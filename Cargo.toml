@@ -1,5 +1,7 @@
 [workspace]
-members = []
+members = [
+    "openapi-manager",
+]
 resolver = "2"
 
 [profile.release]
@@ -7,8 +9,8 @@ panic = "abort"
 
 [workspace.dependencies]
 dropshot = { version = "0.16.4", features = [ "usdt-probes" ] }
-dropshot-api-manager = "0.1.1"
-dropshot-api-manager-types = "0.1.1"
+dropshot-api-manager = "0.2.3"
+dropshot-api-manager-types = "0.2.3"
 progenitor = "0.11.2"
 progenitor-client = "0.11.2"
 tokio = { version = "1.48", features = ["full"] }

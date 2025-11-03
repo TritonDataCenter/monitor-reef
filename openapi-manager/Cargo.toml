@@ -1,0 +1,16 @@
+[package]
+name = "openapi-manager"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dropshot = { workspace = true }
+dropshot-api-manager = { workspace = true }
+dropshot-api-manager-types = { workspace = true }
+anyhow = { workspace = true }
+camino = "1.1"
+clap = { workspace = true }
+
+[[bin]]
+name = "openapi-manager"
+path = "src/main.rs"
