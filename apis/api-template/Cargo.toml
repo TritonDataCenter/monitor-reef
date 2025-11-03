@@ -1,0 +1,12 @@
+[package]
+name = "example-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dropshot = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+
+[lints.clippy]
+unused_async = "allow"

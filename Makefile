@@ -49,7 +49,7 @@ workspace-test: ## Run all workspace tests
 api-new: ## Create new API trait (usage: make api-new API=my-service-api)
 	@if [ -z "$(API)" ]; then echo "Usage: make api-new API=my-service-api"; exit 1; fi
 	@if [ -d "apis/$(API)" ]; then echo "API $(API) already exists"; exit 1; fi
-	cp -r api-template apis/$(API)
+	cp -r apis/api-template apis/$(API)
 	sed -i 's/example-api/$(API)/g' apis/$(API)/Cargo.toml
 	sed -i 's/ExampleApi/$(shell echo $(API) | sed 's/-/ /g' | sed 's/\b\(.\)/\u\1/g' | sed 's/ //g')/g' apis/$(API)/src/lib.rs
 	@echo "Created new API: apis/$(API)"
@@ -64,7 +64,7 @@ api-new: ## Create new API trait (usage: make api-new API=my-service-api)
 service-new: ## Create new service (usage: make service-new SERVICE=my-service API=my-service-api)
 	@if [ -z "$(SERVICE)" ]; then echo "Usage: make service-new SERVICE=my-service API=my-service-api"; exit 1; fi
 	@if [ -d "services/$(SERVICE)" ]; then echo "Service $(SERVICE) already exists"; exit 1; fi
-	cp -r service-template services/$(SERVICE)
+	cp -r services/service-template services/$(SERVICE)
 	sed -i 's/service-template/$(SERVICE)/g' services/$(SERVICE)/Cargo.toml
 	@if [ ! -z "$(API)" ]; then \
 		echo "$$API = { path = \"../../apis/$$API\" }" >> services/$(SERVICE)/Cargo.toml; \
@@ -92,17 +92,18 @@ service-run: ## Run specific service (usage: make service-run SERVICE=my-service
 # Client development commands
 client-new: ## Create new client (usage: make client-new CLIENT=my-service-client API=my-api)
 	@if [ -z "$(CLIENT)" ]; then echo "Usage: make client-new CLIENT=my-service-client API=my-api"; exit 1; fi
-	@if [ -d "clients/$(CLIENT)" ]; then echo "Client $(CLIENT) already exists"; exit 1; fi
-	cp -r client-template clients/$(CLIENT)
-	sed -i 's/client-template/$(CLIENT)/g' clients/$(CLIENT)/Cargo.toml
+	@if [ -d "clients/internal/$(CLIENT)" ]; then echo "Client $(CLIENT) already exists"; exit 1; fi
+	cp -r clients/internal/client-template clients/internal/$(CLIENT)
+	sed -i 's/client-template/$(CLIENT)/g' clients/internal/$(CLIENT)/Cargo.toml
+	sed -i 's/client_template/$(shell echo $(CLIENT) | tr '-' '_')/g' clients/internal/$(CLIENT)/Cargo.toml
 	@if [ ! -z "$(API)" ]; then \
-		sed -i 's|example-api/example-api.json|$(API).json|g' clients/$(CLIENT)/build.rs; \
+		sed -i 's|generated/example-api.json|generated/$(API).json|g' clients/internal/$(CLIENT)/build.rs; \
 		echo "Updated build.rs to use $(API).json"; \
 	fi
-	@echo "Created new client: clients/$(CLIENT)"
+	@echo "Created new client: clients/internal/$(CLIENT)"
 	@echo ""
 	@echo "Next steps:"
-	@echo "  1. Add 'clients/$(CLIENT)' to workspace Cargo.toml members list"
+	@echo "  1. Add 'clients/internal/$(CLIENT)' to workspace Cargo.toml members list"
 	@echo "  2. Verify build.rs points to correct OpenAPI spec"
 	@echo "  3. Run: make client-build CLIENT=$(CLIENT)"
 
@@ -177,23 +178,23 @@ new-api-workflow: ## Create complete API+Service+Client (usage: make new-api-wor
 	@echo "Created complete stack for $(NAME):"
 	@echo "  API:     apis/$(NAME)-api"
 	@echo "  Service: services/$(NAME)-service"
-	@echo "  Client:  clients/$(NAME)-client"
+	@echo "  Client:  clients/internal/$(NAME)-client"
 	@echo ""
 	@echo "Next: Implement the API trait in services/$(NAME)-service/src/main.rs"
 
 # List available APIs, services and clients
 list: ## List all APIs, services and clients
 	@echo "APIs:"
-	@ls -1 apis/ 2>/dev/null || echo "  No APIs found"
+	@ls -1 apis/ 2>/dev/null | grep -v api-template || echo "  No APIs found"
 	@echo ""
 	@echo "Services:"
-	@ls -1 services/ 2>/dev/null || echo "  No services found"
+	@ls -1 services/ 2>/dev/null | grep -v service-template || echo "  No services found"
 	@echo ""
-	@echo "Clients:"
-	@ls -1 clients/ 2>/dev/null || echo "  No clients found"
+	@echo "Internal Clients:"
+	@ls -1 clients/internal/ 2>/dev/null | grep -v client-template || echo "  No internal clients found"
 	@echo ""
 	@echo "Managed OpenAPI Specs:"
-	@ls -1 openapi-specs/ 2>/dev/null || echo "  No specs generated yet (run: make openapi-generate)"
+	@ls -1 openapi-specs/generated/ 2>/dev/null || echo "  No specs generated yet (run: make openapi-generate)"
 
 # Validation and CI commands
 validate: ## Run all validation checks (CI-ready)

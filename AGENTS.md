@@ -20,18 +20,18 @@ Our migration strategy centers on **trait-based OpenAPI-driven development** to 
 ```
 triton-rust-monorepo/
 ├── apis/                    # API trait definitions (fast to compile)
+│   ├── api-template/       # Template for creating new API traits
 │   ├── bugview-api/        # Bugview public issue viewer API
 │   └── ...                 # Add more API definitions as needed
-├── api-template/           # Template for creating new API traits
 ├── services/               # Service implementations
+│   ├── service-template/   # Template for trait-based services
 │   ├── bugview-service/    # Bugview using external JIRA API
 │   └── ...                 # Add more services as needed
-├── service-template/       # Template for trait-based services
 ├── clients/                # Client libraries
 │   ├── internal/           # Clients for our trait-based APIs
+│   │   ├── client-template/ # Template for generating API clients
+│   │   └── jira-client/    # Client for JIRA API subset
 │   └── external/           # Clients for external/legacy APIs
-│       └── jira-client/    # (Disabled: Progenitor can't handle full JIRA spec)
-├── client-template/        # Template for generating API clients
 ├── openapi-manager/        # OpenAPI spec management (dropshot-api-manager integration)
 ├── openapi-specs/          # OpenAPI specifications
 │   ├── generated/          # Generated from our trait-based APIs (gitignored)
@@ -62,7 +62,7 @@ triton-rust-monorepo/
 
 ```bash
 # 1. Copy the API template
-cp -r api-template apis/my-service-api
+cp -r apis/api-template apis/my-service-api
 cd apis/my-service-api
 
 # 2. Update Cargo.toml with your API name
@@ -93,7 +93,7 @@ pub trait MyServiceApi {
 
 ```bash
 # 1. Copy the service template
-cp -r service-template services/my-service
+cp -r services/service-template services/my-service
 cd services/my-service
 
 # 2. Add dependency on your API crate in Cargo.toml
@@ -156,7 +156,7 @@ The openapi-manager uses `stub_api_description()` which generates specs without 
 
 ```bash
 # 1. Copy client template
-cp -r client-template clients/internal/my-service-client
+cp -r clients/internal/client-template clients/internal/my-service-client
 cd clients/internal/my-service-client
 
 # 2. Update build.rs to point to your OpenAPI spec:
