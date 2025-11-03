@@ -4,6 +4,7 @@ members = [
     "apis/jira-api",
     "clients/internal/jira-client",
     "openapi-manager",
+    "services/bugview-service",
 ]
 resolver = "2"
 
@@ -23,6 +24,9 @@ anyhow = "1.0"
 clap = { version = "4.5", features = ["derive"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# NOTE: schemars version is tied to dropshot compatibility
+# Dropshot 0.16.x requires schemars 0.8.x
+# Do not upgrade to schemars 1.x without also upgrading dropshot
 schemars = { version = "0.8", features = ["derive"] }
 semver = "1.0"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
