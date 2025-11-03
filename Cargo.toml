@@ -2,6 +2,7 @@
 members = [
     "apis/bugview-api",
     "apis/jira-api",
+    "clients/internal/jira-client",
     "openapi-manager",
 ]
 resolver = "2"

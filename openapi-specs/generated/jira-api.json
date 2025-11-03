@@ -1,0 +1,343 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "JIRA API (Subset)",
+    "description": "Subset of JIRA REST API v3 used by bugview-service. This is NOT a complete JIRA API - only the specific endpoints we consume.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/rest/api/3/issue/{key}": {
+      "get": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "Get a single issue by key",
+        "description": "Retrieves full details for a specific issue. Use the expand parameter to request additional data like renderedFields (HTML-rendered field values).\n\n**JIRA API Reference**: GET /rest/api/3/issue/{issueIdOrKey}",
+        "operationId": "get_issue",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "description": "Issue key (e.g., \"PROJECT-123\")",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expand",
+            "description": "Comma-separated list of expansions (e.g., \"renderedFields\")",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Issue"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/rest/api/3/issue/{key}/remotelink": {
+      "get": {
+        "tags": [
+          "issue-links"
+        ],
+        "summary": "Get remote links for an issue",
+        "description": "Retrieves all remote links associated with an issue. Remote links are external URLs related to the issue.\n\n**Note**: This endpoint requires the numeric issue ID, not the issue key. The path parameter is named \"key\" for Dropshot consistency, but expects a numeric ID like \"12345\", not a key like \"PROJECT-123\".\n\n**JIRA API Reference**: GET /rest/api/3/issue/{issueIdOrKey}/remotelink",
+        "operationId": "get_remote_links",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "description": "Issue ID (numeric, NOT the issue key) Note: Despite being named \"key\" for Dropshot path consistency, this must be a numeric ID, not an issue key like \"PROJECT-123\"",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_RemoteLink",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RemoteLink"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/rest/api/3/search/jql": {
+      "get": {
+        "tags": [
+          "issue-search"
+        ],
+        "summary": "Search for issues using JQL",
+        "description": "Searches for issues using JIRA Query Language (JQL). Supports cursor-based pagination via the nextPageToken parameter.\n\n**JIRA API Reference**: GET /rest/api/3/search/jql",
+        "operationId": "search_issues",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "fields",
+            "description": "Comma-separated list of fields to include in the response",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "jql",
+            "description": "JQL (JIRA Query Language) query string",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "maxResults",
+            "description": "Maximum number of results to return (default: 50)",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "nextPageToken",
+            "description": "Token for cursor-based pagination (returned from previous search)",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SearchResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "description": "Error information from a response.",
+        "type": "object",
+        "properties": {
+          "error_code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "request_id"
+        ]
+      },
+      "Issue": {
+        "description": "Full issue details",
+        "type": "object",
+        "properties": {
+          "fields": {
+            "description": "Issue fields as a dynamic JSON object",
+            "type": "object",
+            "additionalProperties": true
+          },
+          "id": {
+            "description": "Issue ID (numeric)",
+            "type": "string"
+          },
+          "key": {
+            "description": "Issue key (e.g., \"PROJECT-123\")",
+            "type": "string"
+          },
+          "renderedFields": {
+            "nullable": true,
+            "description": "Rendered (HTML) versions of fields when expand=renderedFields is used",
+            "default": null,
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "fields",
+          "id",
+          "key"
+        ]
+      },
+      "IssueSearchResult": {
+        "description": "Minimal issue information from search results",
+        "type": "object",
+        "properties": {
+          "fields": {
+            "description": "Issue fields as a dynamic JSON object Field names and values depend on the JIRA configuration",
+            "type": "object",
+            "additionalProperties": true
+          },
+          "key": {
+            "description": "Issue key (e.g., \"PROJECT-123\")",
+            "type": "string"
+          }
+        },
+        "required": [
+          "fields",
+          "key"
+        ]
+      },
+      "RemoteLink": {
+        "description": "Remote link information",
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "Remote link ID",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "object": {
+            "nullable": true,
+            "description": "Remote link object with URL and title",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RemoteLinkObject"
+              }
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "RemoteLinkObject": {
+        "description": "Remote link object details",
+        "type": "object",
+        "properties": {
+          "title": {
+            "description": "Title/description of the remote resource",
+            "type": "string"
+          },
+          "url": {
+            "description": "URL of the remote resource",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "url"
+        ]
+      },
+      "SearchResponse": {
+        "description": "Response from JIRA search endpoint",
+        "type": "object",
+        "properties": {
+          "isLast": {
+            "nullable": true,
+            "description": "Whether this is the last page of results",
+            "default": null,
+            "type": "boolean"
+          },
+          "issues": {
+            "description": "List of issues matching the query",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IssueSearchResult"
+            }
+          },
+          "nextPageToken": {
+            "nullable": true,
+            "description": "Token for fetching the next page of results (cursor-based pagination)",
+            "default": null,
+            "type": "string"
+          },
+          "total": {
+            "nullable": true,
+            "description": "Total number of issues matching the query (may be approximate)",
+            "default": null,
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "issues"
+        ]
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "issue-links"
+    },
+    {
+      "name": "issue-search"
+    },
+    {
+      "name": "issues"
+    }
+  ]
+}
