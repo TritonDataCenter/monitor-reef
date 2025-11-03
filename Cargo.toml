@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "apis/jira-api",
     "openapi-manager",
 ]
 resolver = "2"
