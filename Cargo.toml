@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "apis/bugview-api",
     "apis/jira-api",
     "openapi-manager",
 ]

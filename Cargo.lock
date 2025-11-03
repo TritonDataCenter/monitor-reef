@@ -163,6 +163,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "bugview-api"
+version = "0.1.0"
+dependencies = [
+ "dropshot",
+ "http",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "bumpalo"
 version = "3.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1093,6 +1104,7 @@ name = "openapi-manager"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bugview-api",
  "camino",
  "clap",
  "dropshot",

@@ -1,0 +1,14 @@
+[package]
+name = "bugview-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dropshot = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+http = "1.1"
+
+[lints.clippy]
+unused_async = "allow"
