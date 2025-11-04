@@ -708,6 +708,7 @@ mod tests {
     use bugview_api::IssueDetails;
     use http::StatusCode;
     use crate::jira_client::{Issue, RemoteLink, SearchResponse};
+    use ::jira_client::types::IssueSearchResult;
 
     // Mock JIRA client implementing the trait for tests
     #[derive(Clone, Default)]
@@ -717,12 +718,29 @@ mod tests {
     impl JiraClientTrait for MockJiraClient {
         async fn search_issues(
             &self,
-            _labels: &[String],
+            labels: &[String],
             _page_token: Option<&str>,
-            _sort: &str,
+            sort: &str,
         ) -> anyhow::Result<SearchResponse> {
-            // Not exercised in these tests
-            unimplemented!("search_issues not used in these tests");
+            // Build two simple issues that contain the required fields
+            let mut issue1 = serde_json::Map::new();
+            issue1.insert("summary".into(), serde_json::Value::String("Alpha".into()));
+            issue1.insert("created".into(), serde_json::Value::String("2023-10-01T00:00:00.000-0400".into()));
+            issue1.insert("updated".into(), serde_json::Value::String("2023-10-02T00:00:00.000-0400".into()));
+            issue1.insert("labels".into(), serde_json::json!(["public"]));
+
+            let mut issue2 = serde_json::Map::new();
+            issue2.insert("summary".into(), serde_json::Value::String("Beta".into()));
+            issue2.insert("created".into(), serde_json::Value::String("2023-10-03T00:00:00.000-0400".into()));
+            issue2.insert("updated".into(), serde_json::Value::String("2023-10-04T00:00:00.000-0400".into()));
+            issue2.insert("labels".into(), serde_json::json!(["public"]));
+
+            let issues = vec![
+                IssueSearchResult { key: "PROJ-1".into(), fields: issue1.into_iter().collect() },
+                IssueSearchResult { key: "PROJ-2".into(), fields: issue2.into_iter().collect() },
+            ];
+
+            Ok(SearchResponse { total: Some(2), issues, is_last: Some(true), next_page_token: None })
         }
 
         async fn get_issue(&self, key: &str) -> anyhow::Result<Issue> {
@@ -860,5 +878,109 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::OK);
         let body = resp.text().await.expect("body");
         assert!(body.contains("Test summary"));
+    }
+
+    #[tokio::test]
+    async fn test_http_index_json_with_mock_server() {
+        let ctx = test_context();
+        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>().expect("api description");
+        let config_dropshot = ConfigDropshot {
+            bind_address: "127.0.0.1:0".parse().unwrap(),
+            default_request_body_max_bytes: 1024 * 1024,
+            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
+            ..Default::default()
+        };
+        let log = dropshot::ConfigLogging::StderrTerminal { level: dropshot::ConfigLoggingLevel::Info }
+            .to_logger("bugview-service-test")
+            .expect("logger");
+        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
+            Ok(starter) => starter.start(),
+            Err(_) => return,
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        let addr = server.local_addr();
+        let url = format!("http://{}/bugview/index.json", addr);
+        let resp = reqwest::get(&url).await.expect("request");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.text().await.expect("body");
+        assert!(body.contains("\"issues\""));
+        assert!(body.contains("PROJ-1") && body.contains("PROJ-2"));
+    }
+
+    #[tokio::test]
+    async fn test_http_index_html_with_mock_server() {
+        let ctx = test_context();
+        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>().expect("api description");
+        let config_dropshot = ConfigDropshot {
+            bind_address: "127.0.0.1:0".parse().unwrap(),
+            default_request_body_max_bytes: 1024 * 1024,
+            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
+            ..Default::default()
+        };
+        let log = dropshot::ConfigLogging::StderrTerminal { level: dropshot::ConfigLoggingLevel::Info }
+            .to_logger("bugview-service-test")
+            .expect("logger");
+        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
+            Ok(starter) => starter.start(),
+            Err(_) => return,
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        let addr = server.local_addr();
+        let url = format!("http://{}/bugview/index.html", addr);
+        let resp = reqwest::get(&url).await.expect("request");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let body = resp.text().await.expect("body");
+        assert!(body.contains("Public Issues Index") || body.contains("Public Issues"));
+    }
+
+    #[tokio::test]
+    async fn test_http_label_index_html_disallowed() {
+        let ctx = test_context();
+        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>().expect("api description");
+        let config_dropshot = ConfigDropshot {
+            bind_address: "127.0.0.1:0".parse().unwrap(),
+            default_request_body_max_bytes: 1024 * 1024,
+            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
+            ..Default::default()
+        };
+        let log = dropshot::ConfigLogging::StderrTerminal { level: dropshot::ConfigLoggingLevel::Info }
+            .to_logger("bugview-service-test")
+            .expect("logger");
+        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
+            Ok(starter) => starter.start(),
+            Err(_) => return,
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        let addr = server.local_addr();
+        let url = format!("http://{}/bugview/label/not-allowed", addr);
+        let resp = reqwest::get(&url).await.expect("request");
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn test_http_redirect_bugview_root() {
+        let ctx = test_context();
+        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>().expect("api description");
+        let config_dropshot = ConfigDropshot {
+            bind_address: "127.0.0.1:0".parse().unwrap(),
+            default_request_body_max_bytes: 1024 * 1024,
+            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
+            ..Default::default()
+        };
+        let log = dropshot::ConfigLogging::StderrTerminal { level: dropshot::ConfigLoggingLevel::Info }
+            .to_logger("bugview-service-test")
+            .expect("logger");
+        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
+            Ok(starter) => starter.start(),
+            Err(_) => return,
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        let addr = server.local_addr();
+        let url = format!("http://{}/bugview", addr);
+        let client = reqwest::Client::new();
+        let resp = client.get(&url).send().await.expect("request");
+        assert_eq!(resp.status(), StatusCode::FOUND);
+        let loc = resp.headers().get("Location").and_then(|v| v.to_str().ok()).unwrap_or("");
+        assert_eq!(loc, "/bugview/index.html");
     }
 }
