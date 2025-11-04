@@ -289,6 +289,13 @@ cargo run -p openapi-manager -- check
 
 This ensures developers remember to regenerate and commit specs when they change API traits.
 
+#### Doctests Policy
+
+- API trait crates (`apis/*`) and Progenitor-generated client crates include documentation examples that rustdoc treats as doctests.
+- These examples are illustrative and are ignored by default in `cargo test` and CI.
+- Forcing doctests to run (e.g., `cargo test -p bugview-client --doc -- --ignored`) will typically fail without a running HTTP service and async context; we intentionally do not run these in CI.
+- Prefer adding runnable unit/integration tests in service crates for behavior verification.
+
 ## Migration Checklist
 
 For each service migration:
