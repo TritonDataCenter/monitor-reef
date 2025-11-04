@@ -124,7 +124,7 @@ impl JiraClientTrait for JiraClient {
         // Add sort clause
         if sort == "created" || sort == "updated" {
             if !jql.is_empty() {
-                jql.push_str(" ");
+                jql.push(' ');
             }
             jql.push_str(&format!("ORDER BY {} DESC", sort));
         }

@@ -96,7 +96,7 @@ fn extract_adf_text(nodes: &serde_json::Value, indent_level: usize) -> String {
                         if let Some(attrs) = node_obj.get("attrs") {
                             if let Some(url) = attrs.get("url").and_then(|u| u.as_str()) {
                                 // Try to extract issue key from URL (e.g., TRITON-2378)
-                                if let Some(issue_key) = url.split('/').last() {
+                                if let Some(issue_key) = url.split('/').next_back() {
                                     result.push_str(&format!("[{}]", issue_key));
                                 } else {
                                     result.push_str(&format!("[{}]", url));
@@ -140,7 +140,7 @@ fn extract_adf_text(nodes: &serde_json::Value, indent_level: usize) -> String {
                                     if let Some(item_content) = item.get("content") {
                                         let item_text =
                                             extract_adf_text(item_content, indent_level + 1);
-                                        result.push_str(&item_text.trim_end());
+                                        result.push_str(item_text.trim_end());
                                     }
                                     result.push('\n');
                                 }
@@ -158,7 +158,7 @@ fn extract_adf_text(nodes: &serde_json::Value, indent_level: usize) -> String {
                                     if let Some(item_content) = item.get("content") {
                                         let item_text =
                                             extract_adf_text(item_content, indent_level + 1);
-                                        result.push_str(&item_text.trim_end());
+                                        result.push_str(item_text.trim_end());
                                     }
                                     result.push('\n');
                                 }
@@ -201,7 +201,7 @@ fn extract_adf_text(nodes: &serde_json::Value, indent_level: usize) -> String {
                                 result.push('\n');
                             }
                         }
-                        result.push_str("└");
+                        result.push('└');
                         result.push_str(&"─".repeat(68));
                         result.push_str("┘\n");
                     }

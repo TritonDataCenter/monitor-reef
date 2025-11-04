@@ -400,13 +400,7 @@ async fn fetch_issues_for_html(
     // Resolve the short token ID to the real JIRA token
     // For HTML endpoints, we gracefully fall back to first page on bad tokens
     let jira_token = if let Some(short_id) = &query.next_page_token {
-        match ctx.token_cache.get(short_id) {
-            Some(jira_token) => Some(jira_token),
-            None => {
-                // Return None to fetch first page instead of erroring
-                None
-            }
-        }
+        ctx.token_cache.get(short_id)
     } else {
         None
     };
@@ -487,15 +481,16 @@ async fn search_issues(
 
     // Resolve the short token ID to the real JIRA token
     let jira_token = if let Some(short_id) = &query.next_page_token {
-        match ctx.token_cache.get(short_id) {
-            Some(jira_token) => Some(jira_token),
-            None => {
-                return Err(HttpError::for_bad_request(
-                    None,
-                    "Invalid or expired pagination token".to_string(),
-                ));
-            }
-        }
+        Some(
+            ctx.token_cache
+                .get(short_id)
+                .ok_or_else(|| {
+                    HttpError::for_bad_request(
+                        None,
+                        "Invalid or expired pagination token".to_string(),
+                    )
+                })?,
+        )
     } else {
         None
     };

@@ -398,7 +398,7 @@ fn adf_to_html(nodes: &serde_json::Value) -> String {
                         if let Some(attrs) = node_obj.get("attrs") {
                             if let Some(url) = attrs.get("url").and_then(|u| u.as_str()) {
                                 // Extract issue key from URL
-                                if let Some(issue_key) = url.split('/').last() {
+                                if let Some(issue_key) = url.split('/').next_back() {
                                     result.push_str(&format!(
                                         r#"<a href="{}" rel="noopener noreferrer" target="_blank">{}</a>"#,
                                         html_escape(url),
