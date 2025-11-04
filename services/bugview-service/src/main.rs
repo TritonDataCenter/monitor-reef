@@ -481,16 +481,9 @@ async fn search_issues(
 
     // Resolve the short token ID to the real JIRA token
     let jira_token = if let Some(short_id) = &query.next_page_token {
-        Some(
-            ctx.token_cache
-                .get(short_id)
-                .ok_or_else(|| {
-                    HttpError::for_bad_request(
-                        None,
-                        "Invalid or expired pagination token".to_string(),
-                    )
-                })?,
-        )
+        Some(ctx.token_cache.get(short_id).ok_or_else(|| {
+            HttpError::for_bad_request(None, "Invalid or expired pagination token".to_string())
+        })?)
     } else {
         None
     };
