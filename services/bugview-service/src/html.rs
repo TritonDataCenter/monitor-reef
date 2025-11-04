@@ -104,14 +104,15 @@ impl HtmlRenderer {
             "Public Issues Index".to_string()
         };
 
-        self.handlebars.render(
-            "primary",
-            &json!({
-                "title": title,
-                "container": container,
-            }),
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to render page: {}", e))
+        self.handlebars
+            .render(
+                "primary",
+                &json!({
+                    "title": title,
+                    "container": container,
+                }),
+            )
+            .map_err(|e| anyhow::anyhow!("Failed to render page: {}", e))
     }
 
     /// Render a single issue page
@@ -174,14 +175,26 @@ impl HtmlRenderer {
         content.push_str(&format!("<h2>{}</h2>\n", html_escape(summary)));
 
         content.push_str("<dl class=\"dl-horizontal\">\n");
-        content.push_str(&format!("<dt>Status:</dt><dd>{}</dd>\n", html_escape(status)));
+        content.push_str(&format!(
+            "<dt>Status:</dt><dd>{}</dd>\n",
+            html_escape(status)
+        ));
 
         if let Some(res) = resolution {
-            content.push_str(&format!("<dt>Resolution:</dt><dd>{}</dd>\n", html_escape(res)));
+            content.push_str(&format!(
+                "<dt>Resolution:</dt><dd>{}</dd>\n",
+                html_escape(res)
+            ));
         }
 
-        content.push_str(&format!("<dt>Created:</dt><dd>{}</dd>\n", html_escape(created)));
-        content.push_str(&format!("<dt>Updated:</dt><dd>{}</dd>\n", html_escape(updated)));
+        content.push_str(&format!(
+            "<dt>Created:</dt><dd>{}</dd>\n",
+            html_escape(created)
+        ));
+        content.push_str(&format!(
+            "<dt>Updated:</dt><dd>{}</dd>\n",
+            html_escape(updated)
+        ));
         content.push_str("</dl>\n");
 
         // Description - use rendered HTML if available, otherwise fallback to escaped plain text
@@ -277,14 +290,15 @@ impl HtmlRenderer {
         }
 
         // Wrap in primary template
-        self.handlebars.render(
-            "primary",
-            &json!({
-                "title": format!("{} - Bugview", issue.key),
-                "container": content,
-            }),
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to render page: {}", e))
+        self.handlebars
+            .render(
+                "primary",
+                &json!({
+                    "title": format!("{} - Bugview", issue.key),
+                    "container": content,
+                }),
+            )
+            .map_err(|e| anyhow::anyhow!("Failed to render page: {}", e))
     }
 
     /// Render an error page
@@ -306,14 +320,15 @@ impl HtmlRenderer {
             html_escape(message)
         );
 
-        self.handlebars.render(
-            "primary",
-            &json!({
-                "title": title,
-                "container": content,
-            }),
-        )
-        .map_err(|e| anyhow::anyhow!("Failed to render error page: {}", e))
+        self.handlebars
+            .render(
+                "primary",
+                &json!({
+                    "title": title,
+                    "container": content,
+                }),
+            )
+            .map_err(|e| anyhow::anyhow!("Failed to render error page: {}", e))
     }
 }
 
@@ -345,18 +360,26 @@ fn adf_to_html(nodes: &serde_json::Value) -> String {
                             // Apply marks (formatting)
                             if let Some(marks) = node_obj.get("marks").and_then(|m| m.as_array()) {
                                 for mark in marks {
-                                    if let Some(mark_type) = mark.get("type").and_then(|t| t.as_str()) {
+                                    if let Some(mark_type) =
+                                        mark.get("type").and_then(|t| t.as_str())
+                                    {
                                         formatted_text = match mark_type {
-                                            "strong" => format!("<strong>{}</strong>", formatted_text),
+                                            "strong" => {
+                                                format!("<strong>{}</strong>", formatted_text)
+                                            }
                                             "em" => format!("<em>{}</em>", formatted_text),
                                             "code" => format!("<code>{}</code>", formatted_text),
                                             "link" => {
-                                                if let Some(href) = mark.get("attrs")
+                                                if let Some(href) = mark
+                                                    .get("attrs")
                                                     .and_then(|a| a.get("href"))
                                                     .and_then(|h| h.as_str())
                                                 {
-                                                    format!(r#"<a href="{}" rel="noopener noreferrer" target="_blank">{}</a>"#,
-                                                        html_escape(href), formatted_text)
+                                                    format!(
+                                                        r#"<a href="{}" rel="noopener noreferrer" target="_blank">{}</a>"#,
+                                                        html_escape(href),
+                                                        formatted_text
+                                                    )
                                                 } else {
                                                     formatted_text
                                                 }
@@ -407,7 +430,8 @@ fn adf_to_html(nodes: &serde_json::Value) -> String {
                     "mention" => {
                         if let Some(attrs) = node_obj.get("attrs") {
                             if let Some(text) = attrs.get("text").and_then(|t| t.as_str()) {
-                                result.push_str(&format!("<strong>@{}</strong>", html_escape(text)));
+                                result
+                                    .push_str(&format!("<strong>@{}</strong>", html_escape(text)));
                             } else if let Some(id) = attrs.get("id").and_then(|i| i.as_str()) {
                                 result.push_str(&format!("<strong>@{}</strong>", html_escape(id)));
                             }
@@ -454,7 +478,8 @@ fn adf_to_html(nodes: &serde_json::Value) -> String {
                     }
 
                     "heading" => {
-                        let level = node_obj.get("attrs")
+                        let level = node_obj
+                            .get("attrs")
                             .and_then(|a| a.get("level"))
                             .and_then(|l| l.as_u64())
                             .unwrap_or(1)
@@ -467,7 +492,8 @@ fn adf_to_html(nodes: &serde_json::Value) -> String {
                     }
 
                     "panel" => {
-                        result.push_str(r#"<div class="alert alert-info" style="margin: 10px 0;">"#);
+                        result
+                            .push_str(r#"<div class="alert alert-info" style="margin: 10px 0;">"#);
                         if let Some(content) = node_obj.get("content") {
                             result.push_str(&adf_to_html(content));
                         }

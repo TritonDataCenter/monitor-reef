@@ -57,12 +57,20 @@ struct TokenCache {
 
 impl TokenCache {
     fn new() -> Self {
-        Self { cache: Arc::new(Mutex::new(HashMap::new())), ttl: Duration::from_secs(3600), max_entries: 1000 }
+        Self {
+            cache: Arc::new(Mutex::new(HashMap::new())),
+            ttl: Duration::from_secs(3600),
+            max_entries: 1000,
+        }
     }
 
     #[cfg(test)]
     fn new_with(ttl: Duration, max_entries: usize) -> Self {
-        Self { cache: Arc::new(Mutex::new(HashMap::new())), ttl, max_entries }
+        Self {
+            cache: Arc::new(Mutex::new(HashMap::new())),
+            ttl,
+            max_entries,
+        }
     }
 
     /// Store a JIRA token and return a short random ID
@@ -100,7 +108,14 @@ impl TokenCache {
             }
         }
 
-        cache.insert(id.clone(), TokenCacheEntry { jira_token, expires_at: now + self.ttl, inserted_at: now });
+        cache.insert(
+            id.clone(),
+            TokenCacheEntry {
+                jira_token,
+                expires_at: now + self.ttl,
+                inserted_at: now,
+            },
+        );
 
         id
     }
@@ -152,18 +167,14 @@ impl BugviewApi for BugviewServiceImpl {
         let ctx = rqctx.context();
         let key = path.into_inner().key;
 
-        let issue = ctx
-            .jira
-            .get_issue(&key)
-            .await
-            .map_err(|e| {
-                let msg = e.to_string();
-                if msg.contains("Issue not found") {
-                    HttpError::for_not_found(None, msg)
-                } else {
-                    HttpError::for_internal_error(format!("Failed to get issue: {}", e))
-                }
-            })?;
+        let issue = ctx.jira.get_issue(&key).await.map_err(|e| {
+            let msg = e.to_string();
+            if msg.contains("Issue not found") {
+                HttpError::for_not_found(None, msg)
+            } else {
+                HttpError::for_internal_error(format!("Failed to get issue: {}", e))
+            }
+        })?;
 
         // Check if issue has the required label
         if !issue_has_public_label(&issue, &ctx.config.default_label) {
@@ -183,18 +194,14 @@ impl BugviewApi for BugviewServiceImpl {
         let ctx = rqctx.context();
         let key = path.into_inner().key;
 
-        let issue = ctx
-            .jira
-            .get_issue(&key)
-            .await
-            .map_err(|e| {
-                let msg = e.to_string();
-                if msg.contains("Issue not found") {
-                    HttpError::for_not_found(None, msg)
-                } else {
-                    HttpError::for_internal_error(format!("Failed to get issue: {}", e))
-                }
-            })?;
+        let issue = ctx.jira.get_issue(&key).await.map_err(|e| {
+            let msg = e.to_string();
+            if msg.contains("Issue not found") {
+                HttpError::for_not_found(None, msg)
+            } else {
+                HttpError::for_internal_error(format!("Failed to get issue: {}", e))
+            }
+        })?;
 
         // Check if issue has the required label
         if !issue_has_public_label(&issue, &ctx.config.default_label) {
@@ -225,12 +232,20 @@ impl BugviewApi for BugviewServiceImpl {
         let labels = vec![ctx.config.default_label.clone()];
 
         // Get issues
-        let (issues, next_page_token, is_last, sort) = fetch_issues_for_html(ctx, labels, query).await?;
+        let (issues, next_page_token, is_last, sort) =
+            fetch_issues_for_html(ctx, labels, query).await?;
 
         // Render HTML
         let html = ctx
             .html
-            .render_issue_index(&issues, next_page_token, is_last, &sort, None, &ctx.config.allowed_labels)
+            .render_issue_index(
+                &issues,
+                next_page_token,
+                is_last,
+                &sort,
+                None,
+                &ctx.config.allowed_labels,
+            )
             .map_err(|e| HttpError::for_internal_error(format!("Failed to render HTML: {}", e)))?;
 
         Ok(Response::builder()
@@ -261,7 +276,8 @@ impl BugviewApi for BugviewServiceImpl {
         let labels = vec![ctx.config.default_label.clone(), label.clone()];
 
         // Get issues
-        let (issues, next_page_token, is_last, sort) = fetch_issues_for_html(ctx, labels, query).await?;
+        let (issues, next_page_token, is_last, sort) =
+            fetch_issues_for_html(ctx, labels, query).await?;
 
         // Render HTML
         let html = ctx
@@ -330,7 +346,11 @@ impl BugviewApi for BugviewServiceImpl {
         }
 
         // Fetch remote links and filter by allowed_domains
-        let remote_links = ctx.jira.get_remote_links(&issue.id).await.unwrap_or_default();
+        let remote_links = ctx
+            .jira
+            .get_remote_links(&issue.id)
+            .await
+            .unwrap_or_default();
 
         let filtered_links = filter_remote_links(&remote_links, &ctx.config);
 
@@ -443,9 +463,9 @@ async fn fetch_issues_for_html(
     let is_last = search_result.is_last.unwrap_or(false);
 
     // Store JIRA's token in cache and return short ID instead
-    let next_page_token = search_result.next_page_token.map(|jira_token| {
-        ctx.token_cache.store(jira_token)
-    });
+    let next_page_token = search_result
+        .next_page_token
+        .map(|jira_token| ctx.token_cache.store(jira_token));
 
     Ok((issues, next_page_token, is_last, sort.to_string()))
 }
@@ -529,9 +549,9 @@ async fn search_issues(
         .collect();
 
     // Store JIRA's token in cache and return short ID instead
-    let next_page_token = search_result.next_page_token.map(|jira_token| {
-        ctx.token_cache.store(jira_token)
-    });
+    let next_page_token = search_result
+        .next_page_token
+        .map(|jira_token| ctx.token_cache.store(jira_token));
 
     Ok(HttpResponseOk(IssueListResponse {
         total: search_result.total,
@@ -547,11 +567,7 @@ fn issue_has_public_label(issue: &jira_client::Issue, required_label: &str) -> b
         .fields
         .get("labels")
         .and_then(|v| v.as_array())
-        .map(|labels| {
-            labels
-                .iter()
-                .any(|l| l.as_str() == Some(required_label))
-        })
+        .map(|labels| labels.iter().any(|l| l.as_str() == Some(required_label)))
         .unwrap_or(false)
 }
 
@@ -623,15 +639,18 @@ async fn main() -> Result<()> {
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new(
-            std::env::var("RUST_LOG").unwrap_or_else(|_| "bugview_service=info,dropshot=info".to_string()),
+            std::env::var("RUST_LOG")
+                .unwrap_or_else(|_| "bugview_service=info,dropshot=info".to_string()),
         ))
         .init();
 
     // Load configuration from environment
-    let jira_url = std::env::var("JIRA_URL").unwrap_or_else(|_| "https://jira.example.com".to_string());
+    let jira_url =
+        std::env::var("JIRA_URL").unwrap_or_else(|_| "https://jira.example.com".to_string());
     let jira_username = std::env::var("JIRA_USERNAME").unwrap_or_else(|_| "username".to_string());
     let jira_password = std::env::var("JIRA_PASSWORD").unwrap_or_else(|_| "password".to_string());
-    let default_label = std::env::var("JIRA_DEFAULT_LABEL").unwrap_or_else(|_| "public".to_string());
+    let default_label =
+        std::env::var("JIRA_DEFAULT_LABEL").unwrap_or_else(|_| "public".to_string());
     let allowed_labels = std::env::var("JIRA_ALLOWED_LABELS")
         .unwrap_or_default()
         .split(',')
@@ -704,11 +723,11 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::jira_client::{Issue, RemoteLink, SearchResponse};
+    use ::jira_client::types::IssueSearchResult;
     use async_trait::async_trait;
     use bugview_api::IssueDetails;
     use http::StatusCode;
-    use crate::jira_client::{Issue, RemoteLink, SearchResponse};
-    use ::jira_client::types::IssueSearchResult;
 
     // Mock JIRA client implementing the trait for tests
     #[derive(Clone, Default)]
@@ -725,33 +744,70 @@ mod tests {
             // Build two simple issues that contain the required fields
             let mut issue1 = serde_json::Map::new();
             issue1.insert("summary".into(), serde_json::Value::String("Alpha".into()));
-            issue1.insert("created".into(), serde_json::Value::String("2023-10-01T00:00:00.000-0400".into()));
-            issue1.insert("updated".into(), serde_json::Value::String("2023-10-02T00:00:00.000-0400".into()));
+            issue1.insert(
+                "created".into(),
+                serde_json::Value::String("2023-10-01T00:00:00.000-0400".into()),
+            );
+            issue1.insert(
+                "updated".into(),
+                serde_json::Value::String("2023-10-02T00:00:00.000-0400".into()),
+            );
             issue1.insert("labels".into(), serde_json::json!(["public"]));
 
             let mut issue2 = serde_json::Map::new();
             issue2.insert("summary".into(), serde_json::Value::String("Beta".into()));
-            issue2.insert("created".into(), serde_json::Value::String("2023-10-03T00:00:00.000-0400".into()));
-            issue2.insert("updated".into(), serde_json::Value::String("2023-10-04T00:00:00.000-0400".into()));
+            issue2.insert(
+                "created".into(),
+                serde_json::Value::String("2023-10-03T00:00:00.000-0400".into()),
+            );
+            issue2.insert(
+                "updated".into(),
+                serde_json::Value::String("2023-10-04T00:00:00.000-0400".into()),
+            );
             issue2.insert("labels".into(), serde_json::json!(["public"]));
 
             let issues = vec![
-                IssueSearchResult { key: "PROJ-1".into(), fields: issue1.into_iter().collect() },
-                IssueSearchResult { key: "PROJ-2".into(), fields: issue2.into_iter().collect() },
+                IssueSearchResult {
+                    key: "PROJ-1".into(),
+                    fields: issue1.into_iter().collect(),
+                },
+                IssueSearchResult {
+                    key: "PROJ-2".into(),
+                    fields: issue2.into_iter().collect(),
+                },
             ];
 
-            Ok(SearchResponse { total: Some(2), issues, is_last: Some(true), next_page_token: None })
+            Ok(SearchResponse {
+                total: Some(2),
+                issues,
+                is_last: Some(true),
+                next_page_token: None,
+            })
         }
 
         async fn get_issue(&self, key: &str) -> anyhow::Result<Issue> {
             // Return a minimal issue with required fields and the public label
             let mut fields: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
-            fields.insert("summary".to_string(), serde_json::Value::String("Test summary".into()));
-            fields.insert("created".to_string(), serde_json::Value::String("2023-10-04T10:27:22.826-0400".into()));
-            fields.insert("updated".to_string(), serde_json::Value::String("2023-10-05T10:27:22.826-0400".into()));
+            fields.insert(
+                "summary".to_string(),
+                serde_json::Value::String("Test summary".into()),
+            );
+            fields.insert(
+                "created".to_string(),
+                serde_json::Value::String("2023-10-04T10:27:22.826-0400".into()),
+            );
+            fields.insert(
+                "updated".to_string(),
+                serde_json::Value::String("2023-10-05T10:27:22.826-0400".into()),
+            );
             fields.insert("labels".to_string(), serde_json::json!(["public"]));
 
-            Ok(Issue { key: key.to_string(), id: "12345".to_string(), fields, rendered_fields: None })
+            Ok(Issue {
+                key: key.to_string(),
+                id: "12345".to_string(),
+                fields,
+                rendered_fields: None,
+            })
         }
 
         async fn get_remote_links(&self, _issue_id: &str) -> anyhow::Result<Vec<RemoteLink>> {
@@ -784,11 +840,7 @@ mod tests {
     async fn test_issue_full_json_with_mock() {
         // Exercise the same logic used by the handler with a mock client
         let ctx = test_context();
-        let issue = ctx
-            .jira
-            .get_issue("PROJ-1")
-            .await
-            .expect("mock get_issue");
+        let issue = ctx.jira.get_issue("PROJ-1").await.expect("mock get_issue");
 
         // Verify label gate
         assert!(issue_has_public_label(&issue, &ctx.config.default_label));
@@ -800,7 +852,10 @@ mod tests {
 
         // Spot-check a couple fields
         let fields = details.fields.as_object().unwrap();
-        assert_eq!(fields.get("summary").and_then(|v| v.as_str()), Some("Test summary"));
+        assert_eq!(
+            fields.get("summary").and_then(|v| v.as_str()),
+            Some("Test summary")
+        );
     }
 
     #[tokio::test]
@@ -818,7 +873,10 @@ mod tests {
         let filtered = super::filter_remote_links(&links, &ctx.config);
         assert_eq!(filtered.len(), 1, "allowed domain should pass");
 
-        let html = ctx.html.render_issue(&issue, &filtered).expect("render html");
+        let html = ctx
+            .html
+            .render_issue(&issue, &filtered)
+            .expect("render html");
         assert!(html.contains("Test summary"));
         assert!(html.contains("Related Links"));
         assert!(html.contains("example.com"));
@@ -855,9 +913,11 @@ mod tests {
             ..Default::default()
         };
 
-        let log = dropshot::ConfigLogging::StderrTerminal { level: dropshot::ConfigLoggingLevel::Info }
-            .to_logger("bugview-service-test")
-            .expect("logger");
+        let log = dropshot::ConfigLogging::StderrTerminal {
+            level: dropshot::ConfigLoggingLevel::Info,
+        }
+        .to_logger("bugview-service-test")
+        .expect("logger");
 
         let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
             Ok(starter) => starter.start(),
@@ -883,16 +943,19 @@ mod tests {
     #[tokio::test]
     async fn test_http_index_json_with_mock_server() {
         let ctx = test_context();
-        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>().expect("api description");
+        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
+            .expect("api description");
         let config_dropshot = ConfigDropshot {
             bind_address: "127.0.0.1:0".parse().unwrap(),
             default_request_body_max_bytes: 1024 * 1024,
             default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
             ..Default::default()
         };
-        let log = dropshot::ConfigLogging::StderrTerminal { level: dropshot::ConfigLoggingLevel::Info }
-            .to_logger("bugview-service-test")
-            .expect("logger");
+        let log = dropshot::ConfigLogging::StderrTerminal {
+            level: dropshot::ConfigLoggingLevel::Info,
+        }
+        .to_logger("bugview-service-test")
+        .expect("logger");
         let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
             Ok(starter) => starter.start(),
             Err(_) => return,
@@ -910,16 +973,19 @@ mod tests {
     #[tokio::test]
     async fn test_http_index_html_with_mock_server() {
         let ctx = test_context();
-        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>().expect("api description");
+        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
+            .expect("api description");
         let config_dropshot = ConfigDropshot {
             bind_address: "127.0.0.1:0".parse().unwrap(),
             default_request_body_max_bytes: 1024 * 1024,
             default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
             ..Default::default()
         };
-        let log = dropshot::ConfigLogging::StderrTerminal { level: dropshot::ConfigLoggingLevel::Info }
-            .to_logger("bugview-service-test")
-            .expect("logger");
+        let log = dropshot::ConfigLogging::StderrTerminal {
+            level: dropshot::ConfigLoggingLevel::Info,
+        }
+        .to_logger("bugview-service-test")
+        .expect("logger");
         let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
             Ok(starter) => starter.start(),
             Err(_) => return,
@@ -936,16 +1002,19 @@ mod tests {
     #[tokio::test]
     async fn test_http_label_index_html_disallowed() {
         let ctx = test_context();
-        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>().expect("api description");
+        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
+            .expect("api description");
         let config_dropshot = ConfigDropshot {
             bind_address: "127.0.0.1:0".parse().unwrap(),
             default_request_body_max_bytes: 1024 * 1024,
             default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
             ..Default::default()
         };
-        let log = dropshot::ConfigLogging::StderrTerminal { level: dropshot::ConfigLoggingLevel::Info }
-            .to_logger("bugview-service-test")
-            .expect("logger");
+        let log = dropshot::ConfigLogging::StderrTerminal {
+            level: dropshot::ConfigLoggingLevel::Info,
+        }
+        .to_logger("bugview-service-test")
+        .expect("logger");
         let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
             Ok(starter) => starter.start(),
             Err(_) => return,
@@ -960,16 +1029,19 @@ mod tests {
     #[tokio::test]
     async fn test_http_redirect_bugview_root() {
         let ctx = test_context();
-        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>().expect("api description");
+        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
+            .expect("api description");
         let config_dropshot = ConfigDropshot {
             bind_address: "127.0.0.1:0".parse().unwrap(),
             default_request_body_max_bytes: 1024 * 1024,
             default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
             ..Default::default()
         };
-        let log = dropshot::ConfigLogging::StderrTerminal { level: dropshot::ConfigLoggingLevel::Info }
-            .to_logger("bugview-service-test")
-            .expect("logger");
+        let log = dropshot::ConfigLogging::StderrTerminal {
+            level: dropshot::ConfigLoggingLevel::Info,
+        }
+        .to_logger("bugview-service-test")
+        .expect("logger");
         let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
             Ok(starter) => starter.start(),
             Err(_) => return,
@@ -983,7 +1055,11 @@ mod tests {
             .expect("client");
         let resp = client.get(&url).send().await.expect("request");
         assert_eq!(resp.status(), StatusCode::FOUND);
-        let loc = resp.headers().get("Location").and_then(|v| v.to_str().ok()).unwrap_or("");
+        let loc = resp
+            .headers()
+            .get("Location")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
         assert_eq!(loc, "/bugview/index.html");
     }
 }

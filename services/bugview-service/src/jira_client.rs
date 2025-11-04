@@ -45,8 +45,7 @@ impl JiraClient {
         let auth_value = format!("Basic {}", encoded);
         headers.insert(
             AUTHORIZATION,
-            HeaderValue::from_str(&auth_value)
-                .context("Failed to create auth header")?,
+            HeaderValue::from_str(&auth_value).context("Failed to create auth header")?,
         );
 
         // Create authenticated HTTP client
@@ -61,7 +60,6 @@ impl JiraClient {
 
         Ok(Self { client })
     }
-
 }
 
 async fn with_retries<F, Fut, T>(mut f: F, op_name: &str) -> Result<T>
@@ -91,7 +89,9 @@ where
                 if !retriable || attempt > max_retries {
                     return Err(anyhow::anyhow!(
                         "{} failed after {} attempt(s): {}",
-                        op_name, attempt, es
+                        op_name,
+                        attempt,
+                        es
                     ));
                 }
 
@@ -175,7 +175,9 @@ impl JiraClientTrait for JiraClient {
                             || err_str.contains("Invalid Response Payload")
                         {
                             anyhow::anyhow!("Issue not found: {}", k)
-                        } else if err_str.contains("429") || err_str.to_lowercase().contains("too many requests") {
+                        } else if err_str.contains("429")
+                            || err_str.to_lowercase().contains("too many requests")
+                        {
                             anyhow::anyhow!("Rate limited by JIRA (429) when getting issue {}", k)
                         } else {
                             anyhow::anyhow!("Failed to get issue: {}", e)

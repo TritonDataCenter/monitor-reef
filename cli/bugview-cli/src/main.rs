@@ -74,7 +74,9 @@ fn extract_adf_text(nodes: &serde_json::Value, indent_level: usize) -> String {
 
                             if let Some(marks) = node_obj.get("marks").and_then(|m| m.as_array()) {
                                 for mark in marks {
-                                    if let Some(mark_type) = mark.get("type").and_then(|t| t.as_str()) {
+                                    if let Some(mark_type) =
+                                        mark.get("type").and_then(|t| t.as_str())
+                                    {
                                         formatted_text = match mark_type {
                                             "strong" => format!("**{}**", formatted_text),
                                             "em" => format!("*{}*", formatted_text),
@@ -136,7 +138,8 @@ fn extract_adf_text(nodes: &serde_json::Value, indent_level: usize) -> String {
                                     result.push_str(&indent);
                                     result.push_str("• ");
                                     if let Some(item_content) = item.get("content") {
-                                        let item_text = extract_adf_text(item_content, indent_level + 1);
+                                        let item_text =
+                                            extract_adf_text(item_content, indent_level + 1);
                                         result.push_str(&item_text.trim_end());
                                     }
                                     result.push('\n');
@@ -153,7 +156,8 @@ fn extract_adf_text(nodes: &serde_json::Value, indent_level: usize) -> String {
                                     result.push_str(&indent);
                                     result.push_str(&format!("{}. ", i + 1));
                                     if let Some(item_content) = item.get("content") {
-                                        let item_text = extract_adf_text(item_content, indent_level + 1);
+                                        let item_text =
+                                            extract_adf_text(item_content, indent_level + 1);
                                         result.push_str(&item_text.trim_end());
                                     }
                                     result.push('\n');
@@ -171,7 +175,8 @@ fn extract_adf_text(nodes: &serde_json::Value, indent_level: usize) -> String {
 
                     "heading" => {
                         // Extract heading text
-                        let level = node_obj.get("attrs")
+                        let level = node_obj
+                            .get("attrs")
                             .and_then(|a| a.get("level"))
                             .and_then(|l| l.as_u64())
                             .unwrap_or(1);
@@ -276,10 +281,7 @@ async fn main() -> Result<()> {
                     .as_ref()
                     .map(|r| format!(" [{}]", r))
                     .unwrap_or_default();
-                println!(
-                    "  {}: {}{}",
-                    issue.key, issue.summary, resolution
-                );
+                println!("  {}: {}{}", issue.key, issue.summary, resolution);
             }
 
             println!();
@@ -289,7 +291,10 @@ async fn main() -> Result<()> {
 
             if let Some(next_token) = data.next_page_token {
                 println!();
-                println!("Next page: bugview list --next-page-token \"{}\"", next_token);
+                println!(
+                    "Next page: bugview list --next-page-token \"{}\"",
+                    next_token
+                );
             }
         }
 
@@ -377,7 +382,10 @@ async fn main() -> Result<()> {
                 println!();
 
                 // Display web URL
-                println!("View in browser: {}/bugview/issue/{}", cli.base_url, issue.key);
+                println!(
+                    "View in browser: {}/bugview/issue/{}",
+                    cli.base_url, issue.key
+                );
                 println!();
 
                 // Display description
@@ -425,7 +433,8 @@ async fn main() -> Result<()> {
                                     .and_then(|u| u.as_str())
                                     .unwrap_or("");
 
-                                println!("Comment by {} on {}{}",
+                                println!(
+                                    "Comment by {} on {}{}",
                                     author,
                                     format_timestamp(created),
                                     if created != updated {
