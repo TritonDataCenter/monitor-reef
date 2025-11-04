@@ -4,11 +4,27 @@
 //! to maintain a clean interface for the bugview service.
 
 use anyhow::{Context, Result};
+use async_trait::async_trait;
 
 // Re-export types from the generated client that match our API
 pub use jira_client::types::{Issue, RemoteLink, SearchResponse};
 
-/// JIRA client wrapper
+/// Trait abstraction for the JIRA client used by the service.
+#[async_trait]
+pub trait JiraClientTrait: Send + Sync {
+    async fn search_issues(
+        &self,
+        labels: &[String],
+        page_token: Option<&str>,
+        sort: &str,
+    ) -> Result<SearchResponse>;
+
+    async fn get_issue(&self, key: &str) -> Result<Issue>;
+
+    async fn get_remote_links(&self, issue_id: &str) -> Result<Vec<RemoteLink>>;
+}
+
+/// Concrete JIRA client wrapper backed by the Progenitor-generated client.
 #[derive(Clone)]
 pub struct JiraClient {
     client: jira_client::Client,
@@ -17,8 +33,8 @@ pub struct JiraClient {
 impl JiraClient {
     /// Create a new JIRA client
     pub fn new(base_url: String, username: String, password: String) -> Result<Self> {
-        use base64::Engine;
         use base64::engine::general_purpose::STANDARD;
+        use base64::Engine;
         use reqwest::header::{HeaderMap, HeaderValue, AUTHORIZATION};
 
         // Create Basic Auth header
@@ -44,14 +60,11 @@ impl JiraClient {
 
         Ok(Self { client })
     }
+}
 
-    /// Search for issues using JQL
-    ///
-    /// # Arguments
-    /// * `labels` - Labels to filter by (combined with AND)
-    /// * `page_token` - Optional pagination token (None for first page)
-    /// * `sort` - Sort field (key, created, or updated)
-    pub async fn search_issues(
+#[async_trait]
+impl JiraClientTrait for JiraClient {
+    async fn search_issues(
         &self,
         labels: &[String],
         page_token: Option<&str>,
@@ -93,11 +106,7 @@ impl JiraClient {
         Ok(response)
     }
 
-    /// Get a single issue by key
-    ///
-    /// # Arguments
-    /// * `key` - Issue key (e.g., "PROJECT-123")
-    pub async fn get_issue(&self, key: &str) -> Result<Issue> {
+    async fn get_issue(&self, key: &str) -> Result<Issue> {
         if !key.contains('-') {
             anyhow::bail!("Invalid issue key: {}", key);
         }
@@ -111,9 +120,6 @@ impl JiraClient {
             .await
             .map_err(|e| {
                 let err_str = e.to_string();
-                // Check for various 404 indicators
-                // "Invalid Response Payload" means Progenitor couldn't deserialize JIRA's error response
-                // which typically happens when JIRA returns 404 with their error JSON format
                 if err_str.contains("404")
                     || err_str.contains("Not Found")
                     || err_str.contains("Invalid Response Payload")
@@ -127,11 +133,7 @@ impl JiraClient {
         Ok(response.into_inner())
     }
 
-    /// Get remote links for an issue
-    ///
-    /// # Arguments
-    /// * `issue_id` - Issue ID (numeric, not the key)
-    pub async fn get_remote_links(&self, issue_id: &str) -> Result<Vec<RemoteLink>> {
+    async fn get_remote_links(&self, issue_id: &str) -> Result<Vec<RemoteLink>> {
         if issue_id.contains('-') {
             anyhow::bail!("Issue ID must be numeric, not a key: {}", issue_id);
         }
