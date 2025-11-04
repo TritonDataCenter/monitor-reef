@@ -272,6 +272,12 @@ make regen-clients
 make client-build CLIENT=bugview-client
 ```
 
+## 🧪 Tests and Doctests
+
+- Workspace tests include unit tests, HTTP handler tests (with a mock Jira client), and spec validation.
+- The API trait crates and generated client crates contain documentation examples that rustdoc treats as doctests. These are illustrative and ignored by default in `cargo test`.
+- Forcing doctests to run (e.g., `cargo test -p bugview-client --doc -- --ignored`) will fail unless you provide a running service and async context. We intentionally do not run these in CI.
+
 ## 🤝 Contributing
 
 When adding new services or APIs:
