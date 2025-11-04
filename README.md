@@ -19,15 +19,6 @@ open http://127.0.0.1:8080/bugview/index.html
 curl http://127.0.0.1:8080/bugview/index.json | jq
 ```
 
-## Key Benefits of Trait-Based Architecture
-
-- **10x Faster Iteration** - OpenAPI generation in ~1.5s (vs 18+ seconds)
-- **Clean Separation** - API definitions decoupled from implementations
-- **Better Testing** - Easy to create mock implementations
-- **Zero Boilerplate** - No manual `--openapi` flag handling
-- **Automatic Versioning** - Built-in compatibility tracking
-- **Break Circular Dependencies** - Services depend on API traits, not implementations
-
 ## Project Structure
 
 ```
