@@ -43,6 +43,7 @@ impl Config {
 struct TokenCacheEntry {
     jira_token: String,
     expires_at: Instant,
+    inserted_at: Instant,
 }
 
 /// Thread-safe cache for mapping short IDs to JIRA pagination tokens
@@ -51,14 +52,17 @@ struct TokenCacheEntry {
 struct TokenCache {
     cache: Arc<Mutex<HashMap<String, TokenCacheEntry>>>,
     ttl: Duration,
+    max_entries: usize,
 }
 
 impl TokenCache {
     fn new() -> Self {
-        Self {
-            cache: Arc::new(Mutex::new(HashMap::new())),
-            ttl: Duration::from_secs(3600), // 1 hour TTL
-        }
+        Self { cache: Arc::new(Mutex::new(HashMap::new())), ttl: Duration::from_secs(3600), max_entries: 1000 }
+    }
+
+    #[cfg(test)]
+    fn new_with(ttl: Duration, max_entries: usize) -> Self {
+        Self { cache: Arc::new(Mutex::new(HashMap::new())), ttl, max_entries }
     }
 
     /// Store a JIRA token and return a short random ID
@@ -78,13 +82,25 @@ impl TokenCache {
             .collect();
 
         let mut cache = self.cache.lock().unwrap();
-        cache.insert(
-            id.clone(),
-            TokenCacheEntry {
-                jira_token,
-                expires_at: Instant::now() + self.ttl,
-            },
-        );
+
+        // Cleanup expired entries
+        let now = Instant::now();
+        cache.retain(|_, entry| entry.expires_at > now);
+
+        // Enforce capacity by evicting oldest entries
+        while cache.len() >= self.max_entries {
+            if let Some((oldest_key, _)) = cache
+                .iter()
+                .min_by_key(|(_, v)| v.inserted_at)
+                .map(|(k, v)| (k.clone(), v.inserted_at))
+            {
+                cache.remove(&oldest_key);
+            } else {
+                break;
+            }
+        }
+
+        cache.insert(id.clone(), TokenCacheEntry { jira_token, expires_at: now + self.ttl, inserted_at: now });
 
         id
     }
@@ -692,7 +708,6 @@ mod tests {
     use bugview_api::IssueDetails;
     use http::StatusCode;
     use crate::jira_client::{Issue, RemoteLink, SearchResponse};
-    use std::collections::HashMap;
 
     // Mock JIRA client implementing the trait for tests
     #[derive(Clone, Default)]
@@ -789,6 +804,22 @@ mod tests {
         assert!(html.contains("Test summary"));
         assert!(html.contains("Related Links"));
         assert!(html.contains("example.com"));
+    }
+
+    #[tokio::test]
+    async fn test_token_cache_capacity_bounds() {
+        let cache = TokenCache::new_with(Duration::from_secs(60), 3);
+        let ids: Vec<String> = (0..10)
+            .map(|i| cache.store(format!("token-{}", i)))
+            .collect();
+
+        // Oldest should be evicted to maintain capacity
+        let len = cache.cache.lock().unwrap().len();
+        assert!(len <= 3, "cache should be bounded");
+
+        // Newest likely remain; ensure at least last id resolves
+        let last_id = ids.last().unwrap();
+        assert_eq!(cache.get(last_id).as_deref(), Some("token-9"));
     }
 
     #[tokio::test]
