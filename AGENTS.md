@@ -30,11 +30,14 @@ triton-rust-monorepo/
 ├── clients/                # Client libraries
 │   ├── internal/           # Clients for our trait-based APIs
 │   │   ├── client-template/ # Template for generating API clients
+│   │   ├── bugview-client/ # Bugview API client (Progenitor-generated)
 │   │   └── jira-client/    # Client for JIRA API subset
 │   └── external/           # Clients for external/legacy APIs
+├── cli/                    # Command-line applications
+│   └── bugview-cli/        # CLI for Bugview service
 ├── openapi-manager/        # OpenAPI spec management (dropshot-api-manager integration)
 ├── openapi-specs/          # OpenAPI specifications
-│   ├── generated/          # Generated from our trait-based APIs (gitignored)
+│   ├── generated/          # Generated from our trait-based APIs (checked into git)
 │   └── external/           # External API specs for reference (tracked in git)
 ├── xtask/                  # Build automation helpers
 └── tests/                  # Integration tests
@@ -170,7 +173,47 @@ cargo build
 
 **Note**: Client build.rs reads the spec from `openapi-specs/generated/` which is checked into git. This means clients can be built without running openapi-manager first.
 
-### 5. Consuming External APIs (Interim Migration Pattern)
+### 5. Building CLI Applications
+
+Once you have a generated client library, you can build command-line tools on top of it:
+
+```bash
+# 1. Create CLI directory structure
+mkdir -p cli/my-service-cli/src
+
+# 2. Create Cargo.toml
+cat > cli/my-service-cli/Cargo.toml <<EOF
+[package]
+name = "my-service-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "my-service"
+path = "src/main.rs"
+
+[dependencies]
+my-service-client = { path = "../../clients/internal/my-service-client" }
+clap = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+EOF
+
+# 3. Implement CLI in src/main.rs using the generated client
+# 4. Add 'cli/my-service-cli' to workspace Cargo.toml members list
+# 5. Build: cargo build -p my-service-cli
+```
+
+**Example**: See `cli/bugview-cli` for a complete working CLI that uses `bugview-client`.
+
+**Benefits of this approach**:
+- Type-safe client library handles all API communication
+- CLI focuses on user experience (argument parsing, output formatting)
+- API changes automatically flow through client regeneration
+- Client library can be reused by other applications
+
+### 6. Consuming External APIs (Interim Migration Pattern)
 
 When building new services that need to consume external/legacy APIs during migration:
 
@@ -225,7 +268,7 @@ impl ExternalApiClient {
 - Hand-writing 3-5 endpoint wrappers takes less time than debugging generated code
 - This pattern works great for migration: your NEW Rust service has a clean API while consuming the OLD API internally
 
-### 6. Testing and Validation
+### 7. Testing and Validation
 
 All services must include:
 - **Unit tests** for business logic

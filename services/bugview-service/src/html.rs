@@ -199,6 +199,61 @@ impl HtmlRenderer {
             content.push_str("</div>\n");
         }
 
+        // Comments
+        if let Some(comment_obj) = issue.fields.get("comment") {
+            if let Some(comments) = comment_obj.get("comments").and_then(|c| c.as_array()) {
+                if !comments.is_empty() {
+                    content.push_str(&format!("<h2>Comments ({})</h2>\n", comments.len()));
+
+                    for comment in comments {
+                        let author = comment
+                            .get("author")
+                            .and_then(|a| a.get("displayName"))
+                            .and_then(|d| d.as_str())
+                            .unwrap_or("Unknown");
+
+                        let created = comment
+                            .get("created")
+                            .and_then(|c| c.as_str())
+                            .unwrap_or("");
+
+                        let updated = comment
+                            .get("updated")
+                            .and_then(|u| u.as_str())
+                            .unwrap_or("");
+
+                        content.push_str("<div class=\"well\" style=\"margin-bottom: 15px;\">\n");
+                        content.push_str(&format!(
+                            "<p><strong>{}</strong> commented on {}{}:</p>\n",
+                            html_escape(author),
+                            html_escape(created),
+                            if created != updated {
+                                format!(" <em>(edited {})</em>", html_escape(updated))
+                            } else {
+                                String::new()
+                            }
+                        ));
+
+                        // Render comment body
+                        if let Some(body) = comment.get("body") {
+                            if let Some(body_str) = body.as_str() {
+                                // Plain text fallback
+                                content.push_str(&format!("<p>{}</p>", html_escape(body_str)));
+                            } else if let Some(body_obj) = body.as_object() {
+                                // ADF format - convert to HTML
+                                if let Some(body_content) = body_obj.get("content") {
+                                    let html = adf_to_html(body_content);
+                                    content.push_str(&html);
+                                }
+                            }
+                        }
+
+                        content.push_str("</div>\n");
+                    }
+                }
+            }
+        }
+
         // Remote Links (filtered by allowed_domains)
         if !remote_links.is_empty() {
             content.push_str("<h2>Related Links</h2>\n");
@@ -258,6 +313,177 @@ impl HtmlRenderer {
         )
         .map_err(|e| anyhow::anyhow!("Failed to render error page: {}", e))
     }
+}
+
+/// Convert ADF (Atlassian Document Format) to HTML
+///
+/// This function handles the same ADF node types as the CLI text extractor,
+/// but outputs HTML instead of plain text.
+fn adf_to_html(nodes: &serde_json::Value) -> String {
+    let mut result = String::new();
+
+    if let Some(nodes_array) = nodes.as_array() {
+        for node in nodes_array.iter() {
+            if let Some(node_obj) = node.as_object() {
+                let node_type = node_obj.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+                match node_type {
+                    "paragraph" => {
+                        result.push_str("<p>");
+                        if let Some(content) = node_obj.get("content") {
+                            result.push_str(&adf_to_html(content));
+                        }
+                        result.push_str("</p>\n");
+                    }
+
+                    "text" => {
+                        if let Some(text) = node_obj.get("text").and_then(|t| t.as_str()) {
+                            let mut formatted_text = html_escape(text);
+
+                            // Apply marks (formatting)
+                            if let Some(marks) = node_obj.get("marks").and_then(|m| m.as_array()) {
+                                for mark in marks {
+                                    if let Some(mark_type) = mark.get("type").and_then(|t| t.as_str()) {
+                                        formatted_text = match mark_type {
+                                            "strong" => format!("<strong>{}</strong>", formatted_text),
+                                            "em" => format!("<em>{}</em>", formatted_text),
+                                            "code" => format!("<code>{}</code>", formatted_text),
+                                            "link" => {
+                                                if let Some(href) = mark.get("attrs")
+                                                    .and_then(|a| a.get("href"))
+                                                    .and_then(|h| h.as_str())
+                                                {
+                                                    format!(r#"<a href="{}" rel="noopener noreferrer" target="_blank">{}</a>"#,
+                                                        html_escape(href), formatted_text)
+                                                } else {
+                                                    formatted_text
+                                                }
+                                            }
+                                            _ => formatted_text,
+                                        };
+                                    }
+                                }
+                            }
+
+                            result.push_str(&formatted_text);
+                        }
+                    }
+
+                    "inlineCard" => {
+                        if let Some(attrs) = node_obj.get("attrs") {
+                            if let Some(url) = attrs.get("url").and_then(|u| u.as_str()) {
+                                // Extract issue key from URL
+                                if let Some(issue_key) = url.split('/').last() {
+                                    result.push_str(&format!(
+                                        r#"<a href="{}" rel="noopener noreferrer" target="_blank">{}</a>"#,
+                                        html_escape(url),
+                                        html_escape(issue_key)
+                                    ));
+                                } else {
+                                    result.push_str(&format!(
+                                        r#"<a href="{}" rel="noopener noreferrer" target="_blank">{}</a>"#,
+                                        html_escape(url),
+                                        html_escape(url)
+                                    ));
+                                }
+                            }
+                        }
+                    }
+
+                    "codeBlock" => {
+                        result.push_str("<pre><code>");
+                        if let Some(content) = node_obj.get("content") {
+                            result.push_str(&adf_to_html(content));
+                        }
+                        result.push_str("</code></pre>\n");
+                    }
+
+                    "hardBreak" => {
+                        result.push_str("<br>\n");
+                    }
+
+                    "mention" => {
+                        if let Some(attrs) = node_obj.get("attrs") {
+                            if let Some(text) = attrs.get("text").and_then(|t| t.as_str()) {
+                                result.push_str(&format!("<strong>@{}</strong>", html_escape(text)));
+                            } else if let Some(id) = attrs.get("id").and_then(|i| i.as_str()) {
+                                result.push_str(&format!("<strong>@{}</strong>", html_escape(id)));
+                            }
+                        }
+                    }
+
+                    "bulletList" => {
+                        result.push_str("<ul>\n");
+                        if let Some(content) = node_obj.get("content") {
+                            if let Some(items) = content.as_array() {
+                                for item in items {
+                                    result.push_str("<li>");
+                                    if let Some(item_content) = item.get("content") {
+                                        result.push_str(&adf_to_html(item_content));
+                                    }
+                                    result.push_str("</li>\n");
+                                }
+                            }
+                        }
+                        result.push_str("</ul>\n");
+                    }
+
+                    "orderedList" => {
+                        result.push_str("<ol>\n");
+                        if let Some(content) = node_obj.get("content") {
+                            if let Some(items) = content.as_array() {
+                                for item in items {
+                                    result.push_str("<li>");
+                                    if let Some(item_content) = item.get("content") {
+                                        result.push_str(&adf_to_html(item_content));
+                                    }
+                                    result.push_str("</li>\n");
+                                }
+                            }
+                        }
+                        result.push_str("</ol>\n");
+                    }
+
+                    "listItem" => {
+                        // Handled by parent list
+                        if let Some(content) = node_obj.get("content") {
+                            result.push_str(&adf_to_html(content));
+                        }
+                    }
+
+                    "heading" => {
+                        let level = node_obj.get("attrs")
+                            .and_then(|a| a.get("level"))
+                            .and_then(|l| l.as_u64())
+                            .unwrap_or(1)
+                            .min(6);
+                        result.push_str(&format!("<h{}>", level));
+                        if let Some(content) = node_obj.get("content") {
+                            result.push_str(&adf_to_html(content));
+                        }
+                        result.push_str(&format!("</h{}>\n", level));
+                    }
+
+                    "panel" => {
+                        result.push_str(r#"<div class="alert alert-info" style="margin: 10px 0;">"#);
+                        if let Some(content) = node_obj.get("content") {
+                            result.push_str(&adf_to_html(content));
+                        }
+                        result.push_str("</div>\n");
+                    }
+
+                    _ => {
+                        // For unknown node types, try to extract content recursively
+                        if let Some(content) = node_obj.get("content") {
+                            result.push_str(&adf_to_html(content));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    result
 }
 
 /// Simple HTML escape function

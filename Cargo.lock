@@ -180,6 +180,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "bugview-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bugview-client",
+ "chrono",
+ "clap",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "bugview-client"
+version = "0.1.0"
+dependencies = [
+ "openapiv3",
+ "progenitor",
+ "progenitor-client",
+ "reqwest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "bugview-service"
 version = "0.1.0"
 dependencies = [

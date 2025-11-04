@@ -1,0 +1,16 @@
+[package]
+name = "bugview-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "bugview"
+path = "src/main.rs"
+
+[dependencies]
+bugview-client = { path = "../../clients/internal/bugview-client" }
+clap = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+chrono = "0.4"
