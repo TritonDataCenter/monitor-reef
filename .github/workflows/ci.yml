@@ -31,3 +31,22 @@ jobs:
         run: |
           make validate
 
+  cli-smoke:
+    runs-on: ubuntu-latest
+    needs: build-test-validate
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust 1.90 with components
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.90
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build bugview CLI (smoke)
+        run: |
+          cargo build -p bugview-cli

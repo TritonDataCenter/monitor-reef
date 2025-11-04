@@ -248,6 +248,30 @@ make openapi-check
 - See `services/bugview-service/README.md` for detailed configuration, endpoints, and usage.
 - For local runs, export the variables or source a `.env` file before `cargo run -p bugview-service`.
 
+## 🔄 Regenerate OpenAPI and Clients
+
+- Generate OpenAPI specs from trait crates (fast):
+
+```bash
+make openapi-generate
+```
+
+- Review and commit changes to `openapi-specs/generated/` so client builds stay deterministic:
+
+```bash
+git diff openapi-specs/generated/
+git add openapi-specs/generated/
+git commit -m "Update OpenAPI specs for <api>"
+```
+
+- Rebuild clients to regenerate code from updated specs:
+
+```bash
+make regen-clients
+# or target a single client
+make client-build CLIENT=bugview-client
+```
+
 ## 🤝 Contributing
 
 When adding new services or APIs:
