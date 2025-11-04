@@ -31,20 +31,23 @@ curl http://127.0.0.1:8000/health
 
 ```
 triton-rust-monorepo/
-├── Makefile               # Developer commands (make help)
-├── AGENTS.md              # Comprehensive migration guide
-├── apis/                  # API trait definitions (fast to compile)
-│   └── bugview-api/      # Bugview public issue viewer API
-├── api-template/         # Template for new API traits
-├── services/             # Service implementations
-│   └── bugview-service/  # Bugview service implementation
-├── service-template/     # Template for trait-based services
-├── clients/              # Generated client libraries
-├── client-template/      # Template for Progenitor clients
-├── openapi-manager/      # OpenAPI spec management
-├── openapi-specs/        # Auto-managed OpenAPI specifications
-├── xtask/                # Build automation helpers
-└── tests/               # Integration tests
+├── Makefile                        # Developer commands (make help)
+├── AGENTS.md                       # Comprehensive migration guide
+├── apis/                           # API trait definitions (fast to compile)
+│   ├── api-template/               # Template for new API traits
+│   └── bugview-api/                # Bugview public issue viewer API
+├── services/                       # Service implementations
+│   ├── service-template/           # Template for trait-based services
+│   └── bugview-service/            # Bugview service implementation
+├── clients/                        # Client libraries
+│   └── internal/
+│       ├── client-template/        # Template for Progenitor clients
+│       ├── bugview-client/         # Generated client for bugview-api
+│       └── jira-client/            # Generated client for jira-api subset
+├── openapi-manager/                # OpenAPI spec management
+├── openapi-specs/                  # Auto-managed OpenAPI specifications
+│   └── generated/                  # Specs generated from API traits
+└── tests/                          # Integration tests
 ```
 
 ## 🔧 Development Workflow
@@ -175,9 +178,11 @@ The repository includes a complete example demonstrating the trait-based workflo
 # Try it out
 make service-run SERVICE=bugview-service
 
-# In another terminal
-curl http://127.0.0.1:8000/health
-curl http://127.0.0.1:8000/issues/PROJ-123
+# In another terminal, browse HTML
+open http://127.0.0.1:8080/bugview/index.html
+
+# Or fetch JSON
+curl http://127.0.0.1:8080/bugview/index.json | jq
 ```
 
 ## 🏁 Migration from Node.js
