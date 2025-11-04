@@ -18,6 +18,22 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tracing::info;
 
+// ================================
+// Module constants
+// ================================
+/// Length of the short, URL-safe pagination token IDs we expose publicly.
+const PAGINATION_TOKEN_ID_LEN: usize = 12;
+/// Size of the token ID alphabet (0-9, a-z, A-Z).
+const TOKEN_ID_ALPHABET_LEN: u8 = 62;
+/// Default TTL for cached JIRA pagination tokens (seconds).
+const TOKEN_TTL_SECS: u64 = 60 * 60; // 1 hour
+/// Maximum number of cached pagination tokens to retain.
+const TOKEN_CACHE_MAX_ENTRIES: usize = 1000;
+/// Default maximum request body size (bytes).
+const DEFAULT_BODY_MAX_BYTES: usize = 1024 * 1024; // 1MB
+/// Default bind address for the HTTP server.
+const DEFAULT_BIND_ADDRESS: &str = "127.0.0.1:8080";
+
 /// Service configuration
 #[derive(Clone)]
 struct Config {
@@ -59,8 +75,8 @@ impl TokenCache {
     fn new() -> Self {
         Self {
             cache: Arc::new(Mutex::new(HashMap::new())),
-            ttl: Duration::from_secs(3600),
-            max_entries: 1000,
+            ttl: Duration::from_secs(TOKEN_TTL_SECS),
+            max_entries: TOKEN_CACHE_MAX_ENTRIES,
         }
     }
 
@@ -78,9 +94,9 @@ impl TokenCache {
         use rand::Rng;
 
         let mut rng = rand::rng();
-        let id: String = (0..12)
+        let id: String = (0..PAGINATION_TOKEN_ID_LEN)
             .map(|_| {
-                let idx = rng.random_range(0..62);
+                let idx = rng.random_range(0..TOKEN_ID_ALPHABET_LEN);
                 match idx {
                     0..=9 => (b'0' + idx) as char,
                     10..=35 => (b'a' + idx - 10) as char,
@@ -678,12 +694,12 @@ async fn main() -> Result<()> {
 
     // Configure the server
     let bind_address = std::env::var("BIND_ADDRESS")
-        .unwrap_or_else(|_| "127.0.0.1:8080".to_string())
+        .unwrap_or_else(|_| DEFAULT_BIND_ADDRESS.to_string())
         .parse()?;
 
     let config_dropshot = ConfigDropshot {
         bind_address,
-        default_request_body_max_bytes: 1024 * 1024, // 1MB
+        default_request_body_max_bytes: DEFAULT_BODY_MAX_BYTES,
         default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
         ..Default::default()
     };

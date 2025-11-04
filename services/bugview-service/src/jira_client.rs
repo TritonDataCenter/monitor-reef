@@ -7,6 +7,15 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use std::time::Duration;
 
+// Retry/backoff and HTTP configuration
+const RETRY_MAX_RETRIES: u32 = 3;
+const RETRY_INITIAL_DELAY_MS: u64 = 150;
+const RETRY_MAX_DELAY_MS: u64 = 2_000;
+const RETRY_JITTER_MAX_MS: u64 = 50;
+const HTTP_TIMEOUT_SECS: u64 = 15;
+const USER_AGENT: &str = "BugviewRust/0.1.0";
+const JIRA_SEARCH_MAX_RESULTS: u32 = 50;
+
 // Re-export types from the generated client that match our API
 pub use jira_client::types::{Issue, RemoteLink, SearchResponse};
 
@@ -50,8 +59,8 @@ impl JiraClient {
 
         // Create authenticated HTTP client
         let http_client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(15))
-            .user_agent("BugviewRust/0.1.0")
+            .timeout(std::time::Duration::from_secs(HTTP_TIMEOUT_SECS))
+            .user_agent(USER_AGENT)
             .default_headers(headers)
             .build()
             .context("Failed to create HTTP client")?;
@@ -67,9 +76,9 @@ where
     F: FnMut() -> Fut,
     Fut: std::future::Future<Output = Result<T>>,
 {
-    let max_retries = 3u32;
+    let max_retries = RETRY_MAX_RETRIES;
     let mut attempt = 0u32;
-    let mut delay = Duration::from_millis(150);
+    let mut delay = Duration::from_millis(RETRY_INITIAL_DELAY_MS);
 
     loop {
         match f().await {
@@ -96,9 +105,9 @@ where
                 }
 
                 // Exponential backoff with jitter
-                let jitter: u64 = (rand::random::<u8>() as u64) % 50;
+                let jitter: u64 = (rand::random::<u8>() as u64) % RETRY_JITTER_MAX_MS;
                 tokio::time::sleep(delay + Duration::from_millis(jitter)).await;
-                delay = std::cmp::min(delay * 2, Duration::from_secs(2));
+                delay = std::cmp::min(delay * 2, Duration::from_millis(RETRY_MAX_DELAY_MS));
             }
         }
     }
@@ -112,7 +121,7 @@ impl JiraClientTrait for JiraClient {
         page_token: Option<&str>,
         sort: &str,
     ) -> Result<SearchResponse> {
-        let max_results = 50;
+        let max_results = JIRA_SEARCH_MAX_RESULTS;
 
         // Build JQL query
         let label_clauses: Vec<String> = labels
