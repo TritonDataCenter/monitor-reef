@@ -242,6 +242,12 @@ make openapi-list
 make openapi-check
 ```
 
+## 🧰 Configuration
+
+- Example environment variables for the Bugview service are provided at `services/bugview-service/.env.example`.
+- See `services/bugview-service/README.md` for detailed configuration, endpoints, and usage.
+- For local runs, export the variables or source a `.env` file before `cargo run -p bugview-service`.
+
 ## 🤝 Contributing
 
 When adding new services or APIs:

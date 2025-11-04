@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, clean-history-round-two ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-test-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust 1.90 with components
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: 1.90
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Show rustc/cargo versions
+        run: |
+          rustc -V
+          cargo -V
+
+      - name: Validate (fmt, clippy, tests, openapi-check)
+        run: |
+          make validate
+
