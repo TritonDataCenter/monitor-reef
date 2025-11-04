@@ -49,14 +49,16 @@ impl HtmlRenderer {
                 if Some(l.as_str()) == label {
                     format!("<b>{}</b>", html_escape(l))
                 } else {
-                    format!(r#"<a href="/bugview/label/{}">{}</a>"#, l, html_escape(l))
+                    let enc = urlencoding::encode(l);
+                    format!(r#"<a href="/bugview/label/{}">{}</a>"#, enc, html_escape(l))
                 }
             })
             .collect();
 
         // Build pagination links
         let page_path = if let Some(l) = label {
-            format!("/bugview/label/{}", l)
+            let enc = urlencoding::encode(l);
+            format!("/bugview/label/{}", enc)
         } else {
             "/bugview/index.html".to_string()
         };
@@ -493,4 +495,43 @@ fn html_escape(s: &str) -> String {
         .replace('>', "&gt;")
         .replace('"', "&quot;")
         .replace('\'', "&#x27;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn label_links_are_url_encoded() {
+        let renderer = HtmlRenderer::new().expect("renderer");
+        let issues: Vec<IssueListItem> = vec![];
+        let html = renderer
+            .render_issue_index(
+                &issues,
+                None,
+                true,
+                "updated",
+                None,
+                &["needs triage".to_string()],
+            )
+            .expect("render");
+        assert!(html.contains("/bugview/label/needs%20triage"));
+    }
+
+    #[test]
+    fn pagination_path_for_label_is_encoded() {
+        let renderer = HtmlRenderer::new().expect("renderer");
+        let issues: Vec<IssueListItem> = vec![];
+        let html = renderer
+            .render_issue_index(
+                &issues,
+                None,
+                true,
+                "updated",
+                Some("needs triage"),
+                &["needs triage".to_string()],
+            )
+            .expect("render");
+        assert!(html.contains("/bugview/label/needs%20triage?sort=updated"));
+    }
 }
