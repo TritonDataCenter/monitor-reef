@@ -14,8 +14,9 @@ make list
 # Start the bugview service
 make service-run SERVICE=bugview-service
 
-# Test the service
-curl http://127.0.0.1:8000/health
+# Browse HTML or fetch JSON
+open http://127.0.0.1:8080/bugview/index.html
+curl http://127.0.0.1:8080/bugview/index.json | jq
 ```
 
 ## 🎯 Key Benefits of Trait-Based Architecture
@@ -50,82 +51,26 @@ triton-rust-monorepo/
 └── tests/                          # Integration tests
 ```
 
-## 🔧 Development Workflow
-
-### Create a Complete API Stack
+## 🛠 Common Commands
 
 ```bash
-# One command to create API + Service + Client
-make new-api-workflow NAME=products
-
-# Or step by step:
-make api-new API=products-api
-# (Add to workspace and register in openapi-manager)
+# Generate OpenAPI specs (fast)
 make openapi-generate
-make service-new SERVICE=products-service API=products-api
-make client-new CLIENT=products-client API=products-api
-```
-
-### Work with Existing Services
-
-```bash
-# Build and test a service
-make dev SERVICE=bugview-service
 
 # Run a service
 make service-run SERVICE=bugview-service
 
-# Regenerate OpenAPI specs (fast!)
-make openapi-generate
-
-# List everything
-make list
-
-# Validate before committing
+# Validate before committing (fmt, clippy, tests, openapi-check)
 make validate
+
+# Discover what’s available
+make list
+make help
 ```
-
-## 🛠 Makefile Commands
-
-### API Development
-- `make api-new API=name` - Create new API trait from template
-- `make openapi-generate` - Generate specs using dropshot-api-manager
-- `make openapi-list` - List all managed APIs
-- `make openapi-check` - Validate specs are up-to-date
-
-### Service Development
-- `make service-new SERVICE=name API=api-name` - Create service with API dependency
-- `make service-build SERVICE=name` - Build specific service
-- `make service-test SERVICE=name` - Test specific service
-- `make service-run SERVICE=name` - Run specific service
-
-### Client Development
-- `make client-new CLIENT=name API=api-name` - Create client with correct spec path
-- `make client-build CLIENT=name` - Build specific client
-- `make client-test CLIENT=name` - Test specific client
-
-### Workflows
-- `make dev-setup` - One-command development environment setup
-- `make validate` - Run all validation checks (CI-ready)
-- `make list` - List all APIs, services, clients, and specs
-- `make help` - Show all available commands
 
 ## 📋 Architecture Overview
 
-### Traditional Dropshot (Before)
-```rust
-// API definition mixed with implementation
-#[endpoint { method = GET, path = "/issues/{key}" }]
-async fn get_issue(rqctx: RequestContext<ApiContext>, ...) -> Result<...> {
-    // implementation
-}
-
-fn main() {
-    let mut api = ApiDescription::new();
-    api.register(get_issue).unwrap();
-    // Manual --openapi handling needed
-}
-```
+This repo uses Dropshot API traits (RFD 479) to separate interface from implementation and enable fast OpenAPI generation. See AGENTS.md for the complete patterns and examples.
 
 ### Trait-Based Dropshot (After)
 ```rust
@@ -187,41 +132,11 @@ curl http://127.0.0.1:8080/bugview/index.json | jq
 
 ## 🏁 Migration from Node.js
 
-1. **Extract or create OpenAPI spec** from your Node.js service
-2. **Define API trait** in `apis/your-service-api/`:
-   ```bash
-   make api-new API=your-service-api
-   ```
-3. **Register in openapi-manager** (add to `openapi-manager/src/main.rs`)
-4. **Generate and compare specs**:
-   ```bash
-   make openapi-generate
-   # Compare with Node.js spec
-   ```
-5. **Implement service**:
-   ```bash
-   make service-new SERVICE=your-service API=your-service-api
-   # Implement the trait in src/main.rs
-   ```
-6. **Generate client**:
-   ```bash
-   make client-new CLIENT=your-service-client API=your-service-api
-   ```
-7. **Test everything**:
-   ```bash
-   make validate
-   ```
+See AGENTS.md for the step‑by‑step migration workflow (API → specs → service → client), guidance, and troubleshooting.
 
 ## 📚 Documentation
 
-See [AGENTS.md](AGENTS.md) for detailed information on:
-- Trait-based API design patterns
-- Step-by-step development workflow
-- Testing strategies
-- Configuration management
-- Error handling standards
-- Troubleshooting guide
-- Before/after architecture comparison
+See [AGENTS.md](AGENTS.md) for detailed design patterns, workflows, and troubleshooting.
 
 ## 🔬 OpenAPI Management
 
@@ -280,22 +195,14 @@ make client-build CLIENT=bugview-client
 
 ## 🤝 Contributing
 
-When adding new services or APIs:
+When adding new services or APIs, start with the API trait (apis/), register it in openapi-manager, generate specs, then implement the service and client. Add tests and run `make validate` before pushing.
 
-1. Create API trait first (in `apis/`) using `make api-new`
-2. Register in openapi-manager
-3. Generate OpenAPI specs with `make openapi-generate`
-4. Implement service (in `services/`) using `make service-new`
-5. Create client library (in `clients/`) using `make client-new`
-6. Add comprehensive tests
-7. Run `make validate` before committing
+## 📚 References
 
-## 🎓 Learning Resources
-
-- **[RFD 479: Dropshot API Traits](https://rfd.shared.oxide.computer/rfd/0479)** - Design philosophy and patterns
-- **[Dropshot Documentation](https://github.com/oxidecomputer/dropshot)** - HTTP framework details
-- **[Dropshot API Manager](https://github.com/oxidecomputer/dropshot-api-manager)** - OpenAPI management tool
-- **[Progenitor Documentation](https://github.com/oxidecomputer/progenitor)** - Client generation
+- RFD 479: Dropshot API Traits
+- Dropshot (HTTP framework)
+- dropshot-api-manager (OpenAPI management)
+- Progenitor (client generation)
 
 ## 💡 Tips
 
