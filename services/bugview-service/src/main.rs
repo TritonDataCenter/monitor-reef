@@ -718,9 +718,9 @@ mod tests {
     impl JiraClientTrait for MockJiraClient {
         async fn search_issues(
             &self,
-            labels: &[String],
+            _labels: &[String],
             _page_token: Option<&str>,
-            sort: &str,
+            _sort: &str,
         ) -> anyhow::Result<SearchResponse> {
             // Build two simple issues that contain the required fields
             let mut issue1 = serde_json::Map::new();
