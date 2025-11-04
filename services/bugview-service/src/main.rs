@@ -977,7 +977,10 @@ mod tests {
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         let addr = server.local_addr();
         let url = format!("http://{}/bugview", addr);
-        let client = reqwest::Client::new();
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .build()
+            .expect("client");
         let resp = client.get(&url).send().await.expect("request");
         assert_eq!(resp.status(), StatusCode::FOUND);
         let loc = resp.headers().get("Location").and_then(|v| v.to_str().ok()).unwrap_or("");
