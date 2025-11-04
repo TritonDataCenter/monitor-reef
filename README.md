@@ -2,7 +2,7 @@
 
 A structured monorepo for migrating Node.js services to Rust with guaranteed API compatibility through **trait-based OpenAPI-driven development**.
 
-## 🚀 Quick Start
+## Quick Start
 
 ```bash
 # Set up development environment
@@ -19,7 +19,7 @@ open http://127.0.0.1:8080/bugview/index.html
 curl http://127.0.0.1:8080/bugview/index.json | jq
 ```
 
-## 🎯 Key Benefits of Trait-Based Architecture
+## Key Benefits of Trait-Based Architecture
 
 - **10x Faster Iteration** - OpenAPI generation in ~1.5s (vs 18+ seconds)
 - **Clean Separation** - API definitions decoupled from implementations
@@ -28,7 +28,7 @@ curl http://127.0.0.1:8080/bugview/index.json | jq
 - **Automatic Versioning** - Built-in compatibility tracking
 - **Break Circular Dependencies** - Services depend on API traits, not implementations
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 triton-rust-monorepo/
@@ -51,7 +51,7 @@ triton-rust-monorepo/
 └── tests/                          # Integration tests
 ```
 
-## 🛠 Common Commands
+## Common Commands
 
 ```bash
 # Generate OpenAPI specs (fast)
@@ -68,7 +68,7 @@ make list
 make help
 ```
 
-## 📋 Architecture Overview
+## Architecture Overview
 
 This repo uses Dropshot API traits (RFD 479) to separate interface from implementation and enable fast OpenAPI generation. See AGENTS.md for the complete patterns and examples.
 
@@ -110,7 +110,7 @@ fn main() {
 - **[Tokio](https://tokio.rs/)** - Async runtime
 - **[Serde](https://serde.rs/)** - Serialization framework
 
-## 🧪 Example: Bugview Service
+## Example: Bugview Service
 
 The repository includes a complete example demonstrating the trait-based workflow:
 
@@ -130,15 +130,15 @@ open http://127.0.0.1:8080/bugview/index.html
 curl http://127.0.0.1:8080/bugview/index.json | jq
 ```
 
-## 🏁 Migration from Node.js
+## Migration from Node.js
 
 See AGENTS.md for the step‑by‑step migration workflow (API → specs → service → client), guidance, and troubleshooting.
 
-## 📚 Documentation
+## Documentation
 
 See [AGENTS.md](AGENTS.md) for detailed design patterns, workflows, and troubleshooting.
 
-## 🔬 OpenAPI Management
+## OpenAPI Management
 
 OpenAPI specs are managed by `dropshot-api-manager` for:
 - **Fast generation** - Uses `stub_api_description()` without compiling implementations
@@ -157,13 +157,13 @@ make openapi-list
 make openapi-check
 ```
 
-## 🧰 Configuration
+## Configuration
 
 - Example environment variables for the Bugview service are provided at `services/bugview-service/.env.example`.
 - See `services/bugview-service/README.md` for detailed configuration, endpoints, and usage.
 - For local runs, export the variables or source a `.env` file before `cargo run -p bugview-service`.
 
-## 🔄 Regenerate OpenAPI and Clients
+## Regenerate OpenAPI and Clients
 
 - Generate OpenAPI specs from trait crates (fast):
 
@@ -187,17 +187,17 @@ make regen-clients
 make client-build CLIENT=bugview-client
 ```
 
-## 🧪 Tests and Doctests
+## Tests and Doctests
 
 - Workspace tests include unit tests, HTTP handler tests (with a mock Jira client), and spec validation.
 - The API trait crates and generated client crates contain documentation examples that rustdoc treats as doctests. These are illustrative and ignored by default in `cargo test`.
 - Forcing doctests to run (e.g., `cargo test -p bugview-client --doc -- --ignored`) will fail unless you provide a running service and async context. We intentionally do not run these in CI.
 
-## 🤝 Contributing
+## Contributing
 
 When adding new services or APIs, start with the API trait (apis/), register it in openapi-manager, generate specs, then implement the service and client. Add tests and run `make validate` before pushing.
 
-## 📚 References
+## References
 
 - RFD 479: Dropshot API Traits
 - Dropshot (HTTP framework)
