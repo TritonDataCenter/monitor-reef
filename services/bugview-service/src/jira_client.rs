@@ -104,8 +104,8 @@ where
                     ));
                 }
 
-                // Exponential backoff with jitter
-                let jitter: u64 = (rand::random::<u8>() as u64) % RETRY_JITTER_MAX_MS;
+                // Exponential backoff with jitter (uniform)
+                let jitter: u64 = rand::random_range(0..RETRY_JITTER_MAX_MS);
                 tokio::time::sleep(delay + Duration::from_millis(jitter)).await;
                 delay = std::cmp::min(delay * 2, Duration::from_millis(RETRY_MAX_DELAY_MS));
             }

@@ -398,7 +398,7 @@ fn adf_to_html(nodes: &serde_json::Value) -> String {
                         if let Some(attrs) = node_obj.get("attrs") {
                             if let Some(url) = attrs.get("url").and_then(|u| u.as_str()) {
                                 // Extract issue key from URL
-                                if let Some(issue_key) = url.split('/').next_back() {
+                                if let Some(issue_key) = url.rsplit('/').next() {
                                     result.push_str(&format!(
                                         r#"<a href="{}" rel="noopener noreferrer" target="_blank">{}</a>"#,
                                         html_escape(url),
@@ -559,5 +559,19 @@ mod tests {
             )
             .expect("render");
         assert!(html.contains("/bugview/label/needs%20triage?sort=updated"));
+    }
+
+    #[test]
+    fn adf_inline_card_renders_anchor_with_last_segment() {
+        let input = serde_json::json!([
+            {"type": "inlineCard", "attrs": {"url": "https://example.com/ABC-123"}}
+        ]);
+        let html = super::adf_to_html(&input);
+        assert!(
+            html.contains("href=\"https://example.com/ABC-123\""),
+            "html: {}",
+            html
+        );
+        assert!(html.contains(">ABC-123<"));
     }
 }

@@ -96,7 +96,7 @@ fn extract_adf_text(nodes: &serde_json::Value, indent_level: usize) -> String {
                         if let Some(attrs) = node_obj.get("attrs") {
                             if let Some(url) = attrs.get("url").and_then(|u| u.as_str()) {
                                 // Try to extract issue key from URL (e.g., TRITON-2378)
-                                if let Some(issue_key) = url.split('/').next_back() {
+                                if let Some(issue_key) = url.rsplit('/').next() {
                                     result.push_str(&format!("[{}]", issue_key));
                                 } else {
                                     result.push_str(&format!("[{}]", url));
@@ -219,7 +219,6 @@ fn extract_adf_text(nodes: &serde_json::Value, indent_level: usize) -> String {
 
     result
 }
-
 /// Format a timestamp into a human-readable format
 ///
 /// Converts ISO 8601 timestamps like "2023-10-04T10:27:22.826-0400" into
@@ -464,4 +463,27 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_adf_text;
+
+    #[test]
+    fn inline_card_uses_last_path_segment() {
+        let adf = serde_json::json!([
+            { "type": "inlineCard", "attrs": {"url": "https://example.com/path/ISSUE-123"} }
+        ]);
+        let out = extract_adf_text(&adf, 0);
+        assert!(out.contains("[ISSUE-123]"), "output was: {}", out);
+    }
+
+    #[test]
+    fn inline_card_without_slash_uses_full_url() {
+        let adf = serde_json::json!([
+            {"type": "inlineCard", "attrs": {"url": "ISSUE-456"}}
+        ]);
+        let out = extract_adf_text(&adf, 0);
+        assert!(out.contains("[ISSUE-456]"));
+    }
 }
