@@ -12,8 +12,8 @@ use dropshot::{
 };
 use html::HtmlRenderer;
 use http::Response;
+use indexmap::IndexMap;
 use jira_client::{JiraClient, JiraClientTrait};
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tracing::info;
@@ -59,14 +59,13 @@ impl Config {
 struct TokenCacheEntry {
     jira_token: String,
     expires_at: Instant,
-    inserted_at: Instant,
 }
 
 /// Thread-safe cache for mapping short IDs to JIRA pagination tokens
 /// This prevents exposing JIRA's tokens (which contain the JQL query) in URLs
 #[derive(Clone)]
 struct TokenCache {
-    cache: Arc<Mutex<HashMap<String, TokenCacheEntry>>>,
+    cache: Arc<Mutex<IndexMap<String, TokenCacheEntry>>>,
     ttl: Duration,
     max_entries: usize,
 }
@@ -74,7 +73,7 @@ struct TokenCache {
 impl TokenCache {
     fn new() -> Self {
         Self {
-            cache: Arc::new(Mutex::new(HashMap::new())),
+            cache: Arc::new(Mutex::new(IndexMap::new())),
             ttl: Duration::from_secs(TOKEN_TTL_SECS),
             max_entries: TOKEN_CACHE_MAX_ENTRIES,
         }
@@ -83,7 +82,7 @@ impl TokenCache {
     #[cfg(test)]
     fn new_with(ttl: Duration, max_entries: usize) -> Self {
         Self {
-            cache: Arc::new(Mutex::new(HashMap::new())),
+            cache: Arc::new(Mutex::new(IndexMap::new())),
             ttl,
             max_entries,
         }
@@ -111,17 +110,9 @@ impl TokenCache {
         let now = Instant::now();
         cache.retain(|_, entry| entry.expires_at > now);
 
-        // Enforce capacity by evicting oldest entries
+        // Enforce capacity by evicting oldest entries (O(1) with IndexMap swap_remove_index)
         while cache.len() >= self.max_entries {
-            if let Some((oldest_key, _)) = cache
-                .iter()
-                .min_by_key(|(_, v)| v.inserted_at)
-                .map(|(k, v)| (k.clone(), v.inserted_at))
-            {
-                cache.remove(&oldest_key);
-            } else {
-                break;
-            }
+            let _ = cache.swap_remove_index(0);
         }
 
         cache.insert(
@@ -129,7 +120,6 @@ impl TokenCache {
             TokenCacheEntry {
                 jira_token,
                 expires_at: now + self.ttl,
-                inserted_at: now,
             },
         );
 

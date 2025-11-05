@@ -214,6 +214,7 @@ dependencies = [
  "dropshot",
  "handlebars",
  "http",
+ "indexmap",
  "jira-client",
  "rand",
  "reqwest",
