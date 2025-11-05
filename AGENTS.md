@@ -66,10 +66,18 @@ Follow this workflow for all code changes to maintain a clean, auditable history
    cargo test -p <your-package>
    cargo build -p <your-package>
    ```
-3. **Run security audit** - Check for vulnerabilities in dependencies
+3. **Run security audit** - Check for known vulnerabilities in dependencies
    ```bash
+   # Install cargo-audit (one-time setup)
+   cargo install cargo-audit
+
+   # Run before each commit
    cargo audit
+
+   # Update advisory database regularly
+   cargo audit --update
    ```
+   Review any warnings/errors and address them before committing.
 4. **Update documentation** - Ensure docs reflect your changes (inline comments, README, API docs)
 5. **Create atomic commit** - Commit only the changes related to this single logical change
    ```bash
@@ -441,22 +449,9 @@ Include in all services:
 - Validate all inputs according to OpenAPI specs
 - Implement proper authentication/authorization
 - Use secure defaults for all configurations
-- **Run `cargo audit` before every commit** to check for known vulnerabilities
+- Run `cargo audit` before every commit (see [Atomic Commit Workflow](#atomic-commit-workflow))
 - Keep dependencies up to date with security patches
-- Review `cargo audit` output and address any warnings/errors
 - Consider using `cargo-deny` for additional dependency policy enforcement
-
-**Security Audit Workflow:**
-```bash
-# Install cargo-audit (one-time setup)
-cargo install cargo-audit
-
-# Run before each commit
-cargo audit
-
-# Update advisory database regularly
-cargo audit --update
-```
 
 ## Contributing
 
