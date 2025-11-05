@@ -229,12 +229,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_with_retries_succeeds_after_errors() {
-        let mut attempts = 0u32;
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        let attempts = AtomicU32::new(0);
         let res: Result<u32> = with_retries(
             || {
-                attempts += 1;
+                let n = attempts.fetch_add(1, Ordering::Relaxed) + 1;
                 async move {
-                    if attempts < 3 {
+                    if n < 3 {
                         Err(anyhow::anyhow!("temporary connection error"))
                     } else {
                         Ok(42)
