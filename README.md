@@ -91,7 +91,7 @@ fn main() {
 }
 ```
 
-## 🔍 Key Technologies
+## Key Technologies
 
 - **[Dropshot](https://github.com/oxidecomputer/dropshot)** - HTTP server framework with API trait support
 - **[Dropshot API Manager](https://github.com/oxidecomputer/dropshot-api-manager)** - OpenAPI document management and versioning
@@ -195,7 +195,7 @@ When adding new services or APIs, start with the API trait (apis/), register it 
 - dropshot-api-manager (OpenAPI management)
 - Progenitor (client generation)
 
-## 💡 Tips
+## Tips
 
 - Use `make help` to see all available commands
 - Use `make list` to see what's in your monorepo

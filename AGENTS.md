@@ -39,7 +39,6 @@ triton-rust-monorepo/
 ├── openapi-specs/          # OpenAPI specifications
 │   ├── generated/          # Generated from our trait-based APIs (checked into git)
 │   └── external/           # External API specs for reference (tracked in git)
-├── xtask/                  # Build automation helpers
 └── tests/                  # Integration tests
 ```
 
@@ -49,15 +48,6 @@ triton-rust-monorepo/
 - **[Dropshot API Manager](https://github.com/oxidecomputer/dropshot-api-manager)**: OpenAPI document management and versioning
 - **[Progenitor](https://github.com/oxidecomputer/progenitor)**: OpenAPI client generator for Rust
 - **[RFD 479](https://rfd.shared.oxide.computer/rfd/0479)**: Dropshot API Traits design documentation
-
-## Key Benefits of Trait-Based Architecture
-
-1. **Fast Iteration**: OpenAPI generation takes ~1.5s instead of 18+ seconds
-2. **Clean Separation**: API definitions decoupled from implementations
-3. **Multiple Implementations**: Easy to create test mocks, in-memory versions, etc.
-4. **Better IDE Support**: Native async traits provide superior error messages
-5. **Automatic Versioning**: dropshot-api-manager tracks versions and validates compatibility
-6. **Break Circular Dependencies**: Services can depend on API traits without full implementations
 
 ## Development Workflow
 
@@ -315,71 +305,6 @@ For each service migration:
 - [ ] Document any API differences or migration notes
 - [ ] Deploy to staging and validate end-to-end
 
-## Comparison: Before vs. After
-
-### Before (Function-Based Dropshot)
-
-```rust
-// Service implementation tightly coupled with API definition
-#[endpoint { method = GET, path = "/resource/{id}" }]
-async fn get_resource(rqctx: RequestContext<ApiContext>, ...) -> Result<...> {
-    // implementation
-}
-
-fn main() {
-    let mut api = ApiDescription::new();
-    api.register(get_resource).unwrap();
-    // Must check for --openapi flag and handle spec generation
-    if args contains "--openapi" {
-        let spec = api.openapi(...);
-        println!("{}", spec);
-        return;
-    }
-    // Start server...
-}
-```
-
-**Problems:**
-- Must compile full implementation to generate specs (slow)
-- API definition mixed with implementation
-- Manual `--openapi` handling
-- Hard to create mock implementations
-
-### After (Trait-Based)
-
-```rust
-// apis/my-api/src/lib.rs - Just the interface
-#[dropshot::api_description]
-pub trait MyApi {
-    type Context: Send + Sync + 'static;
-
-    #[endpoint { method = GET, path = "/resource/{id}" }]
-    async fn get_resource(...) -> Result<...>;
-}
-
-// services/my-service/src/main.rs - Implementation only
-enum MyServiceImpl {}
-
-impl MyApi for MyServiceImpl {
-    type Context = ApiContext;
-    async fn get_resource(...) -> Result<...> {
-        // implementation
-    }
-}
-
-fn main() {
-    // No manual OpenAPI handling needed!
-    let api = my_api::my_api_mod::api_description::<MyServiceImpl>()?;
-    // Start server...
-}
-```
-
-**Benefits:**
-- Specs generated in ~1.5s via `stub_api_description()` (no implementation compilation)
-- Clean separation: API trait vs. implementation
-- No manual OpenAPI code needed
-- Easy to create test mocks by implementing the trait differently
-
 ## OpenAPI Manager
 
 The `openapi-manager` crate integrates with dropshot-api-manager to provide:
@@ -391,19 +316,6 @@ The `openapi-manager` crate integrates with dropshot-api-manager to provide:
 - **Compatibility checking**: Validates backward compatibility
 
 ## Build Tooling
-
-The `xtask` crate provides convenience wrappers:
-
-```bash
-# Generate OpenAPI specs (delegates to openapi-manager)
-cargo xtask openapi --all
-
-# Regenerate all clients
-cargo xtask regen-clients
-
-# Run integration tests
-cargo xtask integration-test
-```
 
 For direct OpenAPI management, use the openapi-manager:
 
