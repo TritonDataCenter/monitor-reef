@@ -54,6 +54,55 @@ triton-rust-monorepo/
 - **[Progenitor](https://github.com/oxidecomputer/progenitor)**: OpenAPI client generator for Rust
 - **[RFD 479](https://rfd.shared.oxide.computer/rfd/0479)**: Dropshot API Traits design documentation
 
+## Development Best Practices
+
+### Atomic Commit Workflow
+
+Follow this workflow for all code changes to maintain a clean, auditable history:
+
+1. **Make changes** - Implement a single, focused change (one feature, one bug fix, one refactor)
+2. **Test thoroughly** - Run all relevant tests before committing
+   ```bash
+   cargo test -p <your-package>
+   cargo build -p <your-package>
+   ```
+3. **Run security audit** - Check for vulnerabilities in dependencies
+   ```bash
+   cargo audit
+   ```
+4. **Update documentation** - Ensure docs reflect your changes (inline comments, README, API docs)
+5. **Create atomic commit** - Commit only the changes related to this single logical change
+   ```bash
+   git add <relevant-files>
+   git commit -m "Brief description of single change"
+   ```
+
+**Atomic Commit Guidelines:**
+- One commit = one logical change
+- Each commit should build and pass tests independently
+- Commit messages should clearly describe what and why
+- Documentation updates should be included in the same commit as the code they document
+
+### Code Organization
+
+**Module Structure:**
+- Keep modules small and focused on a single responsibility
+- Break large files into logical sub-modules
+- Aim for files under 300-400 lines when possible
+- Use `mod.rs` or module files to organize related functionality
+
+**Code Reusability:**
+- Extract common patterns into reusable functions/traits
+- Periodically review for duplicate code and refactor
+- Consider creating shared utility crates for cross-service functionality
+- Document reusable components thoroughly for discoverability
+
+**Optimization Practices:**
+- Profile before optimizing (don't guess at bottlenecks)
+- Regular code reviews to catch redundancy early
+- Refactor incrementally - optimize as you work, not in large batches
+- Balance readability with performance
+
 ## Development Workflow
 
 ### 1. Creating a New API
@@ -270,6 +319,38 @@ All services must include:
 - **Integration tests** against actual HTTP endpoints
 - **OpenAPI spec validation** (automated via openapi-manager)
 - **Client compatibility tests** using generated clients
+- **Real data fixtures** - Sample JSON responses from actual endpoints
+
+#### Test Data Management
+
+Store sample JSON responses as test artifacts to ensure tests validate against real-world data:
+
+```
+tests/
+├── fixtures/
+│   ├── endpoint-name-success.json      # Successful response
+│   ├── endpoint-name-error-404.json    # Error response
+│   └── endpoint-name-list.json         # Collection response
+└── integration/
+    └── endpoint_tests.rs
+```
+
+**Guidelines:**
+- Capture real responses from endpoints during development
+- Include both success and error response examples
+- Update fixtures when API response schemas change
+- Use fixtures in both unit and integration tests
+- Document the source/date of captured responses in comments
+
+**Example:**
+```rust
+#[tokio::test]
+async fn test_get_resource() {
+    let fixture = include_str!("../fixtures/get-resource-success.json");
+    let expected: Resource = serde_json::from_str(fixture).unwrap();
+    // Test against this real data structure
+}
+```
 
 **CI Check for Stale Specs**: Add this to your CI pipeline to catch when specs are out of date:
 
@@ -360,7 +441,22 @@ Include in all services:
 - Validate all inputs according to OpenAPI specs
 - Implement proper authentication/authorization
 - Use secure defaults for all configurations
-- Audit dependencies regularly
+- **Run `cargo audit` before every commit** to check for known vulnerabilities
+- Keep dependencies up to date with security patches
+- Review `cargo audit` output and address any warnings/errors
+- Consider using `cargo-deny` for additional dependency policy enforcement
+
+**Security Audit Workflow:**
+```bash
+# Install cargo-audit (one-time setup)
+cargo install cargo-audit
+
+# Run before each commit
+cargo audit
+
+# Update advisory database regularly
+cargo audit --update
+```
 
 ## Contributing
 
