@@ -25,19 +25,6 @@ fn environment() -> Result<Environment> {
 fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
     let apis = vec![
         ManagedApiConfig {
-            ident: "bugview-api",
-            versions: Versions::Lockstep {
-                version: "0.1.0".parse().unwrap(),
-            },
-            title: "Bugview API",
-            metadata: ManagedApiMetadata {
-                description: Some("Public JIRA issue viewer API"),
-                ..ManagedApiMetadata::default()
-            },
-            api_description: bugview_api::bugview_api_mod::stub_api_description,
-            extra_validation: None,
-        },
-        ManagedApiConfig {
             ident: "jira-api",
             versions: Versions::Lockstep {
                 version: "0.1.0".parse().unwrap(),
