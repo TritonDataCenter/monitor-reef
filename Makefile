@@ -4,6 +4,12 @@
 # Triton Rust Monorepo Makefile
 # Common development commands for working with trait-based Dropshot APIs
 
+ENGBLD_REQUIRE :=       $(shell git submodule update --init deps/eng)
+include ./deps/eng/tools/mk/Makefile.defs
+TOP ?= $(error Unable to access eng.git submodule Makefiles.)
+include ./deps/eng/tools/mk/Makefile.deps
+include ./deps/eng/tools/mk/Makefile.targ
+
 .PHONY: help build test clean lint check format
 .PHONY: api-new service-new client-new
 .PHONY: service-build service-test service-run
@@ -33,13 +39,13 @@ build: ## Build all APIs, services and clients
 test: ## Run all tests
 	cargo test
 
-clean: ## Clean build artifacts
+clean:: ## Clean build artifacts
 	cargo clean
 
 lint: ## Run clippy linter
 	cargo clippy --all-targets --all-features -- -D warnings
 
-check: ## Run cargo check
+check:: ## Run cargo check
 	cargo check --all
 
 format: ## Format all code
@@ -214,3 +220,4 @@ regen-clients: ## Regenerate all client libraries
 	@echo "Regenerating clients by rebuilding..."
 	cargo build
 	@echo "All clients regenerated. Test with: make test"
+
