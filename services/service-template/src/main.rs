@@ -1,3 +1,9 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+// Copyright 2025 Edgecast Cloud LLC.
+
 // Service Template - Trait-Based Dropshot Service
 //
 // This template demonstrates how to implement a service using Dropshot API traits.
@@ -94,5 +100,3 @@ async fn main() -> Result<()> {
         .await
         .map_err(|error| anyhow::anyhow!("server failed: {}", error))
 }
-// Copyright 2025 Edgecast Cloud LLC.
-// This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.

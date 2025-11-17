@@ -1,5 +1,8 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
 # Copyright 2025 Edgecast Cloud LLC.
-# This Source Code Form is subject to the terms of the Mozilla Public License, v. 2.0. If a copy of the MPL was not distributed with this file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 # Triton Rust Monorepo Makefile
 # Common development commands for working with trait-based Dropshot APIs
@@ -9,8 +12,10 @@ include ./deps/eng/tools/mk/Makefile.defs
 TOP ?= $(error Unable to access eng.git submodule Makefiles.)
 include ./deps/eng/tools/mk/Makefile.deps
 include ./deps/eng/tools/mk/Makefile.targ
+include ./deps/eng/tools/mk/Makefile.rust.defs
+include ./deps/eng/tools/mk/Makefile.rust.targ
 
-.PHONY: help build test clean lint check format
+.PHONY: help build test clean lint format
 .PHONY: api-new service-new client-new
 .PHONY: service-build service-test service-run
 .PHONY: client-build client-test
@@ -45,8 +50,6 @@ clean:: ## Clean build artifacts
 lint: ## Run clippy linter
 	cargo clippy --all-targets --all-features -- -D warnings
 
-check:: ## Run cargo check
-	cargo check --all
 
 format: ## Format all code
 	cargo fmt --all
