@@ -7,7 +7,7 @@
 [package]
 name = "example-api"
 version = "0.1.0"
-edition = { workspace = true }
+edition.workspace = true
 
 [dependencies]
 dropshot = { workspace = true }
