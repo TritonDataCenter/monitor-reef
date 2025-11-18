@@ -69,7 +69,7 @@ make help
 
 ## Architecture Overview
 
-This repo uses Dropshot API traits (RFD 479) to separate interface from implementation and enable fast OpenAPI generation. See AGENTS.md for the complete patterns and examples.
+This repo uses Dropshot API traits (Oxide RFD 479) to separate interface from implementation and enable fast OpenAPI generation. See AGENTS.md for the complete patterns and examples.
 
 ### Trait-Based Dropshot (After)
 ```rust
@@ -104,7 +104,7 @@ fn main() {
 - **[Dropshot](https://github.com/oxidecomputer/dropshot)** - HTTP server framework with API trait support
 - **[Dropshot API Manager](https://github.com/oxidecomputer/dropshot-api-manager)** - OpenAPI document management and versioning
 - **[Progenitor](https://github.com/oxidecomputer/progenitor)** - OpenAPI client generator for Rust
-- **[RFD 479](https://rfd.shared.oxide.computer/rfd/0479)** - Dropshot API Traits design documentation
+- **[Oxide RFD 479](https://rfd.shared.oxide.computer/rfd/0479)** - Dropshot API Traits design documentation
 - **[Schemars](https://github.com/GREsau/schemars)** - JSON Schema generation for Rust types
 - **[Tokio](https://tokio.rs/)** - Async runtime
 - **[Serde](https://serde.rs/)** - Serialization framework
@@ -198,7 +198,7 @@ When adding new services or APIs, start with the API trait (apis/), register it 
 
 ## References
 
-- RFD 479: Dropshot API Traits
+- Oxide RFD 479: Dropshot API Traits
 - Dropshot (HTTP framework)
 - dropshot-api-manager (OpenAPI management)
 - Progenitor (client generation)

@@ -55,7 +55,7 @@ triton-rust-monorepo/
 - **[Dropshot](https://github.com/oxidecomputer/dropshot)**: HTTP server framework with API trait support
 - **[Dropshot API Manager](https://github.com/oxidecomputer/dropshot-api-manager)**: OpenAPI document management and versioning
 - **[Progenitor](https://github.com/oxidecomputer/progenitor)**: OpenAPI client generator for Rust
-- **[RFD 479](https://rfd.shared.oxide.computer/rfd/0479)**: Dropshot API Traits design documentation
+- **[Oxide RFD 479](https://rfd.shared.oxide.computer/rfd/0479)**: Dropshot API Traits design documentation
 
 ## Development Best Practices
 
@@ -486,13 +486,13 @@ When adding new services or APIs:
 
 - Check existing service implementations (e.g., `services/bugview-service`)
 - Review API trait examples (e.g., `apis/bugview-api`)
-- Read [RFD 479](https://rfd.shared.oxide.computer/rfd/0479) for trait-based API design patterns
+- Read [Oxide RFD 479](https://rfd.shared.oxide.computer/rfd/0479) for trait-based API design patterns
 - Review [dropshot-api-manager docs](https://github.com/oxidecomputer/dropshot-api-manager)
 - Consult Dropshot and Progenitor documentation
 
 ## References
 
-- [RFD 479: Dropshot API Traits](https://rfd.shared.oxide.computer/rfd/0479)
+- [Oxide RFD 479: Dropshot API Traits](https://rfd.shared.oxide.computer/rfd/0479)
 - [Dropshot Documentation](https://github.com/oxidecomputer/dropshot)
 - [Dropshot API Manager](https://github.com/oxidecomputer/dropshot-api-manager)
 - [Progenitor Documentation](https://github.com/oxidecomputer/progenitor)
