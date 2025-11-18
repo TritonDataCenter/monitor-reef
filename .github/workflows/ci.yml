@@ -30,23 +30,3 @@ jobs:
       - name: Validate (fmt, clippy, tests, openapi-check)
         run: |
           make validate
-
-  cli-smoke:
-    runs-on: ubuntu-latest
-    needs: build-test-validate
-    steps:
-      - name: Checkout
-        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # 5.0.1
-
-      - name: Install Rust 1.90 with components
-        uses: dtolnay/rust-toolchain@0f44b27771c32bda9f458f75a1e241b09791b331 # 1.91.1
-        with:
-          toolchain: 1.90
-          components: clippy, rustfmt
-
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@f13886b937689c021905a6b90929199931d60db1 # 2.8.1
-
-      - name: Build bugview CLI (smoke)
-        run: |
-          cargo build -p bugview-cli
