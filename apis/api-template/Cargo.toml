@@ -13,6 +13,3 @@ edition.workspace = true
 dropshot = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
-
-[lints.clippy]
-unused_async = "allow"
