@@ -7,8 +7,7 @@
 use anyhow::Result;
 use camino::Utf8PathBuf;
 use clap::Parser;
-use dropshot_api_manager::{Environment, ManagedApiConfig};
-use dropshot_api_manager_types::{ManagedApiMetadata, Versions};
+use dropshot_api_manager::Environment;
 use std::process::ExitCode;
 
 fn environment() -> Result<Environment> {
