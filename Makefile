@@ -214,7 +214,8 @@ validate: ## Run all validation checks (CI-ready)
 	cargo fmt --all -- --check
 	cargo clippy --all-targets --all-features -- -D warnings
 	cargo test --workspace
-	$(MAKE) openapi-check
+	# TODO enable this when we bring in the first API
+	#$(MAKE) openapi-check
 	@echo ""
 	@echo "✅ All validation checks passed!"
 
