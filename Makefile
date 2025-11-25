@@ -136,7 +136,7 @@ openapi-generate: | $(CARGO_EXEC) ## Generate OpenAPI specs from API traits
 	$(CARGO) run -p openapi-manager -- generate
 	@echo "OpenAPI specs generated in openapi-specs/generated/"
 	@echo ""
-	@echo "⚠️  Don't forget to commit the updated specs:"
+	@echo "    Don't forget to commit the updated specs:"
 	@echo "    git add openapi-specs/generated/"
 	@echo "    git commit -m 'Update OpenAPI specs'"
 
@@ -220,7 +220,7 @@ validate: | $(CARGO_EXEC) ## Run all validation checks (CI-ready)
 	# TODO enable this when we bring in the first API
 	#$(MAKE) openapi-check
 	@echo ""
-	@echo "✅ All validation checks passed!"
+	@echo "All validation checks passed!"
 
 # Regenerate clients after OpenAPI spec changes
 regen-clients: | $(CARGO_EXEC) ## Regenerate all client libraries
