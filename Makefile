@@ -7,6 +7,9 @@
 # Triton Rust Monorepo Makefile
 # Common development commands for working with trait-based Dropshot APIs
 
+RUST_USE_BOOTSTRAP = false
+RUST_CLIPPY_ARGS = --all-targets --all-features -- -D warnings
+
 ENGBLD_REQUIRE :=       $(shell git submodule update --init deps/eng)
 include ./deps/eng/tools/mk/Makefile.defs
 TOP ?= $(error Unable to access eng.git submodule Makefiles.)
@@ -38,24 +41,24 @@ help: ## Show this help message
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z_-]+:.*##/ { printf "  %-20s %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 
 # Workspace commands
-build: ## Build all APIs, services and clients
-	cargo build
 
-test: ## Run all tests
-	cargo test
+build: | $(CARGO_EXEC) ## Build all APIs, services and clients
+	$(CARGO) build
 
-clean:: ## Clean build artifacts
-	cargo clean
+test: | $(CARGO_EXEC) ## Run all tests
+	$(CARGO) test
 
-lint: ## Run clippy linter
-	cargo clippy --all-targets --all-features -- -D warnings
+clean:: | $(CARGO_EXEC) ## Clean build artifacts
+	$(CARGO) clean
 
+lint: | $(CARGO_EXEC) ## Run clippy linter
+	$(CARGO) clippy $(RUST_CLIPPY_ARGS)
 
-format: ## Format all code
-	cargo fmt --all
+format: | $(CARGO_EXEC) ## Format all code
+	$(CARGO) fmt $(RUSTFMT_ARGS)
 
-workspace-test: ## Run all workspace tests
-	cargo test --workspace
+workspace-test: | $(CARGO_EXEC) ## Run all workspace tests
+	$(CARGO) test --workspace
 
 # API development commands
 api-new: ## Create new API trait (usage: make api-new API=my-service-api)
@@ -89,17 +92,17 @@ service-new: ## Create new service (usage: make service-new SERVICE=my-service A
 	@echo "  2. Implement the API trait in services/$(SERVICE)/src/main.rs"
 	@echo "  3. Test: make service-run SERVICE=$(SERVICE)"
 
-service-build: ## Build specific service (usage: make service-build SERVICE=my-service)
+service-build: | $(CARGO_EXEC) ## Build specific service (usage: make service-build SERVICE=my-service)
 	@if [ -z "$(SERVICE)" ]; then echo "Usage: make service-build SERVICE=my-service"; exit 1; fi
-	cargo build -p $(SERVICE)
+	$(CARGO) build -p $(SERVICE)
 
-service-test: ## Test specific service (usage: make service-test SERVICE=my-service)
+service-test: | $(CARGO_EXEC) ## Test specific service (usage: make service-test SERVICE=my-service)
 	@if [ -z "$(SERVICE)" ]; then echo "Usage: make service-test SERVICE=my-service"; exit 1; fi
-	cargo test -p $(SERVICE)
+	$(CARGO) test -p $(SERVICE)
 
-service-run: ## Run specific service (usage: make service-run SERVICE=my-service)
+service-run: | $(CARGO_EXEC) ## Run specific service (usage: make service-run SERVICE=my-service)
 	@if [ -z "$(SERVICE)" ]; then echo "Usage: make service-run SERVICE=my-service"; exit 1; fi
-	cargo run -p $(SERVICE)
+	$(CARGO) run -p $(SERVICE)
 
 # Client development commands
 client-new: ## Create new client (usage: make client-new CLIENT=my-service-client API=my-api)
@@ -119,47 +122,47 @@ client-new: ## Create new client (usage: make client-new CLIENT=my-service-clien
 	@echo "  2. Verify build.rs points to correct OpenAPI spec"
 	@echo "  3. Run: make client-build CLIENT=$(CLIENT)"
 
-client-build: ## Build specific client (usage: make client-build CLIENT=my-service-client)
+client-build: | $(CARGO_EXEC) ## Build specific client (usage: make client-build CLIENT=my-service-client)
 	@if [ -z "$(CLIENT)" ]; then echo "Usage: make client-build CLIENT=my-service-client"; exit 1; fi
-	cargo build -p $(CLIENT)
+	$(CARGO) build -p $(CLIENT)
 
-client-test: ## Test specific client (usage: make client-test CLIENT=my-service-client)
+client-test: | $(CARGO_EXEC) ## Test specific client (usage: make client-test CLIENT=my-service-client)
 	@if [ -z "$(CLIENT)" ]; then echo "Usage: make client-test CLIENT=my-service-client"; exit 1; fi
-	cargo test -p $(CLIENT)
+	$(CARGO) test -p $(CLIENT)
 
 # OpenAPI management commands (using dropshot-api-manager)
-openapi-generate: ## Generate OpenAPI specs from API traits
+openapi-generate: | $(CARGO_EXEC) ## Generate OpenAPI specs from API traits
 	@echo "Generating OpenAPI specs using dropshot-api-manager..."
-	cargo run -p openapi-manager -- generate
+	$(CARGO) run -p openapi-manager -- generate
 	@echo "OpenAPI specs generated in openapi-specs/generated/"
 	@echo ""
 	@echo "⚠️  Don't forget to commit the updated specs:"
 	@echo "    git add openapi-specs/generated/"
 	@echo "    git commit -m 'Update OpenAPI specs'"
 
-openapi-list: ## List all managed APIs
-	cargo run -p openapi-manager -- list
+openapi-list: | $(CARGO_EXEC) ## List all managed APIs
+	$(CARGO) run -p openapi-manager -- list
 
-openapi-check: ## Check that OpenAPI specs are up-to-date (use in CI)
-	cargo run -p openapi-manager -- check
+openapi-check: | $(CARGO_EXEC) ## Check that OpenAPI specs are up-to-date (use in CI)
+	$(CARGO) run -p openapi-manager -- check
 
-openapi-debug: ## Debug OpenAPI manager configuration
-	cargo run -p openapi-manager -- debug
+openapi-debug: | $(CARGO_EXEC) ## Debug OpenAPI manager configuration
+	$(CARGO) run -p openapi-manager -- debug
 
-integration-test: ## Run integration tests across all services
-	cargo test --workspace integration
+integration-test: | $(CARGO_EXEC) ## Run integration tests across all services
+	$(CARGO) test --workspace integration
 
 # Development setup
-dev-setup: ## Set up development environment
+dev-setup: | $(CARGO_EXEC) ## Set up development environment
 	@echo "Setting up development environment..."
 	@echo "Building openapi-manager..."
-	cargo build -p openapi-manager
+	$(CARGO) build -p openapi-manager
 	@echo "Running initial build..."
-	cargo build
+	$(CARGO) build
 	@echo "Generating OpenAPI specs..."
 	$(MAKE) openapi-generate
 	@echo "Running tests to ensure everything works..."
-	cargo test
+	$(CARGO) test
 	@echo ""
 	@echo "Development environment ready!"
 	@echo ""
@@ -209,19 +212,19 @@ list: ## List all APIs, services and clients
 	@ls -1 openapi-specs/generated/ 2>/dev/null || echo "  No specs generated yet (run: make openapi-generate)"
 
 # Validation and CI commands
-validate: ## Run all validation checks (CI-ready)
+validate: | $(CARGO_EXEC) ## Run all validation checks (CI-ready)
 	@echo "Running all validation checks..."
-	cargo fmt --all -- --check
-	cargo clippy --all-targets --all-features -- -D warnings
-	cargo test --workspace
+	$(CARGO) fmt $(RUSTFMT_ARGS) -- --check
+	$(CARGO) clippy $(RUST_CLIPPY_ARGS)
+	$(CARGO) test --workspace
 	# TODO enable this when we bring in the first API
 	#$(MAKE) openapi-check
 	@echo ""
 	@echo "✅ All validation checks passed!"
 
 # Regenerate clients after OpenAPI spec changes
-regen-clients: ## Regenerate all client libraries
+regen-clients: | $(CARGO_EXEC) ## Regenerate all client libraries
 	@echo "Regenerating clients by rebuilding..."
-	cargo build
+	$(CARGO) build
 	@echo "All clients regenerated. Test with: make test"
 
