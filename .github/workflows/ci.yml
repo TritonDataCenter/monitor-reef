@@ -27,6 +27,6 @@ jobs:
           rustc -V
           cargo -V
 
-      - name: Validate (fmt, clippy, tests, openapi-check)
+      - name: Check (fmt, clippy, tests, openapi-check)
         run: |
-          make validate
+          make check

@@ -55,7 +55,7 @@ lint: | $(CARGO_EXEC) ## Run clippy linter
 	$(CARGO) clippy $(RUST_CLIPPY_ARGS)
 
 format: | $(CARGO_EXEC) ## Format all code
-	$(CARGO) fmt $(RUSTFMT_ARGS)
+	$(CARGO) fmt
 
 workspace-test: | $(CARGO_EXEC) ## Run all workspace tests
 	$(CARGO) test --workspace
@@ -212,10 +212,8 @@ list: ## List all APIs, services and clients
 	@ls -1 openapi-specs/generated/ 2>/dev/null || echo "  No specs generated yet (run: make openapi-generate)"
 
 # Validation and CI commands
-validate: | $(CARGO_EXEC) ## Run all validation checks (CI-ready)
+check:: | $(CARGO_EXEC) ## Run all validation checks (CI-ready)
 	@echo "Running all validation checks..."
-	$(CARGO) fmt $(RUSTFMT_ARGS) -- --check
-	$(CARGO) clippy $(RUST_CLIPPY_ARGS)
 	$(CARGO) test --workspace
 	# TODO enable this when we bring in the first API
 	#$(MAKE) openapi-check

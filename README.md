@@ -60,7 +60,7 @@ make openapi-generate
 make service-run SERVICE=bugview-service
 
 # Validate before committing (fmt, clippy, tests, openapi-check)
-make validate
+make check
 
 # Discover what’s available
 make list
