@@ -1,0 +1,15 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2025 Edgecast Cloud LLC.
+
+[package]
+name = "example-api"
+version = "0.1.0"
+edition.workspace = true
+
+[dependencies]
+dropshot = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
