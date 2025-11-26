@@ -7,7 +7,8 @@
 use anyhow::Result;
 use camino::Utf8PathBuf;
 use clap::Parser;
-use dropshot_api_manager::Environment;
+use dropshot_api_manager::{Environment, ManagedApiConfig};
+use dropshot_api_manager_types::{ManagedApiMetadata, Versions};
 use std::process::ExitCode;
 
 fn environment() -> Result<Environment> {
@@ -25,7 +26,21 @@ fn environment() -> Result<Environment> {
 }
 
 fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
-    let apis = vec![];
+    let apis = vec![ManagedApiConfig {
+        ident: "jira-api",
+        versions: Versions::Lockstep {
+            version: "0.1.0".parse().unwrap(),
+        },
+        title: "JIRA API (Subset)",
+        metadata: ManagedApiMetadata {
+            description: Some(
+                "Subset of JIRA REST API v3 used by bugview-service. This is NOT a complete JIRA API - only the specific endpoints we consume.",
+            ),
+            ..ManagedApiMetadata::default()
+        },
+        api_description: jira_api::jira_api_mod::stub_api_description,
+        extra_validation: None,
+    }];
     let managed_apis = dropshot_api_manager::ManagedApis::new(apis)?;
     Ok(managed_apis)
 }

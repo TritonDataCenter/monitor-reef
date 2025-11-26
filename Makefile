@@ -215,8 +215,7 @@ list: ## List all APIs, services and clients
 check:: | $(CARGO_EXEC) ## Run all validation checks (CI-ready)
 	@echo "Running all validation checks..."
 	$(CARGO) test --workspace
-	# TODO enable this when we bring in the first API
-	#$(MAKE) openapi-check
+	$(MAKE) openapi-check
 	@echo ""
 	@echo "All validation checks passed!"
 
