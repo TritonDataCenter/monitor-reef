@@ -23,7 +23,7 @@ The actual JIRA API is implemented by Atlassian's JIRA servers. We define this t
 ## Key Design Decisions
 
 ### Path Parameter Naming
-The `get_remote_links` endpoint uses a path parameter named `key` (for Dropshot consistency) but expects a numeric issue ID, not an issue key like "PROJECT-123". This is documented in both the type definition and endpoint documentation.
+The `get_remote_links` endpoint uses a path parameter named `issue_id_or_key`, which accepts either a numeric issue ID or an issue key like "PROJECT-123". This matches the implementation and allows for both forms.
 
 ### Dynamic Field Types
 Issue fields are represented as `HashMap<String, serde_json::Value>` because JIRA's field structure varies by configuration. Clients must handle field extraction dynamically.
