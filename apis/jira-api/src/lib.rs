@@ -78,9 +78,9 @@ pub struct IssueSearchResult {
 
 /// Path parameter for get_issue endpoint
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct IssueKeyPath {
-    /// Issue key (e.g., "PROJECT-123")
-    pub key: String,
+pub struct IssueIdOrKey {
+    /// Issue ID ( some opaque number ) or Key (e.g., "PROJECT-123")
+    pub issue_id_or_key: String,
 }
 
 /// Query parameters for get_issue endpoint
@@ -105,15 +105,6 @@ pub struct Issue {
     /// Rendered (HTML) versions of fields when expand=renderedFields is used
     #[serde(default, rename = "renderedFields")]
     pub rendered_fields: Option<HashMap<String, serde_json::Value>>,
-}
-
-/// Path parameter for get_remote_links endpoint
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct IssueIdPath {
-    /// Issue ID (numeric, NOT the issue key)
-    /// Note: Despite being named "key" for Dropshot path consistency,
-    /// this must be a numeric ID, not an issue key like "PROJECT-123"
-    pub key: String,
 }
 
 /// Remote link information
@@ -176,12 +167,12 @@ pub trait JiraApi {
     /// **JIRA API Reference**: GET /rest/api/3/issue/{issueIdOrKey}
     #[endpoint {
         method = GET,
-        path = "/rest/api/3/issue/{key}",
+        path = "/rest/api/3/issue/{issue_id_or_key}",
         tags = ["issues"],
     }]
     async fn get_issue(
         rqctx: RequestContext<Self::Context>,
-        path: Path<IssueKeyPath>,
+        path: Path<IssueIdOrKey>,
         query: Query<IssueQuery>,
     ) -> Result<HttpResponseOk<Issue>, HttpError>;
 
@@ -190,18 +181,14 @@ pub trait JiraApi {
     /// Retrieves all remote links associated with an issue. Remote links are
     /// external URLs related to the issue.
     ///
-    /// **Note**: This endpoint requires the numeric issue ID, not the issue key.
-    /// The path parameter is named "key" for Dropshot consistency, but expects
-    /// a numeric ID like "12345", not a key like "PROJECT-123".
-    ///
     /// **JIRA API Reference**: GET /rest/api/3/issue/{issueIdOrKey}/remotelink
     #[endpoint {
         method = GET,
-        path = "/rest/api/3/issue/{key}/remotelink",
+        path = "/rest/api/3/issue/{issue_id_or_key}/remotelink",
         tags = ["issue-links"],
     }]
     async fn get_remote_links(
         rqctx: RequestContext<Self::Context>,
-        path: Path<IssueIdPath>,
+        path: Path<IssueIdOrKey>,
     ) -> Result<HttpResponseOk<Vec<RemoteLink>>, HttpError>;
 }

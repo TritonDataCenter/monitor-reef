@@ -6,7 +6,7 @@
     "version": "0.1.0"
   },
   "paths": {
-    "/rest/api/3/issue/{key}": {
+    "/rest/api/3/issue/{issue_id_or_key}": {
       "get": {
         "tags": [
           "issues"
@@ -17,8 +17,8 @@
         "parameters": [
           {
             "in": "path",
-            "name": "key",
-            "description": "Issue key (e.g., \"PROJECT-123\")",
+            "name": "issue_id_or_key",
+            "description": "Issue ID ( some opaque number ) or Key (e.g., \"PROJECT-123\")",
             "required": true,
             "schema": {
               "type": "string"
@@ -54,19 +54,19 @@
         }
       }
     },
-    "/rest/api/3/issue/{key}/remotelink": {
+    "/rest/api/3/issue/{issue_id_or_key}/remotelink": {
       "get": {
         "tags": [
           "issue-links"
         ],
         "summary": "Get remote links for an issue",
-        "description": "Retrieves all remote links associated with an issue. Remote links are external URLs related to the issue.\n\n**Note**: This endpoint requires the numeric issue ID, not the issue key. The path parameter is named \"key\" for Dropshot consistency, but expects a numeric ID like \"12345\", not a key like \"PROJECT-123\".\n\n**JIRA API Reference**: GET /rest/api/3/issue/{issueIdOrKey}/remotelink",
+        "description": "Retrieves all remote links associated with an issue. Remote links are external URLs related to the issue.\n\n**JIRA API Reference**: GET /rest/api/3/issue/{issueIdOrKey}/remotelink",
         "operationId": "get_remote_links",
         "parameters": [
           {
             "in": "path",
-            "name": "key",
-            "description": "Issue ID (numeric, NOT the issue key) Note: Despite being named \"key\" for Dropshot path consistency, this must be a numeric ID, not an issue key like \"PROJECT-123\"",
+            "name": "issue_id_or_key",
+            "description": "Issue ID ( some opaque number ) or Key (e.g., \"PROJECT-123\")",
             "required": true,
             "schema": {
               "type": "string"
