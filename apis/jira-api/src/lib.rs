@@ -79,7 +79,7 @@ pub struct IssueSearchResult {
 /// Path parameter for get_issue endpoint
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct IssueIdOrKey {
-    /// Issue ID ( some opaque number ) or Key (e.g., "PROJECT-123")
+    /// Issue ID (some opaque number) or Key (e.g., "PROJECT-123")
     pub issue_id_or_key: String,
 }
 
