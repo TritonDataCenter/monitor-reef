@@ -61,8 +61,9 @@ pub struct SearchResponse {
     pub next_page_token: Option<String>,
 }
 
+// NOTE: In the official Atlassian JIRA openapi spec,
+// this data structure is called "IssueBean".
 /// Full issue details
-/// (This is called "IssueBean" in the openapi spec.)
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Issue {
     /// Issue key (e.g., "PROJECT-123")

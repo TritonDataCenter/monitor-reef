@@ -188,7 +188,7 @@
         ]
       },
       "Issue": {
-        "description": "Full issue details (This is called \"IssueBean\" in the openapi spec.)",
+        "description": "Full issue details",
         "type": "object",
         "properties": {
           "fields": {
