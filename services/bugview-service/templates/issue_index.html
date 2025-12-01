@@ -1,0 +1,27 @@
+<!--
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this
+file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+Copyright 2025 Edgecast Cloud LLC.
+-->
+
+<h1>Public Issues Index{{#if label_text}}: {{label_text}}{{/if}}</h1>
+  <p><b>Filter by label:</b> {{{label_links}}}</p>
+  <div>{{{pagination}}}</div><br>
+  <table class="table">
+    <thead><tr>
+      <th><b>Issue</b></th>
+      <th><b>Resolution</b></th>
+      <th><b>Synopsis</b></th>
+    </tr></thead>
+  <tbody>
+{{#each issues}}
+    <tr>
+      <td><a href="/bugview/issue/{{this.key}}">{{this.key}}</a></td>
+      <td>{{#if this.resolution}}{{this.resolution}}{{else}}&nbsp;{{/if}}</td>
+      <td>{{this.summary}}</td>
+    </tr>
+{{/each}}
+  </tbody>
+</table>

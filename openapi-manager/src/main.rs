@@ -47,21 +47,36 @@ fn crate_version(crate_path: &str) -> Result<semver::Version> {
 }
 
 fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
-    let apis = vec![ManagedApiConfig {
-        ident: "jira-api",
-        versions: Versions::Lockstep {
-            version: crate_version("apis/jira-api")?,
+    let apis = vec![
+        ManagedApiConfig {
+            ident: "bugview-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/bugview-api")?,
+            },
+            title: "Bugview API",
+            metadata: ManagedApiMetadata {
+                description: Some("Public JIRA issue viewer API"),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: bugview_api::bugview_api_mod::stub_api_description,
+            extra_validation: None,
         },
-        title: "JIRA API (Subset)",
-        metadata: ManagedApiMetadata {
-            description: Some(
-                "Subset of JIRA REST API v3 used by bugview-service. This is NOT a complete JIRA API - only the specific endpoints we consume.",
-            ),
-            ..ManagedApiMetadata::default()
+        ManagedApiConfig {
+            ident: "jira-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/jira-api")?,
+            },
+            title: "JIRA API (Subset)",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Subset of JIRA REST API v3 used by bugview-service. This is NOT a complete JIRA API - only the specific endpoints we consume.",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: jira_api::jira_api_mod::stub_api_description,
+            extra_validation: None,
         },
-        api_description: jira_api::jira_api_mod::stub_api_description,
-        extra_validation: None,
-    }];
+    ];
     let managed_apis = dropshot_api_manager::ManagedApis::new(apis)?;
     Ok(managed_apis)
 }

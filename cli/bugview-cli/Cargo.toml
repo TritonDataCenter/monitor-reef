@@ -1,0 +1,22 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2025 Edgecast Cloud LLC.
+
+[package]
+name = "bugview-cli"
+version = "0.1.0"
+edition.workspace = true
+
+[[bin]]
+name = "bugview"
+path = "src/main.rs"
+
+[dependencies]
+bugview-client = { path = "../../clients/internal/bugview-client" }
+clap = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+chrono = "0.4"

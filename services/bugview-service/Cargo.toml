@@ -1,0 +1,35 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2025 Edgecast Cloud LLC.
+
+[package]
+name = "bugview-service"
+version = "0.1.0"
+edition.workspace = true
+
+[[bin]]
+name = "bugview-service"
+path = "src/main.rs"
+
+[dependencies]
+dropshot = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+schemars = { workspace = true }
+bugview-api = { path = "../../apis/bugview-api" }
+jira-client = { path = "../../clients/internal/jira-client" }
+reqwest = { workspace = true, features = ["json"] }
+handlebars = "6.3"
+http = "1.1"
+url = "2.5"
+urlencoding = "2.1"
+rand = "0.9"
+base64 = "0.22"
+async-trait = "0.1"
+indexmap = "2"
