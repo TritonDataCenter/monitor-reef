@@ -54,7 +54,7 @@ This client doesn't handle authentication directly. Pass a pre-configured reqwes
 
 ## Relationship to Full JIRA API
 
-The `clients/external/jira-client` directory (disabled) attempted to use the full JIRA API spec with Progenitor, but:
+We attempted to use the full JIRA API spec with Progenitor, but:
 - The spec is >1MB and causes compilation issues
 - We only need 3 endpoints
 - Hand-written clients are more maintainable for small API surfaces
