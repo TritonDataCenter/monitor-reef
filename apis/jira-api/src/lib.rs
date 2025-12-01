@@ -49,12 +49,8 @@ pub struct SearchQuery {
 /// Response from JIRA search endpoint
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct SearchResponse {
-    /// Total number of issues matching the query (may be approximate)
-    #[serde(default)]
-    pub total: Option<u32>,
-
     /// List of issues matching the query
-    pub issues: Vec<IssueSearchResult>,
+    pub issues: Vec<Issue>,
 
     /// Whether this is the last page of results
     #[serde(rename = "isLast", default)]
@@ -65,32 +61,8 @@ pub struct SearchResponse {
     pub next_page_token: Option<String>,
 }
 
-/// Minimal issue information from search results
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct IssueSearchResult {
-    /// Issue key (e.g., "PROJECT-123")
-    pub key: String,
-
-    /// Issue fields as a dynamic JSON object
-    /// Field names and values depend on the JIRA configuration
-    pub fields: HashMap<String, serde_json::Value>,
-}
-
-/// Path parameter for get_issue endpoint
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct IssueIdOrKey {
-    /// Issue ID (some opaque number) or Key (e.g., "PROJECT-123")
-    pub issue_id_or_key: String,
-}
-
-/// Query parameters for get_issue endpoint
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct IssueQuery {
-    /// Comma-separated list of expansions (e.g., "renderedFields")
-    pub expand: Option<String>,
-}
-
 /// Full issue details
+/// (This is called "IssueBean" in the openapi spec.)
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Issue {
     /// Issue key (e.g., "PROJECT-123")
@@ -105,6 +77,20 @@ pub struct Issue {
     /// Rendered (HTML) versions of fields when expand=renderedFields is used
     #[serde(default, rename = "renderedFields")]
     pub rendered_fields: Option<HashMap<String, serde_json::Value>>,
+}
+
+/// Path parameter for get_issue endpoint
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct IssueIdOrKey {
+    /// Issue ID (some opaque number) or Key (e.g., "PROJECT-123")
+    pub issue_id_or_key: String,
+}
+
+/// Query parameters for get_issue endpoint
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct IssueQuery {
+    /// Comma-separated list of expansions (e.g., "renderedFields")
+    pub expand: Option<String>,
 }
 
 /// Remote link information

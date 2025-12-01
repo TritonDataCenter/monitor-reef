@@ -188,7 +188,7 @@
         ]
       },
       "Issue": {
-        "description": "Full issue details",
+        "description": "Full issue details (This is called \"IssueBean\" in the openapi spec.)",
         "type": "object",
         "properties": {
           "fields": {
@@ -215,25 +215,6 @@
         "required": [
           "fields",
           "id",
-          "key"
-        ]
-      },
-      "IssueSearchResult": {
-        "description": "Minimal issue information from search results",
-        "type": "object",
-        "properties": {
-          "fields": {
-            "description": "Issue fields as a dynamic JSON object Field names and values depend on the JIRA configuration",
-            "type": "object",
-            "additionalProperties": true
-          },
-          "key": {
-            "description": "Issue key (e.g., \"PROJECT-123\")",
-            "type": "string"
-          }
-        },
-        "required": [
-          "fields",
           "key"
         ]
       },
@@ -293,7 +274,7 @@
             "description": "List of issues matching the query",
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/IssueSearchResult"
+              "$ref": "#/components/schemas/Issue"
             }
           },
           "nextPageToken": {
@@ -301,14 +282,6 @@
             "description": "Token for fetching the next page of results (cursor-based pagination)",
             "default": null,
             "type": "string"
-          },
-          "total": {
-            "nullable": true,
-            "description": "Total number of issues matching the query (may be approximate)",
-            "default": null,
-            "type": "integer",
-            "format": "uint32",
-            "minimum": 0
           }
         },
         "required": [
