@@ -11,13 +11,9 @@ use std::path::Path;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = env::var("OUT_DIR")?;
 
-    // OpenAPI specs are managed by openapi-manager
-    // Update this path to match your service's API name
-    // Note: For clients/internal/* use ../../../openapi-specs/generated/your-api.json
-    let spec_path = "../../../openapi-specs/generated/example-api.json";
+    let spec_path = "../../../openapi-specs/generated/jira-api.json";
 
-    assert!(Path::new(spec_path).exists(),
-        "{spec_path} does not exist!");
+    assert!(Path::new(spec_path).exists(), "{spec_path} does not exist!");
     println!("cargo:rerun-if-changed={}", spec_path);
 
     let spec = std::fs::read_to_string(spec_path)?;
