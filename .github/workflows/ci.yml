@@ -27,6 +27,9 @@ jobs:
           rustc -V
           cargo -V
 
+      - name: Fetch main branch for OpenAPI comparison
+        run: git fetch --no-tags origin main
+
       - name: Check (fmt, clippy, tests, openapi-check)
         run: |
           make check
