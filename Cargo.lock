@@ -190,6 +190,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "cargo_toml"
+version = "0.22.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "374b7c592d9c00c1f4972ea58390ac6b18cbb6ab79011f3bdc90a0b82ca06b77"
+dependencies = [
+ "serde",
+ "toml",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1231,11 +1241,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "camino",
+ "cargo_toml",
  "clap",
  "dropshot",
  "dropshot-api-manager",
  "dropshot-api-manager-types",
  "jira-api",
+ "semver 1.0.27",
 ]
 
 [[package]]

@@ -16,7 +16,9 @@ dropshot-api-manager-types = { workspace = true }
 jira-api = { path = "../apis/jira-api" }
 anyhow = { workspace = true }
 camino = { workspace = true }
+cargo_toml = { workspace = true }
 clap = { workspace = true }
+semver = { workspace = true }
 
 [[bin]]
 name = "openapi-manager"

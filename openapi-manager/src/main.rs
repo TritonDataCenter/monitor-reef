@@ -4,32 +4,53 @@
 
 // Copyright 2025 Edgecast Cloud LLC.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
+use cargo_toml::Manifest;
 use clap::Parser;
 use dropshot_api_manager::{Environment, ManagedApiConfig};
 use dropshot_api_manager_types::{ManagedApiMetadata, Versions};
 use std::process::ExitCode;
 
-fn environment() -> Result<Environment> {
-    let workspace_root = Utf8PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+fn workspace_root() -> Utf8PathBuf {
+    Utf8PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .unwrap()
-        .to_path_buf();
+        .to_path_buf()
+}
 
+fn environment() -> Result<Environment> {
     let env = Environment::new(
         "cargo openapi".to_string(),
-        workspace_root,
+        workspace_root(),
         "openapi-specs/generated",
     )?;
     Ok(env)
+}
+
+/// Read the version from a crate's Cargo.toml.
+fn crate_version(crate_path: &str) -> Result<semver::Version> {
+    let manifest_path = workspace_root().join(crate_path).join("Cargo.toml");
+    let manifest = Manifest::from_path(&manifest_path)
+        .with_context(|| format!("failed to read {}", manifest_path))?;
+    let package = manifest
+        .package
+        .as_ref()
+        .with_context(|| format!("no [package] section in {}", manifest_path))?;
+    let version_str = package
+        .version
+        .get()
+        .with_context(|| format!("failed to resolve version in {}", manifest_path))?;
+    version_str
+        .parse()
+        .with_context(|| format!("invalid version '{}' in {}", version_str, manifest_path))
 }
 
 fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
     let apis = vec![ManagedApiConfig {
         ident: "jira-api",
         versions: Versions::Lockstep {
-            version: "0.1.0".parse().unwrap(),
+            version: crate_version("apis/jira-api")?,
         },
         title: "JIRA API (Subset)",
         metadata: ManagedApiMetadata {
