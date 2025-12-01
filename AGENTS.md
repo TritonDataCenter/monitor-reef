@@ -241,7 +241,7 @@ cat > cli/my-service-cli/Cargo.toml <<EOF
 [package]
 name = "my-service-cli"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
 
 [[bin]]
 name = "my-service"

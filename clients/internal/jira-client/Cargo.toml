@@ -7,7 +7,7 @@
 [package]
 name = "jira-client"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
 
 [lib]
 name = "jira_client"
