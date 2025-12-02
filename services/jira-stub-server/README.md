@@ -32,16 +32,65 @@ The server starts on `http://localhost:9090` and exposes:
 
 ### Run bugview against the stub
 
+**Terminal 1: Start the JIRA stub server**
+
 ```bash
-# In terminal 1: start the stub server
 cargo run -p jira-stub-server
+```
 
-# In terminal 2: start bugview pointing at the stub
-JIRA_BASE_URL=http://localhost:9090 cargo run -p bugview-service
+You should see:
+```
+INFO Loaded 5 issues from fixtures
+INFO Stub JIRA server listening on http://localhost:9090
+INFO Available endpoints:
+INFO   GET /rest/api/3/search/jql?jql=...
+INFO   GET /rest/api/3/issue/{issueIdOrKey}
+INFO   GET /rest/api/3/issue/{issueIdOrKey}/remotelink
+```
 
-# In terminal 3: query bugview
-curl http://localhost:8080/bugview/index.json
+**Terminal 2: Start bugview-service pointing at the stub**
+
+```bash
+JIRA_URL=http://localhost:9090 \
+JIRA_USERNAME=unused \
+JIRA_PASSWORD=unused \
+JIRA_DEFAULT_LABEL=public \
+JIRA_ALLOWED_LABELS=public,rust \
+JIRA_ALLOWED_DOMAINS=github.com,smartos.org \
+cargo run -p bugview-service
+```
+
+You should see:
+```
+INFO bugview_service: Initializing JIRA client
+INFO bugview_service: Initializing HTML renderer
+INFO bugview_service: Bugview service running on http://127.0.0.1:8080
+```
+
+**Terminal 3: Query bugview**
+
+```bash
+# List all public issues (JSON)
+curl -s http://localhost:8080/bugview/index.json | jq .
+
+# View a specific issue (HTML)
 curl http://localhost:8080/bugview/issue/OS-8627
+
+# View a specific issue (JSON)
+curl -s http://localhost:8080/bugview/issue/OS-8627.json | jq .
+
+# Open in browser
+open http://localhost:8080/bugview/
+```
+
+**Using bugview-cli**
+
+```bash
+# List issues
+cargo run -p bugview-cli -- --base-url http://localhost:8080 list
+
+# Get a specific issue
+cargo run -p bugview-cli -- --base-url http://localhost:8080 get OS-8627
 ```
 
 ## Fixture Data
