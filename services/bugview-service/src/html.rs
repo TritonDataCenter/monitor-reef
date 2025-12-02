@@ -5,6 +5,13 @@
 // Copyright 2025 Edgecast Cloud LLC.
 
 //! HTML rendering for bugview
+//!
+//! # Security Note
+//!
+//! This module inserts pre-rendered HTML from JIRA (e.g., `renderedFields.description`)
+//! directly into the page without sanitization. This assumes JIRA is a trusted source.
+//! If defense-in-depth against a compromised JIRA instance is desired, consider using
+//! the `ammonia` crate (<https://docs.rs/ammonia>) to sanitize HTML before insertion.
 
 use anyhow::Result;
 use bugview_api::IssueListItem;
@@ -206,7 +213,8 @@ impl HtmlRenderer {
             if !rendered.is_empty() {
                 content.push_str("<h3>Description</h3>\n");
                 content.push_str("<div class=\"well\">\n");
-                // JIRA has already rendered this to HTML, so use it directly
+                // SAFETY: JIRA's renderedFields.description is trusted HTML.
+                // See module-level security note regarding this trust boundary.
                 content.push_str(&rendered);
                 content.push_str("</div>\n");
             }
