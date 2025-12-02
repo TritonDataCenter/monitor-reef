@@ -327,6 +327,10 @@
             "description": "Resolution status (if resolved)",
             "type": "string"
           },
+          "status": {
+            "description": "Issue status (e.g., \"Open\", \"Resolved\", \"Closed\")",
+            "type": "string"
+          },
           "summary": {
             "description": "Issue summary/title",
             "type": "string"
@@ -339,6 +343,7 @@
         "required": [
           "created",
           "key",
+          "status",
           "summary",
           "updated"
         ]

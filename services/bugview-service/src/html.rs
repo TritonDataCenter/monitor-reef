@@ -193,15 +193,15 @@ impl HtmlRenderer {
         content.push_str("</dl>\n");
 
         // Description - render from ADF
-        if let Some(adf) = description_adf {
-            if let Some(adf_content) = adf.get("content") {
-                let rendered = adf_to_html(adf_content);
-                if !rendered.is_empty() {
-                    content.push_str("<h3>Description</h3>\n");
-                    content.push_str("<div class=\"well\">\n");
-                    content.push_str(&rendered);
-                    content.push_str("</div>\n");
-                }
+        if let Some(adf) = description_adf
+            && let Some(adf_content) = adf.get("content")
+        {
+            let rendered = adf_to_html(adf_content);
+            if !rendered.is_empty() {
+                content.push_str("<h3>Description</h3>\n");
+                content.push_str("<div class=\"well\">\n");
+                content.push_str(&rendered);
+                content.push_str("</div>\n");
             }
         }
 
@@ -423,8 +423,10 @@ fn adf_to_html(nodes: &serde_json::Value) -> String {
                             if let Some(text) = attrs.get("text").and_then(|t| t.as_str()) {
                                 // Text may already contain @ prefix, so strip it if present
                                 let display = text.strip_prefix('@').unwrap_or(text);
-                                result
-                                    .push_str(&format!("<strong>@{}</strong>", html_escape(display)));
+                                result.push_str(&format!(
+                                    "<strong>@{}</strong>",
+                                    html_escape(display)
+                                ));
                             } else if let Some(id) = attrs.get("id").and_then(|i| i.as_str()) {
                                 result.push_str(&format!("<strong>@{}</strong>", html_escape(id)));
                             }

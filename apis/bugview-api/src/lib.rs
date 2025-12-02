@@ -45,6 +45,8 @@ pub struct IssueListItem {
     pub key: String,
     /// Issue summary/title
     pub summary: String,
+    /// Issue status (e.g., "Open", "Resolved", "Closed")
+    pub status: String,
     /// Resolution status (if resolved)
     pub resolution: Option<String>,
     /// Last updated timestamp

@@ -507,6 +507,14 @@ fn convert_to_list_item(issue: jira_client::Issue) -> IssueListItem {
         .unwrap_or("")
         .to_string();
 
+    let status = issue
+        .fields
+        .get("status")
+        .and_then(|v| v.get("name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Unknown")
+        .to_string();
+
     let resolution = issue
         .fields
         .get("resolution")
@@ -531,6 +539,7 @@ fn convert_to_list_item(issue: jira_client::Issue) -> IssueListItem {
     IssueListItem {
         key: issue.key,
         summary,
+        status,
         resolution,
         updated,
         created,

@@ -152,7 +152,7 @@ impl JiraClientTrait for JiraClient {
             || async {
                 let mut request = self.client.search_issues().jql(jql_owned.clone());
                 request = request.max_results(max_results);
-                request = request.fields("summary,resolution,updated,created".to_string());
+                request = request.fields("summary,status,resolution,updated,created".to_string());
                 if let Some(ref token) = token_owned {
                     request = request.next_page_token(token.clone());
                 }

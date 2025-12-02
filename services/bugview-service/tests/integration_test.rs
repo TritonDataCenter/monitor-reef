@@ -73,7 +73,10 @@ async fn test_jira_stub_server_with_progenitor_client() {
         .await
         .expect("search via progenitor client");
 
-    assert!(!search_result.issues.is_empty(), "should have public issues");
+    assert!(
+        !search_result.issues.is_empty(),
+        "should have public issues"
+    );
 
     let keys: Vec<&str> = search_result
         .issues

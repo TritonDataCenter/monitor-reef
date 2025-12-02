@@ -80,9 +80,12 @@ impl StubContext {
         let mut issues: HashMap<String, FixtureIssue> = HashMap::new();
 
         // Load individual issue files (raw JIRA responses)
-        for entry in std::fs::read_dir(fixtures_dir)
-            .with_context(|| format!("Failed to read fixtures directory: {}", fixtures_dir.display()))?
-        {
+        for entry in std::fs::read_dir(fixtures_dir).with_context(|| {
+            format!(
+                "Failed to read fixtures directory: {}",
+                fixtures_dir.display()
+            )
+        })? {
             let entry = entry?;
             let path = entry.path();
 

@@ -12,6 +12,7 @@ Copyright 2025 Edgecast Cloud LLC.
   <table class="table">
     <thead><tr>
       <th><b>Issue</b></th>
+      <th><b>Status</b></th>
       <th><b>Resolution</b></th>
       <th><b>Synopsis</b></th>
     </tr></thead>
@@ -19,6 +20,7 @@ Copyright 2025 Edgecast Cloud LLC.
 {{#each issues}}
     <tr>
       <td><a href="/bugview/issue/{{this.key}}">{{this.key}}</a></td>
+      <td>{{this.status}}</td>
       <td>{{#if this.resolution}}{{this.resolution}}{{else}}&nbsp;{{/if}}</td>
       <td>{{this.summary}}</td>
     </tr>
