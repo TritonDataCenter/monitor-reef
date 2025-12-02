@@ -99,17 +99,6 @@ impl TokenCache {
         use rand::Rng;
 
         let mut rng = rand::rng();
-        let id: String = (0..PAGINATION_TOKEN_ID_LEN)
-            .map(|_| {
-                let idx = rng.random_range(0..TOKEN_ID_ALPHABET_LEN);
-                match idx {
-                    0..=9 => (b'0' + idx) as char,
-                    10..=35 => (b'a' + idx - 10) as char,
-                    _ => (b'A' + idx - 36) as char,
-                }
-            })
-            .collect();
-
         let mut cache = self.cache.lock().unwrap();
 
         // Cleanup expired entries
@@ -120,6 +109,23 @@ impl TokenCache {
         while cache.len() >= self.max_entries {
             let _ = cache.swap_remove_index(0);
         }
+
+        // Generate ID, checking for collisions (unlikely but possible)
+        let id = loop {
+            let candidate: String = (0..PAGINATION_TOKEN_ID_LEN)
+                .map(|_| {
+                    let idx = rng.random_range(0..TOKEN_ID_ALPHABET_LEN);
+                    match idx {
+                        0..=9 => (b'0' + idx) as char,
+                        10..=35 => (b'a' + idx - 10) as char,
+                        _ => (b'A' + idx - 36) as char,
+                    }
+                })
+                .collect();
+            if !cache.contains_key(&candidate) {
+                break candidate;
+            }
+        };
 
         cache.insert(
             id.clone(),
