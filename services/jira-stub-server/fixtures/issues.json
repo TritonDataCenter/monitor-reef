@@ -1,0 +1,303 @@
+{
+  "OS-8627": {
+    "key": "OS-8627",
+    "id": "10001",
+    "fields": {
+      "summary": "dlpi_open_zone() messes up DLS reference holds",
+      "status": {
+        "name": "In Progress"
+      },
+      "resolution": null,
+      "created": "2025-02-24T10:24:54.561-0500",
+      "updated": "2025-12-01T09:36:49.758-0500",
+      "labels": ["public"],
+      "description": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "See "
+              },
+              {
+                "type": "text",
+                "text": "https://gist.github.com/gemelen/105c32e6a47285a85b802a0cf7bcac1c",
+                "marks": [
+                  {
+                    "type": "link",
+                    "attrs": {
+                      "href": "https://gist.github.com/gemelen/105c32e6a47285a85b802a0cf7bcac1c"
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "."
+              }
+            ]
+          },
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "A simpler reproduction is:"
+              }
+            ]
+          },
+          {
+            "type": "orderedList",
+            "content": [
+              {
+                "type": "listItem",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "snoop -z ZONE -d net0",
+                        "marks": [{ "type": "code" }]
+                      },
+                      {
+                        "type": "text",
+                        "text": " (Assuming net0 is a NIC in the zone)"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "vmadm halt ZONE",
+                        "marks": [{ "type": "code" }]
+                      },
+                      {
+                        "type": "text",
+                        "text": " (which will hang)"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "kill/exit the snoop process in #1."
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "comment": {
+        "comments": [
+          {
+            "id": "10001",
+            "author": {
+              "displayName": "Dan McDonald"
+            },
+            "created": "2025-03-11T17:01:25.663-0400",
+            "updated": "2025-03-11T17:01:25.663-0400",
+            "body": {
+              "type": "doc",
+              "version": 1,
+              "content": [
+                {
+                  "type": "paragraph",
+                  "content": [
+                    {
+                      "type": "text",
+                      "text": "The problem is that the cleanup of the "
+                    },
+                    {
+                      "type": "text",
+                      "text": "dls_devnet_t",
+                      "marks": [{ "type": "code" }]
+                    },
+                    {
+                      "type": "text",
+                      "text": " at zone shutdown time CANNOT POSSIBLY KNOW how many of its "
+                    },
+                    {
+                      "type": "text",
+                      "text": "dd_ref",
+                      "marks": [{ "type": "code" }]
+                    },
+                    {
+                      "type": "text",
+                      "text": " counts are tied to global-zone snoop processes."
+                    }
+                  ]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "renderedFields": {
+      "description": "<p>See <a href=\"https://gist.github.com/gemelen/105c32e6a47285a85b802a0cf7bcac1c\" class=\"external-link\" rel=\"nofollow noreferrer\">https://gist.github.com/gemelen/105c32e6a47285a85b802a0cf7bcac1c</a>.</p>\n<p>A simpler reproduction is:</p>\n<ol>\n<li><tt>snoop -z ZONE -d net0</tt> (Assuming <tt>net0</tt> is a NIC in the zone)</li>\n<li><tt>vmadm halt ZONE</tt> (which will hang)</li>\n<li>kill/exit the snoop process in #1.</li>\n</ol>"
+    }
+  },
+  "TRITON-1813": {
+    "key": "TRITON-1813",
+    "id": "10002",
+    "fields": {
+      "summary": "non-integer 'refreservation' values confound sdc-migrate",
+      "status": {
+        "name": "Closed"
+      },
+      "resolution": {
+        "name": "Fixed"
+      },
+      "created": "2019-07-12T16:31:13.363-0400",
+      "updated": "2025-10-30T06:09:45.032-0400",
+      "labels": ["public"],
+      "description": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "When a ZFS dataset has a non-integer refreservation value (e.g., 1.5G), sdc-migrate fails to parse it correctly."
+              }
+            ]
+          }
+        ]
+      },
+      "comment": {
+        "comments": []
+      }
+    },
+    "renderedFields": {
+      "description": "<p>When a ZFS dataset has a non-integer refreservation value (e.g., 1.5G), sdc-migrate fails to parse it correctly.</p>"
+    }
+  },
+  "OS-8638": {
+    "key": "OS-8638",
+    "id": "10003",
+    "fields": {
+      "summary": "Want ability to specify zfs_arc_max",
+      "status": {
+        "name": "Open"
+      },
+      "resolution": null,
+      "created": "2025-03-24T14:44:42.319-0400",
+      "updated": "2025-12-01T09:36:49.571-0500",
+      "labels": ["public"],
+      "description": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Currently there is no supported way to set zfs_arc_max on SmartOS. This is needed for systems with large amounts of RAM where the default ARC sizing is not optimal."
+              }
+            ]
+          }
+        ]
+      },
+      "comment": {
+        "comments": []
+      }
+    },
+    "renderedFields": {
+      "description": "<p>Currently there is no supported way to set zfs_arc_max on SmartOS. This is needed for systems with large amounts of RAM where the default ARC sizing is not optimal.</p>"
+    }
+  },
+  "TOOLS-2590": {
+    "key": "TOOLS-2590",
+    "id": "10004",
+    "fields": {
+      "summary": "Rewrite Bugview in Rust",
+      "status": {
+        "name": "In Progress"
+      },
+      "resolution": null,
+      "created": "2025-11-01T10:00:00.000-0400",
+      "updated": "2025-12-01T12:00:00.000-0500",
+      "labels": ["public", "rust"],
+      "description": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Migrate the Bugview service from Node.js to Rust using the trait-based API pattern."
+              }
+            ]
+          }
+        ]
+      },
+      "comment": {
+        "comments": []
+      }
+    },
+    "renderedFields": {
+      "description": "<p>Migrate the Bugview service from Node.js to Rust using the trait-based API pattern.</p>"
+    }
+  },
+  "MANTA-5480": {
+    "key": "MANTA-5480",
+    "id": "10005",
+    "fields": {
+      "summary": "Objects are not garbage-collected when replaced",
+      "status": {
+        "name": "Open"
+      },
+      "resolution": null,
+      "created": "2025-07-14T09:31:28.857-0400",
+      "updated": "2025-09-15T16:16:30.435-0400",
+      "labels": ["public"],
+      "description": {
+        "type": "doc",
+        "version": 1,
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "When an object in Manta is overwritten with a new version, the old version's storage is not reclaimed by the garbage collector."
+              }
+            ]
+          }
+        ]
+      },
+      "comment": {
+        "comments": []
+      }
+    },
+    "renderedFields": {
+      "description": "<p>When an object in Manta is overwritten with a new version, the old version's storage is not reclaimed by the garbage collector.</p>"
+    }
+  }
+}

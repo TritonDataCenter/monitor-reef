@@ -13,6 +13,7 @@ members = [
     "clients/internal/jira-client",
     "openapi-manager",
     "services/bugview-service",
+    "services/jira-stub-server",
 ]
 resolver = "2"
 

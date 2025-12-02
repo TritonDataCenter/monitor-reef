@@ -1,0 +1,36 @@
+{
+  "OS-8627": [
+    {
+      "id": 1,
+      "object": {
+        "url": "https://github.com/illumos/illumos-gate/pull/1234",
+        "title": "Fix for DLS reference holds"
+      }
+    },
+    {
+      "id": 2,
+      "object": {
+        "url": "https://smartos.org/docs/networking",
+        "title": "SmartOS Networking Documentation"
+      }
+    }
+  ],
+  "TRITON-1813": [
+    {
+      "id": 3,
+      "object": {
+        "url": "https://github.com/TritonDataCenter/sdc-migrate/commit/abc123",
+        "title": "Fix refreservation parsing"
+      }
+    }
+  ],
+  "TOOLS-2590": [
+    {
+      "id": 4,
+      "object": {
+        "url": "https://github.com/TritonDataCenter/triton-rust-monorepo",
+        "title": "Triton Rust Monorepo"
+      }
+    }
+  ]
+}

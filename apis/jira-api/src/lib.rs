@@ -47,7 +47,7 @@ pub struct SearchQuery {
 }
 
 /// Response from JIRA search endpoint
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct SearchResponse {
     /// List of issues matching the query
     pub issues: Vec<Issue>,
@@ -64,7 +64,7 @@ pub struct SearchResponse {
 // NOTE: In the official Atlassian JIRA openapi spec,
 // this data structure is called "IssueBean".
 /// Full issue details
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Issue {
     /// Issue key (e.g., "PROJECT-123")
     pub key: String,
