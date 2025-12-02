@@ -9,6 +9,12 @@ if [[ -z "$JIRA_URL" || -z "$JIRA_USERNAME" || -z "$JIRA_PASSWORD" ]]; then
     exit 1
 fi
 
+# Enforce HTTPS to protect credentials
+if [[ ${JIRA_URL%%:*} != "https" ]]; then
+    echo "Error: JIRA_URL must use HTTPS" >&2
+    exit 1
+fi
+
 FIXTURES_DIR="$(dirname "$0")"
 
 ISSUES=(
@@ -66,7 +72,7 @@ ISSUES=(
 
 for issue in "${ISSUES[@]}"; do
     echo "Fetching $issue..."
-    curl -s -u "$JIRA_USERNAME:$JIRA_PASSWORD" \
+    curl --proto =https --tlsv1.2 --fail -s -u "$JIRA_USERNAME:$JIRA_PASSWORD" \
         "$JIRA_URL/rest/api/3/issue/$issue?expand=renderedFields" \
         | jq . > "$FIXTURES_DIR/$issue.json"
 done
