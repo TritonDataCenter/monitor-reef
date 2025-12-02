@@ -94,7 +94,7 @@ bugview get PROJECT-123 --raw
 
 ### Base URL
 
-By default, the CLI connects to `http://localhost:8080`. Override with:
+By default, the CLI connects to `https://smartos.org`. Override with:
 
 ```bash
 bugview --base-url https://bugview.example.com list
