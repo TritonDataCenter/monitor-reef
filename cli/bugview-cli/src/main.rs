@@ -14,6 +14,7 @@ use clap::{Parser, Subcommand};
 #[command(about = "CLI for interacting with the Bugview public issue viewer", long_about = None)]
 struct Cli {
     /// Base URL of the Bugview service
+    /// Default is the production deployment; for local development, use http://localhost:8080
     #[arg(long, default_value = "https://smartos.org")]
     base_url: String,
 
