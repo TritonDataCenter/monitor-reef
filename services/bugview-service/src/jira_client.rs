@@ -180,7 +180,6 @@ impl JiraClientTrait for JiraClient {
                     .client
                     .get_issue()
                     .issue_id_or_key(&k)
-                    .expand("renderedFields".to_string())
                     .send()
                     .await
                     .map_err(|e| {

@@ -6,12 +6,9 @@
 
 //! HTML rendering for bugview
 //!
-//! # Security Note
-//!
-//! This module inserts pre-rendered HTML from JIRA (e.g., `renderedFields.description`)
-//! directly into the page without sanitization. This assumes JIRA is a trusted source.
-//! If defense-in-depth against a compromised JIRA instance is desired, consider using
-//! the `ammonia` crate (<https://docs.rs/ammonia>) to sanitize HTML before insertion.
+//! This module renders JIRA issue content by converting Atlassian Document Format (ADF)
+//! to HTML. ADF is the structured JSON format JIRA uses in `fields.description` and
+//! comment bodies.
 
 use anyhow::Result;
 use bugview_api::IssueListItem;
@@ -164,21 +161,8 @@ impl HtmlRenderer {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
-        // Try to get rendered description (HTML from JIRA), fallback to raw
-        let description_html = if let Some(rendered_fields) = &issue.rendered_fields {
-            rendered_fields
-                .get("description")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string())
-        } else {
-            None
-        };
-
-        let description_raw = issue
-            .fields
-            .get("description")
-            .and_then(|v| v.as_str())
-            .unwrap_or("");
+        // Get description as ADF (Atlassian Document Format) for rendering
+        let description_adf = issue.fields.get("description");
 
         // Build HTML content
         let mut content = String::new();
@@ -208,22 +192,17 @@ impl HtmlRenderer {
         ));
         content.push_str("</dl>\n");
 
-        // Description - use rendered HTML if available, otherwise fallback to escaped plain text
-        if let Some(rendered) = description_html {
-            if !rendered.is_empty() {
-                content.push_str("<h3>Description</h3>\n");
-                content.push_str("<div class=\"well\">\n");
-                // SAFETY: JIRA's renderedFields.description is trusted HTML.
-                // See module-level security note regarding this trust boundary.
-                content.push_str(&rendered);
-                content.push_str("</div>\n");
+        // Description - render from ADF
+        if let Some(adf) = description_adf {
+            if let Some(adf_content) = adf.get("content") {
+                let rendered = adf_to_html(adf_content);
+                if !rendered.is_empty() {
+                    content.push_str("<h3>Description</h3>\n");
+                    content.push_str("<div class=\"well\">\n");
+                    content.push_str(&rendered);
+                    content.push_str("</div>\n");
+                }
             }
-        } else if !description_raw.is_empty() {
-            content.push_str("<h3>Description</h3>\n");
-            content.push_str("<div class=\"well\">\n");
-            // Fallback: escape and preserve as plain text
-            content.push_str(&format!("<pre>{}</pre>", html_escape(description_raw)));
-            content.push_str("</div>\n");
         }
 
         // Comments
@@ -395,6 +374,7 @@ fn adf_to_html(nodes: &serde_json::Value) -> String {
                                                     formatted_text
                                                 }
                                             }
+                                            "strike" => format!("<del>{}</del>", formatted_text),
                                             _ => formatted_text,
                                         };
                                     }
@@ -441,8 +421,10 @@ fn adf_to_html(nodes: &serde_json::Value) -> String {
                     "mention" => {
                         if let Some(attrs) = node_obj.get("attrs") {
                             if let Some(text) = attrs.get("text").and_then(|t| t.as_str()) {
+                                // Text may already contain @ prefix, so strip it if present
+                                let display = text.strip_prefix('@').unwrap_or(text);
                                 result
-                                    .push_str(&format!("<strong>@{}</strong>", html_escape(text)));
+                                    .push_str(&format!("<strong>@{}</strong>", html_escape(display)));
                             } else if let Some(id) = attrs.get("id").and_then(|i| i.as_str()) {
                                 result.push_str(&format!("<strong>@{}</strong>", html_escape(id)));
                             }

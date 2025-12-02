@@ -1,0 +1,1850 @@
+{
+  "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations,customfield_10010.requestTypePractice",
+  "id": "30152",
+  "self": "https://mnx.atlassian.net/rest/api/3/issue/30152",
+  "key": "OS-6892",
+  "renderedFields": {
+    "statuscategorychangedate": "16/Jul/25 11:44 AM",
+    "issuetype": null,
+    "timespent": null,
+    "customfield_10030": null,
+    "project": null,
+    "customfield_10110": null,
+    "fixVersions": null,
+    "statusCategory": null,
+    "customfield_10111": null,
+    "aggregatetimespent": null,
+    "customfield_10112": null,
+    "resolution": null,
+    "customfield_10114": null,
+    "customfield_10104": null,
+    "customfield_10105": null,
+    "customfield_10149": null,
+    "customfield_10106": null,
+    "customfield_10029": "",
+    "customfield_10109": null,
+    "resolutiondate": null,
+    "workratio": null,
+    "lastViewed": null,
+    "watches": null,
+    "issuerestriction": null,
+    "customfield_10060": null,
+    "created": "16/Apr/18 11:39 AM",
+    "customfield_10020": null,
+    "customfield_10021": null,
+    "customfield_10066": null,
+    "customfield_10022": null,
+    "customfield_10100": null,
+    "priority": null,
+    "customfield_10023": null,
+    "customfield_10101": null,
+    "customfield_10024": "09/Jul/25 2:54 PM",
+    "customfield_10102": null,
+    "customfield_10025": null,
+    "customfield_10103": null,
+    "labels": null,
+    "customfield_10016": null,
+    "customfield_10017": "",
+    "customfield_10019": null,
+    "timeestimate": null,
+    "aggregatetimeoriginalestimate": null,
+    "versions": null,
+    "issuelinks": null,
+    "assignee": null,
+    "updated": "16/Jul/25 11:44 AM",
+    "status": null,
+    "components": null,
+    "customfield_10093": null,
+    "customfield_10094": null,
+    "customfield_10051": "",
+    "timeoriginalestimate": null,
+    "customfield_10095": null,
+    "customfield_10096": null,
+    "description": "<p>For use-cases like SmartOS-on-SmartOS, viona must configure itself, in certain circumstances, to be a promiscuous MAC client on top of the provided vnic.  This could be very rudimentary at first, being enabled only when the zone has been configured to allow such promiscuous access.  Toggling such functionality could be enabled later, when viona supports the virtio-net control queue feature.</p>",
+    "customfield_10097": null,
+    "customfield_10010": null,
+    "customfield_10098": null,
+    "customfield_10099": null,
+    "customfield_10056": null,
+    "customfield_10014": null,
+    "timetracking": {},
+    "customfield_10015": null,
+    "customfield_10005": null,
+    "customfield_10006": null,
+    "customfield_10007": null,
+    "security": null,
+    "customfield_10008": null,
+    "aggregatetimeestimate": null,
+    "customfield_10009": null,
+    "attachment": [
+      {
+        "self": "https://mnx.atlassian.net/rest/api/3/attachment/15713",
+        "id": "15713",
+        "filename": "Screenshot 2025-07-15 at 3.36.27 PM.png",
+        "author": {
+          "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+          "accountId": "6256ebc46b0007006970072f",
+          "emailAddress": "danmcd@mnx.io",
+          "avatarUrls": {
+            "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
+            "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+            "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+            "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
+          },
+          "displayName": "Dan McDonald",
+          "active": true,
+          "timeZone": "America/Detroit",
+          "accountType": "atlassian"
+        },
+        "created": "15/Jul/25 3:48 PM",
+        "size": "91 kB",
+        "mimeType": "image/png",
+        "content": "https://mnx.atlassian.net/rest/api/3/attachment/content/15713",
+        "thumbnail": "https://mnx.atlassian.net/rest/api/3/attachment/thumbnail/15713"
+      }
+    ],
+    "summary": null,
+    "creator": null,
+    "subtasks": null,
+    "customfield_10041": null,
+    "customfield_10042": null,
+    "reporter": null,
+    "aggregateprogress": null,
+    "customfield_10088": null,
+    "customfield_10001": null,
+    "customfield_10002": null,
+    "customfield_10003": null,
+    "customfield_10004": null,
+    "customfield_10115": null,
+    "customfield_10116": null,
+    "environment": "",
+    "duedate": null,
+    "progress": null,
+    "votes": null,
+    "comment": {
+      "comments": [
+        {
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/30152/comment/130413",
+          "id": "130413",
+          "author": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "accountId": "6256ebc46b0007006970072f",
+            "emailAddress": "danmcd@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
+            },
+            "displayName": "Dan McDonald",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "body": "<p><a href=\"https://www.illumos.org/issues/14716\" title=\"smart-link\" class=\"external-link\" rel=\"nofollow noreferrer\">https://www.illumos.org/issues/14716</a>  may be necessary, but not sufficient, to solve this bug.</p>",
+          "updateAuthor": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "accountId": "6256ebc46b0007006970072f",
+            "emailAddress": "danmcd@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
+            },
+            "displayName": "Dan McDonald",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "created": "09/Jul/25 2:54 PM",
+          "updated": "09/Jul/25 2:54 PM",
+          "jsdPublic": true
+        },
+        {
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/30152/comment/130511",
+          "id": "130511",
+          "author": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A70b68467-d824-4d84-a899-a7470bccb323",
+            "accountId": "712020:70b68467-d824-4d84-a899-a7470bccb323",
+            "emailAddress": "carlos.neira@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/32"
+            },
+            "displayName": "Carlos Neira",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "body": "<p>As part of development and in the spirit of dogfooding, we attempted to update this SmartOS on SmartOS setup by <a href=\"https://mnx.atlassian.net/secure/ViewProfile.jspa?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4\" class=\"user-hover\" rel=\"712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4\" data-account-id=\"712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4\" accountid=\"712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4\" rel=\"noreferrer\">Nahum Shalman</a>  (<a href=\"https://blog.shalman.org/running-sdc-coal-on-smartos/\" title=\"smart-link\" class=\"external-link\" rel=\"nofollow noreferrer\">https://blog.shalman.org/running-sdc-coal-on-smartos/</a> ).</p>\n\n<p>However, during a debugging session with <a href=\"https://mnx.atlassian.net/secure/ViewProfile.jspa?accountId=6256ebc46b0007006970072f\" class=\"user-hover\" rel=\"6256ebc46b0007006970072f\" data-account-id=\"6256ebc46b0007006970072f\" accountid=\"6256ebc46b0007006970072f\" rel=\"noreferrer\">Dan McDonald</a>  and <a href=\"https://mnx.atlassian.net/secure/ViewProfile.jspa?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4\" class=\"user-hover\" rel=\"712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4\" data-account-id=\"712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4\" accountid=\"712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4\" rel=\"noreferrer\">Nahum Shalman</a>, we  discovered that the VM's connectivity was not working. In that session, we identified a bhyve(8) network-backend option as the culprit.</p>\n\n<p>   The avalaible network-backend-options are:</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>             promiscphys\n                       Enable promiscuous mode at the physical level\n                       (default: false)\n\n             promiscsap\n                       Enable promiscuous mode at the SAP level \n                       (default:true)\n\n             promiscmulti\n                       Enable promiscuous mode for all multicast addresses\n                       (default: true)\n            \n             promiscrxonly\n                        The selected promiscuous modes are only enabled for\n                         received traffic (default: true).\n</pre>\n</div></div>\n\n<p>These are enabled by default, except for <b><em>promiscphys</em></b></p>\n\n<p>Setting this backend option when a zone specifies <b><em>allow_mac_spoofing=true</em></b>, along with adding support for unfiltered promiscuous mode to the bhyve brand, resolved the problem.</p>\n\n<p><b>Testing done:</b></p>\n\n<p>With a new PI image build with this branch <a href=\"https://github.com/TritonDataCenter/illumos-joyent/pull/515\" title=\"smart-link\" class=\"external-link\" rel=\"nofollow noreferrer\">https://github.com/TritonDataCenter/illumos-joyent/pull/515</a> . This setup was replicated using bhyve <a href=\"https://blog.shalman.org/running-sdc-coal-on-smartos/\" title=\"smart-link\" class=\"external-link\" rel=\"nofollow noreferrer\">https://blog.shalman.org/running-sdc-coal-on-smartos/</a>  </p>\n\n<p>Provisioning a bhyve zone with allow_mac_spoofing=true.</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>[root@boldo /opt/templates]# cat coal-headnode.json\n{\n  \"alias\": \"coal-headnode2\",\n  \"brand\": \"bhyve\",\n  \"ram\": 32096,\n  \"vcpus\": 3,\n  \"autoboot\": false,\n  \"nics\": [\n    {\n      \"mac\": \"52:54:00:00:00:00\",\n      \"nic_tag\": \"sdc_admin0\",\n      \"model\": \"e1000\",\n      \"ip\": \"dhcp\",\n      \"allow_dhcp_spoofing\": true,\n      \"allow_ip_spoofing\": true,\n      \"allow_mac_spoofing\": true,\n      \"allow_restricted_traffic\": true,\n      \"allow_unfiltered_promisc\": true,\n      \"dhcp_server\": true\n    },\n    {\n      \"mac\": \"52:54:00:00:00:01\",\n      \"nic_tag\": \"sdc_external0\",\n      \"model\": \"e1000\",\n      \"ip\": \"dhcp\",\n      \"allow_dhcp_spoofing\": true,\n      \"allow_ip_spoofing\": true,\n      \"allow_mac_spoofing\": true,\n      \"allow_restricted_traffic\": true,\n      \"allow_unfiltered_promisc\": true,\n      \"dhcp_server\": true\n    }\n  ],\n  \"disks\": [\n    {\n      \"size\": 8192,\n      \"model\": \"virtio\"\n    },\n    {\n      \"size\": 65440,\n      \"model\": \"virtio\"\n    }\n  ]\n} </pre>\n</div></div>\n\n<p>Provisioning a bhyve zone without allow_mac_spoofing </p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>[root@boldo /opt/templates]# cat ubu.json\n{\n  \"alias\": \"ubuntu-dev\",\n  \"brand\": \"bhyve\",\n  \"ram\": 4096,\n  \"vcpus\": 3,\n  \"autoboot\": false,\n  \"nics\":\n  [\n    {\n      \"nic_tag\": \"sdc_external0\",\n      \"model\": \"virtio\",\n      \"ip\": \"dhcp\",\n      \"dhcp_server\": true\n\n    }],\n \"disks\": [\n    {\n      \"image_uuid\": \"97219479-f34c-4f1d-8a71-cd774dada4cf\",\n      \"boot\": true,\n      \"model\": \"virtio\"\n    },\n    {\n      \"model\": \"virtio\",\n      \"size\": 25600\n    }\n  ]\n}</pre>\n</div></div>\n\n\n\n<p>We check that both bhyve processes are running and their internal vm names</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>           SOFTC               VM             ZONE  TOPO MiB    F   NAME\nfffffeb2141f41c0 fffffeb166b5b000 fffffeb16faa4540 3/1/1 32129   T  SYSbhyve-75\nfffffeb230171080 fffffeb167c11000 fffffeb16faa4000 3/1/1 4129    T  SYSbhyve-118</pre>\n</div></div>\n\n\n\n<p>SYSbhyve-75 is our COAL bhyve vm, checking the bhyve argument for that gives us</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>[root@boldo /opt/templates]# pargs 11790\n11790:  bhyve -H -U d5ad188a-7a73-4aef-a25a-5d9a7a3f7696 -B 1,manufacturer=Joyent,produ\nargv[0]: bhyve\nargv[1]: -H\nargv[2]: -U\nargv[3]: d5ad188a-7a73-4aef-a25a-5d9a7a3f7696\nargv[4]: -B\nargv[5]: 1,manufacturer=Joyent,product=SmartDC HVM,version=7.20250707T155014Z,serial=d5ad188a-7a73-4aef-a25a-5d9a7a3f7696,sku=001,family=Virtual Machine\nargv[6]: -s\nargv[7]: 31,lpc\nargv[8]: -l\nargv[9]: com1,/dev/zconsole\nargv[10]: -l\nargv[11]: com2,socket,/tmp/vm.ttyb\nargv[12]: -l\nargv[13]: bootrom,/usr/share/bhyve/uefi-csm-rom.bin\nargv[14]: -s\nargv[15]: 0,hostbridge,model=i440fx\nargv[16]: -c\nargv[17]: 3\nargv[18]: -m\nargv[19]: 32096\nargv[20]: -s\nargv[21]: 0:4:0,virtio-blk,/dev/zvol/rdsk/zones/d5ad188a-7a73-4aef-a25a-5d9a7a3f7696/disk0\nargv[22]: -s\nargv[23]: 0:4:1,virtio-blk,/dev/zvol/rdsk/zones/d5ad188a-7a73-4aef-a25a-5d9a7a3f7696/disk1\nargv[24]: -s\nargv[25]: 0:4:2,virtio-blk,/dev/zvol/rdsk/zones/d5ad188a-7a73-4aef-a25a-5d9a7a3f7696/disk2\nargv[26]: -s\nargv[27]: 0:4:3,virtio-blk,/dev/zvol/rdsk/zones/d5ad188a-7a73-4aef-a25a-5d9a7a3f7696/disk3\nargv[28]: -s\nargv[29]: 6:0,virtio-net-viona,net0,promiscphys=true\nargv[30]: -s\nargv[31]: 6:1,virtio-net-viona,net1,promiscphys=true\nargv[32]: -s\nargv[33]: 30:0,fbuf,vga=off,unix=/tmp/vm.vnc\nargv[34]: -s\nargv[35]: 30:1,xhci,tablet\nargv[36]: SYSbhyve-75</pre>\n</div></div>\n\n<p>promiscphys=true as required.</p>\n\n<p>Sysbhyve-118 is a Linux Bhyve vm with no allow_mac_spoofing specified.</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>[root@boldo /opt/templates]# pargs 12397\n12397:  bhyve -H -U 2231ec78-e3e2-43a6-a2b9-dce0683d02b0 -B 1,manufacturer=Joyent,produ\nargv[0]: bhyve\nargv[1]: -H\nargv[2]: -U\nargv[3]: 2231ec78-e3e2-43a6-a2b9-dce0683d02b0\nargv[4]: -B\nargv[5]: 1,manufacturer=Joyent,product=SmartDC HVM,version=7.20250707T155014Z,serial=2231ec78-e3e2-43a6-a2b9-dce0683d02b0,sku=001,family=Virtual Machine\nargv[6]: -s\nargv[7]: 31,lpc\nargv[8]: -l\nargv[9]: com1,/dev/zconsole\nargv[10]: -l\nargv[11]: com2,socket,/tmp/vm.ttyb\nargv[12]: -l\nargv[13]: bootrom,/usr/share/bhyve/uefi-csm-rom.bin\nargv[14]: -s\nargv[15]: 0,hostbridge,model=i440fx\nargv[16]: -c\nargv[17]: 3\nargv[18]: -m\nargv[19]: 4096\nargv[20]: -s\nargv[21]: 0:4:0,virtio-blk,/dev/zvol/rdsk/zones/2231ec78-e3e2-43a6-a2b9-dce0683d02b0/disk0\nargv[22]: -s\nargv[23]: 0:4:1,virtio-blk,/dev/zvol/rdsk/zones/2231ec78-e3e2-43a6-a2b9-dce0683d02b0/disk1\nargv[24]: -s\nargv[25]: 6:0,virtio-net-viona,net0\nargv[26]: -s\nargv[27]: 30:0,fbuf,vga=off,unix=/tmp/vm.vnc\nargv[28]: -s\nargv[29]: 30:1,xhci,tablet\nargv[30]: SYSbhyve-118</pre>\n</div></div>\n\n<p>So as expected, we don’t see promiscphys=true in the backend options.</p>",
+          "updateAuthor": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A70b68467-d824-4d84-a899-a7470bccb323",
+            "accountId": "712020:70b68467-d824-4d84-a899-a7470bccb323",
+            "emailAddress": "carlos.neira@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/32"
+            },
+            "displayName": "Carlos Neira",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "created": "11/Jul/25 10:07 AM",
+          "updated": "11/Jul/25 10:07 AM",
+          "jsdPublic": true
+        },
+        {
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/30152/comment/130544",
+          "id": "130544",
+          "author": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A70b68467-d824-4d84-a899-a7470bccb323",
+            "accountId": "712020:70b68467-d824-4d84-a899-a7470bccb323",
+            "emailAddress": "carlos.neira@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/32"
+            },
+            "displayName": "Carlos Neira",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "body": "<p><b>Case 2:</b>  Test allow_ip_spoofing in a bhyve vm (COAL) with <em>promiscphys=true</em> with <a href=\"https://github.com/TritonDataCenter/illumos-joyent/pull/515\" title=\"smart-link\" class=\"external-link\" rel=\"nofollow noreferrer\">https://github.com/TritonDataCenter/illumos-joyent/pull/515</a>  </p>\n\n<p>zone nics definition:</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>\"nics\": [\n    {\n      \"mac\": \"52:54:00:00:00:00\",\n      \"nic_tag\": \"sdc_admin0\",\n      \"model\": \"e1000\",\n      \"ip\": \"dhcp\",\n      \"allow_dhcp_spoofing\": true,\n      \"allow_ip_spoofing\": true,\n      \"allow_mac_spoofing\": true,\n      \"allow_restricted_traffic\": true,\n      \"allow_unfiltered_promisc\": true,\n      \"dhcp_server\": true\n    },\n    {\n      \"mac\": \"52:54:00:00:00:01\",\n      \"nic_tag\": \"sdc_external0\",\n      \"model\": \"e1000\",\n      \"ip\": \"dhcp\",\n      \"allow_dhcp_spoofing\": true,\n      \"allow_ip_spoofing\": true,\n      \"allow_mac_spoofing\": true,\n      \"allow_restricted_traffic\": true,\n      \"allow_unfiltered_promisc\": true,\n      \"dhcp_server\": true\n    }\n  ],</pre>\n</div></div>\n\n\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>[root@headnode (coal) ~]# dladm show-vnic\nLINK         OVER       SPEED    MACADDRESS        MACADDRTYPE VID  ZONE\nexternal0    vioif1     1000     2:8:20:f8:88:d    fixed       0    --\nmanta0       vioif1     1000     90:b8:d0:7a:67:e4 fixed       0    --\n\n[root@headnode (coal) ~]# dladm show-phys\nLINK         MEDIA                STATE      SPEED    DUPLEX   DEVICE\nvioif0       Ethernet             up         1000     full     vioif0\nvioif1       Ethernet             up         1000     full     vioif1\n\n[root@headnode (coal) ~]# ifconfig -a\nlo0: flags=2001000849&lt;UP,LOOPBACK,RUNNING,MULTICAST,IPv4,VIRTUAL&gt; mtu 8232 index 1\n        inet 127.0.0.1 netmask ff000000\nvioif0: flags=1001000943&lt;UP,BROADCAST,RUNNING,PROMISC,MULTICAST,IPv4,FIXEDMTU&gt; mtu 1500 index 2\n        inet 10.99.99.7 netmask ffffff00 broadcast 10.99.99.255\n        ether 52:54:0:0:0:0\nexternal0: flags=1000843&lt;UP,BROADCAST,RUNNING,MULTICAST,IPv4&gt; mtu 1500 index 3\n        inet 10.88.88.200 netmask ffffff00 broadcast 10.88.88.255\n        ether 2:8:20:f8:88:d\nmanta0: flags=1000843&lt;UP,BROADCAST,RUNNING,MULTICAST,IPv4&gt; mtu 1500 index 4\n        inet 10.77.77.5 netmask ffffff00 broadcast 10.77.77.255\n        ether 90:b8:d0:7a:67:e4\nlo0: flags=2002000849&lt;UP,LOOPBACK,RUNNING,MULTICAST,IPv6,VIRTUAL&gt; mtu 8252 index 1\n        inet6 ::1/128\n[root@headnode (coal) ~]# ifconfig external0:1 plumb 10.88.88.230/24 up\n[root@headnode (coal) ~]# ping -i 10.88.88.230 tritondatacenter.com\ntritondatacenter.com is alive\n[root@headnode (coal) ~]# ping -i manta0 tritondatacenter.com\nping: sendto No route to host\n[root@headnode (coal) ~]# ping -i external0:1  tritondatacenter.com\ntritondatacenter.com is alive</pre>\n</div></div>\n\n<p><b>Case 2:</b>  COAL bhyve vm <b>without</b> <em>promiscphys=true  (</em><b><em>not running the current fix</em></b><em>)  same nic definitions.</em></p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>[root@headnode (coal) ~]# ifconfig external0:1 plumb 10.88.88.230/24 up\n[root@headnode (coal) ~]# ifconfig -a\nlo0: flags=2001000849&lt;UP,LOOPBACK,RUNNING,MULTICAST,IPv4,VIRTUAL&gt; mtu 8232 index 1\n        inet 127.0.0.1 netmask ff000000\nvioif0: flags=1001000843&lt;UP,BROADCAST,RUNNING,MULTICAST,IPv4,FIXEDMTU&gt; mtu 1500 index 2\n        inet 10.99.99.7 netmask ffffff00 broadcast 10.99.99.255\n        ether 52:54:0:0:0:0\nexternal0: flags=1000843&lt;UP,BROADCAST,RUNNING,MULTICAST,IPv4&gt; mtu 1500 index 3\n        inet 10.88.88.200 netmask ffffff00 broadcast 10.88.88.255\n        ether 2:8:20:f8:88:d\nexternal0:1: flags=1000843&lt;UP,BROADCAST,RUNNING,MULTICAST,IPv4&gt; mtu 1500 index 3\n        inet 10.88.88.230 netmask ffffff00 broadcast 10.88.88.255\nmanta0: flags=1000843&lt;UP,BROADCAST,RUNNING,MULTICAST,IPv4&gt; mtu 1500 index 4\n        inet 10.77.77.5 netmask ffffff00 broadcast 10.77.77.255\n        ether 90:b8:d0:7a:67:e4\nlo0: flags=2002000849&lt;UP,LOOPBACK,RUNNING,MULTICAST,IPv6,VIRTUAL&gt; mtu 8252 index 1\n        inet6 ::1/128\n[root@headnode (coal) ~]# ping -i 10.88.88.230 8.8.8.8\nno answer from 8.8.8.8\n</pre>\n</div></div>",
+          "updateAuthor": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A70b68467-d824-4d84-a899-a7470bccb323",
+            "accountId": "712020:70b68467-d824-4d84-a899-a7470bccb323",
+            "emailAddress": "carlos.neira@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/32"
+            },
+            "displayName": "Carlos Neira",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "created": "11/Jul/25 2:31 PM",
+          "updated": "11/Jul/25 2:33 PM",
+          "jsdPublic": true
+        },
+        {
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/30152/comment/130545",
+          "id": "130545",
+          "author": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A70b68467-d824-4d84-a899-a7470bccb323",
+            "accountId": "712020:70b68467-d824-4d84-a899-a7470bccb323",
+            "emailAddress": "carlos.neira@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/32"
+            },
+            "displayName": "Carlos Neira",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "body": "<ul>\n\t<li><b>on-link peers works both ways</b><br/>\nTest  <b><em>without fix</em></b> applied, in COAL bhyve vm, ping <em>coal-nat(native)</em> zone at 10.88.88.2</li>\n</ul>\n\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>[root@headnode (coal) ~]# ifconfig -a\nlo0: flags=2001000849&lt;UP,LOOPBACK,RUNNING,MULTICAST,IPv4,VIRTUAL&gt; mtu 8232 index 1\n        inet 127.0.0.1 netmask ff000000\nvioif0: flags=1001000943&lt;UP,BROADCAST,RUNNING,PROMISC,MULTICAST,IPv4,FIXEDMTU&gt; mtu 1500 index 2\n        inet 10.99.99.7 netmask ffffff00 broadcast 10.99.99.255\n        ether 52:54:0:0:0:0\nexternal0: flags=1000843&lt;UP,BROADCAST,RUNNING,MULTICAST,IPv4&gt; mtu 1500 index 3\n        inet 10.88.88.200 netmask ffffff00 broadcast 10.88.88.255\n        ether 2:8:20:f8:88:d\nexternal0:1: flags=1000843&lt;UP,BROADCAST,RUNNING,MULTICAST,IPv4&gt; mtu 1500 index 3\n        inet 10.88.88.230 netmask ffffff00 broadcast 10.88.88.255\nmanta0: flags=1000843&lt;UP,BROADCAST,RUNNING,MULTICAST,IPv4&gt; mtu 1500 index 4\n        inet 10.77.77.5 netmask ffffff00 broadcast 10.77.77.255\n        ether 90:b8:d0:7a:67:e4\nlo0: flags=2002000849&lt;UP,LOOPBACK,RUNNING,MULTICAST,IPv6,VIRTUAL&gt; mtu 8252 index 1\n        inet6 ::1/128\n[root@headnode (coal) ~]# ping -i external0:1  10.88.88.2\nno answer from 10.88.88.2\n[root@headnode (coal) ~]# ping -i external0 10.88.88.2\nno answer from 10.88.88.2</pre>\n</div></div>\n\n<p>From coal-nat(native) zone ping 10.88.88.230 in COAL bhyve vm</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre> ,---.                   |     ,---. ,---.\n  `---. ,-.-. ,---. ,---. |---  |   | `---.  minimal-64-lts\n      | | | | ,---| |     |     |   |     |  24.4.1\n  `---' ` ' ' `---' `     `---' `---' `---'\n\n[root@coal-nat ~]# ifconfig -a\nlo0: flags=2001000849&lt;UP,LOOPBACK,RUNNING,MULTICAST,IPv4,VIRTUAL&gt; mtu 8232 index 1\n        inet 127.0.0.1 netmask ff000000\nnet0: flags=1104843&lt;UP,BROADCAST,RUNNING,MULTICAST,DHCP,ROUTER,IPv4&gt; mtu 1500 index 2\n        inet 192.168.3.200 netmask ffffff00 broadcast 192.168.3.255\n        ether 62:95:d2:9:1d:d6\nnet1: flags=1100843&lt;UP,BROADCAST,RUNNING,MULTICAST,ROUTER,IPv4&gt; mtu 1500 index 3\n        inet 10.88.88.2 netmask ffffff00 broadcast 10.88.88.255\n        ether 52:8d:42:57:32:22\nlo0: flags=2002000849&lt;UP,LOOPBACK,RUNNING,MULTICAST,IPv6,VIRTUAL&gt; mtu 8252 index 1\n        inet6 ::1/128\n[root@coal-nat ~]# ping -i net1 10.88.88.230\n\nno answer from 10.88.88.230\n\n[root@coal-nat ~]# ifconfig -a\nlo0: flags=2001000849&lt;UP,LOOPBACK,RUNNING,MULTICAST,IPv4,VIRTUAL&gt; mtu 8232 index 1\n        inet 127.0.0.1 netmask ff000000\nnet0: flags=1104843&lt;UP,BROADCAST,RUNNING,MULTICAST,DHCP,ROUTER,IPv4&gt; mtu 1500 index 2\n        inet 192.168.3.200 netmask ffffff00 broadcast 192.168.3.255\n        ether 62:95:d2:9:1d:d6\nnet1: flags=1100843&lt;UP,BROADCAST,RUNNING,MULTICAST,ROUTER,IPv4&gt; mtu 1500 index 3\n        inet 10.88.88.2 netmask ffffff00 broadcast 10.88.88.255\n        ether 52:8d:42:57:32:22\nlo0: flags=2002000849&lt;UP,LOOPBACK,RUNNING,MULTICAST,IPv6,VIRTUAL&gt; mtu 8252 index 1\n        inet6 ::1/128\n        \n[root@coal-nat ~]# ping -i net1 10.88.88.200\nno answer from 10.88.88.200</pre>\n</div></div>\n\n\n\n<p>Test with <a href=\"https://github.com/TritonDataCenter/illumos-joyent/pull/515\" title=\"smart-link\" class=\"external-link\" rel=\"nofollow noreferrer\">https://github.com/TritonDataCenter/illumos-joyent/pull/515</a>  applied </p>\n\n<p>Ping from COAL bhyve vm to coal-nat (native zone)</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>[root@headnode (coal) ~]# ping google.cl\ngoogle.cl is alive\n[root@headnode (coal) ~]# ifconfig -a\nlo0: flags=2001000849&lt;UP,LOOPBACK,RUNNING,MULTICAST,IPv4,VIRTUAL&gt; mtu 8232 index 1\n        inet 127.0.0.1 netmask ff000000\nvioif0: flags=1001000943&lt;UP,BROADCAST,RUNNING,PROMISC,MULTICAST,IPv4,FIXEDMTU&gt; mtu 1500 index 2\n        inet 10.99.99.7 netmask ffffff00 broadcast 10.99.99.255\n        ether 52:54:0:0:0:0\nexternal0: flags=1000843&lt;UP,BROADCAST,RUNNING,MULTICAST,IPv4&gt; mtu 1500 index 3\n        inet 10.88.88.200 netmask ffffff00 broadcast 10.88.88.255\n        ether 2:8:20:f8:88:d\nmanta0: flags=1000843&lt;UP,BROADCAST,RUNNING,MULTICAST,IPv4&gt; mtu 1500 index 4\n        inet 10.77.77.5 netmask ffffff00 broadcast 10.77.77.255\n        ether 90:b8:d0:7a:67:e4\nlo0: flags=2002000849&lt;UP,LOOPBACK,RUNNING,MULTICAST,IPv6,VIRTUAL&gt; mtu 8252 index 1\n        inet6 ::1/128\n[root@headnode (coal) ~]# ifconfig external0:1 plumb 10.88.88.230/24 up\n[root@headnode (coal) ~]# ping 10.88.88.2\n10.88.88.2 is alive\n[root@headnode (coal) ~]# ping -i external0:1 10.88.88.2\n10.88.88.2 is alive\n[root@headnode (coal) ~]#</pre>\n</div></div>\n\n<p>From coal-nat(native) zone ping 10.88.88.230 in COAL bhyve vm</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>[root@coal-nat ~]# ifconfig -a\nlo0: flags=2001000849&lt;UP,LOOPBACK,RUNNING,MULTICAST,IPv4,VIRTUAL&gt; mtu 8232 index 1\n        inet 127.0.0.1 netmask ff000000\nnet0: flags=1104843&lt;UP,BROADCAST,RUNNING,MULTICAST,DHCP,ROUTER,IPv4&gt; mtu 1500 index 2\n        inet 192.168.3.200 netmask ffffff00 broadcast 192.168.3.255\n        ether 62:95:d2:9:1d:d6\nnet1: flags=1100843&lt;UP,BROADCAST,RUNNING,MULTICAST,ROUTER,IPv4&gt; mtu 1500 index 3\n        inet 10.88.88.2 netmask ffffff00 broadcast 10.88.88.255\n        ether 52:8d:42:57:32:22\nlo0: flags=2002000849&lt;UP,LOOPBACK,RUNNING,MULTICAST,IPv6,VIRTUAL&gt; mtu 8252 index 1\n        inet6 ::1/128\n[root@coal-nat ~]# ping -i net1 10.88.88.230\n10.88.88.230 is alive\n[root@coal-nat ~]# ping -i net1 10.88.88.200\n10.88.88.200 is alive\n[root@coal-nat ~]#</pre>\n</div></div>",
+          "updateAuthor": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A70b68467-d824-4d84-a899-a7470bccb323",
+            "accountId": "712020:70b68467-d824-4d84-a899-a7470bccb323",
+            "emailAddress": "carlos.neira@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/32"
+            },
+            "displayName": "Carlos Neira",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "created": "11/Jul/25 4:15 PM",
+          "updated": "11/Jul/25 4:46 PM",
+          "jsdPublic": true
+        },
+        {
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/30152/comment/130610",
+          "id": "130610",
+          "author": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "accountId": "6256ebc46b0007006970072f",
+            "emailAddress": "danmcd@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
+            },
+            "displayName": "Dan McDonald",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "body": "<p>Additional testing, using Kebecloud VM <tt>omnios</tt> which is an OmniOS guest inside BHYVE.  All tests using illumos primitives in the guest, and Triton’s ADMINUI with <em>operator</em> privileges:</p>\n\n<ul class=\"alternate\" type=\"square\">\n\t<li>By default <tt>omnios</tt> has no anti-spoofing bypasses.</li>\n</ul>\n\n\n<ul>\n\t<li>Bypass changes via ADMINUI for IP spoofing get tested with adding addresses to a plumbed guest NIC.  e.g. <tt>ifconfig vioif0:1 plumb 172.24.4.199/24 up</tt> where vioif0 has a 172.24.4.X address already.  Changing this flag works before 6892, and should after.</li>\n</ul>\n\n\n<p><span class=\"image-wrap\" style=\"\"><img src=\"/rest/api/3/attachment/content/15713\" alt=\"Screenshot 2025-07-15 at 3.36.27 PM.png\" height=\"692\" width=\"593\" style=\"border: 0px solid black\" /></span></p>\n\n<ul>\n\t<li>Adding a vnic with a unique MAC is done with the combination of <tt>dladm create-vnic</tt> and <tt>ifconfig</tt>.</li>\n</ul>\n\n\n<p>Final configuration of the guest is:</p>\n\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>vioif0: flags=1000943&lt;UP,BROADCAST,RUNNING,PROMISC,MULTICAST,IPv4&gt; mtu 1500 index 2\n        inet 172.24.4.147 netmask ffffff00 broadcast 172.24.4.255\n        ether 90:b8:d0:e9:10:8b \nvioif0:1: flags=1000943&lt;UP,BROADCAST,RUNNING,PROMISC,MULTICAST,IPv4&gt; mtu 1500 index 2\n        inet 172.24.4.199 netmask ffffff00 broadcast 172.24.4.255\nmacbypass0: flags=1000843&lt;UP,BROADCAST,RUNNING,MULTICAST,IPv4&gt; mtu 1500 index 3\n        inet 172.24.4.200 netmask ffffff00 broadcast 172.24.4.255\n        ether 2:8:20:12:99:63 </pre>\n</div></div>\n\n<p>Before 6892 having bypass changes for MAC spoofing are ineffective.  FURTHERMORE, if <tt>macbypass0</tt> is <b>plumbed</b> it stops traffic from reaching vioif0, possibly due to mac confusion.</p>",
+          "updateAuthor": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "accountId": "6256ebc46b0007006970072f",
+            "emailAddress": "danmcd@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
+            },
+            "displayName": "Dan McDonald",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "created": "15/Jul/25 3:48 PM",
+          "updated": "15/Jul/25 3:50 PM",
+          "jsdPublic": true
+        },
+        {
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/30152/comment/130643",
+          "id": "130643",
+          "author": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "accountId": "6256ebc46b0007006970072f",
+            "emailAddress": "danmcd@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
+            },
+            "displayName": "Dan McDonald",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "body": "<p>AFTER 6892 things change.  The standalone SmartOS stuff works in an improved fashion per earlier tests.  On a Triton CN, for ANY NIC (native, BHYVE, etc.) to set the <tt>allowed_unfiltered_promisc</tt> field you MUST use NAPI’s <a href=\"https://github.com/TritonDataCenter/sdc-napi/blob/master/docs/index.md#updatenic-put-nicsmac_address\" class=\"external-link\" rel=\"nofollow noreferrer\">UpdateNic</a> primitive on the headnode.  This was true before this change, and will be after it, though NOW it will work with BHYVE.  Testing on an OmniOS guest using a vnic assigned to a zone works rather well.</p>\n\n\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre># ifconfig -a ; netstat -rnc\nlo0: flags=2001000849&lt;UP,LOOPBACK,RUNNING,MULTICAST,IPv4,VIRTUAL&gt; mtu 8232 index 1\n        inet 127.0.0.1 netmask ff000000 \nvioif0: flags=1000943&lt;UP,BROADCAST,RUNNING,PROMISC,MULTICAST,IPv4&gt; mtu 1500 index 2\n        inet 172.24.4.156 netmask ffffff00 broadcast 172.24.4.255\n        ether 90:b8:d0:7d:53:4c \nlo0: flags=2002000849&lt;UP,LOOPBACK,RUNNING,MULTICAST,IPv6,VIRTUAL&gt; mtu 8252 index 1\n        inet6 ::1/128 \nvioif0: flags=20002000940&lt;RUNNING,PROMISC,MULTICAST,IPv6&gt; mtu 1500 index 2\n        inet6 ::/0 \n        ether 90:b8:d0:7d:53:4c \n\nRouting Table: IPv4\n  Destination            Gateway          Flags  Ref     Use     Interface \n-------------------- -------------------- ----- ----- ---------- --------- \ndefault              172.24.4.1           UG        2          1           \n127.0.0.1            127.0.0.1            UH        2          0 lo0       \n172.24.4.0/24        172.24.4.156         U         3        533 vioif0    \n\nRouting Table: IPv6\n  Destination/Mask            Gateway                   Flags Ref   Use    If   \n--------------------------- --------------------------- ----- --- ------- ----- \n::1                         ::1                         UH      2       0 lo0   \n# zoneadm list -cv\n  ID NAME             STATUS     PATH                           BRAND    IP    \n   0 global           running    /                              ipkg     shared\n   1 bypass           running    /zones/bypass                  lipkg    excl  \n# zlogin bypass\n[Connected to zone 'bypass' pts/1]\nLast login: Wed Jul 16 04:44:42 2025 on pts/1\nOmniOS r151054  omnios-r151054-180b86b9dd       July 2025\nroot@bypass:~# ifconfig -a ; netstat -rnc\nlo0: flags=2001000849&lt;UP,LOOPBACK,RUNNING,MULTICAST,IPv4,VIRTUAL&gt; mtu 8232 index 1\n        inet 127.0.0.1 netmask ff000000 \nmacbypass0: flags=1000843&lt;UP,BROADCAST,RUNNING,MULTICAST,IPv4&gt; mtu 1500 index 2\n        inet 172.24.4.201 netmask ffffff00 broadcast 172.24.4.255\n        ether 2:8:20:30:d1:29 \nlo0: flags=2002000849&lt;UP,LOOPBACK,RUNNING,MULTICAST,IPv6,VIRTUAL&gt; mtu 8252 index 1\n        inet6 ::1/128 \nmacbypass0: flags=20002000840&lt;RUNNING,MULTICAST,IPv6&gt; mtu 1500 index 2\n        inet6 ::/0 \n        ether 2:8:20:30:d1:29 \n\nRouting Table: IPv4\n  Destination            Gateway          Flags  Ref     Use     Interface \n-------------------- -------------------- ----- ----- ---------- --------- \ndefault              172.24.4.1           UG        2          1           \n127.0.0.1            127.0.0.1            UH        2          0 lo0       \n172.24.4.0/24        172.24.4.201         U         4          8 macbypass0 \n\nRouting Table: IPv6\n  Destination/Mask            Gateway                   Flags Ref   Use    If   \n--------------------------- --------------------------- ----- --- ------- ----- \n::1                         ::1                         UH      2       0 lo0   \nroot@bypass:~# ping google.com\ngoogle.com is alive\nroot@bypass:~# \nlogout\n\n[Connection to zone 'bypass' pts/1 closed]\n# ping google.com\ngoogle.com is alive\n# </pre>\n</div></div>",
+          "updateAuthor": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "accountId": "6256ebc46b0007006970072f",
+            "emailAddress": "danmcd@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
+            },
+            "displayName": "Dan McDonald",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "created": "16/Jul/25 12:45 AM",
+          "updated": "16/Jul/25 12:45 AM",
+          "jsdPublic": true
+        },
+        {
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/30152/comment/130676",
+          "id": "130676",
+          "author": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "accountId": "6256ebc46b0007006970072f",
+            "emailAddress": "danmcd@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
+            },
+            "displayName": "Dan McDonald",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "body": "<p>Of note:  While testing this I triggered a kernel panic in mac_sw_lso() on a promiscuous delivery path, but the delivery path (mac_sw_lso()) needs to be more robust against certain kinds of failures.</p>",
+          "updateAuthor": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "accountId": "6256ebc46b0007006970072f",
+            "emailAddress": "danmcd@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
+            },
+            "displayName": "Dan McDonald",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "created": "16/Jul/25 11:44 AM",
+          "updated": "16/Jul/25 11:44 AM",
+          "jsdPublic": true
+        }
+      ],
+      "self": "https://mnx.atlassian.net/rest/api/3/issue/30152/comment",
+      "maxResults": 7,
+      "total": 7,
+      "startAt": 0
+    },
+    "worklog": {
+      "startAt": 0,
+      "maxResults": 20,
+      "total": 0,
+      "worklogs": []
+    }
+  },
+  "fields": {
+    "statuscategorychangedate": "2025-07-16T11:44:12.320-0400",
+    "issuetype": {
+      "self": "https://mnx.atlassian.net/rest/api/3/issuetype/10032",
+      "id": "10032",
+      "description": "An improvement or enhancement to an existing feature or task. (Migrated on 13 Apr 2022 02:01 UTC)",
+      "iconUrl": "https://mnx.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10300?size=medium",
+      "name": "Improvement",
+      "subtask": false,
+      "avatarId": 10300,
+      "hierarchyLevel": 0
+    },
+    "timespent": null,
+    "customfield_10030": null,
+    "project": {
+      "self": "https://mnx.atlassian.net/rest/api/3/project/10022",
+      "id": "10022",
+      "key": "OS",
+      "name": "OS: Operating System",
+      "projectTypeKey": "software",
+      "simplified": false,
+      "avatarUrls": {
+        "48x48": "https://mnx.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10552",
+        "24x24": "https://mnx.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10552?size=small",
+        "16x16": "https://mnx.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10552?size=xsmall",
+        "32x32": "https://mnx.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10552?size=medium"
+      },
+      "projectCategory": {
+        "self": "https://mnx.atlassian.net/rest/api/3/projectCategory/10002",
+        "id": "10002",
+        "description": "",
+        "name": "Teams"
+      }
+    },
+    "customfield_10110": null,
+    "fixVersions": [],
+    "statusCategory": {
+      "self": "https://mnx.atlassian.net/rest/api/3/statuscategory/3",
+      "id": 3,
+      "key": "done",
+      "colorName": "green",
+      "name": "Done"
+    },
+    "customfield_10111": null,
+    "aggregatetimespent": null,
+    "customfield_10112": null,
+    "resolution": null,
+    "customfield_10114": null,
+    "customfield_10104": null,
+    "customfield_10105": null,
+    "customfield_10149": null,
+    "customfield_10106": null,
+    "customfield_10029": null,
+    "customfield_10109": null,
+    "resolutiondate": null,
+    "workratio": -1,
+    "lastViewed": null,
+    "watches": {
+      "self": "https://mnx.atlassian.net/rest/api/3/issue/OS-6892/watchers",
+      "watchCount": 3,
+      "isWatching": false
+    },
+    "issuerestriction": {
+      "issuerestrictions": {},
+      "shouldDisplay": false
+    },
+    "customfield_10060": null,
+    "created": "2018-04-16T11:39:17.587-0400",
+    "customfield_10020": [
+      {
+        "id": 445,
+        "name": "release-20250710",
+        "state": "closed",
+        "boardId": 7,
+        "goal": "SmartOS release 20250710",
+        "startDate": "2025-06-30T14:04:57.157Z",
+        "endDate": "2025-07-14T20:00:00.000Z",
+        "completeDate": "2025-07-14T14:01:57.837Z"
+      },
+      {
+        "id": 478,
+        "name": "release-20250724",
+        "state": "closed",
+        "boardId": 7,
+        "goal": "Triton and SmartOS release 20250724",
+        "startDate": "2025-07-14T14:02:38.676Z",
+        "endDate": "2025-07-28T20:00:00.000Z",
+        "completeDate": "2025-07-28T13:04:18.254Z"
+      }
+    ],
+    "customfield_10021": null,
+    "customfield_10066": {
+      "self": "https://mnx.atlassian.net/rest/api/3/customFieldOption/10173",
+      "value": "No",
+      "id": "10173"
+    },
+    "customfield_10022": null,
+    "customfield_10100": null,
+    "priority": {
+      "self": "https://mnx.atlassian.net/rest/api/3/priority/10003",
+      "iconUrl": "https://mnx.atlassian.net/images/icons/priorities/major.svg",
+      "name": "4 - Normal",
+      "id": "10003"
+    },
+    "customfield_10023": null,
+    "customfield_10101": null,
+    "customfield_10024": "2025-07-09T14:54:36.899-0400",
+    "customfield_10102": null,
+    "customfield_10025": null,
+    "customfield_10103": null,
+    "labels": [
+      "bhyve",
+      "public"
+    ],
+    "customfield_10016": null,
+    "customfield_10017": null,
+    "customfield_10019": "1|hzz153:",
+    "timeestimate": null,
+    "aggregatetimeoriginalestimate": null,
+    "versions": [],
+    "issuelinks": [],
+    "assignee": {
+      "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A70b68467-d824-4d84-a899-a7470bccb323",
+      "accountId": "712020:70b68467-d824-4d84-a899-a7470bccb323",
+      "emailAddress": "carlos.neira@mnx.io",
+      "avatarUrls": {
+        "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/48",
+        "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/24",
+        "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/16",
+        "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/32"
+      },
+      "displayName": "Carlos Neira",
+      "active": true,
+      "timeZone": "America/Detroit",
+      "accountType": "atlassian"
+    },
+    "updated": "2025-07-16T11:44:12.320-0400",
+    "status": {
+      "self": "https://mnx.atlassian.net/rest/api/3/status/5",
+      "description": "A resolution has been taken, and it is awaiting verification by reporter. From here issues are either reopened, or are closed.",
+      "iconUrl": "https://mnx.atlassian.net/images/icons/statuses/resolved.png",
+      "name": "Resolved",
+      "id": "5",
+      "statusCategory": {
+        "self": "https://mnx.atlassian.net/rest/api/3/statuscategory/3",
+        "id": 3,
+        "key": "done",
+        "colorName": "green",
+        "name": "Done"
+      }
+    },
+    "components": [],
+    "customfield_10093": null,
+    "customfield_10094": null,
+    "customfield_10051": null,
+    "timeoriginalestimate": null,
+    "customfield_10095": null,
+    "customfield_10096": null,
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "For use-cases like SmartOS-on-SmartOS, viona must configure itself, in certain circumstances, to be a promiscuous MAC client on top of the provided vnic.  This could be very rudimentary at first, being enabled only when the zone has been configured to allow such promiscuous access.  Toggling such functionality could be enabled later, when viona supports the virtio-net control queue feature."
+            }
+          ]
+        }
+      ]
+    },
+    "customfield_10097": null,
+    "customfield_10010": null,
+    "customfield_10098": [],
+    "customfield_10099": null,
+    "customfield_10056": null,
+    "customfield_10014": null,
+    "timetracking": {},
+    "customfield_10015": null,
+    "customfield_10005": null,
+    "customfield_10006": null,
+    "customfield_10007": null,
+    "security": null,
+    "customfield_10008": null,
+    "aggregatetimeestimate": null,
+    "customfield_10009": null,
+    "attachment": [
+      {
+        "self": "https://mnx.atlassian.net/rest/api/3/attachment/15713",
+        "id": "15713",
+        "filename": "Screenshot 2025-07-15 at 3.36.27 PM.png",
+        "author": {
+          "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+          "accountId": "6256ebc46b0007006970072f",
+          "emailAddress": "danmcd@mnx.io",
+          "avatarUrls": {
+            "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
+            "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+            "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+            "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
+          },
+          "displayName": "Dan McDonald",
+          "active": true,
+          "timeZone": "America/Detroit",
+          "accountType": "atlassian"
+        },
+        "created": "2025-07-15T15:48:47.929-0400",
+        "size": 93215,
+        "mimeType": "image/png",
+        "content": "https://mnx.atlassian.net/rest/api/3/attachment/content/15713",
+        "thumbnail": "https://mnx.atlassian.net/rest/api/3/attachment/thumbnail/15713"
+      }
+    ],
+    "summary": "viona should allow promisc interfaces",
+    "creator": {
+      "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=624b27045f63fd0069b53cd6",
+      "accountId": "624b27045f63fd0069b53cd6",
+      "avatarUrls": {
+        "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/default-avatar.png",
+        "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/default-avatar.png",
+        "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/default-avatar.png",
+        "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/default-avatar.png"
+      },
+      "displayName": "Former user",
+      "active": false,
+      "timeZone": "America/Detroit",
+      "accountType": "atlassian"
+    },
+    "subtasks": [],
+    "customfield_10041": null,
+    "customfield_10042": null,
+    "reporter": {
+      "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=624b27045f63fd0069b53cd6",
+      "accountId": "624b27045f63fd0069b53cd6",
+      "avatarUrls": {
+        "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/default-avatar.png",
+        "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/default-avatar.png",
+        "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/default-avatar.png",
+        "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/default-avatar.png"
+      },
+      "displayName": "Former user",
+      "active": false,
+      "timeZone": "America/Detroit",
+      "accountType": "atlassian"
+    },
+    "aggregateprogress": {
+      "progress": 0,
+      "total": 0
+    },
+    "customfield_10088": null,
+    "customfield_10001": null,
+    "customfield_10002": [],
+    "customfield_10003": null,
+    "customfield_10004": null,
+    "customfield_10115": null,
+    "customfield_10116": null,
+    "environment": null,
+    "duedate": null,
+    "progress": {
+      "progress": 0,
+      "total": 0
+    },
+    "votes": {
+      "self": "https://mnx.atlassian.net/rest/api/3/issue/OS-6892/votes",
+      "votes": 0,
+      "hasVoted": false
+    },
+    "comment": {
+      "comments": [
+        {
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/30152/comment/130413",
+          "id": "130413",
+          "author": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "accountId": "6256ebc46b0007006970072f",
+            "emailAddress": "danmcd@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
+            },
+            "displayName": "Dan McDonald",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "body": {
+            "type": "doc",
+            "version": 1,
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "inlineCard",
+                    "attrs": {
+                      "url": "https://www.illumos.org/issues/14716"
+                    }
+                  },
+                  {
+                    "type": "text",
+                    "text": "  may be necessary, but not sufficient, to solve this bug."
+                  }
+                ]
+              }
+            ]
+          },
+          "updateAuthor": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "accountId": "6256ebc46b0007006970072f",
+            "emailAddress": "danmcd@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
+            },
+            "displayName": "Dan McDonald",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "created": "2025-07-09T14:54:36.899-0400",
+          "updated": "2025-07-09T14:54:36.899-0400",
+          "jsdPublic": true
+        },
+        {
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/30152/comment/130511",
+          "id": "130511",
+          "author": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A70b68467-d824-4d84-a899-a7470bccb323",
+            "accountId": "712020:70b68467-d824-4d84-a899-a7470bccb323",
+            "emailAddress": "carlos.neira@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/32"
+            },
+            "displayName": "Carlos Neira",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "body": {
+            "type": "doc",
+            "version": 1,
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "As part of development and in the spirit of dogfooding, we attempted to update this SmartOS on SmartOS setup by "
+                  },
+                  {
+                    "type": "mention",
+                    "attrs": {
+                      "id": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+                      "text": "@Nahum Shalman",
+                      "accessLevel": "",
+                      "localId": "c87f2f12-5f56-4e32-9c3e-cbcbbcced6e6"
+                    }
+                  },
+                  {
+                    "type": "text",
+                    "text": "  ("
+                  },
+                  {
+                    "type": "inlineCard",
+                    "attrs": {
+                      "url": "https://blog.shalman.org/running-sdc-coal-on-smartos/"
+                    }
+                  },
+                  {
+                    "type": "text",
+                    "text": " )."
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "However, during a debugging session with "
+                  },
+                  {
+                    "type": "mention",
+                    "attrs": {
+                      "id": "6256ebc46b0007006970072f",
+                      "text": "@Dan McDonald",
+                      "accessLevel": "",
+                      "localId": "5b093ccb-0f50-41fc-be4a-aaded618d76e"
+                    }
+                  },
+                  {
+                    "type": "text",
+                    "text": "  and "
+                  },
+                  {
+                    "type": "mention",
+                    "attrs": {
+                      "id": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+                      "text": "@Nahum Shalman",
+                      "accessLevel": "",
+                      "localId": "416ed3ae-204a-4b77-a14f-62976363b24d"
+                    }
+                  },
+                  {
+                    "type": "text",
+                    "text": ", we  discovered that the VM's connectivity was not working. In that session, we identified a bhyve(8) network-backend option as the culprit."
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "   The avalaible network-backend-options are:"
+                  }
+                ]
+              },
+              {
+                "type": "codeBlock",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "             promiscphys\n                       Enable promiscuous mode at the physical level\n                       (default: false)\n\n             promiscsap\n                       Enable promiscuous mode at the SAP level \n                       (default:true)\n\n             promiscmulti\n                       Enable promiscuous mode for all multicast addresses\n                       (default: true)\n            \n             promiscrxonly\n                        The selected promiscuous modes are only enabled for\n                         received traffic (default: true).\n"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "These are enabled by default, except for "
+                  },
+                  {
+                    "type": "text",
+                    "text": "promiscphys",
+                    "marks": [
+                      {
+                        "type": "em"
+                      },
+                      {
+                        "type": "strong"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Setting this backend option when a zone specifies "
+                  },
+                  {
+                    "type": "text",
+                    "text": "allow_mac_spoofing=true",
+                    "marks": [
+                      {
+                        "type": "em"
+                      },
+                      {
+                        "type": "strong"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": ", along with adding support for unfiltered promiscuous mode to the bhyve brand, resolved the problem."
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Testing done:",
+                    "marks": [
+                      {
+                        "type": "strong"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "With a new PI image build with this branch "
+                  },
+                  {
+                    "type": "inlineCard",
+                    "attrs": {
+                      "url": "https://github.com/TritonDataCenter/illumos-joyent/pull/515"
+                    }
+                  },
+                  {
+                    "type": "text",
+                    "text": " . This setup was replicated using bhyve "
+                  },
+                  {
+                    "type": "inlineCard",
+                    "attrs": {
+                      "url": "https://blog.shalman.org/running-sdc-coal-on-smartos/"
+                    }
+                  },
+                  {
+                    "type": "text",
+                    "text": "  "
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Provisioning a bhyve zone with allow_mac_spoofing=true."
+                  }
+                ]
+              },
+              {
+                "type": "codeBlock",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "[root@boldo /opt/templates]# cat coal-headnode.json\n{\n  \"alias\": \"coal-headnode2\",\n  \"brand\": \"bhyve\",\n  \"ram\": 32096,\n  \"vcpus\": 3,\n  \"autoboot\": false,\n  \"nics\": [\n    {\n      \"mac\": \"52:54:00:00:00:00\",\n      \"nic_tag\": \"sdc_admin0\",\n      \"model\": \"e1000\",\n      \"ip\": \"dhcp\",\n      \"allow_dhcp_spoofing\": true,\n      \"allow_ip_spoofing\": true,\n      \"allow_mac_spoofing\": true,\n      \"allow_restricted_traffic\": true,\n      \"allow_unfiltered_promisc\": true,\n      \"dhcp_server\": true\n    },\n    {\n      \"mac\": \"52:54:00:00:00:01\",\n      \"nic_tag\": \"sdc_external0\",\n      \"model\": \"e1000\",\n      \"ip\": \"dhcp\",\n      \"allow_dhcp_spoofing\": true,\n      \"allow_ip_spoofing\": true,\n      \"allow_mac_spoofing\": true,\n      \"allow_restricted_traffic\": true,\n      \"allow_unfiltered_promisc\": true,\n      \"dhcp_server\": true\n    }\n  ],\n  \"disks\": [\n    {\n      \"size\": 8192,\n      \"model\": \"virtio\"\n    },\n    {\n      \"size\": 65440,\n      \"model\": \"virtio\"\n    }\n  ]\n} "
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Provisioning a bhyve zone without allow_mac_spoofing "
+                  }
+                ]
+              },
+              {
+                "type": "codeBlock",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "[root@boldo /opt/templates]# cat ubu.json\n{\n  \"alias\": \"ubuntu-dev\",\n  \"brand\": \"bhyve\",\n  \"ram\": 4096,\n  \"vcpus\": 3,\n  \"autoboot\": false,\n  \"nics\":\n  [\n    {\n      \"nic_tag\": \"sdc_external0\",\n      \"model\": \"virtio\",\n      \"ip\": \"dhcp\",\n      \"dhcp_server\": true\n\n    }],\n \"disks\": [\n    {\n      \"image_uuid\": \"97219479-f34c-4f1d-8a71-cd774dada4cf\",\n      \"boot\": true,\n      \"model\": \"virtio\"\n    },\n    {\n      \"model\": \"virtio\",\n      \"size\": 25600\n    }\n  ]\n}"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph"
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "We check that both bhyve processes are running and their internal vm names"
+                  }
+                ]
+              },
+              {
+                "type": "codeBlock",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "           SOFTC               VM             ZONE  TOPO MiB    F   NAME\nfffffeb2141f41c0 fffffeb166b5b000 fffffeb16faa4540 3/1/1 32129   T  SYSbhyve-75\nfffffeb230171080 fffffeb167c11000 fffffeb16faa4000 3/1/1 4129    T  SYSbhyve-118"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph"
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "SYSbhyve-75 is our COAL bhyve vm, checking the bhyve argument for that gives us"
+                  }
+                ]
+              },
+              {
+                "type": "codeBlock",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "[root@boldo /opt/templates]# pargs 11790\n11790:  bhyve -H -U d5ad188a-7a73-4aef-a25a-5d9a7a3f7696 -B 1,manufacturer=Joyent,produ\nargv[0]: bhyve\nargv[1]: -H\nargv[2]: -U\nargv[3]: d5ad188a-7a73-4aef-a25a-5d9a7a3f7696\nargv[4]: -B\nargv[5]: 1,manufacturer=Joyent,product=SmartDC HVM,version=7.20250707T155014Z,serial=d5ad188a-7a73-4aef-a25a-5d9a7a3f7696,sku=001,family=Virtual Machine\nargv[6]: -s\nargv[7]: 31,lpc\nargv[8]: -l\nargv[9]: com1,/dev/zconsole\nargv[10]: -l\nargv[11]: com2,socket,/tmp/vm.ttyb\nargv[12]: -l\nargv[13]: bootrom,/usr/share/bhyve/uefi-csm-rom.bin\nargv[14]: -s\nargv[15]: 0,hostbridge,model=i440fx\nargv[16]: -c\nargv[17]: 3\nargv[18]: -m\nargv[19]: 32096\nargv[20]: -s\nargv[21]: 0:4:0,virtio-blk,/dev/zvol/rdsk/zones/d5ad188a-7a73-4aef-a25a-5d9a7a3f7696/disk0\nargv[22]: -s\nargv[23]: 0:4:1,virtio-blk,/dev/zvol/rdsk/zones/d5ad188a-7a73-4aef-a25a-5d9a7a3f7696/disk1\nargv[24]: -s\nargv[25]: 0:4:2,virtio-blk,/dev/zvol/rdsk/zones/d5ad188a-7a73-4aef-a25a-5d9a7a3f7696/disk2\nargv[26]: -s\nargv[27]: 0:4:3,virtio-blk,/dev/zvol/rdsk/zones/d5ad188a-7a73-4aef-a25a-5d9a7a3f7696/disk3\nargv[28]: -s\nargv[29]: 6:0,virtio-net-viona,net0,promiscphys=true\nargv[30]: -s\nargv[31]: 6:1,virtio-net-viona,net1,promiscphys=true\nargv[32]: -s\nargv[33]: 30:0,fbuf,vga=off,unix=/tmp/vm.vnc\nargv[34]: -s\nargv[35]: 30:1,xhci,tablet\nargv[36]: SYSbhyve-75"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "promiscphys=true as required."
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Sysbhyve-118 is a Linux Bhyve vm with no allow_mac_spoofing specified."
+                  }
+                ]
+              },
+              {
+                "type": "codeBlock",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "[root@boldo /opt/templates]# pargs 12397\n12397:  bhyve -H -U 2231ec78-e3e2-43a6-a2b9-dce0683d02b0 -B 1,manufacturer=Joyent,produ\nargv[0]: bhyve\nargv[1]: -H\nargv[2]: -U\nargv[3]: 2231ec78-e3e2-43a6-a2b9-dce0683d02b0\nargv[4]: -B\nargv[5]: 1,manufacturer=Joyent,product=SmartDC HVM,version=7.20250707T155014Z,serial=2231ec78-e3e2-43a6-a2b9-dce0683d02b0,sku=001,family=Virtual Machine\nargv[6]: -s\nargv[7]: 31,lpc\nargv[8]: -l\nargv[9]: com1,/dev/zconsole\nargv[10]: -l\nargv[11]: com2,socket,/tmp/vm.ttyb\nargv[12]: -l\nargv[13]: bootrom,/usr/share/bhyve/uefi-csm-rom.bin\nargv[14]: -s\nargv[15]: 0,hostbridge,model=i440fx\nargv[16]: -c\nargv[17]: 3\nargv[18]: -m\nargv[19]: 4096\nargv[20]: -s\nargv[21]: 0:4:0,virtio-blk,/dev/zvol/rdsk/zones/2231ec78-e3e2-43a6-a2b9-dce0683d02b0/disk0\nargv[22]: -s\nargv[23]: 0:4:1,virtio-blk,/dev/zvol/rdsk/zones/2231ec78-e3e2-43a6-a2b9-dce0683d02b0/disk1\nargv[24]: -s\nargv[25]: 6:0,virtio-net-viona,net0\nargv[26]: -s\nargv[27]: 30:0,fbuf,vga=off,unix=/tmp/vm.vnc\nargv[28]: -s\nargv[29]: 30:1,xhci,tablet\nargv[30]: SYSbhyve-118"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "So as expected, we don’t see promiscphys=true in the backend options."
+                  }
+                ]
+              }
+            ]
+          },
+          "updateAuthor": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A70b68467-d824-4d84-a899-a7470bccb323",
+            "accountId": "712020:70b68467-d824-4d84-a899-a7470bccb323",
+            "emailAddress": "carlos.neira@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/32"
+            },
+            "displayName": "Carlos Neira",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "created": "2025-07-11T10:07:18.550-0400",
+          "updated": "2025-07-11T10:07:18.550-0400",
+          "jsdPublic": true
+        },
+        {
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/30152/comment/130544",
+          "id": "130544",
+          "author": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A70b68467-d824-4d84-a899-a7470bccb323",
+            "accountId": "712020:70b68467-d824-4d84-a899-a7470bccb323",
+            "emailAddress": "carlos.neira@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/32"
+            },
+            "displayName": "Carlos Neira",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "body": {
+            "type": "doc",
+            "version": 1,
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Case 2: ",
+                    "marks": [
+                      {
+                        "type": "strong"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " Test allow_ip_spoofing in a bhyve vm (COAL) with "
+                  },
+                  {
+                    "type": "text",
+                    "text": "promiscphys=true",
+                    "marks": [
+                      {
+                        "type": "em"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " with "
+                  },
+                  {
+                    "type": "inlineCard",
+                    "attrs": {
+                      "url": "https://github.com/TritonDataCenter/illumos-joyent/pull/515"
+                    }
+                  },
+                  {
+                    "type": "text",
+                    "text": "  "
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "zone nics definition:"
+                  }
+                ]
+              },
+              {
+                "type": "codeBlock",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "\"nics\": [\n    {\n      \"mac\": \"52:54:00:00:00:00\",\n      \"nic_tag\": \"sdc_admin0\",\n      \"model\": \"e1000\",\n      \"ip\": \"dhcp\",\n      \"allow_dhcp_spoofing\": true,\n      \"allow_ip_spoofing\": true,\n      \"allow_mac_spoofing\": true,\n      \"allow_restricted_traffic\": true,\n      \"allow_unfiltered_promisc\": true,\n      \"dhcp_server\": true\n    },\n    {\n      \"mac\": \"52:54:00:00:00:01\",\n      \"nic_tag\": \"sdc_external0\",\n      \"model\": \"e1000\",\n      \"ip\": \"dhcp\",\n      \"allow_dhcp_spoofing\": true,\n      \"allow_ip_spoofing\": true,\n      \"allow_mac_spoofing\": true,\n      \"allow_restricted_traffic\": true,\n      \"allow_unfiltered_promisc\": true,\n      \"dhcp_server\": true\n    }\n  ],"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph"
+              },
+              {
+                "type": "codeBlock",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "[root@headnode (coal) ~]# dladm show-vnic\nLINK         OVER       SPEED    MACADDRESS        MACADDRTYPE VID  ZONE\nexternal0    vioif1     1000     2:8:20:f8:88:d    fixed       0    --\nmanta0       vioif1     1000     90:b8:d0:7a:67:e4 fixed       0    --\n\n[root@headnode (coal) ~]# dladm show-phys\nLINK         MEDIA                STATE      SPEED    DUPLEX   DEVICE\nvioif0       Ethernet             up         1000     full     vioif0\nvioif1       Ethernet             up         1000     full     vioif1\n\n[root@headnode (coal) ~]# ifconfig -a\nlo0: flags=2001000849<UP,LOOPBACK,RUNNING,MULTICAST,IPv4,VIRTUAL> mtu 8232 index 1\n        inet 127.0.0.1 netmask ff000000\nvioif0: flags=1001000943<UP,BROADCAST,RUNNING,PROMISC,MULTICAST,IPv4,FIXEDMTU> mtu 1500 index 2\n        inet 10.99.99.7 netmask ffffff00 broadcast 10.99.99.255\n        ether 52:54:0:0:0:0\nexternal0: flags=1000843<UP,BROADCAST,RUNNING,MULTICAST,IPv4> mtu 1500 index 3\n        inet 10.88.88.200 netmask ffffff00 broadcast 10.88.88.255\n        ether 2:8:20:f8:88:d\nmanta0: flags=1000843<UP,BROADCAST,RUNNING,MULTICAST,IPv4> mtu 1500 index 4\n        inet 10.77.77.5 netmask ffffff00 broadcast 10.77.77.255\n        ether 90:b8:d0:7a:67:e4\nlo0: flags=2002000849<UP,LOOPBACK,RUNNING,MULTICAST,IPv6,VIRTUAL> mtu 8252 index 1\n        inet6 ::1/128\n[root@headnode (coal) ~]# ifconfig external0:1 plumb 10.88.88.230/24 up\n[root@headnode (coal) ~]# ping -i 10.88.88.230 tritondatacenter.com\ntritondatacenter.com is alive\n[root@headnode (coal) ~]# ping -i manta0 tritondatacenter.com\nping: sendto No route to host\n[root@headnode (coal) ~]# ping -i external0:1  tritondatacenter.com\ntritondatacenter.com is alive"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Case 2:  ",
+                    "marks": [
+                      {
+                        "type": "strong"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": "COAL bhyve vm "
+                  },
+                  {
+                    "type": "text",
+                    "text": "without",
+                    "marks": [
+                      {
+                        "type": "strong"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " "
+                  },
+                  {
+                    "type": "text",
+                    "text": "promiscphys=true  (",
+                    "marks": [
+                      {
+                        "type": "em"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": "not running the current fix",
+                    "marks": [
+                      {
+                        "type": "em"
+                      },
+                      {
+                        "type": "strong"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": ")  same nic definitions.",
+                    "marks": [
+                      {
+                        "type": "em"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "codeBlock",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "[root@headnode (coal) ~]# ifconfig external0:1 plumb 10.88.88.230/24 up\n[root@headnode (coal) ~]# ifconfig -a\nlo0: flags=2001000849<UP,LOOPBACK,RUNNING,MULTICAST,IPv4,VIRTUAL> mtu 8232 index 1\n        inet 127.0.0.1 netmask ff000000\nvioif0: flags=1001000843<UP,BROADCAST,RUNNING,MULTICAST,IPv4,FIXEDMTU> mtu 1500 index 2\n        inet 10.99.99.7 netmask ffffff00 broadcast 10.99.99.255\n        ether 52:54:0:0:0:0\nexternal0: flags=1000843<UP,BROADCAST,RUNNING,MULTICAST,IPv4> mtu 1500 index 3\n        inet 10.88.88.200 netmask ffffff00 broadcast 10.88.88.255\n        ether 2:8:20:f8:88:d\nexternal0:1: flags=1000843<UP,BROADCAST,RUNNING,MULTICAST,IPv4> mtu 1500 index 3\n        inet 10.88.88.230 netmask ffffff00 broadcast 10.88.88.255\nmanta0: flags=1000843<UP,BROADCAST,RUNNING,MULTICAST,IPv4> mtu 1500 index 4\n        inet 10.77.77.5 netmask ffffff00 broadcast 10.77.77.255\n        ether 90:b8:d0:7a:67:e4\nlo0: flags=2002000849<UP,LOOPBACK,RUNNING,MULTICAST,IPv6,VIRTUAL> mtu 8252 index 1\n        inet6 ::1/128\n[root@headnode (coal) ~]# ping -i 10.88.88.230 8.8.8.8\nno answer from 8.8.8.8\n"
+                  }
+                ]
+              }
+            ]
+          },
+          "updateAuthor": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A70b68467-d824-4d84-a899-a7470bccb323",
+            "accountId": "712020:70b68467-d824-4d84-a899-a7470bccb323",
+            "emailAddress": "carlos.neira@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/32"
+            },
+            "displayName": "Carlos Neira",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "created": "2025-07-11T14:31:48.833-0400",
+          "updated": "2025-07-11T14:33:16.940-0400",
+          "jsdPublic": true
+        },
+        {
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/30152/comment/130545",
+          "id": "130545",
+          "author": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A70b68467-d824-4d84-a899-a7470bccb323",
+            "accountId": "712020:70b68467-d824-4d84-a899-a7470bccb323",
+            "emailAddress": "carlos.neira@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/32"
+            },
+            "displayName": "Carlos Neira",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "body": {
+            "type": "doc",
+            "version": 1,
+            "content": [
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "on-link peers works both ways ",
+                            "marks": [
+                              {
+                                "type": "strong"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "hardBreak"
+                          },
+                          {
+                            "type": "text",
+                            "text": "Test  "
+                          },
+                          {
+                            "type": "text",
+                            "text": "without fix",
+                            "marks": [
+                              {
+                                "type": "em"
+                              },
+                              {
+                                "type": "strong"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "text",
+                            "text": " applied, in COAL bhyve vm, ping "
+                          },
+                          {
+                            "type": "text",
+                            "text": "coal-nat(native) ",
+                            "marks": [
+                              {
+                                "type": "em"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "text",
+                            "text": "zone at 10.88.88.2"
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "codeBlock",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "[root@headnode (coal) ~]# ifconfig -a\nlo0: flags=2001000849<UP,LOOPBACK,RUNNING,MULTICAST,IPv4,VIRTUAL> mtu 8232 index 1\n        inet 127.0.0.1 netmask ff000000\nvioif0: flags=1001000943<UP,BROADCAST,RUNNING,PROMISC,MULTICAST,IPv4,FIXEDMTU> mtu 1500 index 2\n        inet 10.99.99.7 netmask ffffff00 broadcast 10.99.99.255\n        ether 52:54:0:0:0:0\nexternal0: flags=1000843<UP,BROADCAST,RUNNING,MULTICAST,IPv4> mtu 1500 index 3\n        inet 10.88.88.200 netmask ffffff00 broadcast 10.88.88.255\n        ether 2:8:20:f8:88:d\nexternal0:1: flags=1000843<UP,BROADCAST,RUNNING,MULTICAST,IPv4> mtu 1500 index 3\n        inet 10.88.88.230 netmask ffffff00 broadcast 10.88.88.255\nmanta0: flags=1000843<UP,BROADCAST,RUNNING,MULTICAST,IPv4> mtu 1500 index 4\n        inet 10.77.77.5 netmask ffffff00 broadcast 10.77.77.255\n        ether 90:b8:d0:7a:67:e4\nlo0: flags=2002000849<UP,LOOPBACK,RUNNING,MULTICAST,IPv6,VIRTUAL> mtu 8252 index 1\n        inet6 ::1/128\n[root@headnode (coal) ~]# ping -i external0:1  10.88.88.2\nno answer from 10.88.88.2\n[root@headnode (coal) ~]# ping -i external0 10.88.88.2\nno answer from 10.88.88.2"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "From coal-nat(native) zone ping 10.88.88.230 in COAL bhyve vm"
+                  }
+                ]
+              },
+              {
+                "type": "codeBlock",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": " ,---.                   |     ,---. ,---.\n  `---. ,-.-. ,---. ,---. |---  |   | `---.  minimal-64-lts\n      | | | | ,---| |     |     |   |     |  24.4.1\n  `---' ` ' ' `---' `     `---' `---' `---'\n\n[root@coal-nat ~]# ifconfig -a\nlo0: flags=2001000849<UP,LOOPBACK,RUNNING,MULTICAST,IPv4,VIRTUAL> mtu 8232 index 1\n        inet 127.0.0.1 netmask ff000000\nnet0: flags=1104843<UP,BROADCAST,RUNNING,MULTICAST,DHCP,ROUTER,IPv4> mtu 1500 index 2\n        inet 192.168.3.200 netmask ffffff00 broadcast 192.168.3.255\n        ether 62:95:d2:9:1d:d6\nnet1: flags=1100843<UP,BROADCAST,RUNNING,MULTICAST,ROUTER,IPv4> mtu 1500 index 3\n        inet 10.88.88.2 netmask ffffff00 broadcast 10.88.88.255\n        ether 52:8d:42:57:32:22\nlo0: flags=2002000849<UP,LOOPBACK,RUNNING,MULTICAST,IPv6,VIRTUAL> mtu 8252 index 1\n        inet6 ::1/128\n[root@coal-nat ~]# ping -i net1 10.88.88.230\n\nno answer from 10.88.88.230\n\n[root@coal-nat ~]# ifconfig -a\nlo0: flags=2001000849<UP,LOOPBACK,RUNNING,MULTICAST,IPv4,VIRTUAL> mtu 8232 index 1\n        inet 127.0.0.1 netmask ff000000\nnet0: flags=1104843<UP,BROADCAST,RUNNING,MULTICAST,DHCP,ROUTER,IPv4> mtu 1500 index 2\n        inet 192.168.3.200 netmask ffffff00 broadcast 192.168.3.255\n        ether 62:95:d2:9:1d:d6\nnet1: flags=1100843<UP,BROADCAST,RUNNING,MULTICAST,ROUTER,IPv4> mtu 1500 index 3\n        inet 10.88.88.2 netmask ffffff00 broadcast 10.88.88.255\n        ether 52:8d:42:57:32:22\nlo0: flags=2002000849<UP,LOOPBACK,RUNNING,MULTICAST,IPv6,VIRTUAL> mtu 8252 index 1\n        inet6 ::1/128\n        \n[root@coal-nat ~]# ping -i net1 10.88.88.200\nno answer from 10.88.88.200"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph"
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Test with "
+                  },
+                  {
+                    "type": "inlineCard",
+                    "attrs": {
+                      "url": "https://github.com/TritonDataCenter/illumos-joyent/pull/515"
+                    }
+                  },
+                  {
+                    "type": "text",
+                    "text": "  applied "
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Ping from COAL bhyve vm to coal-nat (native zone)"
+                  }
+                ]
+              },
+              {
+                "type": "codeBlock",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "[root@headnode (coal) ~]# ping google.cl\ngoogle.cl is alive\n[root@headnode (coal) ~]# ifconfig -a\nlo0: flags=2001000849<UP,LOOPBACK,RUNNING,MULTICAST,IPv4,VIRTUAL> mtu 8232 index 1\n        inet 127.0.0.1 netmask ff000000\nvioif0: flags=1001000943<UP,BROADCAST,RUNNING,PROMISC,MULTICAST,IPv4,FIXEDMTU> mtu 1500 index 2\n        inet 10.99.99.7 netmask ffffff00 broadcast 10.99.99.255\n        ether 52:54:0:0:0:0\nexternal0: flags=1000843<UP,BROADCAST,RUNNING,MULTICAST,IPv4> mtu 1500 index 3\n        inet 10.88.88.200 netmask ffffff00 broadcast 10.88.88.255\n        ether 2:8:20:f8:88:d\nmanta0: flags=1000843<UP,BROADCAST,RUNNING,MULTICAST,IPv4> mtu 1500 index 4\n        inet 10.77.77.5 netmask ffffff00 broadcast 10.77.77.255\n        ether 90:b8:d0:7a:67:e4\nlo0: flags=2002000849<UP,LOOPBACK,RUNNING,MULTICAST,IPv6,VIRTUAL> mtu 8252 index 1\n        inet6 ::1/128\n[root@headnode (coal) ~]# ifconfig external0:1 plumb 10.88.88.230/24 up\n[root@headnode (coal) ~]# ping 10.88.88.2\n10.88.88.2 is alive\n[root@headnode (coal) ~]# ping -i external0:1 10.88.88.2\n10.88.88.2 is alive\n[root@headnode (coal) ~]#"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "From coal-nat(native) zone ping 10.88.88.230 in COAL bhyve vm"
+                  }
+                ]
+              },
+              {
+                "type": "codeBlock",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "[root@coal-nat ~]# ifconfig -a\nlo0: flags=2001000849<UP,LOOPBACK,RUNNING,MULTICAST,IPv4,VIRTUAL> mtu 8232 index 1\n        inet 127.0.0.1 netmask ff000000\nnet0: flags=1104843<UP,BROADCAST,RUNNING,MULTICAST,DHCP,ROUTER,IPv4> mtu 1500 index 2\n        inet 192.168.3.200 netmask ffffff00 broadcast 192.168.3.255\n        ether 62:95:d2:9:1d:d6\nnet1: flags=1100843<UP,BROADCAST,RUNNING,MULTICAST,ROUTER,IPv4> mtu 1500 index 3\n        inet 10.88.88.2 netmask ffffff00 broadcast 10.88.88.255\n        ether 52:8d:42:57:32:22\nlo0: flags=2002000849<UP,LOOPBACK,RUNNING,MULTICAST,IPv6,VIRTUAL> mtu 8252 index 1\n        inet6 ::1/128\n[root@coal-nat ~]# ping -i net1 10.88.88.230\n10.88.88.230 is alive\n[root@coal-nat ~]# ping -i net1 10.88.88.200\n10.88.88.200 is alive\n[root@coal-nat ~]#"
+                  }
+                ]
+              }
+            ]
+          },
+          "updateAuthor": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A70b68467-d824-4d84-a899-a7470bccb323",
+            "accountId": "712020:70b68467-d824-4d84-a899-a7470bccb323",
+            "emailAddress": "carlos.neira@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:70b68467-d824-4d84-a899-a7470bccb323/77c9d027-4fec-4333-8826-c05b0278865b/32"
+            },
+            "displayName": "Carlos Neira",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "created": "2025-07-11T16:15:59.224-0400",
+          "updated": "2025-07-11T16:46:24.189-0400",
+          "jsdPublic": true
+        },
+        {
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/30152/comment/130610",
+          "id": "130610",
+          "author": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "accountId": "6256ebc46b0007006970072f",
+            "emailAddress": "danmcd@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
+            },
+            "displayName": "Dan McDonald",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "body": {
+            "type": "doc",
+            "version": 1,
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Additional testing, using Kebecloud VM "
+                  },
+                  {
+                    "type": "text",
+                    "text": "omnios",
+                    "marks": [
+                      {
+                        "type": "code"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " which is an OmniOS guest inside BHYVE.  All tests using illumos primitives in the guest, and Triton’s ADMINUI with "
+                  },
+                  {
+                    "type": "text",
+                    "text": "operator",
+                    "marks": [
+                      {
+                        "type": "em"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " privileges:"
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "- By default "
+                  },
+                  {
+                    "type": "text",
+                    "text": "omnios",
+                    "marks": [
+                      {
+                        "type": "code"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " has no anti-spoofing bypasses."
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Bypass changes via ADMINUI for IP spoofing get tested with adding addresses to a plumbed guest NIC.  e.g. "
+                          },
+                          {
+                            "type": "text",
+                            "text": "ifconfig vioif0:1 plumb 172.24.4.199/24 up",
+                            "marks": [
+                              {
+                                "type": "code"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "text",
+                            "text": " where vioif0 has a 172.24.4.X address already.  Changing this flag works before 6892, and should after."
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "mediaSingle",
+                "attrs": {
+                  "layout": "align-start"
+                },
+                "content": [
+                  {
+                    "type": "media",
+                    "attrs": {
+                      "type": "file",
+                      "id": "71d19a37-985c-4bb4-ad85-7e8a9adea24b",
+                      "alt": "Screenshot 2025-07-15 at 3.36.27 PM.png",
+                      "collection": "",
+                      "height": 692,
+                      "width": 593
+                    }
+                  }
+                ]
+              },
+              {
+                "type": "bulletList",
+                "content": [
+                  {
+                    "type": "listItem",
+                    "content": [
+                      {
+                        "type": "paragraph",
+                        "content": [
+                          {
+                            "type": "text",
+                            "text": "Adding a vnic with a unique MAC is done with the combination of "
+                          },
+                          {
+                            "type": "text",
+                            "text": "dladm create-vnic",
+                            "marks": [
+                              {
+                                "type": "code"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "text",
+                            "text": " and "
+                          },
+                          {
+                            "type": "text",
+                            "text": "ifconfig",
+                            "marks": [
+                              {
+                                "type": "code"
+                              }
+                            ]
+                          },
+                          {
+                            "type": "text",
+                            "text": "."
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Final configuration of the guest is:"
+                  },
+                  {
+                    "type": "hardBreak"
+                  }
+                ]
+              },
+              {
+                "type": "codeBlock",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "vioif0: flags=1000943<UP,BROADCAST,RUNNING,PROMISC,MULTICAST,IPv4> mtu 1500 index 2\n        inet 172.24.4.147 netmask ffffff00 broadcast 172.24.4.255\n        ether 90:b8:d0:e9:10:8b \nvioif0:1: flags=1000943<UP,BROADCAST,RUNNING,PROMISC,MULTICAST,IPv4> mtu 1500 index 2\n        inet 172.24.4.199 netmask ffffff00 broadcast 172.24.4.255\nmacbypass0: flags=1000843<UP,BROADCAST,RUNNING,MULTICAST,IPv4> mtu 1500 index 3\n        inet 172.24.4.200 netmask ffffff00 broadcast 172.24.4.255\n        ether 2:8:20:12:99:63 "
+                  }
+                ]
+              },
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Before 6892 having bypass changes for MAC spoofing are ineffective.  FURTHERMORE, if "
+                  },
+                  {
+                    "type": "text",
+                    "text": "macbypass0",
+                    "marks": [
+                      {
+                        "type": "code"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " is "
+                  },
+                  {
+                    "type": "text",
+                    "text": "plumbed",
+                    "marks": [
+                      {
+                        "type": "strong"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " it stops traffic from reaching vioif0, possibly due to mac confusion."
+                  }
+                ]
+              }
+            ]
+          },
+          "updateAuthor": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "accountId": "6256ebc46b0007006970072f",
+            "emailAddress": "danmcd@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
+            },
+            "displayName": "Dan McDonald",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "created": "2025-07-15T15:48:48.531-0400",
+          "updated": "2025-07-15T15:50:48.812-0400",
+          "jsdPublic": true
+        },
+        {
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/30152/comment/130643",
+          "id": "130643",
+          "author": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "accountId": "6256ebc46b0007006970072f",
+            "emailAddress": "danmcd@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
+            },
+            "displayName": "Dan McDonald",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "body": {
+            "type": "doc",
+            "version": 1,
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "AFTER 6892 things change.  The standalone SmartOS stuff works in an improved fashion per earlier tests.  On a Triton CN, for ANY NIC (native, BHYVE, etc.) to set the "
+                  },
+                  {
+                    "type": "text",
+                    "text": "allowed_unfiltered_promisc",
+                    "marks": [
+                      {
+                        "type": "code"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " field you MUST use NAPI’s "
+                  },
+                  {
+                    "type": "text",
+                    "text": "UpdateNic",
+                    "marks": [
+                      {
+                        "type": "link",
+                        "attrs": {
+                          "href": "https://github.com/TritonDataCenter/sdc-napi/blob/master/docs/index.md#updatenic-put-nicsmac_address"
+                        }
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": " primitive on the headnode.  This was true before this change, and will be after it, though NOW it will work with BHYVE.  Testing on an OmniOS guest using a vnic assigned to a zone works rather well."
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "type": "hardBreak"
+                  }
+                ]
+              },
+              {
+                "type": "codeBlock",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "# ifconfig -a ; netstat -rnc\nlo0: flags=2001000849<UP,LOOPBACK,RUNNING,MULTICAST,IPv4,VIRTUAL> mtu 8232 index 1\n        inet 127.0.0.1 netmask ff000000 \nvioif0: flags=1000943<UP,BROADCAST,RUNNING,PROMISC,MULTICAST,IPv4> mtu 1500 index 2\n        inet 172.24.4.156 netmask ffffff00 broadcast 172.24.4.255\n        ether 90:b8:d0:7d:53:4c \nlo0: flags=2002000849<UP,LOOPBACK,RUNNING,MULTICAST,IPv6,VIRTUAL> mtu 8252 index 1\n        inet6 ::1/128 \nvioif0: flags=20002000940<RUNNING,PROMISC,MULTICAST,IPv6> mtu 1500 index 2\n        inet6 ::/0 \n        ether 90:b8:d0:7d:53:4c \n\nRouting Table: IPv4\n  Destination            Gateway          Flags  Ref     Use     Interface \n-------------------- -------------------- ----- ----- ---------- --------- \ndefault              172.24.4.1           UG        2          1           \n127.0.0.1            127.0.0.1            UH        2          0 lo0       \n172.24.4.0/24        172.24.4.156         U         3        533 vioif0    \n\nRouting Table: IPv6\n  Destination/Mask            Gateway                   Flags Ref   Use    If   \n--------------------------- --------------------------- ----- --- ------- ----- \n::1                         ::1                         UH      2       0 lo0   \n# zoneadm list -cv\n  ID NAME             STATUS     PATH                           BRAND    IP    \n   0 global           running    /                              ipkg     shared\n   1 bypass           running    /zones/bypass                  lipkg    excl  \n# zlogin bypass\n[Connected to zone 'bypass' pts/1]\nLast login: Wed Jul 16 04:44:42 2025 on pts/1\nOmniOS r151054  omnios-r151054-180b86b9dd       July 2025\nroot@bypass:~# ifconfig -a ; netstat -rnc\nlo0: flags=2001000849<UP,LOOPBACK,RUNNING,MULTICAST,IPv4,VIRTUAL> mtu 8232 index 1\n        inet 127.0.0.1 netmask ff000000 \nmacbypass0: flags=1000843<UP,BROADCAST,RUNNING,MULTICAST,IPv4> mtu 1500 index 2\n        inet 172.24.4.201 netmask ffffff00 broadcast 172.24.4.255\n        ether 2:8:20:30:d1:29 \nlo0: flags=2002000849<UP,LOOPBACK,RUNNING,MULTICAST,IPv6,VIRTUAL> mtu 8252 index 1\n        inet6 ::1/128 \nmacbypass0: flags=20002000840<RUNNING,MULTICAST,IPv6> mtu 1500 index 2\n        inet6 ::/0 \n        ether 2:8:20:30:d1:29 \n\nRouting Table: IPv4\n  Destination            Gateway          Flags  Ref     Use     Interface \n-------------------- -------------------- ----- ----- ---------- --------- \ndefault              172.24.4.1           UG        2          1           \n127.0.0.1            127.0.0.1            UH        2          0 lo0       \n172.24.4.0/24        172.24.4.201         U         4          8 macbypass0 \n\nRouting Table: IPv6\n  Destination/Mask            Gateway                   Flags Ref   Use    If   \n--------------------------- --------------------------- ----- --- ------- ----- \n::1                         ::1                         UH      2       0 lo0   \nroot@bypass:~# ping google.com\ngoogle.com is alive\nroot@bypass:~# \nlogout\n\n[Connection to zone 'bypass' pts/1 closed]\n# ping google.com\ngoogle.com is alive\n# "
+                  }
+                ]
+              }
+            ]
+          },
+          "updateAuthor": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "accountId": "6256ebc46b0007006970072f",
+            "emailAddress": "danmcd@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
+            },
+            "displayName": "Dan McDonald",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "created": "2025-07-16T00:45:37.353-0400",
+          "updated": "2025-07-16T00:45:37.353-0400",
+          "jsdPublic": true
+        },
+        {
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/30152/comment/130676",
+          "id": "130676",
+          "author": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "accountId": "6256ebc46b0007006970072f",
+            "emailAddress": "danmcd@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
+            },
+            "displayName": "Dan McDonald",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "body": {
+            "type": "doc",
+            "version": 1,
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Of note:  While testing this I triggered a kernel panic in mac_sw_lso() on a promiscuous delivery path, but the delivery path (mac_sw_lso()) needs to be more robust against certain kinds of failures."
+                  }
+                ]
+              }
+            ]
+          },
+          "updateAuthor": {
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "accountId": "6256ebc46b0007006970072f",
+            "emailAddress": "danmcd@mnx.io",
+            "avatarUrls": {
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
+            },
+            "displayName": "Dan McDonald",
+            "active": true,
+            "timeZone": "America/Detroit",
+            "accountType": "atlassian"
+          },
+          "created": "2025-07-16T11:44:08.281-0400",
+          "updated": "2025-07-16T11:44:08.281-0400",
+          "jsdPublic": true
+        }
+      ],
+      "self": "https://mnx.atlassian.net/rest/api/3/issue/30152/comment",
+      "maxResults": 7,
+      "total": 7,
+      "startAt": 0
+    },
+    "worklog": {
+      "startAt": 0,
+      "maxResults": 20,
+      "total": 0,
+      "worklogs": []
+    }
+  }
+}

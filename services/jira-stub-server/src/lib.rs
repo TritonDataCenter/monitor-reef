@@ -27,7 +27,7 @@ use std::sync::Arc;
 // Fixture Data Types
 // ============================================================================
 
-/// Raw issue data as stored in fixtures (includes renderedFields at top level)
+/// Raw issue data as stored in fixtures - matches actual JIRA API response format
 #[derive(Debug, Clone, Deserialize)]
 struct FixtureIssue {
     key: String,
@@ -35,6 +35,13 @@ struct FixtureIssue {
     fields: HashMap<String, serde_json::Value>,
     #[serde(default, rename = "renderedFields")]
     rendered_fields: Option<HashMap<String, serde_json::Value>>,
+    // Additional fields from raw JIRA responses (ignored but allowed for compatibility)
+    #[allow(dead_code)]
+    #[serde(default)]
+    expand: Option<String>,
+    #[allow(dead_code)]
+    #[serde(default, rename = "self")]
+    self_url: Option<String>,
 }
 
 impl From<FixtureIssue> for Issue {
@@ -63,14 +70,44 @@ pub struct StubContext {
 
 impl StubContext {
     /// Create a new stub context by loading fixture data from JSON files
+    ///
+    /// Loads issues from individual `*.json` files containing raw JIRA API responses.
+    /// Each file should be a single issue response from the JIRA REST API.
+    /// Remote links are loaded from `remote_links.json` if present.
     pub fn from_fixtures(fixtures_dir: &std::path::Path) -> Result<Self> {
-        let issues_path = fixtures_dir.join("issues.json");
         let links_path = fixtures_dir.join("remote_links.json");
 
-        let issues_json = std::fs::read_to_string(&issues_path)
-            .with_context(|| format!("Failed to read {}", issues_path.display()))?;
-        let issues: HashMap<String, FixtureIssue> = serde_json::from_str(&issues_json)
-            .with_context(|| format!("Failed to parse {}", issues_path.display()))?;
+        let mut issues: HashMap<String, FixtureIssue> = HashMap::new();
+
+        // Load individual issue files (raw JIRA responses)
+        for entry in std::fs::read_dir(fixtures_dir)
+            .with_context(|| format!("Failed to read fixtures directory: {}", fixtures_dir.display()))?
+        {
+            let entry = entry?;
+            let path = entry.path();
+
+            // Skip non-JSON files and special files
+            if path.extension().and_then(|s| s.to_str()) != Some("json") {
+                continue;
+            }
+            let filename = path.file_name().and_then(|s| s.to_str()).unwrap_or("");
+            if filename == "remote_links.json" {
+                continue;
+            }
+
+            // Parse as a single issue
+            let json_str = std::fs::read_to_string(&path)
+                .with_context(|| format!("Failed to read {}", path.display()))?;
+            match serde_json::from_str::<FixtureIssue>(&json_str) {
+                Ok(issue) => {
+                    tracing::info!("Loaded issue {} from {}", issue.key, filename);
+                    issues.insert(issue.key.clone(), issue);
+                }
+                Err(e) => {
+                    tracing::warn!("Skipping {}: not a valid issue file ({})", filename, e);
+                }
+            }
+        }
 
         let remote_links: HashMap<String, Vec<RemoteLink>> = if links_path.exists() {
             let links_json = std::fs::read_to_string(&links_path)
@@ -296,12 +333,11 @@ mod tests {
         let fixtures_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures");
         let ctx = StubContext::from_fixtures(&fixtures_dir).expect("Failed to load fixtures");
 
-        assert!(ctx.issues.contains_key("OS-8627"));
-        assert!(ctx.issues.contains_key("TRITON-1813"));
-        assert!(ctx.issues.contains_key("TOOLS-2590"));
+        // Should load TRITON-2520 from raw JIRA response file
+        assert!(ctx.issues.contains_key("TRITON-2520"));
 
-        // Check that remote links were loaded
-        assert!(ctx.remote_links.contains_key("OS-8627"));
-        assert_eq!(ctx.remote_links.get("OS-8627").unwrap().len(), 2);
+        let issue = ctx.issues.get("TRITON-2520").unwrap();
+        assert_eq!(issue.id, "57781");
+        assert!(issue.rendered_fields.is_some());
     }
 }
