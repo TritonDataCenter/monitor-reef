@@ -426,43 +426,7 @@ async fn fetch_issues_for_html(
     let issues: Vec<IssueListItem> = search_result
         .issues
         .into_iter()
-        .map(|issue| {
-            let summary = issue
-                .fields
-                .get("summary")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-
-            let resolution = issue
-                .fields
-                .get("resolution")
-                .and_then(|v| v.get("name"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-
-            let updated = issue
-                .fields
-                .get("updated")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-
-            let created = issue
-                .fields
-                .get("created")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-
-            IssueListItem {
-                key: issue.key,
-                summary,
-                resolution,
-                updated,
-                created,
-            }
-        })
+        .map(convert_to_list_item)
         .collect();
 
     // Extract pagination info from JIRA response
@@ -509,43 +473,7 @@ async fn search_issues(
     let issues: Vec<IssueListItem> = search_result
         .issues
         .into_iter()
-        .map(|issue| {
-            let summary = issue
-                .fields
-                .get("summary")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-
-            let resolution = issue
-                .fields
-                .get("resolution")
-                .and_then(|v| v.get("name"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-
-            let updated = issue
-                .fields
-                .get("updated")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-
-            let created = issue
-                .fields
-                .get("created")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-
-            IssueListItem {
-                key: issue.key,
-                summary,
-                resolution,
-                updated,
-                created,
-            }
-        })
+        .map(convert_to_list_item)
         .collect();
 
     // Store JIRA's token in cache and return short ID instead
