@@ -6,98 +6,97 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 Copyright 2025 Edgecast Cloud LLC.
 -->
 
-# Client Template
+# Bugview Client
 
-This is a template for generating Rust client libraries from Dropshot API traits using Progenitor.
+Auto-generated Rust client library for the Bugview API, built using Progenitor from the OpenAPI spec.
 
 ## Usage
 
-1. Copy this directory to `clients/internal/your-service-client`
-2. Update `Cargo.toml`:
-   - Change `name = "client-template"` to `name = "your-service-client"`
-   - Change `name = "client_template"` to `name = "your_service_client"` in the `[lib]` section
-3. Update `build.rs` to point to your service's OpenAPI spec:
-   - Change `let spec_path = "../../../openapi-specs/generated/example-api.json";`
-   - To `let spec_path = "../../../openapi-specs/generated/your-api.json";`
-4. Ensure your API spec has been generated: `cargo run -p openapi-manager -- generate`
-5. Run `cargo build` to generate the client
-6. Use the generated client library in your applications
-
-## How It Works
-
-The `build.rs` script:
-1. Reads the OpenAPI specification from `openapi-specs/generated/` (checked into git)
-2. Uses Progenitor to generate a type-safe Rust client at build time
-3. The generated client is written to the build output directory
-4. Your `src/lib.rs` includes and exports the generated client code
-
-## Generated Client Structure
-
-This template creates a **library crate**, not an application. The generated client is meant to be used as a dependency in other services or applications.
-
-## Benefits
-
-- **Type safety**: Progenitor generates type-safe clients matching your API exactly
-- **Fast compilation**: Specs generated from API traits without compiling service implementations
-- **Versioning**: dropshot-api-manager tracks API versions and validates compatibility
-- **Consistent**: Same OpenAPI spec used for documentation, validation, and client generation
-- **Clean dependencies**: Only includes what's needed for the generated client
-
-## Example Usage
-
-After building your client library, use it in another service:
+Add to your `Cargo.toml`:
 
 ```toml
-# In your service's Cargo.toml
 [dependencies]
-your-service-client = { path = "../clients/internal/your-service-client" }
+bugview-client = { path = "../../clients/internal/bugview-client" }
 ```
 
+### Basic Example
+
 ```rust
-use your_service_client::Client;
+use bugview_client::Client;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let client = Client::new("http://localhost:8080");
+    let client = Client::new("https://smartos.org");
 
-    // Use the generated client methods
+    // List public issues
     let response = client
-        .your_endpoint()
+        .get_issue_index_json()
         .send()
         .await?;
 
-    println!("Response: {:?}", response);
+    for issue in response.issues {
+        println!("{}: {}", issue.key, issue.summary);
+    }
+
+    // Get a specific issue
+    let issue = client
+        .get_issue_full_json()
+        .key("OS-1234")
+        .send()
+        .await?;
+
+    println!("Issue: {:?}", issue);
+
     Ok(())
 }
 ```
 
-## Authentication
-
-If your API requires authentication, use `new_with_client()` to provide a pre-configured `reqwest::Client`:
+### Pagination
 
 ```rust
-use reqwest::Client as ReqwestClient;
-use your_service_client::Client;
+let mut next_token: Option<String> = None;
 
-let reqwest_client = ReqwestClient::builder()
-    .default_headers({
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(
-            reqwest::header::AUTHORIZATION,
-            format!("Bearer {}", api_token).parse()?,
-        );
-        headers
-    })
-    .build()?;
+loop {
+    let mut request = client.get_issue_index_json();
+    if let Some(token) = &next_token {
+        request = request.next_page_token(token);
+    }
 
-let client = Client::new_with_client("http://localhost:8080", reqwest_client);
+    let response = request.send().await?;
+
+    for issue in response.issues {
+        println!("{}: {}", issue.key, issue.summary);
+    }
+
+    if response.is_last {
+        break;
+    }
+    next_token = response.next_page_token;
+}
 ```
 
-## Relationship to Services
+## Available Methods
 
-This template is designed for internal clients that talk to services in this monorepo:
-- Service defines API trait in `apis/your-service-api`
-- Service implements the trait in `services/your-service`
-- `openapi-manager` generates OpenAPI spec from the trait
-- This client is generated from that spec
-- Other services use this client to talk to your service
+| Method | Description |
+|--------|-------------|
+| `get_issue_index_json()` | List public issues (paginated) |
+| `get_issue_json()` | Get simplified issue details |
+| `get_issue_full_json()` | Get complete issue details |
+| `get_issue_index_html()` | Get HTML issue list |
+| `get_label_index_html()` | Get HTML issue list filtered by label |
+| `get_issue_html()` | Get HTML issue view |
+
+## How It Works
+
+This client is generated at build time:
+
+1. `openapi-manager` generates `openapi-specs/generated/bugview-api.json` from the API trait
+2. `build.rs` reads the spec and invokes Progenitor
+3. Progenitor generates type-safe Rust client code
+4. The generated code is included via `src/lib.rs`
+
+## Related Crates
+
+- `bugview-api` - API trait definition (source of the OpenAPI spec)
+- `bugview-service` - Service implementation
+- `bugview-cli` - CLI built on this client
