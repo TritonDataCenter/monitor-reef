@@ -85,6 +85,19 @@ pub struct IssueListItem {
     pub created: String,
 }
 
+/// Legacy issue summary format (for backwards compatibility with Node.js bugview)
+///
+/// This matches the original `/bugview/json/{key}` response format.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct IssueSummary {
+    /// Issue key (named "id" for legacy compatibility)
+    pub id: String,
+    /// Issue summary/title
+    pub summary: String,
+    /// URL to the bugview web page for this issue
+    pub web_url: String,
+}
+
 /// Response for issue list endpoints
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct IssueListResponse {
@@ -96,13 +109,26 @@ pub struct IssueListResponse {
     pub is_last: bool,
 }
 
-/// Full issue details
+/// Full issue details (matches original Node.js bugview format)
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct IssueDetails {
-    /// Issue key
+    /// JIRA internal issue ID
+    pub id: String,
+    /// Issue key (e.g., "OS-1234")
     pub key: String,
-    /// Issue fields (structure depends on JIRA configuration)
+    /// Issue fields (sanitized for public consumption)
     pub fields: serde_json::Value,
+    /// Remote links (filtered by allowed domains)
+    pub remotelinks: Vec<RemoteLink>,
+}
+
+/// Remote link information
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct RemoteLink {
+    /// Link URL
+    pub url: String,
+    /// Link title/description
+    pub title: String,
 }
 
 /// Bugview API Trait
@@ -127,9 +153,10 @@ pub trait BugviewApi {
         query: Query<IssueListQuery>,
     ) -> Result<HttpResponseOk<IssueListResponse>, HttpError>;
 
-    /// Get simplified issue details as JSON
+    /// Get issue summary as JSON (legacy format)
     ///
-    /// Returns basic issue information without full details.
+    /// Returns issue key, summary, and web URL. This endpoint maintains
+    /// backwards compatibility with the original Node.js bugview service.
     #[endpoint {
         method = GET,
         path = "/bugview/json/{key}",
@@ -138,7 +165,7 @@ pub trait BugviewApi {
     async fn get_issue_json(
         rqctx: RequestContext<Self::Context>,
         path: Path<IssuePath>,
-    ) -> Result<HttpResponseOk<IssueListItem>, HttpError>;
+    ) -> Result<HttpResponseOk<IssueSummary>, HttpError>;
 
     /// Get full issue details as JSON
     ///

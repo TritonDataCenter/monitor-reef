@@ -10,7 +10,7 @@ mod jira_client;
 use anyhow::Result;
 use bugview_api::{
     BugviewApi, IssueDetails, IssueListItem, IssueListQuery, IssueListResponse, IssuePath,
-    IssueSort, LabelPath,
+    IssueSort, IssueSummary, LabelPath, RemoteLink,
 };
 use dropshot::{
     Body, ConfigDropshot, ConfigLogging, ConfigLoggingLevel, HttpError, HttpResponseOk,
@@ -39,6 +39,8 @@ const TOKEN_CACHE_MAX_ENTRIES: usize = 1000;
 const DEFAULT_BODY_MAX_BYTES: usize = 1024 * 1024; // 1MB
 /// Default bind address for the HTTP server.
 const DEFAULT_BIND_ADDRESS: &str = "127.0.0.1:8080";
+/// Default public base URL for constructing web_url in legacy JSON responses.
+const DEFAULT_PUBLIC_BASE_URL: &str = "https://smartos.org";
 
 /// Service configuration
 #[derive(Clone)]
@@ -49,6 +51,8 @@ struct Config {
     allowed_labels: Vec<String>,
     /// Allowed domains for remote links (security: prevents exposing signed URLs)
     allowed_domains: Vec<String>,
+    /// Public base URL for constructing web_url in legacy JSON responses
+    public_base_url: String,
 }
 
 impl Config {
@@ -181,7 +185,7 @@ impl BugviewApi for BugviewServiceImpl {
     async fn get_issue_json(
         rqctx: RequestContext<Self::Context>,
         path: Path<IssuePath>,
-    ) -> Result<HttpResponseOk<IssueListItem>, HttpError> {
+    ) -> Result<HttpResponseOk<IssueSummary>, HttpError> {
         let ctx = rqctx.context();
         let key = path.into_inner().key;
 
@@ -202,7 +206,18 @@ impl BugviewApi for BugviewServiceImpl {
             ));
         }
 
-        Ok(HttpResponseOk(convert_to_list_item(issue)))
+        let summary = issue
+            .fields
+            .get("summary")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        Ok(HttpResponseOk(IssueSummary {
+            id: issue.key.clone(),
+            summary,
+            web_url: format!("{}/bugview/{}", ctx.config.public_base_url, issue.key),
+        }))
     }
 
     async fn get_issue_full_json(
@@ -229,9 +244,31 @@ impl BugviewApi for BugviewServiceImpl {
             ));
         }
 
+        // Fetch remote links and filter by allowed domains
+        let jira_remote_links = ctx
+            .jira
+            .get_remote_links(&issue.id)
+            .await
+            .unwrap_or_default();
+
+        let filtered_links = filter_remote_links(&jira_remote_links, &ctx.config);
+
+        // Convert to API response format
+        let remotelinks: Vec<RemoteLink> = filtered_links
+            .iter()
+            .filter_map(|link| {
+                link.object.as_ref().map(|obj| RemoteLink {
+                    url: obj.url.clone(),
+                    title: obj.title.clone(),
+                })
+            })
+            .collect();
+
         Ok(HttpResponseOk(IssueDetails {
+            id: issue.id,
             key: issue.key,
             fields: serde_json::to_value(issue.fields).unwrap_or(serde_json::Value::Null),
+            remotelinks,
         }))
     }
 
@@ -598,10 +635,14 @@ async fn main() -> Result<()> {
         .map(|s| s.trim().to_string())
         .collect();
 
+    let public_base_url =
+        std::env::var("PUBLIC_BASE_URL").unwrap_or_else(|_| DEFAULT_PUBLIC_BASE_URL.to_string());
+
     let config = Config {
         default_label,
         allowed_labels,
         allowed_domains,
+        public_base_url,
     };
 
     let api_context = ApiContext {
@@ -755,6 +796,7 @@ mod tests {
             default_label: "public".to_string(),
             allowed_labels: vec!["public".to_string(), "bug".to_string()],
             allowed_domains: vec!["example.com".to_string()],
+            public_base_url: "https://test.example.com".to_string(),
         };
 
         ApiContext {
@@ -775,8 +817,10 @@ mod tests {
         assert!(issue_has_public_label(&issue, &ctx.config.default_label));
 
         let details = IssueDetails {
+            id: issue.id,
             key: issue.key,
             fields: serde_json::to_value(issue.fields).unwrap(),
+            remotelinks: vec![],
         };
 
         // Spot-check a couple fields

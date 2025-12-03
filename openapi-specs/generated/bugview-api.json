@@ -186,8 +186,8 @@
         "tags": [
           "issues"
         ],
-        "summary": "Get simplified issue details as JSON",
-        "description": "Returns basic issue information without full details.",
+        "summary": "Get issue summary as JSON (legacy format)",
+        "description": "Returns issue key, summary, and web URL. This endpoint maintains backwards compatibility with the original Node.js bugview service.",
         "operationId": "get_issue_json",
         "parameters": [
           {
@@ -206,7 +206,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IssueListItem"
+                  "$ref": "#/components/schemas/IssueSummary"
                 }
               }
             }
@@ -291,20 +291,33 @@
         ]
       },
       "IssueDetails": {
-        "description": "Full issue details",
+        "description": "Full issue details (matches original Node.js bugview format)",
         "type": "object",
         "properties": {
           "fields": {
-            "description": "Issue fields (structure depends on JIRA configuration)"
+            "description": "Issue fields (sanitized for public consumption)"
+          },
+          "id": {
+            "description": "JIRA internal issue ID",
+            "type": "string"
           },
           "key": {
-            "description": "Issue key",
+            "description": "Issue key (e.g., \"OS-1234\")",
             "type": "string"
+          },
+          "remotelinks": {
+            "description": "Remote links (filtered by allowed domains)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RemoteLink"
+            }
           }
         },
         "required": [
           "fields",
-          "key"
+          "id",
+          "key",
+          "remotelinks"
         ]
       },
       "IssueListItem": {
@@ -369,6 +382,47 @@
         "required": [
           "is_last",
           "issues"
+        ]
+      },
+      "IssueSummary": {
+        "description": "Legacy issue summary format (for backwards compatibility with Node.js bugview)\n\nThis matches the original `/bugview/json/{key}` response format.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "Issue key (named \"id\" for legacy compatibility)",
+            "type": "string"
+          },
+          "summary": {
+            "description": "Issue summary/title",
+            "type": "string"
+          },
+          "web_url": {
+            "description": "URL to the bugview web page for this issue",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "summary",
+          "web_url"
+        ]
+      },
+      "RemoteLink": {
+        "description": "Remote link information",
+        "type": "object",
+        "properties": {
+          "title": {
+            "description": "Link title/description",
+            "type": "string"
+          },
+          "url": {
+            "description": "Link URL",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "url"
         ]
       },
       "IssueSort": {
