@@ -6,16 +6,24 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 Copyright 2025 Edgecast Cloud LLC.
 -->
 
-<h1>Public Issues Index{% if let Some(label) = label_text %}: {{ label }}{% endif %}</h1>
-  <p><b>Filter by label:</b> {{ label_links|safe }}</p>
-  <div>{{ pagination|safe }}</div><br>
-  <table class="table">
-    <thead><tr>
-      <th><b>Issue</b></th>
-      <th><b>Status</b></th>
-      <th><b>Resolution</b></th>
-      <th><b>Synopsis</b></th>
-    </tr></thead>
+<h1>Public Issues Index{% if let Some(label) = current_label %}: {{ label }}{% endif %}</h1>
+
+<p><b>Filter by label:</b>
+{% for label in allowed_labels %}{% if !loop.first %}, {% endif %}{% if current_label == Some(label.as_str()) %}<b>{{ label }}</b>{% else %}<a href="/bugview/label/{{ label|urlencode }}">{{ label }}</a>{% endif %}{% endfor %}
+</p>
+
+<div>
+<a href="{{ page_path }}?sort={{ sort }}">First Page</a> | Displaying {{ issues.len() }} issues{% if !is_last %}{% if let Some(token) = next_page_token %} | <a href="{{ page_path }}?next_page_token={{ token|urlencode }}&amp;sort={{ sort }}">Next Page</a>{% endif %}{% endif %}
+</div>
+<br>
+
+<table class="table">
+  <thead><tr>
+    <th><b>Issue</b></th>
+    <th><b>Status</b></th>
+    <th><b>Resolution</b></th>
+    <th><b>Synopsis</b></th>
+  </tr></thead>
   <tbody>
 {% for issue in issues %}
     <tr>

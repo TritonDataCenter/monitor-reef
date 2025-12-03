@@ -26,10 +26,42 @@ struct PrimaryTemplate<'a> {
 #[derive(Template)]
 #[template(path = "issue_index.html")]
 struct IssueIndexTemplate<'a> {
-    label_text: Option<&'a str>,
-    label_links: &'a str,
-    pagination: &'a str,
+    current_label: Option<&'a str>,
+    allowed_labels: &'a [String],
+    page_path: &'a str,
+    sort: IssueSort,
+    next_page_token: Option<&'a str>,
+    is_last: bool,
     issues: &'a [IssueListItem],
+}
+
+/// Single issue page template
+#[derive(Template)]
+#[template(path = "issue.html")]
+struct IssueTemplate<'a> {
+    key: &'a str,
+    summary: &'a str,
+    status: &'a str,
+    resolution: Option<&'a str>,
+    created: &'a str,
+    updated: &'a str,
+    description: &'a str,
+    comments: &'a [CommentView],
+    remote_links: &'a [RemoteLinkView],
+}
+
+/// Comment data for template rendering
+pub struct CommentView {
+    pub author: String,
+    pub created: String,
+    pub edited: Option<String>,
+    pub body: String,
+}
+
+/// Remote link data for template rendering
+pub struct RemoteLinkView {
+    pub url: String,
+    pub title: String,
 }
 
 /// HTML template renderer
@@ -51,20 +83,7 @@ impl HtmlRenderer {
         label: Option<&str>,
         allowed_labels: &[String],
     ) -> Result<String> {
-        // Build label links
-        let label_links: Vec<String> = allowed_labels
-            .iter()
-            .map(|l| {
-                if Some(l.as_str()) == label {
-                    format!("<b>{}</b>", html_escape(l))
-                } else {
-                    let enc = urlencoding::encode(l);
-                    format!(r#"<a href="/bugview/label/{}">{}</a>"#, enc, html_escape(l))
-                }
-            })
-            .collect();
-
-        // Build pagination links
+        // Build page path for pagination links
         let page_path = if let Some(l) = label {
             let enc = urlencoding::encode(l);
             format!("/bugview/label/{}", enc)
@@ -72,34 +91,14 @@ impl HtmlRenderer {
             "/bugview/index.html".to_string()
         };
 
-        let mut pagination = Vec::new();
-
-        // "First Page" link always goes back to start (no token)
-        pagination.push(format!(
-            r#"<a href="{}?sort={}">First Page</a>"#,
-            page_path, sort
-        ));
-
-        let count = issues.len();
-        pagination.push(format!("Displaying {} issues", count));
-
-        // "Next Page" link if there are more results
-        if !is_last && let Some(token) = next_page_token {
-            // URL-encode the token
-            let encoded_token = urlencoding::encode(&token);
-            pagination.push(format!(
-                r#"<a href="{}?next_page_token={}&sort={}">Next Page</a>"#,
-                page_path, encoded_token, sort
-            ));
-        }
-
         // Render the issue_index template
-        let label_links_str = label_links.join(", ");
-        let pagination_str = pagination.join(" | ");
         let index_template = IssueIndexTemplate {
-            label_text: label,
-            label_links: &label_links_str,
-            pagination: &pagination_str,
+            current_label: label,
+            allowed_labels,
+            page_path: &page_path,
+            sort,
+            next_page_token: next_page_token.as_deref(),
+            is_last,
             issues,
         };
         let container = index_template.render()?;
@@ -158,129 +157,104 @@ impl HtmlRenderer {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
-        // Get description as ADF (Atlassian Document Format) for rendering
-        let description_adf = issue.fields.get("description");
+        // Render description from ADF
+        let description = issue
+            .fields
+            .get("description")
+            .and_then(|adf| adf.get("content"))
+            .map(adf_to_html)
+            .unwrap_or_default();
 
-        // Build HTML content
-        let mut content = String::new();
-        content.push_str(&format!("<h1>{}</h1>\n", html_escape(&issue.key)));
-        content.push_str(&format!("<h2>{}</h2>\n", html_escape(summary)));
+        // Extract and render comments
+        let comments: Vec<CommentView> = issue
+            .fields
+            .get("comment")
+            .and_then(|c| c.get("comments"))
+            .and_then(|c| c.as_array())
+            .map(|comments| {
+                comments
+                    .iter()
+                    .map(|comment| {
+                        let author = comment
+                            .get("author")
+                            .and_then(|a| a.get("displayName"))
+                            .and_then(|d| d.as_str())
+                            .unwrap_or("Unknown")
+                            .to_string();
 
-        content.push_str("<dl class=\"dl-horizontal\">\n");
-        content.push_str(&format!(
-            "<dt>Status:</dt><dd>{}</dd>\n",
-            html_escape(status)
-        ));
+                        let created = comment
+                            .get("created")
+                            .and_then(|c| c.as_str())
+                            .unwrap_or("")
+                            .to_string();
 
-        if let Some(res) = resolution {
-            content.push_str(&format!(
-                "<dt>Resolution:</dt><dd>{}</dd>\n",
-                html_escape(res)
-            ));
-        }
+                        let updated = comment
+                            .get("updated")
+                            .and_then(|u| u.as_str())
+                            .unwrap_or("");
 
-        content.push_str(&format!(
-            "<dt>Created:</dt><dd>{}</dd>\n",
-            html_escape(created)
-        ));
-        content.push_str(&format!(
-            "<dt>Updated:</dt><dd>{}</dd>\n",
-            html_escape(updated)
-        ));
-        content.push_str("</dl>\n");
+                        let edited = if created != updated {
+                            Some(updated.to_string())
+                        } else {
+                            None
+                        };
 
-        // Description - render from ADF
-        if let Some(adf) = description_adf
-            && let Some(adf_content) = adf.get("content")
-        {
-            let rendered = adf_to_html(adf_content);
-            if !rendered.is_empty() {
-                content.push_str("<h3>Description</h3>\n");
-                content.push_str("<div class=\"well\">\n");
-                content.push_str(&rendered);
-                content.push_str("</div>\n");
-            }
-        }
+                        let body = comment
+                            .get("body")
+                            .map(|body| {
+                                if let Some(body_str) = body.as_str() {
+                                    // Plain text fallback
+                                    format!("<p>{}</p>", html_escape(body_str))
+                                } else if let Some(body_content) = body.get("content") {
+                                    // ADF format
+                                    adf_to_html(body_content)
+                                } else {
+                                    String::new()
+                                }
+                            })
+                            .unwrap_or_default();
 
-        // Comments
-        if let Some(comment_obj) = issue.fields.get("comment")
-            && let Some(comments) = comment_obj.get("comments").and_then(|c| c.as_array())
-            && !comments.is_empty()
-        {
-            content.push_str(&format!("<h2>Comments ({})</h2>\n", comments.len()));
+                        CommentView {
+                            author,
+                            created,
+                            edited,
+                            body,
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
 
-            for comment in comments {
-                let author = comment
-                    .get("author")
-                    .and_then(|a| a.get("displayName"))
-                    .and_then(|d| d.as_str())
-                    .unwrap_or("Unknown");
+        // Extract remote links
+        let link_views: Vec<RemoteLinkView> = remote_links
+            .iter()
+            .filter_map(|link| {
+                link.object.as_ref().map(|obj| RemoteLinkView {
+                    url: obj.url.clone(),
+                    title: obj.title.clone(),
+                })
+            })
+            .collect();
 
-                let created = comment
-                    .get("created")
-                    .and_then(|c| c.as_str())
-                    .unwrap_or("");
-
-                let updated = comment
-                    .get("updated")
-                    .and_then(|u| u.as_str())
-                    .unwrap_or("");
-
-                content.push_str("<div class=\"well\" style=\"margin-bottom: 15px;\">\n");
-                content.push_str(&format!(
-                    "<p><strong>{}</strong> commented on {}{}:</p>\n",
-                    html_escape(author),
-                    html_escape(created),
-                    if created != updated {
-                        format!(" <em>(edited {})</em>", html_escape(updated))
-                    } else {
-                        String::new()
-                    }
-                ));
-
-                // Render comment body
-                if let Some(body) = comment.get("body") {
-                    if let Some(body_str) = body.as_str() {
-                        // Plain text fallback
-                        content.push_str(&format!("<p>{}</p>", html_escape(body_str)));
-                    } else if let Some(body_obj) = body.as_object()
-                        && let Some(body_content) = body_obj.get("content")
-                    {
-                        // ADF format - convert to HTML
-                        let html = adf_to_html(body_content);
-                        content.push_str(&html);
-                    }
-                }
-
-                content.push_str("</div>\n");
-            }
-        }
-
-        // Remote Links (filtered by allowed_domains)
-        if !remote_links.is_empty() {
-            content.push_str("<h2>Related Links</h2>\n");
-            content.push_str("<p><ul>\n");
-
-            for link in remote_links {
-                if let Some(obj) = &link.object {
-                    content.push_str("<li>");
-                    content.push_str(&format!(
-                        r#"<a rel="noopener noreferrer" target="_blank" href="{}">{}</a>"#,
-                        html_escape(&obj.url),
-                        html_escape(&obj.title)
-                    ));
-                    content.push_str("</li>\n");
-                }
-            }
-
-            content.push_str("</ul></p>\n");
-        }
+        // Render issue template
+        let issue_template = IssueTemplate {
+            key: &issue.key,
+            summary,
+            status,
+            resolution,
+            created,
+            updated,
+            description: &description,
+            comments: &comments,
+            remote_links: &link_views,
+        };
+        let container = issue_template.render()?;
 
         // Wrap in primary template
         let title = format!("{} - Bugview", issue.key);
         let primary = PrimaryTemplate {
             title: &title,
-            container: &content,
+            container: &container,
         };
         primary
             .render()

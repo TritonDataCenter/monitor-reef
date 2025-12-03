@@ -1,0 +1,45 @@
+<!--
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this
+file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+Copyright 2025 Edgecast Cloud LLC.
+-->
+
+<h1>{{ key }}</h1>
+<h2>{{ summary }}</h2>
+
+<dl class="dl-horizontal">
+  <dt>Status:</dt><dd>{{ status }}</dd>
+{% if let Some(res) = resolution %}
+  <dt>Resolution:</dt><dd>{{ res }}</dd>
+{% endif %}
+  <dt>Created:</dt><dd>{{ created }}</dd>
+  <dt>Updated:</dt><dd>{{ updated }}</dd>
+</dl>
+
+{% if !description.is_empty() %}
+<h3>Description</h3>
+<div class="well">
+{{ description|safe }}
+</div>
+{% endif %}
+
+{% if !comments.is_empty() %}
+<h2>Comments ({{ comments.len() }})</h2>
+{% for comment in comments %}
+<div class="well" style="margin-bottom: 15px;">
+  <p><strong>{{ comment.author }}</strong> commented on {{ comment.created }}{% if let Some(edited) = comment.edited %} <em>(edited {{ edited }})</em>{% endif %}:</p>
+{{ comment.body|safe }}
+</div>
+{% endfor %}
+{% endif %}
+
+{% if !remote_links.is_empty() %}
+<h2>Related Links</h2>
+<p><ul>
+{% for link in remote_links %}
+  <li><a rel="noopener noreferrer" target="_blank" href="{{ link.url }}">{{ link.title }}</a></li>
+{% endfor %}
+</ul></p>
+{% endif %}
