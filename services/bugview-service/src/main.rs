@@ -589,7 +589,7 @@ async fn main() -> Result<()> {
     let jira_client = JiraClient::new(jira_url, jira_username, jira_password)?;
 
     info!("Initializing HTML renderer");
-    let html_renderer = HtmlRenderer::new()?;
+    let html_renderer = HtmlRenderer::new();
 
     let allowed_domains = std::env::var("JIRA_ALLOWED_DOMAINS")
         .unwrap_or_default()
@@ -760,7 +760,7 @@ mod tests {
         ApiContext {
             jira: Arc::new(MockJiraClient) as Arc<dyn JiraClientTrait>,
             config: Arc::new(config),
-            html: Arc::new(HtmlRenderer::new().expect("html renderer")),
+            html: Arc::new(HtmlRenderer::new()),
             token_cache: TokenCache::new(),
         }
     }

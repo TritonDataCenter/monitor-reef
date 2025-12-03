@@ -76,8 +76,9 @@ fn extract_adf_text(nodes: &serde_json::Value, indent_level: usize) -> String {
                     "text" => {
                         // Extract plain text, handling marks (formatting)
                         if let Some(text) = node_obj.get("text").and_then(|t| t.as_str()) {
-                            // Check for marks (bold, italic, code, etc.)
+                            // Check for marks (bold, italic, code, link, etc.)
                             let mut formatted_text = text.to_string();
+                            let mut link_href: Option<&str> = None;
 
                             if let Some(marks) = node_obj.get("marks").and_then(|m| m.as_array()) {
                                 for mark in marks {
@@ -88,10 +89,23 @@ fn extract_adf_text(nodes: &serde_json::Value, indent_level: usize) -> String {
                                             "strong" => format!("**{}**", formatted_text),
                                             "em" => format!("*{}*", formatted_text),
                                             "code" => format!("`{}`", formatted_text),
+                                            "link" => {
+                                                // Capture href for later, apply after other marks
+                                                link_href = mark
+                                                    .get("attrs")
+                                                    .and_then(|a| a.get("href"))
+                                                    .and_then(|h| h.as_str());
+                                                formatted_text
+                                            }
                                             _ => formatted_text,
                                         };
                                     }
                                 }
+                            }
+
+                            // Apply link formatting last (wraps all other marks)
+                            if let Some(href) = link_href {
+                                formatted_text = format!("[{}]({})", formatted_text, href);
                             }
 
                             result.push_str(&formatted_text);
@@ -487,5 +501,34 @@ mod tests {
         ]);
         let out = extract_adf_text(&adf, 0);
         assert!(out.contains("[ISSUE-456]"));
+    }
+
+    #[test]
+    fn link_mark_renders_markdown_link() {
+        let adf = serde_json::json!([
+            {
+                "type": "text",
+                "text": "click here",
+                "marks": [{"type": "link", "attrs": {"href": "https://example.com"}}]
+            }
+        ]);
+        let out = extract_adf_text(&adf, 0);
+        assert_eq!(out, "[click here](https://example.com)");
+    }
+
+    #[test]
+    fn link_mark_with_other_formatting() {
+        let adf = serde_json::json!([
+            {
+                "type": "text",
+                "text": "bold link",
+                "marks": [
+                    {"type": "strong"},
+                    {"type": "link", "attrs": {"href": "https://example.com"}}
+                ]
+            }
+        ]);
+        let out = extract_adf_text(&adf, 0);
+        assert_eq!(out, "[**bold link**](https://example.com)");
     }
 }

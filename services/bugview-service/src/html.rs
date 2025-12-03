@@ -65,12 +65,13 @@ pub struct RemoteLinkView {
 }
 
 /// HTML template renderer
+#[derive(Default)]
 pub struct HtmlRenderer;
 
 impl HtmlRenderer {
     /// Create a new HTML renderer
-    pub fn new() -> Result<Self> {
-        Ok(Self)
+    pub fn new() -> Self {
+        Self
     }
 
     /// Render the issue index page
@@ -492,7 +493,7 @@ mod tests {
 
     #[test]
     fn label_links_are_url_encoded() {
-        let renderer = HtmlRenderer::new().expect("renderer");
+        let renderer = HtmlRenderer::new();
         let issues: Vec<IssueListItem> = vec![];
         let html = renderer
             .render_issue_index(
@@ -509,7 +510,7 @@ mod tests {
 
     #[test]
     fn pagination_path_for_label_is_encoded() {
-        let renderer = HtmlRenderer::new().expect("renderer");
+        let renderer = HtmlRenderer::new();
         let issues: Vec<IssueListItem> = vec![];
         let html = renderer
             .render_issue_index(
