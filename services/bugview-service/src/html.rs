@@ -11,35 +11,34 @@
 //! comment bodies.
 
 use anyhow::Result;
+use askama::Template;
 use bugview_api::IssueListItem;
-use handlebars::Handlebars;
-use serde_json::json;
-use std::sync::Arc;
 
-/// HTML template renderer
-pub struct HtmlRenderer {
-    handlebars: Arc<Handlebars<'static>>,
+/// Primary layout template wrapping all pages
+#[derive(Template)]
+#[template(path = "primary.html")]
+struct PrimaryTemplate<'a> {
+    title: &'a str,
+    container: &'a str,
 }
 
+/// Issue index page template
+#[derive(Template)]
+#[template(path = "issue_index.html")]
+struct IssueIndexTemplate<'a> {
+    label_text: Option<&'a str>,
+    label_links: &'a str,
+    pagination: &'a str,
+    issues: &'a [IssueListItem],
+}
+
+/// HTML template renderer
+pub struct HtmlRenderer;
+
 impl HtmlRenderer {
-    /// Create a new HTML renderer with templates loaded
+    /// Create a new HTML renderer
     pub fn new() -> Result<Self> {
-        let mut handlebars = Handlebars::new();
-
-        // Load templates from the templates directory
-        let templates_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("templates");
-
-        handlebars
-            .register_template_file("primary", templates_dir.join("primary.html"))
-            .map_err(|e| anyhow::anyhow!("Failed to load primary template: {}", e))?;
-
-        handlebars
-            .register_template_file("issue_index", templates_dir.join("issue_index.html"))
-            .map_err(|e| anyhow::anyhow!("Failed to load issue_index template: {}", e))?;
-
-        Ok(Self {
-            handlebars: Arc::new(handlebars),
-        })
+        Ok(Self)
     }
 
     /// Render the issue index page
@@ -95,15 +94,15 @@ impl HtmlRenderer {
         }
 
         // Render the issue_index template
-        let container = self.handlebars.render(
-            "issue_index",
-            &json!({
-                "label_text": label,
-                "label_links": label_links.join(", "),
-                "pagination": pagination.join(" | "),
-                "issues": issues,
-            }),
-        )?;
+        let label_links_str = label_links.join(", ");
+        let pagination_str = pagination.join(" | ");
+        let index_template = IssueIndexTemplate {
+            label_text: label,
+            label_links: &label_links_str,
+            pagination: &pagination_str,
+            issues,
+        };
+        let container = index_template.render()?;
 
         // Wrap in primary template
         let title = if let Some(l) = label {
@@ -112,14 +111,12 @@ impl HtmlRenderer {
             "Public Issues Index".to_string()
         };
 
-        self.handlebars
-            .render(
-                "primary",
-                &json!({
-                    "title": title,
-                    "container": container,
-                }),
-            )
+        let primary = PrimaryTemplate {
+            title: &title,
+            container: &container,
+        };
+        primary
+            .render()
             .map_err(|e| anyhow::anyhow!("Failed to render page: {}", e))
     }
 
@@ -280,14 +277,13 @@ impl HtmlRenderer {
         }
 
         // Wrap in primary template
-        self.handlebars
-            .render(
-                "primary",
-                &json!({
-                    "title": format!("{} - Bugview", issue.key),
-                    "container": content,
-                }),
-            )
+        let title = format!("{} - Bugview", issue.key);
+        let primary = PrimaryTemplate {
+            title: &title,
+            container: &content,
+        };
+        primary
+            .render()
             .map_err(|e| anyhow::anyhow!("Failed to render page: {}", e))
     }
 
@@ -310,14 +306,12 @@ impl HtmlRenderer {
             html_escape(message)
         );
 
-        self.handlebars
-            .render(
-                "primary",
-                &json!({
-                    "title": title,
-                    "container": content,
-                }),
-            )
+        let primary = PrimaryTemplate {
+            title,
+            container: &content,
+        };
+        primary
+            .render()
             .map_err(|e| anyhow::anyhow!("Failed to render error page: {}", e))
     }
 }

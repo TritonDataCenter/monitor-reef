@@ -6,9 +6,9 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 Copyright 2025 Edgecast Cloud LLC.
 -->
 
-<h1>Public Issues Index{{#if label_text}}: {{label_text}}{{/if}}</h1>
-  <p><b>Filter by label:</b> {{{label_links}}}</p>
-  <div>{{{pagination}}}</div><br>
+<h1>Public Issues Index{% if let Some(label) = label_text %}: {{ label }}{% endif %}</h1>
+  <p><b>Filter by label:</b> {{ label_links|safe }}</p>
+  <div>{{ pagination|safe }}</div><br>
   <table class="table">
     <thead><tr>
       <th><b>Issue</b></th>
@@ -17,13 +17,13 @@ Copyright 2025 Edgecast Cloud LLC.
       <th><b>Synopsis</b></th>
     </tr></thead>
   <tbody>
-{{#each issues}}
+{% for issue in issues %}
     <tr>
-      <td><a href="/bugview/issue/{{this.key}}">{{this.key}}</a></td>
-      <td>{{this.status}}</td>
-      <td>{{#if this.resolution}}{{this.resolution}}{{else}}&nbsp;{{/if}}</td>
-      <td>{{this.summary}}</td>
+      <td><a href="/bugview/issue/{{ issue.key }}">{{ issue.key }}</a></td>
+      <td>{{ issue.status }}</td>
+      <td>{% if let Some(res) = issue.resolution %}{{ res }}{% else %}&nbsp;{% endif %}</td>
+      <td>{{ issue.summary }}</td>
     </tr>
-{{/each}}
+{% endfor %}
   </tbody>
 </table>
