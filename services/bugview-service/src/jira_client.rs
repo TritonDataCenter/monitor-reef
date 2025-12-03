@@ -19,7 +19,7 @@ const RETRY_INITIAL_DELAY_MS: u64 = 150;
 const RETRY_MAX_DELAY_MS: u64 = 2_000;
 const RETRY_JITTER_MAX_MS: u64 = 50;
 const HTTP_TIMEOUT_SECS: u64 = 15;
-const USER_AGENT: &str = "BugviewRust/0.1.0";
+const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 const JIRA_SEARCH_MAX_RESULTS: u32 = 50;
 
 // Re-export types from the generated client that match our API
