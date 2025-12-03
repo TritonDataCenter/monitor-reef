@@ -334,10 +334,7 @@ async fn main() -> Result<()> {
                 .await
                 .map_err(|e| {
                     if e.to_string().contains("404") || e.to_string().contains("Not Found") {
-                        anyhow::anyhow!(
-                            "Issue '{}' not found or not public",
-                            key
-                        )
+                        anyhow::anyhow!("Issue '{}' not found or not public", key)
                     } else {
                         anyhow::anyhow!("Failed to fetch issue '{}': {}", key, e)
                     }
