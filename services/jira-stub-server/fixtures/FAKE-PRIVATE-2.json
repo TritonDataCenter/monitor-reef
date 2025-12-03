@@ -1,0 +1,34 @@
+{
+  "id": "99902",
+  "key": "FAKE-PRIVATE-2",
+  "fields": {
+    "summary": "This is a private issue with no labels",
+    "labels": [],
+    "status": {
+      "name": "Closed"
+    },
+    "resolution": {
+      "name": "Won't Fix"
+    },
+    "created": "2025-01-03T10:00:00.000-0500",
+    "updated": "2025-01-04T10:00:00.000-0500",
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "This issue has no labels at all and should NOT be visible through bugview."
+            }
+          ]
+        }
+      ]
+    },
+    "comment": {
+      "comments": []
+    }
+  }
+}

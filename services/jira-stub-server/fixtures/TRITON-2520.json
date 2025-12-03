@@ -1,1810 +1,1375 @@
 {
-  "expand": "renderedFields,names,schema,operations,editmeta,changelog,versionedRepresentations,customfield_10010.requestTypePractice",
-  "id": "57781",
-  "self": "https://mnx.atlassian.net/rest/api/3/issue/57781",
-  "key": "TRITON-2520",
-  "renderedFields": {
-    "statuscategorychangedate": "24/Nov/25 10:32 AM",
-    "issuetype": null,
-    "timespent": null,
-    "customfield_10030": null,
-    "project": null,
-    "customfield_10032": null,
-    "customfield_10110": null,
-    "fixVersions": null,
-    "statusCategory": null,
-    "customfield_10111": null,
-    "aggregatetimespent": null,
-    "customfield_10112": null,
-    "resolution": null,
-    "customfield_10114": null,
-    "customfield_10104": null,
-    "customfield_10105": null,
-    "customfield_10149": null,
-    "customfield_10106": null,
-    "customfield_10029": "",
-    "customfield_10109": null,
-    "resolutiondate": null,
-    "workratio": null,
-    "lastViewed": null,
-    "watches": null,
-    "issuerestriction": null,
-    "customfield_10060": null,
-    "created": "31/Oct/25 10:30 AM",
-    "customfield_10020": null,
-    "customfield_10021": null,
-    "customfield_10066": null,
-    "customfield_10022": null,
-    "customfield_10100": null,
-    "priority": null,
-    "customfield_10023": null,
-    "customfield_10101": null,
-    "customfield_10024": "20/Nov/25 10:18 AM",
-    "customfield_10102": null,
-    "customfield_10025": null,
-    "customfield_10103": null,
-    "labels": null,
-    "customfield_10016": null,
-    "customfield_10017": "",
-    "customfield_10019": null,
-    "timeestimate": null,
-    "aggregatetimeoriginalestimate": null,
-    "versions": null,
-    "issuelinks": null,
-    "assignee": null,
-    "updated": "24/Nov/25 10:32 AM",
-    "status": null,
-    "components": null,
-    "customfield_10093": null,
-    "customfield_10094": null,
-    "timeoriginalestimate": null,
-    "customfield_10095": null,
-    "customfield_10096": null,
-    "description": "<p>Servers that already had a specific UUID were discovered to change their UUID based seemingly on reading a UUID from the output of <tt>smbios</tt>. That caused a lot of unexpected behavior.</p>\n\n<p>This was narrowed down to be the result of the BMC being in a bad state. By saving the UUID to the zones pool and trusting that over the <tt>smbios</tt> output going forward we prevent this sort of hardware misbehavior from causing operator confusion.</p>\n\n<p>Leveraging the code from the fix for this bug,<a href=\"https://mnx.atlassian.net/secure/ViewProfile.jspa?accountId=6256ebc46b0007006970072f\" class=\"user-hover\" rel=\"6256ebc46b0007006970072f\" data-account-id=\"6256ebc46b0007006970072f\" accountid=\"6256ebc46b0007006970072f\" rel=\"noreferrer\">Dan McDonald</a> wrote a one-liner that can check for servers where the server UUID is currently mismatched from the output of smbios (whether from <tt>override_uuid</tt> or from trusting a value stored on the pool):<br/>\n{{sdc-oneachnode -a 'if [[ $(sysinfo | json UUID) != $(smbios | grep UUID: | awk \"</p>\n{print \\$2;}\" ) ]]; then echo \"mismatch on $(sysinfo | json UUID)\" ; fi'}}<br/>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre></pre>\n</div></div><span class=\"error\">&#91;root@headnode (mass-1) ~&#93;</span># sdc-oneachnode -a 'if [[ $(sysinfo | json UUID) != $(smbios | grep UUID: | awk \"{print $2;}\n<p>\" ) ]]; then echo \"mismatch on $(sysinfo | json UUID)\" ; fi'<br/>\nHOSTNAME              STATUS<br/>\ncn-1                  mismatch on 564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3<br/>\ncn-2                  <br/>\nheadnode              </p>\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre></pre>\n</div></div>\n\n<p>See also <a href=\"https://smartdatacenter.topicbox.com/groups/sdc-discuss/T8dedf5d44cd8520e-M9f0075c99310d59a5207f285\" title=\"smart-link\" class=\"external-link\" rel=\"nofollow noreferrer\">https://smartdatacenter.topicbox.com/groups/sdc-discuss/T8dedf5d44cd8520e-M9f0075c99310d59a5207f285</a> </p>\n\n<p><del>Need to test:</del></p>\n\n<ol>\n\t<li><del>What happens when smbios uuid changes</del></li>\n\t<li><del>What happens when boot MAC changes</del></li>\n\t<li><del>What happens when BOTH change?</del></li>\n</ol>\n\n\n<p>We should not test MAC address changes. Those could reasonably require Operator intervention to fix nic tag associations (If you change a NIC on a SmartOS machine, you cannot expect it to “Just Work” upon booting it up again.)</p>",
-    "customfield_10097": null,
-    "customfield_10010": null,
-    "customfield_10098": null,
-    "customfield_10099": null,
-    "customfield_10056": null,
-    "customfield_10014": null,
-    "timetracking": {},
-    "customfield_10015": null,
-    "customfield_10005": null,
-    "customfield_10006": null,
-    "customfield_10007": null,
-    "security": null,
-    "customfield_10008": null,
-    "aggregatetimeestimate": null,
-    "customfield_10009": null,
-    "attachment": [
-      {
-        "self": "https://mnx.atlassian.net/rest/api/3/attachment/15880",
-        "id": "15880",
-        "filename": "diff.txt",
-        "author": {
-          "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
-          "accountId": "6256ebc46b0007006970072f",
-          "emailAddress": "danmcd@mnx.io",
-          "avatarUrls": {
-            "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
-            "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
-            "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
-            "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
-          },
-          "displayName": "Dan McDonald",
-          "active": true,
-          "timeZone": "America/Detroit",
-          "accountType": "atlassian"
-        },
-        "created": "20/Nov/25 10:25 AM",
-        "size": "1 kB",
-        "mimeType": "text/plain",
-        "content": "https://mnx.atlassian.net/rest/api/3/attachment/content/15880"
-      },
-      {
-        "self": "https://mnx.atlassian.net/rest/api/3/attachment/15878",
-        "id": "15878",
-        "filename": "right.json",
-        "author": {
-          "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
-          "accountId": "6256ebc46b0007006970072f",
-          "emailAddress": "danmcd@mnx.io",
-          "avatarUrls": {
-            "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
-            "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
-            "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
-            "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
-          },
-          "displayName": "Dan McDonald",
-          "active": true,
-          "timeZone": "America/Detroit",
-          "accountType": "atlassian"
-        },
-        "created": "20/Nov/25 10:25 AM",
-        "size": "7 kB",
-        "mimeType": "application/json",
-        "content": "https://mnx.atlassian.net/rest/api/3/attachment/content/15878"
-      },
-      {
-        "self": "https://mnx.atlassian.net/rest/api/3/attachment/15914",
-        "id": "15914",
-        "filename": "TRITON-2520-2025-11-20-175110.png",
-        "author": {
-          "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-          "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-          "emailAddress": "nahum.shalman@mnx.io",
-          "avatarUrls": {
-            "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-            "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
-            "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-            "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
-          },
-          "displayName": "Nahum Shalman",
-          "active": true,
-          "timeZone": "America/Detroit",
-          "accountType": "atlassian"
-        },
-        "created": "20/Nov/25 12:52 PM",
-        "size": "345 kB",
-        "mimeType": "image/png",
-        "content": "https://mnx.atlassian.net/rest/api/3/attachment/content/15914",
-        "thumbnail": "https://mnx.atlassian.net/rest/api/3/attachment/thumbnail/15914"
-      },
-      {
-        "self": "https://mnx.atlassian.net/rest/api/3/attachment/15879",
-        "id": "15879",
-        "filename": "wrong.json",
-        "author": {
-          "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
-          "accountId": "6256ebc46b0007006970072f",
-          "emailAddress": "danmcd@mnx.io",
-          "avatarUrls": {
-            "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
-            "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
-            "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
-            "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
-          },
-          "displayName": "Dan McDonald",
-          "active": true,
-          "timeZone": "America/Detroit",
-          "accountType": "atlassian"
-        },
-        "created": "20/Nov/25 10:25 AM",
-        "size": "7 kB",
-        "mimeType": "application/json",
-        "content": "https://mnx.atlassian.net/rest/api/3/attachment/content/15879"
-      }
-    ],
-    "summary": null,
-    "creator": null,
-    "subtasks": null,
-    "customfield_10041": null,
-    "customfield_10042": null,
-    "reporter": null,
-    "aggregateprogress": null,
-    "customfield_10088": null,
-    "customfield_10001": null,
-    "customfield_10002": null,
-    "customfield_10003": null,
-    "customfield_10004": null,
-    "customfield_10115": null,
-    "customfield_10116": null,
-    "environment": "",
-    "duedate": null,
-    "progress": null,
-    "votes": null,
-    "comment": {
-      "comments": [
-        {
-          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/134217",
-          "id": "134217",
-          "author": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "emailAddress": "nahum.shalman@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
-            },
-            "displayName": "Nahum Shalman",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
-          },
-          "body": "<p><a href=\"https://github.com/TritonDataCenter/smartos-live/blob/master/src/sysinfo#L103\" title=\"smart-link\" class=\"external-link\" rel=\"nofollow noreferrer\">https://github.com/TritonDataCenter/smartos-live/blob/master/src/sysinfo#L103</a>  is where the UUID is read from smbios.</p>",
-          "updateAuthor": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "emailAddress": "nahum.shalman@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
-            },
-            "displayName": "Nahum Shalman",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
-          },
-          "created": "14/Nov/25 10:16 AM",
-          "updated": "14/Nov/25 10:16 AM",
-          "jsdPublic": true
-        },
-        {
-          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/134350",
-          "id": "134350",
-          "author": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "emailAddress": "nahum.shalman@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
-            },
-            "displayName": "Nahum Shalman",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
-          },
-          "body": "<p>We apparently also have a \"override_uuid\"  bootparam:</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>    # overwrite UUID if config dictates otherwise\n    tmp_uuid=$(/usr/bin/bootparams | grep \"^override_uuid=\" | cut -f2 -d'=')\n    if [[ -n $tmp_uuid ]]; then\n        UUID=$tmp_uuid\n    fi</pre>\n</div></div>\n\n<p>… which presumably one could configure booter to send to a machine, and is probably the correct place in the code for any additional logic on a further source of truth.</p>\n\n<p>I think we should do:</p>\n\n<ol>\n\t<li>get value from <tt>smbios</tt></li>\n\t<li>get value from zones pool, if present. if not present, record the value from <tt>smbios</tt></li>\n\t<li>get value from override_uuid if present, also update zones pool if so</li>\n</ol>\n",
-          "updateAuthor": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "emailAddress": "nahum.shalman@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
-            },
-            "displayName": "Nahum Shalman",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
-          },
-          "created": "19/Nov/25 12:33 PM",
-          "updated": "19/Nov/25 12:33 PM",
-          "jsdPublic": true
-        },
-        {
-          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/134383",
-          "id": "134383",
-          "author": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
-            "accountId": "6256ebc46b0007006970072f",
-            "emailAddress": "danmcd@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
-            },
-            "displayName": "Dan McDonald",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
-          },
-          "body": "<p>First round of testing on all-VMware-guest Triton Cloud {{mass-1}}on my workstation.</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>[root@headnode (mass-1) ~]# sdc-server list\nHOSTNAME             UUID                                 VERSION    SETUP    STATUS      RAM  ADMIN_IP       \nheadnode             564d5aa9-490e-fd3a-e08d-cad4f4a5d7b7     7.0     true   running    16383  172.16.64.2    \n[root@headnode (mass-1) ~]# sdcadm platform list\nVERSION           CURRENT_PLATFORM  BOOT_PLATFORM  LATEST  DEFAULT  OS\n20251119T203931Z  0                 0              true    false    smartos\n20251113T010957Z  1                 1              false   true     smartos\n[root@headnode (mass-1) ~]# </pre>\n</div></div>\n\n<p>Set 'default' to be 20251119T203931Z and bring up a new CN, inspecting pre-and-post setup.</p>\n\n<p>Currently all mass-1 VMware instances (headnode, CN-1, have sane BIOS settings and sane UUIDs as a result.</p>\n\n<p>Bringing up CN-1 with new PI. Headnode sees it.</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>[root@headnode (mass-1) ~]# sdc-server list\nHOSTNAME             UUID                                 VERSION    SETUP    STATUS      RAM  ADMIN_IP       \nheadnode             564d5aa9-490e-fd3a-e08d-cad4f4a5d7b7     7.0     true   running    16383  172.16.64.2    \n00-0c-29-7f-b3-d3    564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3     7.0    false   running     4095  172.16.64.32   \n[root@headnode (mass-1) ~]# </pre>\n</div></div>\n\n<p>VM setting is sane:</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>kebe(~)[0]% grep uuid Virtual\\ Machines.localized/mass-1-CN-1.vmwarevm/mass-1-CN-1.vmx\nuuid.bios = \"56 4d f9 cb 7b 48 9e de-b7 a5 c8 ad 3e 7f b3 d3\"\nuuid.location = \"56 4d f9 cb 7b 48 9e de-b7 a5 c8 ad 3e 7f b3 d3\"\nkebe(~)[0]% </pre>\n</div></div>\n\n<p>and the system is pristine, and so far no different than any other PI’s boot:</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>SmartOS (build: 20251119T203931Z)\n[root@00-0c-29-7f-b3-d3 ~]# zpool list\nno pools available\n[root@00-0c-29-7f-b3-d3 ~]# svcs -xv\n[root@00-0c-29-7f-b3-d3 ~]# bootparams | grep -i uuid\n[root@00-0c-29-7f-b3-d3 ~]# sysinfo | grep -i uuid\n  \"UUID\": \"564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3\",\n[root@00-0c-29-7f-b3-d3 ~]# </pre>\n</div></div>\n\n<p>Let's set it up...</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>[root@headnode (mass-1) ~]# sdc-server setup 564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3 hostname=cn-1\n[root@headnode (mass-1) ~]# </pre>\n</div></div>\n\n<p>and...</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>[root@00-0c-29-7f-b3-d3 ~]# \ncreating pool: zones                                    \n                                                                  (as potentially bootable)done\nadding volume: dump                                     done\nadding volume: config                                   done\nadding volume: cores                                    done\nadding volume: opt                                      done\nadding volume: var                                      done\nCompute node, installing config files...                done\nadding volume: swap                                     done</pre>\n</div></div>\n\n<p>so now it reboots.</p>\n\n<p>CNAPI thinks we're done with setup:</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>[root@headnode (mass-1) ~]# sdc-server list\nHOSTNAME             UUID                                 VERSION    SETUP    STATUS      RAM  ADMIN_IP       \nheadnode             564d5aa9-490e-fd3a-e08d-cad4f4a5d7b7     7.0     true   running    16383  172.16.64.2    \ncn-1                 564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3     7.0     true   unknown     4095  172.16.64.32   \n[root@headnode (mass-1) ~]# </pre>\n</div></div>\n\n<p>That's normal until CN-1 is fully up.  CNAPI now says good to go:</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>[root@headnode (mass-1) ~]# sdc-server list\nHOSTNAME             UUID                                 VERSION    SETUP    STATUS      RAM  ADMIN_IP       \nheadnode             564d5aa9-490e-fd3a-e08d-cad4f4a5d7b7     7.0     true   running    16383  172.16.64.2    \ncn-1                 564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3     7.0     true   running     4095  172.16.64.32   \n[root@headnode (mass-1) ~]# </pre>\n</div></div>\n\n<p>Let's login! Seems sane.</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>[root@cn-1 (mass-1) ~]# zfs get all zones/var | grep triton\nzones/var  com.tritondatacenter:uuid  564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3  local\n[root@cn-1 (mass-1) ~]# bootparams | grep -i uuid\n[root@cn-1 (mass-1) ~]# smbios | grep -i uuid\n  UUID: 564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3\n  UUID (Endian-corrected): cbf94d56-487b-de9e-b7a5-c8ad3e7fb3d3\n[root@cn-1 (mass-1) ~]# sysinfo | grep -i uuid\n  \"UUID\": \"564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3\",\n[root@cn-1 (mass-1) ~]# </pre>\n</div></div>",
-          "updateAuthor": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
-            "accountId": "6256ebc46b0007006970072f",
-            "emailAddress": "danmcd@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
-            },
-            "displayName": "Dan McDonald",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
-          },
-          "created": "20/Nov/25 10:18 AM",
-          "updated": "20/Nov/25 10:18 AM",
-          "jsdPublic": true
-        },
-        {
-          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/134384",
-          "id": "134384",
-          "author": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
-            "accountId": "6256ebc46b0007006970072f",
-            "emailAddress": "danmcd@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
-            },
-            "displayName": "Dan McDonald",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
-          },
-          "body": "<p>Continuing round 1.</p>\n\n<p>1.) Get CN-2 up but with 20251113... aka current release.<br/>\n2.) Make sure everything's nice and hunky-dory.<br/>\n3.) Power off both CNs.<br/>\n4.) Introduce single-bit error on BOTH CNs. VMware’s ethernet MAC address derives from its UUID so introducing the single-bit-error on the vendor portion (<tt>564d</tt> becomes <tt>564c</tt>).<br/>\n5.) Reboot both and see what happens.</p>\n\n<p>So after rebooting both:</p>\n\n<p>1.) cn-2 doubled-up in CNAPI.<br/>\n2.) cn-1 (with \n    <span class=\"jira-issue-macro\" data-jira-key=\"TRITON-2520\" >\n                <a href=\"https://mnx.atlassian.net/browse/TRITON-2520\" class=\"jira-issue-macro-key issue-link\"  title=\"Servers should not change UUID on reboot\" >\n            <img class=\"icon\" src=\"https://mnx.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium\" />\n            TRITON-2520\n        </a>\n                                                    <span class=\"aui-lozenge aui-lozenge-subtle aui-lozenge-success jira-macro-single-issue-export-pdf\">Resolved</span>\n            </span>\n) did not.</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>[root@headnode (mass-1) ~]# sdc-server list\nHOSTNAME             UUID                                 VERSION    SETUP    STATUS      RAM  ADMIN_IP       \ncn-2                 564c0626-c15f-78d0-056e-d4cc6b7aa8ff     7.0     true   running     4095  172.16.64.33   \ncn-2                 564d0626-c15f-78d0-056e-d4cc6b7aa8ff     7.0     true   unknown     4095  172.16.64.33   \nheadnode             564d5aa9-490e-fd3a-e08d-cad4f4a5d7b7     7.0     true   running    16383  172.16.64.2    \ncn-1                 564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3     7.0     true   unknown     4095  172.16.64.32   \n[root@headnode (mass-1) ~]# </pre>\n</div></div>\n\n<p>CN-1 self-corrected:</p>\n\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>cn-1 ttyb login: root\nPassword: \nLast login: Wed Nov 19 22:33:20 on term/b\n2025-11-19T23:18:55+00:00 cn-1 login: [ID 644210 auth.notice] ROOT LOGIN /dev/term/b\nSmartOS (build: 20251119T203931Z)\n[root@cn-1 (mass-1) ~]# zfs get all zones/var | grep triton\nzones/var  com.tritondatacenter:uuid  564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3  local\n[root@cn-1 (mass-1) ~]# smbios | grep -i uuid\n  UUID: 564cf9cb-7b48-9ede-b7a5-c8ad3e7fb3d3\n  UUID (Endian-corrected): cbf94c56-487b-de9e-b7a5-c8ad3e7fb3d3\n[root@cn-1 (mass-1) ~]# sysinfo | grep -i uuid\n  \"UUID\": \"564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3\",\n[root@cn-1 (mass-1) ~]# </pre>\n</div></div>\n\n<p>CN-2 did not:</p>\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>cn-2 ttyb login: root\nPassword: \nLast login: Wed Nov 19 23:14:18 on term/b\n2025-11-19T23:19:45+00:00 cn-2 login: [ID 644210 auth.notice] ROOT LOGIN /dev/term/b\nSmartOS (build: 20251113T010957Z)\n[root@cn-2 (mass-1) ~]# zfs get all zones/var | grep triton\n[root@cn-2 (mass-1) ~]# smbios | grep -i uuid\n  UUID: 564c0626-c15f-78d0-056e-d4cc6b7aa8ff\n  UUID (Endian-corrected): 26064c56-5fc1-d078-056e-d4cc6b7aa8ff\n[root@cn-2 (mass-1) ~]# sysinfo | grep -i uuid\n  \"UUID\": \"564c0626-c15f-78d0-056e-d4cc6b7aa8ff\",\n[root@cn-2 (mass-1) ~]# </pre>\n</div></div>\n\n<p>NOTE that neither of these CNs had VMs deployed on them.</p>\n\n<p>Attaching “right.json”, “wrong.json”, and “diff.txt” for CN-2’s TWO CNAPI entries.<span class=\"nobr\"><a href=\"/rest/api/3/attachment/content/15878\" title=\"right.json attached to TRITON-2520\" data-attachment-type=\"file\" data-attachment-name=\"right.json\" data-media-services-type=\"file\" data-media-services-id=\"ee2a2b54-2b82-4a70-9297-72dfdad3919f\" rel=\"noreferrer\">right.json<sup><img class=\"rendericon\" src=\"/images/icons/link_attachment_7.gif\" height=\"7\" width=\"7\" align=\"absmiddle\" alt=\"\" border=\"0\"/></sup></a></span> <span class=\"nobr\"><a href=\"/rest/api/3/attachment/content/15879\" title=\"wrong.json attached to TRITON-2520\" data-attachment-type=\"file\" data-attachment-name=\"wrong.json\" data-media-services-type=\"file\" data-media-services-id=\"4527aaf8-4aee-4901-8758-f0296c42b811\" rel=\"noreferrer\">wrong.json<sup><img class=\"rendericon\" src=\"/images/icons/link_attachment_7.gif\" height=\"7\" width=\"7\" align=\"absmiddle\" alt=\"\" border=\"0\"/></sup></a></span> <span class=\"nobr\"><a href=\"/rest/api/3/attachment/content/15880\" title=\"diff.txt attached to TRITON-2520\" data-attachment-type=\"file\" data-attachment-name=\"diff.txt\" data-media-services-type=\"file\" data-media-services-id=\"ad0829d7-94f3-41bf-beb6-b544f5b72554\" rel=\"noreferrer\">diff.txt<sup><img class=\"rendericon\" src=\"/images/icons/link_attachment_7.gif\" height=\"7\" width=\"7\" align=\"absmiddle\" alt=\"\" border=\"0\"/></sup></a></span> </p>",
-          "updateAuthor": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
-            "accountId": "6256ebc46b0007006970072f",
-            "emailAddress": "danmcd@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
-            },
-            "displayName": "Dan McDonald",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
-          },
-          "created": "20/Nov/25 10:25 AM",
-          "updated": "20/Nov/25 10:25 AM",
-          "jsdPublic": true
-        },
-        {
-          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/134419",
-          "id": "134419",
-          "author": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "emailAddress": "nahum.shalman@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
-            },
-            "displayName": "Nahum Shalman",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
-          },
-          "body": "<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>flowchart TD\n    Start([get_or_store_uuid called]) --&gt; CheckZpool{Is $Zpool empty?}\n\n    CheckZpool --&gt;|Yes| Return([Return - do nothing])\n    CheckZpool --&gt;|No| GetSource[Get ZFS property source for&lt;br/&gt;org.smartos:server_uuid&lt;br/&gt;on $Zpool/var]\n\n    GetSource --&gt; CheckSource{Is source == 'local'?}\n\n    CheckSource --&gt;|No| NoStoredUUID[No stored UUID on pool]\n    CheckSource --&gt;|Yes| ReadStored[Read UUID value from pool]\n\n    ReadStored --&gt; CheckOverride{Is OVERRIDE_UUID set&lt;br/&gt;AND different from&lt;br/&gt;stored value?}\n\n    CheckOverride --&gt;|Yes| ValidateOverride{Is OVERRIDE_UUID&lt;br/&gt;a valid UUID?}\n    CheckOverride --&gt;|No| ValidateStored{Is stored UUID&lt;br/&gt;valid?}\n\n    ValidateOverride --&gt;|Yes| UpdatePool[Update pool with&lt;br/&gt;OVERRIDE_UUID]\n    ValidateOverride --&gt;|No| ValidateStored\n\n    UpdatePool --&gt; ReadBack[Read updated value&lt;br/&gt;back from pool]\n    ReadBack --&gt; ValidateStored\n\n    ValidateStored --&gt;|Yes| UseStored[Set UUID to stored value]\n    ValidateStored --&gt;|No| CleanupInvalid[Delete invalid UUID&lt;br/&gt;from pool using&lt;br/&gt;zfs inherit]\n\n    UseStored --&gt; End([Return])\n\n    CleanupInvalid --&gt; NoStoredUUID\n    NoStoredUUID --&gt; ValidateCurrent{Is current UUID&lt;br/&gt;valid?}\n\n    ValidateCurrent --&gt;|Yes| PersistUUID[Store current UUID&lt;br/&gt;on pool]\n    ValidateCurrent --&gt;|No| End\n\n    PersistUUID --&gt; End</pre>\n</div></div>\n\n<p><span class=\"image-wrap\" style=\"\"><img src=\"/rest/api/3/attachment/content/15914\" alt=\"TRITON-2520-2025-11-20-175110.png\" width=\"692\" style=\"border: 0px solid black\" /></span></p>",
-          "updateAuthor": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "emailAddress": "nahum.shalman@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
-            },
-            "displayName": "Nahum Shalman",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
-          },
-          "created": "20/Nov/25 12:45 PM",
-          "updated": "20/Nov/25 12:52 PM",
-          "jsdPublic": true
-        },
-        {
-          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/134488",
-          "id": "134488",
-          "author": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "emailAddress": "nahum.shalman@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
-            },
-            "displayName": "Nahum Shalman",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
-          },
-          "body": "<p>Cleanup of an invalid value stored on the pool has been tested as well:</p>\n\n\n<div class=\"preformatted panel\" style=\"border-width: 1px;\"><div class=\"preformattedContent panelContent\">\n<pre>[root@triton-2520 ~]# zfs get org.smartos:server_uuid zones/var; sysinfo | grep UUID; sysinfo -u; sysinfo | grep UUID; zfs get org.smartos:server_uuid zones/var\nNAME       PROPERTY                 VALUE                                 SOURCE\nzones/var  org.smartos:server_uuid  db40345e-669c-4f10-803f-13e212ac4116  local\n  \"UUID\": \"db40345e-669c-4f10-803f-13e212ac4116\",\n  \"UUID\": \"db40345e-669c-4f10-803f-13e212ac4116\",\nNAME       PROPERTY                 VALUE                                 SOURCE\nzones/var  org.smartos:server_uuid  db40345e-669c-4f10-803f-13e212ac4116  local\n[root@triton-2520 ~]# zfs set org.smartos:server_uuid=bogus zones/var\n[root@triton-2520 ~]# zfs get org.smartos:server_uuid zones/var; sysinfo | grep UUID; sysinfo -u; sysinfo | grep UUID; zfs get org.smartos:server_uuid zones/var\nNAME       PROPERTY                 VALUE                    SOURCE\nzones/var  org.smartos:server_uuid  bogus                    local\n  \"UUID\": \"db40345e-669c-4f10-803f-13e212ac4116\",\n  \"UUID\": \"db40345e-669c-4f10-803f-13e212ac4116\",\nNAME       PROPERTY                 VALUE                                 SOURCE\nzones/var  org.smartos:server_uuid  db40345e-669c-4f10-803f-13e212ac4116  local</pre>\n</div></div>",
-          "updateAuthor": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "emailAddress": "nahum.shalman@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
-            },
-            "displayName": "Nahum Shalman",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
-          },
-          "created": "21/Nov/25 11:34 AM",
-          "updated": "21/Nov/25 11:34 AM",
-          "jsdPublic": true
-        }
-      ],
-      "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment",
-      "maxResults": 6,
-      "total": 6,
-      "startAt": 0
-    },
-    "worklog": {
-      "startAt": 0,
-      "maxResults": 20,
-      "total": 0,
-      "worklogs": []
-    }
-  },
   "fields": {
-    "statuscategorychangedate": "2025-11-24T10:32:30.587-0500",
-    "issuetype": {
-      "self": "https://mnx.atlassian.net/rest/api/3/issuetype/10004",
-      "id": "10004",
-      "description": "A problem or error.",
-      "iconUrl": "https://mnx.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
-      "name": "Bug",
-      "subtask": false,
-      "avatarId": 10303,
-      "hierarchyLevel": 0
-    },
-    "timespent": null,
-    "customfield_10030": null,
-    "project": {
-      "self": "https://mnx.atlassian.net/rest/api/3/project/10032",
-      "id": "10032",
-      "key": "TRITON",
-      "name": "TRITON: Triton DataCenter",
-      "projectTypeKey": "software",
-      "simplified": false,
-      "avatarUrls": {
-        "48x48": "https://mnx.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10555",
-        "24x24": "https://mnx.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10555?size=small",
-        "16x16": "https://mnx.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10555?size=xsmall",
-        "32x32": "https://mnx.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10555?size=medium"
-      }
-    },
-    "customfield_10032": null,
-    "customfield_10110": null,
-    "fixVersions": [],
-    "statusCategory": {
-      "self": "https://mnx.atlassian.net/rest/api/3/statuscategory/3",
-      "id": 3,
-      "key": "done",
-      "colorName": "green",
-      "name": "Done"
-    },
-    "customfield_10111": null,
-    "aggregatetimespent": null,
-    "customfield_10112": null,
-    "resolution": null,
-    "customfield_10114": null,
-    "customfield_10104": null,
-    "customfield_10105": null,
-    "customfield_10149": null,
-    "customfield_10106": null,
-    "customfield_10029": null,
-    "customfield_10109": null,
-    "resolutiondate": null,
-    "workratio": -1,
-    "lastViewed": null,
-    "watches": {
-      "self": "https://mnx.atlassian.net/rest/api/3/issue/TRITON-2520/watchers",
-      "watchCount": 2,
-      "isWatching": false
-    },
-    "issuerestriction": {
-      "issuerestrictions": {},
-      "shouldDisplay": false
-    },
-    "customfield_10060": null,
-    "created": "2025-10-31T10:30:15.019-0400",
-    "customfield_10020": [
-      {
-        "id": 775,
-        "name": "release-20251127",
-        "state": "closed",
-        "boardId": 7,
-        "goal": "SmartOS release-20251127",
-        "startDate": "2025-11-17T14:34:42.608Z",
-        "endDate": "2025-12-01T20:00:00.000Z",
-        "completeDate": "2025-12-01T14:36:47.186Z"
-      }
-    ],
-    "customfield_10021": null,
-    "customfield_10066": {
-      "self": "https://mnx.atlassian.net/rest/api/3/customFieldOption/10173",
-      "value": "No",
-      "id": "10173"
-    },
-    "customfield_10022": null,
-    "customfield_10100": null,
-    "priority": {
-      "self": "https://mnx.atlassian.net/rest/api/3/priority/10002",
-      "iconUrl": "https://mnx.atlassian.net/images/icons/priorities/major.svg",
-      "name": "3 - Elevated",
-      "id": "10002"
-    },
-    "customfield_10023": null,
-    "customfield_10101": null,
-    "customfield_10024": "2025-11-20T10:18:20.429-0500",
-    "customfield_10102": null,
-    "customfield_10025": null,
-    "customfield_10103": null,
-    "labels": [
-      "public"
-    ],
-    "customfield_10016": null,
-    "customfield_10017": null,
-    "customfield_10019": "1|i004dj:",
-    "timeestimate": null,
-    "aggregatetimeoriginalestimate": null,
-    "versions": [],
-    "issuelinks": [],
-    "assignee": {
-      "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-      "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-      "emailAddress": "nahum.shalman@mnx.io",
-      "avatarUrls": {
-        "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-        "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
-        "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-        "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
-      },
-      "displayName": "Nahum Shalman",
-      "active": true,
-      "timeZone": "America/Detroit",
-      "accountType": "atlassian"
-    },
-    "updated": "2025-11-24T10:32:30.587-0500",
-    "status": {
-      "self": "https://mnx.atlassian.net/rest/api/3/status/5",
-      "description": "A resolution has been taken, and it is awaiting verification by reporter. From here issues are either reopened, or are closed.",
-      "iconUrl": "https://mnx.atlassian.net/images/icons/statuses/resolved.png",
-      "name": "Resolved",
-      "id": "5",
-      "statusCategory": {
-        "self": "https://mnx.atlassian.net/rest/api/3/statuscategory/3",
-        "id": 3,
-        "key": "done",
-        "colorName": "green",
-        "name": "Done"
-      }
-    },
-    "components": [],
-    "customfield_10093": null,
-    "customfield_10094": null,
-    "timeoriginalestimate": null,
-    "customfield_10095": null,
-    "customfield_10096": null,
-    "description": {
-      "type": "doc",
-      "version": 1,
-      "content": [
-        {
-          "type": "paragraph",
-          "content": [
-            {
-              "type": "text",
-              "text": "Servers that already had a specific UUID were discovered to change their UUID based seemingly on reading a UUID from the output of "
-            },
-            {
-              "type": "text",
-              "text": "smbios",
-              "marks": [
-                {
-                  "type": "code"
-                }
-              ]
-            },
-            {
-              "type": "text",
-              "text": ". That caused a lot of unexpected behavior."
-            }
-          ]
-        },
-        {
-          "type": "paragraph",
-          "content": [
-            {
-              "type": "text",
-              "text": "This was narrowed down to be the result of the BMC being in a bad state. By saving the UUID to the zones pool and trusting that over the "
-            },
-            {
-              "type": "text",
-              "text": "smbios",
-              "marks": [
-                {
-                  "type": "code"
-                }
-              ]
-            },
-            {
-              "type": "text",
-              "text": " output going forward we prevent this sort of hardware misbehavior from causing operator confusion."
-            }
-          ]
-        },
-        {
-          "type": "paragraph",
-          "content": [
-            {
-              "type": "text",
-              "text": "Leveraging the code from the fix for this bug,"
-            },
-            {
-              "type": "mention",
-              "attrs": {
-                "id": "6256ebc46b0007006970072f",
-                "text": "@Dan McDonald",
-                "accessLevel": "",
-                "localId": "724b924b-1713-41cc-a0dd-7364e1cdaf01"
-              }
-            },
-            {
-              "type": "text",
-              "text": " wrote a one-liner that can check for servers where the server UUID is currently mismatched from the output of smbios (whether from "
-            },
-            {
-              "type": "text",
-              "text": "override_uuid",
-              "marks": [
-                {
-                  "type": "code"
-                }
-              ]
-            },
-            {
-              "type": "text",
-              "text": " or from trusting a value stored on the pool):"
-            },
-            {
-              "type": "hardBreak"
-            },
-            {
-              "type": "text",
-              "text": "sdc-oneachnode -a 'if [[ $(sysinfo | json UUID) != $(smbios | grep UUID: | awk \"{print \\$2;}\" ) ]]; then echo \"mismatch on $(sysinfo | json UUID)\" ; fi'",
-              "marks": [
-                {
-                  "type": "code"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "type": "codeBlock",
-          "content": [
-            {
-              "type": "text",
-              "text": "[root@headnode (mass-1) ~]# sdc-oneachnode -a 'if [[ $(sysinfo | json UUID) != $(smbios | grep UUID: | awk \"{print \\$2;}\" ) ]]; then echo \"mismatch on $(sysinfo | json UUID)\" ; fi'\nHOSTNAME              STATUS\ncn-1                  mismatch on 564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3\ncn-2                  \nheadnode              "
-            }
-          ]
-        },
-        {
-          "type": "paragraph",
-          "content": [
-            {
-              "type": "text",
-              "text": "See also "
-            },
-            {
-              "type": "inlineCard",
-              "attrs": {
-                "url": "https://smartdatacenter.topicbox.com/groups/sdc-discuss/T8dedf5d44cd8520e-M9f0075c99310d59a5207f285"
-              }
-            },
-            {
-              "type": "text",
-              "text": " "
-            }
-          ]
-        },
-        {
-          "type": "paragraph",
-          "content": [
-            {
-              "type": "text",
-              "text": "Need to test:",
-              "marks": [
-                {
-                  "type": "strike"
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "type": "orderedList",
-          "attrs": {
-            "order": 1
-          },
-          "content": [
-            {
-              "type": "listItem",
-              "content": [
-                {
-                  "type": "paragraph",
-                  "content": [
-                    {
-                      "type": "text",
-                      "text": "What happens when smbios uuid changes",
-                      "marks": [
-                        {
-                          "type": "strike"
-                        }
-                      ]
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "type": "listItem",
-              "content": [
-                {
-                  "type": "paragraph",
-                  "content": [
-                    {
-                      "type": "text",
-                      "text": "What happens when boot MAC changes",
-                      "marks": [
-                        {
-                          "type": "strike"
-                        }
-                      ]
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "type": "listItem",
-              "content": [
-                {
-                  "type": "paragraph",
-                  "content": [
-                    {
-                      "type": "text",
-                      "text": "What happens when BOTH change?",
-                      "marks": [
-                        {
-                          "type": "strike"
-                        }
-                      ]
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "type": "paragraph",
-          "content": [
-            {
-              "type": "text",
-              "text": "We should not test MAC address changes. Those could reasonably require Operator intervention to fix nic tag associations (If you change a NIC on a SmartOS machine, you cannot expect it to “Just Work” upon booting it up again.)"
-            }
-          ]
-        }
-      ]
-    },
-    "customfield_10097": null,
-    "customfield_10010": null,
-    "customfield_10098": [],
-    "customfield_10099": null,
-    "customfield_10056": null,
-    "customfield_10014": null,
-    "timetracking": {},
-    "customfield_10015": null,
-    "customfield_10005": null,
-    "customfield_10006": null,
-    "customfield_10007": null,
-    "security": null,
-    "customfield_10008": null,
-    "aggregatetimeestimate": null,
-    "customfield_10009": null,
-    "attachment": [
-      {
-        "self": "https://mnx.atlassian.net/rest/api/3/attachment/15880",
-        "id": "15880",
-        "filename": "diff.txt",
-        "author": {
-          "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
-          "accountId": "6256ebc46b0007006970072f",
-          "emailAddress": "danmcd@mnx.io",
-          "avatarUrls": {
-            "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
-            "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
-            "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
-            "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
-          },
-          "displayName": "Dan McDonald",
-          "active": true,
-          "timeZone": "America/Detroit",
-          "accountType": "atlassian"
-        },
-        "created": "2025-11-20T10:25:14.925-0500",
-        "size": 1176,
-        "mimeType": "text/plain",
-        "content": "https://mnx.atlassian.net/rest/api/3/attachment/content/15880"
-      },
-      {
-        "self": "https://mnx.atlassian.net/rest/api/3/attachment/15878",
-        "id": "15878",
-        "filename": "right.json",
-        "author": {
-          "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
-          "accountId": "6256ebc46b0007006970072f",
-          "emailAddress": "danmcd@mnx.io",
-          "avatarUrls": {
-            "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
-            "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
-            "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
-            "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
-          },
-          "displayName": "Dan McDonald",
-          "active": true,
-          "timeZone": "America/Detroit",
-          "accountType": "atlassian"
-        },
-        "created": "2025-11-20T10:25:14.172-0500",
-        "size": 7253,
-        "mimeType": "application/json",
-        "content": "https://mnx.atlassian.net/rest/api/3/attachment/content/15878"
-      },
-      {
-        "self": "https://mnx.atlassian.net/rest/api/3/attachment/15914",
-        "id": "15914",
-        "filename": "TRITON-2520-2025-11-20-175110.png",
-        "author": {
-          "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-          "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-          "emailAddress": "nahum.shalman@mnx.io",
-          "avatarUrls": {
-            "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-            "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
-            "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-            "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
-          },
-          "displayName": "Nahum Shalman",
-          "active": true,
-          "timeZone": "America/Detroit",
-          "accountType": "atlassian"
-        },
-        "created": "2025-11-20T12:52:17.016-0500",
-        "size": 352928,
-        "mimeType": "image/png",
-        "content": "https://mnx.atlassian.net/rest/api/3/attachment/content/15914",
-        "thumbnail": "https://mnx.atlassian.net/rest/api/3/attachment/thumbnail/15914"
-      },
-      {
-        "self": "https://mnx.atlassian.net/rest/api/3/attachment/15879",
-        "id": "15879",
-        "filename": "wrong.json",
-        "author": {
-          "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
-          "accountId": "6256ebc46b0007006970072f",
-          "emailAddress": "danmcd@mnx.io",
-          "avatarUrls": {
-            "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
-            "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
-            "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
-            "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
-          },
-          "displayName": "Dan McDonald",
-          "active": true,
-          "timeZone": "America/Detroit",
-          "accountType": "atlassian"
-        },
-        "created": "2025-11-20T10:25:14.583-0500",
-        "size": 7257,
-        "mimeType": "application/json",
-        "content": "https://mnx.atlassian.net/rest/api/3/attachment/content/15879"
-      }
-    ],
-    "summary": "Servers should not change UUID on reboot",
-    "creator": {
-      "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-      "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-      "emailAddress": "nahum.shalman@mnx.io",
-      "avatarUrls": {
-        "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-        "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
-        "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-        "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
-      },
-      "displayName": "Nahum Shalman",
-      "active": true,
-      "timeZone": "America/Detroit",
-      "accountType": "atlassian"
-    },
-    "subtasks": [],
-    "customfield_10041": null,
-    "customfield_10042": null,
-    "reporter": {
-      "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-      "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-      "emailAddress": "nahum.shalman@mnx.io",
-      "avatarUrls": {
-        "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-        "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
-        "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-        "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
-      },
-      "displayName": "Nahum Shalman",
-      "active": true,
-      "timeZone": "America/Detroit",
-      "accountType": "atlassian"
-    },
     "aggregateprogress": {
       "progress": 0,
       "total": 0
     },
-    "customfield_10088": null,
-    "customfield_10001": null,
-    "customfield_10002": [],
-    "customfield_10003": null,
-    "customfield_10004": null,
-    "customfield_10115": null,
-    "customfield_10116": null,
-    "environment": null,
-    "duedate": null,
-    "progress": {
-      "progress": 0,
-      "total": 0
+    "aggregatetimeestimate": null,
+    "aggregatetimeoriginalestimate": null,
+    "aggregatetimespent": null,
+    "assignee": {
+      "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+      "accountType": "atlassian",
+      "active": true,
+      "avatarUrls": {
+        "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
+        "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
+        "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32",
+        "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48"
+      },
+      "displayName": "Nahum Shalman",
+      "emailAddress": "nahum.shalman@mnx.io",
+      "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+      "timeZone": "America/Detroit"
     },
-    "votes": {
-      "self": "https://mnx.atlassian.net/rest/api/3/issue/TRITON-2520/votes",
-      "votes": 0,
-      "hasVoted": false
-    },
+    "attachment": [
+      {
+        "author": {
+          "accountId": "6256ebc46b0007006970072f",
+          "accountType": "atlassian",
+          "active": true,
+          "avatarUrls": {
+            "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+            "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+            "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32",
+            "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48"
+          },
+          "displayName": "Dan McDonald",
+          "emailAddress": "danmcd@mnx.io",
+          "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+          "timeZone": "America/Detroit"
+        },
+        "content": "https://mnx.atlassian.net/rest/api/3/attachment/content/15880",
+        "created": "2025-11-20T10:25:14.925-0500",
+        "filename": "diff.txt",
+        "id": "15880",
+        "mimeType": "text/plain",
+        "self": "https://mnx.atlassian.net/rest/api/3/attachment/15880",
+        "size": 1176
+      },
+      {
+        "author": {
+          "accountId": "6256ebc46b0007006970072f",
+          "accountType": "atlassian",
+          "active": true,
+          "avatarUrls": {
+            "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+            "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+            "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32",
+            "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48"
+          },
+          "displayName": "Dan McDonald",
+          "emailAddress": "danmcd@mnx.io",
+          "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+          "timeZone": "America/Detroit"
+        },
+        "content": "https://mnx.atlassian.net/rest/api/3/attachment/content/15878",
+        "created": "2025-11-20T10:25:14.172-0500",
+        "filename": "right.json",
+        "id": "15878",
+        "mimeType": "application/json",
+        "self": "https://mnx.atlassian.net/rest/api/3/attachment/15878",
+        "size": 7253
+      },
+      {
+        "author": {
+          "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+          "accountType": "atlassian",
+          "active": true,
+          "avatarUrls": {
+            "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
+            "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
+            "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32",
+            "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48"
+          },
+          "displayName": "Nahum Shalman",
+          "emailAddress": "nahum.shalman@mnx.io",
+          "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+          "timeZone": "America/Detroit"
+        },
+        "content": "https://mnx.atlassian.net/rest/api/3/attachment/content/15914",
+        "created": "2025-11-20T12:52:17.016-0500",
+        "filename": "TRITON-2520-2025-11-20-175110.png",
+        "id": "15914",
+        "mimeType": "image/png",
+        "self": "https://mnx.atlassian.net/rest/api/3/attachment/15914",
+        "size": 352928,
+        "thumbnail": "https://mnx.atlassian.net/rest/api/3/attachment/thumbnail/15914"
+      },
+      {
+        "author": {
+          "accountId": "6256ebc46b0007006970072f",
+          "accountType": "atlassian",
+          "active": true,
+          "avatarUrls": {
+            "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+            "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+            "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32",
+            "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48"
+          },
+          "displayName": "Dan McDonald",
+          "emailAddress": "danmcd@mnx.io",
+          "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+          "timeZone": "America/Detroit"
+        },
+        "content": "https://mnx.atlassian.net/rest/api/3/attachment/content/15879",
+        "created": "2025-11-20T10:25:14.583-0500",
+        "filename": "wrong.json",
+        "id": "15879",
+        "mimeType": "application/json",
+        "self": "https://mnx.atlassian.net/rest/api/3/attachment/15879",
+        "size": 7257
+      }
+    ],
     "comment": {
       "comments": [
         {
-          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/134217",
-          "id": "134217",
           "author": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
             "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "emailAddress": "nahum.shalman@mnx.io",
+            "accountType": "atlassian",
+            "active": true,
             "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
               "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32",
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48"
             },
             "displayName": "Nahum Shalman",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
+            "emailAddress": "nahum.shalman@mnx.io",
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+            "timeZone": "America/Detroit"
           },
           "body": {
-            "type": "doc",
-            "version": 1,
             "content": [
               {
-                "type": "paragraph",
                 "content": [
                   {
-                    "type": "inlineCard",
                     "attrs": {
                       "url": "https://github.com/TritonDataCenter/smartos-live/blob/master/src/sysinfo#L103"
-                    }
+                    },
+                    "type": "inlineCard"
                   },
                   {
-                    "type": "text",
-                    "text": "  is where the UUID is read from smbios."
+                    "text": "  is where the UUID is read from smbios.",
+                    "type": "text"
                   }
-                ]
+                ],
+                "type": "paragraph"
               }
-            ]
-          },
-          "updateAuthor": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "emailAddress": "nahum.shalman@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
-            },
-            "displayName": "Nahum Shalman",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
+            ],
+            "type": "doc",
+            "version": 1
           },
           "created": "2025-11-14T10:16:22.270-0500",
-          "updated": "2025-11-14T10:16:22.270-0500",
-          "jsdPublic": true
-        },
-        {
-          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/134350",
-          "id": "134350",
-          "author": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+          "id": "134217",
+          "jsdPublic": true,
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/134217",
+          "updateAuthor": {
             "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "emailAddress": "nahum.shalman@mnx.io",
+            "accountType": "atlassian",
+            "active": true,
             "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
               "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32",
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48"
             },
             "displayName": "Nahum Shalman",
+            "emailAddress": "nahum.shalman@mnx.io",
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+            "timeZone": "America/Detroit"
+          },
+          "updated": "2025-11-14T10:16:22.270-0500"
+        },
+        {
+          "author": {
+            "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+            "accountType": "atlassian",
             "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
+            "avatarUrls": {
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32",
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48"
+            },
+            "displayName": "Nahum Shalman",
+            "emailAddress": "nahum.shalman@mnx.io",
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+            "timeZone": "America/Detroit"
           },
           "body": {
-            "type": "doc",
-            "version": 1,
             "content": [
               {
-                "type": "paragraph",
                 "content": [
                   {
-                    "type": "text",
-                    "text": "We apparently also have a \"override_uuid\"  bootparam:"
+                    "text": "We apparently also have a \"override_uuid\"  bootparam:",
+                    "type": "text"
                   }
-                ]
+                ],
+                "type": "paragraph"
               },
               {
-                "type": "codeBlock",
                 "content": [
                   {
-                    "type": "text",
-                    "text": "    # overwrite UUID if config dictates otherwise\n    tmp_uuid=$(/usr/bin/bootparams | grep \"^override_uuid=\" | cut -f2 -d'=')\n    if [[ -n $tmp_uuid ]]; then\n        UUID=$tmp_uuid\n    fi"
+                    "text": "    # overwrite UUID if config dictates otherwise\n    tmp_uuid=$(/usr/bin/bootparams | grep \"^override_uuid=\" | cut -f2 -d'=')\n    if [[ -n $tmp_uuid ]]; then\n        UUID=$tmp_uuid\n    fi",
+                    "type": "text"
                   }
-                ]
+                ],
+                "type": "codeBlock"
               },
               {
-                "type": "paragraph",
                 "content": [
                   {
-                    "type": "text",
-                    "text": "… which presumably one could configure booter to send to a machine, and is probably the correct place in the code for any additional logic on a further source of truth."
+                    "text": "… which presumably one could configure booter to send to a machine, and is probably the correct place in the code for any additional logic on a further source of truth.",
+                    "type": "text"
                   }
-                ]
+                ],
+                "type": "paragraph"
               },
               {
-                "type": "paragraph",
                 "content": [
                   {
-                    "type": "text",
-                    "text": "I think we should do:"
+                    "text": "I think we should do:",
+                    "type": "text"
                   }
-                ]
+                ],
+                "type": "paragraph"
               },
               {
-                "type": "orderedList",
                 "attrs": {
                   "order": 1
                 },
                 "content": [
                   {
-                    "type": "listItem",
                     "content": [
                       {
-                        "type": "paragraph",
                         "content": [
                           {
-                            "type": "text",
-                            "text": "get value from "
+                            "text": "get value from ",
+                            "type": "text"
                           },
                           {
-                            "type": "text",
-                            "text": "smbios",
                             "marks": [
                               {
                                 "type": "code"
                               }
-                            ]
+                            ],
+                            "text": "smbios",
+                            "type": "text"
                           }
-                        ]
+                        ],
+                        "type": "paragraph"
                       }
-                    ]
+                    ],
+                    "type": "listItem"
                   },
                   {
-                    "type": "listItem",
                     "content": [
                       {
-                        "type": "paragraph",
                         "content": [
                           {
-                            "type": "text",
-                            "text": "get value from zones pool, if present. if not present, record the value from "
+                            "text": "get value from zones pool, if present. if not present, record the value from ",
+                            "type": "text"
                           },
                           {
-                            "type": "text",
-                            "text": "smbios",
                             "marks": [
                               {
                                 "type": "code"
                               }
-                            ]
+                            ],
+                            "text": "smbios",
+                            "type": "text"
                           }
-                        ]
+                        ],
+                        "type": "paragraph"
                       }
-                    ]
+                    ],
+                    "type": "listItem"
                   },
                   {
-                    "type": "listItem",
                     "content": [
                       {
-                        "type": "paragraph",
                         "content": [
                           {
-                            "type": "text",
-                            "text": "get value from override_uuid if present, also update zones pool if so"
+                            "text": "get value from override_uuid if present, also update zones pool if so",
+                            "type": "text"
                           }
-                        ]
+                        ],
+                        "type": "paragraph"
                       }
-                    ]
+                    ],
+                    "type": "listItem"
                   }
-                ]
+                ],
+                "type": "orderedList"
               }
-            ]
-          },
-          "updateAuthor": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "emailAddress": "nahum.shalman@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
-            },
-            "displayName": "Nahum Shalman",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
+            ],
+            "type": "doc",
+            "version": 1
           },
           "created": "2025-11-19T12:33:39.452-0500",
-          "updated": "2025-11-19T12:33:39.452-0500",
-          "jsdPublic": true
-        },
-        {
-          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/134383",
-          "id": "134383",
-          "author": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
-            "accountId": "6256ebc46b0007006970072f",
-            "emailAddress": "danmcd@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
-            },
-            "displayName": "Dan McDonald",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
-          },
-          "body": {
-            "type": "doc",
-            "version": 1,
-            "content": [
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "First round of testing on all-VMware-guest Triton Cloud "
-                  },
-                  {
-                    "type": "text",
-                    "text": "mass-1",
-                    "marks": [
-                      {
-                        "type": "code"
-                      }
-                    ]
-                  },
-                  {
-                    "type": "text",
-                    "text": "on my workstation."
-                  }
-                ]
-              },
-              {
-                "type": "codeBlock",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "[root@headnode (mass-1) ~]# sdc-server list\nHOSTNAME             UUID                                 VERSION    SETUP    STATUS      RAM  ADMIN_IP       \nheadnode             564d5aa9-490e-fd3a-e08d-cad4f4a5d7b7     7.0     true   running    16383  172.16.64.2    \n[root@headnode (mass-1) ~]# sdcadm platform list\nVERSION           CURRENT_PLATFORM  BOOT_PLATFORM  LATEST  DEFAULT  OS\n20251119T203931Z  0                 0              true    false    smartos\n20251113T010957Z  1                 1              false   true     smartos\n[root@headnode (mass-1) ~]# "
-                  }
-                ]
-              },
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "Set 'default' to be 20251119T203931Z and bring up a new CN, inspecting pre-and-post setup."
-                  }
-                ]
-              },
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "Currently all mass-1 VMware instances (headnode, CN-1, have sane BIOS settings and sane UUIDs as a result."
-                  }
-                ]
-              },
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "Bringing up CN-1 with new PI. Headnode sees it."
-                  }
-                ]
-              },
-              {
-                "type": "codeBlock",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "[root@headnode (mass-1) ~]# sdc-server list\nHOSTNAME             UUID                                 VERSION    SETUP    STATUS      RAM  ADMIN_IP       \nheadnode             564d5aa9-490e-fd3a-e08d-cad4f4a5d7b7     7.0     true   running    16383  172.16.64.2    \n00-0c-29-7f-b3-d3    564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3     7.0    false   running     4095  172.16.64.32   \n[root@headnode (mass-1) ~]# "
-                  }
-                ]
-              },
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "VM setting is sane:"
-                  }
-                ]
-              },
-              {
-                "type": "codeBlock",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "kebe(~)[0]% grep uuid Virtual\\ Machines.localized/mass-1-CN-1.vmwarevm/mass-1-CN-1.vmx\nuuid.bios = \"56 4d f9 cb 7b 48 9e de-b7 a5 c8 ad 3e 7f b3 d3\"\nuuid.location = \"56 4d f9 cb 7b 48 9e de-b7 a5 c8 ad 3e 7f b3 d3\"\nkebe(~)[0]% "
-                  }
-                ]
-              },
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "and the system is pristine, and so far no different than any other PI’s boot:"
-                  }
-                ]
-              },
-              {
-                "type": "codeBlock",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "SmartOS (build: 20251119T203931Z)\n[root@00-0c-29-7f-b3-d3 ~]# zpool list\nno pools available\n[root@00-0c-29-7f-b3-d3 ~]# svcs -xv\n[root@00-0c-29-7f-b3-d3 ~]# bootparams | grep -i uuid\n[root@00-0c-29-7f-b3-d3 ~]# sysinfo | grep -i uuid\n  \"UUID\": \"564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3\",\n[root@00-0c-29-7f-b3-d3 ~]# "
-                  }
-                ]
-              },
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "Let's set it up..."
-                  }
-                ]
-              },
-              {
-                "type": "codeBlock",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "[root@headnode (mass-1) ~]# sdc-server setup 564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3 hostname=cn-1\n[root@headnode (mass-1) ~]# "
-                  }
-                ]
-              },
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "and..."
-                  }
-                ]
-              },
-              {
-                "type": "codeBlock",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "[root@00-0c-29-7f-b3-d3 ~]# \ncreating pool: zones                                    \n                                                                  (as potentially bootable)done\nadding volume: dump                                     done\nadding volume: config                                   done\nadding volume: cores                                    done\nadding volume: opt                                      done\nadding volume: var                                      done\nCompute node, installing config files...                done\nadding volume: swap                                     done"
-                  }
-                ]
-              },
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "so now it reboots."
-                  }
-                ]
-              },
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "CNAPI thinks we're done with setup:"
-                  }
-                ]
-              },
-              {
-                "type": "codeBlock",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "[root@headnode (mass-1) ~]# sdc-server list\nHOSTNAME             UUID                                 VERSION    SETUP    STATUS      RAM  ADMIN_IP       \nheadnode             564d5aa9-490e-fd3a-e08d-cad4f4a5d7b7     7.0     true   running    16383  172.16.64.2    \ncn-1                 564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3     7.0     true   unknown     4095  172.16.64.32   \n[root@headnode (mass-1) ~]# "
-                  }
-                ]
-              },
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "That's normal until CN-1 is fully up.  CNAPI now says good to go:"
-                  }
-                ]
-              },
-              {
-                "type": "codeBlock",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "[root@headnode (mass-1) ~]# sdc-server list\nHOSTNAME             UUID                                 VERSION    SETUP    STATUS      RAM  ADMIN_IP       \nheadnode             564d5aa9-490e-fd3a-e08d-cad4f4a5d7b7     7.0     true   running    16383  172.16.64.2    \ncn-1                 564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3     7.0     true   running     4095  172.16.64.32   \n[root@headnode (mass-1) ~]# "
-                  }
-                ]
-              },
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "Let's login! Seems sane."
-                  }
-                ]
-              },
-              {
-                "type": "codeBlock",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "[root@cn-1 (mass-1) ~]# zfs get all zones/var | grep triton\nzones/var  com.tritondatacenter:uuid  564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3  local\n[root@cn-1 (mass-1) ~]# bootparams | grep -i uuid\n[root@cn-1 (mass-1) ~]# smbios | grep -i uuid\n  UUID: 564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3\n  UUID (Endian-corrected): cbf94d56-487b-de9e-b7a5-c8ad3e7fb3d3\n[root@cn-1 (mass-1) ~]# sysinfo | grep -i uuid\n  \"UUID\": \"564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3\",\n[root@cn-1 (mass-1) ~]# "
-                  }
-                ]
-              }
-            ]
-          },
+          "id": "134350",
+          "jsdPublic": true,
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/134350",
           "updateAuthor": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
-            "accountId": "6256ebc46b0007006970072f",
-            "emailAddress": "danmcd@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
-            },
-            "displayName": "Dan McDonald",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
-          },
-          "created": "2025-11-20T10:18:20.429-0500",
-          "updated": "2025-11-20T10:18:20.429-0500",
-          "jsdPublic": true
-        },
-        {
-          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/134384",
-          "id": "134384",
-          "author": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
-            "accountId": "6256ebc46b0007006970072f",
-            "emailAddress": "danmcd@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
-            },
-            "displayName": "Dan McDonald",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
-          },
-          "body": {
-            "type": "doc",
-            "version": 1,
-            "content": [
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "Continuing round 1."
-                  }
-                ]
-              },
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "1.) Get CN-2 up but with 20251113... aka current release."
-                  },
-                  {
-                    "type": "hardBreak"
-                  },
-                  {
-                    "type": "text",
-                    "text": "2.) Make sure everything's nice and hunky-dory."
-                  },
-                  {
-                    "type": "hardBreak"
-                  },
-                  {
-                    "type": "text",
-                    "text": "3.) Power off both CNs."
-                  },
-                  {
-                    "type": "hardBreak"
-                  },
-                  {
-                    "type": "text",
-                    "text": "4.) Introduce single-bit error on BOTH CNs. VMware’s ethernet MAC address derives from its UUID so introducing the single-bit-error on the vendor portion ("
-                  },
-                  {
-                    "type": "text",
-                    "text": "564d",
-                    "marks": [
-                      {
-                        "type": "code"
-                      }
-                    ]
-                  },
-                  {
-                    "type": "text",
-                    "text": " becomes "
-                  },
-                  {
-                    "type": "text",
-                    "text": "564c",
-                    "marks": [
-                      {
-                        "type": "code"
-                      }
-                    ]
-                  },
-                  {
-                    "type": "text",
-                    "text": ")."
-                  },
-                  {
-                    "type": "hardBreak"
-                  },
-                  {
-                    "type": "text",
-                    "text": "5.) Reboot both and see what happens."
-                  }
-                ]
-              },
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "So after rebooting both:"
-                  }
-                ]
-              },
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "1.) cn-2 doubled-up in CNAPI."
-                  },
-                  {
-                    "type": "hardBreak"
-                  },
-                  {
-                    "type": "text",
-                    "text": "2.) cn-1 (with TRITON-2520) did not."
-                  }
-                ]
-              },
-              {
-                "type": "codeBlock",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "[root@headnode (mass-1) ~]# sdc-server list\nHOSTNAME             UUID                                 VERSION    SETUP    STATUS      RAM  ADMIN_IP       \ncn-2                 564c0626-c15f-78d0-056e-d4cc6b7aa8ff     7.0     true   running     4095  172.16.64.33   \ncn-2                 564d0626-c15f-78d0-056e-d4cc6b7aa8ff     7.0     true   unknown     4095  172.16.64.33   \nheadnode             564d5aa9-490e-fd3a-e08d-cad4f4a5d7b7     7.0     true   running    16383  172.16.64.2    \ncn-1                 564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3     7.0     true   unknown     4095  172.16.64.32   \n[root@headnode (mass-1) ~]# "
-                  }
-                ]
-              },
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "CN-1 self-corrected:"
-                  },
-                  {
-                    "type": "hardBreak"
-                  }
-                ]
-              },
-              {
-                "type": "codeBlock",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "cn-1 ttyb login: root\nPassword: \nLast login: Wed Nov 19 22:33:20 on term/b\n2025-11-19T23:18:55+00:00 cn-1 login: [ID 644210 auth.notice] ROOT LOGIN /dev/term/b\nSmartOS (build: 20251119T203931Z)\n[root@cn-1 (mass-1) ~]# zfs get all zones/var | grep triton\nzones/var  com.tritondatacenter:uuid  564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3  local\n[root@cn-1 (mass-1) ~]# smbios | grep -i uuid\n  UUID: 564cf9cb-7b48-9ede-b7a5-c8ad3e7fb3d3\n  UUID (Endian-corrected): cbf94c56-487b-de9e-b7a5-c8ad3e7fb3d3\n[root@cn-1 (mass-1) ~]# sysinfo | grep -i uuid\n  \"UUID\": \"564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3\",\n[root@cn-1 (mass-1) ~]# "
-                  }
-                ]
-              },
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "CN-2 did not:"
-                  }
-                ]
-              },
-              {
-                "type": "codeBlock",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "cn-2 ttyb login: root\nPassword: \nLast login: Wed Nov 19 23:14:18 on term/b\n2025-11-19T23:19:45+00:00 cn-2 login: [ID 644210 auth.notice] ROOT LOGIN /dev/term/b\nSmartOS (build: 20251113T010957Z)\n[root@cn-2 (mass-1) ~]# zfs get all zones/var | grep triton\n[root@cn-2 (mass-1) ~]# smbios | grep -i uuid\n  UUID: 564c0626-c15f-78d0-056e-d4cc6b7aa8ff\n  UUID (Endian-corrected): 26064c56-5fc1-d078-056e-d4cc6b7aa8ff\n[root@cn-2 (mass-1) ~]# sysinfo | grep -i uuid\n  \"UUID\": \"564c0626-c15f-78d0-056e-d4cc6b7aa8ff\",\n[root@cn-2 (mass-1) ~]# "
-                  }
-                ]
-              },
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "NOTE that neither of these CNs had VMs deployed on them."
-                  }
-                ]
-              },
-              {
-                "type": "paragraph",
-                "content": [
-                  {
-                    "type": "text",
-                    "text": "Attaching “right.json”, “wrong.json”, and “diff.txt” for CN-2’s TWO CNAPI entries."
-                  },
-                  {
-                    "type": "mediaInline",
-                    "attrs": {
-                      "id": "ee2a2b54-2b82-4a70-9297-72dfdad3919f",
-                      "collection": "",
-                      "type": "file"
-                    }
-                  },
-                  {
-                    "type": "text",
-                    "text": " "
-                  },
-                  {
-                    "type": "mediaInline",
-                    "attrs": {
-                      "id": "4527aaf8-4aee-4901-8758-f0296c42b811",
-                      "collection": "",
-                      "type": "file"
-                    }
-                  },
-                  {
-                    "type": "text",
-                    "text": " "
-                  },
-                  {
-                    "type": "mediaInline",
-                    "attrs": {
-                      "id": "ad0829d7-94f3-41bf-beb6-b544f5b72554",
-                      "collection": "",
-                      "type": "file"
-                    }
-                  },
-                  {
-                    "type": "text",
-                    "text": " "
-                  }
-                ]
-              }
-            ]
-          },
-          "updateAuthor": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
-            "accountId": "6256ebc46b0007006970072f",
-            "emailAddress": "danmcd@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32"
-            },
-            "displayName": "Dan McDonald",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
-          },
-          "created": "2025-11-20T10:25:15.518-0500",
-          "updated": "2025-11-20T10:25:15.518-0500",
-          "jsdPublic": true
-        },
-        {
-          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/134419",
-          "id": "134419",
-          "author": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
             "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "emailAddress": "nahum.shalman@mnx.io",
+            "accountType": "atlassian",
+            "active": true,
             "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
               "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32",
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48"
             },
             "displayName": "Nahum Shalman",
+            "emailAddress": "nahum.shalman@mnx.io",
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+            "timeZone": "America/Detroit"
+          },
+          "updated": "2025-11-19T12:33:39.452-0500"
+        },
+        {
+          "author": {
+            "accountId": "6256ebc46b0007006970072f",
+            "accountType": "atlassian",
             "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
+            "avatarUrls": {
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32",
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48"
+            },
+            "displayName": "Dan McDonald",
+            "emailAddress": "danmcd@mnx.io",
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "timeZone": "America/Detroit"
           },
           "body": {
-            "type": "doc",
-            "version": 1,
             "content": [
               {
-                "type": "codeBlock",
+                "content": [
+                  {
+                    "text": "First round of testing on all-VMware-guest Triton Cloud ",
+                    "type": "text"
+                  },
+                  {
+                    "marks": [
+                      {
+                        "type": "code"
+                      }
+                    ],
+                    "text": "mass-1",
+                    "type": "text"
+                  },
+                  {
+                    "text": "on my workstation.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "[root@headnode (mass-1) ~]# sdc-server list\nHOSTNAME             UUID                                 VERSION    SETUP    STATUS      RAM  ADMIN_IP       \nheadnode             564d5aa9-490e-fd3a-e08d-cad4f4a5d7b7     7.0     true   running    16383  172.16.64.2    \n[root@headnode (mass-1) ~]# sdcadm platform list\nVERSION           CURRENT_PLATFORM  BOOT_PLATFORM  LATEST  DEFAULT  OS\n20251119T203931Z  0                 0              true    false    smartos\n20251113T010957Z  1                 1              false   true     smartos\n[root@headnode (mass-1) ~]# ",
+                    "type": "text"
+                  }
+                ],
+                "type": "codeBlock"
+              },
+              {
+                "content": [
+                  {
+                    "text": "Set 'default' to be 20251119T203931Z and bring up a new CN, inspecting pre-and-post setup.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "Currently all mass-1 VMware instances (headnode, CN-1, have sane BIOS settings and sane UUIDs as a result.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "Bringing up CN-1 with new PI. Headnode sees it.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "[root@headnode (mass-1) ~]# sdc-server list\nHOSTNAME             UUID                                 VERSION    SETUP    STATUS      RAM  ADMIN_IP       \nheadnode             564d5aa9-490e-fd3a-e08d-cad4f4a5d7b7     7.0     true   running    16383  172.16.64.2    \n00-0c-29-7f-b3-d3    564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3     7.0    false   running     4095  172.16.64.32   \n[root@headnode (mass-1) ~]# ",
+                    "type": "text"
+                  }
+                ],
+                "type": "codeBlock"
+              },
+              {
+                "content": [
+                  {
+                    "text": "VM setting is sane:",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "kebe(~)[0]% grep uuid Virtual\\ Machines.localized/mass-1-CN-1.vmwarevm/mass-1-CN-1.vmx\nuuid.bios = \"56 4d f9 cb 7b 48 9e de-b7 a5 c8 ad 3e 7f b3 d3\"\nuuid.location = \"56 4d f9 cb 7b 48 9e de-b7 a5 c8 ad 3e 7f b3 d3\"\nkebe(~)[0]% ",
+                    "type": "text"
+                  }
+                ],
+                "type": "codeBlock"
+              },
+              {
+                "content": [
+                  {
+                    "text": "and the system is pristine, and so far no different than any other PI’s boot:",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "SmartOS (build: 20251119T203931Z)\n[root@00-0c-29-7f-b3-d3 ~]# zpool list\nno pools available\n[root@00-0c-29-7f-b3-d3 ~]# svcs -xv\n[root@00-0c-29-7f-b3-d3 ~]# bootparams | grep -i uuid\n[root@00-0c-29-7f-b3-d3 ~]# sysinfo | grep -i uuid\n  \"UUID\": \"564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3\",\n[root@00-0c-29-7f-b3-d3 ~]# ",
+                    "type": "text"
+                  }
+                ],
+                "type": "codeBlock"
+              },
+              {
+                "content": [
+                  {
+                    "text": "Let's set it up...",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "[root@headnode (mass-1) ~]# sdc-server setup 564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3 hostname=cn-1\n[root@headnode (mass-1) ~]# ",
+                    "type": "text"
+                  }
+                ],
+                "type": "codeBlock"
+              },
+              {
+                "content": [
+                  {
+                    "text": "and...",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "[root@00-0c-29-7f-b3-d3 ~]# \ncreating pool: zones                                    \n                                                                  (as potentially bootable)done\nadding volume: dump                                     done\nadding volume: config                                   done\nadding volume: cores                                    done\nadding volume: opt                                      done\nadding volume: var                                      done\nCompute node, installing config files...                done\nadding volume: swap                                     done",
+                    "type": "text"
+                  }
+                ],
+                "type": "codeBlock"
+              },
+              {
+                "content": [
+                  {
+                    "text": "so now it reboots.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "CNAPI thinks we're done with setup:",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "[root@headnode (mass-1) ~]# sdc-server list\nHOSTNAME             UUID                                 VERSION    SETUP    STATUS      RAM  ADMIN_IP       \nheadnode             564d5aa9-490e-fd3a-e08d-cad4f4a5d7b7     7.0     true   running    16383  172.16.64.2    \ncn-1                 564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3     7.0     true   unknown     4095  172.16.64.32   \n[root@headnode (mass-1) ~]# ",
+                    "type": "text"
+                  }
+                ],
+                "type": "codeBlock"
+              },
+              {
+                "content": [
+                  {
+                    "text": "That's normal until CN-1 is fully up.  CNAPI now says good to go:",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "[root@headnode (mass-1) ~]# sdc-server list\nHOSTNAME             UUID                                 VERSION    SETUP    STATUS      RAM  ADMIN_IP       \nheadnode             564d5aa9-490e-fd3a-e08d-cad4f4a5d7b7     7.0     true   running    16383  172.16.64.2    \ncn-1                 564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3     7.0     true   running     4095  172.16.64.32   \n[root@headnode (mass-1) ~]# ",
+                    "type": "text"
+                  }
+                ],
+                "type": "codeBlock"
+              },
+              {
+                "content": [
+                  {
+                    "text": "Let's login! Seems sane.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "[root@cn-1 (mass-1) ~]# zfs get all zones/var | grep triton\nzones/var  com.tritondatacenter:uuid  564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3  local\n[root@cn-1 (mass-1) ~]# bootparams | grep -i uuid\n[root@cn-1 (mass-1) ~]# smbios | grep -i uuid\n  UUID: 564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3\n  UUID (Endian-corrected): cbf94d56-487b-de9e-b7a5-c8ad3e7fb3d3\n[root@cn-1 (mass-1) ~]# sysinfo | grep -i uuid\n  \"UUID\": \"564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3\",\n[root@cn-1 (mass-1) ~]# ",
+                    "type": "text"
+                  }
+                ],
+                "type": "codeBlock"
+              }
+            ],
+            "type": "doc",
+            "version": 1
+          },
+          "created": "2025-11-20T10:18:20.429-0500",
+          "id": "134383",
+          "jsdPublic": true,
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/134383",
+          "updateAuthor": {
+            "accountId": "6256ebc46b0007006970072f",
+            "accountType": "atlassian",
+            "active": true,
+            "avatarUrls": {
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32",
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48"
+            },
+            "displayName": "Dan McDonald",
+            "emailAddress": "danmcd@mnx.io",
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "timeZone": "America/Detroit"
+          },
+          "updated": "2025-11-20T10:18:20.429-0500"
+        },
+        {
+          "author": {
+            "accountId": "6256ebc46b0007006970072f",
+            "accountType": "atlassian",
+            "active": true,
+            "avatarUrls": {
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32",
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48"
+            },
+            "displayName": "Dan McDonald",
+            "emailAddress": "danmcd@mnx.io",
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "timeZone": "America/Detroit"
+          },
+          "body": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "Continuing round 1.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "1.) Get CN-2 up but with 20251113... aka current release.",
+                    "type": "text"
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "text": "2.) Make sure everything's nice and hunky-dory.",
+                    "type": "text"
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "text": "3.) Power off both CNs.",
+                    "type": "text"
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "text": "4.) Introduce single-bit error on BOTH CNs. VMware’s ethernet MAC address derives from its UUID so introducing the single-bit-error on the vendor portion (",
+                    "type": "text"
+                  },
+                  {
+                    "marks": [
+                      {
+                        "type": "code"
+                      }
+                    ],
+                    "text": "564d",
+                    "type": "text"
+                  },
+                  {
+                    "text": " becomes ",
+                    "type": "text"
+                  },
+                  {
+                    "marks": [
+                      {
+                        "type": "code"
+                      }
+                    ],
+                    "text": "564c",
+                    "type": "text"
+                  },
+                  {
+                    "text": ").",
+                    "type": "text"
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "text": "5.) Reboot both and see what happens.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "So after rebooting both:",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "1.) cn-2 doubled-up in CNAPI.",
+                    "type": "text"
+                  },
+                  {
+                    "type": "hardBreak"
+                  },
+                  {
+                    "text": "2.) cn-1 (with TRITON-2520) did not.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "[root@headnode (mass-1) ~]# sdc-server list\nHOSTNAME             UUID                                 VERSION    SETUP    STATUS      RAM  ADMIN_IP       \ncn-2                 564c0626-c15f-78d0-056e-d4cc6b7aa8ff     7.0     true   running     4095  172.16.64.33   \ncn-2                 564d0626-c15f-78d0-056e-d4cc6b7aa8ff     7.0     true   unknown     4095  172.16.64.33   \nheadnode             564d5aa9-490e-fd3a-e08d-cad4f4a5d7b7     7.0     true   running    16383  172.16.64.2    \ncn-1                 564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3     7.0     true   unknown     4095  172.16.64.32   \n[root@headnode (mass-1) ~]# ",
+                    "type": "text"
+                  }
+                ],
+                "type": "codeBlock"
+              },
+              {
+                "content": [
+                  {
+                    "text": "CN-1 self-corrected:",
+                    "type": "text"
+                  },
+                  {
+                    "type": "hardBreak"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "cn-1 ttyb login: root\nPassword: \nLast login: Wed Nov 19 22:33:20 on term/b\n2025-11-19T23:18:55+00:00 cn-1 login: [ID 644210 auth.notice] ROOT LOGIN /dev/term/b\nSmartOS (build: 20251119T203931Z)\n[root@cn-1 (mass-1) ~]# zfs get all zones/var | grep triton\nzones/var  com.tritondatacenter:uuid  564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3  local\n[root@cn-1 (mass-1) ~]# smbios | grep -i uuid\n  UUID: 564cf9cb-7b48-9ede-b7a5-c8ad3e7fb3d3\n  UUID (Endian-corrected): cbf94c56-487b-de9e-b7a5-c8ad3e7fb3d3\n[root@cn-1 (mass-1) ~]# sysinfo | grep -i uuid\n  \"UUID\": \"564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3\",\n[root@cn-1 (mass-1) ~]# ",
+                    "type": "text"
+                  }
+                ],
+                "type": "codeBlock"
+              },
+              {
+                "content": [
+                  {
+                    "text": "CN-2 did not:",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "cn-2 ttyb login: root\nPassword: \nLast login: Wed Nov 19 23:14:18 on term/b\n2025-11-19T23:19:45+00:00 cn-2 login: [ID 644210 auth.notice] ROOT LOGIN /dev/term/b\nSmartOS (build: 20251113T010957Z)\n[root@cn-2 (mass-1) ~]# zfs get all zones/var | grep triton\n[root@cn-2 (mass-1) ~]# smbios | grep -i uuid\n  UUID: 564c0626-c15f-78d0-056e-d4cc6b7aa8ff\n  UUID (Endian-corrected): 26064c56-5fc1-d078-056e-d4cc6b7aa8ff\n[root@cn-2 (mass-1) ~]# sysinfo | grep -i uuid\n  \"UUID\": \"564c0626-c15f-78d0-056e-d4cc6b7aa8ff\",\n[root@cn-2 (mass-1) ~]# ",
+                    "type": "text"
+                  }
+                ],
+                "type": "codeBlock"
+              },
+              {
+                "content": [
+                  {
+                    "text": "NOTE that neither of these CNs had VMs deployed on them.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              },
+              {
+                "content": [
+                  {
+                    "text": "Attaching “right.json”, “wrong.json”, and “diff.txt” for CN-2’s TWO CNAPI entries.",
+                    "type": "text"
+                  },
+                  {
+                    "attrs": {
+                      "collection": "",
+                      "id": "ee2a2b54-2b82-4a70-9297-72dfdad3919f",
+                      "type": "file"
+                    },
+                    "type": "mediaInline"
+                  },
+                  {
+                    "text": " ",
+                    "type": "text"
+                  },
+                  {
+                    "attrs": {
+                      "collection": "",
+                      "id": "4527aaf8-4aee-4901-8758-f0296c42b811",
+                      "type": "file"
+                    },
+                    "type": "mediaInline"
+                  },
+                  {
+                    "text": " ",
+                    "type": "text"
+                  },
+                  {
+                    "attrs": {
+                      "collection": "",
+                      "id": "ad0829d7-94f3-41bf-beb6-b544f5b72554",
+                      "type": "file"
+                    },
+                    "type": "mediaInline"
+                  },
+                  {
+                    "text": " ",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc",
+            "version": 1
+          },
+          "created": "2025-11-20T10:25:15.518-0500",
+          "id": "134384",
+          "jsdPublic": true,
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/134384",
+          "updateAuthor": {
+            "accountId": "6256ebc46b0007006970072f",
+            "accountType": "atlassian",
+            "active": true,
+            "avatarUrls": {
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/16",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/24",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/32",
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/6256ebc46b0007006970072f/9cf02eef-e011-484a-96d2-d58c85c2fe2b/48"
+            },
+            "displayName": "Dan McDonald",
+            "emailAddress": "danmcd@mnx.io",
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=6256ebc46b0007006970072f",
+            "timeZone": "America/Detroit"
+          },
+          "updated": "2025-11-20T10:25:15.518-0500"
+        },
+        {
+          "author": {
+            "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+            "accountType": "atlassian",
+            "active": true,
+            "avatarUrls": {
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32",
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48"
+            },
+            "displayName": "Nahum Shalman",
+            "emailAddress": "nahum.shalman@mnx.io",
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+            "timeZone": "America/Detroit"
+          },
+          "body": {
+            "content": [
+              {
                 "attrs": {
                   "language": "mermaid"
                 },
                 "content": [
                   {
-                    "type": "text",
-                    "text": "flowchart TD\n    Start([get_or_store_uuid called]) --> CheckZpool{Is $Zpool empty?}\n\n    CheckZpool -->|Yes| Return([Return - do nothing])\n    CheckZpool -->|No| GetSource[Get ZFS property source for<br/>org.smartos:server_uuid<br/>on $Zpool/var]\n\n    GetSource --> CheckSource{Is source == 'local'?}\n\n    CheckSource -->|No| NoStoredUUID[No stored UUID on pool]\n    CheckSource -->|Yes| ReadStored[Read UUID value from pool]\n\n    ReadStored --> CheckOverride{Is OVERRIDE_UUID set<br/>AND different from<br/>stored value?}\n\n    CheckOverride -->|Yes| ValidateOverride{Is OVERRIDE_UUID<br/>a valid UUID?}\n    CheckOverride -->|No| ValidateStored{Is stored UUID<br/>valid?}\n\n    ValidateOverride -->|Yes| UpdatePool[Update pool with<br/>OVERRIDE_UUID]\n    ValidateOverride -->|No| ValidateStored\n\n    UpdatePool --> ReadBack[Read updated value<br/>back from pool]\n    ReadBack --> ValidateStored\n\n    ValidateStored -->|Yes| UseStored[Set UUID to stored value]\n    ValidateStored -->|No| CleanupInvalid[Delete invalid UUID<br/>from pool using<br/>zfs inherit]\n\n    UseStored --> End([Return])\n\n    CleanupInvalid --> NoStoredUUID\n    NoStoredUUID --> ValidateCurrent{Is current UUID<br/>valid?}\n\n    ValidateCurrent -->|Yes| PersistUUID[Store current UUID<br/>on pool]\n    ValidateCurrent -->|No| End\n\n    PersistUUID --> End"
+                    "text": "flowchart TD\n    Start([get_or_store_uuid called]) --> CheckZpool{Is $Zpool empty?}\n\n    CheckZpool -->|Yes| Return([Return - do nothing])\n    CheckZpool -->|No| GetSource[Get ZFS property source for<br/>org.smartos:server_uuid<br/>on $Zpool/var]\n\n    GetSource --> CheckSource{Is source == 'local'?}\n\n    CheckSource -->|No| NoStoredUUID[No stored UUID on pool]\n    CheckSource -->|Yes| ReadStored[Read UUID value from pool]\n\n    ReadStored --> CheckOverride{Is OVERRIDE_UUID set<br/>AND different from<br/>stored value?}\n\n    CheckOverride -->|Yes| ValidateOverride{Is OVERRIDE_UUID<br/>a valid UUID?}\n    CheckOverride -->|No| ValidateStored{Is stored UUID<br/>valid?}\n\n    ValidateOverride -->|Yes| UpdatePool[Update pool with<br/>OVERRIDE_UUID]\n    ValidateOverride -->|No| ValidateStored\n\n    UpdatePool --> ReadBack[Read updated value<br/>back from pool]\n    ReadBack --> ValidateStored\n\n    ValidateStored -->|Yes| UseStored[Set UUID to stored value]\n    ValidateStored -->|No| CleanupInvalid[Delete invalid UUID<br/>from pool using<br/>zfs inherit]\n\n    UseStored --> End([Return])\n\n    CleanupInvalid --> NoStoredUUID\n    NoStoredUUID --> ValidateCurrent{Is current UUID<br/>valid?}\n\n    ValidateCurrent -->|Yes| PersistUUID[Store current UUID<br/>on pool]\n    ValidateCurrent -->|No| End\n\n    PersistUUID --> End",
+                    "type": "text"
                   }
-                ]
+                ],
+                "type": "codeBlock"
               },
               {
-                "type": "mediaSingle",
                 "attrs": {
+                  "layout": "align-start",
                   "width": 692,
-                  "widthType": "pixel",
-                  "layout": "align-start"
+                  "widthType": "pixel"
                 },
                 "content": [
                   {
-                    "type": "media",
                     "attrs": {
-                      "type": "file",
-                      "id": "121bb76a-3fd5-48d0-98c0-ee7654f91dad",
                       "alt": "TRITON-2520-2025-11-20-175110.png",
                       "collection": "",
                       "height": 5302,
+                      "id": "121bb76a-3fd5-48d0-98c0-ee7654f91dad",
+                      "type": "file",
                       "width": 1028
-                    }
+                    },
+                    "type": "media"
                   }
-                ]
+                ],
+                "type": "mediaSingle"
               }
-            ]
-          },
-          "updateAuthor": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "emailAddress": "nahum.shalman@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
-            },
-            "displayName": "Nahum Shalman",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
+            ],
+            "type": "doc",
+            "version": 1
           },
           "created": "2025-11-20T12:45:56.275-0500",
-          "updated": "2025-11-20T12:52:17.738-0500",
-          "jsdPublic": true
-        },
-        {
-          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/134488",
-          "id": "134488",
-          "author": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+          "id": "134419",
+          "jsdPublic": true,
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/134419",
+          "updateAuthor": {
             "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "emailAddress": "nahum.shalman@mnx.io",
+            "accountType": "atlassian",
+            "active": true,
             "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
               "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32",
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48"
             },
             "displayName": "Nahum Shalman",
+            "emailAddress": "nahum.shalman@mnx.io",
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+            "timeZone": "America/Detroit"
+          },
+          "updated": "2025-11-20T12:52:17.738-0500"
+        },
+        {
+          "author": {
+            "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+            "accountType": "atlassian",
             "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
+            "avatarUrls": {
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32",
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48"
+            },
+            "displayName": "Nahum Shalman",
+            "emailAddress": "nahum.shalman@mnx.io",
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+            "timeZone": "America/Detroit"
           },
           "body": {
-            "type": "doc",
-            "version": 1,
             "content": [
               {
-                "type": "paragraph",
                 "content": [
                   {
-                    "type": "text",
-                    "text": "Cleanup of an invalid value stored on the pool has been tested as well:"
+                    "text": "Cleanup of an invalid value stored on the pool has been tested as well:",
+                    "type": "text"
                   },
                   {
                     "type": "hardBreak"
                   }
-                ]
+                ],
+                "type": "paragraph"
               },
               {
-                "type": "codeBlock",
                 "content": [
                   {
-                    "type": "text",
-                    "text": "[root@triton-2520 ~]# zfs get org.smartos:server_uuid zones/var; sysinfo | grep UUID; sysinfo -u; sysinfo | grep UUID; zfs get org.smartos:server_uuid zones/var\nNAME       PROPERTY                 VALUE                                 SOURCE\nzones/var  org.smartos:server_uuid  db40345e-669c-4f10-803f-13e212ac4116  local\n  \"UUID\": \"db40345e-669c-4f10-803f-13e212ac4116\",\n  \"UUID\": \"db40345e-669c-4f10-803f-13e212ac4116\",\nNAME       PROPERTY                 VALUE                                 SOURCE\nzones/var  org.smartos:server_uuid  db40345e-669c-4f10-803f-13e212ac4116  local\n[root@triton-2520 ~]# zfs set org.smartos:server_uuid=bogus zones/var\n[root@triton-2520 ~]# zfs get org.smartos:server_uuid zones/var; sysinfo | grep UUID; sysinfo -u; sysinfo | grep UUID; zfs get org.smartos:server_uuid zones/var\nNAME       PROPERTY                 VALUE                    SOURCE\nzones/var  org.smartos:server_uuid  bogus                    local\n  \"UUID\": \"db40345e-669c-4f10-803f-13e212ac4116\",\n  \"UUID\": \"db40345e-669c-4f10-803f-13e212ac4116\",\nNAME       PROPERTY                 VALUE                                 SOURCE\nzones/var  org.smartos:server_uuid  db40345e-669c-4f10-803f-13e212ac4116  local"
+                    "text": "[root@triton-2520 ~]# zfs get org.smartos:server_uuid zones/var; sysinfo | grep UUID; sysinfo -u; sysinfo | grep UUID; zfs get org.smartos:server_uuid zones/var\nNAME       PROPERTY                 VALUE                                 SOURCE\nzones/var  org.smartos:server_uuid  db40345e-669c-4f10-803f-13e212ac4116  local\n  \"UUID\": \"db40345e-669c-4f10-803f-13e212ac4116\",\n  \"UUID\": \"db40345e-669c-4f10-803f-13e212ac4116\",\nNAME       PROPERTY                 VALUE                                 SOURCE\nzones/var  org.smartos:server_uuid  db40345e-669c-4f10-803f-13e212ac4116  local\n[root@triton-2520 ~]# zfs set org.smartos:server_uuid=bogus zones/var\n[root@triton-2520 ~]# zfs get org.smartos:server_uuid zones/var; sysinfo | grep UUID; sysinfo -u; sysinfo | grep UUID; zfs get org.smartos:server_uuid zones/var\nNAME       PROPERTY                 VALUE                    SOURCE\nzones/var  org.smartos:server_uuid  bogus                    local\n  \"UUID\": \"db40345e-669c-4f10-803f-13e212ac4116\",\n  \"UUID\": \"db40345e-669c-4f10-803f-13e212ac4116\",\nNAME       PROPERTY                 VALUE                                 SOURCE\nzones/var  org.smartos:server_uuid  db40345e-669c-4f10-803f-13e212ac4116  local",
+                    "type": "text"
                   }
-                ]
+                ],
+                "type": "codeBlock"
               }
-            ]
-          },
-          "updateAuthor": {
-            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
-            "emailAddress": "nahum.shalman@mnx.io",
-            "avatarUrls": {
-              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48",
-              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
-              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
-              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32"
-            },
-            "displayName": "Nahum Shalman",
-            "active": true,
-            "timeZone": "America/Detroit",
-            "accountType": "atlassian"
+            ],
+            "type": "doc",
+            "version": 1
           },
           "created": "2025-11-21T11:34:06.049-0500",
-          "updated": "2025-11-21T11:34:06.049-0500",
-          "jsdPublic": true
+          "id": "134488",
+          "jsdPublic": true,
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/134488",
+          "updateAuthor": {
+            "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+            "accountType": "atlassian",
+            "active": true,
+            "avatarUrls": {
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32",
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48"
+            },
+            "displayName": "Nahum Shalman",
+            "emailAddress": "nahum.shalman@mnx.io",
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+            "timeZone": "America/Detroit"
+          },
+          "updated": "2025-11-21T11:34:06.049-0500"
         }
       ],
-      "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment",
       "maxResults": 6,
-      "total": 6,
-      "startAt": 0
+      "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment",
+      "startAt": 0,
+      "total": 6
+    },
+    "components": [],
+    "created": "2025-10-31T10:30:15.019-0400",
+    "creator": {
+      "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+      "accountType": "atlassian",
+      "active": true,
+      "avatarUrls": {
+        "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
+        "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
+        "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32",
+        "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48"
+      },
+      "displayName": "Nahum Shalman",
+      "emailAddress": "nahum.shalman@mnx.io",
+      "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+      "timeZone": "America/Detroit"
+    },
+    "customfield_10001": null,
+    "customfield_10002": [],
+    "customfield_10003": null,
+    "customfield_10004": null,
+    "customfield_10005": null,
+    "customfield_10006": null,
+    "customfield_10007": null,
+    "customfield_10008": null,
+    "customfield_10009": null,
+    "customfield_10010": null,
+    "customfield_10014": null,
+    "customfield_10015": null,
+    "customfield_10016": null,
+    "customfield_10017": null,
+    "customfield_10019": "1|i004dj:",
+    "customfield_10020": [
+      {
+        "boardId": 7,
+        "completeDate": "2025-12-01T14:36:47.186Z",
+        "endDate": "2025-12-01T20:00:00.000Z",
+        "goal": "SmartOS release-20251127",
+        "id": 775,
+        "name": "release-20251127",
+        "startDate": "2025-11-17T14:34:42.608Z",
+        "state": "closed"
+      }
+    ],
+    "customfield_10021": null,
+    "customfield_10022": null,
+    "customfield_10023": null,
+    "customfield_10024": "2025-11-20T10:18:20.429-0500",
+    "customfield_10025": null,
+    "customfield_10029": null,
+    "customfield_10030": null,
+    "customfield_10032": null,
+    "customfield_10041": null,
+    "customfield_10042": null,
+    "customfield_10056": null,
+    "customfield_10060": null,
+    "customfield_10066": {
+      "id": "10173",
+      "self": "https://mnx.atlassian.net/rest/api/3/customFieldOption/10173",
+      "value": "No"
+    },
+    "customfield_10088": null,
+    "customfield_10093": null,
+    "customfield_10094": null,
+    "customfield_10095": null,
+    "customfield_10096": null,
+    "customfield_10097": null,
+    "customfield_10098": [],
+    "customfield_10099": null,
+    "customfield_10100": null,
+    "customfield_10101": null,
+    "customfield_10102": null,
+    "customfield_10103": null,
+    "customfield_10104": null,
+    "customfield_10105": null,
+    "customfield_10106": null,
+    "customfield_10109": null,
+    "customfield_10110": null,
+    "customfield_10111": null,
+    "customfield_10112": null,
+    "customfield_10114": null,
+    "customfield_10115": null,
+    "customfield_10116": null,
+    "customfield_10149": null,
+    "description": {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "Servers that already had a specific UUID were discovered to change their UUID based seemingly on reading a UUID from the output of ",
+              "type": "text"
+            },
+            {
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ],
+              "text": "smbios",
+              "type": "text"
+            },
+            {
+              "text": ". That caused a lot of unexpected behavior.",
+              "type": "text"
+            }
+          ],
+          "type": "paragraph"
+        },
+        {
+          "content": [
+            {
+              "text": "This was narrowed down to be the result of the BMC being in a bad state. By saving the UUID to the zones pool and trusting that over the ",
+              "type": "text"
+            },
+            {
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ],
+              "text": "smbios",
+              "type": "text"
+            },
+            {
+              "text": " output going forward we prevent this sort of hardware misbehavior from causing operator confusion.",
+              "type": "text"
+            }
+          ],
+          "type": "paragraph"
+        },
+        {
+          "content": [
+            {
+              "text": "Leveraging the code from the fix for this bug,",
+              "type": "text"
+            },
+            {
+              "attrs": {
+                "accessLevel": "",
+                "id": "6256ebc46b0007006970072f",
+                "localId": "724b924b-1713-41cc-a0dd-7364e1cdaf01",
+                "text": "@Dan McDonald"
+              },
+              "type": "mention"
+            },
+            {
+              "text": " wrote a one-liner that can check for servers where the server UUID is currently mismatched from the output of smbios (whether from ",
+              "type": "text"
+            },
+            {
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ],
+              "text": "override_uuid",
+              "type": "text"
+            },
+            {
+              "text": " or from trusting a value stored on the pool):",
+              "type": "text"
+            },
+            {
+              "type": "hardBreak"
+            },
+            {
+              "marks": [
+                {
+                  "type": "code"
+                }
+              ],
+              "text": "sdc-oneachnode -a 'if [[ $(sysinfo | json UUID) != $(smbios | grep UUID: | awk \"{print \\$2;}\" ) ]]; then echo \"mismatch on $(sysinfo | json UUID)\" ; fi'",
+              "type": "text"
+            }
+          ],
+          "type": "paragraph"
+        },
+        {
+          "content": [
+            {
+              "text": "[root@headnode (mass-1) ~]# sdc-oneachnode -a 'if [[ $(sysinfo | json UUID) != $(smbios | grep UUID: | awk \"{print \\$2;}\" ) ]]; then echo \"mismatch on $(sysinfo | json UUID)\" ; fi'\nHOSTNAME              STATUS\ncn-1                  mismatch on 564df9cb-7b48-9ede-b7a5-c8ad3e7fb3d3\ncn-2                  \nheadnode              ",
+              "type": "text"
+            }
+          ],
+          "type": "codeBlock"
+        },
+        {
+          "content": [
+            {
+              "text": "See also ",
+              "type": "text"
+            },
+            {
+              "attrs": {
+                "url": "https://smartdatacenter.topicbox.com/groups/sdc-discuss/T8dedf5d44cd8520e-M9f0075c99310d59a5207f285"
+              },
+              "type": "inlineCard"
+            },
+            {
+              "text": " ",
+              "type": "text"
+            }
+          ],
+          "type": "paragraph"
+        },
+        {
+          "content": [
+            {
+              "marks": [
+                {
+                  "type": "strike"
+                }
+              ],
+              "text": "Need to test:",
+              "type": "text"
+            }
+          ],
+          "type": "paragraph"
+        },
+        {
+          "attrs": {
+            "order": 1
+          },
+          "content": [
+            {
+              "content": [
+                {
+                  "content": [
+                    {
+                      "marks": [
+                        {
+                          "type": "strike"
+                        }
+                      ],
+                      "text": "What happens when smbios uuid changes",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "type": "listItem"
+            },
+            {
+              "content": [
+                {
+                  "content": [
+                    {
+                      "marks": [
+                        {
+                          "type": "strike"
+                        }
+                      ],
+                      "text": "What happens when boot MAC changes",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "type": "listItem"
+            },
+            {
+              "content": [
+                {
+                  "content": [
+                    {
+                      "marks": [
+                        {
+                          "type": "strike"
+                        }
+                      ],
+                      "text": "What happens when BOTH change?",
+                      "type": "text"
+                    }
+                  ],
+                  "type": "paragraph"
+                }
+              ],
+              "type": "listItem"
+            }
+          ],
+          "type": "orderedList"
+        },
+        {
+          "content": [
+            {
+              "text": "We should not test MAC address changes. Those could reasonably require Operator intervention to fix nic tag associations (If you change a NIC on a SmartOS machine, you cannot expect it to “Just Work” upon booting it up again.)",
+              "type": "text"
+            }
+          ],
+          "type": "paragraph"
+        }
+      ],
+      "type": "doc",
+      "version": 1
+    },
+    "duedate": null,
+    "environment": null,
+    "fixVersions": [],
+    "issuelinks": [],
+    "issuerestriction": {
+      "issuerestrictions": {},
+      "shouldDisplay": false
+    },
+    "issuetype": {
+      "avatarId": 10303,
+      "description": "A problem or error.",
+      "hierarchyLevel": 0,
+      "iconUrl": "https://mnx.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
+      "id": "10004",
+      "name": "Bug",
+      "self": "https://mnx.atlassian.net/rest/api/3/issuetype/10004",
+      "subtask": false
+    },
+    "labels": [
+      "public"
+    ],
+    "lastViewed": null,
+    "priority": {
+      "iconUrl": "https://mnx.atlassian.net/images/icons/priorities/major.svg",
+      "id": "10002",
+      "name": "3 - Elevated",
+      "self": "https://mnx.atlassian.net/rest/api/3/priority/10002"
+    },
+    "progress": {
+      "progress": 0,
+      "total": 0
+    },
+    "project": {
+      "avatarUrls": {
+        "16x16": "https://mnx.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10555?size=xsmall",
+        "24x24": "https://mnx.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10555?size=small",
+        "32x32": "https://mnx.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10555?size=medium",
+        "48x48": "https://mnx.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10555"
+      },
+      "id": "10032",
+      "key": "TRITON",
+      "name": "TRITON: Triton DataCenter",
+      "projectTypeKey": "software",
+      "self": "https://mnx.atlassian.net/rest/api/3/project/10032",
+      "simplified": false
+    },
+    "reporter": {
+      "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+      "accountType": "atlassian",
+      "active": true,
+      "avatarUrls": {
+        "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
+        "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
+        "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32",
+        "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48"
+      },
+      "displayName": "Nahum Shalman",
+      "emailAddress": "nahum.shalman@mnx.io",
+      "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+      "timeZone": "America/Detroit"
+    },
+    "resolution": null,
+    "resolutiondate": null,
+    "security": null,
+    "status": {
+      "description": "A resolution has been taken, and it is awaiting verification by reporter. From here issues are either reopened, or are closed.",
+      "iconUrl": "https://mnx.atlassian.net/images/icons/statuses/resolved.png",
+      "id": "5",
+      "name": "Resolved",
+      "self": "https://mnx.atlassian.net/rest/api/3/status/5",
+      "statusCategory": {
+        "colorName": "green",
+        "id": 3,
+        "key": "done",
+        "name": "Done",
+        "self": "https://mnx.atlassian.net/rest/api/3/statuscategory/3"
+      }
+    },
+    "statusCategory": {
+      "colorName": "green",
+      "id": 3,
+      "key": "done",
+      "name": "Done",
+      "self": "https://mnx.atlassian.net/rest/api/3/statuscategory/3"
+    },
+    "statuscategorychangedate": "2025-11-24T10:32:30.587-0500",
+    "subtasks": [],
+    "summary": "Servers should not change UUID on reboot",
+    "timeestimate": null,
+    "timeoriginalestimate": null,
+    "timespent": null,
+    "timetracking": {},
+    "updated": "2025-11-24T10:32:30.587-0500",
+    "versions": [],
+    "votes": {
+      "hasVoted": false,
+      "self": "https://mnx.atlassian.net/rest/api/3/issue/TRITON-2520/votes",
+      "votes": 0
+    },
+    "watches": {
+      "isWatching": false,
+      "self": "https://mnx.atlassian.net/rest/api/3/issue/TRITON-2520/watchers",
+      "watchCount": 2
     },
     "worklog": {
-      "startAt": 0,
       "maxResults": 20,
+      "startAt": 0,
       "total": 0,
       "worklogs": []
-    }
-  }
+    },
+    "workratio": -1
+  },
+  "id": "57781",
+  "key": "TRITON-2520"
 }

@@ -1,0 +1,32 @@
+{
+  "id": "99901",
+  "key": "FAKE-PRIVATE-1",
+  "fields": {
+    "summary": "This is a private issue with internal label",
+    "labels": ["internal"],
+    "status": {
+      "name": "Open"
+    },
+    "resolution": null,
+    "created": "2025-01-01T10:00:00.000-0500",
+    "updated": "2025-01-02T10:00:00.000-0500",
+    "description": {
+      "type": "doc",
+      "version": 1,
+      "content": [
+        {
+          "type": "paragraph",
+          "content": [
+            {
+              "type": "text",
+              "text": "This issue should NOT be visible through bugview because it lacks the public label."
+            }
+          ]
+        }
+      ]
+    },
+    "comment": {
+      "comments": []
+    }
+  }
+}

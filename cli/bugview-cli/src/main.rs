@@ -41,6 +41,17 @@ enum Commands {
         #[arg(long)]
         raw: bool,
     },
+    /// Fetch issue data and output as a JIRA-compatible fixture for jira-stub-server
+    ///
+    /// This command fetches public issue data from bugview and outputs it in the
+    /// format expected by jira-stub-server fixtures. The output can be redirected
+    /// to a file in the fixtures directory.
+    ///
+    /// Example: bugview fetch-fixture TRITON-2520 > fixtures/TRITON-2520.json
+    FetchFixture {
+        /// Issue key (e.g., PROJECT-123)
+        key: String,
+    },
 }
 
 /// Recursively extract text from ADF (Atlassian Document Format) content
@@ -313,6 +324,35 @@ async fn main() -> Result<()> {
                     next_token
                 );
             }
+        }
+
+        Commands::FetchFixture { key } => {
+            let response = client
+                .get_issue_full_json()
+                .key(key.clone())
+                .send()
+                .await
+                .map_err(|e| {
+                    if e.to_string().contains("404") || e.to_string().contains("Not Found") {
+                        anyhow::anyhow!(
+                            "Issue '{}' not found or not public",
+                            key
+                        )
+                    } else {
+                        anyhow::anyhow!("Failed to fetch issue '{}': {}", key, e)
+                    }
+                })?;
+            let issue = response.into_inner();
+
+            // Build JIRA-compatible fixture format (drop remotelinks)
+            let fixture = serde_json::json!({
+                "id": issue.id,
+                "key": issue.key,
+                "fields": issue.fields
+            });
+
+            // Output pretty-printed JSON
+            println!("{}", serde_json::to_string_pretty(&fixture)?);
         }
 
         Commands::Get { key, raw } => {

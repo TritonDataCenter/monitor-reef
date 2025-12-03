@@ -336,11 +336,11 @@ mod tests {
         let fixtures_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("fixtures");
         let ctx = StubContext::from_fixtures(&fixtures_dir).expect("Failed to load fixtures");
 
-        // Should load TRITON-2520 from raw JIRA response file
+        // Should load TRITON-2520 from fixture file
         assert!(ctx.issues.contains_key("TRITON-2520"));
 
         let issue = ctx.issues.get("TRITON-2520").unwrap();
         assert_eq!(issue.id, "57781");
-        assert!(issue.rendered_fields.is_some());
+        // renderedFields is optional - bugview-service does its own ADF→HTML conversion
     }
 }
