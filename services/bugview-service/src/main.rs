@@ -10,7 +10,7 @@ mod jira_client;
 use anyhow::Result;
 use bugview_api::{
     BugviewApi, IssueDetails, IssueListItem, IssueListQuery, IssueListResponse, IssuePath,
-    LabelPath,
+    IssueSort, LabelPath,
 };
 use dropshot::{
     Body, ConfigDropshot, ConfigLogging, ConfigLoggingLevel, HttpError, HttpResponseOk,
@@ -260,7 +260,7 @@ impl BugviewApi for BugviewServiceImpl {
                 &issues,
                 next_page_token,
                 is_last,
-                &sort,
+                sort,
                 None,
                 &ctx.config.allowed_labels,
             )
@@ -304,7 +304,7 @@ impl BugviewApi for BugviewServiceImpl {
                 &issues,
                 next_page_token,
                 is_last,
-                &sort,
+                sort,
                 Some(&label),
                 &ctx.config.allowed_labels,
             )
@@ -405,15 +405,8 @@ async fn fetch_issues_for_html(
     ctx: &ApiContext,
     labels: Vec<String>,
     query: IssueListQuery,
-) -> Result<(Vec<IssueListItem>, Option<String>, bool, String), HttpError> {
-    // Validate sort field
-    let sort = query.sort.as_deref().unwrap_or("updated");
-    if !["key", "created", "updated"].contains(&sort) {
-        return Err(HttpError::for_bad_request(
-            None,
-            format!("Invalid sort field: {}", sort),
-        ));
-    }
+) -> Result<(Vec<IssueListItem>, Option<String>, bool, IssueSort), HttpError> {
+    let sort = query.sort.unwrap_or_default();
 
     // Resolve the short token ID to the real JIRA token
     // For HTML endpoints, we gracefully fall back to first page on bad tokens
@@ -425,7 +418,7 @@ async fn fetch_issues_for_html(
 
     let search_result = ctx
         .jira
-        .search_issues(&labels, jira_token.as_deref(), sort)
+        .search_issues(&labels, jira_token.as_deref(), sort.as_str())
         .await
         .map_err(|e| HttpError::for_internal_error(format!("Failed to search issues: {}", e)))?;
 
@@ -443,7 +436,7 @@ async fn fetch_issues_for_html(
         .next_page_token
         .map(|jira_token| ctx.token_cache.store(jira_token));
 
-    Ok((issues, next_page_token, is_last, sort.to_string()))
+    Ok((issues, next_page_token, is_last, sort))
 }
 
 /// Helper function to search issues
@@ -452,14 +445,7 @@ async fn search_issues(
     labels: Vec<String>,
     query: IssueListQuery,
 ) -> Result<HttpResponseOk<IssueListResponse>, HttpError> {
-    // Validate sort field
-    let sort = query.sort.as_deref().unwrap_or("updated");
-    if !["key", "created", "updated"].contains(&sort) {
-        return Err(HttpError::for_bad_request(
-            None,
-            format!("Invalid sort field: {}", sort),
-        ));
-    }
+    let sort = query.sort.unwrap_or_default();
 
     // Resolve the short token ID to the real JIRA token
     let jira_token = if let Some(short_id) = &query.next_page_token {
@@ -472,7 +458,7 @@ async fn search_issues(
 
     let search_result = ctx
         .jira
-        .search_issues(&labels, jira_token.as_deref(), sort)
+        .search_issues(&labels, jira_token.as_deref(), sort.as_str())
         .await
         .map_err(|e| HttpError::for_internal_error(format!("Failed to search issues: {}", e)))?;
 

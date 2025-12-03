@@ -85,10 +85,9 @@
           {
             "in": "query",
             "name": "sort",
-            "description": "Sort field (key, created, or updated)",
+            "description": "Sort field (key, created, or updated). Defaults to \"updated\" if omitted.",
             "schema": {
-              "nullable": true,
-              "type": "string"
+              "$ref": "#/components/schemas/IssueSort"
             }
           }
         ],
@@ -125,10 +124,9 @@
           {
             "in": "query",
             "name": "sort",
-            "description": "Sort field (key, created, or updated)",
+            "description": "Sort field (key, created, or updated). Defaults to \"updated\" if omitted.",
             "schema": {
-              "nullable": true,
-              "type": "string"
+              "$ref": "#/components/schemas/IssueSort"
             }
           }
         ],
@@ -252,10 +250,9 @@
           {
             "in": "query",
             "name": "sort",
-            "description": "Sort field (key, created, or updated)",
+            "description": "Sort field (key, created, or updated). Defaults to \"updated\" if omitted.",
             "schema": {
-              "nullable": true,
-              "type": "string"
+              "$ref": "#/components/schemas/IssueSort"
             }
           }
         ],
@@ -372,6 +369,32 @@
         "required": [
           "is_last",
           "issues"
+        ]
+      },
+      "IssueSort": {
+        "description": "Sort field for issue lists",
+        "oneOf": [
+          {
+            "description": "Sort by issue key (e.g., OS-1234)",
+            "type": "string",
+            "enum": [
+              "key"
+            ]
+          },
+          {
+            "description": "Sort by creation date",
+            "type": "string",
+            "enum": [
+              "created"
+            ]
+          },
+          {
+            "description": "Sort by last update date (default)",
+            "type": "string",
+            "enum": [
+              "updated"
+            ]
+          }
         ]
       }
     },

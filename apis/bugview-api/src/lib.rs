@@ -13,15 +13,45 @@ use serde::{Deserialize, Serialize};
 // Request/Response Types
 // ============================================================================
 
+/// Sort field for issue lists
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum IssueSort {
+    /// Sort by issue key (e.g., OS-1234)
+    Key,
+    /// Sort by creation date
+    Created,
+    /// Sort by last update date (default)
+    #[default]
+    Updated,
+}
+
+impl IssueSort {
+    /// Returns the sort field as a string for use in JQL queries
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            IssueSort::Key => "key",
+            IssueSort::Created => "created",
+            IssueSort::Updated => "updated",
+        }
+    }
+}
+
+impl std::fmt::Display for IssueSort {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
 /// Query parameters for issue list endpoints
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct IssueListQuery {
     /// Next page token for pagination (token-based, not offset)
     #[serde(default)]
     pub next_page_token: Option<String>,
-    /// Sort field (key, created, or updated)
+    /// Sort field (key, created, or updated). Defaults to "updated" if omitted.
     #[serde(default)]
-    pub sort: Option<String>,
+    pub sort: Option<IssueSort>,
 }
 
 /// Path parameter for label-specific queries

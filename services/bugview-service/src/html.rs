@@ -12,7 +12,7 @@
 
 use anyhow::Result;
 use askama::Template;
-use bugview_api::IssueListItem;
+use bugview_api::{IssueListItem, IssueSort};
 
 /// Primary layout template wrapping all pages
 #[derive(Template)]
@@ -47,7 +47,7 @@ impl HtmlRenderer {
         issues: &[IssueListItem],
         next_page_token: Option<String>,
         is_last: bool,
-        sort: &str,
+        sort: IssueSort,
         label: Option<&str>,
         allowed_labels: &[String],
     ) -> Result<String> {
@@ -525,7 +525,7 @@ mod tests {
                 &issues,
                 None,
                 true,
-                "updated",
+                IssueSort::Updated,
                 None,
                 &["needs triage".to_string()],
             )
@@ -542,7 +542,7 @@ mod tests {
                 &issues,
                 None,
                 true,
-                "updated",
+                IssueSort::Updated,
                 Some("needs triage"),
                 &["needs triage".to_string()],
             )
