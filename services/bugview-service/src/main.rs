@@ -963,6 +963,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_remote_link_domain_filter_blocks_disallowed() {
+        let config = Config {
+            default_label: "public".into(),
+            allowed_labels: vec![],
+            allowed_domains: vec!["safe.example.com".into()],
+            public_base_url: "https://test.example.com".into(),
+        };
+
+        // Create links from mixed domains - some allowed, some not
+        let links: Vec<jira_client::RemoteLink> = serde_json::from_value(serde_json::json!([
+            {"id": 1, "object": {"url": "https://safe.example.com/good", "title": "Good Link"}},
+            {"id": 2, "object": {"url": "https://manta.joyent.us/signed/secret", "title": "Signed URL"}},
+            {"id": 3, "object": {"url": "https://internal.corp/secret", "title": "Internal"}},
+            {"id": 4, "object": {"url": "https://safe.example.com/another", "title": "Also Good"}}
+        ])).unwrap();
+
+        let filtered = filter_remote_links(&links, &config);
+
+        assert_eq!(
+            filtered.len(),
+            2,
+            "Should only keep links from allowed domain"
+        );
+        assert!(
+            filtered
+                .iter()
+                .all(|l| l.object.as_ref().unwrap().url.contains("safe.example.com"))
+        );
+    }
+
+    #[tokio::test]
     async fn test_token_cache_capacity_bounds() {
         let cache = TokenCache::new_with(Duration::from_secs(60), 3);
         let ids: Vec<String> = (0..10)
