@@ -15,7 +15,7 @@ A public JIRA issue viewer that provides read-only access to issues marked with 
 - **JSON API** - Programmatic access to issue data
 - **HTML UI** - Bootstrap-styled web interface with pagination
 - **Label filtering** - Browse issues by public label
-- **JIRA markup rendering** - Full support via JIRA's `renderedFields` API
+- **JIRA markup rendering** - Full support via ADF (Atlassian Document Format) to HTML conversion
 - **Security** - Label-based access control to show only public issues
 
 ## Configuration
@@ -196,7 +196,7 @@ HTML templates are in `templates/`:
 
 The minimal JIRA client in `src/jira_client.rs` implements only the endpoints needed:
 - Search issues with JQL
-- Get issue by key (with `expand=renderedFields`)
+- Get issue by key
 - Get remote links
 
 ### Testing
@@ -219,7 +219,7 @@ This Rust implementation provides feature parity with the original Node.js bugvi
 ✅ Same JSON API structure
 ✅ Same HTML UI and styling
 ✅ Same label-based access control
-✅ JIRA markup rendering (via `renderedFields`)
+✅ JIRA markup rendering (via ADF to HTML conversion)
 ✅ Pagination and sorting (now token-based for v3 API)
 
 **URL Difference**: The HTML issue view endpoint is `/bugview/issue/{key}` instead of `/bugview/{key}`. This is required because Dropshot (unlike restify) doesn't allow mixing literal path segments (`/bugview/json/{key}`, `/bugview/label/{key}`) with variable segments (`/bugview/{key}`) at the same route level.
@@ -258,6 +258,6 @@ This transparently rewrites URLs like `/bugview/OS-1234` to `/bugview/issue/OS-1
 - They're loaded at compile time using `env!("CARGO_MANIFEST_DIR")`
 
 **Issue: HTML renders but no markup formatting**
-- Check JIRA version supports `expand=renderedFields`
-- Some JIRA instances may not return rendered fields
-- Service will fall back to plain text if unavailable
+- Check the issue description is in ADF (Atlassian Document Format) with a `content` field
+- If the issue description is missing or not in ADF format, the service will not display markup
+- Ensure JIRA issues have proper descriptions set
