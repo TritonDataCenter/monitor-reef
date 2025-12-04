@@ -109,6 +109,22 @@ pub struct IssueListResponse {
     pub is_last: bool,
 }
 
+impl IssueListResponse {
+    /// Create a new IssueListResponse, ensuring `is_last` is consistent with `next_page_token`.
+    ///
+    /// When `next_page_token` is `None`, `is_last` is set to `true`.
+    /// When `next_page_token` is `Some`, `is_last` is set to `false`.
+    ///
+    /// This constructor enforces the invariant that these two fields are always consistent.
+    pub fn new(issues: Vec<IssueListItem>, next_page_token: Option<String>) -> Self {
+        Self {
+            issues,
+            is_last: next_page_token.is_none(),
+            next_page_token,
+        }
+    }
+}
+
 /// Full issue details (matches original Node.js bugview format)
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct IssueDetails {

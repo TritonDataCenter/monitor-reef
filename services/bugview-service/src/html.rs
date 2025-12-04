@@ -9,6 +9,14 @@
 //! This module renders JIRA issue content by converting Atlassian Document Format (ADF)
 //! to HTML. ADF is the structured JSON format JIRA uses in `fields.description` and
 //! comment bodies.
+//!
+//! # Security
+//!
+//! This module is a trust boundary - it receives untrusted content from JIRA and must
+//! produce safe HTML. Key security measures:
+//! - All text content is HTML-escaped via `html_escape()` before rendering
+//! - The `HtmlWriter` implementation escapes text in `write_text()` and URLs in `start_link()`
+//! - Link URLs are escaped but not validated (URL scheme validation happens earlier in `search.rs`)
 
 use anyhow::Result;
 use askama::Template;
@@ -48,6 +56,8 @@ struct IssueTemplate<'a> {
     description: &'a str,
     comments: &'a [CommentView],
     remote_links: &'a [RemoteLinkView],
+    /// True if remote links could not be fetched (show warning to user)
+    remote_links_error: bool,
 }
 
 /// Comment data for template rendering
@@ -121,24 +131,34 @@ impl HtmlRenderer {
     }
 
     /// Render a single issue page
+    ///
+    /// If `remote_links_error` is true, displays a warning that links could not be loaded
+    /// instead of showing an empty list (which would misleadingly suggest no links exist).
     pub fn render_issue(
         &self,
         issue: &crate::jira_client::Issue,
         remote_links: &[crate::jira_client::RemoteLink],
+        remote_links_error: bool,
     ) -> Result<String> {
-        // Extract key fields
+        // Extract key fields with logging for missing data
         let summary = issue
             .fields
             .get("summary")
             .and_then(|v| v.as_str())
-            .unwrap_or("(No summary)");
+            .unwrap_or_else(|| {
+                tracing::warn!(issue_key = %issue.key, "Issue missing summary field in HTML render");
+                "(No summary)"
+            });
 
         let status = issue
             .fields
             .get("status")
             .and_then(|v| v.get("name"))
             .and_then(|v| v.as_str())
-            .unwrap_or("Unknown");
+            .unwrap_or_else(|| {
+                tracing::warn!(issue_key = %issue.key, "Issue missing status field in HTML render");
+                "Unknown"
+            });
 
         let resolution = issue
             .fields
@@ -150,13 +170,19 @@ impl HtmlRenderer {
             .fields
             .get("created")
             .and_then(|v| v.as_str())
-            .unwrap_or("");
+            .unwrap_or_else(|| {
+                tracing::warn!(issue_key = %issue.key, "Issue missing created field in HTML render");
+                ""
+            });
 
         let updated = issue
             .fields
             .get("updated")
             .and_then(|v| v.as_str())
-            .unwrap_or("");
+            .unwrap_or_else(|| {
+                tracing::warn!(issue_key = %issue.key, "Issue missing updated field in HTML render");
+                ""
+            });
 
         // Render description from ADF
         let description = issue
@@ -210,10 +236,21 @@ impl HtmlRenderer {
                                     // ADF format
                                     adf_to_html(body_content)
                                 } else {
-                                    String::new()
+                                    tracing::warn!(
+                                        issue_key = %issue.key,
+                                        "Comment body has unexpected format (not string or ADF)"
+                                    );
+                                    "<p><em>(Comment body could not be displayed)</em></p>"
+                                        .to_string()
                                 }
                             })
-                            .unwrap_or_default();
+                            .unwrap_or_else(|| {
+                                tracing::warn!(
+                                    issue_key = %issue.key,
+                                    "Comment missing body field"
+                                );
+                                String::new()
+                            });
 
                         CommentView {
                             author,
@@ -248,6 +285,7 @@ impl HtmlRenderer {
             description: &description,
             comments: &comments,
             remote_links: &link_views,
+            remote_links_error,
         };
         let container = issue_template.render()?;
 

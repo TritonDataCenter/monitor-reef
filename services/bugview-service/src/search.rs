@@ -95,11 +95,11 @@ pub async fn search_issues(
         .next_page_token
         .map(|jira_token| token_cache.store(jira_token));
 
-    Ok(HttpResponseOk(IssueListResponse {
+    // Use constructor to ensure is_last and next_page_token are consistent
+    Ok(HttpResponseOk(IssueListResponse::new(
         issues,
         next_page_token,
-        is_last: search_result.is_last.unwrap_or(false),
-    }))
+    )))
 }
 
 /// Check if an issue has the required public label.
@@ -174,8 +174,18 @@ pub fn convert_to_list_item(issue: jira_api::Issue) -> IssueListItem {
 
 /// Filter remote links by allowed domains and safe URL schemes.
 ///
-/// This prevents exposing links to signed Manta URLs or other sensitive domains,
-/// and prevents XSS attacks via javascript: or data: URLs.
+/// # Security
+///
+/// This function implements an **allowlist-based** security model:
+///
+/// - **URL Schemes**: Only `http://` and `https://` URLs are allowed.
+///   All other schemes (javascript:, data:, file:, vbscript:, etc.) are blocked
+///   to prevent XSS attacks.
+///
+/// - **Domains**: Only domains explicitly listed in configuration are allowed.
+///   This prevents exposing links to signed Manta URLs or other sensitive internal domains.
+///
+/// Links that fail either check are silently filtered out.
 pub fn filter_remote_links(
     links: &[jira_api::RemoteLink],
     config: &Config,

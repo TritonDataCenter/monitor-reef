@@ -118,10 +118,15 @@ impl BugviewApi for BugviewServiceImpl {
 
         let issue = ctx.jira.get_issue(&key).await.map_err(|e| {
             let msg = e.to_string();
-            if msg.contains("Issue not found") {
-                HttpError::for_not_found(None, msg)
+            if msg.contains("Issue not found") || msg.contains("404") {
+                // Safe to expose - user is asking for an issue that doesn't exist
+                HttpError::for_not_found(None, format!("Issue {} not found", key))
             } else {
-                HttpError::for_internal_error(format!("Failed to get issue: {}", e))
+                // Log full error but return generic message to avoid exposing internals
+                tracing::error!(issue_key = %key, error = %e, "Failed to get issue from JIRA");
+                HttpError::for_internal_error(
+                    "Failed to retrieve issue. Please try again later.".to_string(),
+                )
             }
         })?;
 
@@ -166,10 +171,15 @@ impl BugviewApi for BugviewServiceImpl {
 
         let issue = ctx.jira.get_issue(&key).await.map_err(|e| {
             let msg = e.to_string();
-            if msg.contains("Issue not found") {
-                HttpError::for_not_found(None, msg)
+            if msg.contains("Issue not found") || msg.contains("404") {
+                // Safe to expose - user is asking for an issue that doesn't exist
+                HttpError::for_not_found(None, format!("Issue {} not found", key))
             } else {
-                HttpError::for_internal_error(format!("Failed to get issue: {}", e))
+                // Log full error but return generic message to avoid exposing internals
+                tracing::error!(issue_key = %key, error = %e, "Failed to get issue from JIRA");
+                HttpError::for_internal_error(
+                    "Failed to retrieve issue. Please try again later.".to_string(),
+                )
             }
         })?;
 
@@ -357,10 +367,18 @@ impl BugviewApi for BugviewServiceImpl {
             Ok(issue) => issue,
             Err(e) => {
                 let msg = e.to_string();
-                let (status_code, error_message) = if msg.contains("Issue not found") {
+                let (status_code, error_message) = if msg.contains("Issue not found")
+                    || msg.contains("404")
+                {
+                    // Safe to expose - user is asking for an issue that doesn't exist
                     (404, format!("Issue {} not found", key))
                 } else {
-                    (500, format!("Failed to retrieve issue: {}", e))
+                    // Log full error but return generic message to avoid exposing internals
+                    tracing::error!(issue_key = %key, error = %e, "Failed to get issue from JIRA");
+                    (
+                        500,
+                        "Failed to retrieve issue. Please try again later.".to_string(),
+                    )
                 };
 
                 let html = ctx
@@ -397,11 +415,10 @@ impl BugviewApi for BugviewServiceImpl {
         }
 
         // Fetch remote links and filter by allowed_domains
-        let remote_links = ctx
-            .jira
-            .get_remote_links(&issue.id)
-            .await
-            .unwrap_or_else(|e| {
+        // Track whether fetch failed so we can show a warning to users
+        let (remote_links, remote_links_error) = match ctx.jira.get_remote_links(&issue.id).await {
+            Ok(links) => (links, false),
+            Err(e) => {
                 let err_str = e.to_string();
                 // Escalate to error level for auth failures and rate limiting
                 // as these indicate operational issues that need attention
@@ -430,18 +447,19 @@ impl BugviewApi for BugviewServiceImpl {
                         issue_id = %issue.id,
                         issue_key = %issue.key,
                         error = %e,
-                        "Failed to fetch remote links, returning empty list"
+                        "Failed to fetch remote links, will show warning to user"
                     );
                 }
-                Vec::new()
-            });
+                (Vec::new(), true)
+            }
+        };
 
         let filtered_links = filter_remote_links(&remote_links, &ctx.config);
 
-        // Render HTML
+        // Render HTML (pass error flag to show warning if links couldn't be loaded)
         let html = ctx
             .html
-            .render_issue(&issue, &filtered_links)
+            .render_issue(&issue, &filtered_links, remote_links_error)
             .map_err(|e| HttpError::for_internal_error(format!("Failed to render HTML: {}", e)))?;
 
         build_html_response(200, html)
@@ -473,10 +491,12 @@ async fn main() -> Result<()> {
         .init();
 
     // Load configuration from environment
-    let jira_url =
-        std::env::var("JIRA_URL").unwrap_or_else(|_| "https://jira.example.com".to_string());
-    let jira_username = std::env::var("JIRA_USERNAME").unwrap_or_else(|_| "username".to_string());
-    let jira_password = std::env::var("JIRA_PASSWORD").unwrap_or_else(|_| "password".to_string());
+    // Required credentials - fail fast if not set rather than starting with invalid config
+    let jira_url = std::env::var("JIRA_URL").expect("JIRA_URL environment variable is required");
+    let jira_username =
+        std::env::var("JIRA_USERNAME").expect("JIRA_USERNAME environment variable is required");
+    let jira_password =
+        std::env::var("JIRA_PASSWORD").expect("JIRA_PASSWORD environment variable is required");
     let default_label =
         std::env::var("JIRA_DEFAULT_LABEL").unwrap_or_else(|_| "public".to_string());
     let allowed_labels = std::env::var("JIRA_ALLOWED_LABELS")
@@ -806,7 +826,7 @@ mod tests {
 
         let html = ctx
             .html
-            .render_issue(&issue, &filtered)
+            .render_issue(&issue, &filtered, false)
             .expect("render html");
         assert!(html.contains("Test summary"));
         assert!(html.contains("Related Links"));
@@ -1231,5 +1251,276 @@ mod tests {
             StatusCode::NOT_FOUND,
             "Full JSON endpoint should return 404 for non-public issue"
         );
+    }
+
+    #[tokio::test]
+    async fn test_json_api_returns_400_for_invalid_pagination_token() {
+        // Test that the JSON API returns 400 Bad Request for invalid/expired pagination tokens
+        let ctx = test_context();
+
+        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
+            .expect("api description");
+
+        let config_dropshot = ConfigDropshot {
+            bind_address: "127.0.0.1:0".parse().unwrap(),
+            default_request_body_max_bytes: 1024 * 1024,
+            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
+            ..Default::default()
+        };
+
+        let log = dropshot::ConfigLogging::StderrTerminal {
+            level: dropshot::ConfigLoggingLevel::Warn,
+        }
+        .to_logger("bugview-service-test")
+        .expect("logger");
+
+        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
+            Ok(starter) => starter.start(),
+            Err(e) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Failed to start test server in CI: {}", e);
+                }
+                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
+                return;
+            }
+        };
+
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        let addr = server.local_addr();
+
+        // Request with an invalid pagination token
+        let url = format!(
+            "http://{}/bugview/index.json?next_page_token=invalid123abc",
+            addr
+        );
+        let resp = reqwest::get(&url).await.expect("request");
+        assert_eq!(
+            resp.status(),
+            StatusCode::BAD_REQUEST,
+            "JSON API should return 400 for invalid pagination token"
+        );
+        let body = resp.text().await.expect("body");
+        assert!(
+            body.contains("Invalid or expired pagination token"),
+            "Error message should indicate invalid token: {}",
+            body
+        );
+    }
+
+    #[tokio::test]
+    async fn test_html_api_gracefully_handles_invalid_pagination_token() {
+        // Test that the HTML API gracefully falls back to first page for invalid tokens
+        let ctx = test_context();
+
+        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
+            .expect("api description");
+
+        let config_dropshot = ConfigDropshot {
+            bind_address: "127.0.0.1:0".parse().unwrap(),
+            default_request_body_max_bytes: 1024 * 1024,
+            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
+            ..Default::default()
+        };
+
+        let log = dropshot::ConfigLogging::StderrTerminal {
+            level: dropshot::ConfigLoggingLevel::Warn,
+        }
+        .to_logger("bugview-service-test")
+        .expect("logger");
+
+        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
+            Ok(starter) => starter.start(),
+            Err(e) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Failed to start test server in CI: {}", e);
+                }
+                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
+                return;
+            }
+        };
+
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        let addr = server.local_addr();
+
+        // Request with an invalid pagination token - should return 200 with first page
+        let url = format!(
+            "http://{}/bugview/index.html?next_page_token=invalid123abc",
+            addr
+        );
+        let resp = reqwest::get(&url).await.expect("request");
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "HTML API should return 200 (fallback to first page) for invalid token"
+        );
+        let body = resp.text().await.expect("body");
+        // Should show the normal index page content
+        assert!(
+            body.contains("Public Issues") || body.contains("PROJ-1"),
+            "HTML should show the index page content"
+        );
+    }
+
+    // Mock JIRA client that returns "Issue not found" error
+    #[derive(Clone, Default)]
+    struct NotFoundMockJiraClient;
+
+    #[async_trait]
+    impl JiraClientTrait for NotFoundMockJiraClient {
+        async fn search_issues(
+            &self,
+            _labels: &[String],
+            _page_token: Option<&str>,
+            _sort: &str,
+        ) -> anyhow::Result<SearchResponse> {
+            Ok(SearchResponse {
+                issues: vec![],
+                is_last: Some(true),
+                next_page_token: None,
+            })
+        }
+
+        async fn get_issue(&self, key: &jira_api::IssueKey) -> anyhow::Result<Issue> {
+            anyhow::bail!("Issue not found: {}", key)
+        }
+
+        async fn get_remote_links(&self, _issue_id: &str) -> anyhow::Result<Vec<RemoteLink>> {
+            Ok(vec![])
+        }
+    }
+
+    fn not_found_test_context() -> ApiContext {
+        let config = Config {
+            default_label: "public".to_string(),
+            allowed_labels: vec!["public".to_string()],
+            allowed_domains: vec![],
+            public_base_url: "https://test.example.com".to_string(),
+        };
+
+        ApiContext {
+            jira: Arc::new(NotFoundMockJiraClient) as Arc<dyn JiraClientTrait>,
+            config: Arc::new(config),
+            html: Arc::new(HtmlRenderer::new()),
+            token_cache: TokenCache::new(),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_issue_not_found_returns_404() {
+        // Test that JIRA "Issue not found" errors are converted to HTTP 404
+        let ctx = not_found_test_context();
+
+        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
+            .expect("api description");
+
+        let config_dropshot = ConfigDropshot {
+            bind_address: "127.0.0.1:0".parse().unwrap(),
+            default_request_body_max_bytes: 1024 * 1024,
+            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
+            ..Default::default()
+        };
+
+        let log = dropshot::ConfigLogging::StderrTerminal {
+            level: dropshot::ConfigLoggingLevel::Warn,
+        }
+        .to_logger("bugview-service-test")
+        .expect("logger");
+
+        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
+            Ok(starter) => starter.start(),
+            Err(e) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Failed to start test server in CI: {}", e);
+                }
+                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
+                return;
+            }
+        };
+
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        let addr = server.local_addr();
+
+        // Test HTML endpoint
+        let url = format!("http://{}/bugview/issue/PROJ-999", addr);
+        let resp = reqwest::get(&url).await.expect("request");
+        assert_eq!(
+            resp.status(),
+            StatusCode::NOT_FOUND,
+            "HTML endpoint should return 404 when JIRA says issue not found"
+        );
+
+        // Test JSON endpoint
+        let url = format!("http://{}/bugview/json/PROJ-999", addr);
+        let resp = reqwest::get(&url).await.expect("request");
+        assert_eq!(
+            resp.status(),
+            StatusCode::NOT_FOUND,
+            "JSON endpoint should return 404 when JIRA says issue not found"
+        );
+
+        // Test full JSON endpoint
+        let url = format!("http://{}/bugview/fulljson/PROJ-999", addr);
+        let resp = reqwest::get(&url).await.expect("request");
+        assert_eq!(
+            resp.status(),
+            StatusCode::NOT_FOUND,
+            "Full JSON endpoint should return 404 when JIRA says issue not found"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_malformed_issue_key_returns_400() {
+        // Test that malformed issue keys return 400 Bad Request
+        let ctx = test_context();
+
+        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
+            .expect("api description");
+
+        let config_dropshot = ConfigDropshot {
+            bind_address: "127.0.0.1:0".parse().unwrap(),
+            default_request_body_max_bytes: 1024 * 1024,
+            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
+            ..Default::default()
+        };
+
+        let log = dropshot::ConfigLogging::StderrTerminal {
+            level: dropshot::ConfigLoggingLevel::Warn,
+        }
+        .to_logger("bugview-service-test")
+        .expect("logger");
+
+        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
+            Ok(starter) => starter.start(),
+            Err(e) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Failed to start test server in CI: {}", e);
+                }
+                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
+                return;
+            }
+        };
+
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        let addr = server.local_addr();
+
+        // Test various malformed keys
+        // Note: "123-456" is actually valid - JIRA allows numeric project prefixes
+        let malformed_keys = vec![
+            "NOHYPHEN", // Missing hyphen
+            "-123",     // Empty project part
+            "PROJ-",    // Empty issue number
+            "PROJ-abc", // Non-numeric issue number
+        ];
+
+        for key in &malformed_keys {
+            let url = format!("http://{}/bugview/issue/{}", addr, key);
+            let resp = reqwest::get(&url).await.expect("request");
+            assert_eq!(
+                resp.status(),
+                StatusCode::BAD_REQUEST,
+                "Malformed key '{}' should return 400",
+                key
+            );
+        }
     }
 }

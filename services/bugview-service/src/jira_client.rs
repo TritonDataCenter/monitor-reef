@@ -275,4 +275,122 @@ mod tests {
         assert!(res.is_ok());
         assert_eq!(res.unwrap(), 42);
     }
+
+    #[tokio::test]
+    async fn test_with_retries_does_not_retry_non_retriable_errors() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        // Test that 404 errors are NOT retried (fail immediately)
+        let attempts = AtomicU32::new(0);
+        let res: Result<u32> = with_retries(
+            || {
+                attempts.fetch_add(1, Ordering::Relaxed);
+                async { Err(anyhow::anyhow!("404 Not Found")) }
+            },
+            "test.op",
+        )
+        .await;
+
+        assert!(res.is_err());
+        assert_eq!(
+            attempts.load(Ordering::Relaxed),
+            1,
+            "Non-retriable error should not be retried"
+        );
+
+        // Test that 400 errors are NOT retried
+        let attempts = AtomicU32::new(0);
+        let res: Result<u32> = with_retries(
+            || {
+                attempts.fetch_add(1, Ordering::Relaxed);
+                async { Err(anyhow::anyhow!("400 Bad Request")) }
+            },
+            "test.op",
+        )
+        .await;
+
+        assert!(res.is_err());
+        assert_eq!(
+            attempts.load(Ordering::Relaxed),
+            1,
+            "400 error should not be retried"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_with_retries_retries_specific_error_types() {
+        use std::sync::atomic::{AtomicU32, Ordering};
+
+        // Test that 429 rate limit errors ARE retried
+        let attempts = AtomicU32::new(0);
+        let res: Result<u32> = with_retries(
+            || {
+                let n = attempts.fetch_add(1, Ordering::Relaxed) + 1;
+                async move {
+                    if n < 2 {
+                        Err(anyhow::anyhow!("429 Too Many Requests"))
+                    } else {
+                        Ok(42)
+                    }
+                }
+            },
+            "test.op",
+        )
+        .await;
+
+        assert!(res.is_ok());
+        assert_eq!(
+            attempts.load(Ordering::Relaxed),
+            2,
+            "429 error should be retried"
+        );
+
+        // Test that 500 errors ARE retried
+        let attempts = AtomicU32::new(0);
+        let res: Result<u32> = with_retries(
+            || {
+                let n = attempts.fetch_add(1, Ordering::Relaxed) + 1;
+                async move {
+                    if n < 2 {
+                        Err(anyhow::anyhow!("500 Internal Server Error"))
+                    } else {
+                        Ok(42)
+                    }
+                }
+            },
+            "test.op",
+        )
+        .await;
+
+        assert!(res.is_ok());
+        assert_eq!(
+            attempts.load(Ordering::Relaxed),
+            2,
+            "500 error should be retried"
+        );
+
+        // Test that timeout errors ARE retried
+        let attempts = AtomicU32::new(0);
+        let res: Result<u32> = with_retries(
+            || {
+                let n = attempts.fetch_add(1, Ordering::Relaxed) + 1;
+                async move {
+                    if n < 2 {
+                        Err(anyhow::anyhow!("request timed out"))
+                    } else {
+                        Ok(42)
+                    }
+                }
+            },
+            "test.op",
+        )
+        .await;
+
+        assert!(res.is_ok());
+        assert_eq!(
+            attempts.load(Ordering::Relaxed),
+            2,
+            "Timeout error should be retried"
+        );
+    }
 }
