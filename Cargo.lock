@@ -269,6 +269,7 @@ dependencies = [
  "dropshot",
  "http",
  "indexmap",
+ "jira-api",
  "jira-client",
  "jira-stub-server",
  "rand",
@@ -1205,6 +1206,7 @@ dependencies = [
 name = "jira-client"
 version = "0.1.0"
 dependencies = [
+ "jira-api",
  "openapiv3",
  "progenitor",
  "progenitor-client",

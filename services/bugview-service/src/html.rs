@@ -239,7 +239,7 @@ impl HtmlRenderer {
 
         // Render issue template
         let issue_template = IssueTemplate {
-            key: &issue.key,
+            key: issue.key.as_str(),
             summary,
             status,
             resolution,

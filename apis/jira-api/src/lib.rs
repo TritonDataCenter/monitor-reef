@@ -23,6 +23,70 @@ use dropshot::{HttpError, HttpResponseOk, Path, Query, RequestContext};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
+
+// ============================================================================
+// Newtypes
+// ============================================================================
+
+/// A JIRA issue key in PROJECT-123 format
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+#[serde(transparent)]
+pub struct IssueKey(String);
+
+impl IssueKey {
+    /// Create a new IssueKey, validating the format
+    pub fn new(key: impl Into<String>) -> Result<Self, InvalidIssueKey> {
+        let key = key.into();
+        // Must contain a hyphen and have at least one digit after
+        if key.contains('-')
+            && key
+                .split('-')
+                .last()
+                .map_or(false, |n| n.chars().all(|c| c.is_ascii_digit()) && !n.is_empty())
+        {
+            Ok(Self(key))
+        } else {
+            Err(InvalidIssueKey(key))
+        }
+    }
+
+    /// Create without validation (for trusted sources like JIRA responses)
+    pub fn new_unchecked(key: impl Into<String>) -> Self {
+        Self(key.into())
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for IssueKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl AsRef<str> for IssueKey {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+#[derive(Debug)]
+pub struct InvalidIssueKey(pub String);
+
+impl fmt::Display for InvalidIssueKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "Invalid issue key format: '{}' (expected PROJECT-123)",
+            self.0
+        )
+    }
+}
+
+impl std::error::Error for InvalidIssueKey {}
 
 // ============================================================================
 // Request/Response Types
@@ -67,7 +131,7 @@ pub struct SearchResponse {
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Issue {
     /// Issue key (e.g., "PROJECT-123")
-    pub key: String,
+    pub key: IssueKey,
 
     /// Issue ID (numeric)
     pub id: String,

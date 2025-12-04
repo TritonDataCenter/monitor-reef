@@ -22,8 +22,26 @@ const HTTP_TIMEOUT_SECS: u64 = 15;
 const USER_AGENT: &str = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 const JIRA_SEARCH_MAX_RESULTS: u32 = 50;
 
-// Re-export types from the generated client that match our API
-pub use jira_client::types::{Issue, RemoteLink, SearchResponse};
+// Re-export types from jira-api for consistency
+pub use jira_api::{Issue, IssueKey, RemoteLink};
+
+// Custom SearchResponse that uses jira_api::Issue instead of generated Issue
+#[derive(Debug, Clone)]
+pub struct SearchResponse {
+    pub issues: Vec<Issue>,
+    pub is_last: Option<bool>,
+    pub next_page_token: Option<String>,
+}
+
+impl From<jira_client::types::SearchResponse> for SearchResponse {
+    fn from(resp: jira_client::types::SearchResponse) -> Self {
+        Self {
+            issues: resp.issues.into_iter().map(Into::into).collect(),
+            is_last: resp.is_last,
+            next_page_token: resp.next_page_token,
+        }
+    }
+}
 
 /// Trait abstraction for the JIRA client used by the service.
 #[async_trait]
@@ -35,7 +53,7 @@ pub trait JiraClientTrait: Send + Sync {
         sort: &str,
     ) -> Result<SearchResponse>;
 
-    async fn get_issue(&self, key: &str) -> Result<Issue>;
+    async fn get_issue(&self, key: &IssueKey) -> Result<Issue>;
 
     async fn get_remote_links(&self, issue_id: &str) -> Result<Vec<RemoteLink>>;
 }
@@ -161,21 +179,21 @@ impl JiraClientTrait for JiraClient {
                     .await
                     .context("Failed to send search request")?
                     .into_inner();
-                Ok(response)
+
+                // Convert SearchResponse to use jira_api::Issue
+                Ok(response.into())
             },
             "jira.search_issues",
         )
         .await
     }
 
-    async fn get_issue(&self, key: &str) -> Result<Issue> {
-        if !key.contains('-') {
-            anyhow::bail!("Invalid issue key: {}", key);
-        }
+    async fn get_issue(&self, key: &IssueKey) -> Result<Issue> {
+        let key_str = key.as_str();
 
         with_retries(
             || async {
-                let k = key.to_string();
+                let k = key_str.to_string();
                 let response = self
                     .client
                     .get_issue()
@@ -197,7 +215,8 @@ impl JiraClientTrait for JiraClient {
                             anyhow::anyhow!("Failed to get issue: {}", e)
                         }
                     })?;
-                Ok(response.into_inner())
+                // Convert from generated Issue (String key) to jira_api::Issue (IssueKey)
+                Ok(response.into_inner().into())
             },
             "jira.get_issue",
         )
@@ -220,7 +239,8 @@ impl JiraClientTrait for JiraClient {
                     .await
                     .context("Failed to send get remote links request")?
                     .into_inner();
-                Ok(response)
+                // Convert from generated RemoteLink to jira_api::RemoteLink
+                Ok(response.into_iter().map(Into::into).collect())
             },
             "jira.get_remote_links",
         )

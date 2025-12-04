@@ -47,7 +47,7 @@ struct FixtureIssue {
 impl From<FixtureIssue> for Issue {
     fn from(f: FixtureIssue) -> Self {
         Issue {
-            key: f.key,
+            key: jira_api::IssueKey::new_unchecked(f.key),
             id: f.id,
             fields: f.fields,
             rendered_fields: f.rendered_fields,

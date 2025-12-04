@@ -187,7 +187,12 @@ impl BugviewApi for BugviewServiceImpl {
         path: Path<IssuePath>,
     ) -> Result<HttpResponseOk<IssueSummary>, HttpError> {
         let ctx = rqctx.context();
-        let key = path.into_inner().key;
+        let key_str = path.into_inner().key;
+
+        // Validate issue key format
+        let key = jira_api::IssueKey::new(&key_str).map_err(|e| {
+            HttpError::for_bad_request(None, format!("{}", e))
+        })?;
 
         let issue = ctx.jira.get_issue(&key).await.map_err(|e| {
             let msg = e.to_string();
@@ -214,7 +219,7 @@ impl BugviewApi for BugviewServiceImpl {
             .to_string();
 
         Ok(HttpResponseOk(IssueSummary {
-            id: issue.key.clone(),
+            id: issue.key.to_string(),
             summary,
             web_url: format!("{}/bugview/{}", ctx.config.public_base_url, issue.key),
         }))
@@ -225,7 +230,12 @@ impl BugviewApi for BugviewServiceImpl {
         path: Path<IssuePath>,
     ) -> Result<HttpResponseOk<IssueDetails>, HttpError> {
         let ctx = rqctx.context();
-        let key = path.into_inner().key;
+        let key_str = path.into_inner().key;
+
+        // Validate issue key format
+        let key = jira_api::IssueKey::new(&key_str).map_err(|e| {
+            HttpError::for_bad_request(None, format!("{}", e))
+        })?;
 
         let issue = ctx.jira.get_issue(&key).await.map_err(|e| {
             let msg = e.to_string();
@@ -274,7 +284,7 @@ impl BugviewApi for BugviewServiceImpl {
 
         Ok(HttpResponseOk(IssueDetails {
             id: issue.id,
-            key: issue.key,
+            key: issue.key.to_string(),
             fields: serde_json::to_value(issue.fields).unwrap_or(serde_json::Value::Null),
             remotelinks,
         }))
@@ -367,7 +377,25 @@ impl BugviewApi for BugviewServiceImpl {
         path: Path<IssuePath>,
     ) -> Result<Response<Body>, HttpError> {
         let ctx = rqctx.context();
-        let key = path.into_inner().key;
+        let key_str = path.into_inner().key;
+
+        // Validate issue key format
+        let key = match jira_api::IssueKey::new(&key_str) {
+            Ok(k) => k,
+            Err(e) => {
+                let error_message = format!("{}", e);
+                let html = ctx
+                    .html
+                    .render_error(400, &error_message)
+                    .unwrap_or_else(|_| format!("Error 400: {}", error_message));
+
+                return Ok(Response::builder()
+                    .status(400)
+                    .header("Content-Type", "text/html; charset=utf-8")
+                    .body(html.into())
+                    .unwrap());
+            }
+        };
 
         // Try to get the issue
         let issue = match ctx.jira.get_issue(&key).await {
@@ -534,7 +562,7 @@ async fn search_issues(
 }
 
 /// Helper to check if issue has the public label
-fn issue_has_public_label(issue: &jira_client::Issue, required_label: &str) -> bool {
+fn issue_has_public_label(issue: &jira_api::Issue, required_label: &str) -> bool {
     issue
         .fields
         .get("labels")
@@ -544,7 +572,7 @@ fn issue_has_public_label(issue: &jira_client::Issue, required_label: &str) -> b
 }
 
 /// Helper to convert full issue to list item
-fn convert_to_list_item(issue: jira_client::Issue) -> IssueListItem {
+fn convert_to_list_item(issue: jira_api::Issue) -> IssueListItem {
     let summary = issue
         .fields
         .get("summary")
@@ -582,7 +610,7 @@ fn convert_to_list_item(issue: jira_client::Issue) -> IssueListItem {
         .to_string();
 
     IssueListItem {
-        key: issue.key,
+        key: issue.key.to_string(),
         summary,
         status,
         resolution,
@@ -595,9 +623,9 @@ fn convert_to_list_item(issue: jira_client::Issue) -> IssueListItem {
 ///
 /// This prevents exposing links to signed Manta URLs or other sensitive domains
 fn filter_remote_links(
-    links: &[jira_client::RemoteLink],
+    links: &[jira_api::RemoteLink],
     config: &Config,
-) -> Vec<jira_client::RemoteLink> {
+) -> Vec<jira_api::RemoteLink> {
     links
         .iter()
         .filter(|link| {
@@ -707,7 +735,8 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::jira_client::{Issue, RemoteLink, SearchResponse};
+    use jira_api::{Issue, RemoteLink};
+    use crate::jira_client::SearchResponse;
     use async_trait::async_trait;
     use bugview_api::IssueDetails;
     use http::StatusCode;
@@ -751,13 +780,13 @@ mod tests {
 
             let issues = vec![
                 Issue {
-                    key: "PROJ-1".into(),
+                    key: jira_api::IssueKey::new_unchecked("PROJ-1"),
                     id: "1".into(),
                     fields: issue1.into_iter().collect(),
                     rendered_fields: None,
                 },
                 Issue {
-                    key: "PROJ-2".into(),
+                    key: jira_api::IssueKey::new_unchecked("PROJ-2"),
                     id: "2".into(),
                     fields: issue2.into_iter().collect(),
                     rendered_fields: None,
@@ -771,7 +800,7 @@ mod tests {
             })
         }
 
-        async fn get_issue(&self, key: &str) -> anyhow::Result<Issue> {
+        async fn get_issue(&self, key: &jira_api::IssueKey) -> anyhow::Result<Issue> {
             // Return a minimal issue with required fields and the public label
             let mut fields: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
             fields.insert(
@@ -789,9 +818,9 @@ mod tests {
             fields.insert("labels".to_string(), serde_json::json!(["public"]));
 
             Ok(Issue {
-                key: key.to_string(),
+                key: key.clone(),
                 id: "12345".to_string(),
-                fields,
+                fields: fields.into_iter().collect(),
                 rendered_fields: None,
             })
         }
@@ -836,7 +865,7 @@ mod tests {
             issue1.insert("labels".into(), serde_json::json!(["internal"]));
 
             let issues = vec![Issue {
-                key: "PROJ-1".into(),
+                key: jira_api::IssueKey::new_unchecked("PROJ-1"),
                 id: "1".into(),
                 fields: issue1.into_iter().collect(),
                 rendered_fields: None,
@@ -849,7 +878,7 @@ mod tests {
             })
         }
 
-        async fn get_issue(&self, key: &str) -> anyhow::Result<Issue> {
+        async fn get_issue(&self, key: &jira_api::IssueKey) -> anyhow::Result<Issue> {
             // Return an issue with "internal" label instead of "public"
             let mut fields: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
             fields.insert(
@@ -867,9 +896,9 @@ mod tests {
             fields.insert("labels".to_string(), serde_json::json!(["internal"]));
 
             Ok(Issue {
-                key: key.to_string(),
+                key: key.clone(),
                 id: "12345".to_string(),
-                fields,
+                fields: fields.into_iter().collect(),
                 rendered_fields: None,
             })
         }
@@ -918,14 +947,15 @@ mod tests {
     async fn test_issue_full_json_with_mock() {
         // Exercise the same logic used by the handler with a mock client
         let ctx = test_context();
-        let issue = ctx.jira.get_issue("PROJ-1").await.expect("mock get_issue");
+        let key = jira_api::IssueKey::new("PROJ-1").expect("valid key");
+        let issue = ctx.jira.get_issue(&key).await.expect("mock get_issue");
 
         // Verify label gate
         assert!(issue_has_public_label(&issue, &ctx.config.default_label));
 
         let details = IssueDetails {
             id: issue.id,
-            key: issue.key,
+            key: issue.key.to_string(),
             fields: serde_json::to_value(issue.fields).unwrap(),
             remotelinks: vec![],
         };
@@ -941,9 +971,10 @@ mod tests {
     #[tokio::test]
     async fn test_issue_html_with_mock_and_link_filter() {
         let ctx = test_context();
-        let issue = ctx.jira.get_issue("PROJ-2").await.unwrap();
+        let key = jira_api::IssueKey::new("PROJ-2").expect("valid key");
+        let issue = ctx.jira.get_issue(&key).await.unwrap();
         // Build a link via JSON to avoid referring to internal generated types directly
-        let link: jira_client::RemoteLink = serde_json::from_value(serde_json::json!({
+        let link: jira_api::RemoteLink = serde_json::from_value(serde_json::json!({
             "id": 1,
             "object": { "url": "https://example.com/resource", "title": "Example" }
         }))
@@ -972,7 +1003,7 @@ mod tests {
         };
 
         // Create links from mixed domains - some allowed, some not
-        let links: Vec<jira_client::RemoteLink> = serde_json::from_value(serde_json::json!([
+        let links: Vec<jira_api::RemoteLink> = serde_json::from_value(serde_json::json!([
             {"id": 1, "object": {"url": "https://safe.example.com/good", "title": "Good Link"}},
             {"id": 2, "object": {"url": "https://manta.joyent.us/signed/secret", "title": "Signed URL"}},
             {"id": 3, "object": {"url": "https://internal.corp/secret", "title": "Internal"}},
