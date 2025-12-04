@@ -249,7 +249,15 @@ impl BugviewApi for BugviewServiceImpl {
             .jira
             .get_remote_links(&issue.id)
             .await
-            .unwrap_or_default();
+            .unwrap_or_else(|e| {
+                tracing::warn!(
+                    issue_id = %issue.id,
+                    issue_key = %issue.key,
+                    error = %e,
+                    "Failed to fetch remote links, returning empty list"
+                );
+                Vec::new()
+            });
 
         let filtered_links = filter_remote_links(&jira_remote_links, &ctx.config);
 
@@ -405,7 +413,15 @@ impl BugviewApi for BugviewServiceImpl {
             .jira
             .get_remote_links(&issue.id)
             .await
-            .unwrap_or_default();
+            .unwrap_or_else(|e| {
+                tracing::warn!(
+                    issue_id = %issue.id,
+                    issue_key = %issue.key,
+                    error = %e,
+                    "Failed to fetch remote links, returning empty list"
+                );
+                Vec::new()
+            });
 
         let filtered_links = filter_remote_links(&remote_links, &ctx.config);
 
