@@ -6,11 +6,13 @@
 
 mod html;
 mod jira_client;
+mod search;
+mod token_cache;
 
 use anyhow::Result;
 use bugview_api::{
-    BugviewApi, IssueDetails, IssueListItem, IssueListQuery, IssueListResponse, IssuePath,
-    IssueSort, IssueSummary, LabelPath, RemoteLink,
+    BugviewApi, IssueDetails, IssueListQuery, IssueListResponse, IssuePath, IssueSummary, LabelPath,
+    RemoteLink,
 };
 use dropshot::{
     Body, ConfigDropshot, ConfigLogging, ConfigLoggingLevel, HttpError, HttpResponseOk,
@@ -18,28 +20,15 @@ use dropshot::{
 };
 use html::HtmlRenderer;
 use http::Response;
-use indexmap::IndexMap;
 use jira_client::{JiraClient, JiraClientTrait};
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use search::{fetch_issues_for_html, filter_remote_links, issue_has_public_label, search_issues};
+use std::sync::Arc;
+use token_cache::TokenCache;
 use tracing::info;
 
 // ================================
 // Module constants
 // ================================
-/// Length of the short, URL-safe pagination token IDs we expose publicly.
-/// 12 chars from 62-char alphabet = ~71 bits of entropy, sufficient to prevent
-/// brute-force enumeration within the 1-hour TTL window.
-const PAGINATION_TOKEN_ID_LEN: usize = 12;
-/// Size of the token ID alphabet (0-9, a-z, A-Z = 62 characters).
-const TOKEN_ID_ALPHABET_LEN: u8 = 62;
-/// Default TTL for cached JIRA pagination tokens (1 hour).
-/// Chosen to allow reasonable user session duration while limiting
-/// exposure window for any leaked tokens.
-const TOKEN_TTL_SECS: u64 = 60 * 60;
-/// Maximum number of cached pagination tokens to retain.
-/// Limits memory usage and ensures old tokens are evicted.
-const TOKEN_CACHE_MAX_ENTRIES: usize = 1000;
 /// Default maximum request body size (bytes).
 const DEFAULT_BODY_MAX_BYTES: usize = 1024 * 1024; // 1MB
 /// Default bind address for the HTTP server.
@@ -49,158 +38,24 @@ const DEFAULT_PUBLIC_BASE_URL: &str = "https://smartos.org";
 
 /// Service configuration
 #[derive(Clone)]
-struct Config {
+pub(crate) struct Config {
     /// Default label for public issues
-    default_label: String,
+    pub(crate) default_label: String,
     /// Additional allowed labels
-    allowed_labels: Vec<String>,
+    pub(crate) allowed_labels: Vec<String>,
     /// Allowed domains for remote links (security: prevents exposing signed URLs)
     allowed_domains: Vec<String>,
     /// Public base URL for constructing web_url in legacy JSON responses
-    public_base_url: String,
+    pub(crate) public_base_url: String,
 }
 
 impl Config {
-    fn is_allowed_label(&self, label: &str) -> bool {
+    pub(crate) fn is_allowed_label(&self, label: &str) -> bool {
         self.allowed_labels.iter().any(|l| l == label)
     }
 
-    fn is_allowed_domain(&self, domain: &str) -> bool {
+    pub(crate) fn is_allowed_domain(&self, domain: &str) -> bool {
         self.allowed_domains.iter().any(|d| d == domain)
-    }
-}
-
-/// Token cache entry with expiration
-struct TokenCacheEntry {
-    jira_token: String,
-    expires_at: Instant,
-}
-
-/// Thread-safe cache for mapping short IDs to JIRA pagination tokens.
-///
-/// # Why We Use Short IDs
-///
-/// JIRA v3 API pagination tokens contain base64-encoded data including:
-/// - The JQL query being executed
-/// - Internal cursor state
-/// - Potentially other metadata
-///
-/// Exposing these tokens directly in URLs would:
-/// - Leak query details (labels being searched, filters applied) to users
-/// - Allow tokens to appear in browser history and server logs
-/// - Potentially enable token manipulation attacks
-///
-/// Instead, we generate opaque 12-character alphanumeric IDs that map to the
-/// real JIRA tokens internally. These IDs are:
-/// - Short enough for clean URLs
-/// - Cryptographically random (using thread_rng)
-/// - Time-limited (TTL-based expiration)
-/// - Capacity-limited (LRU eviction)
-#[derive(Clone)]
-struct TokenCache {
-    cache: Arc<Mutex<IndexMap<String, TokenCacheEntry>>>,
-    ttl: Duration,
-    max_entries: usize,
-}
-
-impl TokenCache {
-    fn new() -> Self {
-        Self {
-            cache: Arc::new(Mutex::new(IndexMap::new())),
-            ttl: Duration::from_secs(TOKEN_TTL_SECS),
-            max_entries: TOKEN_CACHE_MAX_ENTRIES,
-        }
-    }
-
-    #[cfg(test)]
-    fn new_with(ttl: Duration, max_entries: usize) -> Self {
-        Self {
-            cache: Arc::new(Mutex::new(IndexMap::new())),
-            ttl,
-            max_entries,
-        }
-    }
-
-    /// Store a JIRA token and return a short random ID
-    fn store(&self, jira_token: String) -> String {
-        use rand::Rng;
-
-        let mut rng = rand::rng();
-        let mut cache = self.cache.lock().unwrap_or_else(|poisoned| {
-            tracing::error!("Token cache mutex was poisoned, recovering");
-            poisoned.into_inner()
-        });
-
-        // Cleanup expired entries
-        let now = Instant::now();
-        cache.retain(|_, entry| entry.expires_at > now);
-
-        // Enforce capacity by evicting oldest entries (O(1) with IndexMap swap_remove_index)
-        while cache.len() >= self.max_entries {
-            let _ = cache.swap_remove_index(0);
-        }
-
-        // Generate ID, checking for collisions (unlikely but possible)
-        // With 62^12 possible IDs (~3.2e21) and max 1000 entries, collision
-        // probability is astronomically low, but we add a limit for safety
-        const MAX_COLLISION_ATTEMPTS: usize = 100;
-        let id = (0..MAX_COLLISION_ATTEMPTS)
-            .find_map(|_| {
-                let candidate: String = (0..PAGINATION_TOKEN_ID_LEN)
-                    .map(|_| {
-                        let idx = rng.random_range(0..TOKEN_ID_ALPHABET_LEN);
-                        match idx {
-                            0..=9 => (b'0' + idx) as char,
-                            10..=35 => (b'a' + idx - 10) as char,
-                            _ => (b'A' + idx - 36) as char,
-                        }
-                    })
-                    .collect();
-                (!cache.contains_key(&candidate)).then_some(candidate)
-            })
-            .unwrap_or_else(|| {
-                // This should never happen in practice, but log and generate anyway
-                tracing::error!(
-                    "Token cache collision detection exceeded {} attempts - this indicates a bug",
-                    MAX_COLLISION_ATTEMPTS
-                );
-                // Generate one more as fallback (will overwrite if collision)
-                (0..PAGINATION_TOKEN_ID_LEN)
-                    .map(|_| {
-                        let idx = rng.random_range(0..TOKEN_ID_ALPHABET_LEN);
-                        match idx {
-                            0..=9 => (b'0' + idx) as char,
-                            10..=35 => (b'a' + idx - 10) as char,
-                            _ => (b'A' + idx - 36) as char,
-                        }
-                    })
-                    .collect()
-            });
-
-        cache.insert(
-            id.clone(),
-            TokenCacheEntry {
-                jira_token,
-                expires_at: now + self.ttl,
-            },
-        );
-
-        id
-    }
-
-    /// Retrieve a JIRA token by ID, cleaning up expired entries
-    fn get(&self, id: &str) -> Option<String> {
-        let mut cache = self.cache.lock().unwrap_or_else(|poisoned| {
-            tracing::error!("Token cache mutex was poisoned, recovering");
-            poisoned.into_inner()
-        });
-
-        // Clean up expired entries
-        let now = Instant::now();
-        cache.retain(|_, entry| entry.expires_at > now);
-
-        // Get the token if it exists and hasn't expired
-        cache.get(id).map(|entry| entry.jira_token.clone())
     }
 }
 
@@ -247,7 +102,7 @@ impl BugviewApi for BugviewServiceImpl {
         // Use the default label
         let labels = vec![ctx.config.default_label.clone()];
 
-        search_issues(ctx, labels, query).await
+        search_issues(ctx.jira.as_ref(), &ctx.token_cache, labels, query).await
     }
 
     async fn get_issue_json(
@@ -412,7 +267,7 @@ impl BugviewApi for BugviewServiceImpl {
 
         // Get issues
         let (issues, next_page_token, is_last, sort) =
-            fetch_issues_for_html(ctx, labels, query).await?;
+            fetch_issues_for_html(ctx.jira.as_ref(), &ctx.token_cache, labels, query).await?;
 
         // Render HTML
         let html = ctx
@@ -452,7 +307,7 @@ impl BugviewApi for BugviewServiceImpl {
 
         // Get issues
         let (issues, next_page_token, is_last, sort) =
-            fetch_issues_for_html(ctx, labels, query).await?;
+            fetch_issues_for_html(ctx.jira.as_ref(), &ctx.token_cache, labels, query).await?;
 
         // Render HTML
         let html = ctx
@@ -605,186 +460,6 @@ impl BugviewApi for BugviewServiceImpl {
             .body(Body::empty())
             .map_err(|e| HttpError::for_internal_error(format!("Failed to build redirect: {}", e)))
     }
-}
-
-/// Helper function to fetch issues for HTML rendering
-async fn fetch_issues_for_html(
-    ctx: &ApiContext,
-    labels: Vec<String>,
-    query: IssueListQuery,
-) -> Result<(Vec<IssueListItem>, Option<String>, bool, IssueSort), HttpError> {
-    let sort = query.sort.unwrap_or_default();
-
-    // Resolve the short token ID to the real JIRA token
-    // For HTML endpoints, we gracefully fall back to first page on bad tokens
-    let jira_token = if let Some(short_id) = &query.next_page_token {
-        ctx.token_cache.get(short_id)
-    } else {
-        None
-    };
-
-    let search_result = ctx
-        .jira
-        .search_issues(&labels, jira_token.as_deref(), sort.as_str())
-        .await
-        .map_err(|e| HttpError::for_internal_error(format!("Failed to search issues: {}", e)))?;
-
-    let issues: Vec<IssueListItem> = search_result
-        .issues
-        .into_iter()
-        .map(convert_to_list_item)
-        .collect();
-
-    // Extract pagination info from JIRA response
-    let is_last = search_result.is_last.unwrap_or(false);
-
-    // Store JIRA's token in cache and return short ID instead
-    let next_page_token = search_result
-        .next_page_token
-        .map(|jira_token| ctx.token_cache.store(jira_token));
-
-    Ok((issues, next_page_token, is_last, sort))
-}
-
-/// Helper function to search issues
-async fn search_issues(
-    ctx: &ApiContext,
-    labels: Vec<String>,
-    query: IssueListQuery,
-) -> Result<HttpResponseOk<IssueListResponse>, HttpError> {
-    let sort = query.sort.unwrap_or_default();
-
-    // Resolve the short token ID to the real JIRA token
-    let jira_token = if let Some(short_id) = &query.next_page_token {
-        Some(ctx.token_cache.get(short_id).ok_or_else(|| {
-            HttpError::for_bad_request(None, "Invalid or expired pagination token".to_string())
-        })?)
-    } else {
-        None
-    };
-
-    let search_result = ctx
-        .jira
-        .search_issues(&labels, jira_token.as_deref(), sort.as_str())
-        .await
-        .map_err(|e| HttpError::for_internal_error(format!("Failed to search issues: {}", e)))?;
-
-    let issues: Vec<IssueListItem> = search_result
-        .issues
-        .into_iter()
-        .map(convert_to_list_item)
-        .collect();
-
-    // Store JIRA's token in cache and return short ID instead
-    let next_page_token = search_result
-        .next_page_token
-        .map(|jira_token| ctx.token_cache.store(jira_token));
-
-    Ok(HttpResponseOk(IssueListResponse {
-        issues,
-        next_page_token,
-        is_last: search_result.is_last.unwrap_or(false),
-    }))
-}
-
-/// Helper to check if issue has the public label
-fn issue_has_public_label(issue: &jira_api::Issue, required_label: &str) -> bool {
-    issue
-        .fields
-        .get("labels")
-        .and_then(|v| v.as_array())
-        .map(|labels| labels.iter().any(|l| l.as_str() == Some(required_label)))
-        .unwrap_or(false)
-}
-
-/// Helper to convert full issue to list item
-fn convert_to_list_item(issue: jira_api::Issue) -> IssueListItem {
-    let summary = issue
-        .fields
-        .get("summary")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            tracing::warn!(
-                issue_key = %issue.key,
-                "Issue missing summary field in list item"
-            );
-            "(No summary)".to_string()
-        });
-
-    let status = issue
-        .fields
-        .get("status")
-        .and_then(|v| v.get("name"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            tracing::warn!(
-                issue_key = %issue.key,
-                "Issue missing status field"
-            );
-            "Unknown".to_string()
-        });
-
-    let resolution = issue
-        .fields
-        .get("resolution")
-        .and_then(|v| v.get("name"))
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
-
-    let updated = issue
-        .fields
-        .get("updated")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-
-    let created = issue
-        .fields
-        .get("created")
-        .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
-
-    IssueListItem {
-        key: issue.key,
-        summary,
-        status,
-        resolution,
-        updated,
-        created,
-    }
-}
-
-/// Filter remote links by allowed domains and safe URL schemes
-///
-/// This prevents exposing links to signed Manta URLs or other sensitive domains,
-/// and prevents XSS attacks via javascript: or data: URLs
-fn filter_remote_links(
-    links: &[jira_api::RemoteLink],
-    config: &Config,
-) -> Vec<jira_api::RemoteLink> {
-    links
-        .iter()
-        .filter(|link| {
-            if let Some(obj) = &link.object
-                && let Ok(url) = url::Url::parse(&obj.url)
-                && let Some(domain) = url.host_str()
-            {
-                // Only allow http and https schemes to prevent XSS
-                let scheme = url.scheme();
-                if scheme != "http" && scheme != "https" {
-                    return false;
-                }
-
-                // Check domain is allowed
-                return config.is_allowed_domain(domain);
-            }
-            false
-        })
-        .cloned()
-        .collect()
 }
 
 #[tokio::main]
@@ -1219,44 +894,6 @@ mod tests {
             !filtered.iter().any(|l| l.object.as_ref().unwrap().url.contains("file:")),
             "file: URLs should be filtered"
         );
-    }
-
-    #[tokio::test]
-    async fn test_token_cache_capacity_bounds() {
-        let cache = TokenCache::new_with(Duration::from_secs(60), 3);
-        let ids: Vec<String> = (0..10)
-            .map(|i| cache.store(format!("token-{}", i)))
-            .collect();
-
-        // Oldest should be evicted to maintain capacity
-        let len = cache
-            .cache
-            .lock()
-            .unwrap_or_else(|poisoned| {
-                tracing::error!("Token cache mutex was poisoned, recovering");
-                poisoned.into_inner()
-            })
-            .len();
-        assert!(len <= 3, "cache should be bounded");
-
-        // Newest likely remain; ensure at least last id resolves
-        let last_id = ids.last().unwrap();
-        assert_eq!(cache.get(last_id).as_deref(), Some("token-9"));
-    }
-
-    #[tokio::test]
-    async fn test_token_cache_expiration() {
-        let cache = TokenCache::new_with(Duration::from_millis(50), 100);
-        let id = cache.store("test-token".to_string());
-
-        // Token should be retrievable immediately
-        assert_eq!(cache.get(&id).as_deref(), Some("test-token"));
-
-        // Wait for expiration
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        // Token should be expired
-        assert!(cache.get(&id).is_none());
     }
 
     #[tokio::test]
