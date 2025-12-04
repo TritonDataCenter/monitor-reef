@@ -12,9 +12,9 @@
 use bugview_api::{IssueListItem, IssueListQuery, IssueListResponse, IssueSort};
 use dropshot::{HttpError, HttpResponseOk};
 
+use crate::Config;
 use crate::jira_client::JiraClientTrait;
 use crate::token_cache::TokenCache;
-use crate::Config;
 
 /// Helper function to fetch issues for HTML rendering.
 ///

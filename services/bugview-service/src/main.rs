@@ -11,8 +11,8 @@ mod token_cache;
 
 use anyhow::Result;
 use bugview_api::{
-    BugviewApi, IssueDetails, IssueListQuery, IssueListResponse, IssuePath, IssueSummary, LabelPath,
-    RemoteLink,
+    BugviewApi, IssueDetails, IssueListQuery, IssueListResponse, IssuePath, IssueSummary,
+    LabelPath, RemoteLink,
 };
 use dropshot::{
     Body, ConfigDropshot, ConfigLogging, ConfigLoggingLevel, HttpError, HttpResponseOk,
@@ -337,16 +337,16 @@ impl BugviewApi for BugviewServiceImpl {
             Ok(k) => k,
             Err(e) => {
                 let error_message = format!("{}", e);
-                let html = ctx
-                    .html
-                    .render_error(400, &error_message)
-                    .unwrap_or_else(|template_err| {
-                        tracing::error!(
-                            error = %template_err,
-                            "Failed to render error page template"
-                        );
-                        format!("Error 400: {}", error_message)
-                    });
+                let html =
+                    ctx.html
+                        .render_error(400, &error_message)
+                        .unwrap_or_else(|template_err| {
+                            tracing::error!(
+                                error = %template_err,
+                                "Failed to render error page template"
+                            );
+                            format!("Error 400: {}", error_message)
+                        });
 
                 return build_html_response(400, html);
             }
@@ -865,11 +865,7 @@ mod tests {
 
         let filtered = filter_remote_links(&links, &config);
 
-        assert_eq!(
-            filtered.len(),
-            2,
-            "Should only keep http and https links"
-        );
+        assert_eq!(filtered.len(), 2, "Should only keep http and https links");
 
         // Verify only safe schemes remain
         for link in &filtered {
@@ -883,15 +879,21 @@ mod tests {
 
         // Verify dangerous schemes were filtered out
         assert!(
-            !filtered.iter().any(|l| l.object.as_ref().unwrap().url.contains("javascript:")),
+            !filtered
+                .iter()
+                .any(|l| l.object.as_ref().unwrap().url.contains("javascript:")),
             "javascript: URLs should be filtered"
         );
         assert!(
-            !filtered.iter().any(|l| l.object.as_ref().unwrap().url.contains("data:")),
+            !filtered
+                .iter()
+                .any(|l| l.object.as_ref().unwrap().url.contains("data:")),
             "data: URLs should be filtered"
         );
         assert!(
-            !filtered.iter().any(|l| l.object.as_ref().unwrap().url.contains("file:")),
+            !filtered
+                .iter()
+                .any(|l| l.object.as_ref().unwrap().url.contains("file:")),
             "file: URLs should be filtered"
         );
     }
