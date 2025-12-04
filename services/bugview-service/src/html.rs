@@ -291,191 +291,153 @@ impl HtmlRenderer {
     }
 }
 
-/// Convert ADF (Atlassian Document Format) to HTML
-///
-/// This function handles the same ADF node types as the CLI text extractor,
-/// but outputs HTML instead of plain text.
-fn adf_to_html(nodes: &serde_json::Value) -> String {
-    let mut result = String::new();
+/// HTML writer that implements AdfWriter trait
+struct HtmlWriter {
+    output: String,
+}
 
-    if let Some(nodes_array) = nodes.as_array() {
-        for node in nodes_array.iter() {
-            if let Some(node_obj) = node.as_object() {
-                let node_type = node_obj.get("type").and_then(|t| t.as_str()).unwrap_or("");
-
-                match node_type {
-                    "paragraph" => {
-                        result.push_str("<p>");
-                        if let Some(content) = node_obj.get("content") {
-                            result.push_str(&adf_to_html(content));
-                        }
-                        result.push_str("</p>\n");
-                    }
-
-                    "text" => {
-                        if let Some(text) = node_obj.get("text").and_then(|t| t.as_str()) {
-                            let mut formatted_text = html_escape(text);
-
-                            // Apply marks (formatting)
-                            if let Some(marks) = node_obj.get("marks").and_then(|m| m.as_array()) {
-                                for mark in marks {
-                                    if let Some(mark_type) =
-                                        mark.get("type").and_then(|t| t.as_str())
-                                    {
-                                        formatted_text = match mark_type {
-                                            "strong" => {
-                                                format!("<strong>{}</strong>", formatted_text)
-                                            }
-                                            "em" => format!("<em>{}</em>", formatted_text),
-                                            "code" => format!("<code>{}</code>", formatted_text),
-                                            "link" => {
-                                                if let Some(href) = mark
-                                                    .get("attrs")
-                                                    .and_then(|a| a.get("href"))
-                                                    .and_then(|h| h.as_str())
-                                                {
-                                                    format!(
-                                                        r#"<a href="{}" rel="noopener noreferrer" target="_blank">{}</a>"#,
-                                                        html_escape(href),
-                                                        formatted_text
-                                                    )
-                                                } else {
-                                                    formatted_text
-                                                }
-                                            }
-                                            "strike" => format!("<del>{}</del>", formatted_text),
-                                            _ => formatted_text,
-                                        };
-                                    }
-                                }
-                            }
-
-                            result.push_str(&formatted_text);
-                        }
-                    }
-
-                    "inlineCard" => {
-                        if let Some(attrs) = node_obj.get("attrs")
-                            && let Some(url) = attrs.get("url").and_then(|u| u.as_str())
-                        {
-                            // Extract issue key from URL
-                            if let Some(issue_key) = url.rsplit('/').next() {
-                                result.push_str(&format!(
-                                    r#"<a href="{}" rel="noopener noreferrer" target="_blank">{}</a>"#,
-                                    html_escape(url),
-                                    html_escape(issue_key)
-                                ));
-                            } else {
-                                result.push_str(&format!(
-                                    r#"<a href="{}" rel="noopener noreferrer" target="_blank">{}</a>"#,
-                                    html_escape(url),
-                                    html_escape(url)
-                                ));
-                            }
-                        }
-                    }
-
-                    "codeBlock" => {
-                        result.push_str("<pre><code>");
-                        if let Some(content) = node_obj.get("content") {
-                            result.push_str(&adf_to_html(content));
-                        }
-                        result.push_str("</code></pre>\n");
-                    }
-
-                    "hardBreak" => {
-                        result.push_str("<br>\n");
-                    }
-
-                    "mention" => {
-                        if let Some(attrs) = node_obj.get("attrs") {
-                            if let Some(text) = attrs.get("text").and_then(|t| t.as_str()) {
-                                // Text may already contain @ prefix, so strip it if present
-                                let display = text.strip_prefix('@').unwrap_or(text);
-                                result.push_str(&format!(
-                                    "<strong>@{}</strong>",
-                                    html_escape(display)
-                                ));
-                            } else if let Some(id) = attrs.get("id").and_then(|i| i.as_str()) {
-                                result.push_str(&format!("<strong>@{}</strong>", html_escape(id)));
-                            }
-                        }
-                    }
-
-                    "bulletList" => {
-                        result.push_str("<ul>\n");
-                        if let Some(content) = node_obj.get("content")
-                            && let Some(items) = content.as_array()
-                        {
-                            for item in items {
-                                result.push_str("<li>");
-                                if let Some(item_content) = item.get("content") {
-                                    result.push_str(&adf_to_html(item_content));
-                                }
-                                result.push_str("</li>\n");
-                            }
-                        }
-                        result.push_str("</ul>\n");
-                    }
-
-                    "orderedList" => {
-                        result.push_str("<ol>\n");
-                        if let Some(content) = node_obj.get("content")
-                            && let Some(items) = content.as_array()
-                        {
-                            for item in items {
-                                result.push_str("<li>");
-                                if let Some(item_content) = item.get("content") {
-                                    result.push_str(&adf_to_html(item_content));
-                                }
-                                result.push_str("</li>\n");
-                            }
-                        }
-                        result.push_str("</ol>\n");
-                    }
-
-                    "listItem" => {
-                        // Handled by parent list
-                        if let Some(content) = node_obj.get("content") {
-                            result.push_str(&adf_to_html(content));
-                        }
-                    }
-
-                    "heading" => {
-                        let level = node_obj
-                            .get("attrs")
-                            .and_then(|a| a.get("level"))
-                            .and_then(|l| l.as_u64())
-                            .unwrap_or(1)
-                            .min(6);
-                        result.push_str(&format!("<h{}>", level));
-                        if let Some(content) = node_obj.get("content") {
-                            result.push_str(&adf_to_html(content));
-                        }
-                        result.push_str(&format!("</h{}>\n", level));
-                    }
-
-                    "panel" => {
-                        result
-                            .push_str(r#"<div class="alert alert-info" style="margin: 10px 0;">"#);
-                        if let Some(content) = node_obj.get("content") {
-                            result.push_str(&adf_to_html(content));
-                        }
-                        result.push_str("</div>\n");
-                    }
-
-                    _ => {
-                        // For unknown node types, try to extract content recursively
-                        if let Some(content) = node_obj.get("content") {
-                            result.push_str(&adf_to_html(content));
-                        }
-                    }
-                }
-            }
+impl HtmlWriter {
+    fn new() -> Self {
+        Self {
+            output: String::new(),
         }
     }
 
-    result
+    fn into_string(self) -> String {
+        self.output
+    }
+}
+
+impl bugview_api::adf::AdfWriter for HtmlWriter {
+    fn write_text(&mut self, text: &str) {
+        self.output.push_str(&html_escape(text));
+    }
+
+    fn start_link(&mut self, url: &str) {
+        self.output.push_str(&format!(
+            r#"<a href="{}" rel="noopener noreferrer" target="_blank">"#,
+            html_escape(url)
+        ));
+    }
+
+    fn end_link(&mut self) {
+        self.output.push_str("</a>");
+    }
+
+    fn start_paragraph(&mut self) {
+        self.output.push_str("<p>");
+    }
+
+    fn end_paragraph(&mut self) {
+        self.output.push_str("</p>\n");
+    }
+
+    fn start_bullet_list(&mut self) {
+        self.output.push_str("<ul>\n");
+    }
+
+    fn end_bullet_list(&mut self) {
+        self.output.push_str("</ul>\n");
+    }
+
+    fn start_ordered_list(&mut self) {
+        self.output.push_str("<ol>\n");
+    }
+
+    fn end_ordered_list(&mut self) {
+        self.output.push_str("</ol>\n");
+    }
+
+    fn start_list_item(&mut self, _index: Option<usize>) {
+        self.output.push_str("<li>");
+    }
+
+    fn end_list_item(&mut self) {
+        self.output.push_str("</li>\n");
+    }
+
+    fn start_heading(&mut self, level: u8) {
+        self.output.push_str(&format!("<h{}>", level));
+    }
+
+    fn end_heading(&mut self, level: u8) {
+        self.output.push_str(&format!("</h{}>\n", level));
+    }
+
+    fn start_code_block(&mut self, _language: Option<&str>) {
+        self.output.push_str("<pre><code>");
+    }
+
+    fn end_code_block(&mut self) {
+        self.output.push_str("</code></pre>\n");
+    }
+
+    fn write_hard_break(&mut self) {
+        self.output.push_str("<br>\n");
+    }
+
+    fn start_panel(&mut self, _panel_type: Option<&str>) {
+        self.output
+            .push_str(r#"<div class="alert alert-info" style="margin: 10px 0;">"#);
+    }
+
+    fn end_panel(&mut self, _panel_type: Option<&str>) {
+        self.output.push_str("</div>\n");
+    }
+
+    fn start_strong(&mut self) {
+        self.output.push_str("<strong>");
+    }
+
+    fn end_strong(&mut self) {
+        self.output.push_str("</strong>");
+    }
+
+    fn start_emphasis(&mut self) {
+        self.output.push_str("<em>");
+    }
+
+    fn end_emphasis(&mut self) {
+        self.output.push_str("</em>");
+    }
+
+    fn start_inline_code(&mut self) {
+        self.output.push_str("<code>");
+    }
+
+    fn end_inline_code(&mut self) {
+        self.output.push_str("</code>");
+    }
+
+    fn start_strike(&mut self) {
+        self.output.push_str("<del>");
+    }
+
+    fn end_strike(&mut self) {
+        self.output.push_str("</del>");
+    }
+
+    fn write_mention(&mut self, display: &str) {
+        self.output
+            .push_str(&format!("<strong>@{}</strong>", html_escape(display)));
+    }
+
+    fn write_inline_card(&mut self, url: &str, display: &str) {
+        self.output.push_str(&format!(
+            r#"<a href="{}" rel="noopener noreferrer" target="_blank">{}</a>"#,
+            html_escape(url),
+            html_escape(display)
+        ));
+    }
+}
+
+/// Convert ADF (Atlassian Document Format) to HTML
+///
+/// This function uses the shared ADF rendering logic from bugview-api.
+fn adf_to_html(nodes: &serde_json::Value) -> String {
+    let mut writer = HtmlWriter::new();
+    bugview_api::adf::render_adf(nodes, &mut writer);
+    writer.into_string()
 }
 
 /// Simple HTML escape function
