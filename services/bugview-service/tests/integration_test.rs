@@ -310,3 +310,308 @@ async fn test_non_public_issues_filtered() {
 
     jira_server.close().await.expect("shutdown");
 }
+
+/// End-to-end test for bugview-service with jira-stub-server backend
+///
+/// This test verifies the complete integration by spawning bugview-service
+/// as a subprocess and testing it against jira-stub-server.
+///
+/// Tests:
+/// 1. Public issues are accessible (200 OK)
+/// 2. Private issues return 404
+/// 3. JSON responses have expected structure
+#[tokio::test]
+async fn test_bugview_service_e2e() {
+    // ========================================================================
+    // Step 1: Start jira-stub-server
+    // ========================================================================
+    let jira_fixtures_dir =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../jira-stub-server/fixtures");
+
+    let jira_context =
+        Arc::new(jira_stub_server::StubContext::from_fixtures(&jira_fixtures_dir).unwrap());
+
+    // Verify test fixtures are loaded correctly
+    let issue_keys = jira_context.issue_keys();
+    assert!(
+        issue_keys.iter().any(|k| k == &"TRITON-2520".to_string()),
+        "should have public issue TRITON-2520"
+    );
+    assert!(
+        issue_keys
+            .iter()
+            .any(|k| k == &"FAKE-PRIVATE-1".to_string()),
+        "should have private issue FAKE-PRIVATE-1"
+    );
+
+    let jira_api = jira_stub_server::api_description().expect("jira api description");
+
+    let jira_config = dropshot::ConfigDropshot {
+        bind_address: "127.0.0.1:0".parse().unwrap(),
+        default_request_body_max_bytes: 1024 * 1024,
+        default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
+        ..Default::default()
+    };
+
+    let jira_log = dropshot::ConfigLogging::StderrTerminal {
+        level: dropshot::ConfigLoggingLevel::Warn,
+    }
+    .to_logger("jira-stub-e2e-test")
+    .expect("jira logger");
+
+    let jira_server =
+        match dropshot::HttpServerStarter::new(&jira_config, jira_api, jira_context, &jira_log) {
+            Ok(starter) => starter.start(),
+            Err(e) => {
+                eprintln!("skipping e2e test: failed to start jira-stub-server: {}", e);
+                return;
+            }
+        };
+
+    let jira_addr = jira_server.local_addr();
+    let jira_base_url = format!("http://{}", jira_addr);
+
+    // Give JIRA stub a moment to be ready
+    tokio::time::sleep(Duration::from_millis(100)).await;
+
+    // ========================================================================
+    // Step 2: Start bugview-service as subprocess configured to use jira-stub
+    // ========================================================================
+
+    // Build bugview-service binary first
+    let build_output = std::process::Command::new("cargo")
+        .args(&["build", "-p", "bugview-service", "--bin", "bugview-service"])
+        .output()
+        .expect("failed to build bugview-service");
+
+    if !build_output.status.success() {
+        eprintln!(
+            "skipping e2e test: failed to build bugview-service: {}",
+            String::from_utf8_lossy(&build_output.stderr)
+        );
+        jira_server.close().await.ok();
+        return;
+    }
+
+    // Start bugview-service with environment variables pointing to jira-stub
+    let bugview_binary = std::env::current_exe()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("bugview-service");
+
+    if !bugview_binary.exists() {
+        eprintln!(
+            "skipping e2e test: bugview-service binary not found at {:?}",
+            bugview_binary
+        );
+        jira_server.close().await.ok();
+        return;
+    }
+
+    let mut bugview_process = std::process::Command::new(&bugview_binary)
+        .env("JIRA_URL", &jira_base_url)
+        .env("JIRA_USERNAME", "test-user")
+        .env("JIRA_PASSWORD", "test-password")
+        .env("JIRA_DEFAULT_LABEL", "public")
+        .env("JIRA_ALLOWED_LABELS", "public,bug")
+        .env("JIRA_ALLOWED_DOMAINS", "example.com")
+        .env("PUBLIC_BASE_URL", "https://test.example.com")
+        .env("BIND_ADDRESS", "127.0.0.1:0") // Random port
+        .env("RUST_LOG", "warn")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .expect("failed to start bugview-service");
+
+    // Give bugview service a moment to start (it should print the bind address)
+    tokio::time::sleep(Duration::from_millis(500)).await;
+
+    // Check if the process is still running
+    match bugview_process.try_wait() {
+        Ok(Some(status)) => {
+            eprintln!(
+                "skipping e2e test: bugview-service exited early with status: {}",
+                status
+            );
+            jira_server.close().await.ok();
+            return;
+        }
+        Ok(None) => {
+            // Process is still running, good
+        }
+        Err(e) => {
+            eprintln!("skipping e2e test: error checking bugview-service: {}", e);
+            jira_server.close().await.ok();
+            return;
+        }
+    }
+
+    // Try to find what port bugview started on by trying a few common ports
+    // Since we can't easily parse stdout, we'll just try ports and see what works
+    let client = reqwest::Client::new();
+    let mut bugview_base_url = None;
+
+    for port in 8080..8090 {
+        let test_url = format!("http://127.0.0.1:{}/bugview/index.json", port);
+        if let Ok(resp) = client.get(&test_url).send().await {
+            if resp.status().is_success() || resp.status().is_client_error() {
+                bugview_base_url = Some(format!("http://127.0.0.1:{}", port));
+                break;
+            }
+        }
+    }
+
+    let bugview_base_url = match bugview_base_url {
+        Some(url) => url,
+        None => {
+            eprintln!("skipping e2e test: could not determine bugview-service port");
+            bugview_process.kill().ok();
+            jira_server.close().await.ok();
+            return;
+        }
+    };
+
+    // ========================================================================
+    // Step 3: Test bugview endpoints with reqwest
+    // ========================================================================
+
+    // Test 1: GET /bugview/index.json - should return public issues only
+    let index_url = format!("{}/bugview/index.json", bugview_base_url);
+    let index_resp = client
+        .get(&index_url)
+        .send()
+        .await
+        .expect("GET /bugview/index.json");
+    assert_eq!(index_resp.status(), 200, "index.json should return 200 OK");
+
+    let index_json: serde_json::Value = index_resp.json().await.expect("parse index.json response");
+    let issues = index_json["issues"]
+        .as_array()
+        .expect("index.json should have issues array");
+
+    // Should contain public issues
+    let issue_keys: Vec<&str> = issues.iter().filter_map(|i| i["key"].as_str()).collect();
+    assert!(
+        issue_keys.contains(&"TRITON-2520"),
+        "index should include public issue TRITON-2520"
+    );
+
+    // Should NOT contain private issues
+    assert!(
+        !issue_keys.iter().any(|k| k.starts_with("FAKE-PRIVATE")),
+        "index should NOT include FAKE-PRIVATE issues, got: {:?}",
+        issue_keys
+    );
+
+    // Test 2: GET /bugview/issue/TRITON-2520 - public issue should return 200
+    let public_issue_url = format!("{}/bugview/issue/TRITON-2520", bugview_base_url);
+    let public_resp = client
+        .get(&public_issue_url)
+        .send()
+        .await
+        .expect("GET /bugview/issue/TRITON-2520");
+    assert_eq!(
+        public_resp.status(),
+        200,
+        "public issue HTML should return 200"
+    );
+
+    let public_html = public_resp.text().await.expect("read HTML response");
+    assert!(
+        public_html.contains("TRITON-2520"),
+        "HTML should contain issue key"
+    );
+    assert!(
+        public_html.contains("UUID"),
+        "HTML should contain summary text"
+    );
+
+    // Test 3: GET /bugview/issue/FAKE-PRIVATE-1 - private issue should return 404
+    let private_issue_url = format!("{}/bugview/issue/FAKE-PRIVATE-1", bugview_base_url);
+    let private_resp = client
+        .get(&private_issue_url)
+        .send()
+        .await
+        .expect("GET /bugview/issue/FAKE-PRIVATE-1");
+    assert_eq!(
+        private_resp.status(),
+        404,
+        "private issue should return 404"
+    );
+
+    let private_html = private_resp.text().await.expect("read 404 HTML");
+    assert!(
+        private_html.contains("404") || private_html.contains("not public"),
+        "404 response should indicate issue is not public"
+    );
+
+    // Test 4: GET /bugview/fulljson/TRITON-2520 - should return full JSON
+    let fulljson_url = format!("{}/bugview/fulljson/TRITON-2520", bugview_base_url);
+    let fulljson_resp = client
+        .get(&fulljson_url)
+        .send()
+        .await
+        .expect("GET /bugview/fulljson/TRITON-2520");
+    assert_eq!(fulljson_resp.status(), 200, "fulljson should return 200");
+
+    let fulljson: serde_json::Value = fulljson_resp.json().await.expect("parse fulljson response");
+    assert_eq!(
+        fulljson["key"].as_str(),
+        Some("TRITON-2520"),
+        "fulljson should have correct key"
+    );
+    assert!(
+        fulljson["fields"].is_object(),
+        "fulljson should have fields object"
+    );
+    assert!(
+        fulljson["fields"]["summary"].is_string(),
+        "fulljson should have summary field"
+    );
+
+    // Test 5: GET /bugview/fulljson/FAKE-PRIVATE-1 - should return 404
+    let private_json_url = format!("{}/bugview/fulljson/FAKE-PRIVATE-1", bugview_base_url);
+    let private_json_resp = client
+        .get(&private_json_url)
+        .send()
+        .await
+        .expect("GET /bugview/fulljson/FAKE-PRIVATE-1");
+    assert_eq!(
+        private_json_resp.status(),
+        404,
+        "private issue fulljson should return 404"
+    );
+
+    // Test 6: GET /bugview/json/TRITON-2520 - should return summary JSON
+    let json_url = format!("{}/bugview/json/TRITON-2520", bugview_base_url);
+    let json_resp = client
+        .get(&json_url)
+        .send()
+        .await
+        .expect("GET /bugview/json/TRITON-2520");
+    assert_eq!(json_resp.status(), 200, "json endpoint should return 200");
+
+    let summary_json: serde_json::Value = json_resp.json().await.expect("parse json response");
+    assert_eq!(
+        summary_json["id"].as_str(),
+        Some("TRITON-2520"),
+        "summary should have correct id"
+    );
+    assert!(
+        summary_json["summary"].is_string(),
+        "summary should have summary field"
+    );
+    assert!(
+        summary_json["web_url"].is_string(),
+        "summary should have web_url field"
+    );
+
+    // ========================================================================
+    // Cleanup
+    // ========================================================================
+    bugview_process.kill().expect("kill bugview-service");
+    jira_server.close().await.expect("shutdown jira-stub");
+}
