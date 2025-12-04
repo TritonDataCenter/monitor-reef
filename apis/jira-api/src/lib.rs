@@ -41,9 +41,9 @@ impl IssueKey {
         // Must contain a hyphen and have at least one digit after
         if key.contains('-')
             && key
-                .split('-')
-                .last()
-                .map_or(false, |n| n.chars().all(|c| c.is_ascii_digit()) && !n.is_empty())
+                .rsplit('-')
+                .next()
+                .is_some_and(|n| n.chars().all(|c| c.is_ascii_digit()) && !n.is_empty())
         {
             Ok(Self(key))
         } else {

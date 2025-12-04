@@ -71,8 +71,26 @@ struct TokenCacheEntry {
     expires_at: Instant,
 }
 
-/// Thread-safe cache for mapping short IDs to JIRA pagination tokens
-/// This prevents exposing JIRA's tokens (which contain the JQL query) in URLs
+/// Thread-safe cache for mapping short IDs to JIRA pagination tokens.
+///
+/// # Why We Use Short IDs
+///
+/// JIRA v3 API pagination tokens contain base64-encoded data including:
+/// - The JQL query being executed
+/// - Internal cursor state
+/// - Potentially other metadata
+///
+/// Exposing these tokens directly in URLs would:
+/// - Leak query details (labels being searched, filters applied) to users
+/// - Allow tokens to appear in browser history and server logs
+/// - Potentially enable token manipulation attacks
+///
+/// Instead, we generate opaque 12-character alphanumeric IDs that map to the
+/// real JIRA tokens internally. These IDs are:
+/// - Short enough for clean URLs
+/// - Cryptographically random (using thread_rng)
+/// - Time-limited (TTL-based expiration)
+/// - Capacity-limited (LRU eviction)
 #[derive(Clone)]
 struct TokenCache {
     cache: Arc<Mutex<IndexMap<String, TokenCacheEntry>>>,
@@ -169,6 +187,25 @@ struct ApiContext {
     token_cache: TokenCache,
 }
 
+/// Content-Security-Policy header value for HTML responses
+/// Allows:
+/// - Scripts from self and cdn.jsdelivr.net (Bootstrap JS)
+/// - Styles from self, unsafe-inline (for inline styles), and cdn.jsdelivr.net (Bootstrap CSS)
+/// - Images from self and data: URIs
+/// - Fonts from self and cdn.jsdelivr.net
+/// - Default to self for everything else
+const CSP_HEADER: &str = "default-src 'self'; script-src 'self' cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' cdn.jsdelivr.net; img-src 'self' data:; font-src 'self' cdn.jsdelivr.net";
+
+/// Helper function to build HTML responses with security headers
+fn build_html_response(status: u16, html: String) -> Response<Body> {
+    Response::builder()
+        .status(status)
+        .header("Content-Type", "text/html; charset=utf-8")
+        .header("Content-Security-Policy", CSP_HEADER)
+        .body(html.into())
+        .unwrap()
+}
+
 /// Bugview service implementation
 enum BugviewServiceImpl {}
 
@@ -220,8 +257,14 @@ impl BugviewApi for BugviewServiceImpl {
             .fields
             .get("summary")
             .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| {
+                tracing::warn!(
+                    issue_key = %issue.key,
+                    "Issue missing summary field"
+                );
+                "(No summary)".to_string()
+            });
 
         Ok(HttpResponseOk(IssueSummary {
             id: issue.key.to_string(),
@@ -286,10 +329,19 @@ impl BugviewApi for BugviewServiceImpl {
             })
             .collect();
 
+        let fields = serde_json::to_value(issue.fields).map_err(|e| {
+            tracing::error!(
+                issue_key = %issue.key,
+                error = %e,
+                "Failed to serialize issue fields to JSON"
+            );
+            HttpError::for_internal_error(format!("Failed to serialize issue fields: {}", e))
+        })?;
+
         Ok(HttpResponseOk(IssueDetails {
             id: issue.id,
-            key: issue.key.to_string(),
-            fields: serde_json::to_value(issue.fields).unwrap_or(serde_json::Value::Null),
+            key: issue.key,
+            fields,
             remotelinks,
         }))
     }
@@ -325,11 +377,7 @@ impl BugviewApi for BugviewServiceImpl {
             )
             .map_err(|e| HttpError::for_internal_error(format!("Failed to render HTML: {}", e)))?;
 
-        Ok(Response::builder()
-            .status(200)
-            .header("Content-Type", "text/html; charset=utf-8")
-            .body(html.into())
-            .unwrap())
+        Ok(build_html_response(200, html))
     }
 
     async fn get_label_index_html(
@@ -369,11 +417,7 @@ impl BugviewApi for BugviewServiceImpl {
             )
             .map_err(|e| HttpError::for_internal_error(format!("Failed to render HTML: {}", e)))?;
 
-        Ok(Response::builder()
-            .status(200)
-            .header("Content-Type", "text/html; charset=utf-8")
-            .body(html.into())
-            .unwrap())
+        Ok(build_html_response(200, html))
     }
 
     async fn get_issue_html(
@@ -393,11 +437,7 @@ impl BugviewApi for BugviewServiceImpl {
                     .render_error(400, &error_message)
                     .unwrap_or_else(|_| format!("Error 400: {}", error_message));
 
-                return Ok(Response::builder()
-                    .status(400)
-                    .header("Content-Type", "text/html; charset=utf-8")
-                    .body(html.into())
-                    .unwrap());
+                return Ok(build_html_response(400, html));
             }
         };
 
@@ -417,11 +457,7 @@ impl BugviewApi for BugviewServiceImpl {
                     .render_error(status_code, &error_message)
                     .unwrap_or_else(|_| format!("Error {}: {}", status_code, error_message));
 
-                return Ok(Response::builder()
-                    .status(status_code)
-                    .header("Content-Type", "text/html; charset=utf-8")
-                    .body(html.into())
-                    .unwrap());
+                return Ok(build_html_response(status_code, html));
             }
         };
 
@@ -433,11 +469,7 @@ impl BugviewApi for BugviewServiceImpl {
                 .render_error(404, &error_message)
                 .unwrap_or_else(|_| format!("Error 404: {}", error_message));
 
-            return Ok(Response::builder()
-                .status(404)
-                .header("Content-Type", "text/html; charset=utf-8")
-                .body(html.into())
-                .unwrap());
+            return Ok(build_html_response(404, html));
         }
 
         // Fetch remote links and filter by allowed_domains
@@ -463,11 +495,7 @@ impl BugviewApi for BugviewServiceImpl {
             .render_issue(&issue, &filtered_links)
             .map_err(|e| HttpError::for_internal_error(format!("Failed to render HTML: {}", e)))?;
 
-        Ok(Response::builder()
-            .status(200)
-            .header("Content-Type", "text/html; charset=utf-8")
-            .body(html.into())
-            .unwrap())
+        Ok(build_html_response(200, html))
     }
 
     // ========================================================================
@@ -581,16 +609,28 @@ fn convert_to_list_item(issue: jira_api::Issue) -> IssueListItem {
         .fields
         .get("summary")
         .and_then(|v| v.as_str())
-        .unwrap_or("")
-        .to_string();
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            tracing::warn!(
+                issue_key = %issue.key,
+                "Issue missing summary field in list item"
+            );
+            "(No summary)".to_string()
+        });
 
     let status = issue
         .fields
         .get("status")
         .and_then(|v| v.get("name"))
         .and_then(|v| v.as_str())
-        .unwrap_or("Unknown")
-        .to_string();
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            tracing::warn!(
+                issue_key = %issue.key,
+                "Issue missing status field"
+            );
+            "Unknown".to_string()
+        });
 
     let resolution = issue
         .fields
@@ -614,7 +654,7 @@ fn convert_to_list_item(issue: jira_api::Issue) -> IssueListItem {
         .to_string();
 
     IssueListItem {
-        key: issue.key.to_string(),
+        key: issue.key,
         summary,
         status,
         resolution,
@@ -623,9 +663,10 @@ fn convert_to_list_item(issue: jira_api::Issue) -> IssueListItem {
     }
 }
 
-/// Filter remote links by allowed domains
+/// Filter remote links by allowed domains and safe URL schemes
 ///
-/// This prevents exposing links to signed Manta URLs or other sensitive domains
+/// This prevents exposing links to signed Manta URLs or other sensitive domains,
+/// and prevents XSS attacks via javascript: or data: URLs
 fn filter_remote_links(
     links: &[jira_api::RemoteLink],
     config: &Config,
@@ -637,7 +678,13 @@ fn filter_remote_links(
                 && let Ok(url) = url::Url::parse(&obj.url)
                 && let Some(domain) = url.host_str()
             {
-                // Parse URL to extract domain
+                // Only allow http and https schemes to prevent XSS
+                let scheme = url.scheme();
+                if scheme != "http" && scheme != "https" {
+                    return false;
+                }
+
+                // Check domain is allowed
                 return config.is_allowed_domain(domain);
             }
             false
@@ -959,7 +1006,7 @@ mod tests {
 
         let details = IssueDetails {
             id: issue.id,
-            key: issue.key.to_string(),
+            key: issue.key,
             fields: serde_json::to_value(issue.fields).unwrap(),
             remotelinks: vec![],
         };
@@ -1029,6 +1076,58 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_remote_link_scheme_filter_blocks_javascript_and_data() {
+        let config = Config {
+            default_label: "public".into(),
+            allowed_labels: vec![],
+            allowed_domains: vec!["example.com".into()],
+            public_base_url: "https://test.example.com".into(),
+        };
+
+        // Create links with dangerous schemes that could enable XSS
+        let links: Vec<jira_api::RemoteLink> = serde_json::from_value(serde_json::json!([
+            {"id": 1, "object": {"url": "https://example.com/safe", "title": "Safe HTTPS"}},
+            {"id": 2, "object": {"url": "http://example.com/safe", "title": "Safe HTTP"}},
+            {"id": 3, "object": {"url": "javascript:alert('XSS')", "title": "JavaScript XSS"}},
+            {"id": 4, "object": {"url": "data:text/html,<script>alert('XSS')</script>", "title": "Data URI XSS"}},
+            {"id": 5, "object": {"url": "file:///etc/passwd", "title": "File Scheme"}},
+            {"id": 6, "object": {"url": "vbscript:msgbox('XSS')", "title": "VBScript"}},
+        ])).unwrap();
+
+        let filtered = filter_remote_links(&links, &config);
+
+        assert_eq!(
+            filtered.len(),
+            2,
+            "Should only keep http and https links"
+        );
+
+        // Verify only safe schemes remain
+        for link in &filtered {
+            let url = &link.object.as_ref().unwrap().url;
+            assert!(
+                url.starts_with("https://") || url.starts_with("http://"),
+                "Filtered link should have safe scheme: {}",
+                url
+            );
+        }
+
+        // Verify dangerous schemes were filtered out
+        assert!(
+            !filtered.iter().any(|l| l.object.as_ref().unwrap().url.contains("javascript:")),
+            "javascript: URLs should be filtered"
+        );
+        assert!(
+            !filtered.iter().any(|l| l.object.as_ref().unwrap().url.contains("data:")),
+            "data: URLs should be filtered"
+        );
+        assert!(
+            !filtered.iter().any(|l| l.object.as_ref().unwrap().url.contains("file:")),
+            "file: URLs should be filtered"
+        );
+    }
+
+    #[tokio::test]
     async fn test_token_cache_capacity_bounds() {
         let cache = TokenCache::new_with(Duration::from_secs(60), 3);
         let ids: Vec<String> = (0..10)
@@ -1049,6 +1148,21 @@ mod tests {
         // Newest likely remain; ensure at least last id resolves
         let last_id = ids.last().unwrap();
         assert_eq!(cache.get(last_id).as_deref(), Some("token-9"));
+    }
+
+    #[tokio::test]
+    async fn test_token_cache_expiration() {
+        let cache = TokenCache::new_with(Duration::from_millis(50), 100);
+        let id = cache.store("test-token".to_string());
+
+        // Token should be retrievable immediately
+        assert_eq!(cache.get(&id).as_deref(), Some("test-token"));
+
+        // Wait for expiration
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Token should be expired
+        assert!(cache.get(&id).is_none());
     }
 
     #[tokio::test]
@@ -1241,6 +1355,78 @@ mod tests {
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
         assert_eq!(loc, "/bugview/index.html");
+    }
+
+    #[tokio::test]
+    async fn test_csp_header_is_set_on_html_responses() {
+        let ctx = test_context();
+        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
+            .expect("api description");
+        let config_dropshot = ConfigDropshot {
+            bind_address: "127.0.0.1:0".parse().unwrap(),
+            default_request_body_max_bytes: 1024 * 1024,
+            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
+            ..Default::default()
+        };
+        let log = dropshot::ConfigLogging::StderrTerminal {
+            level: dropshot::ConfigLoggingLevel::Info,
+        }
+        .to_logger("bugview-service-test")
+        .expect("logger");
+        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
+            Ok(starter) => starter.start(),
+            Err(e) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Failed to start test server in CI: {}", e);
+                }
+                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
+                return;
+            }
+        };
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+        let addr = server.local_addr();
+
+        // Test index.html has CSP header
+        let url = format!("http://{}/bugview/index.html", addr);
+        let resp = reqwest::get(&url).await.expect("request");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let csp_header = resp
+            .headers()
+            .get("Content-Security-Policy")
+            .and_then(|v| v.to_str().ok());
+        assert!(
+            csp_header.is_some(),
+            "CSP header should be present on HTML response"
+        );
+        assert_eq!(csp_header.unwrap(), CSP_HEADER);
+
+        // Test issue HTML page has CSP header
+        let url = format!("http://{}/bugview/issue/PROJ-1", addr);
+        let resp = reqwest::get(&url).await.expect("request");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let csp_header = resp
+            .headers()
+            .get("Content-Security-Policy")
+            .and_then(|v| v.to_str().ok());
+        assert!(
+            csp_header.is_some(),
+            "CSP header should be present on issue HTML page"
+        );
+        assert_eq!(csp_header.unwrap(), CSP_HEADER);
+
+        // Test error page has CSP header
+        let url = format!("http://{}/bugview/issue/INVALID", addr);
+        let resp = reqwest::get(&url).await.expect("request");
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+        let csp_header = resp
+            .headers()
+            .get("Content-Security-Policy")
+            .and_then(|v| v.to_str().ok());
+        assert!(
+            csp_header.is_some(),
+            "CSP header should be present on error HTML page"
+        );
+        assert_eq!(csp_header.unwrap(), CSP_HEADER);
     }
 
     #[tokio::test]

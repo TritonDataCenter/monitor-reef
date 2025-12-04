@@ -13,6 +13,20 @@
 ///
 /// Implementors define how each ADF node type should be rendered in their
 /// specific format (HTML, plain text, etc.).
+///
+/// # Security
+///
+/// **Implementors are responsible for proper output escaping.** The `render_adf`
+/// function passes text content and URLs as-is from the ADF document without
+/// modification. For security-sensitive outputs:
+///
+/// - **HTML**: All text content must be HTML-escaped (e.g., `<` → `&lt;`) to
+///   prevent XSS attacks. URLs in links should be validated to use safe schemes
+///   (http/https only).
+/// - **Other formats**: Apply appropriate escaping for the target format.
+///
+/// The `HtmlWriter` implementation in `bugview-service` demonstrates proper
+/// HTML escaping via the `html_escape()` function.
 pub trait AdfWriter {
     /// Write plain text content
     fn write_text(&mut self, text: &str);
@@ -107,7 +121,7 @@ pub fn render_adf<W: AdfWriter>(nodes: &serde_json::Value, writer: &mut W) {
     render_adf_internal(nodes, writer, 0);
 }
 
-fn render_adf_internal<W: AdfWriter>(nodes: &serde_json::Value, writer: &mut W, depth: usize) {
+fn render_adf_internal<W: AdfWriter>(nodes: &serde_json::Value, writer: &mut W, _depth: usize) {
     if let Some(nodes_array) = nodes.as_array() {
         for node in nodes_array.iter() {
             if let Some(node_obj) = node.as_object() {
@@ -117,7 +131,7 @@ fn render_adf_internal<W: AdfWriter>(nodes: &serde_json::Value, writer: &mut W, 
                     "paragraph" => {
                         writer.start_paragraph();
                         if let Some(content) = node_obj.get("content") {
-                            render_adf_internal(content, writer, depth);
+                            render_adf_internal(content, writer, _depth);
                         }
                         writer.end_paragraph();
                     }
@@ -216,7 +230,7 @@ fn render_adf_internal<W: AdfWriter>(nodes: &serde_json::Value, writer: &mut W, 
                             .and_then(|l| l.as_str());
                         writer.start_code_block(language);
                         if let Some(content) = node_obj.get("content") {
-                            render_adf_internal(content, writer, depth);
+                            render_adf_internal(content, writer, _depth);
                         }
                         writer.end_code_block();
                     }
@@ -245,7 +259,7 @@ fn render_adf_internal<W: AdfWriter>(nodes: &serde_json::Value, writer: &mut W, 
                             for item in items {
                                 writer.start_list_item(None);
                                 if let Some(item_content) = item.get("content") {
-                                    render_adf_internal(item_content, writer, depth + 1);
+                                    render_adf_internal(item_content, writer, _depth + 1);
                                 }
                                 writer.end_list_item();
                             }
@@ -261,7 +275,7 @@ fn render_adf_internal<W: AdfWriter>(nodes: &serde_json::Value, writer: &mut W, 
                             for (i, item) in items.iter().enumerate() {
                                 writer.start_list_item(Some(i + 1));
                                 if let Some(item_content) = item.get("content") {
-                                    render_adf_internal(item_content, writer, depth + 1);
+                                    render_adf_internal(item_content, writer, _depth + 1);
                                 }
                                 writer.end_list_item();
                             }
@@ -272,7 +286,7 @@ fn render_adf_internal<W: AdfWriter>(nodes: &serde_json::Value, writer: &mut W, 
                     "listItem" => {
                         // List items are handled by their parent list
                         if let Some(content) = node_obj.get("content") {
-                            render_adf_internal(content, writer, depth);
+                            render_adf_internal(content, writer, _depth);
                         }
                     }
 
@@ -285,7 +299,7 @@ fn render_adf_internal<W: AdfWriter>(nodes: &serde_json::Value, writer: &mut W, 
                             .min(6) as u8;
                         writer.start_heading(level);
                         if let Some(content) = node_obj.get("content") {
-                            render_adf_internal(content, writer, depth);
+                            render_adf_internal(content, writer, _depth);
                         }
                         writer.end_heading(level);
                     }
@@ -297,7 +311,7 @@ fn render_adf_internal<W: AdfWriter>(nodes: &serde_json::Value, writer: &mut W, 
                             .and_then(|t| t.as_str());
                         writer.start_panel(panel_type);
                         if let Some(content) = node_obj.get("content") {
-                            render_adf_internal(content, writer, depth);
+                            render_adf_internal(content, writer, _depth);
                         }
                         writer.end_panel(panel_type);
                     }
@@ -305,7 +319,7 @@ fn render_adf_internal<W: AdfWriter>(nodes: &serde_json::Value, writer: &mut W, 
                     _ => {
                         // For unknown node types, try to extract content recursively
                         if let Some(content) = node_obj.get("content") {
-                            render_adf_internal(content, writer, depth);
+                            render_adf_internal(content, writer, _depth);
                         }
                     }
                 }

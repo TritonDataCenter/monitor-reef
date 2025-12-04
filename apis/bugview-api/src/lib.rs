@@ -78,7 +78,7 @@ pub struct IssuePath {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct IssueListItem {
     /// Issue key (e.g., "PROJECT-123")
-    pub key: String,
+    pub key: jira_api::IssueKey,
     /// Issue summary/title
     pub summary: String,
     /// Issue status (e.g., "Open", "Resolved", "Closed")
@@ -121,7 +121,7 @@ pub struct IssueDetails {
     /// JIRA internal issue ID
     pub id: String,
     /// Issue key (e.g., "OS-1234")
-    pub key: String,
+    pub key: jira_api::IssueKey,
     /// Issue fields (sanitized for public consumption)
     pub fields: serde_json::Value,
     /// Remote links (filtered by allowed domains)

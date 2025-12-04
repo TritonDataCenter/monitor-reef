@@ -227,6 +227,7 @@ version = "0.1.0"
 dependencies = [
  "dropshot",
  "http",
+ "jira-api",
  "schemars",
  "serde",
  "serde_json",

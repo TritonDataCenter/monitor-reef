@@ -15,6 +15,7 @@ schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 http = "1.1"
+jira-api = { path = "../jira-api" }
 
 [lints.clippy]
 unused_async = "allow"
