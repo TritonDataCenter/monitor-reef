@@ -103,7 +103,10 @@ impl TokenCache {
         use rand::Rng;
 
         let mut rng = rand::rng();
-        let mut cache = self.cache.lock().unwrap();
+        let mut cache = self.cache.lock().unwrap_or_else(|poisoned| {
+            tracing::error!("Token cache mutex was poisoned, recovering");
+            poisoned.into_inner()
+        });
 
         // Cleanup expired entries
         let now = Instant::now();
@@ -144,7 +147,10 @@ impl TokenCache {
 
     /// Retrieve a JIRA token by ID, cleaning up expired entries
     fn get(&self, id: &str) -> Option<String> {
-        let mut cache = self.cache.lock().unwrap();
+        let mut cache = self.cache.lock().unwrap_or_else(|poisoned| {
+            tracing::error!("Token cache mutex was poisoned, recovering");
+            poisoned.into_inner()
+        });
 
         // Clean up expired entries
         let now = Instant::now();
@@ -190,9 +196,8 @@ impl BugviewApi for BugviewServiceImpl {
         let key_str = path.into_inner().key;
 
         // Validate issue key format
-        let key = jira_api::IssueKey::new(&key_str).map_err(|e| {
-            HttpError::for_bad_request(None, format!("{}", e))
-        })?;
+        let key = jira_api::IssueKey::new(&key_str)
+            .map_err(|e| HttpError::for_bad_request(None, format!("{}", e)))?;
 
         let issue = ctx.jira.get_issue(&key).await.map_err(|e| {
             let msg = e.to_string();
@@ -233,9 +238,8 @@ impl BugviewApi for BugviewServiceImpl {
         let key_str = path.into_inner().key;
 
         // Validate issue key format
-        let key = jira_api::IssueKey::new(&key_str).map_err(|e| {
-            HttpError::for_bad_request(None, format!("{}", e))
-        })?;
+        let key = jira_api::IssueKey::new(&key_str)
+            .map_err(|e| HttpError::for_bad_request(None, format!("{}", e)))?;
 
         let issue = ctx.jira.get_issue(&key).await.map_err(|e| {
             let msg = e.to_string();
@@ -735,11 +739,11 @@ async fn main() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use jira_api::{Issue, RemoteLink};
     use crate::jira_client::SearchResponse;
     use async_trait::async_trait;
     use bugview_api::IssueDetails;
     use http::StatusCode;
+    use jira_api::{Issue, RemoteLink};
 
     // Mock JIRA client implementing the trait for tests with public labels
     #[derive(Clone, Default)]
@@ -1032,7 +1036,14 @@ mod tests {
             .collect();
 
         // Oldest should be evicted to maintain capacity
-        let len = cache.cache.lock().unwrap().len();
+        let len = cache
+            .cache
+            .lock()
+            .unwrap_or_else(|poisoned| {
+                tracing::error!("Token cache mutex was poisoned, recovering");
+                poisoned.into_inner()
+            })
+            .len();
         assert!(len <= 3, "cache should be bounded");
 
         // Newest likely remain; ensure at least last id resolves
