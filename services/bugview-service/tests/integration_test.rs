@@ -45,8 +45,11 @@ async fn test_jira_stub_server_with_progenitor_client() {
         match dropshot::HttpServerStarter::new(&jira_config, jira_api, jira_context, &jira_log) {
             Ok(starter) => starter.start(),
             Err(e) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Failed to start JIRA stub in CI: {}", e);
+                }
                 eprintln!(
-                    "skipping integration test: failed to start jira stub: {}",
+                    "SKIPPING: failed to start jira stub: {} (set CI=1 to fail)",
                     e
                 );
                 return;
@@ -176,7 +179,10 @@ async fn test_stub_jira_label_filtering() {
         match dropshot::HttpServerStarter::new(&jira_config, jira_api, jira_context, &jira_log) {
             Ok(starter) => starter.start(),
             Err(e) => {
-                eprintln!("skipping label filter test: {}", e);
+                if std::env::var("CI").is_ok() {
+                    panic!("Failed to start JIRA stub in CI: {}", e);
+                }
+                eprintln!("SKIPPING: label filter test: {} (set CI=1 to fail)", e);
                 return;
             }
         };
@@ -247,7 +253,10 @@ async fn test_non_public_issues_filtered() {
         match dropshot::HttpServerStarter::new(&jira_config, jira_api, jira_context, &jira_log) {
             Ok(starter) => starter.start(),
             Err(e) => {
-                eprintln!("skipping non-public filter test: {}", e);
+                if std::env::var("CI").is_ok() {
+                    panic!("Failed to start JIRA stub in CI: {}", e);
+                }
+                eprintln!("SKIPPING: non-public filter test: {} (set CI=1 to fail)", e);
                 return;
             }
         };
@@ -363,7 +372,13 @@ async fn test_bugview_service_e2e() {
         match dropshot::HttpServerStarter::new(&jira_config, jira_api, jira_context, &jira_log) {
             Ok(starter) => starter.start(),
             Err(e) => {
-                eprintln!("skipping e2e test: failed to start jira-stub-server: {}", e);
+                if std::env::var("CI").is_ok() {
+                    panic!("Failed to start JIRA stub in CI: {}", e);
+                }
+                eprintln!(
+                    "SKIPPING: e2e test: failed to start jira-stub-server: {} (set CI=1 to fail)",
+                    e
+                );
                 return;
             }
         };

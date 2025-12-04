@@ -1033,7 +1033,10 @@ mod tests {
         let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
             Ok(starter) => starter.start(),
             Err(e) => {
-                eprintln!("skipping HTTP test: failed to start server: {}", e);
+                if std::env::var("CI").is_ok() {
+                    panic!("Failed to start test server in CI: {}", e);
+                }
+                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
                 return; // likely sandbox prevents binding sockets
             }
         };
@@ -1069,7 +1072,13 @@ mod tests {
         .expect("logger");
         let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
             Ok(starter) => starter.start(),
-            Err(_) => return,
+            Err(e) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Failed to start test server in CI: {}", e);
+                }
+                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
+                return;
+            }
         };
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         let addr = server.local_addr();
@@ -1099,7 +1108,13 @@ mod tests {
         .expect("logger");
         let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
             Ok(starter) => starter.start(),
-            Err(_) => return,
+            Err(e) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Failed to start test server in CI: {}", e);
+                }
+                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
+                return;
+            }
         };
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         let addr = server.local_addr();
@@ -1128,7 +1143,13 @@ mod tests {
         .expect("logger");
         let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
             Ok(starter) => starter.start(),
-            Err(_) => return,
+            Err(e) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Failed to start test server in CI: {}", e);
+                }
+                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
+                return;
+            }
         };
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         let addr = server.local_addr();
@@ -1155,7 +1176,13 @@ mod tests {
         .expect("logger");
         let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
             Ok(starter) => starter.start(),
-            Err(_) => return,
+            Err(e) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Failed to start test server in CI: {}", e);
+                }
+                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
+                return;
+            }
         };
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         let addr = server.local_addr();
@@ -1198,7 +1225,10 @@ mod tests {
         let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
             Ok(starter) => starter.start(),
             Err(e) => {
-                eprintln!("skipping HTTP test: failed to start server: {}", e);
+                if std::env::var("CI").is_ok() {
+                    panic!("Failed to start test server in CI: {}", e);
+                }
+                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
                 return; // likely sandbox prevents binding sockets
             }
         };
