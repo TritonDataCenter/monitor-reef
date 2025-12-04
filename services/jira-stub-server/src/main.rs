@@ -13,7 +13,7 @@
 //!
 //! Then point bugview-service at it:
 //! ```bash
-//! JIRA_BASE_URL=http://localhost:9090 cargo run -p bugview-service
+//! JIRA_URL=http://localhost:9090 cargo run -p bugview-service
 //! ```
 
 use anyhow::Result;

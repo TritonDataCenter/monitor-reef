@@ -30,25 +30,45 @@ use std::fmt;
 // ============================================================================
 
 /// A JIRA issue key in PROJECT-123 format
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
+///
+/// This type validates the format on deserialization to prevent invalid keys
+/// from being silently accepted. Valid keys must have the format `PROJECT-123`
+/// where PROJECT is one or more characters and 123 is one or more ASCII digits.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, JsonSchema)]
 #[serde(transparent)]
 pub struct IssueKey(String);
 
+impl<'de> Deserialize<'de> for IssueKey {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        IssueKey::new(s).map_err(serde::de::Error::custom)
+    }
+}
+
 impl IssueKey {
     /// Create a new IssueKey, validating the format
+    ///
+    /// Valid format: `PROJECT-123` where:
+    /// - PROJECT is one or more characters (the project prefix)
+    /// - 123 is one or more ASCII digits (the issue number)
     pub fn new(key: impl Into<String>) -> Result<Self, InvalidIssueKey> {
         let key = key.into();
-        // Must contain a hyphen and have at least one digit after
-        if key.contains('-')
-            && key
-                .rsplit('-')
-                .next()
-                .is_some_and(|n| n.chars().all(|c| c.is_ascii_digit()) && !n.is_empty())
-        {
-            Ok(Self(key))
-        } else {
-            Err(InvalidIssueKey(key))
+        // Find the last hyphen to split prefix and number
+        if let Some(hyphen_pos) = key.rfind('-') {
+            let prefix = &key[..hyphen_pos];
+            let number = &key[hyphen_pos + 1..];
+            // Require non-empty prefix and non-empty numeric suffix
+            if !prefix.is_empty()
+                && !number.is_empty()
+                && number.chars().all(|c| c.is_ascii_digit())
+            {
+                return Ok(Self(key));
+            }
         }
+        Err(InvalidIssueKey(key))
     }
 
     /// Create without validation (for trusted sources like JIRA responses)
@@ -242,4 +262,80 @@ pub trait JiraApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<IssueIdOrKey>,
     ) -> Result<HttpResponseOk<Vec<RemoteLink>>, HttpError>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn issue_key_valid_formats() {
+        // Standard formats
+        assert!(IssueKey::new("PROJECT-123").is_ok());
+        assert!(IssueKey::new("A-1").is_ok());
+        assert!(IssueKey::new("PROJ-99999").is_ok());
+        assert!(IssueKey::new("TRITON-1813").is_ok());
+        assert!(IssueKey::new("OS-6892").is_ok());
+
+        // Multiple hyphens in project name are valid
+        assert!(IssueKey::new("MY-PROJECT-123").is_ok());
+    }
+
+    #[test]
+    fn issue_key_invalid_formats() {
+        // No hyphen
+        assert!(IssueKey::new("PROJECT123").is_err());
+        assert!(IssueKey::new("123").is_err());
+
+        // No digits after hyphen
+        assert!(IssueKey::new("PROJECT-").is_err());
+        assert!(IssueKey::new("PROJECT-abc").is_err());
+        assert!(IssueKey::new("-123").is_err());
+
+        // Empty string
+        assert!(IssueKey::new("").is_err());
+
+        // Just a hyphen
+        assert!(IssueKey::new("-").is_err());
+
+        // Mixed letters and digits after hyphen
+        assert!(IssueKey::new("PROJECT-12abc").is_err());
+        assert!(IssueKey::new("PROJECT-abc12").is_err());
+    }
+
+    #[test]
+    fn issue_key_deserialization_validates() {
+        // Valid key deserializes successfully
+        let valid: Result<IssueKey, _> = serde_json::from_str(r#""PROJECT-123""#);
+        assert!(valid.is_ok());
+        assert_eq!(valid.unwrap().as_str(), "PROJECT-123");
+
+        // Invalid key fails deserialization
+        let invalid: Result<IssueKey, _> = serde_json::from_str(r#""invalid""#);
+        assert!(invalid.is_err());
+
+        let invalid_no_digits: Result<IssueKey, _> = serde_json::from_str(r#""PROJECT-abc""#);
+        assert!(invalid_no_digits.is_err());
+    }
+
+    #[test]
+    fn issue_key_serialization() {
+        let key = IssueKey::new("PROJECT-123").unwrap();
+        let serialized = serde_json::to_string(&key).unwrap();
+        assert_eq!(serialized, r#""PROJECT-123""#);
+    }
+
+    #[test]
+    fn issue_key_display() {
+        let key = IssueKey::new("PROJECT-123").unwrap();
+        assert_eq!(format!("{}", key), "PROJECT-123");
+    }
+
+    #[test]
+    fn invalid_issue_key_error_message() {
+        let err = IssueKey::new("invalid").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("invalid"));
+        assert!(msg.contains("PROJECT-123"));
+    }
 }

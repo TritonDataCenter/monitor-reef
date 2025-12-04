@@ -28,12 +28,17 @@ use tracing::info;
 // Module constants
 // ================================
 /// Length of the short, URL-safe pagination token IDs we expose publicly.
+/// 12 chars from 62-char alphabet = ~71 bits of entropy, sufficient to prevent
+/// brute-force enumeration within the 1-hour TTL window.
 const PAGINATION_TOKEN_ID_LEN: usize = 12;
-/// Size of the token ID alphabet (0-9, a-z, A-Z).
+/// Size of the token ID alphabet (0-9, a-z, A-Z = 62 characters).
 const TOKEN_ID_ALPHABET_LEN: u8 = 62;
-/// Default TTL for cached JIRA pagination tokens (seconds).
-const TOKEN_TTL_SECS: u64 = 60 * 60; // 1 hour
+/// Default TTL for cached JIRA pagination tokens (1 hour).
+/// Chosen to allow reasonable user session duration while limiting
+/// exposure window for any leaked tokens.
+const TOKEN_TTL_SECS: u64 = 60 * 60;
 /// Maximum number of cached pagination tokens to retain.
+/// Limits memory usage and ensures old tokens are evicted.
 const TOKEN_CACHE_MAX_ENTRIES: usize = 1000;
 /// Default maximum request body size (bytes).
 const DEFAULT_BODY_MAX_BYTES: usize = 1024 * 1024; // 1MB
@@ -136,21 +141,41 @@ impl TokenCache {
         }
 
         // Generate ID, checking for collisions (unlikely but possible)
-        let id = loop {
-            let candidate: String = (0..PAGINATION_TOKEN_ID_LEN)
-                .map(|_| {
-                    let idx = rng.random_range(0..TOKEN_ID_ALPHABET_LEN);
-                    match idx {
-                        0..=9 => (b'0' + idx) as char,
-                        10..=35 => (b'a' + idx - 10) as char,
-                        _ => (b'A' + idx - 36) as char,
-                    }
-                })
-                .collect();
-            if !cache.contains_key(&candidate) {
-                break candidate;
-            }
-        };
+        // With 62^12 possible IDs (~3.2e21) and max 1000 entries, collision
+        // probability is astronomically low, but we add a limit for safety
+        const MAX_COLLISION_ATTEMPTS: usize = 100;
+        let id = (0..MAX_COLLISION_ATTEMPTS)
+            .find_map(|_| {
+                let candidate: String = (0..PAGINATION_TOKEN_ID_LEN)
+                    .map(|_| {
+                        let idx = rng.random_range(0..TOKEN_ID_ALPHABET_LEN);
+                        match idx {
+                            0..=9 => (b'0' + idx) as char,
+                            10..=35 => (b'a' + idx - 10) as char,
+                            _ => (b'A' + idx - 36) as char,
+                        }
+                    })
+                    .collect();
+                (!cache.contains_key(&candidate)).then_some(candidate)
+            })
+            .unwrap_or_else(|| {
+                // This should never happen in practice, but log and generate anyway
+                tracing::error!(
+                    "Token cache collision detection exceeded {} attempts - this indicates a bug",
+                    MAX_COLLISION_ATTEMPTS
+                );
+                // Generate one more as fallback (will overwrite if collision)
+                (0..PAGINATION_TOKEN_ID_LEN)
+                    .map(|_| {
+                        let idx = rng.random_range(0..TOKEN_ID_ALPHABET_LEN);
+                        match idx {
+                            0..=9 => (b'0' + idx) as char,
+                            10..=35 => (b'a' + idx - 10) as char,
+                            _ => (b'A' + idx - 36) as char,
+                        }
+                    })
+                    .collect()
+            });
 
         cache.insert(
             id.clone(),
@@ -197,13 +222,13 @@ struct ApiContext {
 const CSP_HEADER: &str = "default-src 'self'; script-src 'self' cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' cdn.jsdelivr.net; img-src 'self' data:; font-src 'self' cdn.jsdelivr.net";
 
 /// Helper function to build HTML responses with security headers
-fn build_html_response(status: u16, html: String) -> Response<Body> {
+fn build_html_response(status: u16, html: String) -> Result<Response<Body>, HttpError> {
     Response::builder()
         .status(status)
         .header("Content-Type", "text/html; charset=utf-8")
         .header("Content-Security-Policy", CSP_HEADER)
         .body(html.into())
-        .unwrap()
+        .map_err(|e| HttpError::for_internal_error(format!("Failed to build response: {}", e)))
 }
 
 /// Bugview service implementation
@@ -307,12 +332,37 @@ impl BugviewApi for BugviewServiceImpl {
             .get_remote_links(&issue.id)
             .await
             .unwrap_or_else(|e| {
-                tracing::warn!(
-                    issue_id = %issue.id,
-                    issue_key = %issue.key,
-                    error = %e,
-                    "Failed to fetch remote links, returning empty list"
-                );
+                let err_str = e.to_string();
+                // Escalate to error level for auth failures and rate limiting
+                // as these indicate operational issues that need attention
+                if err_str.contains("401")
+                    || err_str.contains("403")
+                    || err_str.to_lowercase().contains("unauthorized")
+                    || err_str.to_lowercase().contains("forbidden")
+                {
+                    tracing::error!(
+                        issue_id = %issue.id,
+                        issue_key = %issue.key,
+                        error = %e,
+                        "Authentication/authorization failure fetching remote links - check JIRA credentials"
+                    );
+                } else if err_str.contains("429")
+                    || err_str.to_lowercase().contains("too many requests")
+                {
+                    tracing::error!(
+                        issue_id = %issue.id,
+                        issue_key = %issue.key,
+                        error = %e,
+                        "Rate limited by JIRA when fetching remote links"
+                    );
+                } else {
+                    tracing::warn!(
+                        issue_id = %issue.id,
+                        issue_key = %issue.key,
+                        error = %e,
+                        "Failed to fetch remote links, returning empty list"
+                    );
+                }
                 Vec::new()
             });
 
@@ -377,7 +427,7 @@ impl BugviewApi for BugviewServiceImpl {
             )
             .map_err(|e| HttpError::for_internal_error(format!("Failed to render HTML: {}", e)))?;
 
-        Ok(build_html_response(200, html))
+        build_html_response(200, html)
     }
 
     async fn get_label_index_html(
@@ -417,7 +467,7 @@ impl BugviewApi for BugviewServiceImpl {
             )
             .map_err(|e| HttpError::for_internal_error(format!("Failed to render HTML: {}", e)))?;
 
-        Ok(build_html_response(200, html))
+        build_html_response(200, html)
     }
 
     async fn get_issue_html(
@@ -435,9 +485,15 @@ impl BugviewApi for BugviewServiceImpl {
                 let html = ctx
                     .html
                     .render_error(400, &error_message)
-                    .unwrap_or_else(|_| format!("Error 400: {}", error_message));
+                    .unwrap_or_else(|template_err| {
+                        tracing::error!(
+                            error = %template_err,
+                            "Failed to render error page template"
+                        );
+                        format!("Error 400: {}", error_message)
+                    });
 
-                return Ok(build_html_response(400, html));
+                return build_html_response(400, html);
             }
         };
 
@@ -455,9 +511,16 @@ impl BugviewApi for BugviewServiceImpl {
                 let html = ctx
                     .html
                     .render_error(status_code, &error_message)
-                    .unwrap_or_else(|_| format!("Error {}: {}", status_code, error_message));
+                    .unwrap_or_else(|template_err| {
+                        tracing::error!(
+                            error = %template_err,
+                            status_code = status_code,
+                            "Failed to render error page template"
+                        );
+                        format!("Error {}: {}", status_code, error_message)
+                    });
 
-                return Ok(build_html_response(status_code, html));
+                return build_html_response(status_code, html);
             }
         };
 
@@ -467,9 +530,15 @@ impl BugviewApi for BugviewServiceImpl {
             let html = ctx
                 .html
                 .render_error(404, &error_message)
-                .unwrap_or_else(|_| format!("Error 404: {}", error_message));
+                .unwrap_or_else(|template_err| {
+                    tracing::error!(
+                        error = %template_err,
+                        "Failed to render error page template"
+                    );
+                    format!("Error 404: {}", error_message)
+                });
 
-            return Ok(build_html_response(404, html));
+            return build_html_response(404, html);
         }
 
         // Fetch remote links and filter by allowed_domains
@@ -478,12 +547,37 @@ impl BugviewApi for BugviewServiceImpl {
             .get_remote_links(&issue.id)
             .await
             .unwrap_or_else(|e| {
-                tracing::warn!(
-                    issue_id = %issue.id,
-                    issue_key = %issue.key,
-                    error = %e,
-                    "Failed to fetch remote links, returning empty list"
-                );
+                let err_str = e.to_string();
+                // Escalate to error level for auth failures and rate limiting
+                // as these indicate operational issues that need attention
+                if err_str.contains("401")
+                    || err_str.contains("403")
+                    || err_str.to_lowercase().contains("unauthorized")
+                    || err_str.to_lowercase().contains("forbidden")
+                {
+                    tracing::error!(
+                        issue_id = %issue.id,
+                        issue_key = %issue.key,
+                        error = %e,
+                        "Authentication/authorization failure fetching remote links - check JIRA credentials"
+                    );
+                } else if err_str.contains("429")
+                    || err_str.to_lowercase().contains("too many requests")
+                {
+                    tracing::error!(
+                        issue_id = %issue.id,
+                        issue_key = %issue.key,
+                        error = %e,
+                        "Rate limited by JIRA when fetching remote links"
+                    );
+                } else {
+                    tracing::warn!(
+                        issue_id = %issue.id,
+                        issue_key = %issue.key,
+                        error = %e,
+                        "Failed to fetch remote links, returning empty list"
+                    );
+                }
                 Vec::new()
             });
 
@@ -495,7 +589,7 @@ impl BugviewApi for BugviewServiceImpl {
             .render_issue(&issue, &filtered_links)
             .map_err(|e| HttpError::for_internal_error(format!("Failed to render HTML: {}", e)))?;
 
-        Ok(build_html_response(200, html))
+        build_html_response(200, html)
     }
 
     // ========================================================================
@@ -505,11 +599,11 @@ impl BugviewApi for BugviewServiceImpl {
     async fn redirect_bugview_root(
         _rqctx: RequestContext<Self::Context>,
     ) -> Result<Response<Body>, HttpError> {
-        Ok(Response::builder()
+        Response::builder()
             .status(302)
             .header("Location", "/bugview/index.html")
             .body(Body::empty())
-            .unwrap())
+            .map_err(|e| HttpError::for_internal_error(format!("Failed to build redirect: {}", e)))
     }
 }
 

@@ -500,4 +500,58 @@ mod tests {
         );
         assert!(html.contains(">ABC-123<"));
     }
+
+    #[test]
+    fn html_escape_handles_ampersand() {
+        assert_eq!(html_escape("foo & bar"), "foo &amp; bar");
+        assert_eq!(html_escape("&&"), "&amp;&amp;");
+    }
+
+    #[test]
+    fn html_escape_handles_less_than() {
+        assert_eq!(html_escape("<script>"), "&lt;script&gt;");
+        assert_eq!(html_escape("a < b"), "a &lt; b");
+    }
+
+    #[test]
+    fn html_escape_handles_greater_than() {
+        assert_eq!(html_escape("a > b"), "a &gt; b");
+        assert_eq!(html_escape("-->"), "--&gt;");
+    }
+
+    #[test]
+    fn html_escape_handles_double_quotes() {
+        assert_eq!(html_escape("say \"hello\""), "say &quot;hello&quot;");
+    }
+
+    #[test]
+    fn html_escape_handles_single_quotes() {
+        assert_eq!(html_escape("it's"), "it&#x27;s");
+        assert_eq!(html_escape("'quoted'"), "&#x27;quoted&#x27;");
+    }
+
+    #[test]
+    fn html_escape_handles_all_characters() {
+        // Test all special characters in one string
+        assert_eq!(
+            html_escape("<script>alert('xss' & \"evil\")</script>"),
+            "&lt;script&gt;alert(&#x27;xss&#x27; &amp; &quot;evil&quot;)&lt;/script&gt;"
+        );
+    }
+
+    #[test]
+    fn html_escape_preserves_safe_content() {
+        // Normal text should pass through unchanged
+        assert_eq!(html_escape("Hello World"), "Hello World");
+        assert_eq!(html_escape("123-456"), "123-456");
+        assert_eq!(html_escape(""), "");
+    }
+
+    #[test]
+    fn html_escape_handles_unicode() {
+        // Unicode characters should pass through unchanged
+        assert_eq!(html_escape("café ☕ 日本語"), "café ☕ 日本語");
+        // But special chars in unicode strings still get escaped
+        assert_eq!(html_escape("日本語 & English"), "日本語 &amp; English");
+    }
 }

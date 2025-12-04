@@ -76,8 +76,8 @@ curl -s http://localhost:8080/bugview/index.json | jq .
 # View a specific issue (HTML)
 curl http://localhost:8080/bugview/issue/OS-8627
 
-# View a specific issue (JSON)
-curl -s http://localhost:8080/bugview/issue/OS-8627.json | jq .
+# View a specific issue (JSON summary)
+curl -s http://localhost:8080/bugview/json/OS-8627 | jq .
 
 # Open in browser
 open http://localhost:8080/bugview/

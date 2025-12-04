@@ -107,7 +107,7 @@ pub struct IssueSummary {
 /// Response for issue list endpoints
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct IssueListResponse {
-    /// Issues in this page (up to 50)
+    /// Issues in this page (page size determined by service configuration)
     pub issues: Vec<IssueListItem>,
     /// Token for next page (None if this is the last page)
     pub next_page_token: Option<String>,
