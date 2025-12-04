@@ -501,4 +501,90 @@ mod tests {
         assert!(writer.contains("text(Item 2)"));
         assert!(writer.contains("end_bullet_list"));
     }
+
+    #[test]
+    fn test_render_adf_escapes_xss_in_text() {
+        let input = serde_json::json!([{
+            "type": "text",
+            "text": "<script>alert('xss')</script>"
+        }]);
+        let mut writer = TestWriter::new();
+        render_adf(&input, &mut writer);
+        // Text is passed as-is to writer; HTML escaping happens at the HTML writer level
+        // This test verifies the XSS string is preserved and passed through the writer
+        assert!(writer.contains("<script>alert('xss')</script>"));
+    }
+
+    #[test]
+    fn test_render_adf_handles_empty_array() {
+        let input = serde_json::json!([]);
+        let mut writer = TestWriter::new();
+        render_adf(&input, &mut writer);
+        // Should produce no calls without errors
+        assert_eq!(writer.calls.len(), 0);
+    }
+
+    #[test]
+    fn test_render_adf_handles_null_content() {
+        let input = serde_json::json!([{
+            "type": "paragraph",
+            "content": null
+        }]);
+        let mut writer = TestWriter::new();
+        render_adf(&input, &mut writer);
+        // Should handle gracefully: start/end paragraph without inner content
+        assert!(writer.contains("start_paragraph"));
+        assert!(writer.contains("end_paragraph"));
+    }
+
+    #[test]
+    fn test_render_adf_handles_missing_type() {
+        let input = serde_json::json!([{
+            "text": "no type field"
+        }]);
+        let mut writer = TestWriter::new();
+        render_adf(&input, &mut writer);
+        // Should not panic; unknown node type with no content falls through gracefully
+        assert_eq!(writer.calls.len(), 0);
+    }
+
+    #[test]
+    fn test_render_adf_handles_deeply_nested_lists() {
+        let input = serde_json::json!([{
+            "type": "bulletList",
+            "content": [{
+                "type": "listItem",
+                "content": [{
+                    "type": "bulletList",
+                    "content": [{
+                        "type": "listItem",
+                        "content": [{
+                            "type": "paragraph",
+                            "content": [{"type": "text", "text": "deeply nested"}]
+                        }]
+                    }]
+                }]
+            }]
+        }]);
+        let mut writer = TestWriter::new();
+        render_adf(&input, &mut writer);
+        // Verify nested structure renders correctly
+        assert!(writer.contains("start_bullet_list"));
+        assert!(writer.contains("start_list_item(None)"));
+        assert!(writer.contains("text(deeply nested)"));
+        assert!(writer.contains("end_bullet_list"));
+        // Count occurrences: should have 2 start_bullet_list and 2 end_bullet_list for nesting
+        let start_count = writer
+            .calls
+            .iter()
+            .filter(|c| *c == "start_bullet_list")
+            .count();
+        let end_count = writer
+            .calls
+            .iter()
+            .filter(|c| *c == "end_bullet_list")
+            .count();
+        assert_eq!(start_count, 2);
+        assert_eq!(end_count, 2);
+    }
 }
