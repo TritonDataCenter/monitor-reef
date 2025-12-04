@@ -696,7 +696,7 @@ mod tests {
     use bugview_api::IssueDetails;
     use http::StatusCode;
 
-    // Mock JIRA client implementing the trait for tests
+    // Mock JIRA client implementing the trait for tests with public labels
     #[derive(Clone, Default)]
     struct MockJiraClient;
 
@@ -790,6 +790,80 @@ mod tests {
         }
     }
 
+    // Mock JIRA client that returns issues WITHOUT the public label
+    // Used to test the security boundary
+    #[derive(Clone, Default)]
+    struct NonPublicMockJiraClient;
+
+    #[async_trait]
+    impl JiraClientTrait for NonPublicMockJiraClient {
+        async fn search_issues(
+            &self,
+            _labels: &[String],
+            _page_token: Option<&str>,
+            _sort: &str,
+        ) -> anyhow::Result<SearchResponse> {
+            // Return issues with "internal" label instead of "public"
+            let mut issue1 = serde_json::Map::new();
+            issue1.insert(
+                "summary".into(),
+                serde_json::Value::String("Internal Alpha".into()),
+            );
+            issue1.insert(
+                "created".into(),
+                serde_json::Value::String("2023-10-01T00:00:00.000-0400".into()),
+            );
+            issue1.insert(
+                "updated".into(),
+                serde_json::Value::String("2023-10-02T00:00:00.000-0400".into()),
+            );
+            issue1.insert("labels".into(), serde_json::json!(["internal"]));
+
+            let issues = vec![Issue {
+                key: "PROJ-1".into(),
+                id: "1".into(),
+                fields: issue1.into_iter().collect(),
+                rendered_fields: None,
+            }];
+
+            Ok(SearchResponse {
+                issues,
+                is_last: Some(true),
+                next_page_token: None,
+            })
+        }
+
+        async fn get_issue(&self, key: &str) -> anyhow::Result<Issue> {
+            // Return an issue with "internal" label instead of "public"
+            let mut fields: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+            fields.insert(
+                "summary".to_string(),
+                serde_json::Value::String("Internal issue".into()),
+            );
+            fields.insert(
+                "created".to_string(),
+                serde_json::Value::String("2023-10-04T10:27:22.826-0400".into()),
+            );
+            fields.insert(
+                "updated".to_string(),
+                serde_json::Value::String("2023-10-05T10:27:22.826-0400".into()),
+            );
+            fields.insert("labels".to_string(), serde_json::json!(["internal"]));
+
+            Ok(Issue {
+                key: key.to_string(),
+                id: "12345".to_string(),
+                fields,
+                rendered_fields: None,
+            })
+        }
+
+        async fn get_remote_links(&self, _issue_id: &str) -> anyhow::Result<Vec<RemoteLink>> {
+            // Return empty list for non-public issues
+            Ok(vec![])
+        }
+    }
+
     // Build a test ApiContext with the mock client
     fn test_context() -> ApiContext {
         let config = Config {
@@ -801,6 +875,23 @@ mod tests {
 
         ApiContext {
             jira: Arc::new(MockJiraClient) as Arc<dyn JiraClientTrait>,
+            config: Arc::new(config),
+            html: Arc::new(HtmlRenderer::new()),
+            token_cache: TokenCache::new(),
+        }
+    }
+
+    // Build a test ApiContext with the non-public mock client
+    fn non_public_test_context() -> ApiContext {
+        let config = Config {
+            default_label: "public".to_string(),
+            allowed_labels: vec!["public".to_string(), "bug".to_string()],
+            allowed_domains: vec!["example.com".to_string()],
+            public_base_url: "https://test.example.com".to_string(),
+        };
+
+        ApiContext {
+            jira: Arc::new(NonPublicMockJiraClient) as Arc<dyn JiraClientTrait>,
             config: Arc::new(config),
             html: Arc::new(HtmlRenderer::new()),
             token_cache: TokenCache::new(),
@@ -1034,5 +1125,73 @@ mod tests {
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
         assert_eq!(loc, "/bugview/index.html");
+    }
+
+    #[tokio::test]
+    async fn test_http_non_public_issue_returns_404() {
+        // Test the security boundary: issues without the public label should return 404
+        let ctx = non_public_test_context();
+
+        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
+            .expect("api description");
+
+        let config_dropshot = ConfigDropshot {
+            bind_address: "127.0.0.1:0".parse().unwrap(),
+            default_request_body_max_bytes: 1024 * 1024,
+            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
+            ..Default::default()
+        };
+
+        let log = dropshot::ConfigLogging::StderrTerminal {
+            level: dropshot::ConfigLoggingLevel::Info,
+        }
+        .to_logger("bugview-service-test")
+        .expect("logger");
+
+        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
+            Ok(starter) => starter.start(),
+            Err(e) => {
+                eprintln!("skipping HTTP test: failed to start server: {}", e);
+                return; // likely sandbox prevents binding sockets
+            }
+        };
+
+        // Best-effort small delay to ensure server is ready
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+
+        // Get bound address
+        let addr = server.local_addr();
+
+        // Test HTML endpoint returns 404
+        let url_html = format!("http://{}/bugview/issue/PROJ-1", addr);
+        let resp_html = reqwest::get(&url_html).await.expect("request");
+        assert_eq!(
+            resp_html.status(),
+            StatusCode::NOT_FOUND,
+            "HTML endpoint should return 404 for non-public issue"
+        );
+        let body_html = resp_html.text().await.expect("body");
+        assert!(
+            body_html.contains("not public") || body_html.contains("404"),
+            "Response should indicate issue is not public or not found"
+        );
+
+        // Test JSON summary endpoint returns 404
+        let url_json = format!("http://{}/bugview/json/PROJ-1", addr);
+        let resp_json = reqwest::get(&url_json).await.expect("request");
+        assert_eq!(
+            resp_json.status(),
+            StatusCode::NOT_FOUND,
+            "JSON summary endpoint should return 404 for non-public issue"
+        );
+
+        // Test full JSON endpoint returns 404
+        let url_fulljson = format!("http://{}/bugview/fulljson/PROJ-1", addr);
+        let resp_fulljson = reqwest::get(&url_fulljson).await.expect("request");
+        assert_eq!(
+            resp_fulljson.status(),
+            StatusCode::NOT_FOUND,
+            "Full JSON endpoint should return 404 for non-public issue"
+        );
     }
 }
