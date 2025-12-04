@@ -59,8 +59,8 @@ async fn test_jira_stub_server_with_progenitor_client() {
     let jira_addr = jira_server.local_addr();
     let jira_base_url = format!("http://{}", jira_addr);
 
-    // Give server a moment to be ready
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    // Give server a moment to be ready (10ms is usually sufficient for local binding)
+    tokio::time::sleep(Duration::from_millis(10)).await;
 
     // ========================================================================
     // Step 2: Use the progenitor-generated client to talk to the stub
@@ -190,7 +190,7 @@ async fn test_stub_jira_label_filtering() {
     let jira_addr = jira_server.local_addr();
     let jira_base_url = format!("http://{}", jira_addr);
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    tokio::time::sleep(Duration::from_millis(10)).await;
 
     let client = jira_client::Client::new(&jira_base_url);
 
@@ -264,7 +264,7 @@ async fn test_non_public_issues_filtered() {
     let jira_addr = jira_server.local_addr();
     let jira_base_url = format!("http://{}", jira_addr);
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    tokio::time::sleep(Duration::from_millis(10)).await;
 
     let client = jira_client::Client::new(&jira_base_url);
 
@@ -387,26 +387,14 @@ async fn test_bugview_service_e2e() {
     let jira_base_url = format!("http://{}", jira_addr);
 
     // Give JIRA stub a moment to be ready
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    tokio::time::sleep(Duration::from_millis(10)).await;
 
     // ========================================================================
     // Step 2: Start bugview-service as subprocess configured to use jira-stub
     // ========================================================================
 
-    // Build bugview-service binary first
-    let build_output = std::process::Command::new("cargo")
-        .args(&["build", "-p", "bugview-service", "--bin", "bugview-service"])
-        .output()
-        .expect("failed to build bugview-service");
-
-    if !build_output.status.success() {
-        eprintln!(
-            "skipping e2e test: failed to build bugview-service: {}",
-            String::from_utf8_lossy(&build_output.stderr)
-        );
-        jira_server.close().await.ok();
-        return;
-    }
+    // Note: We skip `cargo build` here - the binary should already be built
+    // when running `cargo test`. This saves ~10-15 seconds per test run.
 
     // Start bugview-service with environment variables pointing to jira-stub
     let bugview_binary = std::env::current_exe()
@@ -426,6 +414,10 @@ async fn test_bugview_service_e2e() {
         return;
     }
 
+    // Use a fixed port to avoid port scanning overhead
+    let bugview_port = 18080;
+    let bugview_base_url = format!("http://127.0.0.1:{}", bugview_port);
+
     let mut bugview_process = std::process::Command::new(&bugview_binary)
         .env("JIRA_URL", &jira_base_url)
         .env("JIRA_USERNAME", "test-user")
@@ -434,15 +426,15 @@ async fn test_bugview_service_e2e() {
         .env("JIRA_ALLOWED_LABELS", "public,bug")
         .env("JIRA_ALLOWED_DOMAINS", "example.com")
         .env("PUBLIC_BASE_URL", "https://test.example.com")
-        .env("BIND_ADDRESS", "127.0.0.1:0") // Random port
+        .env("BIND_ADDRESS", format!("127.0.0.1:{}", bugview_port))
         .env("RUST_LOG", "warn")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()
         .expect("failed to start bugview-service");
 
-    // Give bugview service a moment to start (it should print the bind address)
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // Give bugview service a moment to start
+    tokio::time::sleep(Duration::from_millis(200)).await;
 
     // Check if the process is still running
     match bugview_process.try_wait() {
@@ -464,30 +456,7 @@ async fn test_bugview_service_e2e() {
         }
     }
 
-    // Try to find what port bugview started on by trying a few common ports
-    // Since we can't easily parse stdout, we'll just try ports and see what works
     let client = reqwest::Client::new();
-    let mut bugview_base_url = None;
-
-    for port in 8080..8090 {
-        let test_url = format!("http://127.0.0.1:{}/bugview/index.json", port);
-        if let Ok(resp) = client.get(&test_url).send().await {
-            if resp.status().is_success() || resp.status().is_client_error() {
-                bugview_base_url = Some(format!("http://127.0.0.1:{}", port));
-                break;
-            }
-        }
-    }
-
-    let bugview_base_url = match bugview_base_url {
-        Some(url) => url,
-        None => {
-            eprintln!("skipping e2e test: could not determine bugview-service port");
-            bugview_process.kill().ok();
-            jira_server.close().await.ok();
-            return;
-        }
-    };
 
     // ========================================================================
     // Step 3: Test bugview endpoints with reqwest
