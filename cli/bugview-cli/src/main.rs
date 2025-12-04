@@ -75,7 +75,7 @@ impl TextWriter {
     }
 }
 
-impl bugview_api::adf::AdfWriter for TextWriter {
+impl jira_api::adf::AdfWriter for TextWriter {
     fn write_text(&mut self, text: &str) {
         self.output.push_str(text);
     }
@@ -225,10 +225,10 @@ impl bugview_api::adf::AdfWriter for TextWriter {
 
 /// Extract text from ADF (Atlassian Document Format) content for terminal display
 ///
-/// This function uses the shared ADF rendering logic from bugview-api.
+/// This function uses the shared ADF rendering logic from jira-api.
 fn extract_adf_text(nodes: &serde_json::Value, _indent_level: usize) -> String {
     let mut writer = TextWriter::new();
-    bugview_api::adf::render_adf(nodes, &mut writer);
+    jira_api::adf::render_adf(nodes, &mut writer);
     writer.into_string()
 }
 /// Format a timestamp into a human-readable format

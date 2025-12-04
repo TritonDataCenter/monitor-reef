@@ -19,6 +19,8 @@
 //!
 //! Reference: https://developer.atlassian.com/cloud/jira/platform/rest/v3/
 
+pub mod adf;
+
 use dropshot::{HttpError, HttpResponseOk, Path, Query, RequestContext};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};

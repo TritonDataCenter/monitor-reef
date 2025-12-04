@@ -242,6 +242,7 @@ dependencies = [
  "bugview-client",
  "chrono",
  "clap",
+ "jira-api",
  "serde_json",
  "tokio",
 ]

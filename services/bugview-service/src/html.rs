@@ -308,7 +308,7 @@ impl HtmlWriter {
     }
 }
 
-impl bugview_api::adf::AdfWriter for HtmlWriter {
+impl jira_api::adf::AdfWriter for HtmlWriter {
     fn write_text(&mut self, text: &str) {
         self.output.push_str(&html_escape(text));
     }
@@ -433,10 +433,10 @@ impl bugview_api::adf::AdfWriter for HtmlWriter {
 
 /// Convert ADF (Atlassian Document Format) to HTML
 ///
-/// This function uses the shared ADF rendering logic from bugview-api.
+/// This function uses the shared ADF rendering logic from jira-api.
 fn adf_to_html(nodes: &serde_json::Value) -> String {
     let mut writer = HtmlWriter::new();
-    bugview_api::adf::render_adf(nodes, &mut writer);
+    jira_api::adf::render_adf(nodes, &mut writer);
     writer.into_string()
 }
 
