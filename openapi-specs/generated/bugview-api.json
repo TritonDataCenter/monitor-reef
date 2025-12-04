@@ -367,7 +367,7 @@
             "type": "boolean"
           },
           "issues": {
-            "description": "Issues in this page (up to 50)",
+            "description": "Issues in this page (page size determined by service configuration)",
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/IssueListItem"
