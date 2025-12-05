@@ -22,18 +22,11 @@ use anyhow::Result;
 use askama::Template;
 use bugview_api::{IssueListItem, IssueSort};
 
-/// Primary layout template wrapping all pages
-#[derive(Template)]
-#[template(path = "primary.html")]
-struct PrimaryTemplate<'a> {
-    title: &'a str,
-    container: &'a str,
-}
-
 /// Issue index page template
 #[derive(Template)]
 #[template(path = "issue_index.html")]
 struct IssueIndexTemplate<'a> {
+    title: &'a str,
     current_label: Option<&'a str>,
     allowed_labels: &'a [String],
     page_path: &'a str,
@@ -47,6 +40,7 @@ struct IssueIndexTemplate<'a> {
 #[derive(Template)]
 #[template(path = "issue.html")]
 struct IssueTemplate<'a> {
+    title: &'a str,
     key: &'a str,
     summary: &'a str,
     status: &'a str,
@@ -72,6 +66,15 @@ pub struct CommentView {
 pub struct RemoteLinkView {
     pub url: String,
     pub title: String,
+}
+
+/// Error template
+#[derive(Template)]
+#[template(path = "error.html")]
+struct ErrorTemplate<'a> {
+    title: &'a str,
+    status_code: u16,
+    message: &'a str,
 }
 
 /// HTML template renderer
@@ -102,8 +105,15 @@ impl HtmlRenderer {
             "/bugview/index.html".to_string()
         };
 
+        let title_string = if let Some(l) = label {
+            format!("Public Issues: {}", l)
+        } else {
+            "Public Issues Index".to_string()
+        };
+
         // Render the issue_index template
         let index_template = IssueIndexTemplate {
+            title: &title_string,
             current_label: label,
             allowed_labels,
             page_path: &page_path,
@@ -112,20 +122,7 @@ impl HtmlRenderer {
             is_last,
             issues,
         };
-        let container = index_template.render()?;
-
-        // Wrap in primary template
-        let title = if let Some(l) = label {
-            format!("Public Issues: {}", l)
-        } else {
-            "Public Issues Index".to_string()
-        };
-
-        let primary = PrimaryTemplate {
-            title: &title,
-            container: &container,
-        };
-        primary
+        index_template
             .render()
             .map_err(|e| anyhow::anyhow!("Failed to render page: {}", e))
     }
@@ -275,7 +272,9 @@ impl HtmlRenderer {
             .collect();
 
         // Render issue template
+        let title = format!("{} - Bugview", issue.key);
         let issue_template = IssueTemplate {
+            title: &title,
             key: issue.key.as_str(),
             summary,
             status,
@@ -287,15 +286,7 @@ impl HtmlRenderer {
             remote_links: &link_views,
             remote_links_error,
         };
-        let container = issue_template.render()?;
-
-        // Wrap in primary template
-        let title = format!("{} - Bugview", issue.key);
-        let primary = PrimaryTemplate {
-            title: &title,
-            container: &container,
-        };
-        primary
+        issue_template
             .render()
             .map_err(|e| anyhow::anyhow!("Failed to render page: {}", e))
     }
@@ -308,22 +299,12 @@ impl HtmlRenderer {
             _ => "Error",
         };
 
-        let content = format!(
-            r#"<div class="alert alert-danger">
-    <h1>{} - {}</h1>
-    <p>{}</p>
-    <p><a href="/bugview/index.html">Return to issue index</a></p>
-</div>"#,
-            status_code,
-            html_escape(title),
-            html_escape(message)
-        );
-
-        let primary = PrimaryTemplate {
+        let template = ErrorTemplate {
             title,
-            container: &content,
+            status_code,
+            message,
         };
-        primary
+        template
             .render()
             .map_err(|e| anyhow::anyhow!("Failed to render error page: {}", e))
     }

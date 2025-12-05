@@ -62,8 +62,8 @@ impl Config {
 /// Context for API handlers
 struct ApiContext {
     jira: Arc<dyn JiraClientTrait>,
-    config: Arc<Config>,
-    html: Arc<HtmlRenderer>,
+    config: Config,
+    html: HtmlRenderer,
     token_cache: TokenCache,
 }
 
@@ -531,8 +531,8 @@ async fn main() -> Result<()> {
 
     let api_context = ApiContext {
         jira: Arc::new(jira_client) as Arc<dyn JiraClientTrait>,
-        config: Arc::new(config),
-        html: Arc::new(html_renderer),
+        config,
+        html: html_renderer,
         token_cache: TokenCache::new(),
     };
 
@@ -760,8 +760,8 @@ mod tests {
 
         ApiContext {
             jira: Arc::new(MockJiraClient) as Arc<dyn JiraClientTrait>,
-            config: Arc::new(config),
-            html: Arc::new(HtmlRenderer::new()),
+            config,
+            html: HtmlRenderer::new(),
             token_cache: TokenCache::new(),
         }
     }
@@ -777,8 +777,8 @@ mod tests {
 
         ApiContext {
             jira: Arc::new(NonPublicMockJiraClient) as Arc<dyn JiraClientTrait>,
-            config: Arc::new(config),
-            html: Arc::new(HtmlRenderer::new()),
+            config,
+            html: HtmlRenderer::new(),
             token_cache: TokenCache::new(),
         }
     }
@@ -1399,8 +1399,8 @@ mod tests {
 
         ApiContext {
             jira: Arc::new(NotFoundMockJiraClient) as Arc<dyn JiraClientTrait>,
-            config: Arc::new(config),
-            html: Arc::new(HtmlRenderer::new()),
+            config,
+            html: HtmlRenderer::new(),
             token_cache: TokenCache::new(),
         }
     }
