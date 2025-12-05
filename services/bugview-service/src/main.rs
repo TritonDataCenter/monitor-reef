@@ -69,12 +69,12 @@ struct ApiContext {
 
 /// Content-Security-Policy header value for HTML responses
 /// Allows:
-/// - Scripts from self and cdn.jsdelivr.net (Bootstrap JS)
+/// - Scripts from self, unsafe-inline (for theme detection), and cdn.jsdelivr.net (Bootstrap JS)
 /// - Styles from self, unsafe-inline (for inline styles), and cdn.jsdelivr.net (Bootstrap CSS)
 /// - Images from self and data: URIs
 /// - Fonts from self and cdn.jsdelivr.net
 /// - Default to self for everything else
-const CSP_HEADER: &str = "default-src 'self'; script-src 'self' cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' cdn.jsdelivr.net; img-src 'self' data:; font-src 'self' cdn.jsdelivr.net";
+const CSP_HEADER: &str = "default-src 'self'; script-src 'self' 'unsafe-inline' cdn.jsdelivr.net; style-src 'self' 'unsafe-inline' cdn.jsdelivr.net; img-src 'self' data:; font-src 'self' cdn.jsdelivr.net";
 
 /// Helper function to build HTML responses with security headers
 fn build_html_response(status: u16, html: String) -> Result<Response<Body>, HttpError> {

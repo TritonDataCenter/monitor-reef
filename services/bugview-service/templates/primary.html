@@ -12,16 +12,30 @@ Copyright 2025 Edgecast Cloud LLC.
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <script>
-    // Respect prefers-color-scheme while defaulting to light mode for Bootstrap
+    // Theme management: user preference > system preference > light default
     (function () {
+      const stored = localStorage.getItem("theme");
       const media = window.matchMedia("(prefers-color-scheme: dark)");
-      const applyTheme = () => {
-        const theme = media.matches ? "dark" : "light";
-        document.documentElement.setAttribute("data-bs-theme", theme);
-      };
-      applyTheme();
-      media.addEventListener("change", applyTheme);
+      const getTheme = () => stored || (media.matches ? "dark" : "light");
+      document.documentElement.setAttribute("data-bs-theme", getTheme());
+      // Only listen for system changes if user hasn't set a preference
+      if (!stored) {
+        media.addEventListener("change", () => {
+          document.documentElement.setAttribute("data-bs-theme", media.matches ? "dark" : "light");
+        });
+      }
     })();
+    function toggleTheme() {
+      const current = document.documentElement.getAttribute("data-bs-theme");
+      const next = current === "dark" ? "light" : "dark";
+      document.documentElement.setAttribute("data-bs-theme", next);
+      localStorage.setItem("theme", next);
+      updateThemeIcon(next);
+    }
+    function updateThemeIcon(theme) {
+      const el = document.getElementById("theme-icon");
+      if (el) el.textContent = theme === "dark" ? "\u2600" : "\u263D";
+    }
   </script>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
   <style>
@@ -132,8 +146,12 @@ Copyright 2025 Edgecast Cloud LLC.
   <nav class="navbar navbar-dark bg-dark fixed-top">
     <div class="container-fluid">
       <a class="navbar-brand" href="/bugview">Bugview</a>
+      <button class="btn btn-outline-light btn-sm" onclick="toggleTheme()" title="Toggle dark/light mode">
+        <span id="theme-icon"></span>
+      </button>
     </div>
   </nav>
+  <script>updateThemeIcon(document.documentElement.getAttribute("data-bs-theme"));</script>
   <div class="container">
       {% block body %}{% endblock %}
   </div>
