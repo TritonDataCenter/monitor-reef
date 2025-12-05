@@ -581,6 +581,42 @@ mod tests {
     use http::StatusCode;
     use jira_api::{Issue, RemoteLink};
 
+    /// Start a test server with the given context.
+    ///
+    /// Returns `Some(server)` on success, or `None` if the server couldn't start
+    /// (in non-CI environments). Panics in CI if startup fails.
+    async fn start_test_server(ctx: ApiContext) -> Option<dropshot::HttpServer<ApiContext>> {
+        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
+            .expect("api description");
+
+        let config = ConfigDropshot {
+            bind_address: "127.0.0.1:0".parse().unwrap(),
+            default_request_body_max_bytes: 1024 * 1024,
+            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
+            ..Default::default()
+        };
+
+        let log = dropshot::ConfigLogging::StderrTerminal {
+            level: dropshot::ConfigLoggingLevel::Warn,
+        }
+        .to_logger("bugview-test")
+        .expect("logger");
+
+        let server = match HttpServerStarter::new(&config, api, ctx, &log) {
+            Ok(starter) => starter.start(),
+            Err(e) => {
+                if std::env::var("CI").is_ok() {
+                    panic!("Failed to start test server in CI: {}", e);
+                }
+                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
+                return None;
+            }
+        };
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        Some(server)
+    }
+
     // Mock JIRA client implementing the trait for tests with public labels
     #[derive(Clone, Default)]
     struct MockJiraClient;
@@ -920,42 +956,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_issue_route_with_mock_server() {
-        // Start a real HTTP server on an ephemeral port with the mock client
-        let ctx = test_context();
-
-        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
-            .expect("api description");
-
-        let config_dropshot = ConfigDropshot {
-            bind_address: "127.0.0.1:0".parse().unwrap(),
-            default_request_body_max_bytes: 1024 * 1024,
-            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
-            ..Default::default()
+        let Some(server) = start_test_server(test_context()).await else {
+            return;
         };
-
-        let log = dropshot::ConfigLogging::StderrTerminal {
-            level: dropshot::ConfigLoggingLevel::Info,
-        }
-        .to_logger("bugview-service-test")
-        .expect("logger");
-
-        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
-            Ok(starter) => starter.start(),
-            Err(e) => {
-                if std::env::var("CI").is_ok() {
-                    panic!("Failed to start test server in CI: {}", e);
-                }
-                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
-                return; // likely sandbox prevents binding sockets
-            }
-        };
-
-        // Best-effort small delay to ensure server is ready
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
-        // Get bound address
-        let addr = server.local_addr();
-        let url = format!("http://{}/bugview/issue/PROJ-1", addr);
+        let url = format!("http://{}/bugview/issue/PROJ-1", server.local_addr());
 
         let resp = reqwest::get(&url).await.expect("request");
         assert_eq!(resp.status(), StatusCode::OK);
@@ -965,33 +969,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_index_json_with_mock_server() {
-        let ctx = test_context();
-        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
-            .expect("api description");
-        let config_dropshot = ConfigDropshot {
-            bind_address: "127.0.0.1:0".parse().unwrap(),
-            default_request_body_max_bytes: 1024 * 1024,
-            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
-            ..Default::default()
+        let Some(server) = start_test_server(test_context()).await else {
+            return;
         };
-        let log = dropshot::ConfigLogging::StderrTerminal {
-            level: dropshot::ConfigLoggingLevel::Info,
-        }
-        .to_logger("bugview-service-test")
-        .expect("logger");
-        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
-            Ok(starter) => starter.start(),
-            Err(e) => {
-                if std::env::var("CI").is_ok() {
-                    panic!("Failed to start test server in CI: {}", e);
-                }
-                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
-                return;
-            }
-        };
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        let addr = server.local_addr();
-        let url = format!("http://{}/bugview/index.json", addr);
+        let url = format!("http://{}/bugview/index.json", server.local_addr());
+
         let resp = reqwest::get(&url).await.expect("request");
         assert_eq!(resp.status(), StatusCode::OK);
         let body = resp.text().await.expect("body");
@@ -1001,33 +983,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_index_html_with_mock_server() {
-        let ctx = test_context();
-        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
-            .expect("api description");
-        let config_dropshot = ConfigDropshot {
-            bind_address: "127.0.0.1:0".parse().unwrap(),
-            default_request_body_max_bytes: 1024 * 1024,
-            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
-            ..Default::default()
+        let Some(server) = start_test_server(test_context()).await else {
+            return;
         };
-        let log = dropshot::ConfigLogging::StderrTerminal {
-            level: dropshot::ConfigLoggingLevel::Info,
-        }
-        .to_logger("bugview-service-test")
-        .expect("logger");
-        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
-            Ok(starter) => starter.start(),
-            Err(e) => {
-                if std::env::var("CI").is_ok() {
-                    panic!("Failed to start test server in CI: {}", e);
-                }
-                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
-                return;
-            }
-        };
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        let addr = server.local_addr();
-        let url = format!("http://{}/bugview/index.html", addr);
+        let url = format!("http://{}/bugview/index.html", server.local_addr());
+
         let resp = reqwest::get(&url).await.expect("request");
         assert_eq!(resp.status(), StatusCode::OK);
         let body = resp.text().await.expect("body");
@@ -1036,66 +996,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_http_label_index_html_disallowed() {
-        let ctx = test_context();
-        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
-            .expect("api description");
-        let config_dropshot = ConfigDropshot {
-            bind_address: "127.0.0.1:0".parse().unwrap(),
-            default_request_body_max_bytes: 1024 * 1024,
-            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
-            ..Default::default()
+        let Some(server) = start_test_server(test_context()).await else {
+            return;
         };
-        let log = dropshot::ConfigLogging::StderrTerminal {
-            level: dropshot::ConfigLoggingLevel::Info,
-        }
-        .to_logger("bugview-service-test")
-        .expect("logger");
-        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
-            Ok(starter) => starter.start(),
-            Err(e) => {
-                if std::env::var("CI").is_ok() {
-                    panic!("Failed to start test server in CI: {}", e);
-                }
-                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
-                return;
-            }
-        };
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        let addr = server.local_addr();
-        let url = format!("http://{}/bugview/label/not-allowed", addr);
+        let url = format!("http://{}/bugview/label/not-allowed", server.local_addr());
+
         let resp = reqwest::get(&url).await.expect("request");
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
     async fn test_http_redirect_bugview_root() {
-        let ctx = test_context();
-        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
-            .expect("api description");
-        let config_dropshot = ConfigDropshot {
-            bind_address: "127.0.0.1:0".parse().unwrap(),
-            default_request_body_max_bytes: 1024 * 1024,
-            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
-            ..Default::default()
+        let Some(server) = start_test_server(test_context()).await else {
+            return;
         };
-        let log = dropshot::ConfigLogging::StderrTerminal {
-            level: dropshot::ConfigLoggingLevel::Info,
-        }
-        .to_logger("bugview-service-test")
-        .expect("logger");
-        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
-            Ok(starter) => starter.start(),
-            Err(e) => {
-                if std::env::var("CI").is_ok() {
-                    panic!("Failed to start test server in CI: {}", e);
-                }
-                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
-                return;
-            }
-        };
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        let addr = server.local_addr();
-        let url = format!("http://{}/bugview", addr);
+        let url = format!("http://{}/bugview", server.local_addr());
+
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
             .build()
@@ -1112,31 +1028,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_csp_header_is_set_on_html_responses() {
-        let ctx = test_context();
-        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
-            .expect("api description");
-        let config_dropshot = ConfigDropshot {
-            bind_address: "127.0.0.1:0".parse().unwrap(),
-            default_request_body_max_bytes: 1024 * 1024,
-            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
-            ..Default::default()
+        let Some(server) = start_test_server(test_context()).await else {
+            return;
         };
-        let log = dropshot::ConfigLogging::StderrTerminal {
-            level: dropshot::ConfigLoggingLevel::Info,
-        }
-        .to_logger("bugview-service-test")
-        .expect("logger");
-        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
-            Ok(starter) => starter.start(),
-            Err(e) => {
-                if std::env::var("CI").is_ok() {
-                    panic!("Failed to start test server in CI: {}", e);
-                }
-                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
-                return;
-            }
-        };
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         let addr = server.local_addr();
 
         // Test index.html has CSP header
@@ -1185,39 +1079,9 @@ mod tests {
     #[tokio::test]
     async fn test_http_non_public_issue_returns_404() {
         // Test the security boundary: issues without the public label should return 404
-        let ctx = non_public_test_context();
-
-        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
-            .expect("api description");
-
-        let config_dropshot = ConfigDropshot {
-            bind_address: "127.0.0.1:0".parse().unwrap(),
-            default_request_body_max_bytes: 1024 * 1024,
-            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
-            ..Default::default()
+        let Some(server) = start_test_server(non_public_test_context()).await else {
+            return;
         };
-
-        let log = dropshot::ConfigLogging::StderrTerminal {
-            level: dropshot::ConfigLoggingLevel::Info,
-        }
-        .to_logger("bugview-service-test")
-        .expect("logger");
-
-        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
-            Ok(starter) => starter.start(),
-            Err(e) => {
-                if std::env::var("CI").is_ok() {
-                    panic!("Failed to start test server in CI: {}", e);
-                }
-                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
-                return; // likely sandbox prevents binding sockets
-            }
-        };
-
-        // Best-effort small delay to ensure server is ready
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-
-        // Get bound address
         let addr = server.local_addr();
 
         // Test HTML endpoint returns 404
@@ -1255,43 +1119,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_json_api_returns_400_for_invalid_pagination_token() {
-        // Test that the JSON API returns 400 Bad Request for invalid/expired pagination tokens
-        let ctx = test_context();
-
-        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
-            .expect("api description");
-
-        let config_dropshot = ConfigDropshot {
-            bind_address: "127.0.0.1:0".parse().unwrap(),
-            default_request_body_max_bytes: 1024 * 1024,
-            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
-            ..Default::default()
+        let Some(server) = start_test_server(test_context()).await else {
+            return;
         };
-
-        let log = dropshot::ConfigLogging::StderrTerminal {
-            level: dropshot::ConfigLoggingLevel::Warn,
-        }
-        .to_logger("bugview-service-test")
-        .expect("logger");
-
-        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
-            Ok(starter) => starter.start(),
-            Err(e) => {
-                if std::env::var("CI").is_ok() {
-                    panic!("Failed to start test server in CI: {}", e);
-                }
-                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
-                return;
-            }
-        };
-
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        let addr = server.local_addr();
 
         // Request with an invalid pagination token
         let url = format!(
             "http://{}/bugview/index.json?next_page_token=invalid123abc",
-            addr
+            server.local_addr()
         );
         let resp = reqwest::get(&url).await.expect("request");
         assert_eq!(
@@ -1309,43 +1144,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_html_api_gracefully_handles_invalid_pagination_token() {
-        // Test that the HTML API gracefully falls back to first page for invalid tokens
-        let ctx = test_context();
-
-        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
-            .expect("api description");
-
-        let config_dropshot = ConfigDropshot {
-            bind_address: "127.0.0.1:0".parse().unwrap(),
-            default_request_body_max_bytes: 1024 * 1024,
-            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
-            ..Default::default()
+        let Some(server) = start_test_server(test_context()).await else {
+            return;
         };
-
-        let log = dropshot::ConfigLogging::StderrTerminal {
-            level: dropshot::ConfigLoggingLevel::Warn,
-        }
-        .to_logger("bugview-service-test")
-        .expect("logger");
-
-        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
-            Ok(starter) => starter.start(),
-            Err(e) => {
-                if std::env::var("CI").is_ok() {
-                    panic!("Failed to start test server in CI: {}", e);
-                }
-                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
-                return;
-            }
-        };
-
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        let addr = server.local_addr();
 
         // Request with an invalid pagination token - should return 200 with first page
         let url = format!(
             "http://{}/bugview/index.html?next_page_token=invalid123abc",
-            addr
+            server.local_addr()
         );
         let resp = reqwest::get(&url).await.expect("request");
         assert_eq!(
@@ -1408,36 +1214,9 @@ mod tests {
     #[tokio::test]
     async fn test_issue_not_found_returns_404() {
         // Test that JIRA "Issue not found" errors are converted to HTTP 404
-        let ctx = not_found_test_context();
-
-        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
-            .expect("api description");
-
-        let config_dropshot = ConfigDropshot {
-            bind_address: "127.0.0.1:0".parse().unwrap(),
-            default_request_body_max_bytes: 1024 * 1024,
-            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
-            ..Default::default()
+        let Some(server) = start_test_server(not_found_test_context()).await else {
+            return;
         };
-
-        let log = dropshot::ConfigLogging::StderrTerminal {
-            level: dropshot::ConfigLoggingLevel::Warn,
-        }
-        .to_logger("bugview-service-test")
-        .expect("logger");
-
-        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
-            Ok(starter) => starter.start(),
-            Err(e) => {
-                if std::env::var("CI").is_ok() {
-                    panic!("Failed to start test server in CI: {}", e);
-                }
-                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
-                return;
-            }
-        };
-
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         let addr = server.local_addr();
 
         // Test HTML endpoint
@@ -1470,37 +1249,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_malformed_issue_key_returns_400() {
-        // Test that malformed issue keys return 400 Bad Request
-        let ctx = test_context();
-
-        let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
-            .expect("api description");
-
-        let config_dropshot = ConfigDropshot {
-            bind_address: "127.0.0.1:0".parse().unwrap(),
-            default_request_body_max_bytes: 1024 * 1024,
-            default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
-            ..Default::default()
+        let Some(server) = start_test_server(test_context()).await else {
+            return;
         };
-
-        let log = dropshot::ConfigLogging::StderrTerminal {
-            level: dropshot::ConfigLoggingLevel::Warn,
-        }
-        .to_logger("bugview-service-test")
-        .expect("logger");
-
-        let server = match HttpServerStarter::new(&config_dropshot, api, ctx, &log) {
-            Ok(starter) => starter.start(),
-            Err(e) => {
-                if std::env::var("CI").is_ok() {
-                    panic!("Failed to start test server in CI: {}", e);
-                }
-                eprintln!("SKIPPING: failed to start server: {} (set CI=1 to fail)", e);
-                return;
-            }
-        };
-
-        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         let addr = server.local_addr();
 
         // Test various malformed keys
