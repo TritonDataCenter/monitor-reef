@@ -54,182 +54,236 @@ enum Commands {
     },
 }
 
-/// Text writer that implements AdfWriter trait for terminal output
-struct TextWriter {
-    output: String,
-    indent_level: usize,
-    current_link_url: Option<String>,
-}
-
-impl TextWriter {
-    fn new() -> Self {
-        Self {
-            output: String::new(),
-            indent_level: 0,
-            current_link_url: None,
-        }
-    }
-
-    fn into_string(self) -> String {
-        self.output
-    }
-}
-
-impl jira_api::adf::AdfWriter for TextWriter {
-    fn write_text(&mut self, text: &str) {
-        self.output.push_str(text);
-    }
-
-    fn start_link(&mut self, url: &str) {
-        self.current_link_url = Some(url.to_string());
-        self.output.push('[');
-    }
-
-    fn end_link(&mut self) {
-        self.output.push_str("](");
-        if let Some(url) = self.current_link_url.take() {
-            self.output.push_str(&url);
-        }
-        self.output.push(')');
-    }
-
-    fn start_paragraph(&mut self) {
-        // No special marker for paragraph start
-    }
-
-    fn end_paragraph(&mut self) {
-        self.output.push('\n');
-    }
-
-    fn start_bullet_list(&mut self) {
-        self.indent_level += 1;
-    }
-
-    fn end_bullet_list(&mut self) {
-        self.indent_level -= 1;
-    }
-
-    fn start_ordered_list(&mut self) {
-        self.indent_level += 1;
-    }
-
-    fn end_ordered_list(&mut self) {
-        self.indent_level -= 1;
-    }
-
-    fn start_list_item(&mut self, index: Option<usize>) {
-        // Indent is already applied by parent list
-        let prefix_indent = if self.indent_level > 1 {
-            "  ".repeat(self.indent_level - 1)
-        } else {
-            String::new()
-        };
-        self.output.push_str(&prefix_indent);
-        if let Some(num) = index {
-            self.output.push_str(&format!("{}. ", num));
-        } else {
-            self.output.push_str("• ");
-        }
-    }
-
-    fn end_list_item(&mut self) {
-        // Trim trailing whitespace from list item content
-        self.output = self.output.trim_end().to_string();
-        self.output.push('\n');
-    }
-
-    fn start_heading(&mut self, level: u8) {
-        self.output.push_str(&"#".repeat(level as usize));
-        self.output.push(' ');
-    }
-
-    fn end_heading(&mut self, _level: u8) {
-        self.output.push('\n');
-    }
-
-    fn start_code_block(&mut self, _language: Option<&str>) {
-        self.output.push_str("\n```\n");
-    }
-
-    fn end_code_block(&mut self) {
-        self.output.push_str("```\n");
-    }
-
-    fn write_hard_break(&mut self) {
-        self.output.push('\n');
-    }
-
-    fn start_panel(&mut self, _panel_type: Option<&str>) {
-        self.output.push_str("\n┌");
-        self.output.push_str(&"─".repeat(68));
-        self.output.push_str("┐\n");
-    }
-
-    fn end_panel(&mut self, _panel_type: Option<&str>) {
-        // Process panel content to add "│ " prefix to each line
-        let panel_start = self.output.rfind("┐\n").unwrap_or(0) + 2;
-        let panel_content = self.output[panel_start..].to_string();
-        self.output.truncate(panel_start);
-
-        for line in panel_content.lines() {
-            self.output.push_str("│ ");
-            self.output.push_str(line);
-            self.output.push('\n');
-        }
-
-        self.output.push('└');
-        self.output.push_str(&"─".repeat(68));
-        self.output.push_str("┘\n");
-    }
-
-    fn start_strong(&mut self) {
-        self.output.push_str("**");
-    }
-
-    fn end_strong(&mut self) {
-        self.output.push_str("**");
-    }
-
-    fn start_emphasis(&mut self) {
-        self.output.push('*');
-    }
-
-    fn end_emphasis(&mut self) {
-        self.output.push('*');
-    }
-
-    fn start_inline_code(&mut self) {
-        self.output.push('`');
-    }
-
-    fn end_inline_code(&mut self) {
-        self.output.push('`');
-    }
-
-    fn start_strike(&mut self) {
-        self.output.push_str("~~");
-    }
-
-    fn end_strike(&mut self) {
-        self.output.push_str("~~");
-    }
-
-    fn write_mention(&mut self, display: &str) {
-        self.output.push_str(&format!("@{}", display));
-    }
-
-    fn write_inline_card(&mut self, _url: &str, display: &str) {
-        self.output.push_str(&format!("[{}]", display));
-    }
-}
-
 /// Extract text from ADF (Atlassian Document Format) content for terminal display
-///
-/// This function uses the shared ADF rendering logic from jira-api.
-fn extract_adf_text(nodes: &serde_json::Value, _indent_level: usize) -> String {
-    let mut writer = TextWriter::new();
-    jira_api::adf::render_adf(nodes, &mut writer);
-    writer.into_string()
+fn extract_adf_text(nodes: &serde_json::Value) -> String {
+    let mut output = String::new();
+    render_adf_to_text(nodes, &mut output, 0);
+    output
+}
+
+fn render_adf_to_text(nodes: &serde_json::Value, output: &mut String, indent_level: usize) {
+    let Some(nodes_array) = nodes.as_array() else {
+        return;
+    };
+
+    for node in nodes_array {
+        let Some(node_obj) = node.as_object() else {
+            continue;
+        };
+        let node_type = node_obj.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+        match node_type {
+            "paragraph" => {
+                if let Some(content) = node_obj.get("content") {
+                    render_adf_to_text(content, output, indent_level);
+                }
+                output.push('\n');
+            }
+
+            "text" => {
+                if let Some(text) = node_obj.get("text").and_then(|t| t.as_str()) {
+                    let marks = node_obj
+                        .get("marks")
+                        .and_then(|m| m.as_array())
+                        .map(|m| m.as_slice())
+                        .unwrap_or(&[]);
+
+                    let mut has_strong = false;
+                    let mut has_em = false;
+                    let mut has_code = false;
+                    let mut has_strike = false;
+                    let mut link_href: Option<&str> = None;
+
+                    for mark in marks {
+                        if let Some(mark_type) = mark.get("type").and_then(|t| t.as_str()) {
+                            match mark_type {
+                                "strong" => has_strong = true,
+                                "em" => has_em = true,
+                                "code" => has_code = true,
+                                "strike" => has_strike = true,
+                                "link" => {
+                                    link_href = mark
+                                        .get("attrs")
+                                        .and_then(|a| a.get("href"))
+                                        .and_then(|h| h.as_str());
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+
+                    if link_href.is_some() {
+                        output.push('[');
+                    }
+                    if has_strong {
+                        output.push_str("**");
+                    }
+                    if has_em {
+                        output.push('*');
+                    }
+                    if has_code {
+                        output.push('`');
+                    }
+                    if has_strike {
+                        output.push_str("~~");
+                    }
+
+                    output.push_str(text);
+
+                    if has_strike {
+                        output.push_str("~~");
+                    }
+                    if has_code {
+                        output.push('`');
+                    }
+                    if has_em {
+                        output.push('*');
+                    }
+                    if has_strong {
+                        output.push_str("**");
+                    }
+                    if let Some(href) = link_href {
+                        output.push_str("](");
+                        output.push_str(href);
+                        output.push(')');
+                    }
+                }
+            }
+
+            "inlineCard" => {
+                if let Some(attrs) = node_obj.get("attrs")
+                    && let Some(url) = attrs.get("url").and_then(|u| u.as_str())
+                {
+                    let display = url.rsplit('/').next().unwrap_or(url);
+                    output.push_str(&format!("[{}]", display));
+                }
+            }
+
+            "codeBlock" => {
+                output.push_str("\n```\n");
+                if let Some(content) = node_obj.get("content") {
+                    render_adf_to_text(content, output, indent_level);
+                }
+                output.push_str("```\n");
+            }
+
+            "hardBreak" => {
+                output.push('\n');
+            }
+
+            "mention" => {
+                if let Some(attrs) = node_obj.get("attrs") {
+                    let display = attrs
+                        .get("text")
+                        .and_then(|t| t.as_str())
+                        .map(|t| t.strip_prefix('@').unwrap_or(t))
+                        .or_else(|| attrs.get("id").and_then(|i| i.as_str()));
+                    if let Some(d) = display {
+                        output.push_str(&format!("@{}", d));
+                    }
+                }
+            }
+
+            "bulletList" => {
+                if let Some(content) = node_obj.get("content")
+                    && let Some(items) = content.as_array()
+                {
+                    for item in items {
+                        let prefix_indent = if indent_level > 0 {
+                            "  ".repeat(indent_level)
+                        } else {
+                            String::new()
+                        };
+                        output.push_str(&prefix_indent);
+                        output.push_str("• ");
+                        if let Some(item_content) = item.get("content") {
+                            render_adf_to_text(item_content, output, indent_level + 1);
+                        }
+                        // Trim trailing whitespace and ensure newline
+                        while output.ends_with(' ') || output.ends_with('\t') {
+                            output.pop();
+                        }
+                        if !output.ends_with('\n') {
+                            output.push('\n');
+                        }
+                    }
+                }
+            }
+
+            "orderedList" => {
+                if let Some(content) = node_obj.get("content")
+                    && let Some(items) = content.as_array()
+                {
+                    for (i, item) in items.iter().enumerate() {
+                        let prefix_indent = if indent_level > 0 {
+                            "  ".repeat(indent_level)
+                        } else {
+                            String::new()
+                        };
+                        output.push_str(&prefix_indent);
+                        output.push_str(&format!("{}. ", i + 1));
+                        if let Some(item_content) = item.get("content") {
+                            render_adf_to_text(item_content, output, indent_level + 1);
+                        }
+                        while output.ends_with(' ') || output.ends_with('\t') {
+                            output.pop();
+                        }
+                        if !output.ends_with('\n') {
+                            output.push('\n');
+                        }
+                    }
+                }
+            }
+
+            "listItem" => {
+                if let Some(content) = node_obj.get("content") {
+                    render_adf_to_text(content, output, indent_level);
+                }
+            }
+
+            "heading" => {
+                let level = node_obj
+                    .get("attrs")
+                    .and_then(|a| a.get("level"))
+                    .and_then(|l| l.as_u64())
+                    .unwrap_or(1)
+                    .min(6) as usize;
+                output.push_str(&"#".repeat(level));
+                output.push(' ');
+                if let Some(content) = node_obj.get("content") {
+                    render_adf_to_text(content, output, indent_level);
+                }
+                output.push('\n');
+            }
+
+            "panel" => {
+                output.push_str("\n┌");
+                output.push_str(&"─".repeat(68));
+                output.push_str("┐\n");
+                let panel_start = output.len();
+                if let Some(content) = node_obj.get("content") {
+                    render_adf_to_text(content, output, indent_level);
+                }
+                // Process panel content to add "│ " prefix to each line
+                let panel_content = output[panel_start..].to_string();
+                output.truncate(panel_start);
+                for line in panel_content.lines() {
+                    output.push_str("│ ");
+                    output.push_str(line);
+                    output.push('\n');
+                }
+                output.push('└');
+                output.push_str(&"─".repeat(68));
+                output.push_str("┘\n");
+            }
+
+            _ => {
+                if let Some(content) = node_obj.get("content") {
+                    render_adf_to_text(content, output, indent_level);
+                }
+            }
+        }
+    }
 }
 /// Format a timestamp into a human-readable format
 ///
@@ -435,7 +489,7 @@ async fn main() -> Result<()> {
                     } else if let Some(desc_obj) = description.as_object()
                         && let Some(content) = desc_obj.get("content")
                     {
-                        let text = extract_adf_text(content, 0);
+                        let text = extract_adf_text(content);
                         print!("{}", text);
                     }
                     println!();
@@ -485,7 +539,7 @@ async fn main() -> Result<()> {
                             && let Some(body_obj) = body.as_object()
                             && let Some(content) = body_obj.get("content")
                         {
-                            let text = extract_adf_text(content, 0);
+                            let text = extract_adf_text(content);
                             print!("{}", text);
                         }
                         println!();
@@ -507,7 +561,7 @@ mod tests {
         let adf = serde_json::json!([
             { "type": "inlineCard", "attrs": {"url": "https://example.com/path/ISSUE-123"} }
         ]);
-        let out = extract_adf_text(&adf, 0);
+        let out = extract_adf_text(&adf);
         assert!(out.contains("[ISSUE-123]"), "output was: {}", out);
     }
 
@@ -516,7 +570,7 @@ mod tests {
         let adf = serde_json::json!([
             {"type": "inlineCard", "attrs": {"url": "ISSUE-456"}}
         ]);
-        let out = extract_adf_text(&adf, 0);
+        let out = extract_adf_text(&adf);
         assert!(out.contains("[ISSUE-456]"));
     }
 
@@ -529,7 +583,7 @@ mod tests {
                 "marks": [{"type": "link", "attrs": {"href": "https://example.com"}}]
             }
         ]);
-        let out = extract_adf_text(&adf, 0);
+        let out = extract_adf_text(&adf);
         assert_eq!(out, "[click here](https://example.com)");
     }
 
@@ -545,7 +599,7 @@ mod tests {
                 ]
             }
         ]);
-        let out = extract_adf_text(&adf, 0);
+        let out = extract_adf_text(&adf);
         assert_eq!(out, "[**bold link**](https://example.com)");
     }
 }

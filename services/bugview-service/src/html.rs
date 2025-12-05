@@ -310,153 +310,214 @@ impl HtmlRenderer {
     }
 }
 
-/// HTML writer that implements AdfWriter trait
-struct HtmlWriter {
-    output: String,
-}
-
-impl HtmlWriter {
-    fn new() -> Self {
-        Self {
-            output: String::new(),
-        }
-    }
-
-    fn into_string(self) -> String {
-        self.output
-    }
-}
-
-impl jira_api::adf::AdfWriter for HtmlWriter {
-    fn write_text(&mut self, text: &str) {
-        self.output.push_str(&html_escape(text));
-    }
-
-    fn start_link(&mut self, url: &str) {
-        self.output.push_str(&format!(
-            r#"<a href="{}" rel="noopener noreferrer" target="_blank">"#,
-            html_escape(url)
-        ));
-    }
-
-    fn end_link(&mut self) {
-        self.output.push_str("</a>");
-    }
-
-    fn start_paragraph(&mut self) {
-        self.output.push_str("<p>");
-    }
-
-    fn end_paragraph(&mut self) {
-        self.output.push_str("</p>\n");
-    }
-
-    fn start_bullet_list(&mut self) {
-        self.output.push_str("<ul>\n");
-    }
-
-    fn end_bullet_list(&mut self) {
-        self.output.push_str("</ul>\n");
-    }
-
-    fn start_ordered_list(&mut self) {
-        self.output.push_str("<ol>\n");
-    }
-
-    fn end_ordered_list(&mut self) {
-        self.output.push_str("</ol>\n");
-    }
-
-    fn start_list_item(&mut self, _index: Option<usize>) {
-        self.output.push_str("<li>");
-    }
-
-    fn end_list_item(&mut self) {
-        self.output.push_str("</li>\n");
-    }
-
-    fn start_heading(&mut self, level: u8) {
-        self.output.push_str(&format!("<h{}>", level));
-    }
-
-    fn end_heading(&mut self, level: u8) {
-        self.output.push_str(&format!("</h{}>\n", level));
-    }
-
-    fn start_code_block(&mut self, _language: Option<&str>) {
-        self.output.push_str("<pre><code>");
-    }
-
-    fn end_code_block(&mut self) {
-        self.output.push_str("</code></pre>\n");
-    }
-
-    fn write_hard_break(&mut self) {
-        self.output.push_str("<br>\n");
-    }
-
-    fn start_panel(&mut self, _panel_type: Option<&str>) {
-        self.output
-            .push_str(r#"<div class="alert alert-info" style="margin: 10px 0;">"#);
-    }
-
-    fn end_panel(&mut self, _panel_type: Option<&str>) {
-        self.output.push_str("</div>\n");
-    }
-
-    fn start_strong(&mut self) {
-        self.output.push_str("<strong>");
-    }
-
-    fn end_strong(&mut self) {
-        self.output.push_str("</strong>");
-    }
-
-    fn start_emphasis(&mut self) {
-        self.output.push_str("<em>");
-    }
-
-    fn end_emphasis(&mut self) {
-        self.output.push_str("</em>");
-    }
-
-    fn start_inline_code(&mut self) {
-        self.output.push_str("<code>");
-    }
-
-    fn end_inline_code(&mut self) {
-        self.output.push_str("</code>");
-    }
-
-    fn start_strike(&mut self) {
-        self.output.push_str("<del>");
-    }
-
-    fn end_strike(&mut self) {
-        self.output.push_str("</del>");
-    }
-
-    fn write_mention(&mut self, display: &str) {
-        self.output
-            .push_str(&format!("<strong>@{}</strong>", html_escape(display)));
-    }
-
-    fn write_inline_card(&mut self, url: &str, display: &str) {
-        self.output.push_str(&format!(
-            r#"<a href="{}" rel="noopener noreferrer" target="_blank">{}</a>"#,
-            html_escape(url),
-            html_escape(display)
-        ));
-    }
-}
-
 /// Convert ADF (Atlassian Document Format) to HTML
 ///
-/// This function uses the shared ADF rendering logic from jira-api.
+/// # Security
+///
+/// This function is a trust boundary - it receives untrusted content from JIRA and must
+/// produce safe HTML. All text content is HTML-escaped via `html_escape()` before rendering.
 fn adf_to_html(nodes: &serde_json::Value) -> String {
-    let mut writer = HtmlWriter::new();
-    jira_api::adf::render_adf(nodes, &mut writer);
-    writer.into_string()
+    let mut output = String::new();
+    render_adf_to_html(nodes, &mut output);
+    output
+}
+
+fn render_adf_to_html(nodes: &serde_json::Value, output: &mut String) {
+    let Some(nodes_array) = nodes.as_array() else {
+        return;
+    };
+
+    for node in nodes_array {
+        let Some(node_obj) = node.as_object() else {
+            continue;
+        };
+        let node_type = node_obj.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+        match node_type {
+            "paragraph" => {
+                output.push_str("<p>");
+                if let Some(content) = node_obj.get("content") {
+                    render_adf_to_html(content, output);
+                }
+                output.push_str("</p>\n");
+            }
+
+            "text" => {
+                if let Some(text) = node_obj.get("text").and_then(|t| t.as_str()) {
+                    let marks = node_obj
+                        .get("marks")
+                        .and_then(|m| m.as_array())
+                        .map(|m| m.as_slice())
+                        .unwrap_or(&[]);
+
+                    let mut has_strong = false;
+                    let mut has_em = false;
+                    let mut has_code = false;
+                    let mut has_strike = false;
+                    let mut link_href: Option<&str> = None;
+
+                    for mark in marks {
+                        if let Some(mark_type) = mark.get("type").and_then(|t| t.as_str()) {
+                            match mark_type {
+                                "strong" => has_strong = true,
+                                "em" => has_em = true,
+                                "code" => has_code = true,
+                                "strike" => has_strike = true,
+                                "link" => {
+                                    link_href = mark
+                                        .get("attrs")
+                                        .and_then(|a| a.get("href"))
+                                        .and_then(|h| h.as_str());
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+
+                    if let Some(href) = link_href {
+                        output.push_str(&format!(
+                            r#"<a href="{}" rel="noopener noreferrer" target="_blank">"#,
+                            html_escape(href)
+                        ));
+                    }
+                    if has_strong {
+                        output.push_str("<strong>");
+                    }
+                    if has_em {
+                        output.push_str("<em>");
+                    }
+                    if has_code {
+                        output.push_str("<code>");
+                    }
+                    if has_strike {
+                        output.push_str("<del>");
+                    }
+
+                    output.push_str(&html_escape(text));
+
+                    if has_strike {
+                        output.push_str("</del>");
+                    }
+                    if has_code {
+                        output.push_str("</code>");
+                    }
+                    if has_em {
+                        output.push_str("</em>");
+                    }
+                    if has_strong {
+                        output.push_str("</strong>");
+                    }
+                    if link_href.is_some() {
+                        output.push_str("</a>");
+                    }
+                }
+            }
+
+            "inlineCard" => {
+                if let Some(attrs) = node_obj.get("attrs")
+                    && let Some(url) = attrs.get("url").and_then(|u| u.as_str())
+                {
+                    let display = url.rsplit('/').next().unwrap_or(url);
+                    output.push_str(&format!(
+                        r#"<a href="{}" rel="noopener noreferrer" target="_blank">{}</a>"#,
+                        html_escape(url),
+                        html_escape(display)
+                    ));
+                }
+            }
+
+            "codeBlock" => {
+                output.push_str("<pre><code>");
+                if let Some(content) = node_obj.get("content") {
+                    render_adf_to_html(content, output);
+                }
+                output.push_str("</code></pre>\n");
+            }
+
+            "hardBreak" => {
+                output.push_str("<br>\n");
+            }
+
+            "mention" => {
+                if let Some(attrs) = node_obj.get("attrs") {
+                    let display = attrs
+                        .get("text")
+                        .and_then(|t| t.as_str())
+                        .map(|t| t.strip_prefix('@').unwrap_or(t))
+                        .or_else(|| attrs.get("id").and_then(|i| i.as_str()));
+                    if let Some(d) = display {
+                        output.push_str(&format!("<strong>@{}</strong>", html_escape(d)));
+                    }
+                }
+            }
+
+            "bulletList" => {
+                output.push_str("<ul>\n");
+                if let Some(content) = node_obj.get("content")
+                    && let Some(items) = content.as_array()
+                {
+                    for item in items {
+                        output.push_str("<li>");
+                        if let Some(item_content) = item.get("content") {
+                            render_adf_to_html(item_content, output);
+                        }
+                        output.push_str("</li>\n");
+                    }
+                }
+                output.push_str("</ul>\n");
+            }
+
+            "orderedList" => {
+                output.push_str("<ol>\n");
+                if let Some(content) = node_obj.get("content")
+                    && let Some(items) = content.as_array()
+                {
+                    for item in items {
+                        output.push_str("<li>");
+                        if let Some(item_content) = item.get("content") {
+                            render_adf_to_html(item_content, output);
+                        }
+                        output.push_str("</li>\n");
+                    }
+                }
+                output.push_str("</ol>\n");
+            }
+
+            "listItem" => {
+                if let Some(content) = node_obj.get("content") {
+                    render_adf_to_html(content, output);
+                }
+            }
+
+            "heading" => {
+                let level = node_obj
+                    .get("attrs")
+                    .and_then(|a| a.get("level"))
+                    .and_then(|l| l.as_u64())
+                    .unwrap_or(1)
+                    .min(6) as u8;
+                output.push_str(&format!("<h{}>", level));
+                if let Some(content) = node_obj.get("content") {
+                    render_adf_to_html(content, output);
+                }
+                output.push_str(&format!("</h{}>\n", level));
+            }
+
+            "panel" => {
+                output.push_str(r#"<div class="alert alert-info" style="margin: 10px 0;">"#);
+                if let Some(content) = node_obj.get("content") {
+                    render_adf_to_html(content, output);
+                }
+                output.push_str("</div>\n");
+            }
+
+            _ => {
+                if let Some(content) = node_obj.get("content") {
+                    render_adf_to_html(content, output);
+                }
+            }
+        }
+    }
 }
 
 /// Simple HTML escape function
