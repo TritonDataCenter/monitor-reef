@@ -99,7 +99,7 @@ Copyright 2025 Edgecast Cloud LLC.
       text-align: center;
     }
   </style>
-  <title>{{ title }}</title>
+  <title>{% block title %}Bugview{% endblock %}</title>
 </head>
 <body>
   <nav class="navbar navbar-dark bg-dark fixed-top">
@@ -108,7 +108,7 @@ Copyright 2025 Edgecast Cloud LLC.
     </div>
   </nav>
   <div class="container">
-      {{ container|safe }}
+      {% block body %}{% endblock %}
   </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz" crossorigin="anonymous"></script>
 </body>
