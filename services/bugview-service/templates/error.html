@@ -1,0 +1,19 @@
+<!--
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this
+file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+Copyright 2025 Edgecast Cloud LLC.
+-->
+
+{% extends "primary.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block body %}
+<div class="alert alert-danger">
+  <h1>{{ status_code }} - {{ title }}</h1>
+  <p>{{ message }}</p>
+  <p><a href="/bugview/index.html">Return to issue index</a></p>
+</div>
+{% endblock %}

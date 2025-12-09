@@ -5,16 +5,15 @@
 # Copyright 2025 Edgecast Cloud LLC.
 
 [package]
-name = "jira-client"
+name = "bugview-client"
 version = "0.1.0"
 edition.workspace = true
 
 [lib]
-name = "jira_client"
+name = "bugview_client"
 path = "src/lib.rs"
 
 [dependencies]
-jira-api = { path = "../../../apis/jira-api" }
 progenitor-client = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }

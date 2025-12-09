@@ -17,5 +17,33 @@
 //!
 //! The generated client provides a type-safe, async interface to these endpoints.
 
+// Re-export IssueKey from jira-api for type-safe usage
+pub use jira_api::IssueKey;
+
 // Include the Progenitor-generated client code
 include!(concat!(env!("OUT_DIR"), "/client.rs"));
+
+// Add a conversion from generated Issue (with String key) to jira_api::Issue (with IssueKey)
+impl From<types::Issue> for jira_api::Issue {
+    fn from(issue: types::Issue) -> Self {
+        jira_api::Issue {
+            key: IssueKey::new_unchecked(issue.key),
+            id: issue.id,
+            fields: issue.fields.into_iter().collect(),
+            rendered_fields: issue.rendered_fields.map(|m| m.into_iter().collect()),
+        }
+    }
+}
+
+// Add a conversion from generated RemoteLink to jira_api::RemoteLink
+impl From<types::RemoteLink> for jira_api::RemoteLink {
+    fn from(link: types::RemoteLink) -> Self {
+        jira_api::RemoteLink {
+            id: link.id,
+            object: link.object.map(|obj| jira_api::RemoteLinkObject {
+                url: obj.url,
+                title: obj.title,
+            }),
+        }
+    }
+}

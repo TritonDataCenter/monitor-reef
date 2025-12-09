@@ -6,9 +6,14 @@
 
 [workspace]
 members = [
+    "apis/bugview-api",
     "apis/jira-api",
+    "cli/bugview-cli",
+    "clients/internal/bugview-client",
     "clients/internal/jira-client",
     "openapi-manager",
+    "services/bugview-service",
+    "services/jira-stub-server",
 ]
 resolver = "2"
 
@@ -40,3 +45,4 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 openapiv3 = "2.0"
 camino = "1.1"
 cargo_toml = "0.22"
+chrono = "0.4"

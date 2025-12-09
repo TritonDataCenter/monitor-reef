@@ -1,0 +1,61 @@
+<!--
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this
+file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+Copyright 2025 Edgecast Cloud LLC.
+-->
+
+{% extends "primary.html" %}
+
+{% block title %}{{ title }}{% endblock %}
+
+{% block body %}
+  <h1>{{ key }}</h1>
+  <h2>{{ summary }}</h2>
+
+  <dl class="dl-horizontal">
+    <dt>Status:</dt><dd>{{ status }}</dd>
+  {% if let Some(res) = resolution %}
+    <dt>Resolution:</dt><dd>{{ res }}</dd>
+  {% endif %}
+    <dt>Created:</dt><dd>{{ created }}</dd>
+    <dt>Updated:</dt><dd>{{ updated }}</dd>
+  </dl>
+
+  {% if !description.is_empty() %}
+  <h3>Description</h3>
+  <div class="well">
+  {# SECURITY: description is pre-sanitized HTML from adf_to_html() in html.rs.
+     The HtmlWriter implementation HTML-escapes all text content via html_escape().
+     See apis/jira-api/src/adf.rs for the AdfWriter trait security documentation. #}
+  {{ description|safe }}
+  </div>
+  {% endif %}
+
+  {% if !comments.is_empty() %}
+  <h2>Comments ({{ comments.len() }})</h2>
+  {% for comment in comments %}
+  <div class="well" style="margin-bottom: 15px;">
+    <p><strong>{{ comment.author }}</strong> commented on {{ comment.created }}{% if let Some(edited) = comment.edited %} <em>(edited {{ edited }})</em>{% endif %}:</p>
+  {# SECURITY: comment.body is pre-sanitized HTML from adf_to_html() or html_escape().
+     All text content from JIRA ADF documents is HTML-escaped before insertion. #}
+  {{ comment.body|safe }}
+  </div>
+  {% endfor %}
+  {% endif %}
+
+  {% if remote_links_error %}
+  <h2>Related Links</h2>
+  <div class="alert alert-warning">
+    <strong>Note:</strong> Related links could not be loaded at this time.
+  </div>
+  {% else if !remote_links.is_empty() %}
+  <h2>Related Links</h2>
+  <p><ul>
+  {% for link in remote_links %}
+    <li><a rel="noopener noreferrer" target="_blank" href="{{ link.url }}">{{ link.title }}</a></li>
+  {% endfor %}
+  </ul></p>
+  {% endif %}
+{% endblock %}

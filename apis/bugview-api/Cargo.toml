@@ -5,22 +5,17 @@
 # Copyright 2025 Edgecast Cloud LLC.
 
 [package]
-name = "jira-client"
+name = "bugview-api"
 version = "0.1.0"
 edition.workspace = true
 
-[lib]
-name = "jira_client"
-path = "src/lib.rs"
-
 [dependencies]
-jira-api = { path = "../../../apis/jira-api" }
-progenitor-client = { workspace = true }
-reqwest = { workspace = true }
+dropshot = { workspace = true }
+schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+http = "1.1"
+jira-api = { path = "../jira-api" }
 
-[build-dependencies]
-progenitor = { workspace = true }
-serde_json = { workspace = true }
-openapiv3 = { workspace = true }
+[lints.clippy]
+unused_async = "allow"

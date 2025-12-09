@@ -1,0 +1,479 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Bugview API",
+    "description": "Public JIRA issue viewer API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/bugview": {
+      "get": {
+        "tags": [
+          "redirects"
+        ],
+        "summary": "Redirect /bugview to /bugview/index.html",
+        "operationId": "redirect_bugview_root",
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bugview/fulljson/{key}": {
+      "get": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "Get full issue details as JSON",
+        "description": "Returns complete issue information including all fields.",
+        "operationId": "get_issue_full_json",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "description": "Issue key (e.g., \"PROJECT-123\")",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueDetails"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/bugview/index.html": {
+      "get": {
+        "tags": [
+          "html"
+        ],
+        "summary": "Get issue index as HTML",
+        "description": "Returns a paginated HTML view of public issues.",
+        "operationId": "get_issue_index_html",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "next_page_token",
+            "description": "Next page token for pagination (token-based, not offset)",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "description": "Sort field (key, created, or updated). Defaults to \"updated\" if omitted.",
+            "schema": {
+              "$ref": "#/components/schemas/IssueSort"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bugview/index.json": {
+      "get": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "Get issue index as JSON",
+        "description": "Returns a paginated list of public issues.",
+        "operationId": "get_issue_index_json",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "next_page_token",
+            "description": "Next page token for pagination (token-based, not offset)",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "description": "Sort field (key, created, or updated). Defaults to \"updated\" if omitted.",
+            "schema": {
+              "$ref": "#/components/schemas/IssueSort"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueListResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/bugview/issue/{key}": {
+      "get": {
+        "tags": [
+          "html"
+        ],
+        "summary": "Get issue details as HTML",
+        "description": "Returns an HTML view of a single issue with full details.",
+        "operationId": "get_issue_html",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "description": "Issue key (e.g., \"PROJECT-123\")",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/bugview/json/{key}": {
+      "get": {
+        "tags": [
+          "issues"
+        ],
+        "summary": "Get issue summary as JSON (legacy format)",
+        "description": "Returns issue key, summary, and web URL. This endpoint maintains backwards compatibility with the original Node.js bugview service.",
+        "operationId": "get_issue_json",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "description": "Issue key (e.g., \"PROJECT-123\")",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueSummary"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/bugview/label/{key}": {
+      "get": {
+        "tags": [
+          "html"
+        ],
+        "summary": "Get issues for a specific label as HTML",
+        "description": "Returns a paginated HTML view of issues with the specified label.",
+        "operationId": "get_label_index_html",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "description": "Label key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "next_page_token",
+            "description": "Next page token for pagination (token-based, not offset)",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sort",
+            "description": "Sort field (key, created, or updated). Defaults to \"updated\" if omitted.",
+            "schema": {
+              "$ref": "#/components/schemas/IssueSort"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "description": "Error information from a response.",
+        "type": "object",
+        "properties": {
+          "error_code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "request_id"
+        ]
+      },
+      "IssueDetails": {
+        "description": "Full issue details (matches original Node.js bugview format)",
+        "type": "object",
+        "properties": {
+          "fields": {
+            "description": "Issue fields (sanitized for public consumption)"
+          },
+          "id": {
+            "description": "JIRA internal issue ID",
+            "type": "string"
+          },
+          "key": {
+            "description": "Issue key (e.g., \"OS-1234\")",
+            "type": "string"
+          },
+          "remotelinks": {
+            "description": "Remote links (filtered by allowed domains)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RemoteLink"
+            }
+          }
+        },
+        "required": [
+          "fields",
+          "id",
+          "key",
+          "remotelinks"
+        ]
+      },
+      "IssueListItem": {
+        "description": "Simplified issue information for list views",
+        "type": "object",
+        "properties": {
+          "created": {
+            "description": "Creation timestamp",
+            "type": "string"
+          },
+          "key": {
+            "description": "Issue key (e.g., \"PROJECT-123\")",
+            "type": "string"
+          },
+          "resolution": {
+            "nullable": true,
+            "description": "Resolution status (if resolved)",
+            "type": "string"
+          },
+          "status": {
+            "description": "Issue status (e.g., \"Open\", \"Resolved\", \"Closed\")",
+            "type": "string"
+          },
+          "summary": {
+            "description": "Issue summary/title",
+            "type": "string"
+          },
+          "updated": {
+            "description": "Last updated timestamp",
+            "type": "string"
+          }
+        },
+        "required": [
+          "created",
+          "key",
+          "status",
+          "summary",
+          "updated"
+        ]
+      },
+      "IssueListResponse": {
+        "description": "Response for issue list endpoints",
+        "type": "object",
+        "properties": {
+          "is_last": {
+            "description": "True if this is the last page",
+            "type": "boolean"
+          },
+          "issues": {
+            "description": "Issues in this page (page size determined by service configuration)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IssueListItem"
+            }
+          },
+          "next_page_token": {
+            "nullable": true,
+            "description": "Token for next page (None if this is the last page)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "is_last",
+          "issues"
+        ]
+      },
+      "IssueSummary": {
+        "description": "Legacy issue summary format (for backwards compatibility with Node.js bugview)\n\nThis matches the original `/bugview/json/{key}` response format.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "Issue key (named \"id\" for legacy compatibility)",
+            "type": "string"
+          },
+          "summary": {
+            "description": "Issue summary/title",
+            "type": "string"
+          },
+          "web_url": {
+            "description": "URL to the bugview web page for this issue",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "summary",
+          "web_url"
+        ]
+      },
+      "RemoteLink": {
+        "description": "Remote link information",
+        "type": "object",
+        "properties": {
+          "title": {
+            "description": "Link title/description",
+            "type": "string"
+          },
+          "url": {
+            "description": "Link URL",
+            "type": "string"
+          }
+        },
+        "required": [
+          "title",
+          "url"
+        ]
+      },
+      "IssueSort": {
+        "description": "Sort field for issue lists",
+        "oneOf": [
+          {
+            "description": "Sort by issue key (e.g., OS-1234)",
+            "type": "string",
+            "enum": [
+              "key"
+            ]
+          },
+          {
+            "description": "Sort by creation date",
+            "type": "string",
+            "enum": [
+              "created"
+            ]
+          },
+          {
+            "description": "Sort by last update date (default)",
+            "type": "string",
+            "enum": [
+              "updated"
+            ]
+          }
+        ]
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "html"
+    },
+    {
+      "name": "issues"
+    },
+    {
+      "name": "redirects"
+    }
+  ]
+}

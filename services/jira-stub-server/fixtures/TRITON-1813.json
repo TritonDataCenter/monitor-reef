@@ -1,0 +1,460 @@
+{
+  "fields": {
+    "aggregateprogress": {
+      "progress": 0,
+      "total": 0
+    },
+    "aggregatetimeestimate": null,
+    "aggregatetimeoriginalestimate": null,
+    "aggregatetimespent": null,
+    "assignee": {
+      "accountId": "70121:a36ea101-b8c9-4f3d-825e-334bc077ca5e",
+      "accountType": "atlassian",
+      "active": true,
+      "avatarUrls": {
+        "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/TW-4.png",
+        "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/TW-4.png",
+        "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/TW-4.png",
+        "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/initials/TW-4.png"
+      },
+      "displayName": "Todd Whiteman",
+      "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=70121%3Aa36ea101-b8c9-4f3d-825e-334bc077ca5e",
+      "timeZone": "America/Detroit"
+    },
+    "attachment": [],
+    "comment": {
+      "comments": [
+        {
+          "author": {
+            "accountId": "62562ecded2b3e0074fca056",
+            "accountType": "atlassian",
+            "active": true,
+            "avatarUrls": {
+              "16x16": "https://secure.gravatar.com/avatar/dc8ef6d4e88e0862b21e3628c3760ddb?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FJB-3.png",
+              "24x24": "https://secure.gravatar.com/avatar/dc8ef6d4e88e0862b21e3628c3760ddb?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FJB-3.png",
+              "32x32": "https://secure.gravatar.com/avatar/dc8ef6d4e88e0862b21e3628c3760ddb?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FJB-3.png",
+              "48x48": "https://secure.gravatar.com/avatar/dc8ef6d4e88e0862b21e3628c3760ddb?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FJB-3.png"
+            },
+            "displayName": "Jira Bot",
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=62562ecded2b3e0074fca056",
+            "timeZone": "America/Detroit"
+          },
+          "body": {
+            "content": [
+              {
+                "attrs": {
+                  "panelType": "info"
+                },
+                "content": [
+                  {
+                    "content": [
+                      {
+                        "marks": [
+                          {
+                            "attrs": {
+                              "href": "https://github.com/joyent/sdc-vmapi/commit/8887095d7413f4b9941f27093cefea2625d67b35"
+                            },
+                            "type": "link"
+                          },
+                          {
+                            "type": "strong"
+                          }
+                        ],
+                        "text": "sdc-vmapi commit 8887095d7413f4b9941f27093cefea2625d67b35",
+                        "type": "text"
+                      },
+                      {
+                        "text": " ",
+                        "type": "text"
+                      },
+                      {
+                        "marks": [
+                          {
+                            "type": "strong"
+                          }
+                        ],
+                        "text": "(",
+                        "type": "text"
+                      },
+                      {
+                        "marks": [
+                          {
+                            "attrs": {
+                              "href": "https://github.com/joyent/sdc-vmapi/commits/master"
+                            },
+                            "type": "link"
+                          },
+                          {
+                            "type": "strong"
+                          }
+                        ],
+                        "text": "branch master",
+                        "type": "text"
+                      },
+                      {
+                        "marks": [
+                          {
+                            "type": "strong"
+                          }
+                        ],
+                        "text": ", by Todd Whiteman)",
+                        "type": "text"
+                      }
+                    ],
+                    "type": "paragraph"
+                  },
+                  {
+                    "content": [
+                      {
+                        "attrs": {
+                          "url": "https://mnx.atlassian.net/browse/TRITON-1813#icft=TRITON-1813"
+                        },
+                        "type": "inlineCard"
+                      },
+                      {
+                        "text": " non-integer 'refreservation' values confound sdc-migrate",
+                        "type": "text"
+                      },
+                      {
+                        "type": "hardBreak"
+                      },
+                      {
+                        "text": "Reviewed by: Mike Gerdts <mike.gerdts@joyent.com>",
+                        "type": "text"
+                      },
+                      {
+                        "type": "hardBreak"
+                      },
+                      {
+                        "text": "Approved by: Pedro Palazón Candel <pedro@joyent.com>",
+                        "type": "text"
+                      }
+                    ],
+                    "type": "paragraph"
+                  }
+                ],
+                "type": "panel"
+              }
+            ],
+            "type": "doc",
+            "version": 1
+          },
+          "created": "2019-07-25T16:11:06.894-0400",
+          "id": "116990",
+          "jsdPublic": true,
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/49130/comment/116990",
+          "updateAuthor": {
+            "accountId": "62562ecded2b3e0074fca056",
+            "accountType": "atlassian",
+            "active": true,
+            "avatarUrls": {
+              "16x16": "https://secure.gravatar.com/avatar/dc8ef6d4e88e0862b21e3628c3760ddb?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FJB-3.png",
+              "24x24": "https://secure.gravatar.com/avatar/dc8ef6d4e88e0862b21e3628c3760ddb?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FJB-3.png",
+              "32x32": "https://secure.gravatar.com/avatar/dc8ef6d4e88e0862b21e3628c3760ddb?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FJB-3.png",
+              "48x48": "https://secure.gravatar.com/avatar/dc8ef6d4e88e0862b21e3628c3760ddb?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FJB-3.png"
+            },
+            "displayName": "Jira Bot",
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=62562ecded2b3e0074fca056",
+            "timeZone": "America/Detroit"
+          },
+          "updated": "2019-07-25T16:11:06.894-0400"
+        }
+      ],
+      "maxResults": 1,
+      "self": "https://mnx.atlassian.net/rest/api/3/issue/49130/comment",
+      "startAt": 0,
+      "total": 1
+    },
+    "components": [],
+    "created": "2019-07-12T16:31:13.363-0400",
+    "creator": {
+      "accountId": "62562edc9e7380006fb2e836",
+      "accountType": "atlassian",
+      "active": true,
+      "avatarUrls": {
+        "16x16": "https://secure.gravatar.com/avatar/b33e85a348171979ceabba74c57912e4?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FRK-1.png",
+        "24x24": "https://secure.gravatar.com/avatar/b33e85a348171979ceabba74c57912e4?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FRK-1.png",
+        "32x32": "https://secure.gravatar.com/avatar/b33e85a348171979ceabba74c57912e4?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FRK-1.png",
+        "48x48": "https://secure.gravatar.com/avatar/b33e85a348171979ceabba74c57912e4?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FRK-1.png"
+      },
+      "displayName": "Ryan Kitchen",
+      "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=62562edc9e7380006fb2e836",
+      "timeZone": "America/Detroit"
+    },
+    "customfield_10001": null,
+    "customfield_10002": [],
+    "customfield_10003": null,
+    "customfield_10004": null,
+    "customfield_10005": null,
+    "customfield_10006": null,
+    "customfield_10007": null,
+    "customfield_10008": null,
+    "customfield_10009": null,
+    "customfield_10010": null,
+    "customfield_10014": null,
+    "customfield_10015": null,
+    "customfield_10016": null,
+    "customfield_10017": null,
+    "customfield_10019": "1|hzzlxb:",
+    "customfield_10020": null,
+    "customfield_10021": null,
+    "customfield_10022": null,
+    "customfield_10023": null,
+    "customfield_10024": "2019-07-25T16:11:06.894-0400",
+    "customfield_10025": "1_*:*_1_*:*_1122102946_*|*_5_*:*_1_*:*_0",
+    "customfield_10029": null,
+    "customfield_10030": null,
+    "customfield_10032": null,
+    "customfield_10041": null,
+    "customfield_10042": null,
+    "customfield_10056": null,
+    "customfield_10060": null,
+    "customfield_10066": {
+      "id": "10173",
+      "self": "https://mnx.atlassian.net/rest/api/3/customFieldOption/10173",
+      "value": "No"
+    },
+    "customfield_10088": null,
+    "customfield_10093": null,
+    "customfield_10094": null,
+    "customfield_10095": null,
+    "customfield_10096": null,
+    "customfield_10097": null,
+    "customfield_10098": [],
+    "customfield_10099": null,
+    "customfield_10100": null,
+    "customfield_10101": null,
+    "customfield_10102": null,
+    "customfield_10103": null,
+    "customfield_10104": null,
+    "customfield_10105": null,
+    "customfield_10106": null,
+    "customfield_10109": null,
+    "customfield_10110": null,
+    "customfield_10111": null,
+    "customfield_10112": null,
+    "customfield_10114": null,
+    "customfield_10115": null,
+    "customfield_10116": null,
+    "customfield_10149": null,
+    "description": {
+      "content": [
+        {
+          "content": [
+            {
+              "text": "sdc-migrate error:",
+              "type": "text"
+            }
+          ],
+          "type": "paragraph"
+        },
+        {
+          "content": [
+            {
+              "text": "[root@RAA09044 (us-east-3b) ~]# sdc-migrate migrate b8bd617e-2bde-4092-df6e-f70ddbecacdf\n# Migration begin running in job a0e05c46-f0aa-419a-9c7e-ed5607a2966f\n - reserving instance\nFailure: failed to begin migration instance - \"vmadm exited with code: 1: Invalid value(s) for: disks.*.refreservation",
+              "type": "text"
+            }
+          ],
+          "type": "codeBlock"
+        },
+        {
+          "content": [
+            {
+              "text": "vmadm get:",
+              "type": "text"
+            }
+          ],
+          "type": "paragraph"
+        },
+        {
+          "content": [
+            {
+              "text": "=== Output from 00000000-0000-0000-0000-0025909437cc (RAA09033):\n{\n  \"zonename\": \"b8bd617e-2bde-4092-df6e-f70ddbecacdf\",\n  \"autoboot\": true,\n  \"brand\": \"bhyve\",\n  \"limit_priv\": \"default,-file_link_any,-net_access,-proc_fork,-proc_info,-proc_session\",\n  \"v\": 1,\n  \"create_timestamp\": \"2019-07-10T20:50:46.985Z\",\n  \"cpu_shares\": 256,\n  \"max_lwps\": 1000,\n  \"max_msg_ids\": 4096,\n  \"max_sem_ids\": 4096,\n  \"max_shm_ids\": 4096,\n  \"max_shm_memory\": 4096,\n  \"zfs_io_priority\": 20,\n  \"max_physical_memory\": 4352,\n  \"max_locked_memory\": 4352,\n  \"max_swap\": 8192,\n  \"cpu_cap\": 100,\n  \"billing_id\": \"16a8b78c-be87-4800-bd57-573f27f72988\",\n  \"owner_uuid\": \"e1d31137-c9eb-49b6-e4ad-b0bfc367bce4\",\n  \"archive_on_delete\": true,\n  \"disk_driver\": \"virtio\",\n  \"resolvers\": [\n    \"8.8.8.8\",\n    \"8.8.4.4\"\n  ],\n  \"ram\": 4096,\n  \"vcpus\": 1,\n  \"device\": null,\n  \"disks\": [\n    {\n      \"path\": \"/dev/zvol/rdsk/zones/b8bd617e-2bde-4092-df6e-f70ddbecacdf/disk0\",\n      \"boot\": true,\n      \"model\": \"virtio\",\n      \"media\": \"disk\",\n      \"image_size\": 10240,\n      \"image_uuid\": \"d6e56c0e-1e51-11e9-8ff1-2fecf38a5566\",\n      \"pci_slot\": \"0:4:0\",\n      \"uuid\": \"3eaca56a-5f7f-4022-8483-815a4bd45487\",\n      \"zfs_filesystem\": \"zones/b8bd617e-2bde-4092-df6e-f70ddbecacdf/disk0\",\n      \"zpool\": \"zones\",\n      \"size\": 10240,\n      \"compression\": \"lz4\",\n      \"refreservation\": 10562.5,\n      \"block_size\": 8192\n    },\n    {\n      \"path\": \"/dev/zvol/rdsk/zones/b8bd617e-2bde-4092-df6e-f70ddbecacdf/disk1\",\n      \"boot\": false,\n      \"model\": \"virtio\",\n      \"media\": \"disk\",\n      \"pci_slot\": \"0:4:1\",\n      \"uuid\": \"50e87ddb-1edc-41ef-c185-ce0c4366eb2d\",\n      \"zfs_filesystem\": \"zones/b8bd617e-2bde-4092-df6e-f70ddbecacdf/disk1\",\n      \"zpool\": \"zones\",\n      \"size\": 51200,\n      \"compression\": \"lz4\",\n      \"refreservation\": 52803.75,\n      \"block_size\": 8192\n    }\n  ],\n  \"nics\": [\n    {\n      \"interface\": \"net0\",\n      \"mac\": \"90:b8:d0:97:af:49\",\n      \"vlan_id\": 3105,\n      \"nic_tag\": \"external\",\n      \"gateway\": \"165.225.168.1\",\n      \"gateways\": [\n        \"165.225.168.1\"\n      ],\n      \"netmask\": \"255.255.252.0\",\n      \"ip\": \"165.225.168.90\",\n      \"ips\": [\n        \"165.225.168.90/22\"\n      ],\n      \"network_uuid\": \"feb7b2c5-0063-42f0-a4e6-b812917397f7\",\n      \"model\": \"virtio\",\n      \"mtu\": 1500,\n      \"primary\": true\n    }\n  ],\n  \"alias\": \"bhyvemignoflex\",\n  \"com1\": \"/dev/zconsole\",\n  \"com2\": \"socket,/tmp/vm.ttyb\",\n  \"zlog_mode\": \"g--\",\n  \"zlog_name\": \"platform.log\",\n  \"uuid\": \"b8bd617e-2bde-4092-df6e-f70ddbecacdf\",\n  \"zone_state\": \"running\",\n  \"zonepath\": \"/zones/b8bd617e-2bde-4092-df6e-f70ddbecacdf\",\n  \"hvm\": true,\n  \"zoneid\": 74,\n  \"zonedid\": 1999,\n  \"last_modified\": \"2019-07-10T20:51:45.000Z\",\n  \"firewall_enabled\": false,\n  \"server_uuid\": \"00000000-0000-0000-0000-0025909437cc\",\n  \"datacenter_name\": \"us-east-3b\",\n  \"platform_buildstamp\": \"20190510T191506Z\",\n  \"state\": \"running\",\n  \"boot_timestamp\": \"2019-07-10T20:51:00.000Z\",\n  \"init_restarts\": 0,\n  \"pid\": 88391,\n  \"customer_metadata\": {\n    \"root_authorized_keys\": \"ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDFrIKLpOj1IjZTfA1tWwFipbhooLDv+0oUvuqeCo6kZWp5WvJwQlEBG9zQlt4kru8jW+iA9uFDTVUIuAIcFKslT4bf+k9VfqqrLHXvg3iQEkS73SwSMtH7/ep/PXb4rRCUjzPzJck2sCidPm548Nz5LD/+K1Grab6vdB1uKvIE0Y0ljgh0q9Od0WPqX/tN/YoX9bbgeFzRUpOL3n4YZhYnTdyviba2wNjjLyWL1jlLCtBcOmedj9jKynjoHAIroNKS1EUE9QRl278W6aY0gI5plVXq75G6ZeAKbaVtM0SNFzVTnRCspefVSvSXQ3BGhNFWkA3dv5Pu5D1OrM1bRsUb ryankitchen@joyentmac12288.local\\nssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCorUE/O/h180V9kq10nTYW2dqXUyH/K65TqcIguQ3wgU/aa/MDimPbBGQ0RZSaJgmzyOsK4aR7lf0nyTD8bF2qZXrDIqDH9C2ZT22iirFWrWAu5N07aagSzJnks623t4hEODFVD1RNml+/id+qMAMsj/GIVs0N2KOfBH+w3ePmOwoCSzpIa94dtImmirPqsOl7oSSKmu0j3nAwp7X22uNcrzBwEtaHJfpRqnxNRxAQGf0C0FON+0QFSGiQitsCqYhvYDP7VoS3iYfGM52/cVfbuu6bCtvcshkm0kn+CdknxIxLjhxqPvaJFwobf3b/TFxfQOVB16kJQZf7Q+xMD/8J ra33it@x230.ra33it.net\\necdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBPUhvOBhknPDoD8QIc2TkaYTpCsjy0PIGw6RGb6HBw29I87+1viHvbNQKtq9V/tVJchs/dMUCfseyFaJV6YcPT8= PIV_slot_9A /C=US/ST=WA/L=Enumclaw/O=Joyent/OU=QA/CN=qa/emailAddress=ryan.kitchen@joyent.com\"\n  },\n  \"internal_metadata\": {\n    \"root_pw\": \"6Cibsods~sla\"\n  },\n  \"routes\": {},\n  \"tags\": {},\n  \"quota\": 1,\n  \"zfs_root_compression\": \"lz4\",\n  \"zfs_root_recsize\": 131072,\n  \"zfs_filesystem\": \"zones/b8bd617e-2bde-4092-df6e-f70ddbecacdf\",\n  \"zpool\": \"zones\",\n  \"snapshots\": []\n}",
+              "type": "text"
+            }
+          ],
+          "type": "codeBlock"
+        }
+      ],
+      "type": "doc",
+      "version": 1
+    },
+    "duedate": null,
+    "environment": null,
+    "fixVersions": [
+      {
+        "archived": true,
+        "id": "16410",
+        "name": "2019-08-15 YouFace",
+        "releaseDate": "2019-08-15",
+        "released": true,
+        "self": "https://mnx.atlassian.net/rest/api/3/version/16410"
+      }
+    ],
+    "issuelinks": [
+      {
+        "id": "19113",
+        "inwardIssue": {
+          "fields": {
+            "issuetype": {
+              "avatarId": 10303,
+              "description": "A problem or error.",
+              "hierarchyLevel": 0,
+              "iconUrl": "https://mnx.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
+              "id": "10004",
+              "name": "Bug",
+              "self": "https://mnx.atlassian.net/rest/api/3/issuetype/10004",
+              "subtask": false
+            },
+            "priority": {
+              "iconUrl": "https://mnx.atlassian.net/images/icons/priorities/major.svg",
+              "id": "10003",
+              "name": "4 - Normal",
+              "self": "https://mnx.atlassian.net/rest/api/3/priority/10003"
+            },
+            "status": {
+              "description": "A resolution has been taken, and it is awaiting verification by reporter. From here issues are either reopened, or are closed.",
+              "iconUrl": "https://mnx.atlassian.net/images/icons/statuses/resolved.png",
+              "id": "5",
+              "name": "Resolved",
+              "self": "https://mnx.atlassian.net/rest/api/3/status/5",
+              "statusCategory": {
+                "colorName": "green",
+                "id": 3,
+                "key": "done",
+                "name": "Done",
+                "self": "https://mnx.atlassian.net/rest/api/3/statuscategory/3"
+              }
+            },
+            "summary": "refreservation=auto behavior causes vm migration to fail"
+          },
+          "id": "49421",
+          "key": "TRITON-2298",
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/49421"
+        },
+        "self": "https://mnx.atlassian.net/rest/api/3/issueLink/19113",
+        "type": {
+          "id": "10002",
+          "inward": "is duplicated by",
+          "name": "Duplicate",
+          "outward": "duplicates",
+          "self": "https://mnx.atlassian.net/rest/api/3/issueLinkType/10002"
+        }
+      }
+    ],
+    "issuerestriction": {
+      "issuerestrictions": {},
+      "shouldDisplay": false
+    },
+    "issuetype": {
+      "avatarId": 10303,
+      "description": "A problem or error.",
+      "hierarchyLevel": 0,
+      "iconUrl": "https://mnx.atlassian.net/rest/api/2/universal_avatar/view/type/issuetype/avatar/10303?size=medium",
+      "id": "10004",
+      "name": "Bug",
+      "self": "https://mnx.atlassian.net/rest/api/3/issuetype/10004",
+      "subtask": false
+    },
+    "labels": [
+      "public",
+      "rfd-34"
+    ],
+    "lastViewed": null,
+    "priority": {
+      "iconUrl": "https://mnx.atlassian.net/images/icons/priorities/major.svg",
+      "id": "10003",
+      "name": "4 - Normal",
+      "self": "https://mnx.atlassian.net/rest/api/3/priority/10003"
+    },
+    "progress": {
+      "progress": 0,
+      "total": 0
+    },
+    "project": {
+      "avatarUrls": {
+        "16x16": "https://mnx.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10555?size=xsmall",
+        "24x24": "https://mnx.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10555?size=small",
+        "32x32": "https://mnx.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10555?size=medium",
+        "48x48": "https://mnx.atlassian.net/rest/api/3/universal_avatar/view/type/project/avatar/10555"
+      },
+      "id": "10032",
+      "key": "TRITON",
+      "name": "TRITON: Triton DataCenter",
+      "projectTypeKey": "software",
+      "self": "https://mnx.atlassian.net/rest/api/3/project/10032",
+      "simplified": false
+    },
+    "reporter": {
+      "accountId": "62562edc9e7380006fb2e836",
+      "accountType": "atlassian",
+      "active": true,
+      "avatarUrls": {
+        "16x16": "https://secure.gravatar.com/avatar/b33e85a348171979ceabba74c57912e4?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FRK-1.png",
+        "24x24": "https://secure.gravatar.com/avatar/b33e85a348171979ceabba74c57912e4?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FRK-1.png",
+        "32x32": "https://secure.gravatar.com/avatar/b33e85a348171979ceabba74c57912e4?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FRK-1.png",
+        "48x48": "https://secure.gravatar.com/avatar/b33e85a348171979ceabba74c57912e4?d=https%3A%2F%2Favatar-management--avatars.us-west-2.prod.public.atl-paas.net%2Finitials%2FRK-1.png"
+      },
+      "displayName": "Ryan Kitchen",
+      "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=62562edc9e7380006fb2e836",
+      "timeZone": "America/Detroit"
+    },
+    "resolution": {
+      "description": "A fix for this issue is checked into the tree and tested.",
+      "id": "10004",
+      "name": "Fixed",
+      "self": "https://mnx.atlassian.net/rest/api/3/resolution/10004"
+    },
+    "resolutiondate": "2019-07-25T16:12:56.289-0400",
+    "security": null,
+    "status": {
+      "description": "A resolution has been taken, and it is awaiting verification by reporter. From here issues are either reopened, or are closed.",
+      "iconUrl": "https://mnx.atlassian.net/images/icons/statuses/resolved.png",
+      "id": "5",
+      "name": "Resolved",
+      "self": "https://mnx.atlassian.net/rest/api/3/status/5",
+      "statusCategory": {
+        "colorName": "green",
+        "id": 3,
+        "key": "done",
+        "name": "Done",
+        "self": "https://mnx.atlassian.net/rest/api/3/statuscategory/3"
+      }
+    },
+    "statusCategory": {
+      "colorName": "green",
+      "id": 3,
+      "key": "done",
+      "name": "Done",
+      "self": "https://mnx.atlassian.net/rest/api/3/statuscategory/3"
+    },
+    "statuscategorychangedate": "2022-04-12T23:28:47.558-0400",
+    "subtasks": [],
+    "summary": "non-integer 'refreservation' values confound sdc-migrate",
+    "timeestimate": null,
+    "timeoriginalestimate": null,
+    "timespent": null,
+    "timetracking": {},
+    "updated": "2025-10-30T06:09:45.032-0400",
+    "versions": [],
+    "votes": {
+      "hasVoted": false,
+      "self": "https://mnx.atlassian.net/rest/api/3/issue/TRITON-1813/votes",
+      "votes": 0
+    },
+    "watches": {
+      "isWatching": false,
+      "self": "https://mnx.atlassian.net/rest/api/3/issue/TRITON-1813/watchers",
+      "watchCount": 0
+    },
+    "worklog": {
+      "maxResults": 20,
+      "startAt": 0,
+      "total": 0,
+      "worklogs": []
+    },
+    "workratio": -1
+  },
+  "id": "49130",
+  "key": "TRITON-1813"
+}

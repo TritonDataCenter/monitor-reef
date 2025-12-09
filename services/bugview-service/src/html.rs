@@ -1,0 +1,637 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// Copyright 2025 Edgecast Cloud LLC.
+
+//! HTML rendering for bugview
+//!
+//! This module renders JIRA issue content by converting Atlassian Document Format (ADF)
+//! to HTML. ADF is the structured JSON format JIRA uses in `fields.description` and
+//! comment bodies.
+//!
+//! # Security
+//!
+//! This module is a trust boundary - it receives untrusted content from JIRA and must
+//! produce safe HTML. Key security measures:
+//! - All text content is HTML-escaped via `html_escape()` before rendering
+//! - The `HtmlWriter` implementation escapes text in `write_text()` and URLs in `start_link()`
+//! - Link URLs are escaped but not validated (URL scheme validation happens earlier in `search.rs`)
+
+use anyhow::Result;
+use askama::Template;
+use bugview_api::{IssueListItem, IssueSort};
+
+/// Issue index page template
+#[derive(Template)]
+#[template(path = "issue_index.html")]
+struct IssueIndexTemplate<'a> {
+    title: &'a str,
+    current_label: Option<&'a str>,
+    allowed_labels: &'a [String],
+    page_path: &'a str,
+    sort: IssueSort,
+    next_page_token: Option<&'a str>,
+    is_last: bool,
+    issues: &'a [IssueListItem],
+}
+
+/// Single issue page template
+#[derive(Template)]
+#[template(path = "issue.html")]
+struct IssueTemplate<'a> {
+    title: &'a str,
+    key: &'a str,
+    summary: &'a str,
+    status: &'a str,
+    resolution: Option<&'a str>,
+    created: &'a str,
+    updated: &'a str,
+    description: &'a str,
+    comments: &'a [CommentView],
+    remote_links: &'a [RemoteLinkView],
+    /// True if remote links could not be fetched (show warning to user)
+    remote_links_error: bool,
+}
+
+/// Comment data for template rendering
+pub struct CommentView {
+    pub author: String,
+    pub created: String,
+    pub edited: Option<String>,
+    pub body: String,
+}
+
+/// Remote link data for template rendering
+pub struct RemoteLinkView {
+    pub url: String,
+    pub title: String,
+}
+
+/// Error template
+#[derive(Template)]
+#[template(path = "error.html")]
+struct ErrorTemplate<'a> {
+    title: &'a str,
+    status_code: u16,
+    message: &'a str,
+}
+
+/// HTML template renderer
+#[derive(Default)]
+pub struct HtmlRenderer;
+
+impl HtmlRenderer {
+    /// Create a new HTML renderer
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// Render the issue index page
+    pub fn render_issue_index(
+        &self,
+        issues: &[IssueListItem],
+        next_page_token: Option<String>,
+        is_last: bool,
+        sort: IssueSort,
+        label: Option<&str>,
+        allowed_labels: &[String],
+    ) -> Result<String> {
+        // Build page path for pagination links
+        let page_path = if let Some(l) = label {
+            let enc = urlencoding::encode(l);
+            format!("/bugview/label/{}", enc)
+        } else {
+            "/bugview/index.html".to_string()
+        };
+
+        let title_string = if let Some(l) = label {
+            format!("Public Issues: {}", l)
+        } else {
+            "Public Issues Index".to_string()
+        };
+
+        // Render the issue_index template
+        let index_template = IssueIndexTemplate {
+            title: &title_string,
+            current_label: label,
+            allowed_labels,
+            page_path: &page_path,
+            sort,
+            next_page_token: next_page_token.as_deref(),
+            is_last,
+            issues,
+        };
+        index_template
+            .render()
+            .map_err(|e| anyhow::anyhow!("Failed to render page: {}", e))
+    }
+
+    /// Render a single issue page
+    ///
+    /// If `remote_links_error` is true, displays a warning that links could not be loaded
+    /// instead of showing an empty list (which would misleadingly suggest no links exist).
+    pub fn render_issue(
+        &self,
+        issue: &crate::jira_client::Issue,
+        remote_links: &[crate::jira_client::RemoteLink],
+        remote_links_error: bool,
+    ) -> Result<String> {
+        // Extract key fields with logging for missing data
+        let summary = issue
+            .fields
+            .get("summary")
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| {
+                tracing::warn!(issue_key = %issue.key, "Issue missing summary field in HTML render");
+                "(No summary)"
+            });
+
+        let status = issue
+            .fields
+            .get("status")
+            .and_then(|v| v.get("name"))
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| {
+                tracing::warn!(issue_key = %issue.key, "Issue missing status field in HTML render");
+                "Unknown"
+            });
+
+        let resolution = issue
+            .fields
+            .get("resolution")
+            .and_then(|v| v.get("name"))
+            .and_then(|v| v.as_str());
+
+        let created = issue
+            .fields
+            .get("created")
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| {
+                tracing::warn!(issue_key = %issue.key, "Issue missing created field in HTML render");
+                ""
+            });
+
+        let updated = issue
+            .fields
+            .get("updated")
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| {
+                tracing::warn!(issue_key = %issue.key, "Issue missing updated field in HTML render");
+                ""
+            });
+
+        // Render description from ADF
+        let description = issue
+            .fields
+            .get("description")
+            .and_then(|adf| adf.get("content"))
+            .map(adf_to_html)
+            .unwrap_or_default();
+
+        // Extract and render comments
+        let comments: Vec<CommentView> = issue
+            .fields
+            .get("comment")
+            .and_then(|c| c.get("comments"))
+            .and_then(|c| c.as_array())
+            .map(|comments| {
+                comments
+                    .iter()
+                    .map(|comment| {
+                        let author = comment
+                            .get("author")
+                            .and_then(|a| a.get("displayName"))
+                            .and_then(|d| d.as_str())
+                            .unwrap_or("Unknown")
+                            .to_string();
+
+                        let created = comment
+                            .get("created")
+                            .and_then(|c| c.as_str())
+                            .unwrap_or("")
+                            .to_string();
+
+                        let updated = comment
+                            .get("updated")
+                            .and_then(|u| u.as_str())
+                            .unwrap_or("");
+
+                        let edited = if created != updated {
+                            Some(updated.to_string())
+                        } else {
+                            None
+                        };
+
+                        let body = comment
+                            .get("body")
+                            .map(|body| {
+                                if let Some(body_str) = body.as_str() {
+                                    // Plain text fallback
+                                    format!("<p>{}</p>", html_escape(body_str))
+                                } else if let Some(body_content) = body.get("content") {
+                                    // ADF format
+                                    adf_to_html(body_content)
+                                } else {
+                                    tracing::warn!(
+                                        issue_key = %issue.key,
+                                        "Comment body has unexpected format (not string or ADF)"
+                                    );
+                                    "<p><em>(Comment body could not be displayed)</em></p>"
+                                        .to_string()
+                                }
+                            })
+                            .unwrap_or_else(|| {
+                                tracing::warn!(
+                                    issue_key = %issue.key,
+                                    "Comment missing body field"
+                                );
+                                String::new()
+                            });
+
+                        CommentView {
+                            author,
+                            created,
+                            edited,
+                            body,
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // Extract remote links
+        let link_views: Vec<RemoteLinkView> = remote_links
+            .iter()
+            .filter_map(|link| {
+                link.object.as_ref().map(|obj| RemoteLinkView {
+                    url: obj.url.clone(),
+                    title: obj.title.clone(),
+                })
+            })
+            .collect();
+
+        // Render issue template
+        let title = format!("{} - Bugview", issue.key);
+        let issue_template = IssueTemplate {
+            title: &title,
+            key: issue.key.as_str(),
+            summary,
+            status,
+            resolution,
+            created,
+            updated,
+            description: &description,
+            comments: &comments,
+            remote_links: &link_views,
+            remote_links_error,
+        };
+        issue_template
+            .render()
+            .map_err(|e| anyhow::anyhow!("Failed to render page: {}", e))
+    }
+
+    /// Render an error page
+    pub fn render_error(&self, status_code: u16, message: &str) -> Result<String> {
+        let title = match status_code {
+            404 => "Not Found",
+            500 => "Internal Server Error",
+            _ => "Error",
+        };
+
+        let template = ErrorTemplate {
+            title,
+            status_code,
+            message,
+        };
+        template
+            .render()
+            .map_err(|e| anyhow::anyhow!("Failed to render error page: {}", e))
+    }
+}
+
+/// Convert ADF (Atlassian Document Format) to HTML
+///
+/// # Security
+///
+/// This function is a trust boundary - it receives untrusted content from JIRA and must
+/// produce safe HTML. All text content is HTML-escaped via `html_escape()` before rendering.
+fn adf_to_html(nodes: &serde_json::Value) -> String {
+    let mut output = String::new();
+    render_adf_to_html(nodes, &mut output);
+    output
+}
+
+fn render_adf_to_html(nodes: &serde_json::Value, output: &mut String) {
+    let Some(nodes_array) = nodes.as_array() else {
+        return;
+    };
+
+    for node in nodes_array {
+        let Some(node_obj) = node.as_object() else {
+            continue;
+        };
+        let node_type = node_obj.get("type").and_then(|t| t.as_str()).unwrap_or("");
+
+        match node_type {
+            "paragraph" => {
+                output.push_str("<p>");
+                if let Some(content) = node_obj.get("content") {
+                    render_adf_to_html(content, output);
+                }
+                output.push_str("</p>\n");
+            }
+
+            "text" => {
+                if let Some(text) = node_obj.get("text").and_then(|t| t.as_str()) {
+                    let marks = node_obj
+                        .get("marks")
+                        .and_then(|m| m.as_array())
+                        .map(|m| m.as_slice())
+                        .unwrap_or(&[]);
+
+                    let mut has_strong = false;
+                    let mut has_em = false;
+                    let mut has_code = false;
+                    let mut has_strike = false;
+                    let mut link_href: Option<&str> = None;
+
+                    for mark in marks {
+                        if let Some(mark_type) = mark.get("type").and_then(|t| t.as_str()) {
+                            match mark_type {
+                                "strong" => has_strong = true,
+                                "em" => has_em = true,
+                                "code" => has_code = true,
+                                "strike" => has_strike = true,
+                                "link" => {
+                                    link_href = mark
+                                        .get("attrs")
+                                        .and_then(|a| a.get("href"))
+                                        .and_then(|h| h.as_str());
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
+
+                    if let Some(href) = link_href {
+                        output.push_str(&format!(
+                            r#"<a href="{}" rel="noopener noreferrer" target="_blank">"#,
+                            html_escape(href)
+                        ));
+                    }
+                    if has_strong {
+                        output.push_str("<strong>");
+                    }
+                    if has_em {
+                        output.push_str("<em>");
+                    }
+                    if has_code {
+                        output.push_str("<code>");
+                    }
+                    if has_strike {
+                        output.push_str("<del>");
+                    }
+
+                    output.push_str(&html_escape(text));
+
+                    if has_strike {
+                        output.push_str("</del>");
+                    }
+                    if has_code {
+                        output.push_str("</code>");
+                    }
+                    if has_em {
+                        output.push_str("</em>");
+                    }
+                    if has_strong {
+                        output.push_str("</strong>");
+                    }
+                    if link_href.is_some() {
+                        output.push_str("</a>");
+                    }
+                }
+            }
+
+            "inlineCard" => {
+                if let Some(attrs) = node_obj.get("attrs")
+                    && let Some(url) = attrs.get("url").and_then(|u| u.as_str())
+                {
+                    let display = url.rsplit('/').next().unwrap_or(url);
+                    output.push_str(&format!(
+                        r#"<a href="{}" rel="noopener noreferrer" target="_blank">{}</a>"#,
+                        html_escape(url),
+                        html_escape(display)
+                    ));
+                }
+            }
+
+            "codeBlock" => {
+                output.push_str("<pre><code>");
+                if let Some(content) = node_obj.get("content") {
+                    render_adf_to_html(content, output);
+                }
+                output.push_str("</code></pre>\n");
+            }
+
+            "hardBreak" => {
+                output.push_str("<br>\n");
+            }
+
+            "mention" => {
+                if let Some(attrs) = node_obj.get("attrs") {
+                    let display = attrs
+                        .get("text")
+                        .and_then(|t| t.as_str())
+                        .map(|t| t.strip_prefix('@').unwrap_or(t))
+                        .or_else(|| attrs.get("id").and_then(|i| i.as_str()));
+                    if let Some(d) = display {
+                        output.push_str(&format!("<strong>@{}</strong>", html_escape(d)));
+                    }
+                }
+            }
+
+            "bulletList" => {
+                output.push_str("<ul>\n");
+                if let Some(content) = node_obj.get("content")
+                    && let Some(items) = content.as_array()
+                {
+                    for item in items {
+                        output.push_str("<li>");
+                        if let Some(item_content) = item.get("content") {
+                            render_adf_to_html(item_content, output);
+                        }
+                        output.push_str("</li>\n");
+                    }
+                }
+                output.push_str("</ul>\n");
+            }
+
+            "orderedList" => {
+                output.push_str("<ol>\n");
+                if let Some(content) = node_obj.get("content")
+                    && let Some(items) = content.as_array()
+                {
+                    for item in items {
+                        output.push_str("<li>");
+                        if let Some(item_content) = item.get("content") {
+                            render_adf_to_html(item_content, output);
+                        }
+                        output.push_str("</li>\n");
+                    }
+                }
+                output.push_str("</ol>\n");
+            }
+
+            "listItem" => {
+                if let Some(content) = node_obj.get("content") {
+                    render_adf_to_html(content, output);
+                }
+            }
+
+            "heading" => {
+                let level = node_obj
+                    .get("attrs")
+                    .and_then(|a| a.get("level"))
+                    .and_then(|l| l.as_u64())
+                    .unwrap_or(1)
+                    .min(6) as u8;
+                output.push_str(&format!("<h{}>", level));
+                if let Some(content) = node_obj.get("content") {
+                    render_adf_to_html(content, output);
+                }
+                output.push_str(&format!("</h{}>\n", level));
+            }
+
+            "panel" => {
+                output.push_str(r#"<div class="alert alert-info" style="margin: 10px 0;">"#);
+                if let Some(content) = node_obj.get("content") {
+                    render_adf_to_html(content, output);
+                }
+                output.push_str("</div>\n");
+            }
+
+            _ => {
+                if let Some(content) = node_obj.get("content") {
+                    render_adf_to_html(content, output);
+                }
+            }
+        }
+    }
+}
+
+/// Simple HTML escape function
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&#x27;")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn label_links_are_url_encoded() {
+        let renderer = HtmlRenderer::new();
+        let issues: Vec<IssueListItem> = vec![];
+        let html = renderer
+            .render_issue_index(
+                &issues,
+                None,
+                true,
+                IssueSort::Updated,
+                None,
+                &["needs triage".to_string()],
+            )
+            .expect("render");
+        assert!(html.contains("/bugview/label/needs%20triage"));
+    }
+
+    #[test]
+    fn pagination_path_for_label_is_encoded() {
+        let renderer = HtmlRenderer::new();
+        let issues: Vec<IssueListItem> = vec![];
+        let html = renderer
+            .render_issue_index(
+                &issues,
+                None,
+                true,
+                IssueSort::Updated,
+                Some("needs triage"),
+                &["needs triage".to_string()],
+            )
+            .expect("render");
+        assert!(html.contains("/bugview/label/needs%20triage?sort=updated"));
+    }
+
+    #[test]
+    fn adf_inline_card_renders_anchor_with_last_segment() {
+        let input = serde_json::json!([
+            {"type": "inlineCard", "attrs": {"url": "https://example.com/ABC-123"}}
+        ]);
+        let html = super::adf_to_html(&input);
+        assert!(
+            html.contains("href=\"https://example.com/ABC-123\""),
+            "html: {}",
+            html
+        );
+        assert!(html.contains(">ABC-123<"));
+    }
+
+    #[test]
+    fn html_escape_handles_ampersand() {
+        assert_eq!(html_escape("foo & bar"), "foo &amp; bar");
+        assert_eq!(html_escape("&&"), "&amp;&amp;");
+    }
+
+    #[test]
+    fn html_escape_handles_less_than() {
+        assert_eq!(html_escape("<script>"), "&lt;script&gt;");
+        assert_eq!(html_escape("a < b"), "a &lt; b");
+    }
+
+    #[test]
+    fn html_escape_handles_greater_than() {
+        assert_eq!(html_escape("a > b"), "a &gt; b");
+        assert_eq!(html_escape("-->"), "--&gt;");
+    }
+
+    #[test]
+    fn html_escape_handles_double_quotes() {
+        assert_eq!(html_escape("say \"hello\""), "say &quot;hello&quot;");
+    }
+
+    #[test]
+    fn html_escape_handles_single_quotes() {
+        assert_eq!(html_escape("it's"), "it&#x27;s");
+        assert_eq!(html_escape("'quoted'"), "&#x27;quoted&#x27;");
+    }
+
+    #[test]
+    fn html_escape_handles_all_characters() {
+        // Test all special characters in one string
+        assert_eq!(
+            html_escape("<script>alert('xss' & \"evil\")</script>"),
+            "&lt;script&gt;alert(&#x27;xss&#x27; &amp; &quot;evil&quot;)&lt;/script&gt;"
+        );
+    }
+
+    #[test]
+    fn html_escape_preserves_safe_content() {
+        // Normal text should pass through unchanged
+        assert_eq!(html_escape("Hello World"), "Hello World");
+        assert_eq!(html_escape("123-456"), "123-456");
+        assert_eq!(html_escape(""), "");
+    }
+
+    #[test]
+    fn html_escape_handles_unicode() {
+        // Unicode characters should pass through unchanged
+        assert_eq!(html_escape("café ☕ 日本語"), "café ☕ 日本語");
+        // But special chars in unicode strings still get escaped
+        assert_eq!(html_escape("日本語 & English"), "日本語 &amp; English");
+    }
+}

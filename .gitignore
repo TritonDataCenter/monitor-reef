@@ -1,3 +1,5 @@
 /target
 /cache
 /rust
+.env
+.idea/
