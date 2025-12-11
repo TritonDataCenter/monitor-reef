@@ -5,7 +5,7 @@
 ## Inputs
 
 - **Service name**: Name of the service (e.g., "vmapi")
-- **Plan file**: `.claude/restify-conversion/<service>/plan.md`
+- **Plan file**: `conversion-plans/<service>/plan.md`
 
 ## Outputs
 
@@ -153,7 +153,7 @@ Common errors:
 
 ### 8. Update Plan File
 
-Add to `.claude/restify-conversion/<service>/plan.md`:
+Add to `conversion-plans/<service>/plan.md`:
 
 ```markdown
 ## Phase 3 Complete
@@ -188,3 +188,12 @@ If build fails:
 - Document specific errors in plan.md
 - Common fix: verify re-export type names against API crate
 - Set Phase 3 status to "FAILED: <reason>"
+
+## After Phase Completion
+
+The orchestrator will run:
+```bash
+make check
+git add clients/internal/<service>-client/ conversion-plans/<service>/plan.md Cargo.toml Cargo.lock
+git commit -m "Add <service> client library (Phase 3)"
+```

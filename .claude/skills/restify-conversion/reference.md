@@ -164,7 +164,7 @@ POST /vms/:uuid?action=add_nics  (body: {nics: [...]})
 
 1. **API trait uses `serde_json::Value` for the body** - allows any JSON
 2. **Define an Action enum** for the query parameter
-3. **Define typed request structs** for each action in the API crate
+3. **Define typed request structs FOR EVERY ACTION** in the API crate
 4. **Implementation dispatches** based on action and deserializes appropriately
 5. **Client library** depends on API crate and provides typed wrapper methods
 
@@ -206,6 +206,93 @@ async fn vm_action(
     body: TypedBody<serde_json::Value>,
 ) -> Result<HttpResponseAccepted<JobResponse>, HttpError>;
 ```
+
+### Action-Specific Request Body Types (CRITICAL)
+
+**Every action needs a dedicated typed struct**, even actions that appear to take "no body". Study the original handler code carefully - most actions have optional parameters like `idempotent` or `sync`.
+
+```rust
+/// Request body for `start` action
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct StartVmRequest {
+    /// If true, don't error if VM is already running
+    #[serde(default)]
+    pub idempotent: Option<bool>,
+}
+
+/// Request body for `stop` action
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct StopVmRequest {
+    /// If true, don't error if VM is already stopped
+    #[serde(default)]
+    pub idempotent: Option<bool>,
+}
+
+/// Request body for `kill` action
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct KillVmRequest {
+    /// Signal to send (default: SIGKILL). Examples: "SIGTERM", "SIGKILL"
+    #[serde(default)]
+    pub signal: Option<String>,
+    /// If true, don't error if VM is already stopped
+    #[serde(default)]
+    pub idempotent: Option<bool>,
+}
+
+/// Request body for `reboot` action
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct RebootVmRequest {
+    /// If true, don't error if VM is not running
+    #[serde(default)]
+    pub idempotent: Option<bool>,
+}
+
+/// Request body for `reprovision` action
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ReprovisionVmRequest {
+    /// Image UUID to reprovision with (required)
+    pub image_uuid: String,
+}
+
+/// Request body for `create_snapshot` action
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct CreateSnapshotRequest {
+    /// Snapshot name (optional, auto-generated if not provided)
+    #[serde(default)]
+    pub snapshot_name: Option<String>,
+}
+
+/// Request body for `create_disk` action (bhyve only)
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct CreateDiskRequest {
+    /// Disk size in MB, or the literal "remaining" for remaining space
+    pub size: serde_json::Value,  // Can be number or "remaining"
+    /// PCI slot (optional, auto-assigned if not specified)
+    #[serde(default)]
+    pub pci_slot: Option<String>,
+    /// Disk UUID (optional)
+    #[serde(default)]
+    pub disk_uuid: Option<String>,
+}
+
+/// Request body for `resize_disk` action (bhyve only)
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct ResizeDiskRequest {
+    /// PCI slot of disk to resize
+    pub pci_slot: String,
+    /// New size in MB
+    pub size: i64,
+    /// Allow shrinking (dangerous operation)
+    #[serde(default)]
+    pub dangerous_allow_shrink: Option<bool>,
+}
+```
+
+**Key insights:**
+- Even "simple" actions like start/stop often have `idempotent` options
+- Some fields accept multiple types (e.g., `size: number | "remaining"`) - use `serde_json::Value`
+- Look for `req.body.X || default` patterns to find optional fields
+- Document defaults in doc comments
 
 ### Client Library Pattern
 
@@ -338,6 +425,10 @@ Before completing any phase, verify:
 
 **For Action-Dispatch Patterns:**
 - [ ] Action enum exported from API crate
+- [ ] **Every action has a dedicated typed request struct** (even "no-body" actions like start/stop)
+- [ ] Optional fields like `idempotent`, `sync`, `signal` are captured
+- [ ] Special value types handled (e.g., `size: number | "remaining"` → `serde_json::Value`)
+- [ ] Doc comments document defaults and valid values
 - [ ] Typed request structs exported from API crate
 - [ ] Client re-exports action enum and request types
 - [ ] Typed wrapper methods use builder pattern

@@ -14,11 +14,11 @@ Compare the generated Rust API trait, client, and CLI against the original Node.
 
 - **Service name**: Name of the service (e.g., "vmapi")
 - **Source path**: Path to original Node.js service
-- **Plan file**: `.claude/restify-conversion/<service>/plan.md`
+- **Plan file**: `conversion-plans/<service>/plan.md`
 
 ## Outputs
 
-- **Validation report**: `.claude/restify-conversion/<service>/validation.md`
+- **Validation report**: `conversion-plans/<service>/validation.md`
 - **Updated plan file** with Phase 5 status
 
 ## Prerequisites
@@ -107,7 +107,7 @@ Assess overall API compatibility:
 
 ## Validation Report Format
 
-Create `.claude/restify-conversion/<service>/validation.md`:
+Create `conversion-plans/<service>/validation.md`:
 
 ```markdown
 # <Service> Conversion Validation Report
@@ -215,12 +215,12 @@ Phase 5 is complete when:
 
 ## Final Plan Update
 
-Add to `.claude/restify-conversion/<service>/plan.md`:
+Add to `conversion-plans/<service>/plan.md`:
 
 ```markdown
 ## Phase 5 Complete - CONVERSION VALIDATED
 
-- Validation report: `.claude/restify-conversion/<service>/validation.md`
+- Validation report: `conversion-plans/<service>/validation.md`
 - Overall status: <READY/NEEDS ATTENTION/INCOMPLETE>
 - Endpoint coverage: X/Y (Z%)
 - Issues found: <count>
@@ -246,4 +246,13 @@ The <service> API has been converted to Rust. See validation.md for details.
 1. Run integration tests against live Node.js service
 2. Address any issues in validation report
 3. Deploy Rust service for parallel testing
+```
+
+## After Phase Completion
+
+The orchestrator will run:
+```bash
+make check
+git add conversion-plans/<service>/
+git commit -m "Add <service> validation report (Phase 5 - conversion complete)"
 ```

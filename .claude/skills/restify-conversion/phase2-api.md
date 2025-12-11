@@ -5,7 +5,7 @@
 ## Inputs
 
 - **Service name**: Name of the service (e.g., "vmapi")
-- **Plan file**: `.claude/restify-conversion/<service>/plan.md` (from Phase 1)
+- **Plan file**: `conversion-plans/<service>/plan.md` (from Phase 1)
 
 ## Outputs
 
@@ -57,6 +57,71 @@ Key patterns:
 - Path params: `#[derive(Debug, Deserialize, JsonSchema)]`
 - Use `#[serde(rename_all = "camelCase")]` for JSON compatibility
 - Use `#[serde(default)]` for optional fields
+
+### 3b. Create Action-Specific Request Types (CRITICAL)
+
+For action dispatch endpoints, create a **separate typed struct for each action**:
+
+1. **Read the plan's action dispatch table** from Phase 1
+2. **For each action**, create a struct with:
+   - All required fields as non-Option types
+   - All optional fields as `Option<T>` with `#[serde(default)]`
+   - Doc comments explaining each field's purpose and defaults
+3. **Place in a dedicated module** (e.g., `src/vms.rs` alongside the VmAction enum)
+
+**DO NOT** just use `serde_json::Value` or skip "simple" actions - even start/stop have `idempotent` options.
+
+**File organization for many actions:**
+```
+apis/<service>-api/src/
+├── lib.rs           # Trait definition, re-exports
+├── types.rs         # Shared types (Vm, Nic, Disk, etc.)
+├── vms.rs           # VM endpoint types including:
+│   - VmAction enum
+│   - VmActionQuery
+│   - StartVmRequest
+│   - StopVmRequest
+│   - KillVmRequest (with signal field!)
+│   - RebootVmRequest
+│   - ReprovisionVmRequest
+│   - UpdateVmRequest
+│   - AddNicsRequest
+│   - UpdateNicsRequest
+│   - RemoveNicsRequest
+│   - CreateSnapshotRequest
+│   - RollbackSnapshotRequest
+│   - DeleteSnapshotRequest
+│   - CreateDiskRequest (size can be number OR "remaining")
+│   - ResizeDiskRequest (with dangerous_allow_shrink!)
+│   - DeleteDiskRequest
+│   - MigrateVmRequest
+├── migrations.rs    # Migration endpoint types
+└── jobs.rs          # Job endpoint types
+```
+
+**Example action request types:**
+```rust
+/// Request body for `kill` action
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct KillVmRequest {
+    /// Signal to send (default: SIGKILL). Examples: "SIGTERM", "SIGKILL"
+    #[serde(default)]
+    pub signal: Option<String>,
+    /// If true, don't error if VM is already stopped
+    #[serde(default)]
+    pub idempotent: Option<bool>,
+}
+
+/// Request body for `create_disk` action (bhyve only)
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct CreateDiskRequest {
+    /// Disk size in MB, or the literal "remaining" for remaining space
+    pub size: serde_json::Value,  // Can be number or "remaining"
+    /// PCI slot (optional, auto-assigned if not specified)
+    #[serde(default)]
+    pub pci_slot: Option<String>,
+}
+```
 
 ### 4. Create lib.rs with API Trait
 
@@ -112,7 +177,7 @@ Verify spec created at `openapi-specs/generated/<service>-api.json`.
 
 ### 9. Update Plan File
 
-Add to `.claude/restify-conversion/<service>/plan.md`:
+Add to `conversion-plans/<service>/plan.md`:
 
 ```markdown
 ## Phase 2 Complete
@@ -135,6 +200,8 @@ Add to `.claude/restify-conversion/<service>/plan.md`:
 Phase 2 is complete when:
 - [ ] API crate structure created
 - [ ] All type modules implemented
+- [ ] **Every action has a dedicated typed request struct** (check plan's action dispatch table)
+- [ ] Action-specific optional fields captured (idempotent, sync, signal, etc.)
 - [ ] API trait with all endpoints implemented
 - [ ] Route conflict resolutions applied
 - [ ] Added to workspace Cargo.toml
@@ -150,3 +217,12 @@ If build fails:
 - Document specific errors in plan.md
 - Set Phase 2 status to "FAILED: <reason>"
 - Return error to orchestrator for user intervention
+
+## After Phase Completion
+
+The orchestrator will run:
+```bash
+make check
+git add apis/<service>-api/ openapi-specs/generated/<service>-api.json conversion-plans/<service>/plan.md Cargo.toml Cargo.lock openapi-manager/
+git commit -m "Add <service> API trait (Phase 2)"
+```

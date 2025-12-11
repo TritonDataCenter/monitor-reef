@@ -5,7 +5,7 @@
 ## Inputs
 
 - **Service name**: Name of the service (e.g., "vmapi")
-- **Plan file**: `.claude/restify-conversion/<service>/plan.md`
+- **Plan file**: `conversion-plans/<service>/plan.md`
 
 ## Outputs
 
@@ -204,7 +204,7 @@ cargo run -p openapi-manager -- check
 
 ### 8. Update Plan File
 
-Add to `.claude/restify-conversion/<service>/plan.md`:
+Add to `conversion-plans/<service>/plan.md`:
 
 ```markdown
 ## Phase 4 Complete
@@ -246,3 +246,12 @@ Phase 4 is complete when:
 If build fails:
 - Document specific errors in plan.md
 - Set Phase 4 status to "FAILED: <reason>"
+
+## After Phase Completion
+
+The orchestrator will run:
+```bash
+make check
+git add cli/<service>-cli/ conversion-plans/<service>/plan.md Cargo.toml Cargo.lock
+git commit -m "Add <service> CLI (Phase 4)"
+```

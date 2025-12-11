@@ -9,7 +9,7 @@
 
 ## Outputs
 
-- **Plan file**: `.claude/restify-conversion/<service>/plan.md`
+- **Plan file**: `conversion-plans/<service>/plan.md`
 
 ## Tasks
 
@@ -55,7 +55,21 @@ For each conflict found:
 2. Recommend treating the literal as a special value (maintains API compatibility)
 3. **Flag for user approval** - the orchestrator should ask before proceeding
 
-### 5. Plan File Structure
+### 5. Analyze Action-Based Endpoints
+
+For endpoints using the action dispatch pattern (single path handling multiple operations via query param):
+
+1. **Enumerate all actions** from the handler's switch/if-else chain
+2. **For each action, document:**
+   - Action name
+   - Required body fields
+   - Optional body fields (look for `req.body.X || default` patterns)
+   - Special values (e.g., `size: "remaining"`)
+   - Idempotency options (`idempotent`, `sync`)
+
+**Study the handler code carefully** - even "simple" actions like start/stop often have optional parameters.
+
+### 6. Plan File Structure
 
 Based on endpoint count and logical groupings:
 
@@ -75,9 +89,9 @@ Group endpoints by:
 - Resource type (e.g., vms, jobs, tasks)
 - Logical function (e.g., health, admin)
 
-### 6. Write Plan File
+### 7. Write Plan File
 
-Create `.claude/restify-conversion/<service>/plan.md`:
+Create `conversion-plans/<service>/plan.md`:
 
 ```markdown
 # <Service> API Conversion Plan
@@ -111,6 +125,29 @@ Create `.claude/restify-conversion/<service>/plan.md`:
 - Recommended resolution: Treat "default" as special value
 - **Status: PENDING USER APPROVAL**
 
+## Action Dispatch Endpoints
+
+### POST /vms/:uuid?action=<action>
+
+| Action | Required Fields | Optional Fields | Notes |
+|--------|-----------------|-----------------|-------|
+| start | (none) | idempotent | |
+| stop | (none) | idempotent | |
+| kill | (none) | signal, idempotent | signal defaults to SIGKILL |
+| reboot | (none) | idempotent | |
+| reprovision | image_uuid | | |
+| update | (varies) | ram, cpu_cap, quota, ... | Many optional fields |
+| add_nics | networks OR macs | | One of these required |
+| update_nics | nics | | Array of NIC updates |
+| remove_nics | macs | | Array of MAC addresses |
+| create_snapshot | (none) | snapshot_name | Auto-generated if omitted |
+| rollback_snapshot | snapshot_name | | |
+| delete_snapshot | snapshot_name | | |
+| create_disk | size | pci_slot, disk_uuid | size can be number or "remaining" |
+| resize_disk | pci_slot, size | dangerous_allow_shrink | |
+| delete_disk | pci_slot | | |
+| migrate | (none) | migration_action, target_server_uuid, affinity | |
+
 ## Planned File Structure
 ```
 apis/<service>-api/src/
@@ -136,11 +173,21 @@ Phase 1 is complete when:
 - [ ] All endpoint files have been read
 - [ ] Version extracted from package.json
 - [ ] All route conflicts identified
+- [ ] Action dispatch endpoints analyzed with field details
 - [ ] File structure planned
-- [ ] Plan file written to `.claude/restify-conversion/<service>/plan.md`
+- [ ] Plan file written to `conversion-plans/<service>/plan.md`
 
 ## Error Handling
 
 If the source path doesn't exist or isn't a Restify service:
 - Document the error in plan.md with status "FAILED"
 - Return error to orchestrator
+
+## After Phase Completion
+
+The orchestrator will run:
+```bash
+make check
+git add conversion-plans/<service>/plan.md
+git commit -m "Add <service> conversion plan (Phase 1)"
+```
