@@ -439,26 +439,423 @@ async fn vm_action(
 
 ### Client Library Pattern
 
-The client crate depends on the API crate and provides typed wrappers:
+The client crate depends on the API crate and provides typed wrappers using Progenitor's builder pattern:
 
 ```rust
 // clients/internal/vmapi-client/src/lib.rs
-pub use vmapi_api::{UpdateVmRequest, AddNicsRequest, ...};
+include!(concat!(env!("OUT_DIR"), "/client.rs"));
+
+// Re-export action enum and request types from API crate
+pub use vmapi_api::{VmAction, UpdateVmRequest, AddNicsRequest, ...};
 
 impl Client {
-    pub async fn start_vm(&self, uuid: &str) -> Result<JobResponse> {
-        self.vm_action(uuid, VmAction::Start, json!({})).await
+    pub async fn start_vm(&self, uuid: &str) -> Result<types::JobResponse, Error<types::Error>> {
+        self.vm_action()
+            .uuid(uuid)
+            .action(vmapi_api::VmAction::Start)
+            .body(serde_json::json!({}))
+            .send()
+            .await
+            .map(|r| r.into_inner())  // Unwrap ResponseValue<T>
     }
 
-    pub async fn update_vm(&self, uuid: &str, req: &UpdateVmRequest) -> Result<JobResponse> {
-        self.vm_action(uuid, VmAction::Update, serde_json::to_value(req)?).await
+    pub async fn update_vm(
+        &self,
+        uuid: &str,
+        request: &vmapi_api::UpdateVmRequest,
+    ) -> Result<types::JobResponse, Error<types::Error>> {
+        self.vm_action()
+            .uuid(uuid)
+            .action(vmapi_api::VmAction::Update)
+            .body(serde_json::to_value(request).unwrap_or_default())
+            .send()
+            .await
+            .map(|r| r.into_inner())  // Unwrap ResponseValue<T>
     }
 }
+```
+
+## Full Pipeline
+
+After generating the API trait, complete the full pipeline to generate OpenAPI spec and client.
+
+### Step 1: Version from package.json
+
+Extract the version from the source project's `package.json`:
+
+```bash
+cat /path/to/source-project/package.json | grep '"version"'
+# Example output: "version": "9.17.0",
+```
+
+Use this version in:
+- `apis/<service>-api/Cargo.toml`
+- `clients/internal/<service>-client/Cargo.toml`
+
+### Step 2: Add API crate to workspace
+
+Edit the root `Cargo.toml` to add the new API crate:
+
+```toml
+[workspace]
+members = [
+    # ... existing members
+    "apis/<service>-api",
+]
+```
+
+### Step 3: Create Cargo.toml for API crate
+
+```toml
+# apis/<service>-api/Cargo.toml
+[package]
+name = "<service>-api"
+version = "<version-from-package.json>"
+edition.workspace = true
+
+[dependencies]
+dropshot = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+http = "1.1"
+
+[lints.clippy]
+unused_async = "allow"
+```
+
+### Step 4: Register with OpenAPI Manager
+
+Add the API to `openapi-manager/Cargo.toml`:
+
+```toml
+[dependencies]
+# ... existing deps
+<service>-api = { path = "../apis/<service>-api" }
+```
+
+Add to `openapi-manager/src/main.rs` in the `all_apis()` function:
+
+```rust
+ManagedApiConfig {
+    ident: "<service>-api",
+    versions: Versions::Lockstep {
+        version: crate_version("apis/<service>-api")?,
+    },
+    title: "<Service Name> API",
+    metadata: ManagedApiMetadata {
+        description: Some("<Description of the API>"),
+        ..ManagedApiMetadata::default()
+    },
+    api_description: <service>_api::<service>_api_mod::stub_api_description,
+    extra_validation: None,
+},
+```
+
+### Step 5: Generate OpenAPI Spec
+
+```bash
+cargo run -p openapi-manager -- generate
+```
+
+This creates `openapi-specs/generated/<service>-api.json`.
+
+### Step 6: Create Client Crate
+
+Create directory structure:
+```
+clients/internal/<service>-client/
+├── Cargo.toml
+├── build.rs
+└── src/
+    └── lib.rs
+```
+
+**Cargo.toml:**
+```toml
+[package]
+name = "<service>-client"
+version = "<version-from-package.json>"
+edition.workspace = true
+
+[lib]
+name = "<service>_client"
+path = "src/lib.rs"
+
+[dependencies]
+progenitor-client = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# For APIs with action-dispatch patterns, depend on the API crate
+# to re-export typed request structs
+<service>-api = { path = "../../../apis/<service>-api" }
+
+[build-dependencies]
+progenitor = { workspace = true }
+serde_json = { workspace = true }
+openapiv3 = { workspace = true }
+```
+
+**build.rs:**
+```rust
+use progenitor::GenerationSettings;
+use std::env;
+use std::path::Path;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let out_dir = env::var("OUT_DIR")?;
+
+    // OpenAPI specs are managed by openapi-manager
+    let spec_path = "../../../openapi-specs/generated/<service>-api.json";
+
+    assert!(Path::new(spec_path).exists(),
+        "{spec_path} does not exist!");
+    println!("cargo:rerun-if-changed={}", spec_path);
+
+    let spec = std::fs::read_to_string(spec_path)?;
+    let openapi: openapiv3::OpenAPI = serde_json::from_str(&spec)?;
+
+    let mut settings = GenerationSettings::default();
+    settings
+        .with_interface(progenitor::InterfaceStyle::Builder)
+        .with_tag(progenitor::TagStyle::Merged);
+
+    let tokens = progenitor::Generator::new(&settings).generate_tokens(&openapi)?;
+    std::fs::write(format!("{}/client.rs", out_dir), tokens.to_string())?;
+
+    println!("Generated client from OpenAPI spec: {}", spec_path);
+    Ok(())
+}
+```
+
+**src/lib.rs (for APIs with action-dispatch patterns):**
+```rust
+//! <Service Name> Client Library
+//!
+//! This client provides typed access to the <Service> API.
+//! For action-dispatch endpoints, use the typed wrapper methods and
+//! re-exported request types from the API crate.
+
+// Include the Progenitor-generated client code
+include!(concat!(env!("OUT_DIR"), "/client.rs"));
+
+// Re-export typed request structs from the API crate.
+// This allows clients to use strongly-typed requests for action-dispatch
+// endpoints where the OpenAPI spec shows a generic body.
+// See .claude/docs/action-pattern-analysis.md for details.
+pub use <service>_api::{
+    // Action enum
+    <Resource>Action,
+
+    // Action request types
+    UpdateVmRequest,
+    AddNicsRequest,
+    // ... other action-specific request types
+
+    // Shared types that clients may need
+    Vm,
+    Nic,
+    // ... etc
+};
+
+// =============================================================================
+// Typed Wrapper Methods for Action-Dispatch Endpoints
+// =============================================================================
+//
+// The generated client has a generic method like:
+//   vm_action(uuid, action, body: serde_json::Value) -> Result<JobResponse>
+//
+// These wrapper methods provide type safety at call sites.
+
+impl Client {
+    /// Start a VM
+    ///
+    /// # Arguments
+    /// * `uuid` - The VM UUID
+    pub async fn start_vm(
+        &self,
+        uuid: &str,
+    ) -> Result<types::JobResponse, Error<types::Error>> {
+        self.vm_action()
+            .uuid(uuid)
+            .action(<service>_api::<Resource>Action::Start)
+            .body(serde_json::json!({}))
+            .send()
+            .await
+            .map(|r| r.into_inner())  // Unwrap ResponseValue<T>
+    }
+
+    /// Stop a VM
+    ///
+    /// # Arguments
+    /// * `uuid` - The VM UUID
+    pub async fn stop_vm(
+        &self,
+        uuid: &str,
+    ) -> Result<types::JobResponse, Error<types::Error>> {
+        self.vm_action()
+            .uuid(uuid)
+            .action(<service>_api::<Resource>Action::Stop)
+            .body(serde_json::json!({}))
+            .send()
+            .await
+            .map(|r| r.into_inner())  // Unwrap ResponseValue<T>
+    }
+
+    /// Update VM properties
+    ///
+    /// # Arguments
+    /// * `uuid` - The VM UUID
+    /// * `request` - The update request with fields to modify
+    pub async fn update_vm(
+        &self,
+        uuid: &str,
+        request: &<service>_api::UpdateVmRequest,
+    ) -> Result<types::JobResponse, Error<types::Error>> {
+        self.vm_action()
+            .uuid(uuid)
+            .action(<service>_api::<Resource>Action::Update)
+            .body(serde_json::to_value(request).unwrap_or_default())
+            .send()
+            .await
+            .map(|r| r.into_inner())  // Unwrap ResponseValue<T>
+    }
+
+    /// Add NICs to a VM
+    ///
+    /// # Arguments
+    /// * `uuid` - The VM UUID
+    /// * `request` - The NICs to add
+    pub async fn add_nics(
+        &self,
+        uuid: &str,
+        request: &<service>_api::AddNicsRequest,
+    ) -> Result<types::JobResponse, Error<types::Error>> {
+        self.vm_action()
+            .uuid(uuid)
+            .action(<service>_api::<Resource>Action::AddNics)
+            .body(serde_json::to_value(request).unwrap_or_default())
+            .send()
+            .await
+            .map(|r| r.into_inner())  // Unwrap ResponseValue<T>
+    }
+
+    // ... add wrapper methods for all action types
+}
+```
+
+**Key points for typed wrappers:**
+
+1. **Use the builder pattern** - Progenitor generates builder-style methods (`.uuid()`, `.action()`, `.body().send()`)
+
+2. **Unwrap ResponseValue** - Progenitor returns `Result<ResponseValue<T>, Error>`, use `.map(|r| r.into_inner())` to get `Result<T, Error>`
+
+3. **Re-export the Action enum** - So callers can use the typed enum values
+
+4. **Serialize request structs** - Convert typed structs to `serde_json::Value` using `serde_json::to_value(request).unwrap_or_default()`
+
+5. **Document each wrapper** - Include doc comments explaining arguments and behavior
+
+6. **Match the method name to the action** - e.g., `start_vm()` for `Action::Start`
+
+7. **Request types may not implement Default** - When constructing request types in CLI code, explicitly initialize all fields rather than using `..Default::default()`
+
+**src/lib.rs (for simple APIs without action-dispatch):**
+```rust
+//! <Service Name> Client Library
+include!(concat!(env!("OUT_DIR"), "/client.rs"));
+```
+
+### Step 7: Add Client to Workspace
+
+Edit root `Cargo.toml`:
+```toml
+members = [
+    # ... existing
+    "clients/internal/<service>-client",
+]
+```
+
+### Step 8: Build and Verify
+
+```bash
+# Build everything
+cargo build -p <service>-api
+cargo run -p openapi-manager -- generate
+cargo build -p <service>-client
+
+# Verify OpenAPI spec is valid
+cargo run -p openapi-manager -- check
+```
+
+### Step 9: Create CLI (Optional but Recommended)
+
+CLIs are valuable for **validation testing** - comparing Rust client behavior against the running Node.js service. The CLI should expose **every API endpoint** so that all functionality can be tested.
+
+Create `cli/<service>-cli/`:
+
+**Cargo.toml:**
+```toml
+[package]
+name = "<service>-cli"
+version = "<version-from-package.json>"
+edition.workspace = true
+
+[[bin]]
+name = "<service>"
+path = "src/main.rs"
+
+[dependencies]
+<service>-api = { path = "../../apis/<service>-api" }
+<service>-client = { path = "../../clients/internal/<service>-client" }
+clap = { workspace = true, features = ["env"] }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+serde_json = { workspace = true }
+```
+
+**CLI Design Principles:**
+
+1. **Complete coverage** - Every endpoint in the API trait should have a CLI subcommand
+2. **Action subcommands** - For action-dispatch patterns, each action gets its own subcommand
+3. **Raw output option** - `--raw` flag for JSON output (useful for scripting and debugging)
+4. **Environment variables** - Base URL configurable via env var (e.g., `<SERVICE>_URL`)
+5. **Explicit field initialization** - Request types may not implement `Default`, so initialize all fields explicitly
+
+**Example structure for action-dispatch APIs:**
+```
+vmapi list [--owner-uuid UUID] [--state STATE] [--raw]
+vmapi get <uuid> [--sync] [--raw]
+vmapi create <json-file-or-stdin>
+vmapi delete <uuid>
+vmapi start <uuid> [--idempotent]
+vmapi stop <uuid> [--idempotent]
+vmapi reboot <uuid> [--idempotent]
+vmapi kill <uuid> [--signal SIGNAL]
+vmapi update <uuid> [--ram MB] [--cpu-cap PCT] ...
+vmapi reprovision <uuid> --image-uuid UUID
+vmapi snapshot create <uuid> [--name NAME]
+vmapi snapshot rollback <uuid> --name NAME
+vmapi snapshot delete <uuid> --name NAME
+vmapi nic add <uuid> --network UUID
+vmapi nic update <uuid> --mac MAC [--primary]
+vmapi nic remove <uuid> --mac MAC
+vmapi disk create <uuid> --size MB
+vmapi disk resize <uuid> --pci-slot SLOT --size MB
+vmapi disk delete <uuid> --pci-slot SLOT
+vmapi migration list [--vm-uuid UUID] [--raw]
+vmapi migration get <uuid> [--raw]
+vmapi migration begin <vm-uuid> [--target-server-uuid UUID]
+vmapi migration abort <uuid>
+# ... etc for all endpoints
 ```
 
 ## Checklist
 
 Before presenting the output, verify:
+
+**API Trait:**
 - [ ] License header is present
 - [ ] All necessary imports are included (including `std::collections::HashMap` if needed)
 - [ ] Types are defined before the trait
@@ -471,3 +868,30 @@ Before presenting the output, verify:
 - [ ] Variable status code endpoints use `Response<Body>` return type
 - [ ] Complex nested objects are appropriately modeled (full types vs `serde_json::Value`)
 - [ ] Action dispatch endpoints use `serde_json::Value` body with typed request structs exported
+
+**Full Pipeline:**
+- [ ] Version matches source package.json
+- [ ] API crate added to workspace Cargo.toml
+- [ ] API registered in openapi-manager
+- [ ] OpenAPI spec generated successfully
+- [ ] Client crate created with correct structure
+- [ ] Client crate added to workspace Cargo.toml
+- [ ] Client builds successfully
+
+**For Action-Dispatch Patterns (if applicable):**
+- [ ] Action enum exported from API crate
+- [ ] Typed request structs exported from API crate (e.g., `UpdateVmRequest`, `AddNicsRequest`)
+- [ ] Client crate depends on API crate
+- [ ] Client re-exports action enum and request types
+- [ ] Typed wrapper methods added for each action (e.g., `start_vm()`, `update_vm()`)
+- [ ] Wrapper methods use builder pattern (`.uuid()`, `.action()`, `.body().send()`)
+- [ ] Wrapper methods unwrap ResponseValue with `.map(|r| r.into_inner())`
+
+**CLI (if requested):**
+- [ ] CLI crate created in `cli/<service>-cli/`
+- [ ] CLI added to workspace Cargo.toml
+- [ ] **All API endpoints have corresponding CLI subcommands** (for validation testing against Node.js)
+- [ ] All action-dispatch actions have subcommands
+- [ ] `--raw` flag available for JSON output on read operations
+- [ ] Environment variable support for base URL (e.g., `VMAPI_URL`)
+- [ ] Helpful error messages for common failures
