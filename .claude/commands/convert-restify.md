@@ -1,13 +1,21 @@
 # Convert Node.js Restify API to Dropshot Trait
 
-Convert the provided Node.js Restify API service into a Dropshot API trait definition for this Rust monorepo.
+Convert a Node.js Restify API service into a Dropshot API trait definition for this Rust monorepo.
 
 ## Input
 
-The user will provide Node.js Restify service code including:
+**Expect a local checkout** of the source repository. The user should provide a path like:
+```
+/path/to/sdc-vmapi/lib/endpoints/
+```
+
+Read the source files directly using the Read tool rather than web fetching.
+
+Look for:
 - Route definitions (e.g., `server.get('/path/:id', handler)`)
 - Handler functions
 - Request/response types (if TypeScript)
+- API documentation in `docs/` if available
 
 ## Output
 
@@ -364,6 +372,90 @@ pub trait UsersApi {
 }
 ```
 
+## Action Dispatch Pattern
+
+Some APIs use an action-based pattern where a single endpoint handles multiple operations via a query parameter:
+
+```
+POST /vms/:uuid?action=start
+POST /vms/:uuid?action=stop
+POST /vms/:uuid?action=update    (body: {ram: 1024, ...})
+POST /vms/:uuid?action=add_nics  (body: {nics: [...]})
+```
+
+**See `.claude/docs/action-pattern-analysis.md` for detailed analysis.**
+
+### Recommended Approach
+
+1. **API trait uses `serde_json::Value` for the body** - allows any JSON
+2. **Define an Action enum** for the query parameter
+3. **Define typed request structs** for each action in the API crate
+4. **Implementation dispatches** based on action and deserializes appropriately
+5. **Client library** depends on API crate and provides typed wrapper methods
+
+```rust
+// In API trait
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum VmAction {
+    Start,
+    Stop,
+    Update,
+    AddNics,
+    // ... all actions
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VmActionQuery {
+    pub action: VmAction,
+}
+
+// Typed request structs (exported for client use)
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateVmRequest {
+    pub ram: Option<u64>,
+    pub cpu_cap: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct AddNicsRequest {
+    pub nics: Vec<Nic>,
+}
+
+// The endpoint accepts generic JSON body
+#[endpoint {
+    method = POST,
+    path = "/vms/{uuid}",
+    tags = ["vms"],
+}]
+async fn vm_action(
+    rqctx: RequestContext<Self::Context>,
+    path: Path<VmPath>,
+    query: Query<VmActionQuery>,
+    body: TypedBody<serde_json::Value>,
+) -> Result<HttpResponseAccepted<JobResponse>, HttpError>;
+```
+
+### Client Library Pattern
+
+The client crate depends on the API crate and provides typed wrappers:
+
+```rust
+// clients/internal/vmapi-client/src/lib.rs
+pub use vmapi_api::{UpdateVmRequest, AddNicsRequest, ...};
+
+impl Client {
+    pub async fn start_vm(&self, uuid: &str) -> Result<JobResponse> {
+        self.vm_action(uuid, VmAction::Start, json!({})).await
+    }
+
+    pub async fn update_vm(&self, uuid: &str, req: &UpdateVmRequest) -> Result<JobResponse> {
+        self.vm_action(uuid, VmAction::Update, serde_json::to_value(req)?).await
+    }
+}
+```
+
 ## Checklist
 
 Before presenting the output, verify:
@@ -378,3 +470,4 @@ Before presenting the output, verify:
 - [ ] JSON field names match original API (use `#[serde(rename_all = "camelCase")]` or `#[serde(rename = "...")]`)
 - [ ] Variable status code endpoints use `Response<Body>` return type
 - [ ] Complex nested objects are appropriately modeled (full types vs `serde_json::Value`)
+- [ ] Action dispatch endpoints use `serde_json::Value` body with typed request structs exported
