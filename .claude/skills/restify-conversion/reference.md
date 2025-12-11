@@ -1,0 +1,344 @@
+# Restify to Dropshot Conversion Reference
+
+This document contains detailed mapping rules and patterns for converting Node.js Restify APIs to Rust Dropshot traits.
+
+## Mapping Rules
+
+### HTTP Methods
+- `server.get(...)` → `method = GET`
+- `server.post(...)` → `method = POST`
+- `server.put(...)` → `method = PUT`
+- `server.del(...)` → `method = DELETE`
+- `server.patch(...)` → `method = PATCH`
+
+### Route Parameters
+- Restify: `/path/:id` → Dropshot: `/path/{id}`
+- Restify: `/users/:userId/posts/:postId` → Dropshot: `/users/{user_id}/posts/{post_id}`
+
+### Parameter Types
+- Route params (`req.params.id`) → `Path<PathStruct>`
+- Query params (`req.query.foo`) → `Query<QueryStruct>`
+- Request body (`req.body`) → `TypedBody<BodyStruct>`
+- No params → Just `RequestContext<Self::Context>`
+
+### Response Types
+- JSON response (always 200) → `Result<HttpResponseOk<T>, HttpError>`
+- Created (201) → `Result<HttpResponseCreated<T>, HttpError>`
+- No content (204) → `Result<HttpResponseDeleted, HttpError>`
+- HTML response → `Result<Response<Body>, HttpError>`
+- Variable status code (e.g., health checks) → `Result<Response<Body>, HttpError>`
+
+### Type Mapping (JS → Rust)
+- `string` → `String`
+- `number` (integer) → `i64` or `u64`
+- `number` (float) → `f64`
+- `boolean` → `bool`
+- `Date` / ISO string → `String` (or `chrono::DateTime<Utc>` if using chrono)
+- `any` / `object` → `serde_json::Value`
+- `T[]` / `Array<T>` → `Vec<T>`
+- `T | null` / `T | undefined` → `Option<T>`
+- `{}` (key-value objects) → `std::collections::HashMap<String, T>`
+
+## Route Conflicts (CRITICAL)
+
+**Dropshot does not support having both a literal path segment and a variable path segment at the same level.**
+
+**Problem Example:**
+```
+GET /boot/default          # literal "default"
+GET /boot/:server_uuid     # variable server_uuid
+```
+
+**Solutions (in order of preference):**
+
+### 1. Treat the literal as a special value (PREFERRED - maintains API compatibility)
+
+Unify the routes and treat "default" as a valid value for the path parameter:
+```rust
+/// Path parameter that accepts either a UUID or "default"
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct BootParamsPath {
+    /// Server UUID or "default" for default boot parameters
+    pub server_uuid_or_default: String,
+}
+
+#[endpoint {
+    method = GET,
+    path = "/boot/{server_uuid_or_default}",
+    tags = ["boot"],
+}]
+async fn get_boot_params(
+    rqctx: RequestContext<Self::Context>,
+    path: Path<BootParamsPath>,
+) -> Result<HttpResponseOk<BootParams>, HttpError>;
+```
+
+**This preserves the original API paths** - clients can still call `/boot/default` or `/boot/<uuid>`.
+
+### 2. Change path prefix (BREAKS API COMPATIBILITY - requires user approval)
+
+Move one set of endpoints to a different path. **Only use if user explicitly approves.**
+
+### 3. Merge endpoints if semantically equivalent
+
+If the literal endpoint is just a convenience alias for a default value, merge them.
+
+**ALWAYS ask for user approval before changing route paths.**
+
+## JSON Field Naming (API Compatibility)
+
+The original Node.js API likely uses camelCase in JSON responses. To maintain API compatibility:
+
+1. Use snake_case for Rust field names (idiomatic Rust)
+2. Add `#[serde(rename_all = "camelCase")]` on structs to serialize as camelCase
+3. For individual fields that differ, use `#[serde(rename = "originalName")]`
+
+```rust
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct VmInfo {
+    pub vm_uuid: String,        // Serializes as "vmUuid"
+    pub owner_uuid: String,     // Serializes as "ownerUuid"
+    #[serde(rename = "RAM")]    // Override for specific field
+    pub ram: u64,
+}
+```
+
+## Variable HTTP Status Codes
+
+Some endpoints return different status codes based on conditions (e.g., 200 when healthy, 503 when unhealthy).
+
+**Use `Response<Body>` for full control:**
+```rust
+use dropshot::Body;
+use http::{Response, StatusCode};
+
+#[endpoint {
+    method = GET,
+    path = "/ping",
+    tags = ["health"],
+}]
+async fn ping(
+    rqctx: RequestContext<Self::Context>,
+) -> Result<Response<Body>, HttpError>;
+```
+
+## Modeling Complex/Nested Objects
+
+1. **Fully model** types that are part of the public API contract
+2. **Use `serde_json::Value`** for:
+   - Highly dynamic objects with unpredictable structure
+   - Internal details that shouldn't be part of the API spec
+   - Objects that are just passed through without inspection
+
+```rust
+// Fully modeled - stable API contract
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct VmNic {
+    pub mac: String,
+    pub ip: String,
+    pub primary: bool,
+}
+
+// Dynamic/pass-through - use Value
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct VmDetails {
+    pub uuid: String,
+    /// Additional VM-specific fields (varies by brand)
+    pub extra: serde_json::Value,
+}
+```
+
+## Action Dispatch Pattern
+
+Some APIs use an action-based pattern where a single endpoint handles multiple operations via a query parameter:
+
+```
+POST /vms/:uuid?action=start
+POST /vms/:uuid?action=stop
+POST /vms/:uuid?action=update    (body: {ram: 1024, ...})
+POST /vms/:uuid?action=add_nics  (body: {nics: [...]})
+```
+
+### Recommended Approach
+
+1. **API trait uses `serde_json::Value` for the body** - allows any JSON
+2. **Define an Action enum** for the query parameter
+3. **Define typed request structs** for each action in the API crate
+4. **Implementation dispatches** based on action and deserializes appropriately
+5. **Client library** depends on API crate and provides typed wrapper methods
+
+```rust
+// In API trait
+#[derive(Debug, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum VmAction {
+    Start,
+    Stop,
+    Update,
+    AddNics,
+    // ... all actions
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct VmActionQuery {
+    pub action: VmAction,
+}
+
+// Typed request structs (exported for client use)
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateVmRequest {
+    pub ram: Option<u64>,
+    pub cpu_cap: Option<u32>,
+}
+
+// The endpoint accepts generic JSON body
+#[endpoint {
+    method = POST,
+    path = "/vms/{uuid}",
+    tags = ["vms"],
+}]
+async fn vm_action(
+    rqctx: RequestContext<Self::Context>,
+    path: Path<VmPath>,
+    query: Query<VmActionQuery>,
+    body: TypedBody<serde_json::Value>,
+) -> Result<HttpResponseAccepted<JobResponse>, HttpError>;
+```
+
+### Client Library Pattern
+
+The client crate depends on the API crate and provides typed wrappers using Progenitor's builder pattern:
+
+```rust
+// clients/internal/vmapi-client/src/lib.rs
+include!(concat!(env!("OUT_DIR"), "/client.rs"));
+
+// Re-export action enum and request types from API crate
+pub use vmapi_api::{VmAction, UpdateVmRequest, AddNicsRequest, ...};
+
+impl Client {
+    pub async fn start_vm(&self, uuid: &str) -> Result<types::JobResponse, Error<types::Error>> {
+        self.vm_action()
+            .uuid(uuid)
+            .action(vmapi_api::VmAction::Start)
+            .body(serde_json::json!({}))
+            .send()
+            .await
+            .map(|r| r.into_inner())  // Unwrap ResponseValue<T>
+    }
+
+    pub async fn update_vm(
+        &self,
+        uuid: &str,
+        request: &vmapi_api::UpdateVmRequest,
+    ) -> Result<types::JobResponse, Error<types::Error>> {
+        self.vm_action()
+            .uuid(uuid)
+            .action(vmapi_api::VmAction::Update)
+            .body(serde_json::to_value(request).unwrap_or_default())
+            .send()
+            .await
+            .map(|r| r.into_inner())
+    }
+}
+```
+
+## Example Conversion
+
+### Input (Node.js Restify)
+```javascript
+server.get('/users/:id', async (req, res, next) => {
+    const user = await getUser(req.params.id);
+    res.json(user);
+});
+
+server.post('/users', async (req, res, next) => {
+    const user = await createUser(req.body);
+    res.status(201).json(user);
+});
+```
+
+### Output (Dropshot Trait)
+```rust
+use dropshot::{HttpError, HttpResponseCreated, HttpResponseOk, Path, RequestContext, TypedBody};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UserPath {
+    pub id: String,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateUserRequest {
+    pub name: String,
+    pub email: String,
+}
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct User {
+    pub id: String,
+    pub name: String,
+    pub email: String,
+}
+
+#[dropshot::api_description]
+pub trait UsersApi {
+    type Context: Send + Sync + 'static;
+
+    /// Get a user by ID
+    #[endpoint {
+        method = GET,
+        path = "/users/{id}",
+        tags = ["users"],
+    }]
+    async fn get_user(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<UserPath>,
+    ) -> Result<HttpResponseOk<User>, HttpError>;
+
+    /// Create a new user
+    #[endpoint {
+        method = POST,
+        path = "/users",
+        tags = ["users"],
+    }]
+    async fn create_user(
+        rqctx: RequestContext<Self::Context>,
+        body: TypedBody<CreateUserRequest>,
+    ) -> Result<HttpResponseCreated<User>, HttpError>;
+}
+```
+
+## Checklist
+
+Before completing any phase, verify:
+
+**API Trait:**
+- [ ] License header is present
+- [ ] All necessary imports are included
+- [ ] Types are defined before the trait
+- [ ] All types have appropriate derives
+- [ ] Path parameters use `{param}` syntax (not `:param`)
+- [ ] **No route conflicts** - if conflicts exist, resolve using the "special value" pattern
+- [ ] Each endpoint has a doc comment
+- [ ] Tags are meaningful and consistent
+- [ ] Optional fields use `Option<T>` with `#[serde(default)]`
+- [ ] JSON field names match original API
+- [ ] Variable status code endpoints use `Response<Body>` return type
+- [ ] Action dispatch endpoints use `serde_json::Value` body with typed request structs exported
+
+**Build Order (CRITICAL):**
+- [ ] API crate builds successfully BEFORE proceeding to client
+- [ ] OpenAPI spec generated successfully BEFORE proceeding to client
+- [ ] All client files created BEFORE adding to workspace
+- [ ] All CLI files created BEFORE adding to workspace
+
+**For Action-Dispatch Patterns:**
+- [ ] Action enum exported from API crate
+- [ ] Typed request structs exported from API crate
+- [ ] Client re-exports action enum and request types
+- [ ] Typed wrapper methods use builder pattern
+- [ ] Wrapper methods unwrap ResponseValue with `.map(|r| r.into_inner())`
