@@ -1,3 +1,0 @@
-# This directory holds conversion plans for Restify-to-Dropshot migrations.
-# Each service gets a subdirectory with plan.md tracking progress.
-# These files are temporary working documents and can be deleted after conversion.
