@@ -13,6 +13,16 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+/// Guard to ensure subprocess is killed on drop (including panics)
+struct ProcessGuard(std::process::Child);
+
+impl Drop for ProcessGuard {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
 /// Integration test that verifies the JIRA stub server works correctly
 /// with the progenitor-generated jira-client.
 #[tokio::test]
@@ -329,7 +339,7 @@ async fn test_non_public_issues_filtered() {
 /// 1. Public issues are accessible (200 OK)
 /// 2. Private issues return 404
 /// 3. JSON responses have expected structure
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread")]
 async fn test_bugview_service_e2e() {
     // ========================================================================
     // Step 1: Start jira-stub-server
@@ -405,6 +415,13 @@ async fn test_bugview_service_e2e() {
         .unwrap()
         .join("bugview-service");
 
+    eprintln!(
+        "DEBUG: Looking for bugview-service at: {:?}",
+        bugview_binary
+    );
+    eprintln!("DEBUG: Binary exists: {}", bugview_binary.exists());
+    eprintln!("DEBUG: JIRA base URL: {}", jira_base_url);
+
     if !bugview_binary.exists() {
         eprintln!(
             "skipping e2e test: bugview-service binary not found at {:?}",
@@ -418,7 +435,7 @@ async fn test_bugview_service_e2e() {
     let bugview_port = 18080;
     let bugview_base_url = format!("http://127.0.0.1:{}", bugview_port);
 
-    let mut bugview_process = std::process::Command::new(&bugview_binary)
+    let bugview_process = std::process::Command::new(&bugview_binary)
         .env("JIRA_URL", &jira_base_url)
         .env("JIRA_USERNAME", "test-user")
         .env("JIRA_PASSWORD", "test-password")
@@ -433,30 +450,68 @@ async fn test_bugview_service_e2e() {
         .spawn()
         .expect("failed to start bugview-service");
 
-    // Give bugview service a moment to start
-    tokio::time::sleep(Duration::from_millis(200)).await;
+    // Wrap in guard to ensure cleanup on panic
+    let mut _bugview_guard = ProcessGuard(bugview_process);
+    let bugview_process = &mut _bugview_guard.0;
 
-    // Check if the process is still running
-    match bugview_process.try_wait() {
-        Ok(Some(status)) => {
-            eprintln!(
-                "skipping e2e test: bugview-service exited early with status: {}",
-                status
-            );
-            jira_server.close().await.ok();
-            return;
+    // Wait for bugview-service to be ready by polling the port
+    let client = reqwest::Client::new();
+    let health_url = format!("http://127.0.0.1:{}/bugview/index.json", bugview_port);
+    let mut ready = false;
+    for attempt in 1..=20 {
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // Check if the process is still running
+        match bugview_process.try_wait() {
+            Ok(Some(status)) => {
+                // Process exited - try to read stderr for error info
+                if let Some(mut stderr) = bugview_process.stderr.take() {
+                    use std::io::Read;
+                    let mut err_output = String::new();
+                    stderr.read_to_string(&mut err_output).ok();
+                    eprintln!("DEBUG: bugview-service stderr: {}", err_output);
+                }
+                eprintln!(
+                    "skipping e2e test: bugview-service exited early with status: {}",
+                    status
+                );
+                jira_server.close().await.ok();
+                return;
+            }
+            Ok(None) => {
+                // Process is still running, try to connect
+            }
+            Err(e) => {
+                eprintln!("skipping e2e test: error checking bugview-service: {}", e);
+                jira_server.close().await.ok();
+                return;
+            }
         }
-        Ok(None) => {
-            // Process is still running, good
+
+        // Try to connect to check if it's ready
+        if client.get(&health_url).send().await.is_ok() {
+            eprintln!("DEBUG: bugview-service ready after {} attempts", attempt);
+            ready = true;
+            break;
         }
-        Err(e) => {
-            eprintln!("skipping e2e test: error checking bugview-service: {}", e);
-            jira_server.close().await.ok();
-            return;
-        }
+        eprintln!("DEBUG: attempt {} - not ready yet", attempt);
     }
 
-    let client = reqwest::Client::new();
+    if !ready {
+        // Read stderr to see what's wrong
+        if let Some(mut stderr) = bugview_process.stderr.take() {
+            use std::io::Read;
+            let mut err_output = String::new();
+            stderr.read_to_string(&mut err_output).ok();
+            eprintln!(
+                "DEBUG: bugview-service stderr after timeout: {}",
+                err_output
+            );
+        }
+        bugview_process.kill().ok();
+        jira_server.close().await.ok();
+        panic!("bugview-service did not become ready in time");
+    }
 
     // ========================================================================
     // Step 3: Test bugview endpoints with reqwest
@@ -596,6 +651,6 @@ async fn test_bugview_service_e2e() {
     // ========================================================================
     // Cleanup
     // ========================================================================
-    bugview_process.kill().expect("kill bugview-service");
+    // ProcessGuard will kill bugview-service on drop
     jira_server.close().await.expect("shutdown jira-stub");
 }
