@@ -20,7 +20,13 @@ http.get({ path: '/path', name: 'Name' }, middleware, handler);
 http.post({ path: '/path', name: 'Name' }, middleware, handler);
 ```
 
-Both map the same way:
+**Pattern 3 (sapi-style):** Uses service name as variable
+```javascript
+sapi.get({ path: '/path', name: 'Name' }, handler);
+sapi.post({ path: '/path', name: 'Name' }, handler);
+```
+
+The variable name varies (`server`, `http`, `sapi`, etc.) but all map the same way:
 - `.get(...)` → `method = GET`
 - `.post(...)` → `method = POST`
 - `.put(...)` → `method = PUT`

@@ -17,7 +17,7 @@
 
 Verify the path exists and contains a Restify service:
 - Check for `package.json`
-- Check for `lib/` directory (routes may be in `lib/endpoints/` or directly in `lib/*.js`)
+- Check for `lib/` directory (structure varies - may be `lib/endpoints/`, `lib/server/endpoints/`, or `lib/*.js`)
 
 ### 2. Extract Service Metadata
 
@@ -41,15 +41,18 @@ http.get({ path: '/path', name: 'Name' }, middleware, handler);
 http.post({ path: '/path', name: 'Name' }, middleware, handler);
 ```
 
-Search for files containing:
-- `server.get`, `server.post`, `server.put`, `server.del`, `server.patch`
-- `http.get`, `http.post`, `http.put`, `http.del`, `http.patch`
+Search for files containing route definitions. The variable name varies by service:
+- `server.get`, `server.post`, `server.put`, `server.del`, `server.patch` (vmapi, imgapi)
+- `http.get`, `http.post`, `http.put`, `http.del`, `http.patch` (cnapi)
+- `sapi.get`, `sapi.post`, `sapi.put`, `sapi.del` (sapi - uses service name as variable)
+- Other services may use different variable names - search for `\.get\(.*path:` pattern
 
 Common locations (check ALL of these):
-- `lib/endpoints/*.js` - vmapi, cnapi, and others with endpoints subdirectory
-- `lib/*.js` - imgapi and others define routes directly in lib (e.g., images.js, app.js)
+- `lib/endpoints/*.js` - vmapi, cnapi
+- `lib/server/endpoints/*.js` - sapi (nested under server/)
+- `lib/*.js` - imgapi, cloudapi (routes directly in lib)
 
-**Do not assume `lib/endpoints/` exists** - search the entire `lib/` tree.
+**Do not assume any specific structure** - search the entire `lib/` tree recursively.
 
 For each endpoint, record:
 - HTTP method
