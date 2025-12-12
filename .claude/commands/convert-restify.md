@@ -15,20 +15,21 @@ This command orchestrates a multi-phase conversion by spawning separate sub-agen
 
 **Read the orchestrator instructions at:** `.claude/skills/restify-conversion/SKILL.md`
 
-Follow those instructions to:
+Follow those instructions to execute all 5 phases automatically:
 
-1. **Spawn Phase 1 sub-agent** - Analyze the source and create a plan
-2. **Review plan with user** - Check for route conflicts needing approval
-3. **Spawn Phase 2 sub-agent** - Generate the API trait crate
-4. **Spawn Phase 3 sub-agent** - Generate the client library
-5. **Spawn Phase 4 sub-agent** - Generate the CLI
-6. **Spawn Phase 5 sub-agent** - Validate against original Node.js
+1. **Phase 1** - Analyze the source and create a plan
+2. **Phase 2** - Generate the API trait crate
+3. **Phase 3** - Generate the client library
+4. **Phase 4** - Generate the CLI
+5. **Phase 5** - Validate against original Node.js
 
 Each sub-agent reads its phase instructions from `.claude/skills/restify-conversion/phaseN-*.md`.
 
+**IMPORTANT:** Execute all phases automatically without pausing between them (see "Autonomous Execution" in SKILL.md).
+
 ## Checkpoint Files
 
-State is persisted in `.claude/restify-conversion/<service>/`:
+State is persisted in `conversion-plans/<service>/`:
 - `plan.md` - Conversion plan and phase status
 - `validation.md` - Final validation report
 

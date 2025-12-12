@@ -75,15 +75,15 @@ async fn get_boot_params(
 
 **This preserves the original API paths** - clients can still call `/boot/default` or `/boot/<uuid>`.
 
-### 2. Change path prefix (BREAKS API COMPATIBILITY - requires user approval)
+### 2. Change path prefix (BREAKS API COMPATIBILITY - escalate to user)
 
-Move one set of endpoints to a different path. **Only use if user explicitly approves.**
+Move one set of endpoints to a different path. **This breaks API compatibility and requires explicit user approval.** If option 1 cannot be used for any reason, the sub-agent must report this to the orchestrator, which must then ask the user for a decision before proceeding.
 
 ### 3. Merge endpoints if semantically equivalent
 
 If the literal endpoint is just a convenience alias for a default value, merge them.
 
-**ALWAYS ask for user approval before changing route paths.**
+**Strongly prefer option 1** - it maintains full API compatibility. Only escalate to the user if option 1 is truly impossible.
 
 ## JSON Field Naming (API Compatibility)
 
