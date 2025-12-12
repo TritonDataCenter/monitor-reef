@@ -6,7 +6,11 @@
       "WebFetch(domain:api.github.com)",
       "WebSearch",
       "Bash(mkdir:*)",
-      "Bash(cargo build:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git branch:*)",
+      "Bash(git status:*)",
+      "Bash(make:*)"
     ]
   }
 }

@@ -144,7 +144,7 @@ members = [
 ### 7. Build Client
 
 ```bash
-cargo build -p <service>-client
+make format package-build PACKAGE=<service>-client
 ```
 
 Common errors:
@@ -179,7 +179,7 @@ Phase 3 is complete when:
 - [ ] lib.rs re-exports verified type names
 - [ ] Typed wrappers added (if applicable)
 - [ ] Added to workspace Cargo.toml
-- [ ] `cargo build -p <service>-client` succeeds
+- [ ] `make format package-build PACKAGE=<service>-client` succeeds
 - [ ] Plan file updated
 
 ## Error Handling

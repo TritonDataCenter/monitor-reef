@@ -159,7 +159,7 @@ Edit `openapi-manager/src/main.rs` to register in `all_apis()`.
 ### 7. Build API Crate
 
 ```bash
-cargo build -p <service>-api
+make format package-build PACKAGE=<service>-api
 ```
 
 **Fix all errors before proceeding.** Common issues:
@@ -170,7 +170,7 @@ cargo build -p <service>-api
 ### 8. Generate OpenAPI Spec
 
 ```bash
-cargo run -p openapi-manager -- generate
+make openapi-generate
 ```
 
 Verify spec created at `openapi-specs/generated/<service>-api.json`.
@@ -206,8 +206,8 @@ Phase 2 is complete when:
 - [ ] Route conflict resolutions applied
 - [ ] Added to workspace Cargo.toml
 - [ ] Registered in openapi-manager
-- [ ] `cargo build -p <service>-api` succeeds
-- [ ] `cargo run -p openapi-manager -- generate` succeeds
+- [ ] `make format package-build PACKAGE=<service>-api` succeeds
+- [ ] `make openapi-generate` succeeds
 - [ ] OpenAPI spec exists
 - [ ] Plan file updated
 

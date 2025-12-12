@@ -187,7 +187,7 @@ members = [
 ### 6. Build CLI
 
 ```bash
-cargo build -p <service>-cli
+make format package-build PACKAGE=<service>-cli
 ```
 
 Common errors:
@@ -198,8 +198,8 @@ Common errors:
 ### 7. Full Workspace Build
 
 ```bash
-cargo build --workspace
-cargo run -p openapi-manager -- check
+make format build
+make openapi-check
 ```
 
 ### 8. Update Plan File
@@ -236,9 +236,9 @@ Phase 4 is complete when:
 - [ ] `--raw` flag on read operations
 - [ ] Environment variable for base URL
 - [ ] Added to workspace Cargo.toml
-- [ ] `cargo build -p <service>-cli` succeeds
-- [ ] `cargo build --workspace` succeeds
-- [ ] `cargo run -p openapi-manager -- check` passes
+- [ ] `make format package-build PACKAGE=<service>-cli` succeeds
+- [ ] `make format build` succeeds
+- [ ] `make openapi-check` passes
 - [ ] Plan file updated with command list
 
 ## Error Handling

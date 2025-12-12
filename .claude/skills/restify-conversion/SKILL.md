@@ -1,6 +1,7 @@
 ---
 name: restify-conversion
 description: Orchestrate the conversion of Node.js Restify API services to Rust Dropshot API traits. Use this skill when migrating Node.js services to Rust. This orchestrator spawns separate sub-agents for each phase to manage context.
+allowed-tools: Bash(git add:*), Bash(git commit:*), Bash(make:*), Bash(git branch:*), Bash(git status:*), Bash(mkdir:*), Read, Glob, Grep, Write, Edit
 ---
 
 # Restify to Dropshot Conversion Orchestrator
@@ -102,7 +103,7 @@ Update plan.md with Phase 2 results."
 ```
 
 Wait for completion. Verify:
-- `cargo build -p <service>-api` succeeds
+- `make format package-build PACKAGE=<service>-api` succeeds
 - OpenAPI spec exists at `openapi-specs/generated/<service>-api.json`
 
 **After Phase 2 completes:**
@@ -125,7 +126,7 @@ Update plan.md with Phase 3 results."
 ```
 
 Wait for completion. Verify:
-- `cargo build -p <service>-client` succeeds
+- `make format package-build PACKAGE=<service>-client` succeeds
 
 **After Phase 3 completes:**
 ```bash
@@ -147,8 +148,8 @@ Update plan.md with Phase 4 results."
 ```
 
 Wait for completion. Verify:
-- `cargo build -p <service>-cli` succeeds
-- `cargo build --workspace` succeeds
+- `make format package-build PACKAGE=<service>-cli` succeeds
+- `make format build` succeeds
 
 **After Phase 4 completes:**
 ```bash
