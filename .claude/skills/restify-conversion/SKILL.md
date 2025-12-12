@@ -4,6 +4,14 @@ description: Orchestrate the conversion of Node.js Restify API services to Rust 
 allowed-tools: Bash(git add:*), Bash(git commit:*), Bash(make:*), Bash(git branch:*), Bash(git status:*), Bash(mkdir:*), Read, Glob, Grep, Write, Edit
 ---
 
+<!--
+This Source Code Form is subject to the terms of the Mozilla Public
+License, v. 2.0. If a copy of the MPL was not distributed with this
+file, You can obtain one at https://mozilla.org/MPL/2.0/.
+
+Copyright 2025 Edgecast Cloud LLC.
+-->
+
 # Restify to Dropshot Conversion Orchestrator
 
 This skill orchestrates the multi-phase conversion of Node.js Restify APIs to Rust Dropshot traits by spawning separate sub-agents for each phase.
