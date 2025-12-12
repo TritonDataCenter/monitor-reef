@@ -109,26 +109,85 @@ pub use <service>_api::{
 };
 ```
 
-### 5. Add Typed Wrappers (if action-dispatch pattern)
+### 5. Add Typed Wrapper Methods (REQUIRED for action-dispatch pattern)
 
-If the API uses `?action=` query parameters, add typed wrapper methods.
+**If the API uses `?action=` query parameters, you MUST add typed wrapper methods.**
 
-See `reference.md` for the pattern:
+This is critical for usability - without wrappers, callers must manually construct JSON bodies and remember action names.
+
+**Read the API crate's action types file** (e.g., `apis/<service>-api/src/types/actions.rs`) to enumerate all actions and their request types.
+
+**Template for each action:**
 
 ```rust
 impl Client {
-    pub async fn start_vm(&self, uuid: &str) -> Result<types::JobResponse, Error<types::Error>> {
+    /// Start a VM
+    ///
+    /// # Arguments
+    /// * `uuid` - VM UUID
+    /// * `idempotent` - If true, don't error if already running
+    pub async fn start_vm(
+        &self,
+        uuid: &str,
+        idempotent: bool,
+    ) -> Result<types::AsyncJobResponse, Error<types::Error>> {
+        let body = <service>_api::StartVmRequest {
+            idempotent: if idempotent { Some(true) } else { None },
+        };
         self.vm_action()
             .uuid(uuid)
             .action(<service>_api::VmAction::Start)
-            .body(serde_json::json!({}))
+            .body(serde_json::to_value(&body).unwrap_or_default())
             .send()
             .await
             .map(|r| r.into_inner())
     }
-    // ... one wrapper per action
+
+    /// Stop a VM
+    pub async fn stop_vm(
+        &self,
+        uuid: &str,
+        idempotent: bool,
+    ) -> Result<types::AsyncJobResponse, Error<types::Error>> {
+        let body = <service>_api::StopVmRequest {
+            idempotent: if idempotent { Some(true) } else { None },
+        };
+        self.vm_action()
+            .uuid(uuid)
+            .action(<service>_api::VmAction::Stop)
+            .body(serde_json::to_value(&body).unwrap_or_default())
+            .send()
+            .await
+            .map(|r| r.into_inner())
+    }
+
+    /// Update VM properties
+    ///
+    /// Takes a typed request struct with all updateable fields.
+    pub async fn update_vm(
+        &self,
+        uuid: &str,
+        request: &<service>_api::UpdateVmRequest,
+    ) -> Result<types::AsyncJobResponse, Error<types::Error>> {
+        self.vm_action()
+            .uuid(uuid)
+            .action(<service>_api::VmAction::Update)
+            .body(serde_json::to_value(request).unwrap_or_default())
+            .send()
+            .await
+            .map(|r| r.into_inner())
+    }
+
+    // ... MUST add one wrapper per action in the VmAction enum
 }
 ```
+
+**Wrapper requirements:**
+- One method per action enum variant (no exceptions)
+- Use the typed request struct from the API crate
+- Include doc comments with parameter descriptions
+- Common parameters (like `idempotent`) should be explicit function parameters
+- Complex requests (like `update`) should take the full request struct
 
 ### 6. Add to Workspace
 
@@ -177,10 +236,17 @@ Phase 3 is complete when:
 - [ ] Cargo.toml has API crate dependency
 - [ ] build.rs points to correct spec path
 - [ ] lib.rs re-exports verified type names
-- [ ] Typed wrappers added (if applicable)
+- [ ] **Typed wrapper methods added for ALL actions** (if action-dispatch pattern)
 - [ ] Added to workspace Cargo.toml
 - [ ] `make format package-build PACKAGE=<service>-client` succeeds
 - [ ] Plan file updated
+
+**Action-Dispatch Checklist** (if applicable):
+- [ ] Read API crate's action enum to enumerate all actions
+- [ ] One wrapper method per action variant
+- [ ] Each wrapper uses the corresponding typed request struct
+- [ ] Wrappers documented with parameter descriptions
+- [ ] All action request types re-exported from client
 
 ## Error Handling
 
