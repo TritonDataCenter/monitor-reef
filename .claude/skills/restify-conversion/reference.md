@@ -5,11 +5,27 @@ This document contains detailed mapping rules and patterns for converting Node.j
 ## Mapping Rules
 
 ### HTTP Methods
-- `server.get(...)` → `method = GET`
-- `server.post(...)` → `method = POST`
-- `server.put(...)` → `method = PUT`
-- `server.del(...)` → `method = DELETE`
-- `server.patch(...)` → `method = PATCH`
+
+Different Node.js services use different patterns for defining routes:
+
+**Pattern 1 (vmapi-style):** Direct server methods
+```javascript
+server.get('/path', handler);
+server.post('/path', handler);
+```
+
+**Pattern 2 (cnapi-style):** Via `attachTo(http, app)` function
+```javascript
+http.get({ path: '/path', name: 'Name' }, middleware, handler);
+http.post({ path: '/path', name: 'Name' }, middleware, handler);
+```
+
+Both map the same way:
+- `.get(...)` → `method = GET`
+- `.post(...)` → `method = POST`
+- `.put(...)` → `method = PUT`
+- `.del(...)` → `method = DELETE`
+- `.patch(...)` → `method = PATCH`
 
 ### Route Parameters
 - Restify: `/path/:id` → Dropshot: `/path/{id}`

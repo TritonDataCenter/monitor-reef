@@ -27,10 +27,27 @@ From `package.json`:
 
 ### 3. Read Endpoint Files
 
-Read all files in `lib/endpoints/`:
-- Look for route definitions: `server.get(...)`, `server.post(...)`, etc.
-- Identify handler functions and their parameters
-- Note request/response types
+Search the entire `lib/` directory for route definitions. Different services use different patterns:
+
+**Pattern 1 (vmapi-style):** Direct server methods
+```javascript
+server.get('/path', handler);
+server.post('/path', handler);
+```
+
+**Pattern 2 (cnapi-style):** Via `attachTo(http, app)` function
+```javascript
+http.get({ path: '/path', name: 'Name' }, middleware, handler);
+http.post({ path: '/path', name: 'Name' }, middleware, handler);
+```
+
+Search for files containing:
+- `server.get`, `server.post`, `server.put`, `server.del`, `server.patch`
+- `http.get`, `http.post`, `http.put`, `http.del`, `http.patch`
+
+Common locations:
+- `lib/endpoints/*.js` - Most services
+- `lib/*.js` - Some services define routes in top-level lib files
 
 For each endpoint, record:
 - HTTP method

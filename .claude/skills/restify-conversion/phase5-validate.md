@@ -33,7 +33,11 @@ Compare the generated Rust API trait, client, and CLI against the original Node.
 Compare endpoints in the original Node.js service against the generated API trait:
 
 **Read from Node.js:**
-- `lib/endpoints/*.js` - All route definitions
+Search `lib/` for route definitions using either pattern:
+- `server.get/post/put/del/patch` (vmapi-style)
+- `http.get/post/put/del/patch` via `attachTo()` (cnapi-style)
+
+Common locations: `lib/endpoints/*.js`, `lib/*.js`
 
 **Read from Rust:**
 - `apis/<service>-api/src/lib.rs` - API trait endpoints
