@@ -1,0 +1,27 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2025 Edgecast Cloud LLC.
+
+[package]
+name = "cloudapi-client"
+version = "9.20.0"
+edition.workspace = true
+description = "Triton CloudAPI client library (Progenitor-generated)"
+
+[lib]
+name = "cloudapi_client"
+path = "src/lib.rs"
+
+[dependencies]
+progenitor-client = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+cloudapi-api = { path = "../../../apis/cloudapi-api" }
+
+[build-dependencies]
+progenitor = { workspace = true }
+serde_json = { workspace = true }
+openapiv3 = { workspace = true }

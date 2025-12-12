@@ -597,9 +597,76 @@ Three endpoints use action dispatch pattern (body is `serde_json::Value`, specif
 
 Each action has a dedicated typed request struct (e.g., `StartMachineRequest`, `StopMachineRequest`, `ResizeMachineRequest`, etc.) exported from the API crate for use by client libraries.
 
+## Phase 3 Complete - Client Library Generated
+
+- **Client crate**: `clients/internal/cloudapi-client/`
+- **Build status**: SUCCESS
+- **Typed wrappers**: YES - 13 wrapper methods for action-based endpoints
+
+### Typed Wrapper Methods
+
+The `TypedClient` provides ergonomic methods for action-based endpoints:
+
+**Machine Actions (8 methods):**
+- `start_machine()` - Start a stopped machine
+- `stop_machine()` - Stop a running machine
+- `reboot_machine()` - Reboot a machine
+- `resize_machine()` - Resize to a different package
+- `rename_machine()` - Change machine alias
+- `enable_firewall()` - Enable firewall
+- `disable_firewall()` - Disable firewall
+- `enable_deletion_protection()` - Enable deletion protection
+- `disable_deletion_protection()` - Disable deletion protection
+
+**Image Actions (4 methods):**
+- `update_image_metadata()` - Update image metadata
+- `export_image()` - Export image to Manta
+- `clone_image()` - Clone image to account
+- `import_image_from_datacenter()` - Import from another datacenter
+
+**Volume Actions (1 method):**
+- `update_volume_name()` - Update volume name
+
+**Disk Actions (1 method):**
+- `resize_disk()` - Resize a machine disk
+
+### Usage
+
+```rust
+use cloudapi_client::{TypedClient, Uuid};
+
+let client = TypedClient::new("https://cloudapi.example.com");
+
+// Typed machine actions
+client.start_machine("account", &machine_uuid, None).await?;
+client.resize_machine("account", &machine_uuid, "new-package".to_string(), None).await?;
+
+// Access underlying client for non-action endpoints
+let machines = client.inner()
+    .list_machines()
+    .account("account")
+    .send()
+    .await?;
+```
+
+### Type Re-exports
+
+The client re-exports 83 types from `cloudapi-api` for convenience, organized by category:
+- Common types (Metadata, Tags, Timestamp, Uuid)
+- Account types (Account, Config, ProvisioningLimits, etc.)
+- Machine types (Machine, MachineState, CreateMachineRequest, etc.)
+- Machine resources (Snapshot, Disk, metadata, tags)
+- Image types (Image, ImageState, CreateImageRequest, etc.)
+- Network types (Network, FabricVlan, Nic, etc.)
+- Volume types (Volume, VolumeState, CreateVolumeRequest, etc.)
+- Firewall types (FirewallRule, etc.)
+- User types (User, Role, Policy, etc.)
+- Key types (SshKey, AccessKey, etc.)
+- Misc types (Package, Datacenter, Migration, Service)
+
 ## Phase Status
 - [x] Phase 1: Analyze - COMPLETE
 - [x] Phase 2: Generate API - COMPLETE
-- [ ] Phase 3: Generate Client
+- [x] Phase 3: Generate Client - COMPLETE
 - [ ] Phase 4: Generate CLI
 - [ ] Phase 5: Validate

@@ -405,6 +405,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cloudapi-client"
+version = "9.20.0"
+dependencies = [
+ "cloudapi-api",
+ "openapiv3",
+ "progenitor",
+ "progenitor-client",
+ "reqwest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"

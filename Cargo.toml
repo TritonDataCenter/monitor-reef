@@ -11,6 +11,7 @@ members = [
     "apis/jira-api",
     "cli/bugview-cli",
     "clients/internal/bugview-client",
+    "clients/internal/cloudapi-client",
     "clients/internal/jira-client",
     "openapi-manager",
     "services/bugview-service",
