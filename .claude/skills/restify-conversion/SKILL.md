@@ -44,6 +44,15 @@ Plan files are stored in the project directory (NOT under `.claude/`) so they:
 
 Location: `conversion-plans/<service>/plan.md`
 
+## Autonomous Execution (IMPORTANT)
+
+**Execute all phases automatically without pausing for user input** unless:
+1. A pre-flight check fails (wrong branch, dirty working directory)
+2. A phase encounters an error that cannot be resolved
+3. A build or test failure occurs that requires user decision
+
+Do NOT pause between phases to ask "should I continue?" or wait for confirmation. The entire conversion (phases 1-5) should run to completion automatically. If you find yourself about to ask the user whether to proceed to the next phase, just proceed instead.
+
 ## Orchestration Flow
 
 When asked to convert a Restify service, execute this flow:

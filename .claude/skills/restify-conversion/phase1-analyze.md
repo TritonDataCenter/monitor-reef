@@ -53,7 +53,7 @@ GET /boot/:server_uuid     # variable - CONFLICTS!
 For each conflict found:
 1. Document the conflicting routes
 2. Recommend treating the literal as a special value (maintains API compatibility)
-3. **Flag for user approval** - the orchestrator should ask before proceeding
+3. Mark as "RESOLVED" if there's a clear recommended approach, or "NEEDS DECISION" only if truly ambiguous
 
 ### 5. Analyze Action-Based Endpoints
 
@@ -123,7 +123,7 @@ Create `conversion-plans/<service>/plan.md`:
 ### Conflict 1: <path>
 - Routes: `GET /boot/default` vs `GET /boot/:server_uuid`
 - Recommended resolution: Treat "default" as special value
-- **Status: PENDING USER APPROVAL**
+- **Status: RESOLVED** (or NEEDS DECISION if truly ambiguous)
 
 ## Action Dispatch Endpoints
 
