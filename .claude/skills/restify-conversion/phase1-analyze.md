@@ -49,10 +49,13 @@ Search for files containing route definitions. The variable name varies by servi
 
 Common locations (check ALL of these):
 - `lib/endpoints/*.js` - vmapi, cnapi
+- `lib/endpoints/**/*.js` - fwapi has subdirs like `rules/`, `firewalls/`
 - `lib/server/endpoints/*.js` - sapi (nested under server/)
 - `lib/*.js` - imgapi, cloudapi (routes directly in lib)
 
 **Do not assume any specific structure** - search the entire `lib/` tree recursively.
+
+**Note:** Some services mix variable names (e.g., fwapi uses both `server.get()` and `http.get()`).
 
 For each endpoint, record:
 - HTTP method
