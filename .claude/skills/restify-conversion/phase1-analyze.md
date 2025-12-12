@@ -162,6 +162,9 @@ Create `conversion-plans/<service>/plan.md`:
 
 ### POST /vms/:uuid?action=<action>
 
+**Common query parameters for all actions:**
+- `sync` (optional): If `true`, wait for job completion before returning (default: `false`)
+
 | Action | Required Fields | Optional Fields | Notes |
 |--------|-----------------|-----------------|-------|
 | start | (none) | idempotent | |
@@ -180,6 +183,15 @@ Create `conversion-plans/<service>/plan.md`:
 | resize_disk | pci_slot, size | dangerous_allow_shrink | |
 | delete_disk | pci_slot | | |
 | migrate | (none) | migration_action, target_server_uuid, affinity | |
+
+**Example usage:**
+```bash
+# Async (default) - returns immediately with job_uuid
+POST /vms/{uuid}?action=start
+
+# Sync - waits for job completion before returning
+POST /vms/{uuid}?action=start&sync=true
+```
 
 ## Planned File Structure
 ```

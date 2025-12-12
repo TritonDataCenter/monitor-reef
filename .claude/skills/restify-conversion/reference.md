@@ -142,7 +142,7 @@ Some endpoints return different status codes based on conditions (e.g., 200 when
 **Use `Response<Body>` for full control:**
 ```rust
 use dropshot::Body;
-use http::{Response, StatusCode};
+use http::Response;
 
 #[endpoint {
     method = GET,
@@ -327,7 +327,7 @@ pub struct ResizeDiskRequest {
 
 ### Client Library Pattern
 
-The client crate depends on the API crate and provides typed wrappers using Progenitor's builder pattern:
+The client crate depends on the API crate and provides typed wrappers. Since we cannot add impl blocks to Progenitor's generated `Client` type directly (Rust's orphan rule), we use a wrapper struct:
 
 ```rust
 // clients/internal/vmapi-client/src/lib.rs
@@ -336,9 +336,23 @@ include!(concat!(env!("OUT_DIR"), "/client.rs"));
 // Re-export action enum and request types from API crate
 pub use vmapi_api::{VmAction, UpdateVmRequest, AddNicsRequest, ...};
 
-impl Client {
-    pub async fn start_vm(&self, uuid: &str) -> Result<types::JobResponse, Error<types::Error>> {
-        self.vm_action()
+/// Typed wrapper around Progenitor's Client for action-based APIs
+pub struct TypedClient {
+    inner: Client,
+}
+
+impl TypedClient {
+    pub fn new(base_url: &str) -> Self {
+        Self { inner: Client::new(base_url) }
+    }
+
+    /// Access the underlying Progenitor client for non-wrapped methods
+    pub fn inner(&self) -> &Client {
+        &self.inner
+    }
+
+    pub async fn start_vm(&self, uuid: &str) -> Result<types::AsyncJobResponse, Error<types::Error>> {
+        self.inner.vm_action()
             .uuid(uuid)
             .action(vmapi_api::VmAction::Start)
             .body(serde_json::json!({}))
@@ -351,8 +365,8 @@ impl Client {
         &self,
         uuid: &str,
         request: &vmapi_api::UpdateVmRequest,
-    ) -> Result<types::JobResponse, Error<types::Error>> {
-        self.vm_action()
+    ) -> Result<types::AsyncJobResponse, Error<types::Error>> {
+        self.inner.vm_action()
             .uuid(uuid)
             .action(vmapi_api::VmAction::Update)
             .body(serde_json::to_value(request).unwrap_or_default())

@@ -125,10 +125,27 @@ This is critical for usability - without wrappers, callers must manually constru
 
 **Read the API crate's action types file** (e.g., `apis/<service>-api/src/types/actions.rs`) to enumerate all actions and their request types.
 
-**Template for each action:**
+**Template for typed client wrapper:**
 
 ```rust
-impl Client {
+// Wrapper struct - required because we cannot impl on Progenitor's Client directly
+pub struct TypedClient {
+    inner: Client,
+}
+
+impl TypedClient {
+    /// Create a new typed client wrapper
+    pub fn new(base_url: &str) -> Self {
+        Self {
+            inner: Client::new(base_url),
+        }
+    }
+
+    /// Access the underlying Progenitor client for non-wrapped methods
+    pub fn inner(&self) -> &Client {
+        &self.inner
+    }
+
     /// Start a VM
     ///
     /// # Arguments
@@ -142,7 +159,7 @@ impl Client {
         let body = <service>_api::StartVmRequest {
             idempotent: if idempotent { Some(true) } else { None },
         };
-        self.vm_action()
+        self.inner.vm_action()
             .uuid(uuid)
             .action(<service>_api::VmAction::Start)
             .body(serde_json::to_value(&body).unwrap_or_default())
@@ -160,7 +177,7 @@ impl Client {
         let body = <service>_api::StopVmRequest {
             idempotent: if idempotent { Some(true) } else { None },
         };
-        self.vm_action()
+        self.inner.vm_action()
             .uuid(uuid)
             .action(<service>_api::VmAction::Stop)
             .body(serde_json::to_value(&body).unwrap_or_default())
@@ -177,7 +194,7 @@ impl Client {
         uuid: &str,
         request: &<service>_api::UpdateVmRequest,
     ) -> Result<types::AsyncJobResponse, Error<types::Error>> {
-        self.vm_action()
+        self.inner.vm_action()
             .uuid(uuid)
             .action(<service>_api::VmAction::Update)
             .body(serde_json::to_value(request).unwrap_or_default())
