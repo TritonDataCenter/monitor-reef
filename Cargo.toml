@@ -7,6 +7,7 @@
 [workspace]
 members = [
     "apis/bugview-api",
+    "apis/cloudapi-api",
     "apis/jira-api",
     "cli/bugview-cli",
     "clients/internal/bugview-client",

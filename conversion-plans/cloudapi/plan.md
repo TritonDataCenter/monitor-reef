@@ -524,9 +524,82 @@ These may need careful handling in Dropshot to ensure they don't conflict with s
    - Handle versioning in the implementation
    - Use a hybrid approach
 
+## Phase 2 Complete - API Trait Generated
+
+- **API crate**: `apis/cloudapi-api/`
+- **OpenAPI spec**: `openapi-specs/generated/cloudapi-api.json` (255KB)
+- **Endpoint count**: 158 endpoints (4 generic resource role tag endpoints omitted due to Dropshot routing conflicts)
+- **Build status**: SUCCESS
+
+### Changes from Original API
+
+#### Omitted Endpoints (Dropshot Route Conflicts)
+
+The following 4 generic resource role tag endpoints were omitted because they conflict with literal path segments in Dropshot's routing:
+
+1. `PUT /:account/:resource_name` - ReplaceResourcesRoleTags
+2. `PUT /:account/:resource_name/:resource_id` - ReplaceResourceRoleTags
+3. `PUT /:account/users/:user/:resource_name` - ReplaceUserKeysResourcesRoleTags
+4. (Merged) `PUT /:account/users/:user/keys/:resource_id` - Merged into existing user key endpoint
+
+**Rationale**: Dropshot does not support having both variable path segments (e.g., `{resource_name}`) and literal path segments (e.g., `machines`, `users`) at the same level. The generic endpoints would match any resource type, but this conflicts with all the specific resource endpoints like `/machines`, `/images`, `/networks`, etc.
+
+**Impact**: The specific endpoints remain available:
+- `PUT /:account/machines/:machine` - ReplaceMachineRoleTags (kept)
+- `PUT /:account/users/:uuid/keys/:name` - Replace user key role tags (kept)
+
+If additional resource types need role tag support, specific endpoints can be added (e.g., `PUT /:account/images/:image` for image role tags).
+
+### Path Parameter Naming Fixes
+
+Several path parameter names were standardized to avoid Dropshot conflicts:
+- User endpoints: Standardized on `{uuid}` (was mixed `{user}` and `{uuid}`)
+- Network IP endpoints: Standardized on `{network}` (was `{id}`)
+- User key/accesskey sub-resources: All use `{uuid}` to match parent user routes
+
+### Module Structure
+
+```
+apis/cloudapi-api/src/
+├── lib.rs                     # CloudAPI trait with 158 endpoints
+├── types/
+│   ├── mod.rs                 # Re-exports all type modules
+│   ├── account.rs             # Account, limits, config types
+│   ├── common.rs              # UUID, timestamp, tags, metadata
+│   ├── firewall.rs            # Firewall rule types
+│   ├── image.rs               # Image/dataset types with action dispatch
+│   ├── key.rs                 # SSH key and access key types
+│   ├── machine.rs             # Machine types with action dispatch
+│   ├── machine_resources.rs   # Snapshots, disks, tags, metadata
+│   ├── misc.rs                # Packages, datacenters, services, migrations
+│   ├── network.rs             # Networks, fabric VLANs, NICs, IPs
+│   ├── user.rs                # Users, roles, policies
+│   └── volume.rs              # Volume types with action dispatch
+```
+
+### Action Dispatch Endpoints
+
+Three endpoints use action dispatch pattern (body is `serde_json::Value`, specific request types exported):
+
+1. **Machine Actions** (`POST /:account/machines/:machine?action=...`):
+   - `start`, `stop`, `reboot`, `resize`, `rename`
+   - `enable_firewall`, `disable_firewall`
+   - `enable_deletion_protection`, `disable_deletion_protection`
+
+2. **Image Actions** (`POST /:account/images/:dataset?action=...`):
+   - `update`, `export`, `clone`, `import-from-datacenter`
+
+3. **Volume Actions** (`POST /:account/volumes/:id?action=...`):
+   - `update`
+
+4. **Disk Actions** (`POST /:account/machines/:machine/disks/:disk?action=...`):
+   - `resize`
+
+Each action has a dedicated typed request struct (e.g., `StartMachineRequest`, `StopMachineRequest`, `ResizeMachineRequest`, etc.) exported from the API crate for use by client libraries.
+
 ## Phase Status
 - [x] Phase 1: Analyze - COMPLETE
-- [ ] Phase 2: Generate API
+- [x] Phase 2: Generate API - COMPLETE
 - [ ] Phase 3: Generate Client
 - [ ] Phase 4: Generate CLI
 - [ ] Phase 5: Validate

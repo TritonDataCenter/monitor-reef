@@ -62,6 +62,21 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
             extra_validation: None,
         },
         ManagedApiConfig {
+            ident: "cloudapi-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/cloudapi-api")?,
+            },
+            title: "Triton CloudAPI",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Triton CloudAPI - public-facing REST API for managing virtual machines, images, networks, volumes, and other resources",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: cloudapi_api::cloud_api_mod::stub_api_description,
+            extra_validation: None,
+        },
+        ManagedApiConfig {
             ident: "jira-api",
             versions: Versions::Lockstep {
                 version: crate_version("apis/jira-api")?,

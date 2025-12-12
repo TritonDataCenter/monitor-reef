@@ -394,6 +394,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1d728cc89cf3aee9ff92b05e62b19ee65a02b5702cff7d5a377e32c6ae29d8d"
 
 [[package]]
+name = "cloudapi-api"
+version = "9.20.0"
+dependencies = [
+ "dropshot",
+ "http",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1443,6 +1454,7 @@ dependencies = [
  "camino",
  "cargo_toml",
  "clap",
+ "cloudapi-api",
  "dropshot",
  "dropshot-api-manager",
  "dropshot-api-manager-types",

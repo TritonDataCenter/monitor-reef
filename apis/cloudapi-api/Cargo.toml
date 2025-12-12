@@ -1,0 +1,21 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2025 Edgecast Cloud LLC.
+
+[package]
+name = "cloudapi-api"
+version = "9.20.0"
+edition.workspace = true
+description = "Triton CloudAPI trait definition"
+
+[dependencies]
+dropshot = { workspace = true }
+http = "1.1"
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[lints.clippy]
+unused_async = "allow"
