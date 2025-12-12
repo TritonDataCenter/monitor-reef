@@ -17,7 +17,7 @@
 
 Verify the path exists and contains a Restify service:
 - Check for `package.json`
-- Check for `lib/endpoints/` directory
+- Check for `lib/` directory (routes may be in `lib/endpoints/` or directly in `lib/*.js`)
 
 ### 2. Extract Service Metadata
 
@@ -45,9 +45,11 @@ Search for files containing:
 - `server.get`, `server.post`, `server.put`, `server.del`, `server.patch`
 - `http.get`, `http.post`, `http.put`, `http.del`, `http.patch`
 
-Common locations:
-- `lib/endpoints/*.js` - Most services
-- `lib/*.js` - Some services define routes in top-level lib files
+Common locations (check ALL of these):
+- `lib/endpoints/*.js` - vmapi, cnapi, and others with endpoints subdirectory
+- `lib/*.js` - imgapi and others define routes directly in lib (e.g., images.js, app.js)
+
+**Do not assume `lib/endpoints/` exists** - search the entire `lib/` tree.
 
 For each endpoint, record:
 - HTTP method
