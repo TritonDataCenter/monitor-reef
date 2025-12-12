@@ -32,6 +32,7 @@ The variable name varies (`server`, `http`, `sapi`, etc.) but all map the same w
 - `.put(...)` → `method = PUT`
 - `.del(...)` → `method = DELETE`
 - `.patch(...)` → `method = PATCH`
+- `.head(...)` → `method = HEAD` (papi uses this for some endpoints)
 
 ### Route Parameters
 - Restify: `/path/:id` → Dropshot: `/path/{id}`

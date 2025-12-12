@@ -42,10 +42,10 @@ http.post({ path: '/path', name: 'Name' }, middleware, handler);
 ```
 
 Search for files containing route definitions. The variable name varies by service:
-- `server.get`, `server.post`, `server.put`, `server.del`, `server.patch` (vmapi, imgapi)
+- `server.get`, `server.post`, `server.put`, `server.del`, `server.patch`, `server.head` (vmapi, imgapi, papi)
 - `http.get`, `http.post`, `http.put`, `http.del`, `http.patch` (cnapi)
 - `sapi.get`, `sapi.post`, `sapi.put`, `sapi.del` (sapi - uses service name as variable)
-- Other services may use different variable names - search for `\.get\(.*path:` pattern
+- Other services may use different variable names - search for `\.(get|post|put|del|head)\(` pattern
 
 Common locations (check ALL of these):
 - `lib/endpoints/*.js` - vmapi, cnapi
