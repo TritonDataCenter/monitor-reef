@@ -1,6 +1,27 @@
 # Agent Prompt: Add Documentation Redirect Endpoints
 
-## Objective
+## Outcome
+
+**CANNOT BE IMPLEMENTED IN DROPSHOT API TRAIT**
+
+The documentation redirect endpoints cannot be added to the Dropshot API trait due to
+a fundamental routing limitation: Dropshot does not allow both literal path segments
+(e.g., `/docs`) and variable path segments (e.g., `/{account}`) at the same path depth.
+
+Since all CloudAPI endpoints are under `/{account}/...`, adding any root-level literal
+paths like `/`, `/docs`, or `/favicon.ico` creates a routing conflict.
+
+**Solution Implemented**:
+1. Added `DOCS_URL` and `FAVICON_URL` constants to `cloudapi-api` crate for reverse proxy configuration
+2. Added `test-docs` CLI command to verify redirects are working at the reverse proxy level
+3. Updated documentation to explain the limitation and recommended solution
+
+**These redirects must be handled at the reverse proxy or HTTP server level, not in the
+Dropshot API.**
+
+---
+
+## Original Objective (for reference)
 
 Add the 3 documentation redirect endpoints to the CloudAPI Dropshot API trait that were
 previously marked as "intentionally omitted." These endpoints are important for:

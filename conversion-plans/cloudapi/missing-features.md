@@ -5,14 +5,18 @@ that is not yet represented in the Rust Dropshot API trait.
 
 ## Summary
 
-**Status: COMPLETE** - All documented missing features have been implemented.
+**Status: COMPLETE** - All implementable features have been implemented.
 
 | Category | Status | Notes |
 |----------|--------|-------|
 | WebSocket Endpoints | ✅ Complete | 2 endpoints added |
 | Role Tag Endpoints | ✅ Complete | 21 endpoints added |
-| Documentation Redirects | ⏭️ Intentionally Omitted | 3 endpoints (not API functionality) |
+| Documentation Redirects | ⚠️ Cannot Include | 3 endpoints (Dropshot routing conflict) |
 | Machine States | ✅ Complete | All 9 states now in enum |
+
+**Note on Documentation Redirects**: The 3 documentation redirect endpoints (`/`, `/docs`,
+`/favicon.ico`) cannot be included in the Dropshot API trait due to routing conflicts with
+`/{account}`. They must be handled at the reverse proxy level. See section 3 for details.
 
 ---
 
@@ -140,19 +144,30 @@ pub struct RoleTagsResponse {
 
 ---
 
-## 3. Documentation Redirect Endpoints (3 endpoints - Intentionally Omitted)
+## 3. Documentation Redirect Endpoints (3 endpoints - Cannot Be Included)
 
 **Source**: `lib/docs.js`
 
-These endpoints redirect to external documentation and are not part of the API functionality.
+These endpoints redirect to external documentation. They **cannot** be included in the Dropshot
+API trait due to routing conflicts.
 
-| Endpoint | Redirect Target | Reason for Omission |
-|----------|-----------------|---------------------|
-| `GET /` | `http://apidocs.tritondatacenter.com/` | Not API functionality |
-| `GET /docs/*` | `http://apidocs.tritondatacenter.com/cloudapi/` | Not API functionality |
-| `GET /favicon.ico` | `http://apidocs.tritondatacenter.com/favicon.ico` | Static asset |
+| Endpoint | Redirect Target | Reason for Exclusion |
+|----------|-----------------|----------------------|
+| `GET /` | `http://apidocs.tritondatacenter.com/cloudapi/` | Conflicts with `/{account}` |
+| `GET /docs` | `http://apidocs.tritondatacenter.com/cloudapi/` | Conflicts with `/{account}` |
+| `GET /favicon.ico` | `http://apidocs.tritondatacenter.com/favicon.ico` | Conflicts with `/{account}` |
 
-**Recommendation**: Handle these at the reverse proxy or HTTP server level, not in the API trait.
+**Technical Limitation**: Dropshot does not allow both literal path segments (e.g., `/docs`)
+and variable path segments (e.g., `/{account}`) at the same path depth. Since all CloudAPI
+endpoints are under `/{account}/...`, adding any root-level literal paths like `/docs` or
+`/favicon.ico` creates a routing conflict.
+
+**Solution**: Handle these redirects at the reverse proxy or HTTP server level before
+routing to the Dropshot API. The `cloudapi-api` crate exports `DOCS_URL` and `FAVICON_URL`
+constants for use in configuring these redirects.
+
+**CLI Testing**: The `cloudapi test-docs` command can be used to verify that a deployment
+correctly handles these redirects at the reverse proxy level.
 
 ---
 

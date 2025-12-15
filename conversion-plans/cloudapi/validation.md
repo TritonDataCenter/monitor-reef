@@ -16,7 +16,7 @@ Copyright 2025 Edgecast Cloud LLC.
 | Type Completeness | ✅ | Core types complete, all machine states included |
 | Route Conflicts | ✅ | Generic role tag endpoints replaced with explicit endpoints |
 | WebSocket Endpoints | ✅ | Changefeed and VNC endpoints implemented |
-| CLI Coverage | ⚠️ | 13 commands cover core operations (~7% of endpoints) |
+| CLI Coverage | ⚠️ | 14 commands cover core operations (~8% of endpoints) |
 | API Compatibility | ✅ | JSON fields, HTTP methods, and paths compatible |
 
 **Overall Status**: ✅ COMPLETE - 100% API SURFACE COVERAGE
@@ -77,19 +77,27 @@ and VNC are implemented. The `MachineState` enum includes all possible states.
 
 ### ❌ Intentionally Omitted Endpoints
 
-#### 1. Documentation/Redirect Endpoints (3 endpoints)
+#### 1. Documentation/Redirect Endpoints (3 endpoints) - Cannot Be Included
 
 **Source**: `lib/docs.js`
 
-| Node.js | Reason |
-|---------|--------|
-| `GET /` | Documentation redirect - not part of API |
-| `GET /docs/*` | Documentation redirect - not part of API |
-| `GET /favicon.ico` | Static asset redirect - not part of API |
+| Node.js | Reason for Exclusion |
+|---------|----------------------|
+| `GET /` | Dropshot routing conflict with `/{account}` |
+| `GET /docs` | Dropshot routing conflict with `/{account}` |
+| `GET /favicon.ico` | Dropshot routing conflict with `/{account}` |
 
-**Impact**: None. These are convenience redirects to external documentation, not API functionality.
+**Technical Limitation**: Dropshot does not allow both literal path segments (e.g., `/docs`)
+and variable path segments (e.g., `/{account}`) at the same path depth. Since all CloudAPI
+endpoints are under `/{account}/...`, adding any root-level literal paths creates a routing
+conflict at the Dropshot router level.
 
-**Notes**: These endpoints return HTTP 302 redirects to `http://apidocs.tritondatacenter.com/`. They serve no functional purpose in the API and would not be included in a Rust implementation. Any service implementation would typically handle these at the HTTP server/reverse proxy level.
+**Impact**: These endpoints must be handled at the reverse proxy or HTTP server level before
+routing to the Dropshot API.
+
+**Solution**: The `cloudapi-api` crate exports `DOCS_URL` and `FAVICON_URL` constants for
+configuring these redirects. The `cloudapi test-docs` CLI command can verify that a deployment
+correctly handles these redirects.
 
 #### 2. WebSocket Endpoints - ✅ IMPLEMENTED
 
@@ -402,7 +410,7 @@ cargo build -p cloudapi-api
 
 ## CLI Command Analysis
 
-### ✅ Implemented Commands (13 commands)
+### ✅ Implemented Commands (14 commands)
 
 **Account Operations** (1):
 - `cloudapi get-account` - Get account details
@@ -425,8 +433,11 @@ cargo build -p cloudapi-api
 - `cloudapi list-services` - List services
 - `cloudapi list-datacenters` - List datacenters
 
+**Testing Operations** (1):
+- `cloudapi test-docs` - Test documentation redirect endpoints (/, /docs, /favicon.ico)
+
 **Common Flags**:
-- `--account <name>` or `CLOUDAPI_ACCOUNT` env var (required)
+- `--account <name>` or `CLOUDAPI_ACCOUNT` env var (required for most commands)
 - `--base-url <url>` or `CLOUDAPI_URL` env var (optional, defaults to tritondatacenter.com)
 - `--raw` - Output raw JSON instead of formatted text
 
