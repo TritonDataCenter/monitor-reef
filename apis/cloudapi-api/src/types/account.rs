@@ -129,7 +129,18 @@ pub struct UpdateConfigRequest {
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ReplaceRoleTagsRequest {
-    /// Role tags
+    /// Role tags (list of role names)
+    #[serde(rename = "role-tag", default)]
+    pub role_tag: RoleTags,
+}
+
+/// Response after replacing role tags on a resource
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct RoleTagsResponse {
+    /// Resource path name
+    pub name: String,
+    /// List of role names assigned to the resource
     #[serde(rename = "role-tag")]
     pub role_tag: RoleTags,
 }
