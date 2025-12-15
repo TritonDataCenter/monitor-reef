@@ -12,7 +12,7 @@
 
 use dropshot::{
     HttpError, HttpResponseCreated, HttpResponseDeleted, HttpResponseOk, Path, Query,
-    RequestContext, TypedBody,
+    RequestContext, TypedBody, WebsocketChannelResult, WebsocketConnection,
 };
 
 pub mod types;
@@ -1957,48 +1957,331 @@ pub trait CloudApi {
     ) -> Result<HttpResponseOk<Migration>, HttpError>;
 
     // ========================================================================
+    // WebSocket Endpoints
+    // ========================================================================
+
+    /// Stream VM state changes via WebSocket
+    ///
+    /// Provides real-time notifications of VM state transitions for monitoring
+    /// tools and dashboards. Requires WebSocket protocol upgrade.
+    #[channel {
+        protocol = WEBSOCKETS,
+        path = "/{account}/changefeed",
+        tags = ["changefeed"],
+    }]
+    async fn get_changefeed(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AccountPath>,
+        upgraded: WebsocketConnection,
+    ) -> WebsocketChannelResult;
+
+    /// Connect to machine VNC console via WebSocket
+    ///
+    /// Provides browser-based VNC console access to KVM/bhyve virtual machines.
+    /// Only available for running machines. Requires WebSocket protocol upgrade.
+    /// Available since API version 8.4.0.
+    #[channel {
+        protocol = WEBSOCKETS,
+        path = "/{account}/machines/{machine}/vnc",
+        tags = ["machines"],
+    }]
+    async fn get_machine_vnc(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<MachinePath>,
+        upgraded: WebsocketConnection,
+    ) -> WebsocketChannelResult;
+
+    // ========================================================================
     // Role Tags (RBAC)
     // ========================================================================
 
     /// Replace account role tags
+    ///
+    /// This endpoint replaces all role tags on the account itself (the machines
+    /// collection). Returns the resource name and the updated list of role tags.
     #[endpoint {
         method = PUT,
         path = "/{account}",
-        tags = ["rbac"],
+        tags = ["role-tags"],
     }]
     async fn replace_account_role_tags(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
         body: TypedBody<ReplaceRoleTagsRequest>,
-    ) -> Result<HttpResponseOk<RoleTags>, HttpError>;
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
 
     /// Replace machine role tags
+    ///
+    /// Replaces all role tags on a specific machine resource.
     #[endpoint {
         method = PUT,
         path = "/{account}/machines/{machine}",
-        tags = ["machines", "rbac"],
+        tags = ["machines", "role-tags"],
     }]
     async fn replace_machine_role_tags(
         rqctx: RequestContext<Self::Context>,
         path: Path<MachinePath>,
         body: TypedBody<ReplaceRoleTagsRequest>,
-    ) -> Result<HttpResponseOk<RoleTags>, HttpError>;
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
 
-    // Note: Generic resource role tag endpoints (/{account}/{resource_name} and
-    // /{account}/{resource_name}/{resource_id}) have been omitted as they conflict
-    // with literal routes in Dropshot. Specific endpoints like replace_machine_role_tags
-    // cover the most common use cases. If additional specific resource types need
-    // role tag support, add dedicated endpoints for them.
+    // ========================================================================
+    // Collection-Level Role Tag Endpoints
+    // ========================================================================
+    //
+    // These endpoints allow tagging the ability to list/create resources of a
+    // given type. The Node.js CloudAPI uses generic paths like /{account}/{resource_name}
+    // but those conflict with Dropshot's routing, so we provide explicit endpoints
+    // for each valid resource type.
 
-    /// Replace user keys resource role tags
+    /// Replace role tags on the users collection
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/users",
+        tags = ["role-tags"],
+    }]
+    async fn replace_users_collection_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AccountPath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    /// Replace role tags on the roles collection
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/roles",
+        tags = ["role-tags"],
+    }]
+    async fn replace_roles_collection_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AccountPath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    /// Replace role tags on the packages collection
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/packages",
+        tags = ["role-tags"],
+    }]
+    async fn replace_packages_collection_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AccountPath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    /// Replace role tags on the images collection
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/images",
+        tags = ["role-tags"],
+    }]
+    async fn replace_images_collection_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AccountPath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    /// Replace role tags on the policies collection
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/policies",
+        tags = ["role-tags"],
+    }]
+    async fn replace_policies_collection_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AccountPath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    /// Replace role tags on the keys collection
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/keys",
+        tags = ["role-tags"],
+    }]
+    async fn replace_keys_collection_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AccountPath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    /// Replace role tags on the datacenters collection
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/datacenters",
+        tags = ["role-tags"],
+    }]
+    async fn replace_datacenters_collection_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AccountPath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    /// Replace role tags on the firewall rules collection
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/fwrules",
+        tags = ["role-tags"],
+    }]
+    async fn replace_fwrules_collection_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AccountPath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    /// Replace role tags on the networks collection
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/networks",
+        tags = ["role-tags"],
+    }]
+    async fn replace_networks_collection_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AccountPath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    /// Replace role tags on the services collection
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/services",
+        tags = ["role-tags"],
+    }]
+    async fn replace_services_collection_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AccountPath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    // ========================================================================
+    // Individual Resource Role Tag Endpoints
+    // ========================================================================
+    //
+    // These endpoints allow tagging individual resources. Note: machines already
+    // has replace_machine_role_tags above. Datacenters and services are read-only
+    // and don't support individual tagging.
+
+    /// Replace role tags on a specific user
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/users/{uuid}",
+        tags = ["role-tags"],
+    }]
+    async fn replace_user_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<UserPath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    /// Replace role tags on a specific role
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/roles/{role}",
+        tags = ["role-tags"],
+    }]
+    async fn replace_role_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<RolePath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    /// Replace role tags on a specific package
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/packages/{package}",
+        tags = ["role-tags"],
+    }]
+    async fn replace_package_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<PackagePath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    /// Replace role tags on a specific image
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/images/{dataset}",
+        tags = ["role-tags"],
+    }]
+    async fn replace_image_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<ImagePath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    /// Replace role tags on a specific policy
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/policies/{policy}",
+        tags = ["role-tags"],
+    }]
+    async fn replace_policy_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<PolicyPath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    /// Replace role tags on a specific SSH key
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/keys/{name}",
+        tags = ["role-tags"],
+    }]
+    async fn replace_key_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<KeyPath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    /// Replace role tags on a specific firewall rule
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/fwrules/{id}",
+        tags = ["role-tags"],
+    }]
+    async fn replace_fwrule_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<FirewallRulePath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    /// Replace role tags on a specific network
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/networks/{network}",
+        tags = ["role-tags"],
+    }]
+    async fn replace_network_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<NetworkPath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    // ========================================================================
+    // User Sub-Resource Role Tag Endpoints
+    // ========================================================================
+
+    /// Replace role tags on a user's keys collection
+    #[endpoint {
+        method = PUT,
+        path = "/{account}/users/{uuid}/keys",
+        tags = ["role-tags"],
+    }]
+    async fn replace_user_keys_collection_role_tags(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<UserPath>,
+        body: TypedBody<ReplaceRoleTagsRequest>,
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
+
+    /// Replace role tags on a specific user SSH key
     #[endpoint {
         method = PUT,
         path = "/{account}/users/{uuid}/keys/{name}",
-        tags = ["users", "rbac"],
+        tags = ["users", "role-tags"],
     }]
-    async fn replace_user_keys_resource_role_tags(
+    async fn replace_user_key_role_tags(
         rqctx: RequestContext<Self::Context>,
         path: Path<UserKeyPath>,
         body: TypedBody<ReplaceRoleTagsRequest>,
-    ) -> Result<HttpResponseOk<RoleTags>, HttpError>;
+    ) -> Result<HttpResponseOk<RoleTagsResponse>, HttpError>;
 }
