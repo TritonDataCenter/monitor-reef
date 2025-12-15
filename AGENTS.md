@@ -66,19 +66,16 @@ Follow this workflow for all code changes to maintain a clean, auditable history
 1. **Make changes** - Implement a single, focused change (one feature, one bug fix, one refactor)
 2. **Test thoroughly** - Run all relevant tests before committing
    ```bash
-   cargo test -p <your-package>
-   cargo build -p <your-package>
+   make package-test PACKAGE=<your-package>
+   make package-build PACKAGE=<your-package>
    ```
 3. **Run security audit** - Check for known vulnerabilities in dependencies
    ```bash
-   # Install cargo-audit (one-time setup)
-   cargo install cargo-audit
-
    # Run before each commit
-   cargo audit
+   make audit
 
    # Update advisory database regularly
-   cargo audit --update
+   make audit-update
    ```
    Review any warnings/errors and address them before committing.
 4. **Update documentation** - Ensure docs reflect your changes (inline comments, README, API docs)
@@ -119,13 +116,14 @@ Follow this workflow for all code changes to maintain a clean, auditable history
 ### 1. Creating a New API
 
 ```bash
-# 1. Copy the API template
-cp -r apis/api-template apis/my-service-api
-cd apis/my-service-api
+# 1. Create new API from template
+make api-new API=my-service-api
 
-# 2. Update Cargo.toml with your API name
-# 3. Define your types and trait in src/lib.rs
-# 4. Add to workspace Cargo.toml members list
+# 2. Define your types and trait in apis/my-service-api/src/lib.rs
+# 3. Add to workspace Cargo.toml members list
+# 4. Register in openapi-manager/src/main.rs
+# 5. Generate OpenAPI spec
+make openapi-generate
 ```
 
 Example API trait definition:
@@ -150,13 +148,14 @@ pub trait MyServiceApi {
 ### 2. Implementing a Service
 
 ```bash
-# 1. Copy the service template
-cp -r services/service-template services/my-service
-cd services/my-service
+# 1. Create new service from template
+make service-new SERVICE=my-service API=my-service-api
 
-# 2. Add dependency on your API crate in Cargo.toml
-# 3. Implement the API trait in src/main.rs
-# 4. Add to workspace Cargo.toml members list
+# 2. Implement the API trait in services/my-service/src/main.rs
+# 3. Add to workspace Cargo.toml members list
+# 4. Build and test
+make service-build SERVICE=my-service
+make service-test SERVICE=my-service
 ```
 
 Example implementation:
@@ -192,7 +191,7 @@ See `services/bugview-service` for a complete working example.
 # 1. Register your API in openapi-manager/src/main.rs
 
 # 2. Generate specs (much faster than compiling implementations!):
-cargo run -p openapi-manager -- generate
+make openapi-generate
 
 # 3. Review the generated spec diffs:
 git diff openapi-specs/generated/
@@ -202,10 +201,10 @@ git add openapi-specs/generated/
 git commit -m "Update OpenAPI specs for my-api changes"
 
 # List managed APIs
-cargo run -p openapi-manager -- list
+make openapi-list
 
 # Check if specs are up-to-date (use in CI):
-cargo run -p openapi-manager -- check
+make openapi-check
 ```
 
 The openapi-manager uses `stub_api_description()` which generates specs without needing to compile the full service implementation. The `check` command compares generated specs against what's committed in git to catch stale specs.
@@ -213,17 +212,13 @@ The openapi-manager uses `stub_api_description()` which generates specs without 
 ### 4. Generating Clients
 
 ```bash
-# 1. Copy client template
-cp -r clients/internal/client-template clients/internal/my-service-client
-cd clients/internal/my-service-client
+# 1. Create client from template
+make client-new CLIENT=my-service-client API=my-service-api
 
-# 2. Update build.rs to point to your OpenAPI spec:
-#    let spec_path = "../../../openapi-specs/generated/my-api.json";
-
-# 3. Build to generate client (reads the checked-in spec)
-cargo build
-
-# 4. Use the generated client
+# 2. Verify build.rs points to correct OpenAPI spec
+# 3. Add to workspace Cargo.toml members list
+# 4. Build to generate client
+make client-build CLIENT=my-service-client
 ```
 
 **Note**: Client build.rs reads the spec from `openapi-specs/generated/` which is checked into git. This means clients can be built without running openapi-manager first.
@@ -257,7 +252,8 @@ EOF
 
 # 3. Implement CLI in src/main.rs using the generated client
 # 4. Add 'cli/my-service-cli' to workspace Cargo.toml members list
-# 5. Build: cargo build -p my-service-cli
+# 5. Build
+make package-build PACKAGE=my-service-cli
 ```
 
 **Example**: See `cli/bugview-cli` for a complete working CLI that uses `bugview-client`.
@@ -367,7 +363,7 @@ async fn test_get_resource() {
 
 ```bash
 # Verify OpenAPI specs are up-to-date with trait definitions
-cargo run -p openapi-manager -- check
+make openapi-check
 
 # This will fail if:
 # - API traits changed but specs weren't regenerated
@@ -391,7 +387,7 @@ For each service migration:
 - [ ] Define all types (request/response structs) with proper derives
 - [ ] Define trait with `#[dropshot::api_description]` and endpoint methods
 - [ ] Register API in `openapi-manager/src/main.rs`
-- [ ] Generate OpenAPI spec: `cargo run -p openapi-manager -- generate`
+- [ ] Generate OpenAPI spec: `make openapi-generate`
 - [ ] Review and commit spec changes: `git add openapi-specs/generated/ && git commit`
 - [ ] Compare with Node.js service spec (if migrating)
 - [ ] Create service implementation in `services/my-service`
@@ -414,14 +410,52 @@ The `openapi-manager` crate integrates with dropshot-api-manager to provide:
 
 ## Build Tooling
 
-For direct OpenAPI management, use the openapi-manager:
+For OpenAPI management, use the make targets:
 
 ```bash
-cd openapi-manager
-cargo run -- list                    # List all managed APIs
-cargo run -- generate                # Generate all OpenAPI specs
-cargo run -- check                   # Validate specs are up-to-date
+make openapi-list      # List all managed APIs
+make openapi-generate  # Generate all OpenAPI specs
+make openapi-check     # Validate specs are up-to-date
+make openapi-debug     # Debug OpenAPI manager configuration
 ```
+
+## Common Make Targets
+
+Run `make help` to see all available targets. Key commands:
+
+| Target | Description |
+|--------|-------------|
+| `make build` | Build all crates |
+| `make test` | Run all tests |
+| `make check` | Run all validation (tests + OpenAPI check) |
+| `make format` | Format all code |
+| `make lint` | Run clippy linter |
+| `make audit` | Security audit dependencies |
+| `make list` | List all APIs, services, and clients |
+
+### Package-specific commands
+
+| Target | Description |
+|--------|-------------|
+| `make package-build PACKAGE=X` | Build specific package |
+| `make package-test PACKAGE=X` | Test specific package |
+| `make service-run SERVICE=X` | Run a service |
+
+### OpenAPI commands
+
+| Target | Description |
+|--------|-------------|
+| `make openapi-generate` | Generate specs from API traits |
+| `make openapi-check` | Verify specs are up-to-date |
+| `make openapi-list` | List managed APIs |
+
+### Scaffolding commands
+
+| Target | Description |
+|--------|-------------|
+| `make api-new API=X` | Create new API trait crate |
+| `make service-new SERVICE=X API=Y` | Create new service |
+| `make client-new CLIENT=X API=Y` | Create new client |
 
 ## Configuration Management
 
@@ -474,7 +508,7 @@ When adding new services or APIs:
 
 **OpenAPI spec mismatch**: Check trait endpoint annotations, parameter types, and response schemas
 
-**Client generation fails**: Verify OpenAPI spec is valid JSON and follows OpenAPI 3.0+ spec. Run `cargo run -p openapi-manager -- check` to validate.
+**Client generation fails**: Verify OpenAPI spec is valid JSON and follows OpenAPI 3.0+ spec. Run `make openapi-check` to validate.
 
 **Build failures**: Ensure all required dependencies are in workspace Cargo.toml
 
