@@ -1,0 +1,36 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2025 Edgecast Cloud LLC.
+
+[package]
+name = "triton-cli"
+version = "0.1.0"
+edition.workspace = true
+description = "User-friendly CLI for Triton CloudAPI"
+
+[[bin]]
+name = "triton"
+path = "src/main.rs"
+
+[dependencies]
+triton-auth = { path = "../../libs/triton-auth" }
+cloudapi-client = { path = "../../clients/internal/cloudapi-client" }
+cloudapi-api = { path = "../../apis/cloudapi-api" }
+clap = { workspace = true, features = ["derive", "env"] }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+thiserror = "2.0"
+directories = "5.0"
+dirs = "5.0"
+comfy-table = "7.0"
+dialoguer = "0.11"
+indicatif = "0.17"
+tracing = { workspace = true }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = "3.10"
