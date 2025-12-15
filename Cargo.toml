@@ -10,6 +10,7 @@ members = [
     "apis/cloudapi-api",
     "apis/jira-api",
     "cli/bugview-cli",
+    "cli/cloudapi-cli",
     "clients/internal/bugview-client",
     "clients/internal/cloudapi-client",
     "clients/internal/jira-client",

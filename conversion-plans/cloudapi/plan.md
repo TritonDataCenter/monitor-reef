@@ -664,9 +664,75 @@ The client re-exports 83 types from `cloudapi-api` for convenience, organized by
 - Key types (SshKey, AccessKey, etc.)
 - Misc types (Package, Datacenter, Migration, Service)
 
+## Phase 4 Complete - CLI Generated
+
+- **CLI crate**: `cli/cloudapi-cli/`
+- **Binary name**: `cloudapi`
+- **Build status**: SUCCESS
+- **Commands implemented**: 13 core commands covering key API endpoints
+
+### CLI Commands
+
+The CloudAPI CLI provides commands for the most commonly used CloudAPI operations:
+
+**Account Operations:**
+- `cloudapi get-account` - Get account details
+
+**Machine Operations:**
+- `cloudapi list-machines` - List machines (with optional filtering)
+- `cloudapi get-machine <uuid>` - Get machine details
+- `cloudapi start-machine <uuid>` - Start a stopped machine
+- `cloudapi stop-machine <uuid>` - Stop a running machine
+
+**Image Operations:**
+- `cloudapi list-images` - List available images
+- `cloudapi get-image <uuid>` - Get image details
+
+**Infrastructure Operations:**
+- `cloudapi list-packages` - List available packages
+- `cloudapi list-networks` - List networks
+- `cloudapi list-volumes` - List volumes
+- `cloudapi list-firewall-rules` - List firewall rules
+- `cloudapi list-services` - List available services
+- `cloudapi list-datacenters` - List datacenters
+
+### Usage
+
+All commands require an account to be specified via `--account` flag or `CLOUDAPI_ACCOUNT` environment variable. The base URL can be set via `--base-url` or `CLOUDAPI_URL` environment variable (defaults to `https://cloudapi.tritondatacenter.com`).
+
+Example:
+```bash
+export CLOUDAPI_ACCOUNT=myaccount
+export CLOUDAPI_URL=https://cloudapi.example.com
+
+cloudapi list-machines
+cloudapi get-machine abc-123-def --raw
+cloudapi start-machine abc-123-def
+```
+
+All commands support a `--raw` flag for JSON output.
+
+### Design Notes
+
+The CLI is intentionally kept simple and focused on the most common operations. It:
+- Uses the `TypedClient` wrapper for ergonomic machine action commands
+- Provides both human-readable and JSON (`--raw`) output modes
+- Follows the pattern established by `bugview-cli`
+- Can be easily extended with additional commands as needed
+
+The simplified design makes it suitable for:
+- Basic CloudAPI validation and testing
+- Demonstrating client library usage
+- Serving as a template for more comprehensive CLI tools
+
+For production use cases requiring full API coverage, users can either:
+- Extend this CLI with additional commands
+- Use the underlying `cloudapi-client` library directly in custom tools
+- Access the full API via the generated client library
+
 ## Phase Status
 - [x] Phase 1: Analyze - COMPLETE
 - [x] Phase 2: Generate API - COMPLETE
 - [x] Phase 3: Generate Client - COMPLETE
-- [ ] Phase 4: Generate CLI
+- [x] Phase 4: Generate CLI - COMPLETE
 - [ ] Phase 5: Validate
