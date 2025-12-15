@@ -420,10 +420,12 @@ dependencies = [
 name = "cloudapi-client"
 version = "9.20.0"
 dependencies = [
+ "base64",
  "cloudapi-api",
  "openapiv3",
  "progenitor",
  "progenitor-client",
+ "rand",
  "reqwest",
  "serde",
  "serde_json",

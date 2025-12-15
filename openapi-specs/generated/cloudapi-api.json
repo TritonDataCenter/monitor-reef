@@ -45,9 +45,10 @@
       },
       "put": {
         "tags": [
-          "rbac"
+          "role-tags"
         ],
         "summary": "Replace account role tags",
+        "description": "This endpoint replaces all role tags on the account itself (the machines collection). Returns the resource name and the updated list of role tags.",
         "operationId": "replace_account_role_tags",
         "parameters": [
           {
@@ -76,11 +77,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Array_of_String",
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
+                  "$ref": "#/components/schemas/RoleTagsResponse"
                 }
               }
             }
@@ -434,6 +431,38 @@
         }
       }
     },
+    "/{account}/changefeed": {
+      "get": {
+        "tags": [
+          "changefeed"
+        ],
+        "summary": "Stream VM state changes via WebSocket",
+        "description": "Provides real-time notifications of VM state transitions for monitoring tools and dashboards. Requires WebSocket protocol upgrade.",
+        "operationId": "get_changefeed",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-dropshot-websocket": {}
+      }
+    },
     "/{account}/config": {
       "get": {
         "tags": [
@@ -583,6 +612,52 @@
                   "items": {
                     "$ref": "#/components/schemas/Datacenter"
                   }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on the datacenters collection",
+        "operationId": "replace_datacenters_collection_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
                 }
               }
             }
@@ -1484,6 +1559,52 @@
           }
         }
       },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on the firewall rules collection",
+        "operationId": "replace_fwrules_collection_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
       "post": {
         "tags": [
           "firewall"
@@ -1605,6 +1726,61 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/FirewallRule"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on a specific firewall rule",
+        "operationId": "replace_fwrule_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "id",
+            "description": "Firewall rule UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
                 }
               }
             }
@@ -2052,6 +2228,52 @@
           }
         }
       },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on the images collection",
+        "operationId": "replace_images_collection_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
       "post": {
         "tags": [
           "images"
@@ -2234,6 +2456,61 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Image"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on a specific image",
+        "operationId": "replace_image_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "dataset",
+            "description": "Image UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
                 }
               }
             }
@@ -2433,6 +2710,52 @@
           }
         }
       },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on the keys collection",
+        "operationId": "replace_keys_collection_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
       "post": {
         "tags": [
           "keys"
@@ -2554,6 +2877,61 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SshKey"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on a specific SSH key",
+        "operationId": "replace_key_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "name",
+            "description": "Key name or fingerprint",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
                 }
               }
             }
@@ -3019,9 +3397,10 @@
       "put": {
         "tags": [
           "machines",
-          "rbac"
+          "role-tags"
         ],
         "summary": "Replace machine role tags",
+        "description": "Replaces all role tags on a specific machine resource.",
         "operationId": "replace_machine_role_tags",
         "parameters": [
           {
@@ -3059,11 +3438,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Array_of_String",
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
+                  "$ref": "#/components/schemas/RoleTagsResponse"
                 }
               }
             }
@@ -5394,6 +5769,47 @@
         }
       }
     },
+    "/{account}/machines/{machine}/vnc": {
+      "get": {
+        "tags": [
+          "machines"
+        ],
+        "summary": "Connect to machine VNC console via WebSocket",
+        "description": "Provides browser-based VNC console access to KVM/bhyve virtual machines. Only available for running machines. Requires WebSocket protocol upgrade. Available since API version 8.4.0.",
+        "operationId": "get_machine_vnc",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "machine",
+            "description": "Machine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-dropshot-websocket": {}
+      }
+    },
     "/{account}/migrations": {
       "get": {
         "tags": [
@@ -5524,6 +5940,52 @@
           }
         }
       },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on the networks collection",
+        "operationId": "replace_networks_collection_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
       "head": {
         "tags": [
           "networks"
@@ -5599,6 +6061,61 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Network"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on a specific network",
+        "operationId": "replace_network_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "network",
+            "description": "Network UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
                 }
               }
             }
@@ -5972,6 +6489,52 @@
           }
         }
       },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on the packages collection",
+        "operationId": "replace_packages_collection_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
       "head": {
         "tags": [
           "packages"
@@ -6059,6 +6622,61 @@
           }
         }
       },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on a specific package",
+        "operationId": "replace_package_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "package",
+            "description": "Package name or UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
       "head": {
         "tags": [
           "packages"
@@ -6134,6 +6752,52 @@
                   "items": {
                     "$ref": "#/components/schemas/Policy"
                   }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on the policies collection",
+        "operationId": "replace_policies_collection_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
                 }
               }
             }
@@ -6267,6 +6931,61 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Policy"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on a specific policy",
+        "operationId": "replace_policy_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "policy",
+            "description": "Policy UUID or name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
                 }
               }
             }
@@ -6459,6 +7178,52 @@
           }
         }
       },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on the roles collection",
+        "operationId": "replace_roles_collection_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
       "post": {
         "tags": [
           "roles"
@@ -6580,6 +7345,61 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/Role"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on a specific role",
+        "operationId": "replace_role_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "role",
+            "description": "Role UUID or name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
                 }
               }
             }
@@ -6771,6 +7591,52 @@
             "$ref": "#/components/responses/Error"
           }
         }
+      },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on the services collection",
+        "operationId": "replace_services_collection_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
       }
     },
     "/{account}/users": {
@@ -6802,6 +7668,52 @@
                   "items": {
                     "$ref": "#/components/schemas/User"
                   }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on the users collection",
+        "operationId": "replace_users_collection_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
                 }
               }
             }
@@ -6935,6 +7847,61 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/User"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on a specific user",
+        "operationId": "replace_user_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "User UUID or login",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
                 }
               }
             }
@@ -7512,6 +8479,61 @@
           }
         }
       },
+      "put": {
+        "tags": [
+          "role-tags"
+        ],
+        "summary": "Replace role tags on a user's keys collection",
+        "operationId": "replace_user_keys_collection_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "User UUID or login",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
       "post": {
         "tags": [
           "users",
@@ -7678,10 +8700,10 @@
       "put": {
         "tags": [
           "users",
-          "rbac"
+          "role-tags"
         ],
-        "summary": "Replace user keys resource role tags",
-        "operationId": "replace_user_keys_resource_role_tags",
+        "summary": "Replace role tags on a specific user SSH key",
+        "operationId": "replace_user_key_role_tags",
         "parameters": [
           {
             "in": "path",
@@ -7727,11 +8749,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Array_of_String",
-                  "type": "array",
-                  "items": {
-                    "type": "string"
-                  }
+                  "$ref": "#/components/schemas/RoleTagsResponse"
                 }
               }
             }
@@ -9237,14 +10255,18 @@
         ]
       },
       "MachineState": {
-        "description": "Machine state",
+        "description": "Machine state\n\nThese states reflect the possible values returned by VMAPI's `translateState()`: - `provisioning`: VM is being created (includes configured, incomplete, unavailable) - `ready`: VM is ready but not started (occurs during reboot) - `running`: VM is running - `stopping`: VM is in the process of stopping (includes halting, shutting_down) - `stopped`: VM is stopped (includes off, down, installed) - `offline`: VM is offline (agent not responding, unreachable) - `deleted`: VM has been destroyed - `failed`: VM is in a failed state - `unknown`: VM state cannot be determined",
         "type": "string",
         "enum": [
           "running",
           "stopped",
-          "deleted",
+          "stopping",
           "provisioning",
-          "failed"
+          "failed",
+          "deleted",
+          "offline",
+          "ready",
+          "unknown"
         ]
       },
       "MigrateRequest": {
@@ -9633,16 +10655,14 @@
         "type": "object",
         "properties": {
           "role-tag": {
-            "description": "Role tags",
+            "description": "Role tags (list of role names)",
+            "default": [],
             "type": "array",
             "items": {
               "type": "string"
             }
           }
-        },
-        "required": [
-          "role-tag"
-        ]
+        }
       },
       "Role": {
         "description": "Role information",
@@ -9684,6 +10704,27 @@
         "required": [
           "id",
           "name"
+        ]
+      },
+      "RoleTagsResponse": {
+        "description": "Response after replacing role tags on a resource",
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "Resource path name",
+            "type": "string"
+          },
+          "role-tag": {
+            "description": "List of role names assigned to the resource",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "role-tag"
         ]
       },
       "Service": {
@@ -10272,6 +11313,9 @@
       "name": "account"
     },
     {
+      "name": "changefeed"
+    },
+    {
       "name": "config"
     },
     {
@@ -10314,7 +11358,7 @@
       "name": "policies"
     },
     {
-      "name": "rbac"
+      "name": "role-tags"
     },
     {
       "name": "roles"
