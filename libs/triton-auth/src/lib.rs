@@ -58,11 +58,13 @@ pub mod agent;
 pub mod error;
 pub mod fingerprint;
 pub mod key_loader;
+pub mod legacy_pem;
 pub mod signature;
 
 pub use error::AuthError;
 pub use fingerprint::{format_fingerprint, md5_fingerprint, parse_fingerprint};
 pub use key_loader::{KeyLoader, KeySource};
+pub use legacy_pem::{LegacyPrivateKey, PemKeyFormat};
 pub use signature::{KeyType, RequestSigner, encode_signature, sign_with_key};
 
 /// Authentication configuration for CloudAPI requests

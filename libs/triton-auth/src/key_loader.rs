@@ -6,10 +6,15 @@
 
 //! SSH key loading from files
 //!
-//! Supports loading SSH private keys from files in OpenSSH format,
-//! including encrypted (passphrase-protected) keys.
+//! Supports loading SSH private keys from files in multiple formats:
+//! - OpenSSH format (`-----BEGIN OPENSSH PRIVATE KEY-----`)
+//! - PKCS#1 RSA (`-----BEGIN RSA PRIVATE KEY-----`)
+//! - SEC1 ECDSA (`-----BEGIN EC PRIVATE KEY-----`)
+//! - DSA (`-----BEGIN DSA PRIVATE KEY-----`)
+//! - PKCS#8 (`-----BEGIN PRIVATE KEY-----`)
 
 use crate::error::AuthError;
+use crate::legacy_pem::{LegacyPrivateKey, PemKeyFormat};
 use ssh_key::PrivateKey;
 use std::path::{Path, PathBuf};
 
@@ -107,6 +112,9 @@ impl KeyLoader {
     }
 
     /// Load a private key from a specific file path
+    ///
+    /// This method only returns `ssh_key::PrivateKey` for OpenSSH format keys.
+    /// For traditional PEM formats, use `load_legacy_from_file` instead.
     pub fn load_from_file(
         path: &Path,
         passphrase: Option<&String>,
@@ -115,6 +123,28 @@ impl KeyLoader {
             AuthError::KeyLoadError(format!("Failed to read {}: {}", path.display(), e))
         })?;
 
+        // Check if this is OpenSSH format
+        let format = PemKeyFormat::detect(&key_data);
+        if format != PemKeyFormat::OpenSsh {
+            // For non-OpenSSH formats, try to load via legacy_pem and convert
+            let legacy_key =
+                LegacyPrivateKey::from_pem(&key_data, passphrase.map(|s| s.as_str()))?;
+
+            // If it's already an OpenSSH key wrapped in LegacyPrivateKey, unwrap it
+            if let LegacyPrivateKey::OpenSsh(key) = legacy_key {
+                return Ok(key);
+            }
+
+            // For other formats, we can't convert to ssh_key::PrivateKey directly
+            // Return an error suggesting to use the new API
+            return Err(AuthError::KeyLoadError(format!(
+                "Key {} is in {:?} format. Use load_legacy_from_file() for full format support.",
+                path.display(),
+                format
+            )));
+        }
+
+        // OpenSSH format - use ssh-key crate directly
         if let Some(pass) = passphrase {
             PrivateKey::from_openssh(key_data.as_bytes())
                 .map_err(|e| {
@@ -142,6 +172,25 @@ impl KeyLoader {
                 Ok(key)
             }
         }
+    }
+
+    /// Load a private key from a file, supporting all PEM formats
+    ///
+    /// This method supports:
+    /// - OpenSSH format
+    /// - PKCS#1 RSA
+    /// - SEC1 ECDSA (P-256, P-384)
+    /// - DSA
+    /// - PKCS#8
+    pub fn load_legacy_from_file(
+        path: &Path,
+        passphrase: Option<&str>,
+    ) -> Result<LegacyPrivateKey, AuthError> {
+        let key_data = std::fs::read_to_string(path).map_err(|e| {
+            AuthError::KeyLoadError(format!("Failed to read {}: {}", path.display(), e))
+        })?;
+
+        LegacyPrivateKey::from_pem(&key_data, passphrase)
     }
 
     /// Try loading from common SSH key locations (~/.ssh/)
