@@ -137,9 +137,7 @@ async fn test_agent_signer_dsa() {
 
     // DSA signatures are not deterministic, just verify it's valid base64
     assert!(!signature.is_empty());
-    assert!(
-        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &signature).is_ok()
-    );
+    assert!(base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &signature).is_ok());
 }
 
 /// Mirrors: 'agentsigner ecdsa + buffer' test
@@ -165,9 +163,7 @@ async fn test_agent_signer_ecdsa() {
 
     // ECDSA signatures are not deterministic, just verify it's valid base64
     assert!(!signature.is_empty());
-    assert!(
-        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &signature).is_ok()
-    );
+    assert!(base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &signature).is_ok());
 }
 
 /// Mirrors: 'agentsigner with empty agent' test
@@ -180,10 +176,7 @@ async fn test_agent_key_not_found() {
     let result = triton_auth::agent::find_key_in_agent(fake_fp).await;
 
     // Should return KeyNotFound error
-    assert!(
-        result.is_err(),
-        "Should fail when key is not in agent"
-    );
+    assert!(result.is_err(), "Should fail when key is not in agent");
 }
 
 // ============================================================================
@@ -257,7 +250,9 @@ async fn test_agent_fingerprint_matches_file() {
     // Get fingerprint from file-loaded key
     let key_path = test_keys_dir().join("id_rsa");
     let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load RSA key");
-    let pub_blob = key.public_key_blob().expect("Failed to get public key blob");
+    let pub_blob = key
+        .public_key_blob()
+        .expect("Failed to get public key blob");
     let file_fp = md5_fingerprint_bytes(&pub_blob);
 
     assert_eq!(

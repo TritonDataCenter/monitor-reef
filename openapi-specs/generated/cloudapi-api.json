@@ -5380,11 +5380,9 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_String",
+                  "title": "Map_of_AnyValue",
                   "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
+                  "additionalProperties": true
                 }
               }
             }
@@ -5440,11 +5438,9 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_String",
+                  "title": "Map_of_AnyValue",
                   "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
+                  "additionalProperties": true
                 }
               }
             }
@@ -5500,11 +5496,9 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_String",
+                  "title": "Map_of_AnyValue",
                   "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
+                  "additionalProperties": true
                 }
               }
             }
@@ -5589,11 +5583,9 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_String",
+                  "title": "Map_of_AnyValue",
                   "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
+                  "additionalProperties": true
                 }
               }
             }
@@ -9560,9 +9552,7 @@
             "description": "Tags",
             "default": null,
             "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
+            "additionalProperties": true
           },
           "version": {
             "nullable": true,
@@ -9634,9 +9624,7 @@
             "description": "Tags",
             "default": null,
             "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
+            "additionalProperties": true
           }
         },
         "required": [
@@ -9818,9 +9806,7 @@
             "description": "Tags",
             "default": null,
             "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
+            "additionalProperties": true
           },
           "type": {
             "nullable": true,
@@ -10047,9 +10033,7 @@
             "description": "Tags",
             "default": {},
             "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
+            "additionalProperties": true
           },
           "type": {
             "description": "Image type",
@@ -10188,9 +10172,7 @@
           "tags": {
             "description": "Tags",
             "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
+            "additionalProperties": true
           },
           "type": {
             "description": "Machine type (smartmachine or virtualmachine)",
@@ -10803,7 +10785,8 @@
       },
       "TagsRequest": {
         "description": "Request to add/replace machine tags",
-        "type": "object"
+        "type": "object",
+        "additionalProperties": true
       },
       "UpdateAccountRequest": {
         "description": "Request to update account",
@@ -11208,9 +11191,7 @@
             "description": "Tags",
             "default": {},
             "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
+            "additionalProperties": true
           },
           "type": {
             "description": "Volume type",

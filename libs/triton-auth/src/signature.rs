@@ -152,15 +152,11 @@ impl RequestSigner {
     /// The signing string is:
     /// ```text
     /// date: <date>
-    /// (request-target): <method> <path>
     /// ```
-    pub fn signing_string(&self, method: &str, path: &str, date: &str) -> String {
-        format!(
-            "date: {}\n(request-target): {} {}",
-            date,
-            method.to_lowercase(),
-            path
-        )
+    ///
+    /// Note: CloudAPI only requires the date header to be signed.
+    pub fn signing_string(&self, _method: &str, _path: &str, date: &str) -> String {
+        format!("date: {}", date)
     }
 
     /// Generate a Date header value in RFC 2822 format
@@ -178,11 +174,11 @@ impl RequestSigner {
     /// # Returns
     /// The complete Authorization header value:
     /// ```text
-    /// Signature keyId="/:account/keys/:fp",algorithm="rsa-sha256",signature=":sig:"
+    /// Signature keyId="/:account/keys/:fp",algorithm="rsa-sha256",headers="date",signature=":sig:"
     /// ```
     pub fn authorization_header(&self, signature_b64: &str) -> String {
         format!(
-            "Signature keyId=\"{}\",algorithm=\"{}\",signature=\"{}\"",
+            "Signature keyId=\"{}\",algorithm=\"{}\",headers=\"date\",signature=\"{}\"",
             self.key_id_string(),
             self.algorithm(),
             signature_b64
@@ -234,24 +230,8 @@ mod tests {
         let date = "Mon, 15 Dec 2025 10:30:00 GMT";
         let signing_string = signer.signing_string("GET", "/testaccount/machines", date);
 
-        assert!(signing_string.contains("date: Mon, 15 Dec 2025 10:30:00 GMT"));
-        assert!(signing_string.contains("(request-target): get /testaccount/machines"));
-        assert!(signing_string.starts_with("date:"));
-        assert!(signing_string.contains('\n'));
-    }
-
-    #[test]
-    fn test_signing_string_method_lowercase() {
-        let signer = RequestSigner::new("test", "aa:bb:cc:dd", KeyType::Rsa);
-        let date = "Mon, 15 Dec 2025 10:30:00 GMT";
-
-        // POST should become post
-        let signing_string = signer.signing_string("POST", "/test/machines", date);
-        assert!(signing_string.contains("(request-target): post /test/machines"));
-
-        // GET should become get
-        let signing_string = signer.signing_string("GET", "/test/machines", date);
-        assert!(signing_string.contains("(request-target): get /test/machines"));
+        // CloudAPI only signs the date header
+        assert_eq!(signing_string, "date: Mon, 15 Dec 2025 10:30:00 GMT");
     }
 
     #[test]
@@ -295,6 +275,7 @@ mod tests {
 
         assert!(auth.starts_with("Signature keyId=\"/testaccount/keys/"));
         assert!(auth.contains("algorithm=\"rsa-sha256\""));
+        assert!(auth.contains("headers=\"date\""));
         assert!(auth.contains("signature=\"dGVzdHNpZ25hdHVyZQ==\""));
     }
 

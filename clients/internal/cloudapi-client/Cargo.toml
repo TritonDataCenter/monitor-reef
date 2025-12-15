@@ -23,8 +23,11 @@ cloudapi-api = { path = "../../../apis/cloudapi-api" }
 # Required for WebSocket endpoints (Progenitor-generated code)
 base64 = "0.22"
 rand = "0.9"
+# Authentication support
+triton-auth = { path = "../../../libs/triton-auth" }
 
 [build-dependencies]
 progenitor = { workspace = true }
 serde_json = { workspace = true }
 openapiv3 = { workspace = true }
+syn = "2.0"

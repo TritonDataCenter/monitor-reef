@@ -14,6 +14,7 @@
 //! - PKCS#8 (`-----BEGIN PRIVATE KEY-----`)
 
 use crate::error::AuthError;
+use crate::fingerprint::Fingerprint;
 use crate::legacy_pem::{LegacyPrivateKey, PemKeyFormat};
 use ssh_key::PrivateKey;
 use std::path::{Path, PathBuf};
@@ -23,7 +24,7 @@ use std::path::{Path, PathBuf};
 pub enum KeySource {
     /// Load key from SSH agent using fingerprint
     Agent {
-        /// MD5 fingerprint in colon-separated hex format
+        /// Fingerprint in MD5 or SHA256 format
         fingerprint: String,
     },
     /// Load key from file path
@@ -35,7 +36,7 @@ pub enum KeySource {
     },
     /// Auto-detect: try agent first, then common file locations
     Auto {
-        /// MD5 fingerprint in colon-separated hex format
+        /// Fingerprint in MD5 or SHA256 format
         fingerprint: String,
     },
 }
@@ -127,8 +128,7 @@ impl KeyLoader {
         let format = PemKeyFormat::detect(&key_data);
         if format != PemKeyFormat::OpenSsh {
             // For non-OpenSSH formats, try to load via legacy_pem and convert
-            let legacy_key =
-                LegacyPrivateKey::from_pem(&key_data, passphrase.map(|s| s.as_str()))?;
+            let legacy_key = LegacyPrivateKey::from_pem(&key_data, passphrase.map(|s| s.as_str()))?;
 
             // If it's already an OpenSSH key wrapped in LegacyPrivateKey, unwrap it
             if let LegacyPrivateKey::OpenSsh(key) = legacy_key {
@@ -194,7 +194,11 @@ impl KeyLoader {
     }
 
     /// Try loading from common SSH key locations (~/.ssh/)
-    fn load_from_common_paths(fingerprint: &str) -> Result<PrivateKey, AuthError> {
+    fn load_from_common_paths(fingerprint_str: &str) -> Result<PrivateKey, AuthError> {
+        // Parse the fingerprint to support both MD5 and SHA256 formats
+        let fingerprint = Fingerprint::parse(fingerprint_str)
+            .map_err(|e| AuthError::KeyLoadError(format!("Invalid fingerprint: {}", e)))?;
+
         let home = dirs::home_dir()
             .ok_or_else(|| AuthError::KeyLoadError("Could not determine home directory".into()))?;
 
@@ -206,13 +210,12 @@ impl KeyLoader {
             if path.exists() {
                 // Try to load without passphrase first
                 if let Ok(key) = Self::load_from_file(&path, None) {
-                    // Check if fingerprint matches
-                    let key_fp = crate::fingerprint::md5_fingerprint(key.public_key());
-                    if key_fp == fingerprint {
+                    // Check if fingerprint matches using the appropriate hash algorithm
+                    if fingerprint.matches(key.public_key()) {
                         tracing::debug!(
                             "Found matching key at {} for fingerprint {}",
                             path.display(),
-                            fingerprint
+                            fingerprint_str
                         );
                         return Ok(key);
                     }
@@ -222,7 +225,7 @@ impl KeyLoader {
 
         Err(AuthError::KeyNotFound(format!(
             "No key with fingerprint {} found in ~/.ssh/",
-            fingerprint
+            fingerprint_str
         )))
     }
 

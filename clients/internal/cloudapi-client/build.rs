@@ -22,7 +22,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut settings = GenerationSettings::default();
     settings
         .with_interface(progenitor::InterfaceStyle::Builder)
-        .with_tag(progenitor::TagStyle::Merged);
+        .with_tag(progenitor::TagStyle::Merged)
+        // Add authentication support via pre_hook_async
+        // The inner_type stores AuthConfig for each request
+        .with_inner_type(syn::parse_quote!(triton_auth::AuthConfig))
+        // The pre_hook_async function adds Date and Authorization headers
+        .with_pre_hook_async(syn::parse_quote!(crate::auth::add_auth_headers));
 
     let tokens = progenitor::Generator::new(&settings).generate_tokens(&openapi)?;
     std::fs::write(format!("{}/client.rs", out_dir), tokens.to_string())?;

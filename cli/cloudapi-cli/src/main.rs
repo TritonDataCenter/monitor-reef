@@ -23,7 +23,7 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use cloudapi_api::{DOCS_URL, FAVICON_URL};
-use cloudapi_client::TypedClient;
+use cloudapi_client::{AuthConfig, KeySource, TypedClient};
 
 /// Get environment variable with fallback
 ///
@@ -51,11 +51,19 @@ struct Cli {
     #[arg(long)]
     account: Option<String>,
 
-    /// SSH key fingerprint (for future authentication support)
+    /// SSH key fingerprint for authentication
     ///
-    /// Can also be set via TRITON_KEY_ID environment variable.
+    /// Can also be set via CLOUDAPI_KEY_ID or TRITON_KEY_ID environment variables.
+    /// CLOUDAPI_KEY_ID takes precedence over TRITON_KEY_ID.
+    /// Supports both MD5 (aa:bb:cc:...) and SHA256 (SHA256:base64...) formats.
     #[arg(long)]
     key_id: Option<String>,
+
+    /// Path to SSH private key file (optional)
+    ///
+    /// If not specified, keys are loaded from SSH agent or ~/.ssh/ directory.
+    #[arg(long)]
+    key_path: Option<String>,
 
     #[command(subcommand)]
     command: Commands,
@@ -158,15 +166,44 @@ fn resolve_base_url(cli_base_url: Option<String>) -> String {
         .unwrap_or_else(|| DEFAULT_BASE_URL.to_string())
 }
 
+/// Resolve the key ID from CLI arg or environment variables
+fn resolve_key_id(cli_key_id: Option<String>) -> Result<String> {
+    cli_key_id
+        .or_else(|| env_with_fallback("CLOUDAPI_KEY_ID", "TRITON_KEY_ID"))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "SSH key fingerprint required for authentication. Set via --key-id flag, CLOUDAPI_KEY_ID, or TRITON_KEY_ID environment variable"
+            )
+        })
+}
+
+/// Create AuthConfig from CLI arguments and environment variables
+fn create_auth_config(account: &str, key_id: &str, key_path: Option<String>) -> AuthConfig {
+    let key_source = match key_path {
+        Some(path) => KeySource::file(path),
+        None => KeySource::auto(key_id),
+    };
+    AuthConfig::new(account, key_id, key_source)
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     let base_url = resolve_base_url(cli.base_url);
-    let client = TypedClient::new(&base_url);
+
+    // Handle TestDocs separately since it doesn't require authentication
+    if matches!(cli.command, Commands::TestDocs) {
+        return test_docs(&base_url).await;
+    }
+
+    // Resolve account and key_id for authentication
+    let account = resolve_account(cli.account)?;
+    let key_id = resolve_key_id(cli.key_id)?;
+    let auth_config = create_auth_config(&account, &key_id, cli.key_path);
+    let client = TypedClient::new(&base_url, auth_config);
 
     match cli.command {
         Commands::GetAccount { raw } => {
-            let account = resolve_account(cli.account)?;
             let resp = client
                 .inner()
                 .get_account()
@@ -181,7 +218,6 @@ async fn main() -> Result<()> {
             }
         }
         Commands::ListMachines { name, raw } => {
-            let account = resolve_account(cli.account.clone())?;
             let mut req = client.inner().list_machines().account(&account);
             if let Some(n) = name {
                 req = req.name(n);
@@ -202,7 +238,6 @@ async fn main() -> Result<()> {
             }
         }
         Commands::GetMachine { machine, raw } => {
-            let account = resolve_account(cli.account.clone())?;
             let resp = client
                 .inner()
                 .get_machine()
@@ -224,17 +259,14 @@ async fn main() -> Result<()> {
             }
         }
         Commands::StartMachine { machine } => {
-            let account = resolve_account(cli.account.clone())?;
             client.start_machine(&account, &machine, None).await?;
             println!("Machine started");
         }
         Commands::StopMachine { machine } => {
-            let account = resolve_account(cli.account.clone())?;
             client.stop_machine(&account, &machine, None).await?;
             println!("Machine stopped");
         }
         Commands::ListImages { raw } => {
-            let account = resolve_account(cli.account.clone())?;
             let resp = client
                 .inner()
                 .list_images()
@@ -252,7 +284,6 @@ async fn main() -> Result<()> {
             }
         }
         Commands::GetImage { image, raw } => {
-            let account = resolve_account(cli.account.clone())?;
             let resp = client
                 .inner()
                 .get_image()
@@ -274,7 +305,6 @@ async fn main() -> Result<()> {
             }
         }
         Commands::ListPackages { raw } => {
-            let account = resolve_account(cli.account.clone())?;
             let resp = client
                 .inner()
                 .list_packages()
@@ -291,7 +321,6 @@ async fn main() -> Result<()> {
             }
         }
         Commands::ListNetworks { raw } => {
-            let account = resolve_account(cli.account.clone())?;
             let resp = client
                 .inner()
                 .list_networks()
@@ -308,7 +337,6 @@ async fn main() -> Result<()> {
             }
         }
         Commands::ListVolumes { raw } => {
-            let account = resolve_account(cli.account.clone())?;
             let resp = client
                 .inner()
                 .list_volumes()
@@ -325,7 +353,6 @@ async fn main() -> Result<()> {
             }
         }
         Commands::ListFirewallRules { raw } => {
-            let account = resolve_account(cli.account.clone())?;
             let resp = client
                 .inner()
                 .list_firewall_rules()
@@ -342,7 +369,6 @@ async fn main() -> Result<()> {
             }
         }
         Commands::ListServices { raw } => {
-            let account = resolve_account(cli.account.clone())?;
             let resp = client
                 .inner()
                 .list_services()
@@ -359,7 +385,6 @@ async fn main() -> Result<()> {
             }
         }
         Commands::ListDatacenters { raw } => {
-            let account = resolve_account(cli.account.clone())?;
             let resp = client
                 .inner()
                 .list_datacenters()
@@ -376,7 +401,8 @@ async fn main() -> Result<()> {
             }
         }
         Commands::TestDocs => {
-            test_docs(&base_url).await?;
+            // Handled above before authentication setup
+            unreachable!()
         }
     }
 

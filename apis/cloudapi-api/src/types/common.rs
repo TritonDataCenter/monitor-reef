@@ -8,6 +8,7 @@
 
 use schemars::JsonSchema;
 use serde::Deserialize;
+use serde_json::Value;
 use std::collections::HashMap;
 
 /// UUID type
@@ -16,8 +17,8 @@ pub type Uuid = String;
 /// RFC3339 timestamp
 pub type Timestamp = String;
 
-/// Key-value tags
-pub type Tags = HashMap<String, String>;
+/// Key-value tags (values can be strings, booleans, or numbers)
+pub type Tags = HashMap<String, Value>;
 
 /// Key-value metadata
 pub type Metadata = HashMap<String, String>;

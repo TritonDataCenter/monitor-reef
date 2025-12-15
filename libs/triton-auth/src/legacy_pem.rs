@@ -364,9 +364,9 @@ impl LegacyPrivateKey {
                 let mut digest = Sha1::new();
                 Sha1Digest::update(&mut digest, data);
 
-                let signature: dsa::Signature = key.try_sign_digest(digest).map_err(|e| {
-                    AuthError::SigningError(format!("DSA signing failed: {}", e))
-                })?;
+                let signature: dsa::Signature = key
+                    .try_sign_digest(digest)
+                    .map_err(|e| AuthError::SigningError(format!("DSA signing failed: {}", e)))?;
 
                 // DSA signature needs to be in SSH format: two 20-byte integers
                 // The dsa crate provides r() and s() accessors
@@ -413,7 +413,9 @@ fn parse_dsa_der(
 
     // Check SEQUENCE tag
     if der.get(pos) != Some(&0x30) {
-        return Err(AuthError::KeyLoadError("Invalid DSA key: not a SEQUENCE".into()));
+        return Err(AuthError::KeyLoadError(
+            "Invalid DSA key: not a SEQUENCE".into(),
+        ));
     }
     pos += 1;
 
@@ -495,9 +497,9 @@ fn read_asn1_integer(der: &[u8], pos: usize) -> Result<(Vec<u8>, usize), AuthErr
         let num_octets = (len_byte & 0x7f) as usize;
         let mut length: usize = 0;
         for i in 0..num_octets {
-            let byte = *der.get(len_pos + 1 + i).ok_or_else(|| {
-                AuthError::KeyLoadError("Unexpected end of DER data".into())
-            })?;
+            let byte = *der
+                .get(len_pos + 1 + i)
+                .ok_or_else(|| AuthError::KeyLoadError("Unexpected end of DER data".into()))?;
             length = (length << 8) | (byte as usize);
         }
         (length, len_pos + 1 + num_octets)

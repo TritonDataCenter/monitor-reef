@@ -75,7 +75,9 @@ fn test_load_ecdsa_key() {
 fn test_rsa_key_fingerprint() {
     let key_path = test_keys_dir().join("id_rsa");
     let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load RSA key");
-    let pub_blob = key.public_key_blob().expect("Failed to get public key blob");
+    let pub_blob = key
+        .public_key_blob()
+        .expect("Failed to get public key blob");
     let fp = md5_fingerprint_bytes(&pub_blob);
     assert_eq!(fp, ID_RSA_MD5, "RSA key MD5 fingerprint mismatch");
 }
@@ -85,7 +87,9 @@ fn test_rsa_key_fingerprint() {
 fn test_dsa_key_fingerprint() {
     let key_path = test_keys_dir().join("id_dsa");
     let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load DSA key");
-    let pub_blob = key.public_key_blob().expect("Failed to get public key blob");
+    let pub_blob = key
+        .public_key_blob()
+        .expect("Failed to get public key blob");
     let fp = md5_fingerprint_bytes(&pub_blob);
     assert_eq!(fp, ID_DSA_MD5, "DSA key MD5 fingerprint mismatch");
 }
@@ -95,7 +99,9 @@ fn test_dsa_key_fingerprint() {
 fn test_ecdsa_key_fingerprint() {
     let key_path = test_keys_dir().join("id_ecdsa");
     let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load ECDSA key");
-    let pub_blob = key.public_key_blob().expect("Failed to get public key blob");
+    let pub_blob = key
+        .public_key_blob()
+        .expect("Failed to get public key blob");
     let fp = md5_fingerprint_bytes(&pub_blob);
     assert_eq!(fp, ID_ECDSA_MD5, "ECDSA key MD5 fingerprint mismatch");
 }

@@ -12,22 +12,53 @@
 //!
 //! ## Usage
 //!
-//! For most operations, use the generated Progenitor client directly:
+//! ### Authenticated Client (Recommended)
+//!
+//! For authenticated requests using HTTP Signature authentication:
 //!
 //! ```ignore
-//! use cloudapi_client::Client;
+//! use cloudapi_client::{AuthenticatedClient, AuthConfig, KeySource};
 //!
-//! let client = Client::new("https://cloudapi.example.com");
-//! let machines = client.list_machines().account("myaccount").send().await?;
+//! // Configure authentication
+//! let auth_config = AuthConfig::new(
+//!     "myaccount",
+//!     "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99",
+//!     KeySource::auto("aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"),
+//! );
+//!
+//! // Create authenticated client
+//! let client = AuthenticatedClient::new("https://cloudapi.example.com", auth_config);
+//!
+//! // All requests automatically include Date and Authorization headers
+//! let machines = client.inner().list_machines().account("myaccount").send().await?;
 //! ```
+//!
+//! ### Unauthenticated Client
+//!
+//! For unauthenticated requests (limited API access):
+//!
+//! ```ignore
+//! use cloudapi_client::UnauthenticatedClient;
+//!
+//! let client = UnauthenticatedClient::new("https://cloudapi.example.com");
+//! // Only works for endpoints that don't require authentication
+//! ```
+//!
+//! ### TypedClient for Action-based Endpoints
 //!
 //! For action-based endpoints (machines, images, volumes, disks), use the
 //! typed wrapper methods for better ergonomics:
 //!
 //! ```ignore
-//! use cloudapi_client::TypedClient;
+//! use cloudapi_client::{TypedClient, AuthConfig, KeySource};
 //!
-//! let client = TypedClient::new("https://cloudapi.example.com");
+//! let auth_config = AuthConfig::new(
+//!     "myaccount",
+//!     "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99",
+//!     KeySource::auto("aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"),
+//! );
+//!
+//! let client = TypedClient::new("https://cloudapi.example.com", auth_config);
 //!
 //! // Typed machine actions
 //! client.start_machine("myaccount", &machine_uuid, None).await?;
@@ -38,8 +69,13 @@
 //! let account = client.inner().get_account().account("myaccount").send().await?;
 //! ```
 
+pub mod auth;
+
 // Include the Progenitor-generated client code
 include!(concat!(env!("OUT_DIR"), "/client.rs"));
+
+// Re-export triton-auth types for convenience
+pub use triton_auth::{AuthConfig, AuthError, KeySource};
 
 // Re-export types from the API crate for convenience
 pub use cloudapi_api::{
@@ -165,26 +201,73 @@ pub use cloudapi_api::{
     VolumeState,
 };
 
+/// Authenticated client wrapper
+///
+/// This wrapper provides access to a CloudAPI client configured with
+/// HTTP Signature authentication. All requests automatically include
+/// the required Date and Authorization headers.
+pub struct AuthenticatedClient {
+    inner: Client,
+    auth_config: AuthConfig,
+}
+
+impl AuthenticatedClient {
+    /// Create a new authenticated client
+    ///
+    /// # Arguments
+    /// * `base_url` - CloudAPI base URL (e.g., "https://cloudapi.example.com")
+    /// * `auth_config` - Authentication configuration
+    pub fn new(base_url: &str, auth_config: AuthConfig) -> Self {
+        Self {
+            inner: Client::new_with_client(base_url, reqwest::Client::new(), auth_config.clone()),
+            auth_config,
+        }
+    }
+
+    /// Access the underlying Progenitor client
+    pub fn inner(&self) -> &Client {
+        &self.inner
+    }
+
+    /// Get the authentication configuration
+    pub fn auth_config(&self) -> &AuthConfig {
+        &self.auth_config
+    }
+}
+
 /// Typed client wrapper for action-based endpoints
 ///
 /// This wrapper provides ergonomic methods for CloudAPI's action-based endpoints
 /// (machines, images, volumes, disks) while still allowing access to the underlying
 /// Progenitor-generated client for all other operations.
+///
+/// This client is authenticated and will automatically sign all requests.
 pub struct TypedClient {
     inner: Client,
+    auth_config: AuthConfig,
 }
 
 impl TypedClient {
-    /// Create a new typed client wrapper
-    pub fn new(base_url: &str) -> Self {
+    /// Create a new typed client wrapper with authentication
+    ///
+    /// # Arguments
+    /// * `base_url` - CloudAPI base URL (e.g., "https://cloudapi.example.com")
+    /// * `auth_config` - Authentication configuration
+    pub fn new(base_url: &str, auth_config: AuthConfig) -> Self {
         Self {
-            inner: Client::new(base_url),
+            inner: Client::new_with_client(base_url, reqwest::Client::new(), auth_config.clone()),
+            auth_config,
         }
     }
 
     /// Access the underlying Progenitor client for non-wrapped methods
     pub fn inner(&self) -> &Client {
         &self.inner
+    }
+
+    /// Get the authentication configuration
+    pub fn auth_config(&self) -> &AuthConfig {
+        &self.auth_config
     }
 
     // ========================================================================

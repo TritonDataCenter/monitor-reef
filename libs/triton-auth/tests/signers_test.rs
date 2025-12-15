@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use triton_auth::{
     fingerprint::md5_fingerprint_bytes,
     key_loader::KeyLoader,
-    signature::{encode_signature, KeyType, RequestSigner},
+    signature::{KeyType, RequestSigner, encode_signature},
 };
 
 /// Test key fingerprints from node-smartdc-auth test suite
@@ -55,7 +55,9 @@ fn test_basic_signer_rsa() {
     let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load RSA key");
 
     // Get fingerprint
-    let pub_blob = key.public_key_blob().expect("Failed to get public key blob");
+    let pub_blob = key
+        .public_key_blob()
+        .expect("Failed to get public key blob");
     let key_id = md5_fingerprint_bytes(&pub_blob);
 
     // Sign "foobar" - the same test data used in node-smartdc-auth
@@ -88,7 +90,9 @@ fn test_basic_signer_dsa() {
     let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load DSA key");
 
     // Get fingerprint
-    let pub_blob = key.public_key_blob().expect("Failed to get public key blob");
+    let pub_blob = key
+        .public_key_blob()
+        .expect("Failed to get public key blob");
     let key_id = md5_fingerprint_bytes(&pub_blob);
 
     // Sign "foobar"
@@ -105,9 +109,7 @@ fn test_basic_signer_dsa() {
 
     // DSA signatures are not deterministic, but should be valid base64
     assert!(!signature.is_empty());
-    assert!(
-        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &signature).is_ok()
-    );
+    assert!(base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &signature).is_ok());
 
     // DSA-SHA1 signatures should be 40 bytes (two 20-byte integers)
     assert_eq!(sig_bytes.len(), 40, "DSA signature should be 40 bytes");
@@ -124,7 +126,9 @@ fn test_basic_signer_ecdsa() {
     let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load ECDSA key");
 
     // Get fingerprint
-    let pub_blob = key.public_key_blob().expect("Failed to get public key blob");
+    let pub_blob = key
+        .public_key_blob()
+        .expect("Failed to get public key blob");
     let key_id = md5_fingerprint_bytes(&pub_blob);
 
     // Sign some data
@@ -141,9 +145,7 @@ fn test_basic_signer_ecdsa() {
 
     // ECDSA signatures are not deterministic, but should be valid base64
     assert!(!signature.is_empty());
-    assert!(
-        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &signature).is_ok()
-    );
+    assert!(base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &signature).is_ok());
 
     // P-256 ECDSA signatures should be 64 bytes (two 32-byte integers)
     assert_eq!(
@@ -163,7 +165,9 @@ fn test_basic_signer_ecdsa() {
 fn test_request_signer_rsa() {
     let key_path = test_keys_dir().join("id_rsa");
     let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load RSA key");
-    let pub_blob = key.public_key_blob().expect("Failed to get public key blob");
+    let pub_blob = key
+        .public_key_blob()
+        .expect("Failed to get public key blob");
     let fp = md5_fingerprint_bytes(&pub_blob);
 
     // Create signer
@@ -191,9 +195,12 @@ fn test_request_signer_rsa() {
 /// Verifies subuser keyId format
 #[test]
 fn test_request_signer_with_subuser() {
-    let signer =
-        RequestSigner::new("foo", "12:34:56:78:90:ab:cd:ef:12:34:56:78:90:ab:cd:ef", KeyType::Rsa)
-            .with_subuser("test");
+    let signer = RequestSigner::new(
+        "foo",
+        "12:34:56:78:90:ab:cd:ef:12:34:56:78:90:ab:cd:ef",
+        KeyType::Rsa,
+    )
+    .with_subuser("test");
 
     let key_id = signer.key_id_string();
 
@@ -228,7 +235,9 @@ fn test_algorithm_strings_match_node_smartdc_auth() {
 fn test_full_request_signing_flow() {
     let key_path = test_keys_dir().join("id_rsa");
     let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load RSA key");
-    let pub_blob = key.public_key_blob().expect("Failed to get public key blob");
+    let pub_blob = key
+        .public_key_blob()
+        .expect("Failed to get public key blob");
     let fp = md5_fingerprint_bytes(&pub_blob);
 
     // Create signer
@@ -259,10 +268,8 @@ fn test_signing_string_format() {
     let date = "Thu, 05 Jan 2024 00:00:00 GMT";
     let signing_string = signer.signing_string("GET", "/foo/machines", date);
 
-    // Verify the format matches what node-smartdc-auth expects:
-    // date: <date>\n(request-target): <method> <path>
-    assert!(signing_string.starts_with("date: "));
-    assert!(signing_string.contains("\n(request-target): get /foo/machines"));
+    // CloudAPI only requires signing the date header
+    assert_eq!(signing_string, "date: Thu, 05 Jan 2024 00:00:00 GMT");
 }
 
 /// KeyId format test (without subuser)
@@ -278,9 +285,10 @@ fn test_authorization_header_format() {
     let signer = RequestSigner::new("foo", ID_RSA_MD5, KeyType::Rsa);
     let auth_header = signer.authorization_header("dGVzdHNpZw==");
 
-    // Verify format: Signature keyId="...",algorithm="...",signature="..."
+    // Verify format: Signature keyId="...",algorithm="...",headers="date",signature="..."
     assert!(auth_header.starts_with("Signature keyId=\""));
     assert!(auth_header.contains(&format!("keyId=\"/foo/keys/{}", ID_RSA_MD5)));
     assert!(auth_header.contains("algorithm=\"rsa-sha256\""));
+    assert!(auth_header.contains("headers=\"date\""));
     assert!(auth_header.contains("signature=\"dGVzdHNpZw==\""));
 }
