@@ -20,6 +20,9 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 cloudapi-api = { path = "../../../apis/cloudapi-api" }
+# Required for WebSocket endpoints (Progenitor-generated code)
+base64 = "0.22"
+rand = "0.9"
 
 [build-dependencies]
 progenitor = { workspace = true }
