@@ -44,6 +44,54 @@ pub enum ImageType {
     Other,
 }
 
+/// Image requirements
+///
+/// Specifies hardware/software requirements for an image.
+#[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageRequirements {
+    /// Minimum RAM in MB
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_ram: Option<u64>,
+    /// Maximum RAM in MB
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_ram: Option<u64>,
+    /// Minimum memory (alias for min_ram)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub min_memory: Option<u64>,
+    /// Maximum memory (alias for max_ram)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_memory: Option<u64>,
+    /// Required brand
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brand: Option<String>,
+    /// Required bootrom (for bhyve)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bootrom: Option<String>,
+}
+
+/// Image file information
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageFile {
+    /// Compression type (gzip, bzip2, none)
+    pub compression: String,
+    /// SHA1 checksum
+    pub sha1: String,
+    /// File size in bytes
+    pub size: u64,
+}
+
+/// Image error information (for failed image creation)
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ImageError {
+    /// Error code
+    pub code: String,
+    /// Error message
+    pub message: String,
+}
+
 /// Image/dataset information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -53,42 +101,54 @@ pub struct Image {
     /// Image name
     pub name: String,
     /// Image version
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub version: Option<String>,
+    pub version: String,
     /// Operating system
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub os: Option<String>,
+    pub os: String,
     /// Image type
     #[serde(rename = "type")]
     pub image_type: ImageType,
     /// Description
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    /// Requirements
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub requirements: Option<serde_json::Value>,
+    /// Requirements (always present, may be empty)
+    #[serde(default)]
+    pub requirements: ImageRequirements,
     /// Homepage URL
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub homepage: Option<String>,
     /// Published timestamp
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub published_at: Option<Timestamp>,
-    /// Owner UUID
-    pub owner: Uuid,
-    /// Public image
-    #[serde(default)]
+    /// Owner UUID (API version >= 7.1.0)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub owner: Option<Uuid>,
+    /// Public image (API version >= 7.1.0)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub public: Option<bool>,
-    /// Image state
-    pub state: ImageState,
+    /// Image state (API version >= 7.1.0)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state: Option<ImageState>,
     /// Tags
-    #[serde(default)]
-    pub tags: Tags,
-    /// EULA URL
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tags: Option<Tags>,
+    /// EULA URL (API version >= 7.1.0)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub eula: Option<String>,
-    /// ACL (list of account UUIDs with access)
-    #[serde(default)]
+    /// ACL - list of account UUIDs with access (API version >= 7.1.0)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub acl: Option<Vec<Uuid>>,
+    /// Origin image UUID (API version >= 7.1.0)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<Uuid>,
+    /// Image size in bytes (zvol images only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image_size: Option<u64>,
+    /// Files array (contains compression, sha1, size)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub files: Option<Vec<ImageFile>>,
+    /// Error information (if image creation failed, API version >= 7.1.0)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<ImageError>,
 }
 
 /// Request to create image from machine

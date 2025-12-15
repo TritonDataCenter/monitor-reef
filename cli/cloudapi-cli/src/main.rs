@@ -228,12 +228,7 @@ async fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&machines)?);
             } else {
                 for m in &machines {
-                    println!(
-                        "{}: {} ({})",
-                        m.id,
-                        m.name.as_deref().unwrap_or("unnamed"),
-                        m.state
-                    );
+                    println!("{}: {} ({})", m.id, m.name, m.state);
                 }
             }
         }
@@ -251,10 +246,7 @@ async fn main() -> Result<()> {
             } else {
                 println!(
                     "ID: {}\nName: {}\nState: {}\nImage: {}",
-                    m.id,
-                    m.name.as_deref().unwrap_or("unnamed"),
-                    m.state,
-                    m.image
+                    m.id, m.name, m.state, m.image
                 );
             }
         }
@@ -278,8 +270,12 @@ async fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&images)?);
             } else {
                 for img in &images {
-                    let version = img.version.as_deref().unwrap_or("unknown");
-                    println!("{}: {} {} ({})", img.id, img.name, version, img.state);
+                    let state_str = img
+                        .state
+                        .as_ref()
+                        .map(|s| format!("{:?}", s))
+                        .unwrap_or_else(|| "unknown".to_string());
+                    println!("{}: {} {} ({})", img.id, img.name, img.version, state_str);
                 }
             }
         }
@@ -295,12 +291,14 @@ async fn main() -> Result<()> {
             if raw {
                 println!("{}", serde_json::to_string_pretty(&img)?);
             } else {
+                let state_str = img
+                    .state
+                    .as_ref()
+                    .map(|s| format!("{:?}", s))
+                    .unwrap_or_else(|| "unknown".to_string());
                 println!(
                     "ID: {}\nName: {}\nVersion: {}\nState: {}",
-                    img.id,
-                    img.name,
-                    img.version.as_deref().unwrap_or("unknown"),
-                    img.state
+                    img.id, img.name, img.version, state_str
                 );
             }
         }
@@ -379,8 +377,8 @@ async fn main() -> Result<()> {
             if raw {
                 println!("{}", serde_json::to_string_pretty(&services)?);
             } else {
-                for svc in &services {
-                    println!("{}: {}", svc.name, svc.endpoint);
+                for (name, url) in &services {
+                    println!("{}: {}", name, url);
                 }
             }
         }
@@ -395,8 +393,8 @@ async fn main() -> Result<()> {
             if raw {
                 println!("{}", serde_json::to_string_pretty(&dcs)?);
             } else {
-                for dc in &dcs {
-                    println!("{}: {}", dc.name, dc.url);
+                for (name, url) in &dcs {
+                    println!("{}: {}", name, url);
                 }
             }
         }

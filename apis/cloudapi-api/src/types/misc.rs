@@ -6,7 +6,7 @@
 
 //! Miscellaneous types (packages, datacenters, services, migrations)
 
-use super::common::{Timestamp, Uuid};
+use super::common::{Brand, Timestamp, Uuid};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +17,17 @@ pub struct PackagePath {
     pub account: String,
     /// Package name or UUID
     pub package: String,
+}
+
+/// Disk configuration in a package (bhyve only)
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PackageDisk {
+    /// Disk size in MB
+    pub size: u64,
+    /// Block size in bytes
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_size: Option<u64>,
 }
 
 /// Package information
@@ -33,11 +44,11 @@ pub struct Package {
     pub disk: u64,
     /// Swap in MB
     pub swap: u64,
-    /// VCPUs
+    /// VCPUs (defaults to 0)
     #[serde(default)]
-    pub vcpus: Option<u32>,
-    /// Lightweight workload
-    #[serde(default)]
+    pub vcpus: u32,
+    /// Lightweight processes limit
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lwps: Option<u32>,
     /// Version
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -48,12 +59,30 @@ pub struct Package {
     /// Description
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    /// Default
+    /// Default package
     #[serde(default)]
-    pub default: Option<bool>,
+    pub default: bool,
+    /// Brand (joyent, bhyve, kvm, etc.)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brand: Option<Brand>,
+    /// Flexible disk mode (bhyve only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flexible_disk: Option<bool>,
+    /// Disk configuration (bhyve only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disks: Option<Vec<PackageDisk>>,
 }
 
-/// Datacenter information
+/// Datacenter map: name -> URL
+///
+/// The CloudAPI returns datacenters as a map where keys are datacenter names
+/// and values are their URLs. Example:
+/// ```json
+/// {"us-central-1": "https://us-central-1.api.mnx.io"}
+/// ```
+pub type Datacenters = std::collections::HashMap<String, String>;
+
+/// Datacenter information (used for add_foreign_datacenter response)
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Datacenter {
@@ -73,7 +102,16 @@ pub struct AddForeignDatacenterRequest {
     pub url: String,
 }
 
-/// Service information
+/// Services map: name -> URL
+///
+/// The CloudAPI returns services as a map where keys are service names
+/// and values are their URLs. Example:
+/// ```json
+/// {"cmon": "https://cmon.example.com:9163", "docker": "tcp://docker.example.com:2376"}
+/// ```
+pub type Services = std::collections::HashMap<String, String>;
+
+/// Service information (individual service entry, for documentation)
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Service {

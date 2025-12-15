@@ -6,7 +6,7 @@
 
 //! Machine-related types
 
-use super::common::{Metadata, Tags, Timestamp, Uuid};
+use super::common::{Brand, Metadata, Tags, Timestamp, Uuid};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -45,6 +45,16 @@ pub enum MachineState {
     Unknown,
 }
 
+/// Machine type (virtualization category)
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum MachineType {
+    /// SmartOS zone or Linux container
+    Smartmachine,
+    /// Hardware VM (KVM or bhyve)
+    Virtualmachine,
+}
+
 /// Machine information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -52,23 +62,24 @@ pub struct Machine {
     /// Machine UUID
     pub id: Uuid,
     /// Machine alias/name
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub name: Option<String>,
+    pub name: String,
     /// Machine type (smartmachine or virtualmachine)
     #[serde(rename = "type")]
-    pub machine_type: String,
-    /// Brand (joyent, kvm, bhyve, lx)
-    pub brand: String,
+    pub machine_type: MachineType,
+    /// Brand (joyent, kvm, bhyve, lx, joyent-minimal)
+    pub brand: Brand,
     /// Current state
     pub state: MachineState,
     /// Image UUID
     pub image: Uuid,
-    /// Package name/UUID
+    /// Package name
     pub package: String,
     /// RAM in MB
     pub memory: u64,
     /// Disk space in MB
     pub disk: u64,
+    /// IP addresses (always present)
+    pub ips: Vec<String>,
     /// Metadata
     pub metadata: Metadata,
     /// Tags
@@ -77,24 +88,65 @@ pub struct Machine {
     pub created: Timestamp,
     /// Last update timestamp
     pub updated: Timestamp,
-    /// Docker-specific fields
+    /// Network UUIDs (API version >= 7.1.0)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub docker: Option<bool>,
-    /// Firewall enabled
-    #[serde(default)]
-    pub firewall_enabled: Option<bool>,
-    /// Deletion protection enabled
-    #[serde(default)]
-    pub deletion_protection: Option<bool>,
-    /// Compute node UUID
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub compute_node: Option<Uuid>,
+    pub networks: Option<Vec<Uuid>>,
     /// Primary IP address
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primary_ip: Option<String>,
     /// Network interfaces
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub nics: Vec<MachineNic>,
+    /// Docker container
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub docker: Option<bool>,
+    /// Firewall enabled
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub firewall_enabled: Option<bool>,
+    /// Deletion protection enabled
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deletion_protection: Option<bool>,
+    /// Compute node UUID (server hosting the VM)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub compute_node: Option<Uuid>,
+    /// DNS names (CNS feature)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dns_names: Option<Vec<String>>,
+    /// Free space in bytes (bhyve with flexible disk)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub free_space: Option<u64>,
+    /// Disks (bhyve VMs only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disks: Option<Vec<MachineDisk>>,
+    /// Whether the VM uses encrypted storage
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub encrypted: Option<bool>,
+    /// Whether the VM uses flexible disk mode (bhyve only)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flexible: Option<bool>,
+    /// Whether a delegate dataset is present
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delegate_dataset: Option<bool>,
+}
+
+/// Disk attached to a machine (bhyve VMs)
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct MachineDisk {
+    /// Disk UUID
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<Uuid>,
+    /// Disk size in MB
+    pub size: u64,
+    /// Block size in bytes
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_size: Option<u64>,
+    /// Boot disk
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boot: Option<bool>,
+    /// Image UUID (for image-backed disks)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<Uuid>,
 }
 
 /// Network interface on a machine
@@ -269,9 +321,12 @@ pub struct ListMachinesQuery {
     /// Filter by memory (MB)
     #[serde(default)]
     pub memory: Option<u64>,
-    /// Filter by machine type
+    /// Filter by machine type (smartmachine or virtualmachine)
     #[serde(default, rename = "type")]
-    pub machine_type: Option<String>,
+    pub machine_type: Option<MachineType>,
+    /// Filter by brand
+    #[serde(default)]
+    pub brand: Option<Brand>,
     /// Pagination offset
     #[serde(default)]
     pub offset: Option<u64>,

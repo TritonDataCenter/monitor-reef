@@ -1797,6 +1797,8 @@ pub trait CloudApi {
     // ========================================================================
 
     /// List datacenters
+    ///
+    /// Returns a map of datacenter names to their URLs.
     #[endpoint {
         method = GET,
         path = "/{account}/datacenters",
@@ -1805,7 +1807,7 @@ pub trait CloudApi {
     async fn list_datacenters(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
-    ) -> Result<HttpResponseOk<Vec<Datacenter>>, HttpError>;
+    ) -> Result<HttpResponseOk<Datacenters>, HttpError>;
 
     /// Get datacenter
     #[endpoint {
@@ -1819,6 +1821,8 @@ pub trait CloudApi {
     ) -> Result<HttpResponseOk<String>, HttpError>;
 
     /// List foreign datacenters
+    ///
+    /// Returns a map of foreign datacenter names to their URLs.
     #[endpoint {
         method = GET,
         path = "/{account}/foreigndatacenters",
@@ -1827,7 +1831,7 @@ pub trait CloudApi {
     async fn list_foreign_datacenters(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
-    ) -> Result<HttpResponseOk<Vec<Datacenter>>, HttpError>;
+    ) -> Result<HttpResponseOk<Datacenters>, HttpError>;
 
     /// Add foreign datacenter
     #[endpoint {
@@ -1846,6 +1850,8 @@ pub trait CloudApi {
     // ========================================================================
 
     /// List services
+    ///
+    /// Returns a map of service names to their URLs.
     #[endpoint {
         method = GET,
         path = "/{account}/services",
@@ -1854,7 +1860,7 @@ pub trait CloudApi {
     async fn list_services(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
-    ) -> Result<HttpResponseOk<Vec<Service>>, HttpError>;
+    ) -> Result<HttpResponseOk<Services>, HttpError>;
 
     // ========================================================================
     // Volumes

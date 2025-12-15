@@ -7,7 +7,7 @@
 //! Common types used across CloudAPI
 
 use schemars::JsonSchema;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 
@@ -25,6 +25,26 @@ pub type Metadata = HashMap<String, String>;
 
 /// Role tags for RBAC
 pub type RoleTags = Vec<String>;
+
+/// VM/Container brand
+///
+/// The brand determines the virtualization/containerization technology used.
+/// Valid brands as defined in `lib/machines.js`:
+/// - `bhyve`: FreeBSD hypervisor for hardware VMs
+/// - `joyent`: Native SmartOS zone
+/// - `joyent-minimal`: Minimal SmartOS zone
+/// - `kvm`: KVM hardware VM
+/// - `lx`: Linux-branded zone (Linux containers)
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Brand {
+    Bhyve,
+    Joyent,
+    #[serde(rename = "joyent-minimal")]
+    JoyentMinimal,
+    Kvm,
+    Lx,
+}
 
 /// Path parameter for account
 #[derive(Debug, Deserialize, JsonSchema)]

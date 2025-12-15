@@ -589,6 +589,7 @@
           "datacenters"
         ],
         "summary": "List datacenters",
+        "description": "Returns a map of datacenter names to their URLs.",
         "operationId": "list_datacenters",
         "parameters": [
           {
@@ -607,10 +608,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Array_of_Datacenter",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Datacenter"
+                  "title": "Map_of_String",
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
                   }
                 }
               }
@@ -1436,6 +1437,7 @@
           "datacenters"
         ],
         "summary": "List foreign datacenters",
+        "description": "Returns a map of foreign datacenter names to their URLs.",
         "operationId": "list_foreign_datacenters",
         "parameters": [
           {
@@ -1454,10 +1456,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Array_of_Datacenter",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Datacenter"
+                  "title": "Map_of_String",
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
                   }
                 }
               }
@@ -3085,6 +3087,14 @@
           },
           {
             "in": "query",
+            "name": "brand",
+            "description": "Filter by brand",
+            "schema": {
+              "$ref": "#/components/schemas/Brand"
+            }
+          },
+          {
+            "in": "query",
             "name": "image",
             "description": "Filter by image UUID",
             "schema": {
@@ -3154,10 +3164,9 @@
           {
             "in": "query",
             "name": "type",
-            "description": "Filter by machine type",
+            "description": "Filter by machine type (smartmachine or virtualmachine)",
             "schema": {
-              "nullable": true,
-              "type": "string"
+              "$ref": "#/components/schemas/MachineType"
             }
           }
         ],
@@ -3248,6 +3257,14 @@
           },
           {
             "in": "query",
+            "name": "brand",
+            "description": "Filter by brand",
+            "schema": {
+              "$ref": "#/components/schemas/Brand"
+            }
+          },
+          {
+            "in": "query",
             "name": "image",
             "description": "Filter by image UUID",
             "schema": {
@@ -3317,10 +3334,9 @@
           {
             "in": "query",
             "name": "type",
-            "description": "Filter by machine type",
+            "description": "Filter by machine type (smartmachine or virtualmachine)",
             "schema": {
-              "nullable": true,
-              "type": "string"
+              "$ref": "#/components/schemas/MachineType"
             }
           }
         ],
@@ -7549,6 +7565,7 @@
           "services"
         ],
         "summary": "List services",
+        "description": "Returns a map of service names to their URLs.",
         "operationId": "list_services",
         "parameters": [
           {
@@ -7567,10 +7584,10 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Array_of_Service",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Service"
+                  "title": "Map_of_String",
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
                   }
                 }
               }
@@ -9307,6 +9324,17 @@
           "time"
         ]
       },
+      "Brand": {
+        "description": "VM/Container brand\n\nThe brand determines the virtualization/containerization technology used. Valid brands as defined in `lib/machines.js`: - `bhyve`: FreeBSD hypervisor for hardware VMs - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",
+        "type": "string",
+        "enum": [
+          "bhyve",
+          "joyent",
+          "joyent-minimal",
+          "kvm",
+          "lx"
+        ]
+      },
       "ChangePasswordRequest": {
         "description": "Request to change user password",
         "type": "object",
@@ -9820,7 +9848,7 @@
         ]
       },
       "Datacenter": {
-        "description": "Datacenter information",
+        "description": "Datacenter information (used for add_foreign_datacenter response)",
         "type": "object",
         "properties": {
           "name": {
@@ -9967,8 +9995,7 @@
         "properties": {
           "acl": {
             "nullable": true,
-            "description": "ACL (list of account UUIDs with access)",
-            "default": null,
+            "description": "ACL - list of account UUIDs with access (API version >= 7.1.0)",
             "type": "array",
             "items": {
               "type": "string"
@@ -9979,10 +10006,27 @@
             "description": "Description",
             "type": "string"
           },
+          "error": {
+            "nullable": true,
+            "description": "Error information (if image creation failed, API version >= 7.1.0)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageError"
+              }
+            ]
+          },
           "eula": {
             "nullable": true,
-            "description": "EULA URL",
+            "description": "EULA URL (API version >= 7.1.0)",
             "type": "string"
+          },
+          "files": {
+            "nullable": true,
+            "description": "Files array (contains compression, sha1, size)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImageFile"
+            }
           },
           "homepage": {
             "nullable": true,
@@ -9993,23 +10037,34 @@
             "description": "Image UUID",
             "type": "string"
           },
+          "imageSize": {
+            "nullable": true,
+            "description": "Image size in bytes (zvol images only)",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
           "name": {
             "description": "Image name",
             "type": "string"
           },
-          "os": {
+          "origin": {
             "nullable": true,
+            "description": "Origin image UUID (API version >= 7.1.0)",
+            "type": "string"
+          },
+          "os": {
             "description": "Operating system",
             "type": "string"
           },
           "owner": {
-            "description": "Owner UUID",
+            "nullable": true,
+            "description": "Owner UUID (API version >= 7.1.0)",
             "type": "string"
           },
           "public": {
             "nullable": true,
-            "description": "Public image",
-            "default": null,
+            "description": "Public image (API version >= 7.1.0)",
             "type": "boolean"
           },
           "publishedAt": {
@@ -10018,11 +10073,17 @@
             "type": "string"
           },
           "requirements": {
-            "nullable": true,
-            "description": "Requirements"
+            "description": "Requirements (always present, may be empty)",
+            "default": {},
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageRequirements"
+              }
+            ]
           },
           "state": {
-            "description": "Image state",
+            "nullable": true,
+            "description": "Image state (API version >= 7.1.0)",
             "allOf": [
               {
                 "$ref": "#/components/schemas/ImageState"
@@ -10030,8 +10091,8 @@
             ]
           },
           "tags": {
+            "nullable": true,
             "description": "Tags",
-            "default": {},
             "type": "object",
             "additionalProperties": true
           },
@@ -10044,7 +10105,6 @@
             ]
           },
           "version": {
-            "nullable": true,
             "description": "Image version",
             "type": "string"
           }
@@ -10052,10 +10112,97 @@
         "required": [
           "id",
           "name",
-          "owner",
-          "state",
-          "type"
+          "os",
+          "type",
+          "version"
         ]
+      },
+      "ImageError": {
+        "description": "Image error information (for failed image creation)",
+        "type": "object",
+        "properties": {
+          "code": {
+            "description": "Error code",
+            "type": "string"
+          },
+          "message": {
+            "description": "Error message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      },
+      "ImageFile": {
+        "description": "Image file information",
+        "type": "object",
+        "properties": {
+          "compression": {
+            "description": "Compression type (gzip, bzip2, none)",
+            "type": "string"
+          },
+          "sha1": {
+            "description": "SHA1 checksum",
+            "type": "string"
+          },
+          "size": {
+            "description": "File size in bytes",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "compression",
+          "sha1",
+          "size"
+        ]
+      },
+      "ImageRequirements": {
+        "description": "Image requirements\n\nSpecifies hardware/software requirements for an image.",
+        "type": "object",
+        "properties": {
+          "bootrom": {
+            "nullable": true,
+            "description": "Required bootrom (for bhyve)",
+            "type": "string"
+          },
+          "brand": {
+            "nullable": true,
+            "description": "Required brand",
+            "type": "string"
+          },
+          "maxMemory": {
+            "nullable": true,
+            "description": "Maximum memory (alias for max_ram)",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "maxRam": {
+            "nullable": true,
+            "description": "Maximum RAM in MB",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "minMemory": {
+            "nullable": true,
+            "description": "Minimum memory (alias for min_ram)",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "minRam": {
+            "nullable": true,
+            "description": "Minimum RAM in MB",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        }
       },
       "ImageState": {
         "description": "Image state",
@@ -10083,22 +10230,30 @@
         "type": "object",
         "properties": {
           "brand": {
-            "description": "Brand (joyent, kvm, bhyve, lx)",
-            "type": "string"
+            "description": "Brand (joyent, kvm, bhyve, lx, joyent-minimal)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Brand"
+              }
+            ]
           },
           "computeNode": {
             "nullable": true,
-            "description": "Compute node UUID",
+            "description": "Compute node UUID (server hosting the VM)",
             "type": "string"
           },
           "created": {
             "description": "Creation timestamp",
             "type": "string"
           },
+          "delegateDataset": {
+            "nullable": true,
+            "description": "Whether a delegate dataset is present",
+            "type": "boolean"
+          },
           "deletionProtection": {
             "nullable": true,
             "description": "Deletion protection enabled",
-            "default": null,
             "type": "boolean"
           },
           "disk": {
@@ -10107,16 +10262,48 @@
             "format": "uint64",
             "minimum": 0
           },
+          "disks": {
+            "nullable": true,
+            "description": "Disks (bhyve VMs only)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MachineDisk"
+            }
+          },
+          "dnsNames": {
+            "nullable": true,
+            "description": "DNS names (CNS feature)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "docker": {
             "nullable": true,
-            "description": "Docker-specific fields",
+            "description": "Docker container",
+            "type": "boolean"
+          },
+          "encrypted": {
+            "nullable": true,
+            "description": "Whether the VM uses encrypted storage",
             "type": "boolean"
           },
           "firewallEnabled": {
             "nullable": true,
             "description": "Firewall enabled",
-            "default": null,
             "type": "boolean"
+          },
+          "flexible": {
+            "nullable": true,
+            "description": "Whether the VM uses flexible disk mode (bhyve only)",
+            "type": "boolean"
+          },
+          "freeSpace": {
+            "nullable": true,
+            "description": "Free space in bytes (bhyve with flexible disk)",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
           },
           "id": {
             "description": "Machine UUID",
@@ -10125,6 +10312,13 @@
           "image": {
             "description": "Image UUID",
             "type": "string"
+          },
+          "ips": {
+            "description": "IP addresses (always present)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "memory": {
             "description": "RAM in MB",
@@ -10140,20 +10334,26 @@
             }
           },
           "name": {
-            "nullable": true,
             "description": "Machine alias/name",
             "type": "string"
           },
+          "networks": {
+            "nullable": true,
+            "description": "Network UUIDs (API version >= 7.1.0)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "nics": {
             "description": "Network interfaces",
-            "default": [],
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/MachineNic"
             }
           },
           "package": {
-            "description": "Package name/UUID",
+            "description": "Package name",
             "type": "string"
           },
           "primaryIp": {
@@ -10176,7 +10376,11 @@
           },
           "type": {
             "description": "Machine type (smartmachine or virtualmachine)",
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MachineType"
+              }
+            ]
           },
           "updated": {
             "description": "Last update timestamp",
@@ -10189,13 +10393,52 @@
           "disk",
           "id",
           "image",
+          "ips",
           "memory",
           "metadata",
+          "name",
           "package",
           "state",
           "tags",
           "type",
           "updated"
+        ]
+      },
+      "MachineDisk": {
+        "description": "Disk attached to a machine (bhyve VMs)",
+        "type": "object",
+        "properties": {
+          "blockSize": {
+            "nullable": true,
+            "description": "Block size in bytes",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "boot": {
+            "nullable": true,
+            "description": "Boot disk",
+            "type": "boolean"
+          },
+          "id": {
+            "nullable": true,
+            "description": "Disk UUID",
+            "type": "string"
+          },
+          "image": {
+            "nullable": true,
+            "description": "Image UUID (for image-backed disks)",
+            "type": "string"
+          },
+          "size": {
+            "description": "Disk size in MB",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "size"
         ]
       },
       "MachineNic": {
@@ -10249,6 +10492,25 @@
           "offline",
           "ready",
           "unknown"
+        ]
+      },
+      "MachineType": {
+        "description": "Machine type (virtualization category)",
+        "oneOf": [
+          {
+            "description": "SmartOS zone or Linux container",
+            "type": "string",
+            "enum": [
+              "smartmachine"
+            ]
+          },
+          {
+            "description": "Hardware VM (KVM or bhyve)",
+            "type": "string",
+            "enum": [
+              "virtualmachine"
+            ]
+          }
         ]
       },
       "MigrateRequest": {
@@ -10505,10 +10767,18 @@
         "description": "Package information",
         "type": "object",
         "properties": {
-          "default": {
+          "brand": {
             "nullable": true,
-            "description": "Default",
-            "default": null,
+            "description": "Brand (joyent, bhyve, kvm, etc.)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Brand"
+              }
+            ]
+          },
+          "default": {
+            "description": "Default package",
+            "default": false,
             "type": "boolean"
           },
           "description": {
@@ -10522,6 +10792,19 @@
             "format": "uint64",
             "minimum": 0
           },
+          "disks": {
+            "nullable": true,
+            "description": "Disk configuration (bhyve only)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PackageDisk"
+            }
+          },
+          "flexibleDisk": {
+            "nullable": true,
+            "description": "Flexible disk mode (bhyve only)",
+            "type": "boolean"
+          },
           "group": {
             "nullable": true,
             "description": "Group",
@@ -10533,8 +10816,7 @@
           },
           "lwps": {
             "nullable": true,
-            "description": "Lightweight workload",
-            "default": null,
+            "description": "Lightweight processes limit",
             "type": "integer",
             "format": "uint32",
             "minimum": 0
@@ -10556,9 +10838,8 @@
             "minimum": 0
           },
           "vcpus": {
-            "nullable": true,
-            "description": "VCPUs",
-            "default": null,
+            "description": "VCPUs (defaults to 0)",
+            "default": 0,
             "type": "integer",
             "format": "uint32",
             "minimum": 0
@@ -10575,6 +10856,28 @@
           "memory",
           "name",
           "swap"
+        ]
+      },
+      "PackageDisk": {
+        "description": "Disk configuration in a package (bhyve only)",
+        "type": "object",
+        "properties": {
+          "blockSize": {
+            "nullable": true,
+            "description": "Block size in bytes",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "size": {
+            "description": "Disk size in MB",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "size"
         ]
       },
       "Policy": {
@@ -10707,24 +11010,6 @@
         "required": [
           "name",
           "role-tag"
-        ]
-      },
-      "Service": {
-        "description": "Service information",
-        "type": "object",
-        "properties": {
-          "endpoint": {
-            "description": "Service URL",
-            "type": "string"
-          },
-          "name": {
-            "description": "Service name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "endpoint",
-          "name"
         ]
       },
       "Snapshot": {

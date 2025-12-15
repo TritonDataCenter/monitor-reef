@@ -114,6 +114,7 @@ pub use cloudapi_api::{
     // Volume types
     CreateVolumeRequest,
     Datacenter,
+    Datacenters,
     DisableDeletionProtectionRequest,
     DisableFirewallRequest,
     Disk,
@@ -169,6 +170,7 @@ pub use cloudapi_api::{
     Role,
     RolePath,
     Service,
+    Services,
     Snapshot,
     SnapshotPath,
     SshKey,
