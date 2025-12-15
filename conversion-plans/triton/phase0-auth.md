@@ -701,10 +701,10 @@ cp target/node-smartdc-auth/test/keys/id_dsa.pub libs/triton-auth/tests/keys/
 
 After completing all tasks:
 
-1. Run `cargo build -p triton-auth` - should compile
-2. Run `cargo test -p triton-auth` - tests should pass
-3. Run `cargo build -p cloudapi-client` - should compile with auth support
-4. Run `cargo audit` - no new vulnerabilities
+1. Run `make package-build PACKAGE=triton-auth` - should compile
+2. Run `make package-test PACKAGE=triton-auth` - tests should pass
+3. Run `make package-build PACKAGE=cloudapi-client` - should compile with auth support
+4. Run `make audit` - no new vulnerabilities
 
 ## Files Created/Modified
 

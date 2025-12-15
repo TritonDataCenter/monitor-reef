@@ -1043,8 +1043,8 @@ fn test_profile_list() {
 
 After completing all tasks:
 
-1. Run `cargo build -p triton-cli` - should compile
-2. Run `cargo test -p triton-cli` - tests should pass
+1. Run `make package-build PACKAGE=triton-cli` - should compile
+2. Run `make package-test PACKAGE=triton-cli` - tests should pass
 3. Test RBAC commands:
    ```bash
    ./target/debug/triton rbac user list

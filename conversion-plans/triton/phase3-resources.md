@@ -1422,8 +1422,8 @@ Update `cli/triton-cli/src/main.rs` to add all new commands to the Commands enum
 
 After completing all tasks:
 
-1. Run `cargo build -p triton-cli` - should compile
-2. Run `cargo test -p triton-cli` - tests should pass
+1. Run `make package-build PACKAGE=triton-cli` - should compile
+2. Run `make package-test PACKAGE=triton-cli` - tests should pass
 3. Test resource commands (requires valid CloudAPI credentials):
    ```bash
    ./target/debug/triton image list

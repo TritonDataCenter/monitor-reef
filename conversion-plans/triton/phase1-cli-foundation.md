@@ -942,8 +942,8 @@ async fn main() -> Result<()> {
 
 After completing all tasks:
 
-1. Run `cargo build -p triton-cli` - should compile
-2. Run `cargo test -p triton-cli` - tests should pass
+1. Run `make package-build PACKAGE=triton-cli` - should compile
+2. Run `make package-test PACKAGE=triton-cli` - tests should pass
 3. Test profile commands:
    ```bash
    ./target/debug/triton profile create
@@ -953,7 +953,7 @@ After completing all tasks:
    ./target/debug/triton profile set-current <name>
    ./target/debug/triton profile delete <name>
    ```
-4. Run `cargo audit` - no new vulnerabilities
+4. Run `make audit` - no new vulnerabilities
 
 ## Files Created
 
