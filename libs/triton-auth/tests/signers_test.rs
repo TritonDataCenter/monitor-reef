@@ -268,8 +268,9 @@ fn test_signing_string_format() {
     let date = "Thu, 05 Jan 2024 00:00:00 GMT";
     let signing_string = signer.signing_string("GET", "/foo/machines", date);
 
-    // CloudAPI only requires signing the date header
-    assert_eq!(signing_string, "date: Thu, 05 Jan 2024 00:00:00 GMT");
+    // Signing string includes date and request-target (matching node-triton behavior)
+    assert!(signing_string.contains("date: Thu, 05 Jan 2024 00:00:00 GMT"));
+    assert!(signing_string.contains("(request-target): get /foo/machines"));
 }
 
 /// KeyId format test (without subuser)
@@ -285,10 +286,10 @@ fn test_authorization_header_format() {
     let signer = RequestSigner::new("foo", ID_RSA_MD5, KeyType::Rsa);
     let auth_header = signer.authorization_header("dGVzdHNpZw==");
 
-    // Verify format: Signature keyId="...",algorithm="...",headers="date",signature="..."
+    // Verify format: Signature keyId="...",algorithm="...",headers="date (request-target)",signature="..."
     assert!(auth_header.starts_with("Signature keyId=\""));
     assert!(auth_header.contains(&format!("keyId=\"/foo/keys/{}", ID_RSA_MD5)));
     assert!(auth_header.contains("algorithm=\"rsa-sha256\""));
-    assert!(auth_header.contains("headers=\"date\""));
+    assert!(auth_header.contains("headers=\"date (request-target)\""));
     assert!(auth_header.contains("signature=\"dGVzdHNpZw==\""));
 }
