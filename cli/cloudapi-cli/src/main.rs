@@ -8,24 +8,54 @@
 //!
 //! This CLI provides access to all CloudAPI endpoints for managing virtual machines,
 //! images, networks, volumes, and other resources in Triton.
+//!
+//! # Environment Variables
+//!
+//! The CLI reads configuration from environment variables compatible with the
+//! standard Triton CLI tools:
+//!
+//! - `TRITON_URL` or `CLOUDAPI_URL` - CloudAPI base URL
+//! - `TRITON_ACCOUNT` or `CLOUDAPI_ACCOUNT` - Account name
+//! - `TRITON_KEY_ID` - SSH key fingerprint (for future authentication support)
+//!
+//! The `CLOUDAPI_*` variants take precedence over `TRITON_*` variants.
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use cloudapi_api::{DOCS_URL, FAVICON_URL};
 use cloudapi_client::TypedClient;
 
+/// Get environment variable with fallback
+///
+/// Tries the primary variable first, then falls back to the secondary.
+fn env_with_fallback(primary: &str, fallback: &str) -> Option<String> {
+    std::env::var(primary)
+        .ok()
+        .or_else(|| std::env::var(fallback).ok())
+}
+
 #[derive(Parser)]
 #[command(name = "cloudapi", version, about = "CLI for Triton CloudAPI")]
 struct Cli {
-    #[arg(
-        long,
-        env = "CLOUDAPI_URL",
-        default_value = "https://cloudapi.tritondatacenter.com"
-    )]
-    base_url: String,
+    /// CloudAPI base URL
+    ///
+    /// Can also be set via CLOUDAPI_URL or TRITON_URL environment variables.
+    /// CLOUDAPI_URL takes precedence over TRITON_URL.
+    #[arg(long)]
+    base_url: Option<String>,
 
-    #[arg(long, env = "CLOUDAPI_ACCOUNT")]
+    /// Account name
+    ///
+    /// Can also be set via CLOUDAPI_ACCOUNT or TRITON_ACCOUNT environment variables.
+    /// CLOUDAPI_ACCOUNT takes precedence over TRITON_ACCOUNT.
+    #[arg(long)]
     account: Option<String>,
+
+    /// SSH key fingerprint (for future authentication support)
+    ///
+    /// Can also be set via TRITON_KEY_ID environment variable.
+    #[arg(long)]
+    key_id: Option<String>,
 
     #[command(subcommand)]
     command: Commands,
@@ -108,22 +138,35 @@ enum Commands {
     TestDocs,
 }
 
-fn require_account(account: Option<String>) -> Result<String> {
-    account.ok_or_else(|| {
-        anyhow::anyhow!(
-            "Account required. Set via --account flag or CLOUDAPI_ACCOUNT environment variable"
-        )
-    })
+const DEFAULT_BASE_URL: &str = "https://cloudapi.tritondatacenter.com";
+
+/// Resolve the account from CLI arg or environment variables
+fn resolve_account(cli_account: Option<String>) -> Result<String> {
+    cli_account
+        .or_else(|| env_with_fallback("CLOUDAPI_ACCOUNT", "TRITON_ACCOUNT"))
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Account required. Set via --account flag, CLOUDAPI_ACCOUNT, or TRITON_ACCOUNT environment variable"
+            )
+        })
+}
+
+/// Resolve the base URL from CLI arg or environment variables
+fn resolve_base_url(cli_base_url: Option<String>) -> String {
+    cli_base_url
+        .or_else(|| env_with_fallback("CLOUDAPI_URL", "TRITON_URL"))
+        .unwrap_or_else(|| DEFAULT_BASE_URL.to_string())
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
-    let client = TypedClient::new(&cli.base_url);
+    let base_url = resolve_base_url(cli.base_url);
+    let client = TypedClient::new(&base_url);
 
     match cli.command {
         Commands::GetAccount { raw } => {
-            let account = require_account(cli.account)?;
+            let account = resolve_account(cli.account)?;
             let resp = client
                 .inner()
                 .get_account()
@@ -138,7 +181,7 @@ async fn main() -> Result<()> {
             }
         }
         Commands::ListMachines { name, raw } => {
-            let account = require_account(cli.account)?;
+            let account = resolve_account(cli.account.clone())?;
             let mut req = client.inner().list_machines().account(&account);
             if let Some(n) = name {
                 req = req.name(n);
@@ -159,7 +202,7 @@ async fn main() -> Result<()> {
             }
         }
         Commands::GetMachine { machine, raw } => {
-            let account = require_account(cli.account)?;
+            let account = resolve_account(cli.account.clone())?;
             let resp = client
                 .inner()
                 .get_machine()
@@ -181,17 +224,17 @@ async fn main() -> Result<()> {
             }
         }
         Commands::StartMachine { machine } => {
-            let account = require_account(cli.account)?;
+            let account = resolve_account(cli.account.clone())?;
             client.start_machine(&account, &machine, None).await?;
             println!("Machine started");
         }
         Commands::StopMachine { machine } => {
-            let account = require_account(cli.account)?;
+            let account = resolve_account(cli.account.clone())?;
             client.stop_machine(&account, &machine, None).await?;
             println!("Machine stopped");
         }
         Commands::ListImages { raw } => {
-            let account = require_account(cli.account)?;
+            let account = resolve_account(cli.account.clone())?;
             let resp = client
                 .inner()
                 .list_images()
@@ -209,7 +252,7 @@ async fn main() -> Result<()> {
             }
         }
         Commands::GetImage { image, raw } => {
-            let account = require_account(cli.account)?;
+            let account = resolve_account(cli.account.clone())?;
             let resp = client
                 .inner()
                 .get_image()
@@ -231,7 +274,7 @@ async fn main() -> Result<()> {
             }
         }
         Commands::ListPackages { raw } => {
-            let account = require_account(cli.account)?;
+            let account = resolve_account(cli.account.clone())?;
             let resp = client
                 .inner()
                 .list_packages()
@@ -248,7 +291,7 @@ async fn main() -> Result<()> {
             }
         }
         Commands::ListNetworks { raw } => {
-            let account = require_account(cli.account)?;
+            let account = resolve_account(cli.account.clone())?;
             let resp = client
                 .inner()
                 .list_networks()
@@ -265,7 +308,7 @@ async fn main() -> Result<()> {
             }
         }
         Commands::ListVolumes { raw } => {
-            let account = require_account(cli.account)?;
+            let account = resolve_account(cli.account.clone())?;
             let resp = client
                 .inner()
                 .list_volumes()
@@ -282,7 +325,7 @@ async fn main() -> Result<()> {
             }
         }
         Commands::ListFirewallRules { raw } => {
-            let account = require_account(cli.account)?;
+            let account = resolve_account(cli.account.clone())?;
             let resp = client
                 .inner()
                 .list_firewall_rules()
@@ -299,7 +342,7 @@ async fn main() -> Result<()> {
             }
         }
         Commands::ListServices { raw } => {
-            let account = require_account(cli.account)?;
+            let account = resolve_account(cli.account.clone())?;
             let resp = client
                 .inner()
                 .list_services()
@@ -316,7 +359,7 @@ async fn main() -> Result<()> {
             }
         }
         Commands::ListDatacenters { raw } => {
-            let account = require_account(cli.account)?;
+            let account = resolve_account(cli.account.clone())?;
             let resp = client
                 .inner()
                 .list_datacenters()
@@ -333,7 +376,7 @@ async fn main() -> Result<()> {
             }
         }
         Commands::TestDocs => {
-            test_docs(&cli.base_url).await?;
+            test_docs(&base_url).await?;
         }
     }
 
