@@ -6,7 +6,7 @@
 
 //! Environment variable export command
 
-use crate::config::{resolve_profile, Profile};
+use crate::config::{Profile, resolve_profile};
 use anyhow::Result;
 
 /// Generate shell export statements for the profile

@@ -9,7 +9,6 @@
 pub mod paths;
 pub mod profile;
 
-pub use paths::{config_dir, config_file, ensure_config_dirs, profile_path, profiles_dir};
 pub use profile::{Config, Profile};
 
 use anyhow::Result;

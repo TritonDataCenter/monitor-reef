@@ -7,6 +7,8 @@
 //! CLI commands
 
 pub mod env;
+pub mod instance;
 pub mod profile;
 
+pub use instance::InstanceCommand;
 pub use profile::ProfileCommand;

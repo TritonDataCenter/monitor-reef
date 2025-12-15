@@ -55,15 +55,16 @@ pub async fn add_auth_headers(
 
     // Add RBAC roles as query parameter if present
     if let Some(roles) = &auth_config.roles
-        && !roles.is_empty() {
-            let url = request.url_mut();
-            let mut query = url.query().unwrap_or("").to_string();
-            if !query.is_empty() {
-                query.push('&');
-            }
-            query.push_str(&format!("as-role={}", roles.join(",")));
-            url.set_query(Some(&query));
+        && !roles.is_empty()
+    {
+        let url = request.url_mut();
+        let mut query = url.query().unwrap_or("").to_string();
+        if !query.is_empty() {
+            query.push('&');
         }
+        query.push_str(&format!("as-role={}", roles.join(",")));
+        url.set_query(Some(&query));
+    }
 
     Ok(())
 }

@@ -12,7 +12,7 @@ use anyhow::Result;
 use clap::Subcommand;
 use dialoguer::{Confirm, Input};
 
-#[derive(Subcommand)]
+#[derive(Subcommand, Clone)]
 pub enum ProfileCommand {
     /// List all profiles
     #[command(alias = "ls")]
@@ -76,7 +76,10 @@ impl ProfileCommand {
     pub async fn run(self) -> Result<()> {
         match self {
             Self::List { json: use_json } => list_profiles(use_json),
-            Self::Get { name, json: use_json } => get_profile(name, use_json),
+            Self::Get {
+                name,
+                json: use_json,
+            } => get_profile(name, use_json),
             Self::Create {
                 name,
                 url,
@@ -197,9 +200,7 @@ fn create_profile(
 
     let account = match account {
         Some(a) => a,
-        None => Input::new()
-            .with_prompt("Account name")
-            .interact_text()?,
+        None => Input::new().with_prompt("Account name").interact_text()?,
     };
 
     let key_id = match key_id {

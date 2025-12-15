@@ -94,10 +94,10 @@ impl Profile {
         for entry in std::fs::read_dir(&profiles_dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension().is_some_and(|ext| ext == "json") {
-                if let Some(stem) = path.file_stem() {
-                    profiles.push(stem.to_string_lossy().to_string());
-                }
+            if path.extension().is_some_and(|ext| ext == "json")
+                && let Some(stem) = path.file_stem()
+            {
+                profiles.push(stem.to_string_lossy().to_string());
             }
         }
         profiles.sort();
@@ -105,6 +105,7 @@ impl Profile {
     }
 
     /// Convert to AuthConfig for triton-auth
+    #[allow(dead_code)]
     pub fn to_auth_config(&self) -> triton_auth::AuthConfig {
         let mut config = triton_auth::AuthConfig::new(
             self.account.clone(),
