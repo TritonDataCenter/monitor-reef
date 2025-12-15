@@ -160,7 +160,13 @@ async fn main() -> Result<()> {
             if raw {
                 println!("{}", serde_json::to_string_pretty(&m)?);
             } else {
-                println!("{}", serde_json::to_string_pretty(&m)?);
+                println!(
+                    "ID: {}\nName: {}\nState: {}\nImage: {}",
+                    m.id,
+                    m.name.as_deref().unwrap_or("unnamed"),
+                    m.state,
+                    m.image
+                );
             }
         }
         Commands::StartMachine { machine } => {
@@ -204,7 +210,13 @@ async fn main() -> Result<()> {
             if raw {
                 println!("{}", serde_json::to_string_pretty(&img)?);
             } else {
-                println!("{}", serde_json::to_string_pretty(&img)?);
+                println!(
+                    "ID: {}\nName: {}\nVersion: {}\nState: {}",
+                    img.id,
+                    img.name,
+                    img.version.as_deref().unwrap_or("unknown"),
+                    img.state
+                );
             }
         }
         Commands::ListPackages { raw } => {
