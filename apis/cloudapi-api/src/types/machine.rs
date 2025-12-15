@@ -20,14 +20,29 @@ pub struct MachinePath {
 }
 
 /// Machine state
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+///
+/// These states reflect the possible values returned by VMAPI's `translateState()`:
+/// - `provisioning`: VM is being created (includes configured, incomplete, unavailable)
+/// - `ready`: VM is ready but not started (occurs during reboot)
+/// - `running`: VM is running
+/// - `stopping`: VM is in the process of stopping (includes halting, shutting_down)
+/// - `stopped`: VM is stopped (includes off, down, installed)
+/// - `offline`: VM is offline (agent not responding, unreachable)
+/// - `deleted`: VM has been destroyed
+/// - `failed`: VM is in a failed state
+/// - `unknown`: VM state cannot be determined
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum MachineState {
     Running,
     Stopped,
-    Deleted,
+    Stopping,
     Provisioning,
     Failed,
+    Deleted,
+    Offline,
+    Ready,
+    Unknown,
 }
 
 /// Machine information
