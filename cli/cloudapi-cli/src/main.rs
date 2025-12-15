@@ -11,6 +11,7 @@
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use cloudapi_api::{DOCS_URL, FAVICON_URL};
 use cloudapi_client::TypedClient;
 
 #[derive(Parser)]
@@ -95,6 +96,16 @@ enum Commands {
         #[arg(long)]
         raw: bool,
     },
+    /// Test documentation redirect endpoints
+    ///
+    /// Verifies that the documentation redirect endpoints return HTTP 302
+    /// with correct Location headers. Does not require authentication.
+    ///
+    /// Note: These endpoints (/, /docs, /favicon.ico) cannot be included in
+    /// the Dropshot API trait due to routing conflicts with /{account}. They
+    /// must be handled at the reverse proxy or HTTP server level. This command
+    /// tests that they are properly configured.
+    TestDocs,
 }
 
 fn require_account(account: Option<String>) -> Result<String> {
@@ -321,7 +332,77 @@ async fn main() -> Result<()> {
                 }
             }
         }
+        Commands::TestDocs => {
+            test_docs(&cli.base_url).await?;
+        }
     }
 
     Ok(())
+}
+
+/// Test documentation redirect endpoints
+///
+/// These endpoints cannot be included in the Dropshot API trait due to routing
+/// conflicts with `/{account}`. They must be handled at the reverse proxy or
+/// HTTP server level. This function tests that they are properly configured.
+async fn test_docs(base_url: &str) -> Result<()> {
+    use reqwest::redirect::Policy;
+
+    // Build a client that doesn't follow redirects
+    let client = reqwest::Client::builder()
+        .redirect(Policy::none())
+        .build()?;
+
+    println!("Testing documentation redirects...");
+    println!("Note: These endpoints must be handled at the reverse proxy level,");
+    println!("      not by the Dropshot API, due to routing conflicts.");
+    println!();
+
+    let tests = [
+        ("/", DOCS_URL),
+        ("/docs", DOCS_URL),
+        ("/favicon.ico", FAVICON_URL),
+    ];
+
+    let mut failures = 0;
+
+    for (path, expected_location) in tests {
+        let url = format!("{}{}", base_url.trim_end_matches('/'), path);
+        let result = client.get(&url).send().await;
+
+        match result {
+            Ok(response) => {
+                let status = response.status().as_u16();
+                let location = response
+                    .headers()
+                    .get("location")
+                    .and_then(|v| v.to_str().ok())
+                    .unwrap_or("");
+
+                if status == 302 && location == expected_location {
+                    println!("  GET {} -> {} Location: {} [OK]", path, status, location);
+                } else if status != 302 {
+                    println!("  GET {} -> {} [FAIL: expected 302]", path, status);
+                    failures += 1;
+                } else {
+                    println!(
+                        "  GET {} -> {} Location: {} [FAIL: expected {}]",
+                        path, status, location, expected_location
+                    );
+                    failures += 1;
+                }
+            }
+            Err(e) => {
+                println!("  GET {} -> [ERROR: {}]", path, e);
+                failures += 1;
+            }
+        }
+    }
+
+    if failures == 0 {
+        println!("All documentation endpoints working correctly.");
+        Ok(())
+    } else {
+        anyhow::bail!("{} of {} tests failed.", failures, tests.len());
+    }
 }

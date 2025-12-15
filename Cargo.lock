@@ -412,6 +412,7 @@ dependencies = [
  "clap",
  "cloudapi-api",
  "cloudapi-client",
+ "reqwest",
  "serde_json",
  "tokio",
 ]

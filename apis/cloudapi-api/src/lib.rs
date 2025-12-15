@@ -18,9 +18,26 @@ use dropshot::{
 pub mod types;
 pub use types::*;
 
+/// URL for CloudAPI documentation
+///
+/// The Node.js CloudAPI has documentation redirect endpoints at `/`, `/docs`, and
+/// `/favicon.ico`. These cannot be represented in the Dropshot API trait because
+/// they conflict with `/{account}` variable path routing. Dropshot does not allow
+/// both literal segments (e.g., `/docs`) and variable segments (e.g., `/{account}`)
+/// at the same path depth.
+///
+/// Service implementations should handle these redirects at the reverse proxy or
+/// HTTP server level before routing to the Dropshot API.
+pub const DOCS_URL: &str = "http://apidocs.tritondatacenter.com/cloudapi/";
+
+/// URL for favicon
+///
+/// See `DOCS_URL` documentation for why this is not an API endpoint.
+pub const FAVICON_URL: &str = "http://apidocs.tritondatacenter.com/favicon.ico";
+
 /// CloudAPI trait definition
 ///
-/// This trait defines all 161 endpoints of the Triton CloudAPI service.
+/// This trait defines all endpoints of the Triton CloudAPI service (version 9.20.0).
 /// The API is organized into the following categories:
 /// - Account management
 /// - Machines (VMs) and their resources (metadata, tags, snapshots, audit)
@@ -34,6 +51,11 @@ pub use types::*;
 /// - Datacenters
 /// - Services
 /// - Migrations
+///
+/// Note: Documentation redirect endpoints (`/`, `/docs`, `/favicon.ico`) from the
+/// Node.js CloudAPI cannot be included due to Dropshot routing limitations.
+/// See `DOCS_URL` constant for details. These should be handled at the reverse
+/// proxy or HTTP server level.
 #[dropshot::api_description]
 pub trait CloudApi {
     /// Context type for request handlers

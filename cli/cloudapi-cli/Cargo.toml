@@ -21,3 +21,4 @@ clap = { workspace = true, features = ["env"] }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 serde_json = { workspace = true }
+reqwest = { workspace = true }
