@@ -583,9 +583,27 @@ async fn parse_nic_spec(
 }
 
 async fn resolve_image(id_or_name: &str, client: &TypedClient) -> Result<String> {
-    // First try as UUID
+    // First try as full UUID
     if uuid::Uuid::parse_str(id_or_name).is_ok() {
         return Ok(id_or_name.to_string());
+    }
+
+    let account = &client.auth_config().account;
+
+    // Check if it looks like a short UUID (hex characters only)
+    let is_short_uuid = id_or_name.chars().all(|c| c.is_ascii_hexdigit());
+
+    if is_short_uuid {
+        // Fetch all images and find by UUID prefix
+        let response = client.inner().list_images().account(account).send().await?;
+        let images = response.into_inner();
+
+        for img in &images {
+            if img.id.starts_with(id_or_name) {
+                return Ok(img.id.to_string());
+            }
+        }
+        return Err(anyhow::anyhow!("Image not found: {}", id_or_name));
     }
 
     // Parse name@version format
@@ -595,7 +613,6 @@ async fn resolve_image(id_or_name: &str, client: &TypedClient) -> Result<String>
         (id_or_name, None)
     };
 
-    let account = &client.auth_config().account;
     let response = client
         .inner()
         .list_images()
@@ -622,7 +639,7 @@ async fn resolve_image(id_or_name: &str, client: &TypedClient) -> Result<String>
 }
 
 async fn resolve_package(id_or_name: &str, client: &TypedClient) -> Result<String> {
-    // First try as UUID
+    // First try as full UUID
     if uuid::Uuid::parse_str(id_or_name).is_ok() {
         return Ok(id_or_name.to_string());
     }
@@ -637,9 +654,22 @@ async fn resolve_package(id_or_name: &str, client: &TypedClient) -> Result<Strin
 
     let packages = response.into_inner();
 
-    for pkg in &packages {
-        if pkg.name == id_or_name {
-            return Ok(pkg.id.to_string());
+    // Check if it looks like a short UUID (hex characters only)
+    let is_short_uuid = id_or_name.chars().all(|c| c.is_ascii_hexdigit());
+
+    if is_short_uuid {
+        // Find by UUID prefix
+        for pkg in &packages {
+            if pkg.id.starts_with(id_or_name) {
+                return Ok(pkg.id.to_string());
+            }
+        }
+    } else {
+        // Find by name
+        for pkg in &packages {
+            if pkg.name == id_or_name {
+                return Ok(pkg.id.to_string());
+            }
         }
     }
 

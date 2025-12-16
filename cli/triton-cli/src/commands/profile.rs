@@ -239,13 +239,16 @@ fn create_profile(
             buffer
         } else {
             fs::read_to_string(&file_path).map_err(|e| {
-                anyhow::anyhow!("Failed to read profile file '{}': {}", file_path.display(), e)
+                anyhow::anyhow!(
+                    "Failed to read profile file '{}': {}",
+                    file_path.display(),
+                    e
+                )
             })?
         };
 
-        let profile: Profile = serde_json::from_str(&content).map_err(|e| {
-            anyhow::anyhow!("Failed to parse profile JSON: {}", e)
-        })?;
+        let profile: Profile = serde_json::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("Failed to parse profile JSON: {}", e))?;
 
         // Check if profile already exists
         if Profile::list_all()?.contains(&profile.name) {

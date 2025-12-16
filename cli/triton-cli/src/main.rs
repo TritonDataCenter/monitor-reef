@@ -300,7 +300,11 @@ impl Cli {
                 auth_config = auth_config.with_accept_version(version.clone());
             }
 
-            return Ok(TypedClient::new_with_insecure(&url, auth_config, self.insecure));
+            return Ok(TypedClient::new_with_insecure(
+                &url,
+                auth_config,
+                self.insecure,
+            ));
         }
 
         // Otherwise, load from profile
@@ -347,7 +351,11 @@ impl Cli {
         // Insecure mode: CLI flag or profile setting
         let insecure = self.insecure || profile.insecure;
 
-        Ok(TypedClient::new_with_insecure(&final_url, auth_config, insecure))
+        Ok(TypedClient::new_with_insecure(
+            &final_url,
+            auth_config,
+            insecure,
+        ))
     }
 }
 

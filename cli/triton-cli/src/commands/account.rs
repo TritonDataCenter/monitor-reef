@@ -131,14 +131,11 @@ async fn update_account(
 
     // Handle file-based input
     if let Some(file_path) = &args.file {
-        let content = std::fs::read_to_string(file_path).map_err(|e| {
-            anyhow::anyhow!("Failed to read file '{}': {}", file_path.display(), e)
-        })?;
+        let content = std::fs::read_to_string(file_path)
+            .map_err(|e| anyhow::anyhow!("Failed to read file '{}': {}", file_path.display(), e))?;
 
-        let request: cloudapi_client::types::UpdateAccountRequest =
-            serde_json::from_str(&content).map_err(|e| {
-                anyhow::anyhow!("Failed to parse JSON: {}", e)
-            })?;
+        let request: cloudapi_client::types::UpdateAccountRequest = serde_json::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("Failed to parse JSON: {}", e))?;
 
         let response = client
             .inner()

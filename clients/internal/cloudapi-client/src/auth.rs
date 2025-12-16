@@ -27,10 +27,17 @@ pub async fn add_auth_headers(
     request: &mut reqwest::Request,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let method = request.method().as_str();
-    let path = request.url().path();
+    // Include query string in the path for signing - CloudAPI's (request-target)
+    // includes the full path with query parameters
+    let url = request.url();
+    let path_and_query = match url.query() {
+        Some(q) => format!("{}?{}", url.path(), q),
+        None => url.path().to_string(),
+    };
 
     // Sign the request using triton-auth
-    let (date_header, auth_header) = triton_auth::sign_request(auth_config, method, path).await?;
+    let (date_header, auth_header) =
+        triton_auth::sign_request(auth_config, method, &path_and_query).await?;
 
     // Add headers (in a scope to release the mutable borrow before URL modification)
     {
