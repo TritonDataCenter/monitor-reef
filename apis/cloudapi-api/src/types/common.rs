@@ -14,6 +14,22 @@ use std::collections::HashMap;
 /// UUID type
 pub type Uuid = String;
 
+/// CloudAPI error response
+///
+/// This matches the actual error format returned by CloudAPI, which differs
+/// from Dropshot's default error format. CloudAPI uses `code` instead of
+/// `error_code` and `request_id` is optional.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct Error {
+    /// Error code (e.g., "InvalidCredentials", "ResourceNotFound")
+    pub code: String,
+    /// Human-readable error message
+    pub message: String,
+    /// Request ID for tracing (optional, not always present)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+}
+
 /// RFC3339 timestamp
 pub type Timestamp = String;
 
