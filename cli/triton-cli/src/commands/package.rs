@@ -49,11 +49,7 @@ impl PackageCommand {
     }
 }
 
-async fn list_packages(
-    args: PackageListArgs,
-    client: &TypedClient,
-    use_json: bool,
-) -> Result<()> {
+async fn list_packages(args: PackageListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
     let response = client
         .inner()

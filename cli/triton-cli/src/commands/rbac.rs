@@ -29,6 +29,16 @@ pub enum RbacCommand {
         #[command(subcommand)]
         command: RbacPolicyCommand,
     },
+    /// List SSH keys for a sub-user
+    Keys(UserKeysArgs),
+    /// Get SSH key for a sub-user
+    Key(UserKeyGetArgs),
+    /// Add SSH key to a sub-user
+    #[command(alias = "key-add")]
+    KeyAdd(UserKeyAddArgs),
+    /// Delete SSH key from a sub-user
+    #[command(alias = "key-delete", alias = "key-rm")]
+    KeyDelete(UserKeyDeleteArgs),
 }
 
 // =============================================================================
@@ -100,6 +110,47 @@ pub struct UserUpdateArgs {
 pub struct UserDeleteArgs {
     /// User login(s) or UUID(s)
     pub users: Vec<String>,
+    /// Skip confirmation
+    #[arg(long, short)]
+    pub force: bool,
+}
+
+// =============================================================================
+// User Key Commands
+// =============================================================================
+
+#[derive(Args, Clone)]
+pub struct UserKeysArgs {
+    /// User login or UUID
+    pub user: String,
+}
+
+#[derive(Args, Clone)]
+pub struct UserKeyGetArgs {
+    /// User login or UUID
+    pub user: String,
+    /// Key name or fingerprint
+    pub key: String,
+}
+
+#[derive(Args, Clone)]
+pub struct UserKeyAddArgs {
+    /// User login or UUID
+    pub user: String,
+    /// Key name
+    #[arg(long, short)]
+    pub name: String,
+    /// SSH public key (or path to key file with @/path/to/key)
+    #[arg(long, short)]
+    pub key: String,
+}
+
+#[derive(Args, Clone)]
+pub struct UserKeyDeleteArgs {
+    /// User login or UUID
+    pub user: String,
+    /// Key name or fingerprint
+    pub key: String,
     /// Skip confirmation
     #[arg(long, short)]
     pub force: bool,
@@ -245,6 +296,10 @@ impl RbacCommand {
             Self::User { command } => command.run(client, use_json).await,
             Self::Role { command } => command.run(client, use_json).await,
             Self::Policy { command } => command.run(client, use_json).await,
+            Self::Keys(args) => list_user_keys(args, client, use_json).await,
+            Self::Key(args) => get_user_key(args, client, use_json).await,
+            Self::KeyAdd(args) => add_user_key(args, client, use_json).await,
+            Self::KeyDelete(args) => delete_user_key(args, client).await,
         }
     }
 }
@@ -480,6 +535,135 @@ async fn resolve_user(id_or_login: &str, client: &TypedClient) -> Result<String>
     }
 
     Err(anyhow::anyhow!("User not found: {}", id_or_login))
+}
+
+// =============================================================================
+// User Key Implementation
+// =============================================================================
+
+async fn list_user_keys(args: UserKeysArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+    let account = &client.auth_config().account;
+    let user_id = resolve_user(&args.user, client).await?;
+
+    let response = client
+        .inner()
+        .list_user_keys()
+        .account(account)
+        .uuid(&user_id)
+        .send()
+        .await?;
+
+    let keys = response.into_inner();
+
+    if use_json {
+        json::print_json(&keys)?;
+    } else {
+        let mut tbl = table::create_table(&["NAME", "FINGERPRINT"]);
+        for key in &keys {
+            tbl.add_row(vec![&key.name, &key.fingerprint]);
+        }
+        table::print_table(tbl);
+    }
+
+    Ok(())
+}
+
+async fn get_user_key(args: UserKeyGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+    let account = &client.auth_config().account;
+    let user_id = resolve_user(&args.user, client).await?;
+
+    let response = client
+        .inner()
+        .get_user_key()
+        .account(account)
+        .uuid(&user_id)
+        .name(&args.key)
+        .send()
+        .await?;
+
+    let key = response.into_inner();
+
+    if use_json {
+        json::print_json(&key)?;
+    } else {
+        println!("Name:        {}", key.name);
+        println!("Fingerprint: {}", key.fingerprint);
+        println!("Key:         {}", key.key);
+    }
+
+    Ok(())
+}
+
+async fn add_user_key(args: UserKeyAddArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+    let account = &client.auth_config().account;
+    let user_id = resolve_user(&args.user, client).await?;
+
+    // Read key from file if prefixed with @
+    let key_data = if args.key.starts_with('@') {
+        let path = &args.key[1..];
+        std::fs::read_to_string(path)
+            .map_err(|e| anyhow::anyhow!("Failed to read key file '{}': {}", path, e))?
+            .trim()
+            .to_string()
+    } else {
+        args.key.clone()
+    };
+
+    let request = cloudapi_client::types::CreateSshKeyRequest {
+        name: args.name.clone(),
+        key: key_data,
+    };
+
+    let response = client
+        .inner()
+        .create_user_key()
+        .account(account)
+        .uuid(&user_id)
+        .body(request)
+        .send()
+        .await?;
+
+    let key = response.into_inner();
+    println!("Added key '{}' to user", key.name);
+
+    if use_json {
+        json::print_json(&key)?;
+    }
+
+    Ok(())
+}
+
+async fn delete_user_key(args: UserKeyDeleteArgs, client: &TypedClient) -> Result<()> {
+    if !args.force {
+        use dialoguer::Confirm;
+        if !Confirm::new()
+            .with_prompt(format!(
+                "Delete key '{}' from user '{}'?",
+                args.key, args.user
+            ))
+            .default(false)
+            .interact()?
+        {
+            println!("Aborted.");
+            return Ok(());
+        }
+    }
+
+    let account = &client.auth_config().account;
+    let user_id = resolve_user(&args.user, client).await?;
+
+    client
+        .inner()
+        .delete_user_key()
+        .account(account)
+        .uuid(&user_id)
+        .name(&args.key)
+        .send()
+        .await?;
+
+    println!("Deleted key '{}' from user '{}'", args.key, args.user);
+
+    Ok(())
 }
 
 // =============================================================================

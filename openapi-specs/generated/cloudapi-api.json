@@ -9607,11 +9607,30 @@
               "type": "string"
             }
           },
+          "brand": {
+            "nullable": true,
+            "description": "Brand (bhyve, kvm, joyent, joyent-minimal, lx) If not specified, inferred from the image",
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Brand"
+              }
+            ]
+          },
           "deletionProtection": {
             "nullable": true,
             "description": "Deletion protection enabled",
             "default": null,
             "type": "boolean"
+          },
+          "disks": {
+            "nullable": true,
+            "description": "Disks for bhyve instances",
+            "default": null,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DiskSpec"
+            }
           },
           "firewallEnabled": {
             "nullable": true,
@@ -9645,11 +9664,20 @@
           },
           "networks": {
             "nullable": true,
-            "description": "Networks (array of UUIDs)",
+            "description": "Networks (array of UUIDs) - simple network specification",
             "default": null,
             "type": "array",
             "items": {
               "type": "string"
+            }
+          },
+          "nics": {
+            "nullable": true,
+            "description": "NICs - advanced NIC specification with IP addresses and options",
+            "default": null,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NicSpec"
             }
           },
           "package": {
@@ -9662,6 +9690,15 @@
             "default": null,
             "type": "object",
             "additionalProperties": true
+          },
+          "volumes": {
+            "nullable": true,
+            "description": "Volumes to mount on the instance",
+            "default": null,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VolumeMount"
+            }
           }
         },
         "required": [
@@ -9909,6 +9946,36 @@
           "id",
           "size"
         ]
+      },
+      "DiskSpec": {
+        "description": "Disk specification for bhyve instance creation",
+        "type": "object",
+        "properties": {
+          "blockSize": {
+            "nullable": true,
+            "description": "Block size in bytes (optional)",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "boot": {
+            "nullable": true,
+            "description": "Mark as boot disk",
+            "type": "boolean"
+          },
+          "image": {
+            "nullable": true,
+            "description": "Image UUID for this disk (for boot disk or additional image-backed disks)",
+            "type": "string"
+          },
+          "size": {
+            "nullable": true,
+            "description": "Disk size in MB",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        }
       },
       "Error": {
         "description": "Error information from a response.",
@@ -10772,6 +10839,34 @@
           "primary"
         ]
       },
+      "NicSpec": {
+        "description": "NIC specification for instance creation",
+        "type": "object",
+        "properties": {
+          "gateway": {
+            "nullable": true,
+            "description": "Gateway address (optional)",
+            "type": "string"
+          },
+          "ip": {
+            "nullable": true,
+            "description": "Specific IP address (optional)",
+            "type": "string"
+          },
+          "network": {
+            "description": "Network UUID",
+            "type": "string"
+          },
+          "primary": {
+            "nullable": true,
+            "description": "Mark as primary NIC",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "network"
+        ]
+      },
       "Package": {
         "description": "Package information",
         "type": "object",
@@ -11500,6 +11595,34 @@
           "size",
           "state",
           "type"
+        ]
+      },
+      "VolumeMount": {
+        "description": "Volume mount specification for instance creation",
+        "type": "object",
+        "properties": {
+          "mode": {
+            "nullable": true,
+            "description": "Mount mode (defaults to \"rw\")",
+            "type": "string"
+          },
+          "mountpoint": {
+            "description": "Mount point inside the instance",
+            "type": "string"
+          },
+          "name": {
+            "description": "Volume name",
+            "type": "string"
+          },
+          "type": {
+            "nullable": true,
+            "description": "Volume type (defaults to \"tritonnfs\")",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mountpoint",
+          "name"
         ]
       },
       "VolumeSize": {

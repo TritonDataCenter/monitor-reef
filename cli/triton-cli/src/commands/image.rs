@@ -242,7 +242,8 @@ async fn get_image(args: ImageGetArgs, client: &TypedClient, use_json: bool) -> 
 
 async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
-    let machine_id = crate::commands::instance::get::resolve_instance(&args.instance, client).await?;
+    let machine_id =
+        crate::commands::instance::get::resolve_instance(&args.instance, client).await?;
     let machine_uuid: cloudapi_client::Uuid = machine_id.parse()?;
 
     let request = cloudapi_client::types::CreateImageRequest {
@@ -319,7 +320,11 @@ async fn clone_image(args: ImageCloneArgs, client: &TypedClient, use_json: bool)
     let image_uuid: cloudapi_client::Uuid = image_id.parse()?;
 
     let image = client.clone_image(account, &image_uuid).await?;
-    println!("Cloned image {} ({})", image.name, &image.id.to_string()[..8]);
+    println!(
+        "Cloned image {} ({})",
+        image.name,
+        &image.id.to_string()[..8]
+    );
 
     if use_json {
         json::print_json(&image)?;
@@ -333,7 +338,9 @@ async fn copy_image(args: ImageCopyArgs, client: &TypedClient, use_json: bool) -
 
     // For copy from another datacenter, we need to use import_image_from_datacenter
     // The image ID provided is from the source datacenter
-    let source_image_uuid: cloudapi_client::Uuid = args.image.parse()
+    let source_image_uuid: cloudapi_client::Uuid = args
+        .image
+        .parse()
         .map_err(|_| anyhow::anyhow!("Image copy requires a UUID from the source datacenter"))?;
 
     // Create a placeholder UUID for the local image - the API will create a new one
@@ -371,7 +378,9 @@ async fn update_image(args: ImageUpdateArgs, client: &TypedClient, use_json: boo
         tags: None,
     };
 
-    let image = client.update_image_metadata(account, &image_uuid, &request).await?;
+    let image = client
+        .update_image_metadata(account, &image_uuid, &request)
+        .await?;
     println!("Updated image {}", image.name);
 
     if use_json {

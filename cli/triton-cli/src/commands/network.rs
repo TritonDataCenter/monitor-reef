@@ -23,6 +23,11 @@ pub enum NetworkCommand {
     GetDefault,
     /// Set default network
     SetDefault(NetworkSetDefaultArgs),
+    /// Create a fabric network
+    Create(NetworkCreateArgs),
+    /// Delete a fabric network
+    #[command(alias = "rm")]
+    Delete(NetworkDeleteArgs),
     /// Manage network IPs
     Ip {
         #[command(subcommand)]
@@ -78,6 +83,55 @@ pub struct NetworkIpUpdateArgs {
     pub reserve: Option<bool>,
 }
 
+#[derive(Args, Clone)]
+pub struct NetworkCreateArgs {
+    /// Network name
+    #[arg(long, short)]
+    pub name: String,
+
+    /// VLAN ID for the fabric network
+    #[arg(long)]
+    pub vlan_id: u16,
+
+    /// Subnet in CIDR notation (e.g., 10.0.0.0/24)
+    #[arg(long)]
+    pub subnet: String,
+
+    /// Start of IP provisioning range
+    #[arg(long)]
+    pub provision_start: String,
+
+    /// End of IP provisioning range
+    #[arg(long)]
+    pub provision_end: String,
+
+    /// Gateway IP address
+    #[arg(long)]
+    pub gateway: Option<String>,
+
+    /// DNS resolvers (comma-separated or multiple flags)
+    #[arg(long)]
+    pub resolver: Option<Vec<String>>,
+
+    /// Enable internet NAT (allow instances to reach the internet)
+    #[arg(long)]
+    pub internet_nat: bool,
+
+    /// Description
+    #[arg(long)]
+    pub description: Option<String>,
+}
+
+#[derive(Args, Clone)]
+pub struct NetworkDeleteArgs {
+    /// Network ID or name
+    pub network: String,
+
+    /// Force deletion without confirmation
+    #[arg(long, short)]
+    pub force: bool,
+}
+
 impl NetworkCommand {
     pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
@@ -85,6 +139,8 @@ impl NetworkCommand {
             Self::Get(args) => get_network(args, client, use_json).await,
             Self::GetDefault => get_default_network(client, use_json).await,
             Self::SetDefault(args) => set_default_network(args, client).await,
+            Self::Create(args) => create_network(args, client, use_json).await,
+            Self::Delete(args) => delete_network(args, client).await,
             Self::Ip { command } => command.run(client, use_json).await,
         }
     }
@@ -199,6 +255,141 @@ async fn set_default_network(args: NetworkSetDefaultArgs, client: &TypedClient) 
     Ok(())
 }
 
+async fn create_network(
+    args: NetworkCreateArgs,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
+    let account = &client.auth_config().account;
+
+    // Build resolvers from comma-separated or multiple flags
+    let resolvers = args.resolver.map(|r| {
+        r.iter()
+            .flat_map(|s| s.split(','))
+            .map(|s| s.trim().to_string())
+            .collect()
+    });
+
+    let request = cloudapi_client::types::CreateFabricNetworkRequest {
+        name: args.name.clone(),
+        description: args.description,
+        subnet: args.subnet,
+        provision_start_ip: args.provision_start,
+        provision_end_ip: args.provision_end,
+        gateway: args.gateway,
+        resolvers,
+        routes: None,
+        internet_nat: if args.internet_nat { Some(true) } else { None },
+    };
+
+    let response = client
+        .inner()
+        .create_fabric_network()
+        .account(account)
+        .vlan_id(args.vlan_id)
+        .body(request)
+        .send()
+        .await?;
+
+    let network = response.into_inner();
+
+    println!(
+        "Created network {} ({})",
+        &network.name,
+        &network.id[..8.min(network.id.len())]
+    );
+
+    if use_json {
+        json::print_json(&network)?;
+    }
+
+    Ok(())
+}
+
+async fn delete_network(args: NetworkDeleteArgs, client: &TypedClient) -> Result<()> {
+    let account = &client.auth_config().account;
+
+    // Resolve network and get its details
+    let (network_id, network_name, vlan_id) = resolve_fabric_network(&args.network, client).await?;
+
+    // Confirm unless forced
+    if !args.force {
+        println!(
+            "Are you sure you want to delete network '{}' ({})? [y/N]",
+            network_name,
+            &network_id[..8]
+        );
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input)?;
+        if !input.trim().eq_ignore_ascii_case("y") {
+            println!("Aborted.");
+            return Ok(());
+        }
+    }
+
+    client
+        .inner()
+        .delete_fabric_network()
+        .account(account)
+        .vlan_id(vlan_id)
+        .id(&network_id)
+        .send()
+        .await?;
+
+    println!("Deleted network {} ({})", network_name, &network_id[..8]);
+
+    Ok(())
+}
+
+/// Resolve network name or ID to (UUID, name, vlan_id) for fabric networks
+async fn resolve_fabric_network(
+    id_or_name: &str,
+    client: &TypedClient,
+) -> Result<(String, String, u16)> {
+    let account = &client.auth_config().account;
+
+    // List all fabric VLANs first
+    let vlans_response = client
+        .inner()
+        .list_fabric_vlans()
+        .account(account)
+        .send()
+        .await?;
+    let vlans = vlans_response.into_inner();
+
+    // Search through all VLANs for the network
+    for vlan in &vlans {
+        let networks_response = client
+            .inner()
+            .list_fabric_networks()
+            .account(account)
+            .vlan_id(vlan.vlan_id)
+            .send()
+            .await?;
+        let networks = networks_response.into_inner();
+
+        for net in &networks {
+            // Match by UUID
+            if net.id == id_or_name {
+                return Ok((net.id.clone(), net.name.clone(), vlan.vlan_id));
+            }
+            // Match by short ID
+            if id_or_name.len() >= 8 && net.id.starts_with(id_or_name) {
+                return Ok((net.id.clone(), net.name.clone(), vlan.vlan_id));
+            }
+            // Match by name
+            if net.name == id_or_name {
+                return Ok((net.id.clone(), net.name.clone(), vlan.vlan_id));
+            }
+        }
+    }
+
+    Err(anyhow::anyhow!(
+        "Fabric network not found: {}. Note: only fabric networks can be deleted.",
+        id_or_name
+    ))
+}
+
 async fn list_network_ips(
     args: NetworkIpListArgs,
     client: &TypedClient,
@@ -222,19 +413,22 @@ async fn list_network_ips(
     } else {
         let mut tbl = table::create_table(&["IP", "RESERVED", "MANAGED", "OWNER"]);
         for ip in &ips {
-            let reserved_str = if ip.reserved { "yes".to_string() } else { "no".to_string() };
-            let managed_str = if ip.managed.unwrap_or(false) { "yes".to_string() } else { "no".to_string() };
+            let reserved_str = if ip.reserved {
+                "yes".to_string()
+            } else {
+                "no".to_string()
+            };
+            let managed_str = if ip.managed.unwrap_or(false) {
+                "yes".to_string()
+            } else {
+                "no".to_string()
+            };
             let owner_str = ip
                 .owner_uuid
                 .as_ref()
                 .map(|u| u.to_string()[..8].to_string())
                 .unwrap_or_else(|| "-".to_string());
-            tbl.add_row(vec![
-                &ip.ip,
-                &reserved_str,
-                &managed_str,
-                &owner_str,
-            ]);
+            tbl.add_row(vec![&ip.ip, &reserved_str, &managed_str, &owner_str]);
         }
         table::print_table(tbl);
     }

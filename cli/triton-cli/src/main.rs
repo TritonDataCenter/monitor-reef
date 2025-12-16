@@ -142,6 +142,10 @@ enum Commands {
     /// Show account info and resource usage
     Info,
 
+    /// List datacenters
+    #[command(alias = "dcs")]
+    Datacenters,
+
     // =========================================================================
     // TOP-LEVEL SHORTCUTS
     // =========================================================================
@@ -321,6 +325,10 @@ async fn main() -> Result<()> {
             let client = cli.build_client()?;
             commands::info::run(&client, cli.json).await
         }
+        Commands::Datacenters => {
+            let client = cli.build_client()?;
+            commands::datacenters::run(&client, cli.json).await
+        }
         Commands::Insts(args) => {
             let client = cli.build_client()?;
             commands::instance::list::run(args.clone(), &client, cli.json).await
@@ -375,9 +383,7 @@ async fn main() -> Result<()> {
         }
         Commands::Keys => {
             let client = cli.build_client()?;
-            commands::key::KeyCommand::List
-                .run(&client, cli.json)
-                .await
+            commands::key::KeyCommand::List.run(&client, cli.json).await
         }
         Commands::Fwrules => {
             let client = cli.build_client()?;

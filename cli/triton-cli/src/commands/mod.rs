@@ -7,6 +7,7 @@
 //! CLI commands
 
 pub mod account;
+pub mod datacenters;
 pub mod env;
 pub mod fwrule;
 pub mod image;

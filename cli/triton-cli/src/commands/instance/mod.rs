@@ -18,6 +18,7 @@ pub mod firewall;
 pub mod get;
 pub mod lifecycle;
 pub mod metadata;
+pub mod migration;
 pub mod nic;
 pub mod protection;
 pub mod rename;
@@ -118,6 +119,12 @@ pub enum InstanceCommand {
 
     /// Get instance IP address
     Ip(get::IpArgs),
+
+    /// Manage instance migration
+    Migration {
+        #[command(subcommand)]
+        command: migration::MigrationCommand,
+    },
 }
 
 impl InstanceCommand {
@@ -146,6 +153,7 @@ impl InstanceCommand {
             Self::Tag { command } => command.run(client, json).await,
             Self::Metadata { command } => command.run(client, json).await,
             Self::Ip(args) => get::ip(args, client).await,
+            Self::Migration { command } => command.run(client, json).await,
         }
     }
 }

@@ -168,6 +168,58 @@ pub struct MachineNic {
     pub network: Uuid,
 }
 
+/// Volume mount specification for instance creation
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct VolumeMount {
+    /// Volume name
+    pub name: String,
+    /// Mount mode (defaults to "rw")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mode: Option<String>,
+    /// Mount point inside the instance
+    pub mountpoint: String,
+    /// Volume type (defaults to "tritonnfs")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "type")]
+    pub volume_type: Option<String>,
+}
+
+/// Disk specification for bhyve instance creation
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct DiskSpec {
+    /// Disk size in MB
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+    /// Image UUID for this disk (for boot disk or additional image-backed disks)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<Uuid>,
+    /// Block size in bytes (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_size: Option<u64>,
+    /// Mark as boot disk
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boot: Option<bool>,
+}
+
+/// NIC specification for instance creation
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NicSpec {
+    /// Network UUID
+    pub network: Uuid,
+    /// Specific IP address (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ip: Option<String>,
+    /// Mark as primary NIC
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary: Option<bool>,
+    /// Gateway address (optional)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gateway: Option<String>,
+}
+
 /// Request to create a machine
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -179,9 +231,12 @@ pub struct CreateMachineRequest {
     pub image: Uuid,
     /// Package name or UUID
     pub package: String,
-    /// Networks (array of UUIDs)
+    /// Networks (array of UUIDs) - simple network specification
     #[serde(default)]
     pub networks: Option<Vec<Uuid>>,
+    /// NICs - advanced NIC specification with IP addresses and options
+    #[serde(default)]
+    pub nics: Option<Vec<NicSpec>>,
     /// Affinity rules for instance placement (added in CloudAPI v8.3.0)
     ///
     /// Rules follow the pattern: `<key><operator><value>` where:
@@ -207,6 +262,16 @@ pub struct CreateMachineRequest {
     /// Deletion protection enabled
     #[serde(default)]
     pub deletion_protection: Option<bool>,
+    /// Brand (bhyve, kvm, joyent, joyent-minimal, lx)
+    /// If not specified, inferred from the image
+    #[serde(default)]
+    pub brand: Option<Brand>,
+    /// Volumes to mount on the instance
+    #[serde(default)]
+    pub volumes: Option<Vec<VolumeMount>>,
+    /// Disks for bhyve instances
+    #[serde(default)]
+    pub disks: Option<Vec<DiskSpec>>,
 }
 
 /// Machine action for action dispatch

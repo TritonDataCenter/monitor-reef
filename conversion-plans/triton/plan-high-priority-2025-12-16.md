@@ -9,12 +9,57 @@ Copyright 2025 Edgecast Cloud LLC.
 # Triton CLI High Priority Implementation Plan
 
 **Date:** 2025-12-16
-**Status:** Planning
+**Status:** In Progress (Paused - see notes below)
 **Source Reference:** comprehensive-validation-report-2025-12-16.md
+**Last Updated:** 2025-12-16
 
 ## Overview
 
 This plan covers P1 (Important) features that limit significant usage of triton-cli. These are the features needed before the CLI can be considered production-ready for most workflows.
+
+---
+
+## Progress Summary
+
+### Completed Items (2025-12-16)
+
+| Item | Status | Notes |
+|------|--------|-------|
+| 1. Datacenters Command | ✅ Complete | `triton datacenters` implemented |
+| 2. Instance Migration Commands | ⚠️ Partial | get/estimate/start/wait implemented; finalize/abort blocked |
+| 3. Instance Create: Volume Mount | ✅ Complete | `--volume` flag implemented |
+| 4. Instance Create: Disk Config | ✅ Complete | `--disk` flag implemented |
+| 5. Instance Create: Metadata File | ✅ Complete | `--metadata-file` flag implemented |
+| 6. Instance Create: Script | ✅ Complete | `--script` flag implemented |
+| 7. Instance Create: Brand | ✅ Complete | `--brand` flag implemented |
+| 8. Instance Create: Full NIC | ✅ Complete | `--nic` flag implemented |
+| 9. Network Create/Delete | ✅ Complete | `triton network create/delete` implemented |
+| 10. RBAC User Key Management | ✅ Complete | `triton rbac keys/key/key-add/key-delete` implemented |
+
+### Blocking Issue
+
+**Migration commands are incomplete** because the `cloudapi-api` trait is missing endpoints for:
+- Finalize migration (switch to new server)
+- Abort migration (cancel in progress)
+
+See: `conversion-plans/cloudapi/missing-migration-endpoints-2025-12-16.md`
+
+The following migration subcommands work:
+- `triton instance migration get` - View migration status
+- `triton instance migration estimate` - Get migration size estimate
+- `triton instance migration start` - Begin migration
+- `triton instance migration wait` - Poll until migration completes
+
+The following are **blocked** pending API additions:
+- `triton instance migration finalize` - Switch to new server
+- `triton instance migration abort` - Cancel migration
+
+### Next Steps
+
+1. Add missing migration endpoints to `cloudapi-api` trait
+2. Regenerate OpenAPI spec and client
+3. Implement finalize/abort CLI commands
+4. Test full migration workflow
 
 ---
 
@@ -34,11 +79,11 @@ This plan covers P1 (Important) features that limit significant usage of triton-
 - No subcommands needed (just `triton datacenters`)
 
 ### Files to Modify
-- [ ] `clients/external/cloudapi-client/src/lib.rs` - Add API method
-- [ ] `apis/cloudapi-api/src/lib.rs` - Add endpoint if needed
-- [ ] `cli/triton-cli/src/commands/mod.rs` - Add datacenters module
-- [ ] `cli/triton-cli/src/commands/datacenters.rs` - New file
-- [ ] `cli/triton-cli/src/main.rs` - Wire up command
+- [x] `clients/external/cloudapi-client/src/lib.rs` - Add API method
+- [x] `apis/cloudapi-api/src/lib.rs` - Add endpoint if needed
+- [x] `cli/triton-cli/src/commands/mod.rs` - Add datacenters module
+- [x] `cli/triton-cli/src/commands/datacenters.rs` - New file
+- [x] `cli/triton-cli/src/main.rs` - Wire up command
 
 ---
 
@@ -71,10 +116,10 @@ Migration actions: `begin`, `sync`, `switch`, `pause`, `abort`, `finalize`, `aut
   - `watch` - Watch migration progress
 
 ### Files to Modify
-- [ ] `clients/external/cloudapi-client/src/lib.rs` - Add migration API methods
-- [ ] `apis/cloudapi-api/src/lib.rs` - Add migration endpoints
-- [ ] `cli/triton-cli/src/commands/instance/mod.rs` - Add migration subcommand
-- [ ] `cli/triton-cli/src/commands/instance/migration.rs` - New file
+- [x] `clients/external/cloudapi-client/src/lib.rs` - Add migration API methods (partial - missing finalize/abort)
+- [ ] `apis/cloudapi-api/src/lib.rs` - Add migration endpoints (missing finalize/abort - see blocking issue)
+- [x] `cli/triton-cli/src/commands/instance/mod.rs` - Add migration subcommand
+- [x] `cli/triton-cli/src/commands/instance/migration.rs` - New file (partial - missing finalize/abort)
 
 ---
 
@@ -89,8 +134,8 @@ Migration actions: `begin`, `sync`, `switch`, `pause`, `abort`, `finalize`, `aut
 - Support multiple volumes
 
 ### Files to Modify
-- [ ] `cli/triton-cli/src/commands/instance/create.rs` - Add --volume flag
-- [ ] Parse volume specifications and add to create request
+- [x] `cli/triton-cli/src/commands/instance/create.rs` - Add --volume flag
+- [x] Parse volume specifications and add to create request
 
 ### Example Usage
 ```bash
@@ -111,8 +156,8 @@ triton instance create --volume mydata@/data --volume logs:/logs ubuntu-24.04 g4
 - Requires bhyve brand
 
 ### Files to Modify
-- [ ] `cli/triton-cli/src/commands/instance/create.rs` - Add --disk flag
-- [ ] Parse disk specifications and add to create request
+- [x] `cli/triton-cli/src/commands/instance/create.rs` - Add --disk flag
+- [x] Parse disk specifications and add to create request
 
 ### Example Usage
 ```bash
@@ -133,8 +178,8 @@ triton instance create --disk 10G --disk 50G ubuntu-24.04 g4-highcpu-1G
 - Support multiple files
 
 ### Files to Modify
-- [ ] `cli/triton-cli/src/commands/instance/create.rs` - Add --metadata-file flag
-- [ ] Add file reading logic
+- [x] `cli/triton-cli/src/commands/instance/create.rs` - Add --metadata-file flag
+- [x] Add file reading logic
 
 ### Example Usage
 ```bash
@@ -154,7 +199,7 @@ triton instance create -M user-script=/path/to/script.sh ubuntu-24.04 g4-highcpu
 - Common enough to warrant dedicated flag
 
 ### Files to Modify
-- [ ] `cli/triton-cli/src/commands/instance/create.rs` - Add --script flag
+- [x] `cli/triton-cli/src/commands/instance/create.rs` - Add --script flag
 
 ### Example Usage
 ```bash
@@ -174,8 +219,8 @@ triton instance create --script /path/to/setup.sh ubuntu-24.04 g4-highcpu-1G
 - Some images require specific brands
 
 ### Files to Modify
-- [ ] `cli/triton-cli/src/commands/instance/create.rs` - Add --brand flag
-- [ ] Add brand to create request
+- [x] `cli/triton-cli/src/commands/instance/create.rs` - Add --brand flag
+- [x] Add brand to create request
 
 ### Example Usage
 ```bash
@@ -196,8 +241,8 @@ triton instance create --brand bhyve windows-2022 g4-highcpu-4G
 - More powerful than simple --network flag
 
 ### Files to Modify
-- [ ] `cli/triton-cli/src/commands/instance/create.rs` - Add --nic flag
-- [ ] Parse NIC specifications
+- [x] `cli/triton-cli/src/commands/instance/create.rs` - Add --nic flag
+- [x] Parse NIC specifications
 
 ### Example Usage
 ```bash
@@ -222,8 +267,8 @@ Add subcommands to existing network command:
 - `delete` - Delete fabric network
 
 ### Files to Modify
-- [ ] `clients/external/cloudapi-client/src/lib.rs` - Add network CRUD methods
-- [ ] `cli/triton-cli/src/commands/network.rs` - Add create/delete subcommands
+- [x] `clients/external/cloudapi-client/src/lib.rs` - Add network CRUD methods
+- [x] `cli/triton-cli/src/commands/network.rs` - Add create/delete subcommands
 
 ### Example Usage
 ```bash
@@ -253,8 +298,8 @@ Add `keys` subcommand to rbac:
 - `triton rbac key-delete USER KEY` - Delete key
 
 ### Files to Modify
-- [ ] `clients/external/cloudapi-client/src/lib.rs` - Add user key API methods
-- [ ] `cli/triton-cli/src/commands/rbac.rs` - Add key management subcommands
+- [x] `clients/external/cloudapi-client/src/lib.rs` - Add user key API methods
+- [x] `cli/triton-cli/src/commands/rbac.rs` - Add key management subcommands
 
 ---
 
