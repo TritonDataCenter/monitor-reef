@@ -9,39 +9,27 @@ Copyright 2025 Edgecast Cloud LLC.
 # VNC Proxy Implementation Plan
 
 **Date:** 2025-12-16
-**Status:** Implemented
+**Status:** ✅ COMPLETE
 **Priority:** P2 Enhancement
-**Related:** Instance VNC command (already implemented in basic form)
+**Related:** Instance VNC command - fully implemented with proxy support
 
 ## Overview
 
 Enhance the `triton instance vnc` command to include a built-in TCP-to-WebSocket proxy, allowing users to connect standard VNC clients (like TigerVNC, RealVNC, macOS Screen Sharing) directly to their bhyve/KVM instances without needing external tools like noVNC or websockify.
 
-## Current State
+## Implementation Summary
 
-The current `triton instance vnc` command only prints the WebSocket URL:
-```
-$ triton instance vnc myvm
-VNC WebSocket URL: wss://cloudapi.example.com/myaccount/machines/abc123/vnc
+The VNC proxy has been fully implemented in `cli/triton-cli/src/commands/instance/vnc.rs`.
 
-To connect, use a VNC client that supports WebSocket connections,
-or use a noVNC client with this URL.
-```
+### Features Implemented
 
-This requires users to:
-1. Set up noVNC or websockify separately
-2. Handle authentication manually
-3. Understand WebSocket-to-VNC bridging
+1. **TCP Proxy Mode (default)**: Listens on a local TCP port (default 5900) and bridges to CloudAPI WebSocket endpoint
+2. **WebSocket Proxy Mode (`--websocket`)**: Runs a local WebSocket server for browser-based noVNC clients
+3. **URL-only Mode (`--url-only`)**: Just prints the WebSocket URL for scripting
+4. **HTTP Signature Authentication**: Automatically signs WebSocket upgrade requests
+5. **Graceful Shutdown**: Ctrl+C handling with clean connection teardown
 
-## Proposed Enhancement
-
-Add a local proxy mode that:
-1. Listens on a local TCP port (default: 5900)
-2. Connects to the CloudAPI WebSocket endpoint with proper authentication
-3. Bridges VNC traffic between the local TCP socket and WebSocket
-4. Allows standard VNC clients to connect seamlessly
-
-### New Command Interface
+### Command Interface
 
 ```bash
 # Start TCP proxy for native VNC clients (default behavior)

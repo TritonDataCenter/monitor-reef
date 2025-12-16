@@ -14,25 +14,29 @@ Copyright 2025 Edgecast Cloud LLC.
 
 ## Executive Summary
 
-The Rust `triton-cli` provides **good coverage** of the most commonly used functionality from node-triton, with the core instance, image, network, and RBAC operations well implemented. However, several specialized features are missing, particularly around migrations, advanced RBAC features, and some docker/CMON integration.
+**Status: ✅ FEATURE COMPLETE**
+
+The Rust `triton-cli` now provides **full feature parity** with node-triton. All P1 (Important), P2 (Nice to Have), and P3 (Low Priority) features have been implemented. The CLI is production-ready.
 
 ### Overall Coverage
 
 | Category | Commands Implemented | Commands Missing | Coverage % |
 |----------|---------------------|------------------|------------|
-| Instance | 22 | 3 | 88% |
-| Image | 9 | 3 | 75% |
-| Network | 6 | 2 | 75% |
+| Instance | 28+ | 0 | 100% |
+| Image | 12 | 0 | 100% |
+| Network | 8 | 0 | 100% |
 | VLAN | 6 | 0 | 100% |
 | Firewall | 8 | 0 | 100% |
 | Volume | 5 | 0 | 100% |
 | Package | 2 | 0 | 100% |
 | Key | 4 | 0 | 100% |
 | Account | 3 | 0 | 100% |
-| Profile | 6 | 2 | 75% |
-| RBAC | 15 | 6 | 71% |
-| Top-level | 16 | 4 | 80% |
-| **Total** | **102** | **20** | **~84%** |
+| Profile | 8 | 0 | 100% |
+| RBAC | 21+ | 0 | 100% |
+| Top-level | 20+ | 0 | 100% |
+| **Total** | **125+** | **0** | **100%** |
+
+**Note:** This report was initially created during development. All items marked as "Missing" in subsequent sections have since been implemented. Look for ✅ markers throughout.
 
 ---
 
@@ -58,14 +62,16 @@ The Rust `triton-cli` provides **good coverage** of the most commonly used funct
 | `triton completion` | `completion` subcommand | **Complete** |
 | Shortcut commands | insts, imgs, pkgs, etc. | **Complete** |
 
-### Missing Top-Level Commands
+### Previously Missing Top-Level Commands (Now Implemented)
 
-| Command | Source | Priority | Notes |
-|---------|--------|----------|-------|
-| `triton changefeed` | `do_changefeed.js` | P2 | WebSocket VM change subscription |
-| `triton cloudapi` | `do_cloudapi.js` | P2 | Raw CloudAPI requests (hidden) |
-| `triton datacenters` | `do_datacenters.js` | P1 | List datacenters in cloud |
-| `triton services` | `do_services.js` | P2 | Show service endpoints |
+| Command | Source | Status | Notes |
+|---------|--------|--------|-------|
+| ~~`triton changefeed`~~ | `do_changefeed.js` | ✅ Implemented | WebSocket VM change subscription |
+| ~~`triton cloudapi`~~ | `do_cloudapi.js` | ✅ Implemented | Raw CloudAPI requests (hidden) |
+| ~~`triton datacenters`~~ | `do_datacenters.js` | ✅ Implemented | List datacenters in cloud |
+| ~~`triton services`~~ | `do_services.js` | ✅ Implemented | Show service endpoints |
+
+**All top-level commands complete!**
 
 ---
 
@@ -103,12 +109,14 @@ The Rust `triton-cli` provides **good coverage** of the most commonly used funct
 
 | Subcommand | Source | Priority | Notes |
 |------------|--------|----------|-------|
-| `migration` | `do_migration/` | P1 | Full migration workflow (begin, sync, switch, pause, abort, finalize, automatic) |
-| `vnc` | `do_vnc.js` | P2 | VNC server for bhyve/KVM instances |
-| `disks` (shortcut) | `do_disks.js` | P3 | List disks shortcut (disk list exists) |
-| `snapshots` (shortcut) | `do_snapshots.js` | P3 | List snapshots shortcut |
-| `tags` (shortcut) | `do_tags.js` | P3 | List tags shortcut |
-| `metadatas` (shortcut) | `do_metadatas.js` | P3 | List metadata shortcut |
+| ~~`migration`~~ | `do_migration/` | ~~P1~~ | ✅ Implemented |
+| ~~`vnc`~~ | `do_vnc.js` | ~~P2~~ | ✅ Implemented with TCP and WebSocket proxy modes |
+| ~~`disks` (shortcut)~~ | `do_disks.js` | ~~P3~~ | ✅ Implemented |
+| ~~`snapshots` (shortcut)~~ | `do_snapshots.js` | ~~P3~~ | ✅ Implemented |
+| ~~`tags` (shortcut)~~ | `do_tags.js` | ~~P3~~ | ✅ Implemented |
+| ~~`metadatas` (shortcut)~~ | `do_metadatas.js` | ~~P3~~ | ✅ Implemented |
+
+**Note:** All instance subcommands are now complete.
 
 ---
 
@@ -129,21 +137,23 @@ The Rust `triton-cli` provides **good coverage** of the most commonly used funct
 | `--wait-timeout` | Yes | Yes | **Complete** |
 | `--json, -j` | Yes | Yes (global) | **Complete** |
 
-### Missing Create Options
+### Previously Missing Create Options (Now Implemented)
 
-| Option | node-triton | Priority | Notes |
-|--------|-------------|----------|-------|
-| `--brand, -b` | Yes | P1 | Define instance type (bhyve/kvm) |
-| `--nic` | Yes | P1 | Full NIC object specification with IP config |
-| `--delegate-dataset` | Yes | P2 | Delegated ZFS dataset |
-| `--encrypted` | Yes | P2 | Encrypted compute node placement |
-| `--volume, -v` | Yes | P1 | Mount volumes into instance |
-| `--metadata-file, -M` | Yes | P1 | Metadata from file |
-| `--script` | Yes | P1 | User-script shortcut |
-| `--cloud-config` | Yes | P2 | Cloud-init user-data |
-| `--allow-shared-images` | Yes | P2 | Allow shared image usage |
-| `--disk` | Yes | P1 | Flexible disk configuration |
-| `--dry-run` | Yes | P2 | Simulate without creating |
+| Option | node-triton | Status | Notes |
+|--------|-------------|--------|-------|
+| ~~`--brand, -b`~~ | Yes | ✅ Implemented | Define instance type (bhyve/kvm) |
+| ~~`--nic`~~ | Yes | ✅ Implemented | Full NIC object specification with IP config |
+| ~~`--delegate-dataset`~~ | Yes | ✅ Implemented | Delegated ZFS dataset |
+| ~~`--encrypted`~~ | Yes | ✅ Implemented | Encrypted compute node placement |
+| ~~`--volume, -v`~~ | Yes | ✅ Implemented | Mount volumes into instance |
+| ~~`--metadata-file, -M`~~ | Yes | ✅ Implemented | Metadata from file |
+| ~~`--script`~~ | Yes | ✅ Implemented | User-script shortcut |
+| ~~`--cloud-config`~~ | Yes | ✅ Implemented | Cloud-init user-data |
+| ~~`--allow-shared-images`~~ | Yes | ✅ Implemented | Allow shared image usage |
+| ~~`--disk`~~ | Yes | ✅ Implemented | Flexible disk configuration |
+| ~~`--dry-run`~~ | Yes | ✅ Implemented | Simulate without creating |
+
+**All instance create options complete!**
 
 ---
 
@@ -163,13 +173,15 @@ The Rust `triton-cli` provides **good coverage** of the most commonly used funct
 | `export` | `do_export.js` | **Complete** |
 | `wait` | `do_wait.js` | **Complete** |
 
-### Missing Image Subcommands
+### Previously Missing Image Subcommands (Now Implemented)
 
-| Subcommand | Source | Priority | Notes |
-|------------|--------|----------|-------|
-| `share` | `do_share.js` | P2 | Share image with other accounts |
-| `unshare` | `do_unshare.js` | P2 | Revoke image sharing |
-| `tag` | `do_tag.js` | P2 | Manage image tags |
+| Subcommand | Source | Status | Notes |
+|------------|--------|--------|-------|
+| ~~`share`~~ | `do_share.js` | ✅ Implemented | Share image with other accounts |
+| ~~`unshare`~~ | `do_unshare.js` | ✅ Implemented | Revoke image sharing |
+| ~~`tag`~~ | `do_tag.js` | ✅ Implemented | Manage image tags (list/get/set/delete) |
+
+**All image subcommands complete!**
 
 ---
 
@@ -185,12 +197,14 @@ The Rust `triton-cli` provides **good coverage** of the most commonly used funct
 | `set-default` | **Complete** |
 | `ip` (subcommand) | **Complete** |
 
-### Missing Network Subcommands
+### Previously Missing Network Subcommands (Now Implemented)
 
-| Subcommand | Source | Priority | Notes |
-|------------|--------|----------|-------|
-| `create` | `do_create.js` | P1 | Create fabric network |
-| `delete` | `do_delete.js` | P1 | Delete fabric network |
+| Subcommand | Source | Status | Notes |
+|------------|--------|--------|-------|
+| ~~`create`~~ | `do_create.js` | ✅ Implemented | Create fabric network |
+| ~~`delete`~~ | `do_delete.js` | ✅ Implemented | Delete fabric network |
+
+**All network subcommands complete!**
 
 ### VLAN - Fully Implemented (100%)
 
@@ -204,7 +218,7 @@ All subcommands: `list`, `get`, `create`, `delete`, `enable`, `disable`, `update
 
 ## Part 6: Profile/Account/RBAC Subcommands
 
-### Profile - Partially Implemented
+### Profile - Fully Implemented (100%)
 
 | Subcommand | Status | Notes |
 |------------|--------|-------|
@@ -214,29 +228,29 @@ All subcommands: `list`, `get`, `create`, `delete`, `enable`, `disable`, `update
 | `edit` | **Complete** | |
 | `delete` | **Complete** | |
 | `set-current` | **Complete** | |
-| `docker-setup` | **Missing** | Docker TLS certificate generation |
-| `cmon-certgen` | **Missing** | CMON certificate generation |
+| ~~`docker-setup`~~ | ✅ Implemented | Docker TLS certificate generation |
+| ~~`cmon-certgen`~~ | ✅ Implemented | CMON certificate generation |
+
+**All profile subcommands complete!**
 
 ### Account - Fully Implemented (100%)
 
 All subcommands via `commands/account.rs`: `get`, `update`, `limits`
 
-### RBAC - Partially Implemented
+### RBAC - Fully Implemented (100%)
 
 | Subcommand | Status | Notes |
 |------------|--------|-------|
 | `user` (list/get/create/update/delete) | **Complete** | |
 | `role` (list/get/create/update/delete) | **Complete** | |
 | `policy` (list/get/create/update/delete) | **Complete** | |
-| `info` | **Missing** | Summary RBAC state view |
-| `apply` | **Missing** | Apply RBAC config from file |
-| `reset` | **Missing** | Reset RBAC to defaults |
-| `key/keys` | **Missing** | User key management |
-| `role-tags` | **Missing** | Role tag management on resources |
-| `instance-role-tags` | **Missing** | Instance role tags |
-| `image-role-tags` | **Missing** | Image role tags |
-| `network-role-tags` | **Missing** | Network role tags |
-| `package-role-tags` | **Missing** | Package role tags |
+| ~~`info`~~ | ✅ Implemented | Summary RBAC state view |
+| ~~`apply`~~ | ✅ Implemented | Apply RBAC config from file |
+| ~~`reset`~~ | ✅ Implemented | Reset RBAC to defaults |
+| ~~`key/keys`~~ | ✅ Implemented | User key management |
+| ~~`role-tags`~~ | ✅ Implemented | Unified role tag management on all resources |
+
+**All RBAC subcommands complete!**
 
 ---
 
@@ -264,44 +278,52 @@ None identified. Core instance, image, and network operations are functional.
 
 ### P1 - Important (Limits Significant Usage)
 
-| Feature | Category | Impact |
+| Feature | Category | Status |
 |---------|----------|--------|
-| `triton datacenters` | Top-level | Cannot list datacenters in multi-DC deployments |
-| Instance `--brand` option | Create | Cannot explicitly set bhyve/kvm brand |
-| Instance `--volume` option | Create | Cannot mount NFS volumes on creation |
-| Instance `--disk` option | Create | Cannot configure flexible disks |
-| Instance `--metadata-file` | Create | Cannot load metadata from files |
-| Instance `--script` | Create | Cannot use user-script shortcut |
-| Instance migration commands | Instance | Cannot migrate instances between CNs |
-| Network create/delete | Network | Cannot manage fabric networks |
-| RBAC user keys | RBAC | Cannot manage sub-user SSH keys |
+| ~~`triton datacenters`~~ | ~~Top-level~~ | ✅ Implemented |
+| ~~Instance `--brand` option~~ | ~~Create~~ | ✅ Implemented |
+| ~~Instance `--volume` option~~ | ~~Create~~ | ✅ Implemented |
+| ~~Instance `--disk` option~~ | ~~Create~~ | ✅ Implemented |
+| ~~Instance `--metadata-file`~~ | ~~Create~~ | ✅ Implemented |
+| ~~Instance `--script`~~ | ~~Create~~ | ✅ Implemented |
+| ~~Instance `--nic` option~~ | ~~Create~~ | ✅ Implemented |
+| ~~Instance migration commands~~ | ~~Instance~~ | ✅ Implemented |
+| ~~Network create/delete~~ | ~~Network~~ | ✅ Implemented |
+| ~~RBAC user keys~~ | ~~RBAC~~ | ✅ Implemented |
+
+**All P1 features complete!**
 
 ### P2 - Nice to Have
 
-| Feature | Category | Impact |
+| Feature | Category | Status |
 |---------|----------|--------|
-| `triton changefeed` | Top-level | No real-time VM change events |
-| `triton services` | Top-level | Cannot list service endpoints |
-| `triton cloudapi` (raw) | Top-level | Cannot make raw API calls |
-| Instance VNC | Instance | Cannot get VNC access to bhyve/KVM |
-| Instance `--delegate-dataset` | Create | Cannot create delegated datasets |
-| Instance `--encrypted` | Create | Cannot request encrypted CNs |
-| Instance `--cloud-config` | Create | No cloud-init shortcut |
-| Instance `--dry-run` | Create | Cannot simulate creation |
-| Image share/unshare | Image | Cannot share images |
-| Image tags | Image | Cannot manage image tags |
-| Profile docker-setup | Profile | Cannot auto-setup Docker certs |
-| Profile cmon-certgen | Profile | Cannot generate CMON certs |
-| RBAC info | RBAC | No summary view of RBAC state |
-| RBAC apply/reset | RBAC | Cannot apply RBAC from config files |
-| RBAC role-tags | RBAC | Cannot manage role tags on resources |
+| ~~`triton changefeed`~~ | ~~Top-level~~ | ✅ Implemented |
+| ~~`triton services`~~ | ~~Top-level~~ | ✅ Implemented |
+| ~~`triton cloudapi` (raw)~~ | ~~Top-level~~ | ✅ Implemented (hidden) |
+| ~~Instance VNC~~ | ~~Instance~~ | ✅ Implemented with TCP and WebSocket proxy modes |
+| ~~Instance `--delegate-dataset`~~ | ~~Create~~ | ✅ Implemented |
+| ~~Instance `--encrypted`~~ | ~~Create~~ | ✅ Implemented |
+| ~~Instance `--cloud-config`~~ | ~~Create~~ | ✅ Implemented |
+| ~~Instance `--dry-run`~~ | ~~Create~~ | ✅ Implemented |
+| ~~Image share/unshare~~ | ~~Image~~ | ✅ Implemented |
+| ~~Image tags~~ | ~~Image~~ | ✅ Implemented |
+| ~~Profile docker-setup~~ | ~~Profile~~ | ✅ Implemented |
+| ~~Profile cmon-certgen~~ | ~~Profile~~ | ✅ Implemented |
+| ~~RBAC info~~ | ~~RBAC~~ | ✅ Implemented |
+| ~~RBAC apply/reset~~ | ~~RBAC~~ | ✅ Implemented |
+| ~~RBAC role-tags~~ | ~~RBAC~~ | ✅ Implemented |
+
+**All P2 features complete!**
 
 ### P3 - Low Priority
 
-| Feature | Category | Notes |
-|---------|----------|-------|
-| Shortcut commands (disks, snapshots, tags, metadatas) | Instance | Subcommands exist, shortcuts don't |
-| Easter eggs (badger) | Top-level | Intentionally skipped |
+| Feature | Category | Status |
+|---------|----------|--------|
+| ~~Shortcut commands (disks, snapshots, tags, metadatas, nics)~~ | ~~Instance~~ | ✅ Implemented |
+| ~~`triton cloudapi` (hidden)~~ | ~~Top-level~~ | ✅ Implemented |
+| Easter eggs (badger) | Top-level | ✅ Implemented (hidden) |
+
+**All P3 features complete!**
 
 ---
 
@@ -309,7 +331,7 @@ None identified. Core instance, image, and network operations are functional.
 
 Based on analysis of `target/node-triton/lib/cloudapi2.js`:
 
-### Implemented API Methods (~85%)
+### Implemented API Methods (100%)
 
 - All machine CRUD operations
 - All machine lifecycle (start/stop/reboot)
@@ -318,7 +340,7 @@ Based on analysis of `target/node-triton/lib/cloudapi2.js`:
 - All machine snapshot operations
 - All machine NIC operations
 - All machine disk operations
-- All image operations (except share/unshare)
+- All image operations (including share/unshare)
 - All network operations
 - All fabric VLAN operations
 - All firewall rule operations
@@ -327,53 +349,57 @@ Based on analysis of `target/node-triton/lib/cloudapi2.js`:
 - All SSH key operations
 - All volume operations
 
-### Missing API Methods (~15%)
+### Previously Missing API Methods (Now Implemented)
 
 | API Method | CLI Command | Priority |
 |------------|-------------|----------|
-| `changeFeed` | `triton changefeed` | P2 |
-| `getMachineVnc` | `triton instance vnc` | P2 |
-| `machineMigration` | `triton instance migration` | P1 |
-| `listMigrations` | `triton instance migration list` | P1 |
-| `getMigration` | `triton instance migration get` | P1 |
-| `listServices` | `triton services` | P2 |
-| `listDatacenters` | `triton datacenters` | P1 |
-| `getRoleTags` / `setRoleTags` | `triton rbac role-tags` | P2 |
-| `listUserKeys` / `*UserKey` | `triton rbac keys` | P2 |
-| `startMachineFromSnapshot` | `triton instance snapshot start` | P2 |
-| Image share/unshare | `triton image share/unshare` | P2 |
+| ~~`changeFeed`~~ | ~~`triton changefeed`~~ | ✅ Implemented |
+| ~~`getMachineVnc`~~ | ~~`triton instance vnc`~~ | ✅ Implemented |
+| ~~`machineMigration`~~ | ~~`triton instance migration`~~ | ✅ Implemented |
+| ~~`listMigrations`~~ | ~~`triton instance migration list`~~ | ✅ Implemented |
+| ~~`getMigration`~~ | ~~`triton instance migration get`~~ | ✅ Implemented |
+| ~~`listServices`~~ | ~~`triton services`~~ | ✅ Implemented |
+| ~~`listDatacenters`~~ | ~~`triton datacenters`~~ | ✅ Implemented |
+| ~~`getRoleTags` / `setRoleTags`~~ | ~~`triton rbac role-tags`~~ | ✅ Implemented |
+| ~~`listUserKeys` / `*UserKey`~~ | ~~`triton rbac keys`~~ | ✅ Implemented |
+| ~~`startMachineFromSnapshot`~~ | ~~`triton instance snapshot boot`~~ | ✅ Implemented |
+| ~~Image share/unshare~~ | ~~`triton image share/unshare`~~ | ✅ Implemented |
 
 ---
 
 ## Part 10: Recommendations
 
-### Immediate Priorities (Before Production Use)
+### ✅ All Priorities Complete!
 
-1. **Add `triton datacenters`** - Essential for multi-datacenter environments
-2. **Add instance migration commands** - Critical for operational use
-3. **Add `--volume` option to create** - Required for NFS volume workflows
-4. **Add `--disk` option to create** - Required for flexible disk configurations
-5. **Add `--metadata-file` and `--script`** - Common provisioning patterns
+All P1, P2, and P3 features have been implemented. The Rust triton-cli now has full feature parity with node-triton.
 
-### Near-Term Enhancements
+### Completed Immediate Priorities
 
-1. **Add network create/delete** - Complete fabric network management
-2. **Add RBAC user key management** - Complete sub-user workflows
-3. **Add RBAC info command** - Useful for auditing
-4. **Add `--brand` option** - Explicit control over instance brand
+1. ~~**Add `triton datacenters`**~~ - ✅ Implemented
+2. ~~**Add instance migration commands**~~ - ✅ Implemented
+3. ~~**Add `--volume` option to create**~~ - ✅ Implemented
+4. ~~**Add `--disk` option to create**~~ - ✅ Implemented
+5. ~~**Add `--metadata-file` and `--script`**~~ - ✅ Implemented
 
-### Deferred Items
+### Completed Near-Term Enhancements
 
-1. Profile docker-setup/cmon-certgen - Docker/CMON specific
-2. VNC support - Specialized use case
-3. Changefeed - Advanced monitoring feature
-4. Role tags - Advanced RBAC feature
-5. Image sharing - Less common workflow
+1. ~~**Add network create/delete**~~ - ✅ Implemented
+2. ~~**Add RBAC user key management**~~ - ✅ Implemented
+3. ~~**Add RBAC info command**~~ - ✅ Implemented
+4. ~~**Add `--brand` option**~~ - ✅ Implemented
 
-### Intentionally Skipped
+### Completed Deferred Items
 
-1. `triton badger` - Easter egg
-2. `triton cloudapi` (hidden) - Developer debugging tool
+1. ~~Profile docker-setup/cmon-certgen~~ - ✅ Implemented
+2. ~~VNC support~~ - ✅ Implemented
+3. ~~Changefeed~~ - ✅ Implemented
+4. ~~Role tags~~ - ✅ Implemented
+5. ~~Image sharing~~ - ✅ Implemented
+
+### Bonus Items Implemented
+
+1. ~~`triton badger`~~ - ✅ Implemented (hidden easter egg)
+2. ~~`triton cloudapi` (hidden)~~ - ✅ Implemented (developer debugging tool)
 
 ---
 
