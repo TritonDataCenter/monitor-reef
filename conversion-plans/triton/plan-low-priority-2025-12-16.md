@@ -192,7 +192,7 @@ This plan covers P2 (Nice to Have) and P3 (Low Priority) features. These are not
 - Similar for images, networks, packages
 
 #### Files to Modify
-- [ ] `clients/external/cloudapi-client/src/lib.rs` - Add role tag methods
+- [ ] `clients/internal/cloudapi-client/src/lib.rs` - Add role tag methods
 - [ ] `cli/triton-cli/src/commands/rbac.rs` - Add role-tags subcommands
 
 ---

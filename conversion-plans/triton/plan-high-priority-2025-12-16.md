@@ -70,7 +70,7 @@ All high-priority (P1) features have been implemented. The migration commands we
 - No subcommands needed (just `triton datacenters`)
 
 ### Files to Modify
-- [x] `clients/external/cloudapi-client/src/lib.rs` - Add API method
+- [x] `clients/internal/cloudapi-client/src/lib.rs` - Add API method
 - [x] `apis/cloudapi-api/src/lib.rs` - Add endpoint if needed
 - [x] `cli/triton-cli/src/commands/mod.rs` - Add datacenters module
 - [x] `cli/triton-cli/src/commands/datacenters.rs` - New file
@@ -258,7 +258,7 @@ Add subcommands to existing network command:
 - `delete` - Delete fabric network
 
 ### Files to Modify
-- [x] `clients/external/cloudapi-client/src/lib.rs` - Add network CRUD methods
+- [x] `clients/internal/cloudapi-client/src/lib.rs` - Add network CRUD methods
 - [x] `cli/triton-cli/src/commands/network.rs` - Add create/delete subcommands
 
 ### Example Usage
@@ -289,7 +289,7 @@ Add `keys` subcommand to rbac:
 - `triton rbac key-delete USER KEY` - Delete key
 
 ### Files to Modify
-- [x] `clients/external/cloudapi-client/src/lib.rs` - Add user key API methods
+- [x] `clients/internal/cloudapi-client/src/lib.rs` - Add user key API methods
 - [x] `cli/triton-cli/src/commands/rbac.rs` - Add key management subcommands
 
 ---
