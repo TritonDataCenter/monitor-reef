@@ -18,9 +18,9 @@ Copyright 2025 Edgecast Cloud LLC.
 | Metric | Current | Target |
 |--------|---------|--------|
 | Command Coverage | 100% (107/107) | 100% |
-| Short Option Compatibility | ~85% | 100% |
-| Long Option Compatibility | ~95% | 100% |
-| Behavioral Parity | ~90% | 100% |
+| Short Option Compatibility | ~90% | 100% |
+| Long Option Compatibility | ~97% | 100% |
+| Behavioral Parity | ~93% | 100% |
 
 ## Priority Legend
 
@@ -77,19 +77,19 @@ Copyright 2025 Edgecast Cloud LLC.
 
 | Item | Description | Status |
 |------|-------------|--------|
-| Add `-a/--all` | Include inactive images | [ ] |
-| Add `-l/--long` | Long format output | [ ] |
-| Add `-o COLUMNS` | Output columns | [ ] |
-| Add `-H` | No-header option | [ ] |
-| Add `-s FIELD` | Sort field | [ ] |
-| Add `--homepage` | Image homepage for create | [ ] |
-| Add `--eula` | Image EULA for create | [ ] |
-| Add `--acl` | Access control list for create | [ ] |
-| Add `-t/--tag` | Tags for create | [ ] |
-| Add `--dry-run` | Dry-run for create/copy/clone | [ ] |
-| Support positional `DATACENTER` | For `image copy IMAGE DC` | [ ] |
+| Add `-a/--all` | Include inactive images | [x] |
+| Add `-l/--long` | Long format output | [x] |
+| Add `-o COLUMNS` | Output columns | [x] |
+| Add `-H` | No-header option | [x] |
+| Add `-s FIELD` | Sort field | [x] |
+| Add `--homepage` | Image homepage for create | [x] |
+| Add `--eula` | Image EULA for create | [x] |
+| Add `--acl` | Access control list for create | [x] |
+| Add `-t/--tag` | Tags for create | [x] |
+| Add `--dry-run` | Dry-run for create/copy/clone | [x] |
+| Support positional `DATACENTER` | For `image copy IMAGE DC` | [x] |
 
-**Files:** `cli/triton-cli/src/commands/image/`
+**Files:** `cli/triton-cli/src/commands/image.rs`
 
 ---
 

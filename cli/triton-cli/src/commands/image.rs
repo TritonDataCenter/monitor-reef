@@ -9,10 +9,12 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
+use chrono::{DateTime, Utc};
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
+use cloudapi_client::types::Image;
 use dialoguer::Confirm;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
 use crate::output::{json, table};
 
@@ -86,6 +88,30 @@ pub struct ImageListArgs {
     /// Filter by type
     #[arg(long, name = "type")]
     pub image_type: Option<String>,
+
+    /// Include all images (including inactive, disabled, etc.)
+    #[arg(short = 'a', long)]
+    pub all: bool,
+
+    /// Custom output fields (comma-separated)
+    #[arg(short = 'o', long)]
+    pub output: Option<String>,
+
+    /// Long output format with more columns
+    #[arg(short = 'l', long)]
+    pub long: bool,
+
+    /// Omit table header
+    #[arg(short = 'H', long = "no-header")]
+    pub no_header: bool,
+
+    /// Show only short ID (one per line)
+    #[arg(long)]
+    pub short: bool,
+
+    /// Sort by field (name, version, published_at, etc.)
+    #[arg(short = 's', long)]
+    pub sort_by: Option<String>,
 }
 
 #[derive(Args, Clone)]
@@ -107,9 +133,24 @@ pub struct ImageCreateArgs {
     /// Image description
     #[arg(long)]
     pub description: Option<String>,
+    /// Image homepage URL
+    #[arg(long)]
+    pub homepage: Option<String>,
+    /// Image EULA URL
+    #[arg(long)]
+    pub eula: Option<String>,
+    /// Access control list (account UUIDs, multiple allowed)
+    #[arg(long)]
+    pub acl: Option<Vec<String>>,
+    /// Tags (key=value, multiple allowed)
+    #[arg(short = 't', long = "tag")]
+    pub tags: Option<Vec<String>>,
     /// Wait for image to be active
     #[arg(long, short)]
     pub wait: bool,
+    /// Dry run - show what would be created without creating
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Args, Clone)]
@@ -125,15 +166,24 @@ pub struct ImageDeleteArgs {
 pub struct ImageCloneArgs {
     /// Image ID or name[@version]
     pub image: String,
+    /// Dry run - show what would be cloned without cloning
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Args, Clone)]
 pub struct ImageCopyArgs {
     /// Image ID or name[@version] in source datacenter
     pub image: String,
-    /// Source datacenter name
+    /// Source datacenter name (positional or --source)
+    #[arg(index = 2)]
+    pub datacenter: Option<String>,
+    /// Source datacenter name (alternative to positional)
     #[arg(long)]
-    pub source: String,
+    pub source: Option<String>,
+    /// Dry run - show what would be copied without copying
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Args, Clone)]
@@ -265,39 +315,190 @@ async fn list_images(args: ImageListArgs, client: &TypedClient, use_json: bool) 
     if let Some(os) = &args.os {
         req = req.os(os);
     }
+    // If --all is not set and no explicit state filter, default to "active"
     if let Some(state) = &args.state {
         req = req.state(state);
+    } else if !args.all {
+        req = req.state("active");
     }
     if args.public {
         req = req.public(true);
     }
 
     let response = req.send().await?;
-    let images = response.into_inner();
+    let mut images = response.into_inner();
+
+    // Sort images if requested
+    if let Some(ref sort_field) = args.sort_by {
+        sort_images(&mut images, sort_field);
+    }
 
     if use_json {
         json::print_json(&images)?;
     } else {
-        let mut tbl = table::create_table(&["SHORTID", "NAME", "VERSION", "STATE", "TYPE", "OS"]);
-        for img in &images {
-            let state_str = img
-                .state
-                .as_ref()
-                .map(|s| format!("{:?}", s).to_lowercase())
-                .unwrap_or_else(|| "-".to_string());
-            tbl.add_row(vec![
-                &img.id.to_string()[..8],
-                &img.name,
-                &img.version,
-                &state_str,
-                &format!("{:?}", img.type_).to_lowercase(),
-                &img.os,
-            ]);
-        }
-        table::print_table(tbl);
+        print_images_table(&images, &args);
     }
 
     Ok(())
+}
+
+fn sort_images(images: &mut [Image], field: &str) {
+    match field.to_lowercase().as_str() {
+        "name" => images.sort_by(|a, b| a.name.cmp(&b.name)),
+        "version" => images.sort_by(|a, b| a.version.cmp(&b.version)),
+        "os" => images.sort_by(|a, b| a.os.cmp(&b.os)),
+        "type" => images.sort_by(|a, b| format!("{:?}", a.type_).cmp(&format!("{:?}", b.type_))),
+        "state" => images.sort_by(|a, b| {
+            let a_state = a
+                .state
+                .as_ref()
+                .map(|s| format!("{:?}", s))
+                .unwrap_or_default();
+            let b_state = b
+                .state
+                .as_ref()
+                .map(|s| format!("{:?}", s))
+                .unwrap_or_default();
+            a_state.cmp(&b_state)
+        }),
+        "published_at" | "published" => images.sort_by(|a, b| {
+            let a_pub = a
+                .published_at
+                .as_ref()
+                .map(|t| t.to_string())
+                .unwrap_or_default();
+            let b_pub = b
+                .published_at
+                .as_ref()
+                .map(|t| t.to_string())
+                .unwrap_or_default();
+            a_pub.cmp(&b_pub)
+        }),
+        _ => {} // Unknown field, don't sort
+    }
+}
+
+fn print_images_table(images: &[Image], args: &ImageListArgs) {
+    // Handle --short: just print IDs
+    if args.short {
+        for img in images {
+            let short_id = &img.id.to_string()[..8];
+            println!("{}", short_id);
+        }
+        return;
+    }
+
+    // Determine columns based on --long or --output
+    let columns: Vec<&str> = if let Some(ref output) = args.output {
+        output.split(',').map(|s| s.trim()).collect()
+    } else if args.long {
+        vec![
+            "id",
+            "name",
+            "version",
+            "state",
+            "type",
+            "os",
+            "public",
+            "published",
+        ]
+    } else {
+        vec!["shortid", "name", "version", "state", "type", "os"]
+    };
+
+    // Create header (uppercase)
+    let headers: Vec<String> = columns.iter().map(|c| c.to_uppercase()).collect();
+    let header_refs: Vec<&str> = headers.iter().map(|s| s.as_str()).collect();
+
+    let mut tbl = if args.no_header {
+        table::create_table_no_header(columns.len())
+    } else {
+        table::create_table(&header_refs)
+    };
+
+    for img in images {
+        let row: Vec<String> = columns
+            .iter()
+            .map(|col| get_image_field_value(img, col))
+            .collect();
+        let row_refs: Vec<&str> = row.iter().map(|s| s.as_str()).collect();
+        tbl.add_row(row_refs);
+    }
+
+    table::print_table(tbl);
+}
+
+/// Get a field value from an Image by field name
+fn get_image_field_value(img: &Image, field: &str) -> String {
+    match field.to_lowercase().as_str() {
+        "id" => img.id.to_string(),
+        "shortid" => img.id.to_string()[..8].to_string(),
+        "name" => img.name.clone(),
+        "version" => img.version.clone(),
+        "state" => img
+            .state
+            .as_ref()
+            .map(|s| format!("{:?}", s).to_lowercase())
+            .unwrap_or_else(|| "-".to_string()),
+        "type" => format!("{:?}", img.type_).to_lowercase(),
+        "os" => img.os.clone(),
+        "description" | "desc" => img.description.clone().unwrap_or_else(|| "-".to_string()),
+        "public" => img
+            .public
+            .map(|p| p.to_string())
+            .unwrap_or_else(|| "-".to_string()),
+        "owner" => img.owner.clone().unwrap_or_else(|| "-".to_string()),
+        "published" | "published_at" => format_published(&img.published_at),
+        "size" | "image_size" => img
+            .image_size
+            .map(|s| format_size(s))
+            .unwrap_or_else(|| "-".to_string()),
+        "homepage" => img.homepage.clone().unwrap_or_else(|| "-".to_string()),
+        "eula" => img.eula.clone().unwrap_or_else(|| "-".to_string()),
+        "origin" => img.origin.clone().unwrap_or_else(|| "-".to_string()),
+        _ => "-".to_string(),
+    }
+}
+
+fn format_published(published_at: &Option<String>) -> String {
+    match published_at {
+        Some(timestamp) => {
+            // Try to parse as RFC 3339
+            if let Ok(dt) = DateTime::parse_from_rfc3339(timestamp) {
+                let now = Utc::now();
+                let dt_utc = dt.with_timezone(&Utc);
+                let duration = now.signed_duration_since(dt_utc);
+
+                if duration.num_days() >= 365 {
+                    format!("{}y", duration.num_days() / 365)
+                } else if duration.num_days() >= 30 {
+                    format!("{}mo", duration.num_days() / 30)
+                } else if duration.num_days() >= 1 {
+                    format!("{}d", duration.num_days())
+                } else if duration.num_hours() >= 1 {
+                    format!("{}h", duration.num_hours())
+                } else {
+                    "now".to_string()
+                }
+            } else {
+                // Fall back to raw timestamp if parsing fails
+                timestamp.clone()
+            }
+        }
+        None => "-".to_string(),
+    }
+}
+
+fn format_size(bytes: u64) -> String {
+    if bytes >= 1024 * 1024 * 1024 {
+        format!("{:.1}G", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
+    } else if bytes >= 1024 * 1024 {
+        format!("{:.1}M", bytes as f64 / (1024.0 * 1024.0))
+    } else if bytes >= 1024 {
+        format!("{:.1}K", bytes as f64 / 1024.0)
+    } else {
+        format!("{}B", bytes)
+    }
 }
 
 async fn get_image(args: ImageGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
@@ -338,18 +539,64 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
     let account = &client.auth_config().account;
     let machine_id =
         crate::commands::instance::get::resolve_instance(&args.instance, client).await?;
-    let machine_uuid: cloudapi_client::Uuid = machine_id.parse()?;
+
+    // ACL is just Vec<String> (account UUIDs as strings)
+    let acl = args.acl.clone();
+
+    // Parse tags into serde_json::Map
+    let tags = if let Some(tag_strings) = &args.tags {
+        let mut tag_map: Map<String, Value> = Map::new();
+        for tag in tag_strings {
+            if let Some((key, value)) = tag.split_once('=') {
+                tag_map.insert(key.to_string(), Value::String(value.to_string()));
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Invalid tag format '{}', expected key=value",
+                    tag
+                ));
+            }
+        }
+        Some(tag_map)
+    } else {
+        None
+    };
 
     let request = cloudapi_client::types::CreateImageRequest {
-        machine: machine_uuid,
+        machine: machine_id.clone(),
         name: args.name.clone(),
         version: args.version.clone(),
         description: args.description.clone(),
-        homepage: None,
-        eula: None,
-        acl: None,
-        tags: None,
+        homepage: args.homepage.clone(),
+        eula: args.eula.clone(),
+        acl,
+        tags,
     };
+
+    // Handle dry-run
+    if args.dry_run {
+        println!("Dry run - would create image:");
+        println!("  Name:        {}", args.name);
+        if let Some(ver) = &args.version {
+            println!("  Version:     {}", ver);
+        }
+        if let Some(desc) = &args.description {
+            println!("  Description: {}", desc);
+        }
+        if let Some(hp) = &args.homepage {
+            println!("  Homepage:    {}", hp);
+        }
+        if let Some(eula) = &args.eula {
+            println!("  EULA:        {}", eula);
+        }
+        if let Some(acl) = &args.acl {
+            println!("  ACL:         {:?}", acl);
+        }
+        if let Some(tags) = &args.tags {
+            println!("  Tags:        {:?}", tags);
+        }
+        println!("  From instance: {}", args.instance);
+        return Ok(());
+    }
 
     let response = client
         .inner()
@@ -413,6 +660,13 @@ async fn clone_image(args: ImageCloneArgs, client: &TypedClient, use_json: bool)
     let image_id = resolve_image(&args.image, client).await?;
     let image_uuid: cloudapi_client::Uuid = image_id.parse()?;
 
+    // Handle dry-run
+    if args.dry_run {
+        println!("Dry run - would clone image:");
+        println!("  Source image: {} ({})", args.image, &image_id[..8]);
+        return Ok(());
+    }
+
     let image = client.clone_image(account, &image_uuid).await?;
     println!(
         "Cloned image {} ({})",
@@ -430,6 +684,11 @@ async fn clone_image(args: ImageCloneArgs, client: &TypedClient, use_json: bool)
 async fn copy_image(args: ImageCopyArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
 
+    // Get source datacenter from either positional arg or --source flag
+    let source_dc = args.datacenter.or(args.source).ok_or_else(|| {
+        anyhow::anyhow!("Source datacenter required (as second argument or --source)")
+    })?;
+
     // For copy from another datacenter, we need to use import_image_from_datacenter
     // The image ID provided is from the source datacenter
     let source_image_uuid: cloudapi_client::Uuid = args
@@ -437,15 +696,24 @@ async fn copy_image(args: ImageCopyArgs, client: &TypedClient, use_json: bool) -
         .parse()
         .map_err(|_| anyhow::anyhow!("Image copy requires a UUID from the source datacenter"))?;
 
+    // Handle dry-run
+    if args.dry_run {
+        println!("Dry run - would copy image:");
+        println!("  Source image: {}", args.image);
+        println!("  From datacenter: {}", source_dc);
+        return Ok(());
+    }
+
     // Create a placeholder UUID for the local image - the API will create a new one
     let local_uuid = source_image_uuid.clone();
 
     let image = client
-        .import_image_from_datacenter(account, &local_uuid, args.source.clone(), source_image_uuid)
+        .import_image_from_datacenter(account, &local_uuid, source_dc.clone(), source_image_uuid)
         .await?;
 
     println!(
-        "Copying image from source datacenter: {} ({})",
+        "Copying image from {}: {} ({})",
+        source_dc,
         image.name,
         &image.id.to_string()[..8]
     );
