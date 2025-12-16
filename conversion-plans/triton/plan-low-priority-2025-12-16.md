@@ -156,19 +156,21 @@ This plan covers P2 (Nice to Have) and P3 (Low Priority) features. These are not
 
 ---
 
-### 8. RBAC Apply/Reset Commands
+### 8. RBAC Apply/Reset Commands ✅ COMPLETED
 
 **Priority:** P2
 **Impact:** Cannot apply RBAC from config files
 
 #### Implementation
-- Add `triton rbac apply FILE` command
-- Add `triton rbac reset` command
-- Apply creates/updates users/roles/policies from JSON/YAML
+- Added `triton rbac apply FILE` command
+- Added `triton rbac reset` command
+- Apply creates/updates/deletes users/roles/policies from JSON config file
+- Supports `--dry-run` to preview changes without applying
 - Reset removes all RBAC config (with confirmation)
+- Both commands support `--force` to skip confirmation prompts
 
-#### Files to Modify
-- [ ] `cli/triton-cli/src/commands/rbac.rs` - Add apply/reset subcommands
+#### Files Modified
+- [x] `cli/triton-cli/src/commands/rbac.rs` - Add apply/reset subcommands
 
 ---
 
@@ -297,7 +299,7 @@ These features are intentionally not planned:
 
 ## Progress Summary
 
-### Completed (10/12 P2 features):
+### Completed (11/12 P2 features):
 1. ✅ RBAC info command
 2. ✅ Services command
 3. ✅ Image share/unshare commands
@@ -308,10 +310,10 @@ These features are intentionally not planned:
 8. ✅ Profile docker-setup
 9. ✅ Profile cmon-certgen
 10. ✅ Changefeed command
+11. ✅ RBAC apply/reset commands
 
-### Remaining (2/12 P2 features):
-1. RBAC apply/reset commands
-2. RBAC role tags commands
+### Remaining (1/12 P2 features):
+1. RBAC role tags commands
 
 ### P3 features (0.5/2):
 1. Instance shortcut commands - **Partial**: subcommand aliases done, top-level shortcuts pending
