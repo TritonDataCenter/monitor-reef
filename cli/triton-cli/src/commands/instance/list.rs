@@ -32,6 +32,18 @@ pub struct ListArgs {
     #[arg(long)]
     pub package: Option<String>,
 
+    /// Filter by brand (joyent, lx, bhyve, kvm)
+    #[arg(long)]
+    pub brand: Option<String>,
+
+    /// Filter by memory size in MB
+    #[arg(long)]
+    pub memory: Option<u64>,
+
+    /// Filter by docker flag (true/false)
+    #[arg(long)]
+    pub docker: Option<bool>,
+
     /// Filter by tag (key=value)
     #[arg(long, short = 't')]
     pub tag: Option<Vec<String>>,
@@ -59,6 +71,10 @@ pub struct ListArgs {
     /// Show only short ID (one per line)
     #[arg(long)]
     pub short: bool,
+
+    /// Include generated credentials in output (metadata.credentials)
+    #[arg(long)]
+    pub credentials: bool,
 }
 
 pub async fn run(args: ListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
@@ -79,6 +95,18 @@ pub async fn run(args: ListArgs, client: &TypedClient, use_json: bool) -> Result
     // if let Some(pkg) = &args.package {
     //     req = req.package(pkg);
     // }
+    if let Some(brand) = &args.brand {
+        req = req.brand(brand);
+    }
+    if let Some(memory) = args.memory {
+        req = req.memory(memory as i64);
+    }
+    if let Some(docker) = args.docker {
+        req = req.docker(docker);
+    }
+    if args.credentials {
+        req = req.credentials(true);
+    }
     if let Some(limit) = args.limit {
         req = req.limit(limit);
     }

@@ -62,14 +62,14 @@ Copyright 2025 Edgecast Cloud LLC.
 
 | Item | Description | Status |
 |------|-------------|--------|
-| Add `-o` short form | Output column selection (`-o field1,field2`) | [ ] |
-| Add `-s` short form | Sort field selection | [ ] |
-| Add `--brand` filter | Filter by instance brand | [ ] |
-| Add `--memory` filter | Filter by memory size | [ ] |
-| Add `--docker` filter | Filter by docker flag | [ ] |
-| Add `--credentials` | Include credentials in output | [ ] |
+| Add `-o` short form | Output column selection (`-o field1,field2`) | [x] |
+| Add `-s` short form | Sort field selection | [x] |
+| Add `--brand` filter | Filter by instance brand | [x] |
+| Add `--memory` filter | Filter by memory size | [x] |
+| Add `--docker` filter | Filter by docker flag | [x] |
+| Add `--credentials` | Include credentials in output | [x] |
 
-**Files:** `cli/triton-cli/src/commands/instance/list.rs`
+**Files:** `cli/triton-cli/src/commands/instance/list.rs`, `apis/cloudapi-api/src/types/machine.rs`
 
 ---
 

@@ -3095,6 +3095,24 @@
           },
           {
             "in": "query",
+            "name": "credentials",
+            "description": "Include generated credentials in response",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "docker",
+            "description": "Filter by docker flag (added in CloudAPI 8.0.0)",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
             "name": "image",
             "description": "Filter by image UUID",
             "schema": {
@@ -3261,6 +3279,24 @@
             "description": "Filter by brand",
             "schema": {
               "$ref": "#/components/schemas/Brand"
+            }
+          },
+          {
+            "in": "query",
+            "name": "credentials",
+            "description": "Include generated credentials in response",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "docker",
+            "description": "Filter by docker flag (added in CloudAPI 8.0.0)",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
             }
           },
           {

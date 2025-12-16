@@ -421,6 +421,12 @@ pub struct ListMachinesQuery {
     /// Filter by tag (format: key=value)
     #[serde(default)]
     pub tag: Option<String>,
+    /// Filter by docker flag (added in CloudAPI 8.0.0)
+    #[serde(default)]
+    pub docker: Option<bool>,
+    /// Include generated credentials in response
+    #[serde(default)]
+    pub credentials: Option<bool>,
 }
 
 /// Audit entry for a machine
