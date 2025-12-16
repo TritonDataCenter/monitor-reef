@@ -22,8 +22,8 @@ This document provides a systematic comparison between the Node.js `triton` CLI 
 
 | Gap | Priority | Effort | Notes |
 |-----|----------|--------|-------|
-| SSH proxy support | Medium | 2-3h | `tritoncli.ssh.proxy` tag lookup |
-| SSH default user detection | Low | 1h | From image `default_user` tag |
+| ~~SSH proxy support~~ | ~~Medium~~ | ~~2-3h~~ | ✅ Completed |
+| ~~SSH default user detection~~ | ~~Low~~ | ~~1h~~ | ✅ Completed |
 | `triton cloudapi` raw command | P3 | 2-3h | Developer debugging tool |
 | RBAC apply/reset commands | P2 | 3-4h | Bulk config from files |
 | RBAC role tags commands | P2 | 2-3h | Manage role tags on resources |
@@ -101,7 +101,7 @@ See also: `conversion-plans/triton/plan-low-priority-2025-12-16.md` for detailed
 | `instance resize` | `instance resize` | Full | |
 | `instance snapshot` | `instance snapshot` | Full | create, delete, get, list |
 | `instance snapshots` | `instance snapshots` | Full | Alias for `snapshot` |
-| `instance ssh` | `instance ssh` | Partial | Missing proxy support |
+| `instance ssh` | `instance ssh` | Full | Proxy + default user detection |
 | `instance start` | `instance start` | Full | |
 | `instance stop` | `instance stop` | Full | |
 | `instance tag` | `instance tag` | Full | delete, get, list, set |
@@ -190,7 +190,7 @@ See also: `conversion-plans/triton/plan-low-priority-2025-12-16.md` for detailed
 | Option | Node.js | Rust | Compatible | Notes |
 |--------|---------|------|------------|-------|
 | `USER@INST` | Yes | `--user, -l` | Partial | Different syntax |
-| `--no-proxy` | Yes | - | No | Proxy support not implemented |
+| `--no-proxy` | Yes | Yes | Yes | ✅ Implemented |
 | SSH arguments | Pass-through | Pass-through | Yes | |
 | `-i` (identity) | Pass-through | `--identity, -i` | Yes | Explicit in Rust |
 | `-o` (ssh option) | Pass-through | `--ssh-option, -o` | Yes | Explicit in Rust |
@@ -261,8 +261,8 @@ These short options could be added to improve compatibility:
 
 | Feature | Node.js | Rust | Impact |
 |---------|---------|------|--------|
-| SSH proxy support | Via tags (`tritoncli.ssh.proxy`) | Not implemented | Medium |
-| SSH default user | Auto-detected from image | Defaults to `root` | Low |
+| SSH proxy support | Via tags (`tritoncli.ssh.proxy`) | ✅ Implemented | - |
+| SSH default user | Auto-detected from image | ✅ Implemented | - |
 | SSH ControlMaster disable | Automatic | Not implemented | Low |
 | List filter syntax | `key=value` positional | `--key value` flags | Medium |
 | Column output | `-o col1,col2` | `--output col1,col2` | Low |

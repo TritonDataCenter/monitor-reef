@@ -328,8 +328,8 @@ These items were identified during CLI compatibility analysis:
 - ✅ Added plural aliases for instance subcommands
 
 **Still Pending:**
-- SSH proxy support (`tritoncli.ssh.proxy` tag)
-- SSH default user detection (from image tags)
+- ~~SSH proxy support (`tritoncli.ssh.proxy` tag)~~ ✅ Completed
+- ~~SSH default user detection (from image tags)~~ ✅ Completed
 
 See: `conversion-plans/triton/cli-compatibility-analysis.md` for full details.
 
