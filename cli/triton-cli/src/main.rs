@@ -216,6 +216,10 @@ enum Commands {
         #[arg(value_enum)]
         shell: Shell,
     },
+
+    /// Badger don't care
+    #[command(hide = true)]
+    Badger,
 }
 
 impl Cli {
@@ -431,6 +435,10 @@ async fn main() -> Result<()> {
             let mut cmd = Cli::command();
             let name = cmd.get_name().to_string();
             generate(*shell, &mut cmd, name, &mut std::io::stdout());
+            Ok(())
+        }
+        Commands::Badger => {
+            print!("{}", include_str!("../assets/badger"));
             Ok(())
         }
     }
