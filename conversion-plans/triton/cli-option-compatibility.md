@@ -1,6 +1,6 @@
 # Triton CLI Option Compatibility Analysis
 
-This document analyzes the differences between the Rust triton-cli and the original Node.js triton CLI regarding command-line option handling, particularly around short option conflicts.
+This document analyzes the differences between the Rust triton-cli and the original Node.js triton CLI regarding command-line option handling.
 
 ## Background
 
@@ -14,102 +14,59 @@ triton -v instance create -v myvolume ...
 
 The Rust implementation uses [clap](https://docs.rs/clap), which has a different model for global vs. subcommand-specific arguments.
 
-## The Problem: Global Argument Propagation in Clap
+## Resolution: Top-Level Only Arguments
 
-In clap, when an argument is marked as `global = true`, it propagates to ALL subcommands. This means:
+We resolved the short option conflicts by making global arguments **top-level only** (removing `global = true`). This means:
 
-1. The argument can be specified anywhere on the command line
-2. Short options must be unique across the entire command tree
-3. There's no way to "shadow" or "override" a global short option in a subcommand
+1. Top-level options (`-v`, `-j`, `-p`, `-a`, `-k`, `-U`) must come **before** the subcommand
+2. Subcommands can freely use these short options for their own purposes
+3. This matches the Node.js CLI behavior
 
-### Example Conflict
+```bash
+# Correct usage:
+triton -v instance list      # verbose mode
+triton instance create -v myvol image pkg  # -v for volume
 
-Our Rust CLI has:
-- Global `-v` for `--verbose` (used everywhere)
-- Global `-j` for `--json` (used everywhere)
-- Global `-k` for `--key-id` (authentication)
-- Global `-p` for `--profile`
-- Global `-a` for `--account`
+# No longer works:
+triton instance list -v      # ERROR: -v not recognized
+```
 
-The Node.js CLI uses `-v` for `--volume` in `triton instance create`. This conflicts with our global `-v` for `--verbose`.
+## Current Status: No Conflicts
 
-## Affected Options
+| Short | Top-level Use | Subcommand Use | Status |
+|-------|---------------|----------------|--------|
+| `-v`  | `--verbose`   | `--volume` (create) | **Compatible** |
+| `-k`  | `--key-id`    | `--key` (rbac key-add) | **Compatible** |
+| `-a`  | `--account`   | `--affinity` (create) | **Compatible** |
+| `-j`  | `--json`      | (none currently) | Available for subcommands |
+| `-p`  | `--profile`   | (none currently) | Available for subcommands |
 
-| Short | Global Use (Rust) | Node.js Subcommand Use | Resolution |
-|-------|-------------------|------------------------|------------|
-| `-v`  | `--verbose`       | `--volume` (create)    | Removed `-v` from `--volume` |
-| `-k`  | `--key-id`        | `--key` (rbac key-add) | Removed `-k` from `--key` |
-| `-n`  | (available)       | `--name` (various)     | Can use `-n` for name |
-| `-f`  | (available)       | `--force` (various)    | Can use `-f` for force |
+## Historical Context: Options Considered
 
-## Options Considered
+When we initially implemented the CLI with `global = true` on top-level arguments, we faced conflicts. Here's what we considered:
 
-### Option 1: Remove Global Short Options (Rejected)
+### Option 1: Remove Global Short Options
+Remove short options from global flags like `--verbose` and `--json`. Rejected because `-v` and `-j` are common conventions.
 
-Remove short options from global flags like `--verbose` and `--json`.
+### Option 2: Different Short Options for Conflicts
+Keep global options, remove conflicting short options from subcommands. This was our initial approach but reduced Node.js compatibility.
 
-**Pros:**
-- Frees up `-v` and `-j` for subcommand use
-- More compatible with Node.js CLI
+### Option 3: Top-Level Only Arguments (Chosen)
+Remove `global = true` so top-level options don't propagate to subcommands. This allows subcommands to reuse short options like `-v`, `-k`, `-a`.
 
-**Cons:**
-- `-v` for verbose and `-j` for JSON are very common conventions
-- Users expect these to work globally
-- Would be a usability regression
-
-### Option 2: Don't Use Global Arguments (Rejected)
-
-Define `-v`/`--verbose` separately in each subcommand instead of globally.
-
-**Pros:**
-- Each subcommand controls its own options
-- Could match Node.js behavior exactly
-
-**Cons:**
-- Massive code duplication
-- `triton -v instance list` wouldn't work (must be `triton instance list -v`)
-- Inconsistent with modern CLI conventions
-
-### Option 3: Different Short Options for Conflicts (Chosen)
-
-Keep global options as-is, remove conflicting short options from subcommand-specific arguments.
-
-**Pros:**
-- Global options work intuitively (`triton -v` for verbose anywhere)
-- No code duplication
-- Clear, predictable behavior
-
-**Cons:**
-- Some subcommand options lose their short forms
-- Not 100% compatible with Node.js CLI
-
-### Option 4: Use `args_conflicts_with_subcommands` (Rejected)
-
-This clap setting prevents mixing parent args with subcommands entirely.
-
-**Pros:**
-- Clear separation between levels
-
-**Cons:**
-- Can't do `triton -j instance list` (must be `triton instance list -j`)
-- Major usability regression
+**Trade-off:** Options must come before the subcommand (`triton -v instance list` works, `triton instance list -v` doesn't). This matches Node.js CLI behavior.
 
 ## Current Compatibility Status
 
 ### Fully Compatible
-Most options work identically between Node.js and Rust CLIs:
-- `triton instance list`
-- `triton instance get <id>`
-- `triton -j instance list` (JSON output)
-- `triton image list --name <pattern>`
-- etc.
+All short options now work identically between Node.js and Rust CLIs:
 
-### Changed Short Options
-
-| Command | Node.js | Rust | Notes |
-|---------|---------|------|-------|
-| `instance create` | `-v` for volume | `--volume` only | Use long form |
-| `rbac key-add` | `-k` for key | `--key` only | Use long form |
+| Command | Option | Status |
+|---------|--------|--------|
+| `triton instance create` | `-v` for volume | **Compatible** |
+| `triton instance create` | `-a` for affinity | **Compatible** |
+| `triton rbac key-add` | `-k` for key | **Compatible** |
+| `triton instance list` | All options | **Compatible** |
 
 ### Aliases Adjusted
 
@@ -120,28 +77,31 @@ Most options work identically between Node.js and Rust CLIs:
 
 ## Recommendations for Future Development
 
-1. **Prefer long options for new subcommand-specific arguments** - Avoids potential conflicts with global options.
+1. **Top-level options must come before subcommands** - This is now enforced. Document this in help text.
 
-2. **Reserve common short options for global use:**
-   - `-v` → verbose
-   - `-j` → json
+2. **Top-level short options (reserved for top-level only):**
+   - `-v` → verbose (top-level)
+   - `-j` → json (top-level)
    - `-h` → help (automatic)
    - `-V` → version (automatic)
-   - `-p` → profile
-   - `-a` → account
-   - `-k` → key-id
-   - `-U` → url
+   - `-p` → profile (top-level)
+   - `-a` → account (top-level)
+   - `-k` → key-id (top-level)
+   - `-U` → url (top-level)
 
-3. **Safe short options for subcommands:**
+3. **Short options available for subcommands:**
+   - `-v` → volume (in create)
+   - `-a` → affinity (in create)
+   - `-k` → key (in rbac key-add)
    - `-n` → name
    - `-f` → force
-   - `-t` → tag, type, timeout (context-dependent)
-   - `-m` → memory, message
+   - `-t` → tag, type, timeout
+   - `-m` → memory, message, metadata
    - `-s` → size, state
    - `-w` → wait
    - `-y` → yes (skip confirmation)
 
-4. **Document differences** - Maintain this document as new conflicts are discovered.
+4. **Document the ordering requirement** - Users must know that `-v` before subcommand means verbose, `-v` after means something else.
 
 ## Testing for Conflicts
 

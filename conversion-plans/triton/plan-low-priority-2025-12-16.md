@@ -248,7 +248,7 @@ This plan covers P2 (Nice to Have) and P3 (Low Priority) features. These are not
 
 ## P3 Features - Low Priority
 
-### 1. Instance Shortcut Commands
+### 1. Instance Shortcut Commands (Partially Complete)
 
 **Priority:** P3
 **Impact:** Subcommands exist, just missing shortcuts
@@ -260,8 +260,12 @@ Add shortcut commands that alias to instance subcommands:
 - `triton tags INSTANCE` → `triton instance tag list INSTANCE`
 - `triton metadatas INSTANCE` → `triton instance metadata list INSTANCE`
 
+#### Progress (2025-12-16)
+- [x] Added subcommand aliases: `instance disks`, `instance snapshots`, `instance tags`, `instance metadatas`, `instance nics`
+- [ ] Top-level shortcuts (`triton disks INSTANCE`) still needed
+
 #### Files to Modify
-- [ ] `cli/triton-cli/src/main.rs` - Add shortcut aliases
+- [ ] `cli/triton-cli/src/main.rs` - Add top-level shortcut commands
 
 ---
 
@@ -309,9 +313,25 @@ These features are intentionally not planned:
 1. RBAC apply/reset commands
 2. RBAC role tags commands
 
-### P3 features (0/2):
-1. Instance shortcut commands
-2. CloudAPI raw command
+### P3 features (0.5/2):
+1. Instance shortcut commands - **Partial**: subcommand aliases done, top-level shortcuts pending
+2. CloudAPI raw command - Not started
+
+### Additional Improvements (2025-12-16)
+These items were identified during CLI compatibility analysis:
+
+**Completed:**
+- ✅ Resolved short option conflicts (`-v`, `-k`, `-a`) by making globals top-level only
+- ✅ Added `triton ip` shortcut
+- ✅ Added `triton profiles` shortcut
+- ✅ Added instance list options (`-l`, `-H`, `-s`)
+- ✅ Added plural aliases for instance subcommands
+
+**Still Pending:**
+- SSH proxy support (`tritoncli.ssh.proxy` tag)
+- SSH default user detection (from image tags)
+
+See: `conversion-plans/triton/cli-compatibility-analysis.md` for full details.
 
 ---
 
