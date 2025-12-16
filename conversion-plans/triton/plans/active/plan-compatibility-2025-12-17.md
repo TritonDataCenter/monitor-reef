@@ -133,13 +133,13 @@ Copyright 2025 Edgecast Cloud LLC.
 
 ## P3: RBAC Action Flags (Legacy Compat)
 
-Node.js triton uses action flags (`-a`, `-e`, `-d`) instead of subcommands. The Rust CLI uses a modern subcommand pattern (`user create`, `user delete`) which is cleaner and more explicit. The action flag pattern would require significant restructuring and is documented as an intentional difference.
+Node.js triton uses action flags (`-a`, `-e`, `-d`) instead of subcommands. The Rust CLI uses a modern subcommand pattern (`user create`, `user delete`) which is cleaner and more explicit.
 
 | Item | Description | Status |
 |------|-------------|--------|
-| Support `-a` action flag | Add user (alternative to `user create`) | [-] Intentional difference |
+| Support `-a` action flag | Add user (alternative to `user create`) | [ ] Experimental |
 | Support `-e` action flag | Edit user in $EDITOR | [-] Intentional difference |
-| Support `-d` action flag | Delete user (alternative to `user delete`) | [-] Intentional difference |
+| Support `-d` action flag | Delete user (alternative to `user delete`) | [ ] Experimental |
 | Support `-k` flag on user get | Show keys inline | [x] |
 | Add `-y/--yes` alias | For confirmation skipping | [x] |
 | Add `-n` short form | Name for key commands | [x] (pre-existing) |
@@ -147,11 +147,41 @@ Node.js triton uses action flags (`-a`, `-e`, `-d`) instead of subcommands. The 
 | Add plural list aliases | `users`, `roles`, `policies` commands | [x] |
 
 **Notes:**
-- Action flags (`-a/-e/-d`) require mutually exclusive flag handling incompatible with clap subcommand pattern
 - `$EDITOR` integration for `-e` flag would be a separate feature request
 - `--dev-create-keys-and-profiles` flag is accepted but returns an error until SSH key generation is implemented
 
-**Files:** `cli/triton-cli/src/commands/rbac.rs`
+### Experimental: Action Flag Implementation Approach
+
+Clap supports commands that have both subcommands AND direct flags/arguments using `Option<Subcommand>`. The approach:
+
+1. Change `RbacUserCommand` from a pure enum to an `Args` struct with:
+   - `#[command(subcommand)] command: Option<UserSubcommand>` - optional subcommand
+   - `-a/--add` flag (conflicts with subcommand)
+   - `-d/--delete` flag (conflicts with subcommand)
+   - Positional `users: Vec<String>` for USER arguments
+   - `-k/--keys` flag for show mode
+   - `-y/--yes` flag for delete confirmation
+
+2. Dispatch logic in `run()`:
+   - If subcommand present → delegate to subcommand (modern pattern)
+   - If `-a` flag → create user (legacy compat)
+   - If `-d` flag → delete user(s) (legacy compat)
+   - Otherwise → show user (default action)
+
+3. This allows both patterns to coexist:
+   ```bash
+   # Modern (subcommand) pattern
+   triton rbac user create LOGIN --email foo@bar.com
+   triton rbac user delete USER
+
+   # Legacy (action flag) pattern
+   triton rbac user -a FILE        # add from file
+   triton rbac user -d USER...     # delete
+   triton rbac user USER           # show (default)
+   triton rbac user -k USER        # show with keys
+   ```
+
+**Files:** `cli/triton-cli/src/commands/rbac/user.rs`, `cli/triton-cli/src/commands/rbac/mod.rs`
 
 ---
 
