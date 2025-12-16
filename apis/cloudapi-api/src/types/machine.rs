@@ -182,7 +182,17 @@ pub struct CreateMachineRequest {
     /// Networks (array of UUIDs)
     #[serde(default)]
     pub networks: Option<Vec<Uuid>>,
-    /// Locality hints
+    /// Affinity rules for instance placement (added in CloudAPI v8.3.0)
+    ///
+    /// Rules follow the pattern: `<key><operator><value>` where:
+    /// - key: 'instance', 'container', or a tag name
+    /// - operator: '==' (must), '!=' (must not), '==~' (prefer), '!=~' (prefer not)
+    /// - value: exact string, glob pattern (*), or regex (/pattern/)
+    ///
+    /// Examples: `instance==myvm`, `role!=database`, `instance!=~foo*`
+    #[serde(default)]
+    pub affinity: Option<Vec<String>>,
+    /// Locality hints (deprecated, use affinity instead)
     #[serde(default)]
     pub locality: Option<serde_json::Value>,
     /// Metadata

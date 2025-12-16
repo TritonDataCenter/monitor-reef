@@ -9598,6 +9598,15 @@
         "description": "Request to create a machine",
         "type": "object",
         "properties": {
+          "affinity": {
+            "nullable": true,
+            "description": "Affinity rules for instance placement (added in CloudAPI v8.3.0)\n\nRules follow the pattern: `<key><operator><value>` where: - key: 'instance', 'container', or a tag name - operator: '==' (must), '!=' (must not), '==~' (prefer), '!=~' (prefer not) - value: exact string, glob pattern (*), or regex (/pattern/)\n\nExamples: `instance==myvm`, `role!=database`, `instance!=~foo*`",
+            "default": null,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "deletionProtection": {
             "nullable": true,
             "description": "Deletion protection enabled",
@@ -9616,7 +9625,7 @@
           },
           "locality": {
             "nullable": true,
-            "description": "Locality hints",
+            "description": "Locality hints (deprecated, use affinity instead)",
             "default": null
           },
           "metadata": {

@@ -40,7 +40,12 @@ pub struct CreateArgs {
     #[arg(long)]
     pub firewall: bool,
 
-    /// Affinity rules
+    /// Affinity rules for instance placement.
+    /// Format: <key><op><value> where:
+    ///   key: 'instance', 'container', or a tag name
+    ///   op: '==' (must), '!=' (must not), '==~' (prefer), '!=~' (prefer not)
+    ///   value: exact string, glob (*), or regex (/pattern/)
+    /// Examples: 'instance==myvm', 'role!=database', 'instance!=~foo*'
     #[arg(long)]
     pub affinity: Option<Vec<String>>,
 
@@ -91,8 +96,10 @@ pub async fn run(args: CreateArgs, client: &TypedClient, use_json: bool) -> Resu
         request = request.networks(network_ids);
     }
 
-    // Note: affinity is handled through locality, which we don't support in this CLI yet
-    // TODO: Support locality/affinity hints
+    // Handle affinity rules
+    if let Some(affinity) = &args.affinity {
+        request = request.affinity(affinity.clone());
+    }
 
     // Build the final request
     let request: cloudapi_client::types::CreateMachineRequest =
