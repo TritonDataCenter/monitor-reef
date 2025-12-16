@@ -122,12 +122,12 @@ Copyright 2025 Edgecast Cloud LLC.
 
 | Item | Description | Status |
 |------|-------------|--------|
-| Add `--copy PROFILE` | Copy from existing profile | [ ] |
-| Add `--no-docker` | Skip docker setup | [ ] |
-| Add `-y/--yes` | Non-interactive mode | [ ] |
-| Add `-n` short form | Name for key add | [ ] |
+| Add `--copy PROFILE` | Copy from existing profile | [x] |
+| Add `--no-docker` | Skip docker setup | [x] |
+| Add `-y/--yes` | Non-interactive mode | [x] |
+| Add `-n` short form | Name for key add | [x] |
 
-**Files:** `cli/triton-cli/src/commands/profile/`, `cli/triton-cli/src/commands/key/`
+**Files:** `cli/triton-cli/src/commands/profile.rs`, `cli/triton-cli/src/commands/key.rs`
 
 ---
 

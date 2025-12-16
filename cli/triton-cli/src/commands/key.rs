@@ -35,7 +35,7 @@ pub struct KeyGetArgs {
 #[derive(Args, Clone)]
 pub struct KeyAddArgs {
     /// Key name
-    #[arg(long)]
+    #[arg(short, long)]
     pub name: Option<String>,
     /// Key file path (or read from stdin if not provided)
     pub file: Option<String>,

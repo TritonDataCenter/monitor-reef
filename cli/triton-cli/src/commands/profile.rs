@@ -52,8 +52,17 @@ pub enum ProfileCommand {
         #[arg(long)]
         insecure: bool,
         /// Create profile from JSON file (use '-' for stdin)
-        #[arg(short = 'f', long = "file", conflicts_with_all = ["name", "url", "account", "key_id"])]
+        #[arg(short = 'f', long = "file", conflicts_with_all = ["name", "url", "account", "key_id", "copy"])]
         file: Option<PathBuf>,
+        /// Copy values from an existing profile
+        #[arg(long, conflicts_with = "file")]
+        copy: Option<String>,
+        /// Skip Docker setup (Docker setup is not yet implemented; this flag is accepted for compatibility)
+        #[arg(long)]
+        no_docker: bool,
+        /// Answer yes to any confirmations (non-interactive mode)
+        #[arg(short = 'y', long)]
+        yes: bool,
     },
 
     /// Edit an existing profile
@@ -125,7 +134,10 @@ impl ProfileCommand {
                 key_id,
                 insecure,
                 file,
-            } => create_profile(name, url, account, key_id, insecure, file),
+                copy,
+                no_docker: _no_docker,
+                yes,
+            } => create_profile(name, url, account, key_id, insecure, file, copy, yes),
             Self::Edit { name } => edit_profile(&name),
             Self::Delete { names, force } => delete_profiles(&names, force),
             Self::SetCurrent { name } => set_current_profile(&name),
@@ -228,6 +240,8 @@ fn create_profile(
     key_id: Option<String>,
     insecure: bool,
     file: Option<PathBuf>,
+    copy: Option<String>,
+    yes: bool,
 ) -> Result<()> {
     // If file is provided, create from file/stdin
     if let Some(file_path) = file {
@@ -259,11 +273,12 @@ fn create_profile(
         profile.save()?;
         println!("Created profile '{}' from file", profile_name);
 
-        // Ask if this should be the current profile
-        if Confirm::new()
-            .with_prompt("Set as current profile?")
-            .default(true)
-            .interact()?
+        // Ask if this should be the current profile (skip if --yes)
+        if yes
+            || Confirm::new()
+                .with_prompt("Set as current profile?")
+                .default(true)
+                .interact()?
         {
             let mut config = Config::load()?;
             config.set_current_profile(&profile_name);
@@ -274,9 +289,23 @@ fn create_profile(
         return Ok(());
     }
 
-    // Interactive prompts for missing values
+    // Load defaults from source profile if --copy is specified
+    let copy_profile = if let Some(ref copy_name) = copy {
+        Some(Profile::load(copy_name).map_err(|_| {
+            anyhow::anyhow!("no such profile from which to copy: \"{}\"", copy_name)
+        })?)
+    } else {
+        None
+    };
+
+    // Interactive prompts for missing values (with defaults from copy profile)
     let name = match name {
         Some(n) => n,
+        None if yes => {
+            return Err(anyhow::anyhow!(
+                "Profile name is required in non-interactive mode"
+            ));
+        }
         None => Input::new().with_prompt("Profile name").interact_text()?,
     };
 
@@ -285,24 +314,58 @@ fn create_profile(
         return Err(anyhow::anyhow!("Profile '{}' already exists", name));
     }
 
+    let default_url = copy_profile
+        .as_ref()
+        .map(|p| p.url.clone())
+        .unwrap_or_else(|| "https://cloudapi.tritondatacenter.com".to_string());
     let url = match url {
         Some(u) => u,
+        None if yes => default_url,
         None => Input::new()
             .with_prompt("CloudAPI URL")
-            .default("https://cloudapi.tritondatacenter.com".to_string())
+            .default(default_url)
             .interact_text()?,
     };
 
+    let default_account = copy_profile.as_ref().map(|p| p.account.clone());
     let account = match account {
         Some(a) => a,
-        None => Input::new().with_prompt("Account name").interact_text()?,
+        None if yes => default_account
+            .ok_or_else(|| anyhow::anyhow!("Account name is required in non-interactive mode"))?,
+        None => {
+            let mut input = Input::new().with_prompt("Account name");
+            if let Some(default) = default_account {
+                input = input.default(default);
+            }
+            input.interact_text()?
+        }
     };
 
+    let default_key_id = copy_profile.as_ref().map(|p| p.key_id.clone());
     let key_id = match key_id {
         Some(k) => k,
-        None => Input::new()
-            .with_prompt("SSH key fingerprint (aa:bb:cc:... or SHA256:...)")
-            .interact_text()?,
+        None if yes => default_key_id.ok_or_else(|| {
+            anyhow::anyhow!("SSH key fingerprint is required in non-interactive mode")
+        })?,
+        None => {
+            let mut input =
+                Input::new().with_prompt("SSH key fingerprint (aa:bb:cc:... or SHA256:...)");
+            if let Some(default) = default_key_id {
+                input = input.default(default);
+            }
+            input.interact_text()?
+        }
+    };
+
+    // Copy additional fields from source profile if available
+    let (user, roles, act_as_account) = if let Some(ref source) = copy_profile {
+        (
+            source.user.clone(),
+            source.roles.clone(),
+            source.act_as_account.clone(),
+        )
+    } else {
+        (None, None, None)
     };
 
     let profile = Profile {
@@ -311,19 +374,29 @@ fn create_profile(
         account,
         key_id,
         insecure,
-        user: None,
-        roles: None,
-        act_as_account: None,
+        user,
+        roles,
+        act_as_account,
     };
 
     profile.save()?;
     println!("Created profile '{}'", name);
 
-    // Ask if this should be the current profile
-    if Confirm::new()
-        .with_prompt("Set as current profile?")
-        .default(true)
-        .interact()?
+    // Check if this is the only profile - if so, set it as current automatically
+    let existing_profiles = Profile::list_all()?;
+    if existing_profiles.len() == 1 && existing_profiles.contains(&name) {
+        let mut config = Config::load()?;
+        config.set_current_profile(&name);
+        config.save()?;
+        println!(
+            "Set '{}' as current profile (because it is your only profile)",
+            name
+        );
+    } else if yes
+        || Confirm::new()
+            .with_prompt("Set as current profile?")
+            .default(true)
+            .interact()?
     {
         let mut config = Config::load()?;
         config.set_current_profile(&name);
