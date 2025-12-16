@@ -233,6 +233,7 @@ fn get_profile(name: Option<String>, use_json: bool) -> Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn create_profile(
     name: Option<String>,
     url: Option<String>,
