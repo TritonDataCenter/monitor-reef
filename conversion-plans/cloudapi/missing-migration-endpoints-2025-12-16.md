@@ -1,7 +1,7 @@
 # Missing Migration Endpoints in CloudAPI Trait
 
 **Date:** 2025-12-16
-**Status:** Needs Implementation
+**Status:** ✅ Implemented
 **Priority:** High (blocks full migration CLI functionality)
 
 ## Discovery
@@ -180,6 +180,46 @@ Until the endpoints are added, the CLI can implement a partial migration workflo
 - `apis/cloudapi-api/src/types/misc.rs` - Migration types
 - `cli/triton-cli/src/commands/instance/migration.rs` - CLI implementation (in progress)
 - `conversion-plans/triton/plan-high-priority-2025-12-16.md` - Original work plan
+
+## Implementation Summary (2025-12-16)
+
+The analysis revealed that the existing API design was mostly correct - all migration actions go through a single POST endpoint with the action specified in the request body. The following changes were made:
+
+### Types Added (`apis/cloudapi-api/src/types/misc.rs`)
+
+1. **`MigrationAction` enum** - Typed enum for all valid migration actions:
+   - `begin`, `sync`, `switch`, `automatic`, `abort`, `pause`, `finalize`
+
+2. **`MigrationProgressEntry` struct** - For detailed progress history tracking
+
+3. **Updated `Migration` struct** - Added:
+   - `finished_timestamp` field
+   - `progress_history` field for detailed tracking
+   - Better documentation
+
+4. **Updated `MigrateRequest` struct** - Changed `action` from `String` to `MigrationAction` enum for type safety
+
+### Endpoints Added (`apis/cloudapi-api/src/lib.rs`)
+
+1. **`watch_migration`** - WebSocket endpoint at `/{account}/migrations/{machine}/watch` for real-time progress streaming
+
+### Documentation Improvements
+
+- Added comprehensive documentation for the `migrate` endpoint explaining all action types
+- Added documentation for existing migration endpoints
+
+### Key Finding
+
+The Node.js CloudAPI uses a **single POST endpoint** (`POST /{account}/machines/{machine}/migrate`) with the `action` field in the request body to handle all migration operations. This design was already present in the Rust trait, but now with:
+- Type-safe `MigrationAction` enum instead of free-form string
+- WebSocket endpoint for progress watching
+- Better documentation
+
+### Files Changed
+
+- `apis/cloudapi-api/src/types/misc.rs` - Added types
+- `apis/cloudapi-api/src/lib.rs` - Added WebSocket endpoint, improved docs
+- `openapi-specs/generated/cloudapi-api.json` - Regenerated
 
 ## References
 

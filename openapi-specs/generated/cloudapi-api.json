@@ -4574,6 +4574,7 @@
           "migrations"
         ],
         "summary": "Get migration estimate",
+        "description": "Returns an estimate of the migration size and duration for a machine.",
         "operationId": "migrate_machine_estimate",
         "parameters": [
           {
@@ -4619,7 +4620,8 @@
           "machines",
           "migrations"
         ],
-        "summary": "Migrate machine",
+        "summary": "Perform migration action",
+        "description": "Performs a migration action on a machine. The `action` field in the request body specifies the operation:\n\n- `begin`: Start a new migration. Optionally accepts `affinity` rules. - `sync`: Sync data to the target server. - `switch`: Switch the instance to the new server (finalize migration). - `automatic`: Perform automatic migration (begin + sync + switch). - `abort`: Cancel the migration and clean up. - `pause`: Pause an in-progress migration. - `finalize`: Clean up after a successful switch.\n\nReturns the updated migration object (except for `finalize` which returns an empty response on success).",
         "operationId": "migrate",
         "parameters": [
           {
@@ -5824,6 +5826,7 @@
           "migrations"
         ],
         "summary": "List migrations",
+        "description": "Returns a list of all migrations for the account.",
         "operationId": "list_migrations",
         "parameters": [
           {
@@ -5866,6 +5869,7 @@
           "migrations"
         ],
         "summary": "Get migration",
+        "description": "Returns details about a specific migration.",
         "operationId": "get_migration",
         "parameters": [
           {
@@ -5905,6 +5909,47 @@
             "$ref": "#/components/responses/Error"
           }
         }
+      }
+    },
+    "/{account}/migrations/{machine}/watch": {
+      "get": {
+        "tags": [
+          "migrations"
+        ],
+        "summary": "Watch migration progress",
+        "description": "Streams real-time migration progress updates via WebSocket. Returns a stream of JSON objects with progress information.",
+        "operationId": "watch_migration",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "machine",
+            "description": "Machine UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-dropshot-websocket": {}
       }
     },
     "/{account}/networks": {
@@ -10590,16 +10635,20 @@
         ]
       },
       "MigrateRequest": {
-        "description": "Migration request",
+        "description": "Migration request\n\nUsed to perform migration actions on an instance. The `action` field specifies which migration operation to perform.\n\n# Examples\n\nStart a new migration: ```json {\"action\": \"begin\"} ```\n\nStart migration with affinity rules: ```json {\"action\": \"begin\", \"affinity\": [\"instance!=web-*\"]} ```\n\nSwitch to the new server: ```json {\"action\": \"switch\"} ```\n\nAbort an in-progress migration: ```json {\"action\": \"abort\"} ```",
         "type": "object",
         "properties": {
           "action": {
-            "description": "Action (must be \"migrate\")",
-            "type": "string"
+            "description": "Migration action to perform",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationAction"
+              }
+            ]
           },
           "affinity": {
             "nullable": true,
-            "description": "Affinity rules",
+            "description": "Affinity rules (only valid for \"begin\" and \"automatic\" actions)\n\nThese rules influence which server the instance will be migrated to.",
             "default": null,
             "type": "array",
             "items": {
@@ -10617,7 +10666,7 @@
         "properties": {
           "automatic": {
             "nullable": true,
-            "description": "Automatic migration",
+            "description": "Whether this is an automatic migration",
             "default": null,
             "type": "boolean"
           },
@@ -10625,18 +10674,31 @@
             "description": "Creation timestamp",
             "type": "string"
           },
-          "phase": {
-            "description": "Migration phase",
+          "finishedTimestamp": {
+            "nullable": true,
+            "description": "Finished timestamp",
             "type": "string"
+          },
+          "phase": {
+            "description": "Migration phase (e.g., \"start\", \"sync\", \"switch\")",
+            "type": "string"
+          },
+          "progressHistory": {
+            "nullable": true,
+            "description": "Progress history for detailed tracking",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MigrationProgressEntry"
+            }
           },
           "progressPercent": {
             "nullable": true,
-            "description": "Progress percentage",
+            "description": "Progress percentage (0-100)",
             "type": "number",
             "format": "double"
           },
           "state": {
-            "description": "Migration state",
+            "description": "Migration state (e.g., \"running\", \"paused\", \"successful\", \"failed\")",
             "type": "string"
           },
           "updatedTimestamp": {
@@ -10645,7 +10707,7 @@
             "type": "string"
           },
           "vmUuid": {
-            "description": "Machine UUID being migrated",
+            "description": "Machine UUID being migrated\n\nNote: The Node.js CloudAPI translates VMAPI's `vm_uuid` to `machine`. We keep `vm_uuid` here for direct VMAPI compatibility, but the field may be renamed to `machine` in the response.",
             "type": "string"
           }
         },
@@ -10654,6 +10716,60 @@
           "phase",
           "state",
           "vmUuid"
+        ]
+      },
+      "MigrationAction": {
+        "description": "Migration action to perform\n\nThese actions control the migration lifecycle: - `begin`: Start a new migration - `sync`: Sync data to target server - `switch`: Switch instance to new server (finalize the migration) - `automatic`: Perform automatic migration (begin + sync + switch) - `abort`: Cancel the migration and clean up - `pause`: Pause an in-progress migration - `finalize`: Clean up after a successful switch",
+        "oneOf": [
+          {
+            "description": "Start a new migration",
+            "type": "string",
+            "enum": [
+              "begin"
+            ]
+          },
+          {
+            "description": "Sync data to target server",
+            "type": "string",
+            "enum": [
+              "sync"
+            ]
+          },
+          {
+            "description": "Switch instance to new server",
+            "type": "string",
+            "enum": [
+              "switch"
+            ]
+          },
+          {
+            "description": "Perform automatic migration",
+            "type": "string",
+            "enum": [
+              "automatic"
+            ]
+          },
+          {
+            "description": "Cancel the migration",
+            "type": "string",
+            "enum": [
+              "abort"
+            ]
+          },
+          {
+            "description": "Pause the migration",
+            "type": "string",
+            "enum": [
+              "pause"
+            ]
+          },
+          {
+            "description": "Clean up after switch",
+            "type": "string",
+            "enum": [
+              "finalize"
+            ]
+          }
         ]
       },
       "MigrationEstimate": {
@@ -10676,6 +10792,53 @@
         },
         "required": [
           "size"
+        ]
+      },
+      "MigrationProgressEntry": {
+        "description": "Progress entry in migration history",
+        "type": "object",
+        "properties": {
+          "current_progress": {
+            "description": "Current progress value",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "finished_timestamp": {
+            "nullable": true,
+            "description": "When this phase finished",
+            "type": "string"
+          },
+          "message": {
+            "nullable": true,
+            "description": "Progress message",
+            "type": "string"
+          },
+          "phase": {
+            "description": "Phase this entry belongs to",
+            "type": "string"
+          },
+          "started_timestamp": {
+            "nullable": true,
+            "description": "When this phase started",
+            "type": "string"
+          },
+          "state": {
+            "description": "State of this phase",
+            "type": "string"
+          },
+          "total_progress": {
+            "description": "Total progress value",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "current_progress",
+          "phase",
+          "state",
+          "total_progress"
         ]
       },
       "Network": {

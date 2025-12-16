@@ -1940,6 +1940,8 @@ pub trait CloudApi {
     // ========================================================================
 
     /// List migrations
+    ///
+    /// Returns a list of all migrations for the account.
     #[endpoint {
         method = GET,
         path = "/{account}/migrations",
@@ -1951,6 +1953,8 @@ pub trait CloudApi {
     ) -> Result<HttpResponseOk<Vec<Migration>>, HttpError>;
 
     /// Get migration
+    ///
+    /// Returns details about a specific migration.
     #[endpoint {
         method = GET,
         path = "/{account}/migrations/{machine}",
@@ -1962,6 +1966,8 @@ pub trait CloudApi {
     ) -> Result<HttpResponseOk<Migration>, HttpError>;
 
     /// Get migration estimate
+    ///
+    /// Returns an estimate of the migration size and duration for a machine.
     #[endpoint {
         method = GET,
         path = "/{account}/machines/{machine}/migrate",
@@ -1972,7 +1978,21 @@ pub trait CloudApi {
         path: Path<MachinePath>,
     ) -> Result<HttpResponseOk<MigrationEstimate>, HttpError>;
 
-    /// Migrate machine
+    /// Perform migration action
+    ///
+    /// Performs a migration action on a machine. The `action` field in the
+    /// request body specifies the operation:
+    ///
+    /// - `begin`: Start a new migration. Optionally accepts `affinity` rules.
+    /// - `sync`: Sync data to the target server.
+    /// - `switch`: Switch the instance to the new server (finalize migration).
+    /// - `automatic`: Perform automatic migration (begin + sync + switch).
+    /// - `abort`: Cancel the migration and clean up.
+    /// - `pause`: Pause an in-progress migration.
+    /// - `finalize`: Clean up after a successful switch.
+    ///
+    /// Returns the updated migration object (except for `finalize` which
+    /// returns an empty response on success).
     #[endpoint {
         method = POST,
         path = "/{account}/machines/{machine}/migrate",
@@ -1983,6 +2003,21 @@ pub trait CloudApi {
         path: Path<MachinePath>,
         body: TypedBody<MigrateRequest>,
     ) -> Result<HttpResponseOk<Migration>, HttpError>;
+
+    /// Watch migration progress
+    ///
+    /// Streams real-time migration progress updates via WebSocket.
+    /// Returns a stream of JSON objects with progress information.
+    #[channel {
+        protocol = WEBSOCKETS,
+        path = "/{account}/migrations/{machine}/watch",
+        tags = ["migrations"],
+    }]
+    async fn watch_migration(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<MachinePath>,
+        upgraded: WebsocketConnection,
+    ) -> WebsocketChannelResult;
 
     // ========================================================================
     // WebSocket Endpoints

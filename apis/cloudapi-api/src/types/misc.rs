@@ -121,17 +121,51 @@ pub struct Service {
     pub endpoint: String,
 }
 
+/// Migration action to perform
+///
+/// These actions control the migration lifecycle:
+/// - `begin`: Start a new migration
+/// - `sync`: Sync data to target server
+/// - `switch`: Switch instance to new server (finalize the migration)
+/// - `automatic`: Perform automatic migration (begin + sync + switch)
+/// - `abort`: Cancel the migration and clean up
+/// - `pause`: Pause an in-progress migration
+/// - `finalize`: Clean up after a successful switch
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum MigrationAction {
+    /// Start a new migration
+    Begin,
+    /// Sync data to target server
+    Sync,
+    /// Switch instance to new server
+    Switch,
+    /// Perform automatic migration
+    Automatic,
+    /// Cancel the migration
+    Abort,
+    /// Pause the migration
+    Pause,
+    /// Clean up after switch
+    Finalize,
+}
+
 /// Migration information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct Migration {
     /// Machine UUID being migrated
+    ///
+    /// Note: The Node.js CloudAPI translates VMAPI's `vm_uuid` to `machine`.
+    /// We keep `vm_uuid` here for direct VMAPI compatibility, but the field
+    /// may be renamed to `machine` in the response.
+    #[serde(alias = "machine")]
     pub vm_uuid: Uuid,
-    /// Migration phase
+    /// Migration phase (e.g., "start", "sync", "switch")
     pub phase: String,
-    /// Migration state
+    /// Migration state (e.g., "running", "paused", "successful", "failed")
     pub state: String,
-    /// Progress percentage
+    /// Progress percentage (0-100)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub progress_percent: Option<f64>,
     /// Creation timestamp
@@ -139,9 +173,38 @@ pub struct Migration {
     /// Last update timestamp
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated_timestamp: Option<Timestamp>,
-    /// Automatic migration
+    /// Finished timestamp
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_timestamp: Option<Timestamp>,
+    /// Whether this is an automatic migration
     #[serde(default)]
     pub automatic: Option<bool>,
+    /// Progress history for detailed tracking
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub progress_history: Option<Vec<MigrationProgressEntry>>,
+}
+
+/// Progress entry in migration history
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct MigrationProgressEntry {
+    /// Current progress value
+    pub current_progress: u64,
+    /// Total progress value
+    pub total_progress: u64,
+    /// Phase this entry belongs to
+    pub phase: String,
+    /// State of this phase
+    pub state: String,
+    /// Progress message
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
+    /// When this phase started
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub started_timestamp: Option<Timestamp>,
+    /// When this phase finished
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub finished_timestamp: Option<Timestamp>,
 }
 
 /// Migration estimate request
@@ -165,12 +228,39 @@ pub struct MigrationEstimate {
 }
 
 /// Migration request
+///
+/// Used to perform migration actions on an instance. The `action` field
+/// specifies which migration operation to perform.
+///
+/// # Examples
+///
+/// Start a new migration:
+/// ```json
+/// {"action": "begin"}
+/// ```
+///
+/// Start migration with affinity rules:
+/// ```json
+/// {"action": "begin", "affinity": ["instance!=web-*"]}
+/// ```
+///
+/// Switch to the new server:
+/// ```json
+/// {"action": "switch"}
+/// ```
+///
+/// Abort an in-progress migration:
+/// ```json
+/// {"action": "abort"}
+/// ```
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MigrateRequest {
-    /// Action (must be "migrate")
-    pub action: String,
-    /// Affinity rules
+    /// Migration action to perform
+    pub action: MigrationAction,
+    /// Affinity rules (only valid for "begin" and "automatic" actions)
+    ///
+    /// These rules influence which server the instance will be migrated to.
     #[serde(default)]
     pub affinity: Option<Vec<String>>,
 }
