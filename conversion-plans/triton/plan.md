@@ -247,5 +247,5 @@ pub struct Profile {
 - [x] Phase 0: Foundation (triton-auth, client update)
 - [x] Phase 1: Core CLI (structure, profiles, env)
 - [x] Phase 2: Instance commands
-- [ ] Phase 3: Resource commands (images, keys, networks, etc.)
-- [ ] Phase 4: RBAC and polish
+- [x] Phase 3: Resource commands (images, keys, networks, etc.)
+- [x] Phase 4: RBAC and polish

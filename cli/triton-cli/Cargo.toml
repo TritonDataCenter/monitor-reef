@@ -19,6 +19,7 @@ triton-auth = { path = "../../libs/triton-auth" }
 cloudapi-client = { path = "../../clients/internal/cloudapi-client" }
 cloudapi-api = { path = "../../apis/cloudapi-api" }
 clap = { workspace = true, features = ["derive", "env"] }
+clap_complete = "4.4"
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

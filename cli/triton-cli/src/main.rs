@@ -7,14 +7,18 @@
 //! Triton CLI - User-friendly command-line interface for Triton CloudAPI
 
 use anyhow::Result;
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::{Shell, generate};
 use cloudapi_client::TypedClient;
 
 mod commands;
 mod config;
 mod output;
 
-use commands::{InstanceCommand, ProfileCommand};
+use commands::{
+    AccountCommand, FwruleCommand, ImageCommand, InstanceCommand, KeyCommand, NetworkCommand,
+    PackageCommand, ProfileCommand, RbacCommand, VlanCommand, VolumeCommand,
+};
 use config::profile::{Config, Profile};
 
 #[derive(Parser)]
@@ -77,8 +81,72 @@ enum Commands {
         command: InstanceCommand,
     },
 
+    /// Manage images
+    #[command(alias = "img")]
+    Image {
+        #[command(subcommand)]
+        command: ImageCommand,
+    },
+
+    /// Manage SSH keys
+    Key {
+        #[command(subcommand)]
+        command: KeyCommand,
+    },
+
+    /// Manage networks
+    #[command(alias = "net")]
+    Network {
+        #[command(subcommand)]
+        command: NetworkCommand,
+    },
+
+    /// Manage firewall rules
+    Fwrule {
+        #[command(subcommand)]
+        command: FwruleCommand,
+    },
+
+    /// Manage fabric VLANs
+    Vlan {
+        #[command(subcommand)]
+        command: VlanCommand,
+    },
+
+    /// Manage volumes
+    #[command(alias = "vol")]
+    Volume {
+        #[command(subcommand)]
+        command: VolumeCommand,
+    },
+
+    /// Manage packages
+    #[command(alias = "pkg")]
+    Package {
+        #[command(subcommand)]
+        command: PackageCommand,
+    },
+
+    /// Manage account settings
+    Account {
+        #[command(subcommand)]
+        command: AccountCommand,
+    },
+
+    /// Manage RBAC (users, roles, policies)
+    Rbac {
+        #[command(subcommand)]
+        command: RbacCommand,
+    },
+
+    /// Show account info and resource usage
+    Info,
+
+    // =========================================================================
+    // TOP-LEVEL SHORTCUTS
+    // =========================================================================
     /// List instances (shortcut for 'instance list')
-    #[command(alias = "instances")]
+    #[command(alias = "instances", alias = "ls")]
     Insts(commands::instance::ListArgs),
 
     /// Create an instance (shortcut for 'instance create')
@@ -99,6 +167,38 @@ enum Commands {
     /// Delete instance(s) (shortcut for 'instance delete')
     #[command(alias = "rm")]
     Delete(commands::instance::delete::DeleteArgs),
+
+    /// List images (shortcut for 'image list')
+    #[command(alias = "images")]
+    Imgs(commands::image::ImageListArgs),
+
+    /// List packages (shortcut for 'package list')
+    #[command(alias = "packages")]
+    Pkgs(commands::package::PackageListArgs),
+
+    /// List networks (shortcut for 'network list')
+    #[command(alias = "networks")]
+    Nets,
+
+    /// List volumes (shortcut for 'volume list')
+    #[command(alias = "volumes")]
+    Vols,
+
+    /// List SSH keys (shortcut for 'key list')
+    Keys,
+
+    /// List firewall rules (shortcut for 'fwrule list')
+    Fwrules,
+
+    /// List VLANs (shortcut for 'vlan list')
+    Vlans,
+
+    /// Generate shell completions
+    Completion {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: Shell,
+    },
 }
 
 impl Cli {
@@ -179,9 +279,47 @@ async fn main() -> Result<()> {
         Commands::Env { profile, shell } => commands::env::generate_env(profile.as_deref(), shell),
         Commands::Instance { command } => {
             let client = cli.build_client()?;
-            // We need to clone the command since we're borrowing cli
-            // This is a bit awkward but necessary with the current structure
             command.clone().run(&client, cli.json).await
+        }
+        Commands::Image { command } => {
+            let client = cli.build_client()?;
+            command.clone().run(&client, cli.json).await
+        }
+        Commands::Key { command } => {
+            let client = cli.build_client()?;
+            command.clone().run(&client, cli.json).await
+        }
+        Commands::Network { command } => {
+            let client = cli.build_client()?;
+            command.clone().run(&client, cli.json).await
+        }
+        Commands::Fwrule { command } => {
+            let client = cli.build_client()?;
+            command.clone().run(&client, cli.json).await
+        }
+        Commands::Vlan { command } => {
+            let client = cli.build_client()?;
+            command.clone().run(&client, cli.json).await
+        }
+        Commands::Volume { command } => {
+            let client = cli.build_client()?;
+            command.clone().run(&client, cli.json).await
+        }
+        Commands::Package { command } => {
+            let client = cli.build_client()?;
+            command.clone().run(&client, cli.json).await
+        }
+        Commands::Account { command } => {
+            let client = cli.build_client()?;
+            command.clone().run(&client, cli.json).await
+        }
+        Commands::Rbac { command } => {
+            let client = cli.build_client()?;
+            command.clone().run(&client, cli.json).await
+        }
+        Commands::Info => {
+            let client = cli.build_client()?;
+            commands::info::run(&client, cli.json).await
         }
         Commands::Insts(args) => {
             let client = cli.build_client()?;
@@ -210,6 +348,54 @@ async fn main() -> Result<()> {
         Commands::Delete(args) => {
             let client = cli.build_client()?;
             commands::instance::delete::run(args.clone(), &client).await
+        }
+        Commands::Imgs(args) => {
+            let client = cli.build_client()?;
+            commands::image::ImageCommand::List(args.clone())
+                .run(&client, cli.json)
+                .await
+        }
+        Commands::Pkgs(args) => {
+            let client = cli.build_client()?;
+            commands::package::PackageCommand::List(args.clone())
+                .run(&client, cli.json)
+                .await
+        }
+        Commands::Nets => {
+            let client = cli.build_client()?;
+            commands::network::NetworkCommand::List
+                .run(&client, cli.json)
+                .await
+        }
+        Commands::Vols => {
+            let client = cli.build_client()?;
+            commands::volume::VolumeCommand::List
+                .run(&client, cli.json)
+                .await
+        }
+        Commands::Keys => {
+            let client = cli.build_client()?;
+            commands::key::KeyCommand::List
+                .run(&client, cli.json)
+                .await
+        }
+        Commands::Fwrules => {
+            let client = cli.build_client()?;
+            commands::fwrule::FwruleCommand::List
+                .run(&client, cli.json)
+                .await
+        }
+        Commands::Vlans => {
+            let client = cli.build_client()?;
+            commands::vlan::VlanCommand::List
+                .run(&client, cli.json)
+                .await
+        }
+        Commands::Completion { shell } => {
+            let mut cmd = Cli::command();
+            let name = cmd.get_name().to_string();
+            generate(*shell, &mut cmd, name, &mut std::io::stdout());
+            Ok(())
         }
     }
 }
