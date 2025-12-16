@@ -473,3 +473,20 @@ async fn test_docs(base_url: &str) -> Result<()> {
         anyhow::bail!("{} of {} tests failed.", failures, tests.len());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    /// Test that the CLI structure is valid and has no conflicts.
+    ///
+    /// This catches issues like:
+    /// - Duplicate short options (e.g., two args using `-n`)
+    /// - Duplicate long options
+    /// - Invalid argument configurations
+    #[test]
+    fn verify_cli_structure() {
+        Cli::command().debug_assert();
+    }
+}

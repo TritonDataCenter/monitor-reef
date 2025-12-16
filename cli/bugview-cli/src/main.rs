@@ -554,6 +554,20 @@ async fn main() -> Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    /// Test that the CLI structure is valid and has no conflicts.
+    ///
+    /// This catches issues like:
+    /// - Duplicate short options (e.g., two args using `-n`)
+    /// - Duplicate long options
+    /// - Invalid argument configurations
+    #[test]
+    fn verify_cli_structure() {
+        Cli::command().debug_assert();
+    }
+
     use super::extract_adf_text;
 
     #[test]
