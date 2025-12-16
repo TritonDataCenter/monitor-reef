@@ -73,7 +73,7 @@ pub struct CreateArgs {
     /// Volume to mount (NAME[@MOUNTPOINT] or NAME:MODE:MOUNTPOINT).
     /// MODE can be 'ro' or 'rw' (default: 'rw').
     /// Multiple volumes can be specified.
-    #[arg(long, short = 'v')]
+    #[arg(long)]
     pub volume: Option<Vec<String>>,
 
     /// Disk specification for bhyve instances (SIZE or IMAGE:SIZE).

@@ -36,10 +36,10 @@ pub enum RbacCommand {
     /// Get SSH key for a sub-user
     Key(UserKeyGetArgs),
     /// Add SSH key to a sub-user
-    #[command(alias = "key-add")]
+    #[command(alias = "add-key")]
     KeyAdd(UserKeyAddArgs),
     /// Delete SSH key from a sub-user
-    #[command(alias = "key-delete", alias = "key-rm")]
+    #[command(alias = "delete-key", alias = "rm-key")]
     KeyDelete(UserKeyDeleteArgs),
 }
 
@@ -143,7 +143,7 @@ pub struct UserKeyAddArgs {
     #[arg(long, short)]
     pub name: String,
     /// SSH public key (or path to key file with @/path/to/key)
-    #[arg(long, short)]
+    #[arg(long)]
     pub key: String,
 }
 

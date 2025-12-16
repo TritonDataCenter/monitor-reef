@@ -420,3 +420,24 @@ async fn main() -> Result<()> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    /// Test that the CLI structure is valid and has no conflicts.
+    ///
+    /// This catches issues like:
+    /// - Duplicate short options (e.g., two args using `-n`)
+    /// - Duplicate long options
+    /// - Invalid argument configurations
+    ///
+    /// Clap's debug_assert() validates the entire command tree including
+    /// all subcommands, so this single test covers the whole CLI.
+    #[test]
+    fn verify_cli_structure() {
+        // This will panic if there are any argument conflicts or invalid configurations
+        Cli::command().debug_assert();
+    }
+}
