@@ -14,6 +14,8 @@ use crate::output::{json, table};
 
 #[derive(Subcommand, Clone)]
 pub enum RbacCommand {
+    /// Show RBAC summary information
+    Info,
     /// Manage RBAC users
     User {
         #[command(subcommand)]
@@ -293,6 +295,7 @@ pub struct PolicyDeleteArgs {
 impl RbacCommand {
     pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
+            Self::Info => rbac_info(client, use_json).await,
             Self::User { command } => command.run(client, use_json).await,
             Self::Role { command } => command.run(client, use_json).await,
             Self::Policy { command } => command.run(client, use_json).await,
@@ -1004,6 +1007,103 @@ async fn delete_policies(args: PolicyDeleteArgs, client: &TypedClient) -> Result
             .await?;
 
         println!("Deleted policy '{}'", policy_ref);
+    }
+
+    Ok(())
+}
+
+// =============================================================================
+// RBAC Info Implementation
+// =============================================================================
+
+/// RBAC info JSON output structure
+#[derive(serde::Serialize)]
+struct RbacInfo {
+    users: Vec<cloudapi_client::types::User>,
+    roles: Vec<cloudapi_client::types::Role>,
+    policies: Vec<cloudapi_client::types::Policy>,
+}
+
+async fn rbac_info(client: &TypedClient, use_json: bool) -> Result<()> {
+    let account = &client.auth_config().account;
+
+    // Fetch all RBAC data concurrently
+    let (users_result, roles_result, policies_result) = tokio::join!(
+        client.inner().list_users().account(account).send(),
+        client.inner().list_roles().account(account).send(),
+        client.inner().list_policies().account(account).send(),
+    );
+
+    let users = users_result?.into_inner();
+    let roles = roles_result?.into_inner();
+    let policies = policies_result?.into_inner();
+
+    if use_json {
+        let info = RbacInfo {
+            users,
+            roles,
+            policies,
+        };
+        json::print_json(&info)?;
+    } else {
+        // Summary section
+        println!("RBAC Summary");
+        println!("============");
+        println!("Users:    {}", users.len());
+        println!("Roles:    {}", roles.len());
+        println!("Policies: {}", policies.len());
+        println!();
+
+        // Users section
+        if !users.is_empty() {
+            println!("Users:");
+            let mut tbl = table::create_table(&["SHORTID", "LOGIN", "EMAIL"]);
+            for user in &users {
+                tbl.add_row(vec![&user.id.to_string()[..8], &user.login, &user.email]);
+            }
+            table::print_table(tbl);
+            println!();
+        }
+
+        // Roles section
+        if !roles.is_empty() {
+            println!("Roles:");
+            let mut tbl = table::create_table(&["SHORTID", "NAME", "POLICIES", "MEMBERS"]);
+            for role in &roles {
+                let policies_str = if role.policies.is_empty() {
+                    "-".to_string()
+                } else {
+                    role.policies.join(", ")
+                };
+                let members_str = if role.members.is_empty() {
+                    "-".to_string()
+                } else {
+                    role.members.join(", ")
+                };
+                tbl.add_row(vec![
+                    &role.id.to_string()[..8],
+                    &role.name,
+                    &policies_str,
+                    &members_str,
+                ]);
+            }
+            table::print_table(tbl);
+            println!();
+        }
+
+        // Policies section
+        if !policies.is_empty() {
+            println!("Policies:");
+            let mut tbl = table::create_table(&["SHORTID", "NAME", "RULES"]);
+            for policy in &policies {
+                tbl.add_row(vec![
+                    &policy.id.to_string()[..8],
+                    &policy.name,
+                    &format!("{} rule(s)", policy.rules.len()),
+                ]);
+            }
+            table::print_table(tbl);
+        }
     }
 
     Ok(())

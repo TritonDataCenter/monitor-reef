@@ -88,6 +88,28 @@ pub struct CreateArgs {
     #[arg(long)]
     pub nic: Option<Vec<String>>,
 
+    /// Create a delegated ZFS dataset for the zone.
+    /// Only applicable to zone-based instances (joyent, joyent-minimal, lx brands).
+    #[arg(long)]
+    pub delegate_dataset: bool,
+
+    /// Request placement on encrypted compute nodes.
+    #[arg(long)]
+    pub encrypted: bool,
+
+    /// Allow using images shared with this account (not owned by it).
+    #[arg(long)]
+    pub allow_shared_images: bool,
+
+    /// Cloud-init config (shortcut for cloud-init user-data metadata).
+    /// Can be a file path or inline YAML/JSON content.
+    #[arg(long)]
+    pub cloud_config: Option<String>,
+
+    /// Simulate creation without actually provisioning (dry-run mode).
+    #[arg(long)]
+    pub dry_run: bool,
+
     /// Wait for instance to be running
     #[arg(long, short)]
     pub wait: bool,
@@ -124,6 +146,21 @@ pub async fn run(args: CreateArgs, client: &TypedClient, use_json: bool) -> Resu
     // Handle brand
     if let Some(brand) = &args.brand {
         request = request.brand(parse_brand(brand)?);
+    }
+
+    // Handle delegate dataset
+    if args.delegate_dataset {
+        request = request.delegate_dataset(true);
+    }
+
+    // Handle encrypted
+    if args.encrypted {
+        request = request.encrypted(true);
+    }
+
+    // Handle allow shared images
+    if args.allow_shared_images {
+        request = request.allow_shared_images(true);
     }
 
     // Handle networks (simple mode)
@@ -172,6 +209,57 @@ pub async fn run(args: CreateArgs, client: &TypedClient, use_json: bool) -> Resu
             .map_err(|e: cloudapi_client::types::error::ConversionError| {
                 anyhow::anyhow!("Failed to build request: {}", e)
             })?;
+
+    // Handle dry-run mode
+    if args.dry_run {
+        println!("Dry-run mode: Instance would be created with:");
+        if use_json {
+            json::print_json(&request)?;
+        } else {
+            println!("  Image: {:?}", request.image);
+            println!("  Package: {}", request.package);
+            if let Some(name) = &request.name {
+                println!("  Name: {}", name);
+            }
+            if let Some(brand) = &request.brand {
+                println!("  Brand: {:?}", brand);
+            }
+            if let Some(networks) = &request.networks {
+                println!("  Networks: {:?}", networks);
+            }
+            if let Some(nics) = &request.nics {
+                println!("  NICs: {} specified", nics.len());
+            }
+            if let Some(metadata) = &request.metadata {
+                println!("  Metadata keys: {:?}", metadata.keys().collect::<Vec<_>>());
+            }
+            if let Some(tags) = &request.tags {
+                println!("  Tags: {:?}", tags);
+            }
+            if request.firewall_enabled == Some(true) {
+                println!("  Firewall: enabled");
+            }
+            if request.deletion_protection == Some(true) {
+                println!("  Deletion protection: enabled");
+            }
+            if request.delegate_dataset == Some(true) {
+                println!("  Delegate dataset: enabled");
+            }
+            if request.encrypted == Some(true) {
+                println!("  Encrypted: enabled");
+            }
+            if request.allow_shared_images == Some(true) {
+                println!("  Allow shared images: enabled");
+            }
+            if let Some(volumes) = &request.volumes {
+                println!("  Volumes: {} specified", volumes.len());
+            }
+            if let Some(disks) = &request.disks {
+                println!("  Disks: {} specified", disks.len());
+            }
+        }
+        return Ok(());
+    }
 
     // Create the instance
     let response = client
@@ -254,6 +342,19 @@ fn build_metadata(args: &CreateArgs) -> Result<HashMap<String, String>> {
         let content = fs::read_to_string(path)
             .map_err(|e| anyhow::anyhow!("Failed to read {}: {}", script_path, e))?;
         metadata.insert("user-script".to_string(), content);
+    }
+
+    // Handle --cloud-config (shortcut for cloud-init user-data)
+    if let Some(cloud_config) = &args.cloud_config {
+        let content = if Path::new(cloud_config).exists() {
+            // Read from file
+            fs::read_to_string(cloud_config)
+                .map_err(|e| anyhow::anyhow!("Failed to read cloud-config file: {}", e))?
+        } else {
+            // Use as inline content
+            cloud_config.clone()
+        };
+        metadata.insert("user-data".to_string(), content);
     }
 
     Ok(metadata)

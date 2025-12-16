@@ -26,6 +26,7 @@ pub mod resize;
 pub mod snapshot;
 pub mod ssh;
 pub mod tag;
+pub mod vnc;
 pub mod wait;
 
 pub use list::ListArgs;
@@ -125,6 +126,9 @@ pub enum InstanceCommand {
         #[command(subcommand)]
         command: migration::MigrationCommand,
     },
+
+    /// Get VNC console access info
+    Vnc(vnc::VncArgs),
 }
 
 impl InstanceCommand {
@@ -154,6 +158,7 @@ impl InstanceCommand {
             Self::Metadata { command } => command.run(client, json).await,
             Self::Ip(args) => get::ip(args, client).await,
             Self::Migration { command } => command.run(client, json).await,
+            Self::Vnc(args) => vnc::run(args, client, json).await,
         }
     }
 }

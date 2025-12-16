@@ -6,9 +6,13 @@
 
 //! Image management commands
 
+use std::collections::HashMap;
+
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
+use dialoguer::Confirm;
+use serde_json::Value;
 
 use crate::output::{json, table};
 
@@ -32,8 +36,34 @@ pub enum ImageCommand {
     Update(ImageUpdateArgs),
     /// Export image to Manta
     Export(ImageExportArgs),
+    /// Share image with another account
+    Share(ImageShareArgs),
+    /// Unshare image from another account
+    Unshare(ImageUnshareArgs),
+    /// Manage image tags
+    Tag {
+        #[command(subcommand)]
+        command: ImageTagCommand,
+    },
     /// Wait for image state
     Wait(ImageWaitArgs),
+}
+
+#[derive(Subcommand, Clone)]
+pub enum ImageTagCommand {
+    /// List tags on an image
+    #[command(alias = "ls")]
+    List(ImageTagListArgs),
+
+    /// Get a tag value
+    Get(ImageTagGetArgs),
+
+    /// Set tag(s) on an image
+    Set(ImageTagSetArgs),
+
+    /// Delete a tag from an image
+    #[command(alias = "rm")]
+    Delete(ImageTagDeleteArgs),
 }
 
 #[derive(Args, Clone)]
@@ -142,6 +172,56 @@ pub struct ImageWaitArgs {
     pub timeout: u64,
 }
 
+#[derive(Args, Clone)]
+pub struct ImageShareArgs {
+    /// Image ID or name[@version]
+    pub image: String,
+    /// Account UUID to share the image with
+    pub account: String,
+}
+
+#[derive(Args, Clone)]
+pub struct ImageUnshareArgs {
+    /// Image ID or name[@version]
+    pub image: String,
+    /// Account UUID to unshare the image from
+    pub account: String,
+}
+
+#[derive(Args, Clone)]
+pub struct ImageTagListArgs {
+    /// Image ID or name[@version]
+    pub image: String,
+}
+
+#[derive(Args, Clone)]
+pub struct ImageTagGetArgs {
+    /// Image ID or name[@version]
+    pub image: String,
+    /// Tag key
+    pub key: String,
+}
+
+#[derive(Args, Clone)]
+pub struct ImageTagSetArgs {
+    /// Image ID or name[@version]
+    pub image: String,
+    /// Tags to set (key=value, multiple allowed)
+    #[arg(required = true)]
+    pub tags: Vec<String>,
+}
+
+#[derive(Args, Clone)]
+pub struct ImageTagDeleteArgs {
+    /// Image ID or name[@version]
+    pub image: String,
+    /// Tag key to delete
+    pub key: String,
+    /// Skip confirmation
+    #[arg(long, short)]
+    pub force: bool,
+}
+
 impl ImageCommand {
     pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
@@ -153,7 +233,21 @@ impl ImageCommand {
             Self::Copy(args) => copy_image(args, client, use_json).await,
             Self::Update(args) => update_image(args, client, use_json).await,
             Self::Export(args) => export_image(args, client, use_json).await,
+            Self::Share(args) => share_image(args, client, use_json).await,
+            Self::Unshare(args) => unshare_image(args, client, use_json).await,
+            Self::Tag { command } => command.run(client, use_json).await,
             Self::Wait(args) => wait_image(args, client, use_json).await,
+        }
+    }
+}
+
+impl ImageTagCommand {
+    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
+        match self {
+            Self::List(args) => list_image_tags(args, client, use_json).await,
+            Self::Get(args) => get_image_tag(args, client).await,
+            Self::Set(args) => set_image_tags(args, client).await,
+            Self::Delete(args) => delete_image_tag(args, client).await,
         }
     }
 }
@@ -522,4 +616,228 @@ async fn wait_for_image_state(
 
         sleep(Duration::from_secs(2)).await;
     }
+}
+
+async fn share_image(args: ImageShareArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+    let account = &client.auth_config().account;
+    let image_id = resolve_image(&args.image, client).await?;
+    let image_uuid: cloudapi_client::Uuid = image_id.parse()?;
+    let target_account: cloudapi_client::Uuid = args
+        .account
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid account UUID: {}", args.account))?;
+
+    let image = client
+        .share_image(account, &image_uuid, target_account)
+        .await?;
+
+    println!("Shared image {} with account {}", image.name, args.account);
+
+    if use_json {
+        json::print_json(&image)?;
+    }
+
+    Ok(())
+}
+
+async fn unshare_image(args: ImageUnshareArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+    let account = &client.auth_config().account;
+    let image_id = resolve_image(&args.image, client).await?;
+    let image_uuid: cloudapi_client::Uuid = image_id.parse()?;
+    let target_account: cloudapi_client::Uuid = args
+        .account
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid account UUID: {}", args.account))?;
+
+    let image = client
+        .unshare_image(account, &image_uuid, target_account)
+        .await?;
+
+    println!(
+        "Unshared image {} from account {}",
+        image.name, args.account
+    );
+
+    if use_json {
+        json::print_json(&image)?;
+    }
+
+    Ok(())
+}
+
+// =============================================================================
+// Image Tag Functions
+// =============================================================================
+
+async fn list_image_tags(
+    args: ImageTagListArgs,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
+    let account = &client.auth_config().account;
+    let image_id = resolve_image(&args.image, client).await?;
+
+    // Get image to retrieve tags
+    let response = client
+        .inner()
+        .get_image()
+        .account(account)
+        .dataset(&image_id)
+        .send()
+        .await?;
+
+    let image = response.into_inner();
+    let tags = image.tags.unwrap_or_default();
+
+    if use_json {
+        json::print_json(&tags)?;
+    } else if tags.is_empty() {
+        println!("No tags on image {}", image.name);
+    } else {
+        let mut tbl = table::create_table(&["KEY", "VALUE"]);
+        for (key, value) in tags.iter() {
+            let value_str = match value {
+                serde_json::Value::String(s) => s.clone(),
+                _ => value.to_string(),
+            };
+            tbl.add_row(vec![key, &value_str]);
+        }
+        table::print_table(tbl);
+    }
+
+    Ok(())
+}
+
+async fn get_image_tag(args: ImageTagGetArgs, client: &TypedClient) -> Result<()> {
+    let account = &client.auth_config().account;
+    let image_id = resolve_image(&args.image, client).await?;
+
+    // Get image to retrieve tags
+    let response = client
+        .inner()
+        .get_image()
+        .account(account)
+        .dataset(&image_id)
+        .send()
+        .await?;
+
+    let image = response.into_inner();
+    let tags = image.tags.unwrap_or_default();
+
+    if let Some(value) = tags.get(&args.key) {
+        let value_str = match value {
+            serde_json::Value::String(s) => s.clone(),
+            _ => value.to_string(),
+        };
+        println!("{}", value_str);
+    } else {
+        return Err(anyhow::anyhow!("Tag '{}' not found on image", args.key));
+    }
+
+    Ok(())
+}
+
+async fn set_image_tags(args: ImageTagSetArgs, client: &TypedClient) -> Result<()> {
+    let account = &client.auth_config().account;
+    let image_id = resolve_image(&args.image, client).await?;
+    let image_uuid: cloudapi_client::Uuid = image_id.parse()?;
+
+    // Get existing image to merge tags
+    let response = client
+        .inner()
+        .get_image()
+        .account(account)
+        .dataset(&image_id)
+        .send()
+        .await?;
+
+    let image = response.into_inner();
+    // Convert Map to HashMap
+    let mut tags: HashMap<String, Value> = image.tags.unwrap_or_default().into_iter().collect();
+
+    // Parse and add new tags
+    for tag in &args.tags {
+        if let Some((key, value)) = tag.split_once('=') {
+            tags.insert(key.to_string(), Value::String(value.to_string()));
+        } else {
+            return Err(anyhow::anyhow!(
+                "Invalid tag format '{}', expected key=value",
+                tag
+            ));
+        }
+    }
+
+    // Update image with new tags
+    let request = cloudapi_client::UpdateImageRequest {
+        name: None,
+        version: None,
+        description: None,
+        homepage: None,
+        eula: None,
+        acl: None,
+        tags: Some(tags.clone()),
+    };
+
+    client
+        .update_image_metadata(account, &image_uuid, &request)
+        .await?;
+
+    for tag in &args.tags {
+        if let Some((key, value)) = tag.split_once('=') {
+            println!("Set tag {}={}", key, value);
+        }
+    }
+
+    Ok(())
+}
+
+async fn delete_image_tag(args: ImageTagDeleteArgs, client: &TypedClient) -> Result<()> {
+    if !args.force
+        && !Confirm::new()
+            .with_prompt(format!("Delete tag {}?", args.key))
+            .default(false)
+            .interact()?
+    {
+        return Ok(());
+    }
+
+    let account = &client.auth_config().account;
+    let image_id = resolve_image(&args.image, client).await?;
+    let image_uuid: cloudapi_client::Uuid = image_id.parse()?;
+
+    // Get existing image to remove tag
+    let response = client
+        .inner()
+        .get_image()
+        .account(account)
+        .dataset(&image_id)
+        .send()
+        .await?;
+
+    let image = response.into_inner();
+    // Convert Map to HashMap
+    let mut tags: HashMap<String, Value> = image.tags.unwrap_or_default().into_iter().collect();
+
+    if tags.remove(&args.key).is_none() {
+        return Err(anyhow::anyhow!("Tag '{}' not found on image", args.key));
+    }
+
+    // Update image with removed tag
+    let request = cloudapi_client::UpdateImageRequest {
+        name: None,
+        version: None,
+        description: None,
+        homepage: None,
+        eula: None,
+        acl: None,
+        tags: Some(tags),
+    };
+
+    client
+        .update_image_metadata(account, &image_uuid, &request)
+        .await?;
+
+    println!("Deleted tag {}", args.key);
+
+    Ok(())
 }

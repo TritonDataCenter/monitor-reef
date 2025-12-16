@@ -146,6 +146,10 @@ enum Commands {
     #[command(alias = "dcs")]
     Datacenters,
 
+    /// List service endpoints
+    #[command(alias = "svcs")]
+    Services,
+
     // =========================================================================
     // TOP-LEVEL SHORTCUTS
     // =========================================================================
@@ -328,6 +332,10 @@ async fn main() -> Result<()> {
         Commands::Datacenters => {
             let client = cli.build_client()?;
             commands::datacenters::run(&client, cli.json).await
+        }
+        Commands::Services => {
+            let client = cli.build_client()?;
+            commands::services::run(&client, cli.json).await
         }
         Commands::Insts(args) => {
             let client = cli.build_client()?;

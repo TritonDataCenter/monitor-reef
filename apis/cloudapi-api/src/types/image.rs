@@ -187,6 +187,10 @@ pub enum ImageAction {
     Export,
     Clone,
     ImportFromDatacenter,
+    /// Share image with another account
+    Share,
+    /// Unshare image from another account
+    Unshare,
 }
 
 /// Query parameter for image actions
@@ -243,6 +247,22 @@ pub struct ImportImageRequest {
     pub datacenter: String,
     /// Image UUID in source datacenter
     pub id: Uuid,
+}
+
+/// Request to share an image with another account
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ShareImageRequest {
+    /// Account UUID to share the image with
+    pub account: Uuid,
+}
+
+/// Request to unshare an image from an account
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct UnshareImageRequest {
+    /// Account UUID to unshare the image from
+    pub account: Uuid,
 }
 
 /// Query parameters for listing images

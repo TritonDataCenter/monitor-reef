@@ -18,6 +18,7 @@ pub mod network;
 pub mod package;
 pub mod profile;
 pub mod rbac;
+pub mod services;
 pub mod vlan;
 pub mod volume;
 

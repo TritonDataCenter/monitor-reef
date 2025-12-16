@@ -272,6 +272,16 @@ pub struct CreateMachineRequest {
     /// Disks for bhyve instances
     #[serde(default)]
     pub disks: Option<Vec<DiskSpec>>,
+    /// Create a delegated ZFS dataset for the zone
+    /// Only applicable to zone-based instances (joyent, joyent-minimal, lx brands)
+    #[serde(default)]
+    pub delegate_dataset: Option<bool>,
+    /// Request placement on encrypted compute nodes
+    #[serde(default)]
+    pub encrypted: Option<bool>,
+    /// Allow using images shared with this account (not owned by it)
+    #[serde(default)]
+    pub allow_shared_images: Option<bool>,
 }
 
 /// Machine action for action dispatch

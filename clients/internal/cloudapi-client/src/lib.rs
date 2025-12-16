@@ -174,6 +174,7 @@ pub use cloudapi_api::{
     RolePath,
     Service,
     Services,
+    ShareImageRequest,
     Snapshot,
     SnapshotPath,
     SshKey,
@@ -183,6 +184,7 @@ pub use cloudapi_api::{
     Tags,
     TagsRequest,
     Timestamp,
+    UnshareImageRequest,
     UpdateAccountRequest,
     UpdateConfigRequest,
     UpdateFabricNetworkRequest,
@@ -593,6 +595,58 @@ impl TypedClient {
             .account(account)
             .dataset(dataset.to_string())
             .action(types::ImageAction::ImportFromDatacenter)
+            .body(serde_json::to_value(&body).unwrap_or_default())
+            .send()
+            .await
+            .map(|r| r.into_inner())
+    }
+
+    /// Share image with another account
+    ///
+    /// # Arguments
+    /// * `account` - Account login name
+    /// * `dataset` - Image UUID
+    /// * `target_account` - Account UUID to share with
+    pub async fn share_image(
+        &self,
+        account: &str,
+        dataset: &Uuid,
+        target_account: Uuid,
+    ) -> Result<types::Image, Error<types::Error>> {
+        let body = ShareImageRequest {
+            account: target_account,
+        };
+        self.inner
+            .update_image()
+            .account(account)
+            .dataset(dataset.to_string())
+            .action(types::ImageAction::Share)
+            .body(serde_json::to_value(&body).unwrap_or_default())
+            .send()
+            .await
+            .map(|r| r.into_inner())
+    }
+
+    /// Unshare image from another account
+    ///
+    /// # Arguments
+    /// * `account` - Account login name
+    /// * `dataset` - Image UUID
+    /// * `target_account` - Account UUID to unshare from
+    pub async fn unshare_image(
+        &self,
+        account: &str,
+        dataset: &Uuid,
+        target_account: Uuid,
+    ) -> Result<types::Image, Error<types::Error>> {
+        let body = UnshareImageRequest {
+            account: target_account,
+        };
+        self.inner
+            .update_image()
+            .account(account)
+            .dataset(dataset.to_string())
+            .action(types::ImageAction::Unshare)
             .body(serde_json::to_value(&body).unwrap_or_default())
             .send()
             .await

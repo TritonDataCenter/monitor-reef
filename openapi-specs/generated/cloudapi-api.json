@@ -9652,6 +9652,12 @@
               "type": "string"
             }
           },
+          "allowSharedImages": {
+            "nullable": true,
+            "description": "Allow using images shared with this account (not owned by it)",
+            "default": null,
+            "type": "boolean"
+          },
           "brand": {
             "nullable": true,
             "description": "Brand (bhyve, kvm, joyent, joyent-minimal, lx) If not specified, inferred from the image",
@@ -9661,6 +9667,12 @@
                 "$ref": "#/components/schemas/Brand"
               }
             ]
+          },
+          "delegateDataset": {
+            "nullable": true,
+            "description": "Create a delegated ZFS dataset for the zone Only applicable to zone-based instances (joyent, joyent-minimal, lx brands)",
+            "default": null,
+            "type": "boolean"
           },
           "deletionProtection": {
             "nullable": true,
@@ -9676,6 +9688,12 @@
             "items": {
               "$ref": "#/components/schemas/DiskSpec"
             }
+          },
+          "encrypted": {
+            "nullable": true,
+            "description": "Request placement on encrypted compute nodes",
+            "default": null,
+            "type": "boolean"
           },
           "firewallEnabled": {
             "nullable": true,
@@ -11815,12 +11833,30 @@
       },
       "ImageAction": {
         "description": "Image action for action dispatch",
-        "type": "string",
-        "enum": [
-          "update",
-          "export",
-          "clone",
-          "import-from-datacenter"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "update",
+              "export",
+              "clone",
+              "import-from-datacenter"
+            ]
+          },
+          {
+            "description": "Share image with another account",
+            "type": "string",
+            "enum": [
+              "share"
+            ]
+          },
+          {
+            "description": "Unshare image from another account",
+            "type": "string",
+            "enum": [
+              "unshare"
+            ]
+          }
         ]
       },
       "MachineAction": {

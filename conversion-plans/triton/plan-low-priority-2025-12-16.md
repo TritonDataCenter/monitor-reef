@@ -9,7 +9,7 @@ Copyright 2025 Edgecast Cloud LLC.
 # Triton CLI Lower Priority Implementation Plan
 
 **Date:** 2025-12-16
-**Status:** Planning
+**Status:** In Progress
 **Source Reference:** comprehensive-validation-report-2025-12-16.md
 
 ## Overview
@@ -20,83 +20,85 @@ This plan covers P2 (Nice to Have) and P3 (Low Priority) features. These are not
 
 ## P2 Features - Nice to Have
 
-### 1. Instance VNC Command
+### 1. Instance VNC Command ✅ COMPLETED
 
 **Priority:** P2
 **Impact:** Cannot get VNC access to bhyve/KVM instances
 
 #### Implementation
 - Add `triton instance vnc INSTANCE` command
-- Calls `GET /my/machines/:id/vnc`
-- Returns VNC connection info (host, port, token)
-- Optional: Open VNC viewer automatically
+- Returns VNC WebSocket URL for noVNC clients
+- Works with bhyve/KVM instances
 
-#### Files to Modify
-- [ ] `clients/external/cloudapi-client/src/lib.rs` - Add `get_machine_vnc` method
-- [ ] `cli/triton-cli/src/commands/instance/vnc.rs` - New file
-- [ ] `cli/triton-cli/src/commands/instance/mod.rs` - Wire up command
+#### Files Modified
+- [x] `cli/triton-cli/src/commands/instance/vnc.rs` - New file
+- [x] `cli/triton-cli/src/commands/instance/mod.rs` - Wire up command
 
 ---
 
-### 2. Instance Create: Additional Options
+### 2. Instance Create: Additional Options ✅ COMPLETED
 
 **Priority:** P2
 
-#### 2a. Delegate Dataset Option
-- Add `--delegate-dataset` flag to instance create
+#### 2a. Delegate Dataset Option ✅
+- Added `--delegate-dataset` flag to instance create
 - Creates delegated ZFS dataset in zone
 - Zone-specific feature
 
-#### 2b. Encrypted Option
-- Add `--encrypted` flag to instance create
+#### 2b. Encrypted Option ✅
+- Added `--encrypted` flag to instance create
 - Request placement on encrypted compute nodes
 
-#### 2c. Cloud Config Option
-- Add `--cloud-config` flag to instance create
+#### 2c. Cloud Config Option ✅
+- Added `--cloud-config` flag to instance create
 - Shortcut for cloud-init user-data metadata
+- Accepts file path or inline content
 
-#### 2d. Allow Shared Images Option
-- Add `--allow-shared-images` flag
+#### 2d. Allow Shared Images Option ✅
+- Added `--allow-shared-images` flag
 - Permit using images shared with account
 
-#### 2e. Dry Run Option
-- Add `--dry-run` flag to instance create
+#### 2e. Dry Run Option ✅
+- Added `--dry-run` flag to instance create
 - Simulate creation without actually provisioning
+- Shows what would be created
 
-#### Files to Modify
-- [ ] `cli/triton-cli/src/commands/instance/create.rs` - Add all flags
+#### Files Modified
+- [x] `apis/cloudapi-api/src/types/machine.rs` - Add new fields to CreateMachineRequest
+- [x] `cli/triton-cli/src/commands/instance/create.rs` - Add all flags
 
 ---
 
-### 3. Image Share/Unshare Commands
+### 3. Image Share/Unshare Commands ✅ COMPLETED
 
 **Priority:** P2
 **Impact:** Cannot share images with other accounts
 
 #### Implementation
-- Add `triton image share IMAGE ACCOUNT` command
-- Add `triton image unshare IMAGE ACCOUNT` command
+- Added `triton image share IMAGE ACCOUNT` command
+- Added `triton image unshare IMAGE ACCOUNT` command
 - API: `POST /my/images/:id?action=share`
 - API: `POST /my/images/:id?action=unshare`
 
-#### Files to Modify
-- [ ] `clients/external/cloudapi-client/src/lib.rs` - Add share/unshare methods
-- [ ] `cli/triton-cli/src/commands/image.rs` - Add share/unshare subcommands
+#### Files Modified
+- [x] `apis/cloudapi-api/src/types/image.rs` - Add Share/Unshare actions and request types
+- [x] `clients/internal/cloudapi-client/src/lib.rs` - Add share/unshare methods
+- [x] `cli/triton-cli/src/commands/image.rs` - Add share/unshare subcommands
 
 ---
 
-### 4. Image Tag Command
+### 4. Image Tag Command ✅ COMPLETED
 
 **Priority:** P2
 **Impact:** Cannot manage image tags
 
 #### Implementation
-- Add `triton image tag` subcommand group
+- Added `triton image tag` subcommand group
 - Subcommands: list, get, set, delete
-- Similar to instance tag implementation
+- Uses image update mechanism to manage tags
 
-#### Files to Modify
-- [ ] `cli/triton-cli/src/commands/image.rs` - Add tag subcommand
+#### Files Modified
+- [x] `cli/triton-cli/src/commands/image.rs` - Add tag subcommand with list/get/set/delete
 
 ---
 
@@ -131,18 +133,19 @@ This plan covers P2 (Nice to Have) and P3 (Low Priority) features. These are not
 
 ---
 
-### 7. RBAC Info Command
+### 7. RBAC Info Command ✅ COMPLETED
 
 **Priority:** P2
 **Impact:** No summary view of RBAC state
 
 #### Implementation
-- Add `triton rbac info` command
-- Show summary: user count, role count, policy count
-- List all users/roles/policies in compact format
+- Added `triton rbac info` command
+- Shows summary: user count, role count, policy count
+- Lists all users/roles/policies in compact table format
+- Supports JSON output
 
-#### Files to Modify
-- [ ] `cli/triton-cli/src/commands/rbac.rs` - Add info subcommand
+#### Files Modified
+- [x] `cli/triton-cli/src/commands/rbac.rs` - Add info subcommand
 
 ---
 
@@ -203,36 +206,35 @@ This plan covers P2 (Nice to Have) and P3 (Low Priority) features. These are not
 
 ---
 
-### 11. Services Command
+### 11. Services Command ✅ COMPLETED
 
 **Priority:** P2
 **Impact:** Cannot list service endpoints
 
 #### Implementation
-- Add `triton services` command
+- Added `triton services` command (alias: `triton svcs`)
 - API: `GET /my/services`
 - Returns map of service names to URLs
 
-#### Files to Modify
-- [ ] `clients/external/cloudapi-client/src/lib.rs` - Add `list_services` method
-- [ ] `cli/triton-cli/src/commands/services.rs` - New file
-- [ ] `cli/triton-cli/src/main.rs` - Wire up command
+#### Files Modified
+- [x] `cli/triton-cli/src/commands/services.rs` - New file
+- [x] `cli/triton-cli/src/commands/mod.rs` - Export module
+- [x] `cli/triton-cli/src/main.rs` - Wire up command
 
 ---
 
-### 12. Snapshot Start Command
+### 12. Snapshot Start Command ✅ ALREADY EXISTED
 
 **Priority:** P2
 **Impact:** Cannot start instance from snapshot
 
 #### Implementation
-- Add `triton instance snapshot start INSTANCE SNAPSHOT` command
+- Command exists as `triton instance snapshot boot INSTANCE SNAPSHOT`
 - API: `POST /my/machines/:id/snapshots/:name`
 - Starts instance from specified snapshot
 
-#### Files to Modify
-- [ ] `clients/external/cloudapi-client/src/lib.rs` - Add snapshot start method
-- [ ] `cli/triton-cli/src/commands/instance/snapshot.rs` - Add start subcommand
+#### Files (Already Implemented)
+- [x] `cli/triton-cli/src/commands/instance/snapshot.rs` - Boot subcommand exists
 
 ---
 
@@ -281,24 +283,27 @@ These features are intentionally not planned:
 
 ---
 
-## Implementation Order
+## Progress Summary
 
-Suggested order for P2 features (based on utility):
+### Completed (7/12 P2 features):
+1. ✅ RBAC info command
+2. ✅ Services command
+3. ✅ Image share/unshare commands
+4. ✅ Instance VNC command
+5. ✅ Additional instance create options (all 5 flags)
+6. ✅ Snapshot start command (already existed as `boot`)
+7. ✅ Image tag command
 
-1. **RBAC info** - Quick win, useful for auditing
-2. **Services command** - Quick win, simple API
-3. **Image share/unshare** - Enables image collaboration
-4. **Instance VNC** - Useful for debugging bhyve/KVM
-5. **Additional create options** - Incremental improvements
-6. **Profile docker-setup** - Docker users need this
-7. **Snapshot start** - Useful recovery feature
-8. **Image tags** - Consistency with instance tags
-9. **RBAC apply/reset** - Automation support
-10. **RBAC role tags** - Advanced RBAC
-11. **Changefeed** - Advanced monitoring
-12. **Profile cmon-certgen** - Specialized use case
+### Remaining (5/12 P2 features):
+1. Profile docker-setup
+2. Profile cmon-certgen
+3. RBAC apply/reset commands
+4. RBAC role tags commands
+5. Changefeed command
 
-P3 features can be implemented as time permits or community requests.
+### P3 features (0/2):
+1. Instance shortcut commands
+2. CloudAPI raw command
 
 ---
 
