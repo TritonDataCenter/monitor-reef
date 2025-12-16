@@ -133,19 +133,25 @@ Copyright 2025 Edgecast Cloud LLC.
 
 ## P3: RBAC Action Flags (Legacy Compat)
 
-Node.js triton uses action flags (`-a`, `-e`, `-d`) instead of subcommands. Consider supporting both patterns for backwards compatibility.
+Node.js triton uses action flags (`-a`, `-e`, `-d`) instead of subcommands. The Rust CLI uses a modern subcommand pattern (`user create`, `user delete`) which is cleaner and more explicit. The action flag pattern would require significant restructuring and is documented as an intentional difference.
 
 | Item | Description | Status |
 |------|-------------|--------|
-| Support `-a` action flag | Add user (alternative to `user create`) | [ ] |
-| Support `-e` action flag | Edit user | [ ] |
-| Support `-d` action flag | Delete user (alternative to `user delete`) | [ ] |
-| Support `-k` flag on user | Show keys inline | [ ] |
-| Add `-y/--yes` alias | For confirmation skipping | [ ] |
-| Add `-n` short form | Name for key commands | [ ] |
-| Add `--dev-create-keys-and-profiles` | Development mode for apply | [ ] |
+| Support `-a` action flag | Add user (alternative to `user create`) | [-] Intentional difference |
+| Support `-e` action flag | Edit user in $EDITOR | [-] Intentional difference |
+| Support `-d` action flag | Delete user (alternative to `user delete`) | [-] Intentional difference |
+| Support `-k` flag on user get | Show keys inline | [x] |
+| Add `-y/--yes` alias | For confirmation skipping | [x] |
+| Add `-n` short form | Name for key commands | [x] (pre-existing) |
+| Add `--dev-create-keys-and-profiles` | Development mode for apply | [x] (hidden, not implemented) |
+| Add plural list aliases | `users`, `roles`, `policies` commands | [x] |
 
-**Files:** `cli/triton-cli/src/commands/rbac/`
+**Notes:**
+- Action flags (`-a/-e/-d`) require mutually exclusive flag handling incompatible with clap subcommand pattern
+- `$EDITOR` integration for `-e` flag would be a separate feature request
+- `--dev-create-keys-and-profiles` flag is accepted but returns an error until SSH key generation is implemented
+
+**Files:** `cli/triton-cli/src/commands/rbac.rs`
 
 ---
 

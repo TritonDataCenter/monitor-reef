@@ -28,16 +28,25 @@ pub enum RbacCommand {
         #[command(subcommand)]
         command: RbacUserCommand,
     },
+    /// List RBAC users (alias for 'user list')
+    #[command(hide = true)]
+    Users,
     /// Manage RBAC roles
     Role {
         #[command(subcommand)]
         command: RbacRoleCommand,
     },
+    /// List RBAC roles (alias for 'role list')
+    #[command(hide = true)]
+    Roles,
     /// Manage RBAC policies
     Policy {
         #[command(subcommand)]
         command: RbacPolicyCommand,
     },
+    /// List RBAC policies (alias for 'policy list')
+    #[command(hide = true)]
+    Policies,
     /// List SSH keys for a sub-user
     Keys(UserKeysArgs),
     /// Get SSH key for a sub-user
@@ -162,6 +171,9 @@ pub enum RbacUserCommand {
 pub struct UserGetArgs {
     /// User login or UUID
     pub user: String,
+    /// Include SSH keys for the user
+    #[arg(long, short)]
+    pub keys: bool,
 }
 
 #[derive(Args, Clone)]
@@ -208,7 +220,7 @@ pub struct UserDeleteArgs {
     /// User login(s) or UUID(s)
     pub users: Vec<String>,
     /// Skip confirmation
-    #[arg(long, short)]
+    #[arg(long, short, visible_alias = "yes", short_alias = 'y')]
     pub force: bool,
 }
 
@@ -224,14 +236,17 @@ pub struct ApplyArgs {
     #[arg(long, short = 'n')]
     pub dry_run: bool,
     /// Skip confirmation prompts
-    #[arg(long, short)]
+    #[arg(long, short, visible_alias = "yes", short_alias = 'y')]
     pub force: bool,
+    /// Generate SSH keys and CLI profiles for each user (development/testing only)
+    #[arg(long, hide = true)]
+    pub dev_create_keys_and_profiles: bool,
 }
 
 #[derive(Args, Clone)]
 pub struct ResetArgs {
     /// Skip confirmation prompt
-    #[arg(long, short)]
+    #[arg(long, short, visible_alias = "yes", short_alias = 'y')]
     pub force: bool,
 }
 
@@ -314,7 +329,7 @@ pub struct UserKeyDeleteArgs {
     /// Key name or fingerprint
     pub key: String,
     /// Skip confirmation
-    #[arg(long, short)]
+    #[arg(long, short, visible_alias = "yes", short_alias = 'y')]
     pub force: bool,
 }
 
@@ -382,7 +397,7 @@ pub struct RoleDeleteArgs {
     /// Role name(s) or UUID(s)
     pub roles: Vec<String>,
     /// Skip confirmation
-    #[arg(long, short)]
+    #[arg(long, short, visible_alias = "yes", short_alias = 'y')]
     pub force: bool,
 }
 
@@ -444,7 +459,7 @@ pub struct PolicyDeleteArgs {
     /// Policy name(s) or UUID(s)
     pub policies: Vec<String>,
     /// Skip confirmation
-    #[arg(long, short)]
+    #[arg(long, short, visible_alias = "yes", short_alias = 'y')]
     pub force: bool,
 }
 
@@ -459,8 +474,11 @@ impl RbacCommand {
             Self::Apply(args) => rbac_apply(args, client, use_json).await,
             Self::Reset(args) => rbac_reset(args, client).await,
             Self::User { command } => command.run(client, use_json).await,
+            Self::Users => list_users(client, use_json).await,
             Self::Role { command } => command.run(client, use_json).await,
+            Self::Roles => list_roles(client, use_json).await,
             Self::Policy { command } => command.run(client, use_json).await,
+            Self::Policies => list_policies(client, use_json).await,
             Self::Keys(args) => list_user_keys(args, client, use_json).await,
             Self::Key(args) => get_user_key(args, client, use_json).await,
             Self::KeyAdd(args) => add_user_key(args, client, use_json).await,
@@ -565,8 +583,31 @@ async fn get_user(args: UserGetArgs, client: &TypedClient, use_json: bool) -> Re
 
     let user = response.into_inner();
 
+    // Optionally fetch keys if -k/--keys flag is set
+    let keys = if args.keys {
+        let keys_response = client
+            .inner()
+            .list_user_keys()
+            .account(account)
+            .uuid(&user_id)
+            .send()
+            .await?;
+        Some(keys_response.into_inner())
+    } else {
+        None
+    };
+
     if use_json {
-        json::print_json(&user)?;
+        if let Some(keys) = keys {
+            // Combine user and keys into a single JSON object
+            let mut combined = serde_json::to_value(&user)?;
+            if let serde_json::Value::Object(ref mut map) = combined {
+                map.insert("keys".to_string(), serde_json::to_value(&keys)?);
+            }
+            json::print_json(&combined)?;
+        } else {
+            json::print_json(&user)?;
+        }
     } else {
         println!("ID:         {}", user.id);
         println!("Login:      {}", user.login);
@@ -586,6 +627,18 @@ async fn get_user(args: UserGetArgs, client: &TypedClient, use_json: bool) -> Re
         }
         println!("Created:    {}", user.created);
         println!("Updated:    {}", user.updated);
+
+        // Display keys if fetched
+        if let Some(keys) = keys {
+            println!("Keys:");
+            if keys.is_empty() {
+                println!("  (no keys)");
+            } else {
+                for key in &keys {
+                    println!("  - {} ({})", key.name, key.fingerprint);
+                }
+            }
+        }
     }
 
     Ok(())
@@ -1385,6 +1438,16 @@ struct ApplySummary {
 }
 
 async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+    // Check for unimplemented dev option
+    if args.dev_create_keys_and_profiles {
+        return Err(anyhow::anyhow!(
+            "The --dev-create-keys-and-profiles option is not yet implemented.\n\
+             This development option would automatically generate SSH keys and \n\
+             CLI profiles for each RBAC user. For now, please create keys and \n\
+             profiles manually."
+        ));
+    }
+
     // Read and parse the config file
     let content = std::fs::read_to_string(&args.file).map_err(|e| {
         anyhow::anyhow!(
