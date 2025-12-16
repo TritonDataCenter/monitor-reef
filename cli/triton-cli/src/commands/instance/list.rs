@@ -40,15 +40,23 @@ pub struct ListArgs {
     #[arg(long)]
     pub limit: Option<i64>,
 
-    /// Sort by field
-    #[arg(long, default_value = "name")]
+    /// Sort by field (created, name, state, etc.)
+    #[arg(long, short = 's', default_value = "name")]
     pub sort_by: String,
 
-    /// Custom output fields
+    /// Custom output fields (comma-separated)
     #[arg(short = 'o', long)]
     pub output: Option<String>,
 
-    /// Show only short ID
+    /// Long output format with more columns
+    #[arg(short = 'l', long)]
+    pub long: bool,
+
+    /// Omit table header
+    #[arg(short = 'H', long = "no-header")]
+    pub no_header: bool,
+
+    /// Show only short ID (one per line)
     #[arg(long)]
     pub short: bool,
 }
@@ -96,25 +104,94 @@ pub async fn run(args: ListArgs, client: &TypedClient, use_json: bool) -> Result
 }
 
 fn print_machines_table(machines: &[Machine], args: &ListArgs) {
-    let mut tbl = table::create_table(&["SHORTID", "NAME", "IMAGE", "STATE", "PRIMARYIP", "AGE"]);
-
-    for m in machines {
-        let short_id = &m.id[..8.min(m.id.len())];
-        let name = &m.name;
-        let image = &m.image[..8.min(m.image.len())];
-        let state = format!("{:?}", m.state).to_lowercase();
-        let primary_ip = m.primary_ip.as_deref().unwrap_or("-");
-        let age = format_age(&m.created);
-
-        if args.short {
+    // Handle --short: just print IDs
+    if args.short {
+        for m in machines {
+            let short_id = &m.id[..8.min(m.id.len())];
             println!("{}", short_id);
-        } else {
-            tbl.add_row(vec![short_id, name, image, &state, primary_ip, &age]);
         }
+        return;
     }
 
-    if !args.short {
-        table::print_table(tbl);
+    // Determine columns based on --long or --output
+    let columns: Vec<&str> = if let Some(ref output) = args.output {
+        output.split(',').map(|s| s.trim()).collect()
+    } else if args.long {
+        vec![
+            "id",
+            "name",
+            "img",
+            "brand",
+            "package",
+            "state",
+            "flags",
+            "primaryIp",
+            "created",
+        ]
+    } else {
+        vec!["shortid", "name", "img", "state", "flags", "age"]
+    };
+
+    // Create header (uppercase)
+    let headers: Vec<String> = columns.iter().map(|c| c.to_uppercase()).collect();
+    let header_refs: Vec<&str> = headers.iter().map(|s| s.as_str()).collect();
+
+    let mut tbl = if args.no_header {
+        table::create_table_no_header(columns.len())
+    } else {
+        table::create_table(&header_refs)
+    };
+
+    for m in machines {
+        let row: Vec<String> = columns.iter().map(|col| get_field_value(m, col)).collect();
+        let row_refs: Vec<&str> = row.iter().map(|s| s.as_str()).collect();
+        tbl.add_row(row_refs);
+    }
+
+    table::print_table(tbl);
+}
+
+/// Get a field value from a Machine by field name
+fn get_field_value(m: &Machine, field: &str) -> String {
+    match field.to_lowercase().as_str() {
+        "id" => m.id.clone(),
+        "shortid" => m.id[..8.min(m.id.len())].to_string(),
+        "name" => m.name.clone(),
+        "image" => m.image.clone(),
+        "img" => m.image[..8.min(m.image.len())].to_string(),
+        "state" => format!("{:?}", m.state).to_lowercase(),
+        "brand" => format!("{:?}", m.brand).to_lowercase(),
+        "package" => m.package.clone(),
+        "memory" => m.memory.to_string(),
+        "disk" => m.disk.to_string(),
+        "primaryip" => m.primary_ip.clone().unwrap_or_else(|| "-".to_string()),
+        "created" => m.created.clone(),
+        "age" => format_age(&m.created),
+        "flags" => {
+            let mut flags = Vec::new();
+            let brand_str = format!("{:?}", m.brand).to_lowercase();
+            if brand_str == "bhyve" {
+                flags.push('B');
+            }
+            if m.docker.unwrap_or(false) {
+                flags.push('D');
+            }
+            if m.firewall_enabled.unwrap_or(false) {
+                flags.push('F');
+            }
+            if brand_str == "kvm" {
+                flags.push('K');
+            }
+            if m.deletion_protection.unwrap_or(false) {
+                flags.push('P');
+            }
+            if flags.is_empty() {
+                "-".to_string()
+            } else {
+                flags.into_iter().collect()
+            }
+        }
+        _ => "-".to_string(),
     }
 }
 

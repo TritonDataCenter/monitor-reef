@@ -16,6 +16,15 @@ pub fn create_table(headers: &[&str]) -> Table {
     table
 }
 
+/// Create a new table without headers
+pub fn create_table_no_header(num_columns: usize) -> Table {
+    let mut table = Table::new();
+    table.load_preset(NOTHING);
+    // Set empty column constraints if needed
+    let _ = num_columns; // Just to document we expect this many columns
+    table
+}
+
 /// Format a table and print it
 pub fn print_table(table: Table) {
     println!("{table}");

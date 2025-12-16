@@ -58,7 +58,7 @@ pub struct CreateArgs {
     ///   op: '==' (must), '!=' (must not), '==~' (prefer), '!=~' (prefer not)
     ///   value: exact string, glob (*), or regex (/pattern/)
     /// Examples: 'instance==myvm', 'role!=database', 'instance!=~foo*'
-    #[arg(long)]
+    #[arg(long, short = 'a')]
     pub affinity: Option<Vec<String>>,
 
     /// Enable deletion protection
@@ -73,7 +73,7 @@ pub struct CreateArgs {
     /// Volume to mount (NAME[@MOUNTPOINT] or NAME:MODE:MOUNTPOINT).
     /// MODE can be 'ro' or 'rw' (default: 'rw').
     /// Multiple volumes can be specified.
-    #[arg(long)]
+    #[arg(long, short = 'v')]
     pub volume: Option<Vec<String>>,
 
     /// Disk specification for bhyve instances (SIZE or IMAGE:SIZE).

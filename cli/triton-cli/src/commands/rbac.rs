@@ -143,7 +143,7 @@ pub struct UserKeyAddArgs {
     #[arg(long, short)]
     pub name: String,
     /// SSH public key (or path to key file with @/path/to/key)
-    #[arg(long)]
+    #[arg(long, short)]
     pub key: String,
 }
 

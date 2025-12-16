@@ -30,27 +30,27 @@ use config::profile::{Config, Profile};
 )]
 struct Cli {
     /// Profile to use
-    #[arg(short, long, global = true, env = "TRITON_PROFILE")]
+    #[arg(short, long, env = "TRITON_PROFILE")]
     profile: Option<String>,
 
     /// CloudAPI URL override
-    #[arg(short = 'U', long, global = true, env = "TRITON_URL")]
+    #[arg(short = 'U', long, env = "TRITON_URL")]
     url: Option<String>,
 
     /// Account name override
-    #[arg(short, long, global = true, env = "TRITON_ACCOUNT")]
+    #[arg(short, long, env = "TRITON_ACCOUNT")]
     account: Option<String>,
 
     /// SSH key fingerprint override
-    #[arg(short, long, global = true, env = "TRITON_KEY_ID")]
+    #[arg(short, long, env = "TRITON_KEY_ID")]
     key_id: Option<String>,
 
     /// Output as JSON
-    #[arg(short, long, global = true)]
+    #[arg(short, long)]
     json: bool,
 
     /// Verbose output
-    #[arg(short, long, global = true)]
+    #[arg(short, long)]
     verbose: bool,
 
     #[command(subcommand)]
@@ -203,6 +203,12 @@ enum Commands {
 
     /// List VLANs (shortcut for 'vlan list')
     Vlans,
+
+    /// List profiles (shortcut for 'profile list')
+    Profiles,
+
+    /// Get instance IP (shortcut for 'instance ip')
+    Ip(commands::instance::get::IpArgs),
 
     /// Generate shell completions
     Completion {
@@ -411,6 +417,15 @@ async fn main() -> Result<()> {
             commands::vlan::VlanCommand::List
                 .run(&client, cli.json)
                 .await
+        }
+        Commands::Profiles => {
+            commands::profile::ProfileCommand::List { json: cli.json }
+                .run()
+                .await
+        }
+        Commands::Ip(args) => {
+            let client = cli.build_client()?;
+            commands::instance::get::ip(args.clone(), &client).await
         }
         Commands::Completion { shell } => {
             let mut cmd = Cli::command();

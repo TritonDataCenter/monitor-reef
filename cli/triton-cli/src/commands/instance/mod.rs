@@ -89,30 +89,35 @@ pub enum InstanceCommand {
     DisableDeletionProtection(protection::DisableProtectionArgs),
 
     /// Manage instance NICs
+    #[command(alias = "nics")]
     Nic {
         #[command(subcommand)]
         command: nic::NicCommand,
     },
 
     /// Manage instance snapshots
+    #[command(alias = "snapshots")]
     Snapshot {
         #[command(subcommand)]
         command: snapshot::SnapshotCommand,
     },
 
     /// Manage instance disks
+    #[command(alias = "disks")]
     Disk {
         #[command(subcommand)]
         command: disk::DiskCommand,
     },
 
     /// Manage instance tags
+    #[command(alias = "tags")]
     Tag {
         #[command(subcommand)]
         command: tag::TagCommand,
     },
 
     /// Manage instance metadata
+    #[command(alias = "metadatas")]
     Metadata {
         #[command(subcommand)]
         command: metadata::MetadataCommand,
