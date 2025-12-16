@@ -73,18 +73,28 @@ pub async fn run(args: CloudApiArgs, client: &TypedClient) -> Result<()> {
     let auth_config = client.auth_config();
     let account = &auth_config.account;
 
-    // Build the URL by substituting {account} placeholder
-    let path = args.path.replace("{account}", account);
-
     // Ensure path starts with /
-    let path = if path.starts_with('/') {
-        path
+    let path = if args.path.starts_with('/') {
+        args.path.clone()
     } else {
-        format!("/{}", path)
+        format!("/{}", args.path)
     };
 
-    // Build the full URL
+    // Substitute placeholders:
+    // - {account} -> account name
+    // - /my/ -> /{account}/ (CloudAPI alias used by node-triton)
+    let path = path.replace("{account}", account);
+    let path = if path.starts_with("/my/") {
+        format!("/{}{}", account, &path[3..])
+    } else if path == "/my" {
+        format!("/{}", account)
+    } else {
+        path
+    };
+
+    // Build the full URL (handle trailing slash in base_url)
     let base_url = client.inner().baseurl();
+    let base_url = base_url.trim_end_matches('/');
     let url = format!("{}{}", base_url, path);
 
     // Read body from stdin if requested
