@@ -9,7 +9,7 @@ Copyright 2025 Edgecast Cloud LLC.
 # Triton CLI High Priority Implementation Plan
 
 **Date:** 2025-12-16
-**Status:** In Progress (Paused - see notes below)
+**Status:** ✅ Complete
 **Source Reference:** comprehensive-validation-report-2025-12-16.md
 **Last Updated:** 2025-12-16
 
@@ -26,7 +26,7 @@ This plan covers P1 (Important) features that limit significant usage of triton-
 | Item | Status | Notes |
 |------|--------|-------|
 | 1. Datacenters Command | ✅ Complete | `triton datacenters` implemented |
-| 2. Instance Migration Commands | ⚠️ Partial | get/estimate/start/wait implemented; finalize/abort blocked |
+| 2. Instance Migration Commands | ✅ Complete | All subcommands implemented (get/estimate/start/wait/finalize/abort) |
 | 3. Instance Create: Volume Mount | ✅ Complete | `--volume` flag implemented |
 | 4. Instance Create: Disk Config | ✅ Complete | `--disk` flag implemented |
 | 5. Instance Create: Metadata File | ✅ Complete | `--metadata-file` flag implemented |
@@ -36,30 +36,21 @@ This plan covers P1 (Important) features that limit significant usage of triton-
 | 9. Network Create/Delete | ✅ Complete | `triton network create/delete` implemented |
 | 10. RBAC User Key Management | ✅ Complete | `triton rbac keys/key/key-add/key-delete` implemented |
 
-### Blocking Issue
+### All P1 Features Complete! 🎉
 
-**Migration commands are incomplete** because the `cloudapi-api` trait is missing endpoints for:
-- Finalize migration (switch to new server)
-- Abort migration (cancel in progress)
+All high-priority (P1) features have been implemented. The migration commands were unblocked by:
+1. The `cloudapi-api` trait already supported all actions via the `migrate` endpoint with `MigrationAction` enum
+2. Added `MigrationAction` export to `cloudapi-client`
+3. Implemented `finalize` and `abort` CLI subcommands using `MigrationAction::Switch` and `MigrationAction::Abort`
 
-See: `conversion-plans/cloudapi/missing-migration-endpoints-2025-12-16.md`
+### Migration Subcommands Available
 
-The following migration subcommands work:
 - `triton instance migration get` - View migration status
 - `triton instance migration estimate` - Get migration size estimate
 - `triton instance migration start` - Begin migration
 - `triton instance migration wait` - Poll until migration completes
-
-The following are **blocked** pending API additions:
 - `triton instance migration finalize` - Switch to new server
 - `triton instance migration abort` - Cancel migration
-
-### Next Steps
-
-1. Add missing migration endpoints to `cloudapi-api` trait
-2. Regenerate OpenAPI spec and client
-3. Implement finalize/abort CLI commands
-4. Test full migration workflow
 
 ---
 
@@ -116,10 +107,10 @@ Migration actions: `begin`, `sync`, `switch`, `pause`, `abort`, `finalize`, `aut
   - `watch` - Watch migration progress
 
 ### Files to Modify
-- [x] `clients/external/cloudapi-client/src/lib.rs` - Add migration API methods (partial - missing finalize/abort)
-- [ ] `apis/cloudapi-api/src/lib.rs` - Add migration endpoints (missing finalize/abort - see blocking issue)
+- [x] `clients/internal/cloudapi-client/src/lib.rs` - Add migration API methods and MigrationAction export
+- [x] `apis/cloudapi-api/src/lib.rs` - Migration endpoints complete (uses MigrationAction enum)
 - [x] `cli/triton-cli/src/commands/instance/mod.rs` - Add migration subcommand
-- [x] `cli/triton-cli/src/commands/instance/migration.rs` - New file (partial - missing finalize/abort)
+- [x] `cli/triton-cli/src/commands/instance/migration.rs` - All subcommands implemented
 
 ---
 

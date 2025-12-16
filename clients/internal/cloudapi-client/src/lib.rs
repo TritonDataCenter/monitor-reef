@@ -151,6 +151,7 @@ pub use cloudapi_api::{
     MetadataKeyPath,
     MigrateRequest,
     Migration,
+    MigrationAction,
     MigrationEstimateRequest,
     Network,
     NetworkIp,

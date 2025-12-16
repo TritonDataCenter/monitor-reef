@@ -5,10 +5,6 @@
 // Copyright 2025 Edgecast Cloud LLC.
 
 //! Instance migration commands
-//!
-//! Note: The finalize and abort commands are not yet implemented because
-//! the cloudapi-api trait is missing those endpoints. See:
-//! conversion-plans/cloudapi/missing-migration-endpoints-2025-12-16.md
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
@@ -26,8 +22,10 @@ pub enum MigrationCommand {
     Start(MigrationStartArgs),
     /// Wait for a migration to complete
     Wait(MigrationWaitArgs),
-    // TODO: Add Finalize and Abort commands once cloudapi-api endpoints are added
-    // See: conversion-plans/cloudapi/missing-migration-endpoints-2025-12-16.md
+    /// Finalize (switch to) a migrated instance
+    Finalize(MigrationFinalizeArgs),
+    /// Abort an in-progress migration
+    Abort(MigrationAbortArgs),
 }
 
 #[derive(Args, Clone)]
@@ -62,6 +60,18 @@ pub struct MigrationWaitArgs {
     pub timeout: u64,
 }
 
+#[derive(Args, Clone)]
+pub struct MigrationFinalizeArgs {
+    /// Instance ID or name
+    pub instance: String,
+}
+
+#[derive(Args, Clone)]
+pub struct MigrationAbortArgs {
+    /// Instance ID or name
+    pub instance: String,
+}
+
 impl MigrationCommand {
     pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
@@ -69,6 +79,8 @@ impl MigrationCommand {
             Self::Estimate(args) => estimate_migration(args, client, use_json).await,
             Self::Start(args) => start_migration(args, client, use_json).await,
             Self::Wait(args) => wait_migration(args, client).await,
+            Self::Finalize(args) => finalize_migration(args, client, use_json).await,
+            Self::Abort(args) => abort_migration(args, client, use_json).await,
         }
     }
 }
@@ -150,7 +162,7 @@ async fn start_migration(
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
 
     let request = cloudapi_client::types::MigrateRequest {
-        action: "migrate".to_string(),
+        action: cloudapi_client::types::MigrationAction::Begin,
         affinity: args.affinity,
     };
 
@@ -230,4 +242,76 @@ async fn wait_migration(args: MigrationWaitArgs, client: &TypedClient) -> Result
 
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
+}
+
+async fn finalize_migration(
+    args: MigrationFinalizeArgs,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
+    let account = &client.auth_config().account;
+    let instance_id = super::get::resolve_instance(&args.instance, client).await?;
+
+    let request = cloudapi_client::types::MigrateRequest {
+        action: cloudapi_client::types::MigrationAction::Switch,
+        affinity: None,
+    };
+
+    let response = client
+        .inner()
+        .migrate()
+        .account(account)
+        .machine(&instance_id)
+        .body(request)
+        .send()
+        .await?;
+
+    let migration = response.into_inner();
+
+    println!("Migration finalized for instance {}", &instance_id[..8]);
+
+    if use_json {
+        json::print_json(&migration)?;
+    } else {
+        println!("State: {}", migration.state);
+        println!("Phase: {}", migration.phase);
+    }
+
+    Ok(())
+}
+
+async fn abort_migration(
+    args: MigrationAbortArgs,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
+    let account = &client.auth_config().account;
+    let instance_id = super::get::resolve_instance(&args.instance, client).await?;
+
+    let request = cloudapi_client::types::MigrateRequest {
+        action: cloudapi_client::types::MigrationAction::Abort,
+        affinity: None,
+    };
+
+    let response = client
+        .inner()
+        .migrate()
+        .account(account)
+        .machine(&instance_id)
+        .body(request)
+        .send()
+        .await?;
+
+    let migration = response.into_inner();
+
+    println!("Migration aborted for instance {}", &instance_id[..8]);
+
+    if use_json {
+        json::print_json(&migration)?;
+    } else {
+        println!("State: {}", migration.state);
+        println!("Phase: {}", migration.phase);
+    }
+
+    Ok(())
 }
