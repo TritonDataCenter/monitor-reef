@@ -85,41 +85,44 @@ pub struct NetworkIpUpdateArgs {
 
 #[derive(Args, Clone)]
 pub struct NetworkCreateArgs {
-    /// Network name
-    #[arg(long, short)]
-    pub name: String,
-
-    /// VLAN ID for the fabric network
-    #[arg(long)]
+    /// VLAN ID for the fabric network (positional argument)
     pub vlan_id: u16,
 
-    /// Subnet in CIDR notation (e.g., 10.0.0.0/24)
-    #[arg(long)]
-    pub subnet: String,
-
-    /// Start of IP provisioning range
-    #[arg(long)]
-    pub provision_start: String,
-
-    /// End of IP provisioning range
-    #[arg(long)]
-    pub provision_end: String,
-
-    /// Gateway IP address
-    #[arg(long)]
-    pub gateway: Option<String>,
-
-    /// DNS resolvers (comma-separated or multiple flags)
-    #[arg(long)]
-    pub resolver: Option<Vec<String>>,
-
-    /// Enable internet NAT (allow instances to reach the internet)
-    #[arg(long)]
-    pub internet_nat: bool,
+    /// Network name
+    #[arg(long, short = 'n')]
+    pub name: String,
 
     /// Description
-    #[arg(long)]
+    #[arg(long, short = 'D')]
     pub description: Option<String>,
+
+    /// Subnet in CIDR notation (e.g., 10.0.0.0/24)
+    #[arg(long, short = 's')]
+    pub subnet: String,
+
+    /// First assignable IP address on the network
+    #[arg(long = "start-ip", short = 'S', visible_alias = "provision-start")]
+    pub start_ip: String,
+
+    /// Last assignable IP address on the network
+    #[arg(long = "end-ip", short = 'E', visible_alias = "provision-end")]
+    pub end_ip: String,
+
+    /// Default gateway IP address
+    #[arg(long, short = 'g')]
+    pub gateway: Option<String>,
+
+    /// DNS resolver IP address (can be specified multiple times)
+    #[arg(long, short = 'r')]
+    pub resolver: Option<Vec<String>>,
+
+    /// Static route in SUBNET=IP format (can be specified multiple times)
+    #[arg(long, short = 'R')]
+    pub route: Option<Vec<String>>,
+
+    /// Disable internet NAT (no NAT zone on gateway)
+    #[arg(long = "no-nat", short = 'x')]
+    pub no_nat: bool,
 }
 
 #[derive(Args, Clone)]
@@ -270,16 +273,30 @@ async fn create_network(
             .collect()
     });
 
+    // Parse routes from SUBNET=IP format into a JSON object
+    let routes = args.route.map(|route_list| {
+        let mut route_map = serde_json::Map::new();
+        for route in route_list {
+            if let Some((subnet, gateway)) = route.split_once('=') {
+                route_map.insert(
+                    subnet.to_string(),
+                    serde_json::Value::String(gateway.to_string()),
+                );
+            }
+        }
+        serde_json::Value::Object(route_map)
+    });
+
     let request = cloudapi_client::types::CreateFabricNetworkRequest {
         name: args.name.clone(),
         description: args.description,
         subnet: args.subnet,
-        provision_start_ip: args.provision_start,
-        provision_end_ip: args.provision_end,
+        provision_start_ip: args.start_ip,
+        provision_end_ip: args.end_ip,
         gateway: args.gateway,
         resolvers,
-        routes: None,
-        internet_nat: if args.internet_nat { Some(true) } else { None },
+        routes,
+        internet_nat: if args.no_nat { Some(false) } else { None },
     };
 
     let response = client

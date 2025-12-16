@@ -38,14 +38,15 @@ pub struct VlanGetArgs {
 
 #[derive(Args, Clone)]
 pub struct VlanCreateArgs {
-    /// VLAN ID (1-4095)
-    #[arg(long)]
+    /// VLAN ID (1-4095) - positional argument
     pub vlan_id: u16,
+
     /// VLAN name
-    #[arg(long)]
+    #[arg(long, short = 'n')]
     pub name: String,
+
     /// Description
-    #[arg(long)]
+    #[arg(long, short = 'D')]
     pub description: Option<String>,
 }
 

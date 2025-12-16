@@ -451,7 +451,7 @@ fn get_image_field_value(img: &Image, field: &str) -> String {
         "published" | "published_at" => format_published(&img.published_at),
         "size" | "image_size" => img
             .image_size
-            .map(|s| format_size(s))
+            .map(format_size)
             .unwrap_or_else(|| "-".to_string()),
         "homepage" => img.homepage.clone().unwrap_or_else(|| "-".to_string()),
         "eula" => img.eula.clone().unwrap_or_else(|| "-".to_string()),

@@ -36,18 +36,37 @@ pub struct VolumeGetArgs {
 
 #[derive(Args, Clone)]
 pub struct VolumeCreateArgs {
-    /// Volume name
-    #[arg(long)]
-    pub name: String,
-    /// Volume size in MB (e.g., 10240 for 10GB)
-    #[arg(long)]
-    pub size: i64,
-    /// Volume type
-    #[arg(long, default_value = "tritonnfs")]
+    /// Volume name (optional, generated server-side if not provided)
+    #[arg(long, short = 'n')]
+    pub name: Option<String>,
+
+    /// Volume size in gibibytes (e.g., "20G") or megabytes (e.g., 10240)
+    #[arg(long, short = 's')]
+    pub size: Option<String>,
+
+    /// Volume type (default: tritonnfs)
+    #[arg(long, short = 't', default_value = "tritonnfs")]
     pub r#type: String,
-    /// Network ID(s)
-    #[arg(long)]
-    pub network: Option<Vec<String>>,
+
+    /// Network ID, name, or short ID (uses default fabric network if not specified)
+    #[arg(long, short = 'N')]
+    pub network: Option<String>,
+
+    /// Tags in key=value format (can be specified multiple times)
+    #[arg(long = "tag")]
+    pub tags: Option<Vec<String>>,
+
+    /// Affinity rules for server selection (can be specified multiple times)
+    #[arg(long, short = 'a')]
+    pub affinity: Option<Vec<String>>,
+
+    /// Wait for creation to complete (use multiple times for spinner)
+    #[arg(long, short = 'w', action = clap::ArgAction::Count)]
+    pub wait: u8,
+
+    /// Timeout in seconds when waiting
+    #[arg(long = "wait-timeout")]
+    pub wait_timeout: Option<u64>,
 }
 
 #[derive(Args, Clone)]
@@ -135,17 +154,93 @@ async fn get_volume(args: VolumeGetArgs, client: &TypedClient, use_json: bool) -
     Ok(())
 }
 
+/// Parse volume size from string, supporting GiB format ("20G") or plain MB
+fn parse_volume_size(size_str: &str) -> Result<u64> {
+    // Check for GiB format (e.g., "20G")
+    if let Some(gib_str) = size_str.strip_suffix('G') {
+        let gib: u64 = gib_str
+            .parse()
+            .map_err(|_| anyhow::anyhow!("Invalid size format: {}", size_str))?;
+        if gib == 0 {
+            return Err(anyhow::anyhow!("Size must be greater than 0"));
+        }
+        // 1 GiB = 1024 MiB
+        Ok(gib * 1024)
+    } else {
+        // Plain MB format
+        size_str
+            .parse()
+            .map_err(|_| anyhow::anyhow!("Invalid size format: {}", size_str))
+    }
+}
+
+/// Parse tags from key=value format into a serde_json Map
+fn parse_tags(tag_list: &[String]) -> serde_json::Map<String, serde_json::Value> {
+    let mut tags = serde_json::Map::new();
+    for tag in tag_list {
+        if let Some((key, value)) = tag.split_once('=') {
+            // Try to parse as bool or number, otherwise use string
+            let json_value = if value == "true" {
+                serde_json::Value::Bool(true)
+            } else if value == "false" {
+                serde_json::Value::Bool(false)
+            } else if let Ok(num) = value.parse::<i64>() {
+                serde_json::Value::Number(num.into())
+            } else if let Ok(num) = value.parse::<f64>() {
+                serde_json::json!(num)
+            } else {
+                serde_json::Value::String(value.to_string())
+            };
+            tags.insert(key.to_string(), json_value);
+        }
+    }
+    tags
+}
+
 async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
 
-    let networks = args.network.clone();
+    // Warn about affinity if specified (not currently supported by API)
+    if args.affinity.is_some() {
+        eprintln!("Warning: --affinity option is not currently supported by the API");
+    }
+
+    // Parse size
+    let size = if let Some(size_str) = &args.size {
+        parse_volume_size(size_str)?
+    } else {
+        // Use smallest available size (default behavior per node-triton)
+        let sizes_response = client
+            .inner()
+            .list_volume_sizes()
+            .account(account)
+            .send()
+            .await?;
+        let sizes = sizes_response.into_inner();
+        sizes
+            .iter()
+            .map(|s| s.size * 1024) // Convert GB to MB
+            .min()
+            .unwrap_or(10 * 1024) // Fallback to 10 GB
+    };
+
+    // Handle network - resolve name/shortid to UUID if provided
+    let networks = if let Some(net) = &args.network {
+        let network_id = crate::commands::network::resolve_network(net, client).await?;
+        Some(vec![network_id])
+    } else {
+        None
+    };
+
+    // Parse tags
+    let tags = args.tags.as_ref().map(|t| parse_tags(t));
 
     let request = cloudapi_client::types::CreateVolumeRequest {
-        name: Some(args.name.clone()),
+        name: args.name.clone(),
         type_: Some(args.r#type.clone()),
-        size: args.size as u64,
+        size,
         networks,
-        tags: None,
+        tags,
     };
 
     let response = client
@@ -157,18 +252,90 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
         .await?;
     let volume = response.into_inner();
 
-    println!(
-        "Created volume {} ({}) - {} MB",
-        volume.name,
-        &volume.id.to_string()[..8],
-        volume.size
-    );
+    let should_wait = args.wait > 0;
+    let wait_timeout = args.wait_timeout.unwrap_or(300); // Default 5 minutes
 
-    if use_json {
-        json::print_json(&volume)?;
+    if should_wait {
+        println!(
+            "Creating volume {} ({})...",
+            volume.name,
+            &volume.id.to_string()[..8]
+        );
+
+        let final_volume =
+            wait_for_volume_ready(&volume.id.to_string(), client, wait_timeout).await?;
+
+        if use_json {
+            json::print_json(&final_volume)?;
+        } else {
+            let state = format!("{:?}", final_volume.state).to_lowercase();
+            if state == "ready" {
+                println!(
+                    "Created volume {} ({}) - {} MB",
+                    final_volume.name,
+                    &final_volume.id.to_string()[..8],
+                    final_volume.size
+                );
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Failed to create volume {} ({})",
+                    final_volume.name,
+                    final_volume.id
+                ));
+            }
+        }
+    } else {
+        println!(
+            "Creating volume {} ({}) - {} MB",
+            volume.name,
+            &volume.id.to_string()[..8],
+            volume.size
+        );
+
+        if use_json {
+            json::print_json(&volume)?;
+        }
     }
 
     Ok(())
+}
+
+async fn wait_for_volume_ready(
+    volume_id: &str,
+    client: &TypedClient,
+    timeout_secs: u64,
+) -> Result<cloudapi_client::types::Volume> {
+    use std::time::{Duration, Instant};
+    use tokio::time::sleep;
+
+    let account = &client.auth_config().account;
+    let start = Instant::now();
+    let timeout = Duration::from_secs(timeout_secs);
+
+    loop {
+        let response = client
+            .inner()
+            .get_volume()
+            .account(account)
+            .id(volume_id)
+            .send()
+            .await?;
+
+        let volume = response.into_inner();
+        let state = format!("{:?}", volume.state).to_lowercase();
+
+        if state == "ready" || state == "failed" {
+            return Ok(volume);
+        }
+
+        if start.elapsed() > timeout {
+            return Err(anyhow::anyhow!(
+                "Timeout waiting for volume to become ready"
+            ));
+        }
+
+        sleep(Duration::from_secs(2)).await;
+    }
 }
 
 async fn delete_volumes(args: VolumeDeleteArgs, client: &TypedClient) -> Result<()> {

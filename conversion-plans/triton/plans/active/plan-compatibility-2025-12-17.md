@@ -97,24 +97,24 @@ Copyright 2025 Edgecast Cloud LLC.
 
 | Item | Description | Status |
 |------|-------------|--------|
-| Support positional VLAN_ID | For network/vlan create | [ ] |
-| Add `-D` short form | Description | [ ] |
-| Add `-s` short form | Subnet | [ ] |
-| Rename `--provision_start` → `--start-ip` | With `-S` short form | [ ] |
-| Rename `--provision_end` → `--end-ip` | With `-E` short form | [ ] |
-| Add `-g` short form | Gateway | [ ] |
-| Add `-R/--route` | Static routes | [ ] |
-| Change `--internet_nat` → `--no-nat` | With `-x` short form | [ ] |
-| Add `-n` short form | Name for volume/vlan | [ ] |
-| Add `-t` short form | Type for volume | [ ] |
-| Support GiB size format | "20G" instead of MB only | [ ] |
-| Add `-N` short form | Network for volume | [ ] |
-| Add `--tag` | Tags for volume create | [ ] |
-| Add `-a/--affinity` | Affinity rules for volume | [ ] |
-| Add `-w/--wait` | Wait for volume creation | [ ] |
-| Add `--wait-timeout` | Wait timeout for volume | [ ] |
+| Support positional VLAN_ID | For network/vlan create | [x] |
+| Add `-D` short form | Description | [x] |
+| Add `-s` short form | Subnet | [x] |
+| Rename `--provision_start` → `--start-ip` | With `-S` short form | [x] |
+| Rename `--provision_end` → `--end-ip` | With `-E` short form | [x] |
+| Add `-g` short form | Gateway | [x] |
+| Add `-R/--route` | Static routes | [x] |
+| Change `--internet_nat` → `--no-nat` | With `-x` short form | [x] |
+| Add `-n` short form | Name for volume/vlan | [x] |
+| Add `-t` short form | Type for volume | [x] |
+| Support GiB size format | "20G" instead of MB only | [x] |
+| Add `-N` short form | Network for volume | [x] |
+| Add `--tag` | Tags for volume create | [x] |
+| Add `-a/--affinity` | Affinity rules for volume | [x] |
+| Add `-w/--wait` | Wait for volume creation | [x] |
+| Add `--wait-timeout` | Wait timeout for volume | [x] |
 
-**Files:** `cli/triton-cli/src/commands/network/`, `cli/triton-cli/src/commands/vlan/`, `cli/triton-cli/src/commands/volume/`
+**Files:** `cli/triton-cli/src/commands/network.rs`, `cli/triton-cli/src/commands/vlan.rs`, `cli/triton-cli/src/commands/volume.rs`
 
 ---
 
