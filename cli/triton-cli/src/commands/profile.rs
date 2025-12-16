@@ -51,6 +51,9 @@ pub enum ProfileCommand {
         /// Skip TLS verification
         #[arg(long)]
         insecure: bool,
+        /// Create profile from JSON file (use '-' for stdin)
+        #[arg(short = 'f', long = "file", conflicts_with_all = ["name", "url", "account", "key_id"])]
+        file: Option<PathBuf>,
     },
 
     /// Edit an existing profile
@@ -121,7 +124,8 @@ impl ProfileCommand {
                 account,
                 key_id,
                 insecure,
-            } => create_profile(name, url, account, key_id, insecure),
+                file,
+            } => create_profile(name, url, account, key_id, insecure, file),
             Self::Edit { name } => edit_profile(&name),
             Self::Delete { names, force } => delete_profiles(&names, force),
             Self::SetCurrent { name } => set_current_profile(&name),
@@ -223,7 +227,50 @@ fn create_profile(
     account: Option<String>,
     key_id: Option<String>,
     insecure: bool,
+    file: Option<PathBuf>,
 ) -> Result<()> {
+    // If file is provided, create from file/stdin
+    if let Some(file_path) = file {
+        use std::io::Read;
+
+        let content = if file_path.as_os_str() == "-" {
+            let mut buffer = String::new();
+            std::io::stdin().read_to_string(&mut buffer)?;
+            buffer
+        } else {
+            fs::read_to_string(&file_path).map_err(|e| {
+                anyhow::anyhow!("Failed to read profile file '{}': {}", file_path.display(), e)
+            })?
+        };
+
+        let profile: Profile = serde_json::from_str(&content).map_err(|e| {
+            anyhow::anyhow!("Failed to parse profile JSON: {}", e)
+        })?;
+
+        // Check if profile already exists
+        if Profile::list_all()?.contains(&profile.name) {
+            return Err(anyhow::anyhow!("Profile '{}' already exists", profile.name));
+        }
+
+        let profile_name = profile.name.clone();
+        profile.save()?;
+        println!("Created profile '{}' from file", profile_name);
+
+        // Ask if this should be the current profile
+        if Confirm::new()
+            .with_prompt("Set as current profile?")
+            .default(true)
+            .interact()?
+        {
+            let mut config = Config::load()?;
+            config.set_current_profile(&profile_name);
+            config.save()?;
+            println!("Set '{}' as current profile", profile_name);
+        }
+
+        return Ok(());
+    }
+
     // Interactive prompts for missing values
     let name = match name {
         Some(n) => n,

@@ -9,6 +9,7 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
+use std::path::PathBuf;
 
 use crate::output::json;
 
@@ -24,6 +25,12 @@ pub enum AccountCommand {
 
 #[derive(Args, Clone)]
 pub struct AccountUpdateArgs {
+    /// Field updates in KEY=VALUE format (e.g., email=new@example.com)
+    #[arg(value_name = "FIELD=VALUE")]
+    pub fields: Vec<String>,
+    /// Update account from JSON file
+    #[arg(short = 'f', long = "file", conflicts_with_all = ["email", "given_name", "surname", "company_name", "phone", "fields"])]
+    pub file: Option<PathBuf>,
     /// New email
     #[arg(long)]
     pub email: Option<String>,
@@ -122,12 +129,71 @@ async fn update_account(
 ) -> Result<()> {
     let account = &client.auth_config().account;
 
+    // Handle file-based input
+    if let Some(file_path) = &args.file {
+        let content = std::fs::read_to_string(file_path).map_err(|e| {
+            anyhow::anyhow!("Failed to read file '{}': {}", file_path.display(), e)
+        })?;
+
+        let request: cloudapi_client::types::UpdateAccountRequest =
+            serde_json::from_str(&content).map_err(|e| {
+                anyhow::anyhow!("Failed to parse JSON: {}", e)
+            })?;
+
+        let response = client
+            .inner()
+            .update_account()
+            .account(account)
+            .body(request)
+            .send()
+            .await?;
+        let acc = response.into_inner();
+
+        println!("Account updated from file");
+
+        if use_json {
+            json::print_json(&acc)?;
+        }
+
+        return Ok(());
+    }
+
+    // Start with CLI flag values
+    let mut email = args.email.clone();
+    let mut given_name = args.given_name.clone();
+    let mut surname = args.surname.clone();
+    let mut company_name = args.company_name.clone();
+    let mut phone = args.phone.clone();
+
+    // Parse FIELD=VALUE arguments
+    for field in &args.fields {
+        if let Some((key, value)) = field.split_once('=') {
+            match key {
+                "email" => email = Some(value.to_string()),
+                "givenName" | "given_name" | "firstName" | "first_name" => {
+                    given_name = Some(value.to_string())
+                }
+                "sn" | "surname" | "lastName" | "last_name" => surname = Some(value.to_string()),
+                "company" | "companyName" | "company_name" => {
+                    company_name = Some(value.to_string())
+                }
+                "phone" => phone = Some(value.to_string()),
+                _ => return Err(anyhow::anyhow!("Unknown field: {}", key)),
+            }
+        } else {
+            return Err(anyhow::anyhow!(
+                "Invalid field format '{}', expected KEY=VALUE",
+                field
+            ));
+        }
+    }
+
     let request = cloudapi_client::types::UpdateAccountRequest {
-        email: args.email.clone(),
-        first_name: args.given_name.clone(),
-        last_name: args.surname.clone(),
-        company_name: args.company_name.clone(),
-        phone: args.phone.clone(),
+        email,
+        first_name: given_name,
+        last_name: surname,
+        company_name,
+        phone,
         address: None,
         postal_code: None,
         city: None,

@@ -34,13 +34,13 @@ Copyright 2025 Edgecast Cloud LLC.
 
 | Item | Description | Status |
 |------|-------------|--------|
-| Add `-u/--user` | RBAC user login name | [ ] |
-| Add `-r/--role` | RBAC role assumption | [ ] |
-| Add `-i/--insecure` | Skip TLS certificate validation | [ ] |
-| Add `--act-as` | Masquerade as another account | [ ] |
-| Add `--accept-version` | CloudAPI version header (hidden) | [ ] |
+| Add `-u/--user` | RBAC user login name | [x] |
+| Add `-r/--role` | RBAC role assumption | [x] |
+| Add `-i/--insecure` | Skip TLS certificate validation | [x] |
+| Add `--act-as` | Masquerade as another account | [x] |
+| Add `--accept-version` | CloudAPI version header (hidden) | [x] |
 
-**Files:** `cli/triton-cli/src/main.rs`, `cli/triton-cli/src/config/`
+**Files:** `cli/triton-cli/src/main.rs`, `libs/triton-auth/src/lib.rs`, `clients/internal/cloudapi-client/src/auth.rs`
 
 ---
 
@@ -48,13 +48,13 @@ Copyright 2025 Edgecast Cloud LLC.
 
 | Item | Description | Status |
 |------|-------------|--------|
-| `profile create -f FILE` | Create profile from JSON file | [ ] |
-| `profile create -f -` | Create profile from stdin | [ ] |
-| `account update -f FILE` | Update account from JSON file | [ ] |
-| `rbac apply -f FILE` | Apply RBAC config from file | [ ] |
-| `FIELD=VALUE` syntax | For `account update email=foo@bar.com` | [ ] |
+| `profile create -f FILE` | Create profile from JSON file | [x] |
+| `profile create -f -` | Create profile from stdin | [x] |
+| `account update -f FILE` | Update account from JSON file | [x] |
+| `rbac apply -f FILE` | Apply RBAC config from file | [x] (pre-existing) |
+| `FIELD=VALUE` syntax | For `account update email=foo@bar.com` | [x] |
 
-**Files:** `cli/triton-cli/src/commands/profile/`, `cli/triton-cli/src/commands/account/`, `cli/triton-cli/src/commands/rbac/`
+**Files:** `cli/triton-cli/src/commands/profile.rs`, `cli/triton-cli/src/commands/account.rs`, `cli/triton-cli/src/commands/rbac.rs`
 
 ---
 

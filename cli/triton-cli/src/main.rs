@@ -53,6 +53,26 @@ struct Cli {
     #[arg(short, long)]
     verbose: bool,
 
+    /// RBAC sub-user login name
+    #[arg(short = 'u', long = "user", env = "TRITON_RBAC_USER")]
+    user: Option<String>,
+
+    /// RBAC role(s) to assume (can be repeated)
+    #[arg(short = 'r', long = "role", env = "TRITON_RBAC_ROLE")]
+    role: Vec<String>,
+
+    /// Skip TLS certificate validation (insecure)
+    #[arg(short = 'i', long = "insecure", env = "TRITON_TLS_INSECURE")]
+    insecure: bool,
+
+    /// Act as another account (operator only)
+    #[arg(long = "act-as")]
+    act_as: Option<String>,
+
+    /// CloudAPI version to request
+    #[arg(long = "accept-version", hide = true)]
+    accept_version: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -260,12 +280,27 @@ impl Cli {
         if let (Some(url), Some(account), Some(key_id)) =
             (url.clone(), account.clone(), key_id.clone())
         {
-            let auth_config = triton_auth::AuthConfig::new(
+            let mut auth_config = triton_auth::AuthConfig::new(
                 account,
                 key_id.clone(),
                 triton_auth::KeySource::auto(&key_id),
             );
-            return Ok(TypedClient::new(&url, auth_config));
+
+            // Apply RBAC options from CLI
+            if let Some(user) = &self.user {
+                auth_config = auth_config.with_user(user.clone());
+            }
+            if !self.role.is_empty() {
+                auth_config = auth_config.with_roles(self.role.clone());
+            }
+            if let Some(act_as) = &self.act_as {
+                auth_config = auth_config.with_act_as(act_as.clone());
+            }
+            if let Some(version) = &self.accept_version {
+                auth_config = auth_config.with_accept_version(version.clone());
+            }
+
+            return Ok(TypedClient::new_with_insecure(&url, auth_config, self.insecure));
         }
 
         // Otherwise, load from profile
@@ -293,14 +328,26 @@ impl Cli {
             triton_auth::KeySource::auto(&final_key_id),
         );
 
-        if let Some(user) = &profile.user {
+        // Apply RBAC options: CLI overrides profile
+        if let Some(user) = self.user.as_ref().or(profile.user.as_ref()) {
             auth_config = auth_config.with_user(user.clone());
         }
-        if let Some(roles) = &profile.roles {
+        if !self.role.is_empty() {
+            auth_config = auth_config.with_roles(self.role.clone());
+        } else if let Some(roles) = &profile.roles {
             auth_config = auth_config.with_roles(roles.clone());
         }
+        if let Some(act_as) = self.act_as.as_ref().or(profile.act_as_account.as_ref()) {
+            auth_config = auth_config.with_act_as(act_as.clone());
+        }
+        if let Some(version) = &self.accept_version {
+            auth_config = auth_config.with_accept_version(version.clone());
+        }
 
-        Ok(TypedClient::new(&final_url, auth_config))
+        // Insecure mode: CLI flag or profile setting
+        let insecure = self.insecure || profile.insecure;
+
+        Ok(TypedClient::new_with_insecure(&final_url, auth_config, insecure))
     }
 }
 

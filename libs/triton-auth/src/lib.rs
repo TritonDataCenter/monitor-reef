@@ -105,6 +105,10 @@ pub struct AuthConfig {
     pub key_source: KeySource,
     /// RBAC roles to assume (optional, added as query param)
     pub roles: Option<Vec<String>>,
+    /// Masquerade as another account (operator only)
+    pub act_as: Option<String>,
+    /// CloudAPI version to request
+    pub accept_version: Option<String>,
 }
 
 impl AuthConfig {
@@ -129,6 +133,8 @@ impl AuthConfig {
             key_id: key_id.into(),
             key_source,
             roles: None,
+            act_as: None,
+            accept_version: None,
         }
     }
 
@@ -141,6 +147,18 @@ impl AuthConfig {
     /// Set RBAC roles for this configuration
     pub fn with_roles(mut self, roles: Vec<String>) -> Self {
         self.roles = Some(roles);
+        self
+    }
+
+    /// Set act-as account for operator masquerading
+    pub fn with_act_as(mut self, act_as: impl Into<String>) -> Self {
+        self.act_as = Some(act_as.into());
+        self
+    }
+
+    /// Set Accept-Version header value
+    pub fn with_accept_version(mut self, version: impl Into<String>) -> Self {
+        self.accept_version = Some(version.into());
         self
     }
 }

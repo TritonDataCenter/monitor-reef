@@ -32,26 +32,54 @@ pub async fn add_auth_headers(
     // Sign the request using triton-auth
     let (date_header, auth_header) = triton_auth::sign_request(auth_config, method, path).await?;
 
-    // Add headers
-    let headers = request.headers_mut();
-    headers.insert(
-        reqwest::header::DATE,
-        date_header.parse().map_err(|e| {
-            Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Invalid date header: {}", e),
-            )) as Box<dyn std::error::Error + Send + Sync>
-        })?,
-    );
-    headers.insert(
-        reqwest::header::AUTHORIZATION,
-        auth_header.parse().map_err(|e| {
-            Box::new(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!("Invalid authorization header: {}", e),
-            )) as Box<dyn std::error::Error + Send + Sync>
-        })?,
-    );
+    // Add headers (in a scope to release the mutable borrow before URL modification)
+    {
+        let headers = request.headers_mut();
+        headers.insert(
+            reqwest::header::DATE,
+            date_header.parse().map_err(|e| {
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Invalid date header: {}", e),
+                )) as Box<dyn std::error::Error + Send + Sync>
+            })?,
+        );
+        headers.insert(
+            reqwest::header::AUTHORIZATION,
+            auth_header.parse().map_err(|e| {
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("Invalid authorization header: {}", e),
+                )) as Box<dyn std::error::Error + Send + Sync>
+            })?,
+        );
+
+        // Add X-Act-As header if present (for operator masquerading)
+        if let Some(act_as) = &auth_config.act_as {
+            headers.insert(
+                reqwest::header::HeaderName::from_static("x-act-as"),
+                act_as.parse().map_err(|e| {
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Invalid x-act-as header: {}", e),
+                    )) as Box<dyn std::error::Error + Send + Sync>
+                })?,
+            );
+        }
+
+        // Add Accept-Version header if present (for API versioning)
+        if let Some(version) = &auth_config.accept_version {
+            headers.insert(
+                reqwest::header::HeaderName::from_static("accept-version"),
+                version.parse().map_err(|e| {
+                    Box::new(std::io::Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        format!("Invalid accept-version header: {}", e),
+                    )) as Box<dyn std::error::Error + Send + Sync>
+                })?,
+            );
+        }
+    }
 
     // Add RBAC roles as query parameter if present
     if let Some(roles) = &auth_config.roles

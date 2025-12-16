@@ -268,6 +268,23 @@ impl TypedClient {
         }
     }
 
+    /// Create a new typed client with optional TLS certificate validation bypass
+    ///
+    /// # Arguments
+    /// * `base_url` - CloudAPI base URL (e.g., "https://cloudapi.example.com")
+    /// * `auth_config` - Authentication configuration
+    /// * `insecure` - If true, skip TLS certificate validation (use with caution)
+    pub fn new_with_insecure(base_url: &str, auth_config: AuthConfig, insecure: bool) -> Self {
+        let http_client = reqwest::Client::builder()
+            .danger_accept_invalid_certs(insecure)
+            .build()
+            .expect("Failed to build HTTP client");
+        Self {
+            inner: Client::new_with_client(base_url, http_client, auth_config.clone()),
+            auth_config,
+        }
+    }
+
     /// Access the underlying Progenitor client for non-wrapped methods
     pub fn inner(&self) -> &Client {
         &self.inner
