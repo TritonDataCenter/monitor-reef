@@ -64,12 +64,16 @@ triton-rust-monorepo/
 Follow this workflow for all code changes to maintain a clean, auditable history:
 
 1. **Make changes** - Implement a single, focused change (one feature, one bug fix, one refactor)
-2. **Test thoroughly** - Run all relevant tests before committing
+2. **Format code** - Run formatter before testing to catch any formatting issues
+   ```bash
+   make format
+   ```
+3. **Test thoroughly** - Run all relevant tests before committing
    ```bash
    make package-test PACKAGE=<your-package>
    make package-build PACKAGE=<your-package>
    ```
-3. **Run security audit** - Check for known vulnerabilities in dependencies
+4. **Run security audit** - Check for known vulnerabilities in dependencies
    ```bash
    # Run before each commit
    make audit
@@ -78,8 +82,8 @@ Follow this workflow for all code changes to maintain a clean, auditable history
    make audit-update
    ```
    Review any warnings/errors and address them before committing.
-4. **Update documentation** - Ensure docs reflect your changes (inline comments, README, API docs)
-5. **Create atomic commit** - Commit only the changes related to this single logical change
+5. **Update documentation** - Ensure docs reflect your changes (inline comments, README, API docs)
+6. **Create atomic commit** - Commit only the changes related to this single logical change
    ```bash
    git add <relevant-files>
    git commit -m "Brief description of single change"
