@@ -8,6 +8,7 @@
 
 pub mod account;
 pub mod changefeed;
+pub mod cloudapi;
 pub mod datacenters;
 pub mod env;
 pub mod fwrule;

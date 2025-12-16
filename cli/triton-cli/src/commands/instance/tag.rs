@@ -99,7 +99,7 @@ impl TagCommand {
     }
 }
 
-async fn list_tags(args: TagListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+pub async fn list_tags(args: TagListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = &client.auth_config().account;
 

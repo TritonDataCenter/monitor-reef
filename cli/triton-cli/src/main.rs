@@ -210,6 +210,22 @@ enum Commands {
     /// Get instance IP (shortcut for 'instance ip')
     Ip(commands::instance::get::IpArgs),
 
+    /// List instance disks (shortcut for 'instance disk list')
+    Disks(commands::instance::disk::DiskListArgs),
+
+    /// List instance snapshots (shortcut for 'instance snapshot list')
+    Snapshots(commands::instance::snapshot::SnapshotListArgs),
+
+    /// List instance tags (shortcut for 'instance tag list')
+    Tags(commands::instance::tag::TagListArgs),
+
+    /// List instance metadata (shortcut for 'instance metadata list')
+    #[command(alias = "metadata")]
+    Metadatas(commands::instance::metadata::MetadataListArgs),
+
+    /// List instance NICs (shortcut for 'instance nic list')
+    Nics(commands::instance::nic::NicListArgs),
+
     /// Generate shell completions
     Completion {
         /// Shell to generate completions for
@@ -220,6 +236,10 @@ enum Commands {
     /// Badger don't care
     #[command(hide = true)]
     Badger,
+
+    /// Make raw authenticated API requests to CloudAPI
+    #[command(hide = true)]
+    Cloudapi(commands::cloudapi::CloudApiArgs),
 }
 
 impl Cli {
@@ -431,6 +451,26 @@ async fn main() -> Result<()> {
             let client = cli.build_client()?;
             commands::instance::get::ip(args.clone(), &client).await
         }
+        Commands::Disks(args) => {
+            let client = cli.build_client()?;
+            commands::instance::disk::list_disks(args.clone(), &client, cli.json).await
+        }
+        Commands::Snapshots(args) => {
+            let client = cli.build_client()?;
+            commands::instance::snapshot::list_snapshots(args.clone(), &client, cli.json).await
+        }
+        Commands::Tags(args) => {
+            let client = cli.build_client()?;
+            commands::instance::tag::list_tags(args.clone(), &client, cli.json).await
+        }
+        Commands::Metadatas(args) => {
+            let client = cli.build_client()?;
+            commands::instance::metadata::list_metadata(args.clone(), &client, cli.json).await
+        }
+        Commands::Nics(args) => {
+            let client = cli.build_client()?;
+            commands::instance::nic::list_nics(args.clone(), &client, cli.json).await
+        }
         Commands::Completion { shell } => {
             let mut cmd = Cli::command();
             let name = cmd.get_name().to_string();
@@ -440,6 +480,10 @@ async fn main() -> Result<()> {
         Commands::Badger => {
             print!("{}", include_str!("../assets/badger"));
             Ok(())
+        }
+        Commands::Cloudapi(args) => {
+            let client = cli.build_client()?;
+            commands::cloudapi::run(args.clone(), &client).await
         }
     }
 }

@@ -92,7 +92,7 @@ impl SnapshotCommand {
     }
 }
 
-async fn list_snapshots(
+pub async fn list_snapshots(
     args: SnapshotListArgs,
     client: &TypedClient,
     use_json: bool,

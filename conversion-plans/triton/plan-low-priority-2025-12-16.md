@@ -9,7 +9,7 @@ Copyright 2025 Edgecast Cloud LLC.
 # Triton CLI Lower Priority Implementation Plan
 
 **Date:** 2025-12-16
-**Status:** In Progress
+**Status:** ✅ COMPLETE
 **Source Reference:** comprehensive-validation-report-2025-12-16.md
 
 ## Overview
@@ -174,26 +174,23 @@ This plan covers P2 (Nice to Have) and P3 (Low Priority) features. These are not
 
 ---
 
-### 9. RBAC Role Tags Commands
+### 9. RBAC Role Tags Commands ✅ COMPLETED
 
 **Priority:** P2
 **Impact:** Cannot manage role tags on resources
 
 #### Implementation
-- Add `triton rbac role-tags` subcommand group
-- Resource-specific subcommands:
-  - `triton rbac instance-role-tags INSTANCE`
-  - `triton rbac image-role-tags IMAGE`
-  - `triton rbac network-role-tags NETWORK`
-  - `triton rbac package-role-tags PACKAGE`
+- Added `triton rbac role-tags` subcommand group (alias: `role-tag`)
+- Unified approach for all resource types via single command:
+  - `triton rbac role-tags set <type> <resource> <roles...>`
+  - `triton rbac role-tags add <type> <resource> <role>` (with warning)
+  - `triton rbac role-tags remove <type> <resource> <role>` (clears all, with warning)
+  - `triton rbac role-tags clear <type> <resource>`
+- Supported resource types: instance, image, network, package, key, fwrule, user, role, policy
+- Note: API only supports replace (PUT), not incremental add/remove
 
-#### API Methods Needed
-- `GET/PUT /my/machines/:id` (role_tags field)
-- Similar for images, networks, packages
-
-#### Files to Modify
-- [ ] `clients/internal/cloudapi-client/src/lib.rs` - Add role tag methods
-- [ ] `cli/triton-cli/src/commands/rbac.rs` - Add role-tags subcommands
+#### Files Modified
+- [x] `cli/triton-cli/src/commands/rbac.rs` - Add role-tags subcommands with unified interface
 
 ---
 
@@ -250,41 +247,51 @@ This plan covers P2 (Nice to Have) and P3 (Low Priority) features. These are not
 
 ## P3 Features - Low Priority
 
-### 1. Instance Shortcut Commands (Partially Complete)
+### 1. Instance Shortcut Commands ✅ COMPLETED
 
 **Priority:** P3
 **Impact:** Subcommands exist, just missing shortcuts
 
 #### Implementation
-Add shortcut commands that alias to instance subcommands:
+Added shortcut commands that alias to instance subcommands:
 - `triton disks INSTANCE` → `triton instance disk list INSTANCE`
 - `triton snapshots INSTANCE` → `triton instance snapshot list INSTANCE`
 - `triton tags INSTANCE` → `triton instance tag list INSTANCE`
-- `triton metadatas INSTANCE` → `triton instance metadata list INSTANCE`
+- `triton metadatas INSTANCE` (alias: `metadata`) → `triton instance metadata list INSTANCE`
+- `triton nics INSTANCE` → `triton instance nic list INSTANCE`
 
-#### Progress (2025-12-16)
-- [x] Added subcommand aliases: `instance disks`, `instance snapshots`, `instance tags`, `instance metadatas`, `instance nics`
-- [ ] Top-level shortcuts (`triton disks INSTANCE`) still needed
-
-#### Files to Modify
-- [ ] `cli/triton-cli/src/main.rs` - Add top-level shortcut commands
+#### Files Modified
+- [x] `cli/triton-cli/src/main.rs` - Add top-level shortcut commands
+- [x] `cli/triton-cli/src/commands/instance/disk.rs` - Make list_disks public
+- [x] `cli/triton-cli/src/commands/instance/snapshot.rs` - Make list_snapshots public
+- [x] `cli/triton-cli/src/commands/instance/tag.rs` - Make list_tags public
+- [x] `cli/triton-cli/src/commands/instance/metadata.rs` - Make list_metadata public
+- [x] `cli/triton-cli/src/commands/instance/nic.rs` - Make list_nics public
 
 ---
 
-### 2. CloudAPI Raw Command (Hidden)
+### 2. CloudAPI Raw Command (Hidden) ✅ COMPLETED
 
 **Priority:** P3
 **Impact:** Developer debugging tool
 
 #### Implementation
-- Add `triton cloudapi METHOD PATH [BODY]` command
-- Hidden from help (developer tool)
-- Make raw CloudAPI requests
-- Useful for debugging/testing
+- Added `triton cloudapi PATH [OPTIONS]` command
+- Hidden from help (`--hide = true`)
+- Options:
+  - `-m/--method GET|POST|PUT|DELETE|HEAD` (default: GET)
+  - `-b/--body BODY` or `--stdin` for request body
+  - `-H/--header KEY:VALUE` (repeatable) for custom headers
+  - `--show-headers` to display response headers
+  - `--pretty` for formatted JSON output (default: true)
+- Path substitution: `{account}` replaced with current account
+- Automatic authentication via HTTP Signature
+- Pretty-prints JSON responses
 
-#### Files to Modify
-- [ ] `cli/triton-cli/src/commands/cloudapi.rs` - New file
-- [ ] `cli/triton-cli/src/main.rs` - Wire up (hidden)
+#### Files Modified
+- [x] `cli/triton-cli/src/commands/cloudapi.rs` - New file
+- [x] `cli/triton-cli/src/commands/mod.rs` - Export module
+- [x] `cli/triton-cli/src/main.rs` - Wire up (hidden)
 
 ---
 
@@ -292,14 +299,14 @@ Add shortcut commands that alias to instance subcommands:
 
 These features are intentionally not planned:
 
-1. **`triton badger`** - Easter egg, not needed
-2. **Legacy `SDC_*` environment variables** - node-triton specific
+1. **`triton badger`** - Easter egg (but actually implemented as hidden command!)
+2. **Legacy `SDC_*` environment variables** - node-triton specific (though SDC_URL, SDC_ACCOUNT, SDC_KEY_ID are supported as fallbacks)
 
 ---
 
 ## Progress Summary
 
-### Completed (11/12 P2 features):
+### Completed (12/12 P2 features):
 1. ✅ RBAC info command
 2. ✅ Services command
 3. ✅ Image share/unshare commands
@@ -311,13 +318,14 @@ These features are intentionally not planned:
 9. ✅ Profile cmon-certgen
 10. ✅ Changefeed command
 11. ✅ RBAC apply/reset commands
+12. ✅ RBAC role tags commands
 
-### Remaining (1/12 P2 features):
-1. RBAC role tags commands
+### Remaining P2 features:
+None! All P2 features complete.
 
-### P3 features (0.5/2):
-1. Instance shortcut commands - **Partial**: subcommand aliases done, top-level shortcuts pending
-2. CloudAPI raw command - Not started
+### P3 features (2/2 complete):
+1. ✅ Instance shortcut commands (disks, snapshots, tags, metadatas, nics)
+2. ✅ CloudAPI raw command (hidden)
 
 ### Additional Improvements (2025-12-16)
 These items were identified during CLI compatibility analysis:
