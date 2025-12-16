@@ -74,6 +74,7 @@
 //! ```
 
 pub mod agent;
+pub mod certgen;
 pub mod error;
 pub mod fingerprint;
 pub mod key_loader;
@@ -81,6 +82,7 @@ pub mod legacy_pem;
 pub mod signature;
 pub mod ssh_agent;
 
+pub use certgen::{CertGenerator, CertPurpose, DEFAULT_CERT_LIFETIME_DAYS, GeneratedCert};
 pub use error::AuthError;
 pub use fingerprint::{
     Fingerprint, format_fingerprint, md5_fingerprint, parse_fingerprint, sha256_fingerprint,

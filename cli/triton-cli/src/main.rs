@@ -150,6 +150,9 @@ enum Commands {
     #[command(alias = "svcs")]
     Services,
 
+    /// Subscribe to VM change events
+    Changefeed(commands::changefeed::ChangefeedArgs),
+
     // =========================================================================
     // TOP-LEVEL SHORTCUTS
     // =========================================================================
@@ -336,6 +339,10 @@ async fn main() -> Result<()> {
         Commands::Services => {
             let client = cli.build_client()?;
             commands::services::run(&client, cli.json).await
+        }
+        Commands::Changefeed(args) => {
+            let client = cli.build_client()?;
+            commands::changefeed::run(args.clone(), &client, cli.json).await
         }
         Commands::Insts(args) => {
             let client = cli.build_client()?;

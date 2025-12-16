@@ -34,5 +34,12 @@ sec1 = { version = "0.7", features = ["pem"] }
 pem-rfc7468 = "0.7"
 signature = "2.2"
 
+# X.509 certificate generation for Docker/CMON setup
+rcgen = { version = "0.13", features = ["pem"] }
+x509-cert = { version = "0.2", features = ["pem", "builder"] }
+rand = "0.8"
+der = "0.7"
+time = "0.3"
+
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

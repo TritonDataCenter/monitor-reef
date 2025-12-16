@@ -36,11 +36,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
-    tungstenite::{
-        Message,
-        handshake::client::generate_key,
-        protocol::WebSocketConfig,
-    },
+    tungstenite::{Message, handshake::client::generate_key, protocol::WebSocketConfig},
 };
 
 use super::get::resolve_instance;

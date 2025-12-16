@@ -102,34 +102,41 @@ This plan covers P2 (Nice to Have) and P3 (Low Priority) features. These are not
 
 ---
 
-### 5. Profile Docker Setup
+### 5. Profile Docker Setup ✅ COMPLETED
 
 **Priority:** P2
 **Impact:** Cannot auto-setup Docker TLS certificates
 
 #### Implementation
-- Add `triton profile docker-setup` command
-- Generate Docker TLS certificates
-- Configure Docker environment
-- Store certs in `~/.triton/docker/`
+- Added `triton profile docker-setup` command
+- Generates Docker TLS certificates using ECDSA P-256
+- Verifies Docker service exists via CloudAPI
+- Downloads CA certificate from Docker host
+- Stores certs in `~/.triton/docker/<profile>/`
+- Creates setup.json with environment variables
 
-#### Files to Modify
-- [ ] `cli/triton-cli/src/commands/profile.rs` - Add docker-setup subcommand
+#### Files Modified
+- [x] `libs/triton-auth/src/certgen.rs` - New certificate generation module
+- [x] `libs/triton-auth/Cargo.toml` - Add rcgen, x509-cert, time dependencies
+- [x] `cli/triton-cli/src/commands/profile.rs` - Add docker-setup subcommand
 
 ---
 
-### 6. Profile CMON Certgen
+### 6. Profile CMON Certgen ✅ COMPLETED
 
 **Priority:** P2
 **Impact:** Cannot generate CMON certificates
 
 #### Implementation
-- Add `triton profile cmon-certgen` command
-- Generate CMON TLS certificates
-- Store certs in `~/.triton/cmon/`
+- Added `triton profile cmon-certgen` command
+- Generates CMON TLS certificates using ECDSA P-256
+- Verifies CMON service exists via CloudAPI
+- Writes certs to current working directory
+- Generates example Prometheus configuration file
 
-#### Files to Modify
-- [ ] `cli/triton-cli/src/commands/profile.rs` - Add cmon-certgen subcommand
+#### Files Modified
+- [x] `libs/triton-auth/src/certgen.rs` - Shared certificate generation module
+- [x] `cli/triton-cli/src/commands/profile.rs` - Add cmon-certgen subcommand
 
 ---
 
@@ -188,21 +195,22 @@ This plan covers P2 (Nice to Have) and P3 (Low Priority) features. These are not
 
 ---
 
-### 10. Changefeed Command
+### 10. Changefeed Command ✅ COMPLETED
 
 **Priority:** P2
 **Impact:** No real-time VM change events
 
 #### Implementation
-- Add `triton changefeed` command
-- WebSocket connection to CloudAPI changefeed
-- Stream VM state changes in real-time
-- Options: filter by instance, state, etc.
+- Added `triton changefeed` command
+- WebSocket connection to CloudAPI changefeed endpoint
+- Streams VM state changes in real-time with formatted output
+- Options: `--instances` to filter by specific instance UUIDs
+- Supports JSON output with `-j` flag
 
-#### Files to Modify
-- [ ] `clients/external/cloudapi-client/src/lib.rs` - Add WebSocket support
-- [ ] `cli/triton-cli/src/commands/changefeed.rs` - New file
-- [ ] `cli/triton-cli/src/main.rs` - Wire up command
+#### Files Modified
+- [x] `cli/triton-cli/src/commands/changefeed.rs` - New file
+- [x] `cli/triton-cli/src/commands/mod.rs` - Export module
+- [x] `cli/triton-cli/src/main.rs` - Wire up command
 
 ---
 
@@ -285,7 +293,7 @@ These features are intentionally not planned:
 
 ## Progress Summary
 
-### Completed (7/12 P2 features):
+### Completed (10/12 P2 features):
 1. ✅ RBAC info command
 2. ✅ Services command
 3. ✅ Image share/unshare commands
@@ -293,13 +301,13 @@ These features are intentionally not planned:
 5. ✅ Additional instance create options (all 5 flags)
 6. ✅ Snapshot start command (already existed as `boot`)
 7. ✅ Image tag command
+8. ✅ Profile docker-setup
+9. ✅ Profile cmon-certgen
+10. ✅ Changefeed command
 
-### Remaining (5/12 P2 features):
-1. Profile docker-setup
-2. Profile cmon-certgen
-3. RBAC apply/reset commands
-4. RBAC role tags commands
-5. Changefeed command
+### Remaining (2/12 P2 features):
+1. RBAC apply/reset commands
+2. RBAC role tags commands
 
 ### P3 features (0/2):
 1. Instance shortcut commands

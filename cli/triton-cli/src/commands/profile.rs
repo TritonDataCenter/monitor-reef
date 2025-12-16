@@ -6,11 +6,15 @@
 
 //! Profile management commands
 
-use crate::config::{Config, Profile};
+use crate::config::{Config, Profile, paths, resolve_profile};
 use crate::output::{json, table};
 use anyhow::Result;
 use clap::Subcommand;
+use cloudapi_client::{AuthConfig, KeySource, TypedClient};
 use dialoguer::{Confirm, Input};
+use std::fs;
+use std::path::PathBuf;
+use triton_auth::{CertGenerator, CertPurpose, DEFAULT_CERT_LIFETIME_DAYS};
 
 #[derive(Subcommand, Clone)]
 pub enum ProfileCommand {
@@ -70,6 +74,37 @@ pub enum ProfileCommand {
         /// Profile name (use '-' for previous)
         name: String,
     },
+
+    /// Setup Docker TLS certificates for this profile
+    ///
+    /// Generate client TLS certificates for authenticating with the Triton
+    /// Docker Engine. The certificates are stored in ~/.triton/docker/<profile>/
+    DockerSetup {
+        /// Profile name (defaults to current)
+        name: Option<String>,
+        /// Certificate lifetime in days (default: 3650 / 10 years)
+        #[arg(short = 't', long, default_value_t = DEFAULT_CERT_LIFETIME_DAYS)]
+        lifetime: u32,
+        /// Skip confirmation prompts
+        #[arg(short, long)]
+        yes: bool,
+    },
+
+    /// Generate CMON client certificates for this profile
+    ///
+    /// Generate client TLS certificates for authenticating with the Triton
+    /// Container Monitoring (CMON) service. The certificates are written to
+    /// the current working directory.
+    CmonCertgen {
+        /// Profile name (defaults to current)
+        name: Option<String>,
+        /// Certificate lifetime in days (default: 3650 / 10 years)
+        #[arg(short = 't', long, default_value_t = DEFAULT_CERT_LIFETIME_DAYS)]
+        lifetime: u32,
+        /// Skip confirmation prompts
+        #[arg(short, long)]
+        yes: bool,
+    },
 }
 
 impl ProfileCommand {
@@ -90,12 +125,22 @@ impl ProfileCommand {
             Self::Edit { name } => edit_profile(&name),
             Self::Delete { names, force } => delete_profiles(&names, force),
             Self::SetCurrent { name } => set_current_profile(&name),
+            Self::DockerSetup {
+                name,
+                lifetime,
+                yes,
+            } => docker_setup(name, lifetime, yes).await,
+            Self::CmonCertgen {
+                name,
+                lifetime,
+                yes,
+            } => cmon_certgen(name, lifetime, yes).await,
         }
     }
 }
 
 fn list_profiles(use_json: bool) -> Result<()> {
-    use crate::config::{env_profile, resolve_profile};
+    use crate::config::env_profile;
 
     let saved_profiles = Profile::list_all()?;
 
@@ -300,5 +345,294 @@ fn set_current_profile(name: &str) -> Result<()> {
     config.set_current_profile(&name);
     config.save()?;
     println!("Current profile: {}", name);
+    Ok(())
+}
+
+/// Setup Docker TLS certificates for a profile
+async fn docker_setup(name: Option<String>, lifetime: u32, yes: bool) -> Result<()> {
+    // Resolve the profile
+    let profile = resolve_profile(name.as_deref())?;
+    let account = profile
+        .act_as_account
+        .as_deref()
+        .unwrap_or(&profile.account);
+
+    println!(
+        "Setting up Docker for profile \"{}\" (account: {})",
+        profile.name, account
+    );
+
+    // Check for Docker service
+    let auth_config = AuthConfig::new(
+        &profile.account,
+        &profile.key_id,
+        KeySource::auto(&profile.key_id),
+    );
+    let client = TypedClient::new(&profile.url, auth_config);
+
+    println!("Checking for Docker service...");
+    let services = client
+        .inner()
+        .list_services()
+        .account(&profile.account)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to list services: {}", e))?
+        .into_inner();
+
+    let docker_url = services
+        .get("docker")
+        .ok_or_else(|| anyhow::anyhow!("No Docker service available in this datacenter"))?;
+
+    println!("Docker service found: {}", docker_url);
+
+    // Warn about certificate generation
+    println!();
+    println!("WARNING: Docker uses authentication via client TLS certificates that do not");
+    println!("support encrypted (passphrase protected) keys or SSH agents.");
+    println!();
+    println!("This action will create a fresh private key which is written unencrypted to");
+    println!("disk in ~/.triton/docker/ for use by the Docker client. This key will be");
+    println!("useable only for Docker.");
+    println!();
+
+    if !yes
+        && !Confirm::new()
+            .with_prompt("Continue?")
+            .default(true)
+            .interact()?
+    {
+        println!("Skipping Docker setup (you can run \"triton profile docker-setup\" later).");
+        return Ok(());
+    }
+
+    // Generate certificates
+    let generator = CertGenerator::new(&profile.key_id).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to setup certificate generator: {}. Make sure your SSH key is \
+             loaded in the SSH agent and is not Ed25519 (use RSA or ECDSA).",
+            e
+        )
+    })?;
+
+    println!();
+    println!(
+        "Generating Docker certificates (key type: {})...",
+        generator.key_type()
+    );
+
+    let cert = generator.generate(account, CertPurpose::Docker, lifetime)?;
+
+    // Create directory for Docker certs
+    let config_dir = paths::config_dir();
+    let docker_dir = config_dir.join("docker").join(&profile.name);
+    fs::create_dir_all(&docker_dir)?;
+
+    // Write certificates
+    let key_path = docker_dir.join("key.pem");
+    let cert_path = docker_dir.join("cert.pem");
+    fs::write(&key_path, &cert.key_pem)?;
+    fs::write(&cert_path, &cert.cert_pem)?;
+
+    // Download CA certificate from Docker host
+    let ca_path = docker_dir.join("ca.pem");
+    let ca_url = docker_url.replace("tcp:", "https:") + "/ca.pem";
+
+    println!("Downloading CA certificate from {}...", ca_url);
+
+    let ca_client = reqwest::ClientBuilder::new()
+        .danger_accept_invalid_certs(profile.insecure)
+        .build()?;
+
+    let ca_response = ca_client
+        .get(&ca_url)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to download CA certificate: {}", e))?;
+
+    let ca_pem = ca_response
+        .text()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to read CA certificate: {}", e))?;
+
+    fs::write(&ca_path, &ca_pem)?;
+
+    // Write setup.json for reference
+    let setup_json = serde_json::json!({
+        "profile": profile.name,
+        "account": account,
+        "time": chrono::Utc::now().to_rfc3339(),
+        "env": {
+            "DOCKER_CERT_PATH": docker_dir.to_string_lossy(),
+            "DOCKER_HOST": docker_url,
+            "DOCKER_TLS_VERIFY": if profile.insecure { serde_json::Value::Null } else { serde_json::json!("1") },
+            "COMPOSE_HTTP_TIMEOUT": "300"
+        }
+    });
+    let setup_path = docker_dir.join("setup.json");
+    fs::write(&setup_path, serde_json::to_string_pretty(&setup_json)?)?;
+
+    println!();
+    println!(
+        "Successfully setup profile \"{}\" to use Docker.",
+        profile.name
+    );
+    println!();
+    println!("To setup environment variables to use the Docker client, run:");
+    println!("    eval \"$(triton env --docker {})\"", profile.name);
+    println!("    docker info");
+    println!();
+    println!("Or you can place the commands in your shell profile, e.g.:");
+    println!("    triton env --docker {} >> ~/.profile", profile.name);
+
+    Ok(())
+}
+
+/// Generate CMON client certificates for a profile
+async fn cmon_certgen(name: Option<String>, lifetime: u32, yes: bool) -> Result<()> {
+    // Resolve the profile
+    let profile = resolve_profile(name.as_deref())?;
+    let account = profile
+        .act_as_account
+        .as_deref()
+        .unwrap_or(&profile.account);
+
+    println!(
+        "Generating CMON certificates for profile \"{}\" (account: {})",
+        profile.name, account
+    );
+
+    // Check for CMON service
+    let auth_config = AuthConfig::new(
+        &profile.account,
+        &profile.key_id,
+        KeySource::auto(&profile.key_id),
+    );
+    let client = TypedClient::new(&profile.url, auth_config);
+
+    println!("Checking for CMON service...");
+    let services = client
+        .inner()
+        .list_services()
+        .account(&profile.account)
+        .send()
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to list services: {}", e))?
+        .into_inner();
+
+    let cmon_url = services
+        .get("cmon")
+        .ok_or_else(|| anyhow::anyhow!("No CMON service available in this datacenter"))?;
+
+    println!("CMON service found: {}", cmon_url);
+
+    // Warn about certificate generation
+    println!();
+    println!("Note: CMON uses authentication via client TLS certificates.");
+    println!();
+    println!("This action will create a fresh private key which is written unencrypted to");
+    println!("disk in the current working directory. Copy these files to your CMON client");
+    println!("(whether Prometheus, or something else).");
+    println!();
+    println!("This key will be usable only for CMON. If your SSH key is removed from your");
+    println!("account, this CMON key will no longer work.");
+    println!();
+
+    if !yes {
+        println!("If you do not specifically want to use CMON, or want to set this up later,");
+        println!("you can answer \"no\" here.");
+        println!();
+    }
+
+    if !yes
+        && !Confirm::new()
+            .with_prompt("Continue?")
+            .default(true)
+            .interact()?
+    {
+        println!(
+            "Skipping CMON certificate generation (you can run \"triton profile cmon-certgen\" later)."
+        );
+        return Ok(());
+    }
+
+    // Generate certificates
+    let generator = CertGenerator::new(&profile.key_id).map_err(|e| {
+        anyhow::anyhow!(
+            "Failed to setup certificate generator: {}. Make sure your SSH key is \
+             loaded in the SSH agent and is not Ed25519 (use RSA or ECDSA).",
+            e
+        )
+    })?;
+
+    println!();
+    println!(
+        "Generating CMON certificates (key type: {})...",
+        generator.key_type()
+    );
+
+    let cert = generator.generate(account, CertPurpose::Cmon, lifetime)?;
+
+    // Write certificates to current directory
+    let fn_stub = format!("cmon-{}", account);
+    let key_path = PathBuf::from(format!("{}-key.pem", fn_stub));
+    let cert_path = PathBuf::from(format!("{}-cert.pem", fn_stub));
+    fs::write(&key_path, &cert.key_pem)?;
+    fs::write(&cert_path, &cert.cert_pem)?;
+
+    // Generate example Prometheus configuration
+    let cmon_host = cmon_url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://");
+    let prometheus_yml = format!(
+        r#"global:
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    evaluation_interval: 15s
+scrape_configs:
+    - job_name: triton-{account}
+      scheme: https
+      tls_config:
+          cert_file: {fn_stub}-cert.pem
+          key_file: {fn_stub}-key.pem
+      relabel_configs:
+          - source_labels: [__meta_triton_machine_alias]
+            target_label: alias
+          - source_labels: [__meta_triton_machine_id]
+            target_label: instance
+      triton_sd_configs:
+          - account: {account}
+            dns_suffix: {cmon_host}
+            endpoint: {cmon_host}
+            version: 1
+            tls_config:
+                cert_file: {fn_stub}-cert.pem
+                key_file: {fn_stub}-key.pem
+"#,
+        account = account,
+        fn_stub = fn_stub,
+        cmon_host = cmon_host,
+    );
+
+    let prometheus_path = PathBuf::from(format!("{}-prometheus.yml", fn_stub));
+    fs::write(&prometheus_path, &prometheus_yml)?;
+
+    println!();
+    println!("CMON authentication certificate and key have been placed in files");
+    println!(
+        "\"{}\" and \"{}\".",
+        cert_path.display(),
+        key_path.display()
+    );
+    println!();
+    println!("An example Prometheus configuration file has also been written into");
+    println!("\"{}\".", prometheus_path.display());
+    println!();
+    println!("It can be used as-is for testing by running");
+    println!(
+        "  \"prometheus --config.file={}\"",
+        prometheus_path.display()
+    );
+
     Ok(())
 }
