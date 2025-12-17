@@ -6,7 +6,7 @@
 
 //! Firewall rule types
 
-use super::common::{Timestamp, Uuid};
+use super::common::{RoleTags, Timestamp, Uuid};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -41,6 +41,9 @@ pub struct FirewallRule {
     /// Last update timestamp
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated: Option<Timestamp>,
+    /// Role tags for RBAC
+    #[serde(rename = "role-tag", default, skip_serializing_if = "Option::is_none")]
+    pub role_tag: Option<RoleTags>,
 }
 
 /// Request to create firewall rule

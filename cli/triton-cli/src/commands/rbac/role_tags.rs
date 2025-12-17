@@ -6,6 +6,8 @@
 
 //! RBAC role tags management commands
 
+use std::io::Write;
+
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
@@ -48,6 +50,9 @@ pub enum RoleTagsCommand {
     Remove(RoleTagsRemoveArgs),
     /// Clear all role tags from a resource
     Clear(RoleTagsClearArgs),
+    /// Edit role tags in $EDITOR
+    #[command(alias = "e")]
+    Edit(RoleTagsEditArgs),
 }
 
 #[derive(Args, Clone)]
@@ -92,6 +97,15 @@ pub struct RoleTagsClearArgs {
     pub resource: String,
 }
 
+#[derive(Args, Clone)]
+pub struct RoleTagsEditArgs {
+    /// Resource type
+    #[arg(value_enum)]
+    pub resource_type: RoleTagResource,
+    /// Resource ID or name
+    pub resource: String,
+}
+
 impl RoleTagsCommand {
     pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
@@ -99,6 +113,7 @@ impl RoleTagsCommand {
             Self::Add(args) => role_tags_add(args, client, use_json).await,
             Self::Remove(args) => role_tags_remove(args, client, use_json).await,
             Self::Clear(args) => role_tags_clear(args, client, use_json).await,
+            Self::Edit(args) => role_tags_edit(args, client, use_json).await,
         }
     }
 }
@@ -213,42 +228,45 @@ async fn role_tags_set(args: RoleTagsSetArgs, client: &TypedClient, use_json: bo
 }
 
 /// Add a role tag to a resource (preserves existing tags)
-///
-/// Note: The API only supports replacing all tags, so we need to set
-/// the new tag list which includes the added tag. However, since we
-/// can't reliably GET current tags, this command simply sets the single tag.
-/// For proper add behavior, use a management tool that tracks state.
 async fn role_tags_add(args: RoleTagsAddArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    // Since we can't GET current tags, we warn the user
-    eprintln!(
-        "Warning: Cannot retrieve current role tags. This will set the role tag to only '{}'. Use 'set' command to specify all desired tags.",
-        args.role
-    );
+    let resource_id = resolve_resource_id(&args.resource_type, &args.resource, client).await?;
 
+    // GET current tags
+    let mut current_tags = get_current_role_tags(&args.resource_type, &resource_id, client).await?;
+
+    // Add new tag if not already present
+    if !current_tags.contains(&args.role) {
+        current_tags.push(args.role.clone());
+    }
+
+    // SET updated tags
     let set_args = RoleTagsSetArgs {
         resource_type: args.resource_type,
-        resource: args.resource,
-        roles: vec![args.role],
+        resource: resource_id,
+        roles: current_tags,
     };
     role_tags_set(set_args, client, use_json).await
 }
 
 /// Remove a role tag from a resource
-///
-/// Note: Since we can't GET current tags, this clears all tags.
 async fn role_tags_remove(
     args: RoleTagsRemoveArgs,
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    eprintln!(
-        "Warning: Cannot retrieve current role tags. This will clear all role tags. Use 'set' command to specify desired tags instead."
-    );
+    let resource_id = resolve_resource_id(&args.resource_type, &args.resource, client).await?;
 
+    // GET current tags
+    let mut current_tags = get_current_role_tags(&args.resource_type, &resource_id, client).await?;
+
+    // Remove the tag
+    current_tags.retain(|t| t != &args.role);
+
+    // SET updated tags
     let set_args = RoleTagsSetArgs {
         resource_type: args.resource_type,
-        resource: args.resource,
-        roles: vec![],
+        resource: resource_id,
+        roles: current_tags,
     };
     role_tags_set(set_args, client, use_json).await
 }
@@ -265,6 +283,87 @@ async fn role_tags_clear(
         roles: vec![],
     };
     role_tags_set(set_args, client, use_json).await
+}
+
+/// Edit role tags in $EDITOR
+async fn role_tags_edit(
+    args: RoleTagsEditArgs,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
+    let resource_id = resolve_resource_id(&args.resource_type, &args.resource, client).await?;
+
+    // GET current tags
+    let current_tags = get_current_role_tags(&args.resource_type, &resource_id, client).await?;
+
+    // Create text representation (one tag per line)
+    let orig_text = role_tags_to_text(&current_tags);
+
+    // Create temp file and write current tags
+    let mut temp_file = tempfile::Builder::new()
+        .prefix("role-tags-")
+        .suffix(".txt")
+        .tempfile()?;
+    writeln!(
+        temp_file,
+        "# Edit role tags for {} (one per line)",
+        args.resource
+    )?;
+    writeln!(temp_file, "# Lines starting with # are ignored")?;
+    writeln!(
+        temp_file,
+        "# Save and exit to apply changes, or exit without saving to cancel"
+    )?;
+    writeln!(temp_file)?;
+    write!(temp_file, "{}", orig_text)?;
+    temp_file.flush()?;
+
+    // Get editor from environment
+    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+
+    // Open editor
+    let status = std::process::Command::new(&editor)
+        .arg(temp_file.path())
+        .status()?;
+
+    if !status.success() {
+        return Err(anyhow::anyhow!("Editor exited with error"));
+    }
+
+    // Read back the edited file
+    let edited_content = std::fs::read_to_string(temp_file.path())?;
+    let edited_tags = text_to_role_tags(&edited_content);
+
+    // Check if anything changed
+    let edited_text = role_tags_to_text(&edited_tags);
+    if edited_text == orig_text {
+        println!("No changes made.");
+        return Ok(());
+    }
+
+    // SET updated tags
+    let set_args = RoleTagsSetArgs {
+        resource_type: args.resource_type,
+        resource: resource_id,
+        roles: edited_tags,
+    };
+    role_tags_set(set_args, client, use_json).await
+}
+
+/// Convert role tags to text representation (one per line, sorted)
+fn role_tags_to_text(tags: &[String]) -> String {
+    let mut sorted_tags = tags.to_vec();
+    sorted_tags.sort();
+    sorted_tags.join("\n")
+}
+
+/// Parse text back to role tags (strips comments, whitespace)
+fn text_to_role_tags(text: &str) -> Vec<String> {
+    text.lines()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(|line| line.to_string())
+        .collect()
 }
 
 /// Resolve resource identifier to UUID or name as needed by the API
@@ -350,6 +449,117 @@ async fn resolve_resource_id(
         RoleTagResource::Policy => {
             // Policy is by name
             Ok(resource.to_string())
+        }
+    }
+}
+
+/// Get current role tags from a resource
+async fn get_current_role_tags(
+    resource_type: &RoleTagResource,
+    resource_id: &str,
+    client: &TypedClient,
+) -> Result<Vec<String>> {
+    let account = &client.auth_config().account;
+
+    match resource_type {
+        RoleTagResource::Instance => {
+            let machine = client
+                .inner()
+                .get_machine()
+                .account(account)
+                .machine(resource_id)
+                .send()
+                .await?
+                .into_inner();
+            Ok(machine.role_tag.unwrap_or_default())
+        }
+        RoleTagResource::Image => {
+            let image = client
+                .inner()
+                .get_image()
+                .account(account)
+                .dataset(resource_id)
+                .send()
+                .await?
+                .into_inner();
+            Ok(image.role_tag.unwrap_or_default())
+        }
+        RoleTagResource::Network => {
+            let network = client
+                .inner()
+                .get_network()
+                .account(account)
+                .network(resource_id)
+                .send()
+                .await?
+                .into_inner();
+            Ok(network.role_tag.unwrap_or_default())
+        }
+        RoleTagResource::Package => {
+            let package = client
+                .inner()
+                .get_package()
+                .account(account)
+                .package(resource_id)
+                .send()
+                .await?
+                .into_inner();
+            Ok(package.role_tag.unwrap_or_default())
+        }
+        RoleTagResource::Key => {
+            let key = client
+                .inner()
+                .get_key()
+                .account(account)
+                .name(resource_id)
+                .send()
+                .await?
+                .into_inner();
+            Ok(key.role_tag.unwrap_or_default())
+        }
+        RoleTagResource::Fwrule => {
+            let rule = client
+                .inner()
+                .get_firewall_rule()
+                .account(account)
+                .id(resource_id)
+                .send()
+                .await?
+                .into_inner();
+            Ok(rule.role_tag.unwrap_or_default())
+        }
+        RoleTagResource::User => {
+            let user = client
+                .inner()
+                .get_user()
+                .account(account)
+                .uuid(resource_id)
+                .send()
+                .await?
+                .into_inner();
+            Ok(user.role_tag.unwrap_or_default())
+        }
+        RoleTagResource::Role => {
+            let role = client
+                .inner()
+                .get_role()
+                .account(account)
+                .role(resource_id)
+                .send()
+                .await?
+                .into_inner();
+            Ok(role.role_tag.unwrap_or_default())
+        }
+        RoleTagResource::Policy => {
+            let policy = client
+                .inner()
+                .get_policy()
+                .account(account)
+                .policy(resource_id)
+                .send()
+                .await?
+                .into_inner();
+            Ok(policy.role_tag.unwrap_or_default())
         }
     }
 }

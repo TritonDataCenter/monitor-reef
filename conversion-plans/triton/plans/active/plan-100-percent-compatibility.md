@@ -295,13 +295,13 @@ Note: Verify CloudAPI supports this via the `primary` field in the request body.
 
 ### 7. RBAC-Specific Options
 
-| Command | Missing Option | Description |
-|---------|----------------|-------------|
-| `rbac info` | `--all, -a` | Include all info for full report |
-| `rbac info` | `--no-color` | Disable ANSI color codes |
-| `rbac reset` | `--dry-run, -n` | Show what would be deleted |
-| `rbac user` | `--roles, -r` | Include roles in output |
-| `rbac role-tags` | `--edit, -e` | Edit in $EDITOR |
+| Command | Missing Option | Description | Status |
+|---------|----------------|-------------|--------|
+| `rbac info` | `--all, -a` | Include all info for full report | Pending |
+| `rbac info` | `--no-color` | Disable ANSI color codes | Pending |
+| `rbac reset` | `--dry-run, -n` | Show what would be deleted | Pending |
+| `rbac user` | `--roles, -r` | Include roles in output | Pending |
+| `rbac role-tags` | `--edit, -e` | Edit in $EDITOR | ✅ Complete |
 
 **Files to modify:**
 - `cli/triton-cli/src/commands/rbac/apply.rs` (info)
@@ -309,6 +309,23 @@ Note: Verify CloudAPI supports this via the `primary` field in the request body.
 - `cli/triton-cli/src/commands/rbac/role_tags.rs`
 
 **Estimated effort:** 1-2 hours
+
+#### Role Tags API Fix (Completed)
+
+The `--edit` flag for role-tags required an API fix to return role tags in GET responses.
+
+**Problem:** The Rust cloudapi-api trait didn't include `role_tag` field in resource response types (Machine, User, Image, etc.), so the CLI couldn't retrieve current tags for editing.
+
+**Solution:** Added `role_tag: Option<Vec<String>>` to all resource response structs:
+- `apis/cloudapi-api/src/types/machine.rs` - Machine struct
+- `apis/cloudapi-api/src/types/user.rs` - User, Role, Policy structs
+- `apis/cloudapi-api/src/types/image.rs` - Image struct
+- `apis/cloudapi-api/src/types/misc.rs` - Package struct
+- `apis/cloudapi-api/src/types/network.rs` - Network struct
+- `apis/cloudapi-api/src/types/firewall.rs` - FirewallRule struct
+- `apis/cloudapi-api/src/types/key.rs` - SshKey struct
+
+This also fixed `role-tags add` and `role-tags remove` commands which now properly preserve existing tags.
 
 ---
 

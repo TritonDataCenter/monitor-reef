@@ -6,7 +6,7 @@
 
 //! Machine-related types
 
-use super::common::{Brand, Metadata, Tags, Timestamp, Uuid};
+use super::common::{Brand, Metadata, RoleTags, Tags, Timestamp, Uuid};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -127,6 +127,9 @@ pub struct Machine {
     /// Whether a delegate dataset is present
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub delegate_dataset: Option<bool>,
+    /// Role tags for RBAC
+    #[serde(rename = "role-tag", default, skip_serializing_if = "Option::is_none")]
+    pub role_tag: Option<RoleTags>,
 }
 
 /// Disk attached to a machine (bhyve VMs)

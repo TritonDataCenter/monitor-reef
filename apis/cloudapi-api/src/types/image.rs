@@ -6,7 +6,7 @@
 
 //! Image/dataset related types
 
-use super::common::{Tags, Timestamp, Uuid};
+use super::common::{RoleTags, Tags, Timestamp, Uuid};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -149,6 +149,9 @@ pub struct Image {
     /// Error information (if image creation failed, API version >= 7.1.0)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<ImageError>,
+    /// Role tags for RBAC
+    #[serde(rename = "role-tag", default, skip_serializing_if = "Option::is_none")]
+    pub role_tag: Option<RoleTags>,
 }
 
 /// Request to create image from machine

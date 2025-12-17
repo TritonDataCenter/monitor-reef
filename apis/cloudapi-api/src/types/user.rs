@@ -6,7 +6,7 @@
 
 //! User, role, and policy types
 
-use super::common::{Timestamp, Uuid};
+use super::common::{RoleTags, Timestamp, Uuid};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -74,6 +74,9 @@ pub struct User {
     pub created: Timestamp,
     /// Last update timestamp
     pub updated: Timestamp,
+    /// Role tags for RBAC
+    #[serde(rename = "role-tag", default, skip_serializing_if = "Option::is_none")]
+    pub role_tag: Option<RoleTags>,
 }
 
 /// Request to create user
@@ -148,6 +151,9 @@ pub struct Role {
     /// Policies (policy UUIDs or names)
     #[serde(default)]
     pub policies: Vec<String>,
+    /// Role tags for RBAC
+    #[serde(rename = "role-tag", default, skip_serializing_if = "Option::is_none")]
+    pub role_tag: Option<RoleTags>,
 }
 
 /// Request to create role
@@ -198,6 +204,9 @@ pub struct Policy {
     /// Description
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// Role tags for RBAC
+    #[serde(rename = "role-tag", default, skip_serializing_if = "Option::is_none")]
+    pub role_tag: Option<RoleTags>,
 }
 
 /// Request to create policy

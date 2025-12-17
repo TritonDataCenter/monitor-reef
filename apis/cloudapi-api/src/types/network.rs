@@ -6,7 +6,7 @@
 
 //! Network-related types (networks, fabric VLANs, NICs, IPs)
 
-use super::common::Uuid;
+use super::common::{RoleTags, Uuid};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -101,6 +101,9 @@ pub struct Network {
     /// Routes
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub routes: Option<serde_json::Value>,
+    /// Role tags for RBAC
+    #[serde(rename = "role-tag", default, skip_serializing_if = "Option::is_none")]
+    pub role_tag: Option<RoleTags>,
 }
 
 /// Fabric VLAN information

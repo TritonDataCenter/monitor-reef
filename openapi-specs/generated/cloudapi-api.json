@@ -10153,6 +10153,14 @@
             "description": "Rule UUID",
             "type": "string"
           },
+          "role-tag": {
+            "nullable": true,
+            "description": "Role tags for RBAC",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "rule": {
             "description": "Rule text",
             "type": "string"
@@ -10260,6 +10268,14 @@
                 "$ref": "#/components/schemas/ImageRequirements"
               }
             ]
+          },
+          "role-tag": {
+            "nullable": true,
+            "description": "Role tags for RBAC",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "state": {
             "nullable": true,
@@ -10540,6 +10556,14 @@
             "nullable": true,
             "description": "Primary IP address",
             "type": "string"
+          },
+          "role-tag": {
+            "nullable": true,
+            "description": "Role tags for RBAC",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "state": {
             "description": "Current state",
@@ -10956,6 +10980,14 @@
               "type": "string"
             }
           },
+          "role-tag": {
+            "nullable": true,
+            "description": "Role tags for RBAC",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "routes": {
             "nullable": true,
             "description": "Routes"
@@ -11157,6 +11189,14 @@
             "description": "Package name",
             "type": "string"
           },
+          "role-tag": {
+            "nullable": true,
+            "description": "Role tags for RBAC",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
           "swap": {
             "description": "Swap in MB",
             "type": "integer",
@@ -11222,6 +11262,14 @@
           "name": {
             "description": "Policy name",
             "type": "string"
+          },
+          "role-tag": {
+            "nullable": true,
+            "description": "Role tags for RBAC",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "rules": {
             "description": "Policy rules (array of rule strings)",
@@ -11310,6 +11358,14 @@
             "items": {
               "type": "string"
             }
+          },
+          "role-tag": {
+            "nullable": true,
+            "description": "Role tags for RBAC",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -11386,6 +11442,14 @@
           "name": {
             "description": "Key name",
             "type": "string"
+          },
+          "role-tag": {
+            "nullable": true,
+            "description": "Role tags for RBAC",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
         "required": [
@@ -11729,6 +11793,14 @@
             "nullable": true,
             "description": "Phone number",
             "type": "string"
+          },
+          "role-tag": {
+            "nullable": true,
+            "description": "Role tags for RBAC",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "updated": {
             "description": "Last update timestamp",

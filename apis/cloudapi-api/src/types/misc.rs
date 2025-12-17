@@ -6,7 +6,7 @@
 
 //! Miscellaneous types (packages, datacenters, services, migrations)
 
-use super::common::{Brand, Timestamp, Uuid};
+use super::common::{Brand, RoleTags, Timestamp, Uuid};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -71,6 +71,9 @@ pub struct Package {
     /// Disk configuration (bhyve only)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disks: Option<Vec<PackageDisk>>,
+    /// Role tags for RBAC
+    #[serde(rename = "role-tag", default, skip_serializing_if = "Option::is_none")]
+    pub role_tag: Option<RoleTags>,
 }
 
 /// Datacenter map: name -> URL
