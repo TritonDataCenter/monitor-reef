@@ -9,7 +9,8 @@ Copyright 2025 Edgecast Cloud LLC.
 # Plan: Triton CLI 100% Option Compatibility
 
 **Created:** 2025-12-16
-**Status:** Active
+**Updated:** 2025-12-17
+**Status:** In Progress
 **Goal:** Achieve 100% option compatibility with node-triton
 
 ## Executive Summary
@@ -23,6 +24,16 @@ This plan details all remaining option gaps between the Rust `triton-cli` and `n
 | P3 - Low | ~20 | Low | Rare use cases |
 
 **Key Insight:** Creating a shared table formatting utility would close ~30% of all gaps at once.
+
+## Progress Summary
+
+### ✅ Phase 1 Complete (2025-12-17)
+
+**Shared Table Formatting:** Implemented `TableFormatArgs` struct and `TableBuilder` helper in `output/table.rs`. Added `-H`, `-o`, `-l`, `-s` options to 11 list commands.
+
+**Short Flags:** Added `-s` to `image wait --state` and `-a` to `instance migration start --affinity`.
+
+See updated gap inventory below for current status.
 
 ---
 
@@ -403,22 +414,24 @@ Compare with node-triton:
 
 ## Appendix: Complete Gap Inventory
 
-### Table Formatting Gaps (25 items)
+### Table Formatting Gaps (25 items) - ✅ COMPLETE
 
 | Command | `-H` | `-o` | `-l` | `-s` |
 |---------|------|------|------|------|
-| `profile list` | ❌ | ❌ | ❌ | ❌ |
-| `volume list` | ❌ | ❌ | ❌ | ❌ |
-| `volume sizes` | ❌ | ❌ | N/A | ❌ |
-| `network list` | ❌ | ❌ | ❌ | ❌ |
-| `network ip list` | ❌ | ❌ | ❌ | ❌ |
-| `vlan list` | ❌ | ❌ | ❌ | ❌ |
-| `vlan networks` | ❌ | ❌ | ❌ | ❌ |
-| `fwrule list` | ❌ | ❌ | ❌ | ❌ |
-| `fwrule instances` | ❌ | ❌ | ❌ | ❌ |
-| `key list` | ❌ | ❌ | ❌ | ❌ |
-| `account limits` | ❌ | N/A | N/A | N/A |
-| `rbac keys` | ❌ | ❌ | ❌ | ❌ |
+| `profile list` | ✅ | ✅ | ✅ | ✅ |
+| `volume list` | ✅ | ✅ | ✅ | ✅ |
+| `volume sizes` | ✅ | ✅ | N/A | ✅ |
+| `network list` | ✅ | ✅ | ✅ | ✅ |
+| `network ip list` | ✅ | ✅ | ✅ | ✅ |
+| `vlan list` | ✅ | ✅ | ✅ | ✅ |
+| `vlan networks` | ✅ | ✅ | ✅ | ✅ |
+| `fwrule list` | ✅ | ✅ | ✅ | ✅ |
+| `fwrule instances` | ✅ | ✅ | ✅ | ✅ |
+| `key list` | ✅ | ✅ | ✅ | ✅ |
+| `account limits` | N/A | N/A | N/A | N/A |
+| `rbac keys` | ✅ | ✅ | ✅ | ✅ |
+
+Note: `account limits` uses a nested key-value format, not a table, so table formatting options don't apply.
 
 ### Wait/Timeout Gaps (10 items)
 
@@ -441,16 +454,16 @@ Compare with node-triton:
 | `network ip update` | ❌ |
 | `vlan update` | ❌ |
 
-### Short Flag Gaps (6 items)
+### Short Flag Gaps (6 items) - ✅ COMPLETE
 
-| Command | Option | Missing Short |
-|---------|--------|---------------|
-| `network create` | `--description` | `-D` |
-| `vlan create` | `--name` | `-n` |
-| `vlan create` | `--description` | `-D` |
-| `key add` | `--name` | `-n` |
-| `migration start` | `--affinity` | `-a` |
-| `image wait` | `--state` | `-s` |
+| Command | Option | Short | Status |
+|---------|--------|-------|--------|
+| `network create` | `--description` | `-D` | ✅ Already had |
+| `vlan create` | `--name` | `-n` | ✅ Already had |
+| `vlan create` | `--description` | `-D` | ✅ Already had |
+| `key add` | `--name` | `-n` | ✅ Already had |
+| `migration start` | `--affinity` | `-a` | ✅ Added |
+| `image wait` | `--state` | `-s` | ✅ Added |
 
 ### Miscellaneous Gaps (20+ items)
 

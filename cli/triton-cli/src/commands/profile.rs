@@ -7,24 +7,31 @@
 //! Profile management commands
 
 use crate::config::{Config, Profile, paths, resolve_profile};
-use crate::output::{json, table};
+use crate::output::json;
+use crate::output::table::{TableBuilder, TableFormatArgs};
 use anyhow::Result;
-use clap::Subcommand;
+use clap::{Args, Subcommand};
 use cloudapi_client::{AuthConfig, KeySource, TypedClient};
 use dialoguer::{Confirm, Input};
 use std::fs;
 use std::path::PathBuf;
 use triton_auth::{CertGenerator, CertPurpose, DEFAULT_CERT_LIFETIME_DAYS};
 
+#[derive(Args, Clone)]
+pub struct ProfileListArgs {
+    /// Output as JSON
+    #[arg(short, long)]
+    pub json: bool,
+
+    #[command(flatten)]
+    pub table: TableFormatArgs,
+}
+
 #[derive(Subcommand, Clone)]
 pub enum ProfileCommand {
     /// List all profiles
     #[command(alias = "ls")]
-    List {
-        /// Output as JSON
-        #[arg(short, long)]
-        json: bool,
-    },
+    List(ProfileListArgs),
 
     /// Get current profile details
     Get {
@@ -122,7 +129,7 @@ pub enum ProfileCommand {
 impl ProfileCommand {
     pub async fn run(self) -> Result<()> {
         match self {
-            Self::List { json: use_json } => list_profiles(use_json),
+            Self::List(args) => list_profiles(args),
             Self::Get {
                 name,
                 json: use_json,
@@ -155,7 +162,7 @@ impl ProfileCommand {
     }
 }
 
-fn list_profiles(use_json: bool) -> Result<()> {
+fn list_profiles(args: ProfileListArgs) -> Result<()> {
     use crate::config::env_profile;
 
     let saved_profiles = Profile::list_all()?;
@@ -179,10 +186,11 @@ fn list_profiles(use_json: bool) -> Result<()> {
         }
     }
 
-    if use_json {
+    if args.json {
         json::print_json(&profiles_to_show)?;
     } else {
-        let mut tbl = table::create_table(&["NAME", "CURR", "ACCOUNT", "USER", "URL"]);
+        let mut tbl = TableBuilder::new(&["NAME", "CURR", "ACCOUNT", "USER", "URL"])
+            .with_long_headers(&["KEYID", "INSECURE"]);
         for profile in &profiles_to_show {
             let marker = if Some(profile.name.as_str()) == current_name {
                 "*"
@@ -191,14 +199,16 @@ fn list_profiles(use_json: bool) -> Result<()> {
             };
             let user = profile.user.as_deref().unwrap_or("-");
             tbl.add_row(vec![
-                profile.name.as_str(),
-                marker,
-                profile.account.as_str(),
-                user,
-                profile.url.as_str(),
+                profile.name.clone(),
+                marker.to_string(),
+                profile.account.clone(),
+                user.to_string(),
+                profile.url.clone(),
+                profile.key_id.clone(),
+                profile.insecure.to_string(),
             ]);
         }
-        table::print_table(tbl);
+        tbl.print(&args.table);
     }
     Ok(())
 }

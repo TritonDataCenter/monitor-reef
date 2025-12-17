@@ -10,13 +10,20 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 
-use crate::output::{json, table};
+use crate::output::json;
+use crate::output::table::{TableBuilder, TableFormatArgs};
+
+#[derive(Args, Clone)]
+pub struct KeyListArgs {
+    #[command(flatten)]
+    pub table: TableFormatArgs,
+}
 
 #[derive(Subcommand, Clone)]
 pub enum KeyCommand {
     /// List SSH keys
     #[command(alias = "ls")]
-    List,
+    List(KeyListArgs),
     /// Get SSH key details
     Get(KeyGetArgs),
     /// Add SSH key
@@ -53,7 +60,7 @@ pub struct KeyDeleteArgs {
 impl KeyCommand {
     pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
-            Self::List => list_keys(client, use_json).await,
+            Self::List(args) => list_keys(args, client, use_json).await,
             Self::Get(args) => get_key(args, client, use_json).await,
             Self::Add(args) => add_key(args, client, use_json).await,
             Self::Delete(args) => delete_keys(args, client).await,
@@ -61,7 +68,7 @@ impl KeyCommand {
     }
 }
 
-async fn list_keys(client: &TypedClient, use_json: bool) -> Result<()> {
+async fn list_keys(args: KeyListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
     let response = client.inner().list_keys().account(account).send().await?;
 
@@ -70,11 +77,15 @@ async fn list_keys(client: &TypedClient, use_json: bool) -> Result<()> {
     if use_json {
         json::print_json(&keys)?;
     } else {
-        let mut tbl = table::create_table(&["NAME", "FINGERPRINT"]);
+        let mut tbl = TableBuilder::new(&["NAME", "FINGERPRINT"]).with_long_headers(&["KEY"]);
         for key in &keys {
-            tbl.add_row(vec![&key.name, &key.fingerprint]);
+            tbl.add_row(vec![
+                key.name.clone(),
+                key.fingerprint.clone(),
+                key.key.clone(),
+            ]);
         }
-        table::print_table(tbl);
+        tbl.print(&args.table);
     }
 
     Ok(())

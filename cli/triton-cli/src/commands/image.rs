@@ -215,7 +215,7 @@ pub struct ImageWaitArgs {
     /// Image ID or name[@version]
     pub image: String,
     /// Target state (default: active)
-    #[arg(long, default_value = "active")]
+    #[arg(short = 's', long, default_value = "active")]
     pub state: String,
     /// Timeout in seconds
     #[arg(long, default_value = "600")]

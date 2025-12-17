@@ -10,13 +10,20 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 
-use crate::output::{json, table};
+use crate::output::json;
+use crate::output::table::{TableBuilder, TableFormatArgs};
+
+#[derive(Args, Clone)]
+pub struct FwruleListArgs {
+    #[command(flatten)]
+    pub table: TableFormatArgs,
+}
 
 #[derive(Subcommand, Clone)]
 pub enum FwruleCommand {
     /// List firewall rules
     #[command(alias = "ls")]
-    List,
+    List(FwruleListArgs),
     /// Get firewall rule details
     Get(FwruleGetArgs),
     /// Create firewall rule
@@ -89,12 +96,15 @@ pub struct FwruleUpdateArgs {
 pub struct FwruleInstancesArgs {
     /// Rule ID
     pub id: String,
+
+    #[command(flatten)]
+    pub table: TableFormatArgs,
 }
 
 impl FwruleCommand {
     pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
-            Self::List => list_rules(client, use_json).await,
+            Self::List(args) => list_rules(args, client, use_json).await,
             Self::Get(args) => get_rule(args, client, use_json).await,
             Self::Create(args) => create_rule(args, client, use_json).await,
             Self::Delete(args) => delete_rules(args, client).await,
@@ -106,7 +116,7 @@ impl FwruleCommand {
     }
 }
 
-async fn list_rules(client: &TypedClient, use_json: bool) -> Result<()> {
+async fn list_rules(args: FwruleListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
     let response = client
         .inner()
@@ -120,15 +130,27 @@ async fn list_rules(client: &TypedClient, use_json: bool) -> Result<()> {
     if use_json {
         json::print_json(&rules)?;
     } else {
-        let mut tbl = table::create_table(&["SHORTID", "ENABLED", "RULE"]);
+        let mut tbl = TableBuilder::new(&["SHORTID", "ENABLED", "RULE"]).with_long_headers(&[
+            "ID",
+            "DESCRIPTION",
+            "GLOBAL",
+        ]);
         for rule in &rules {
             tbl.add_row(vec![
-                &rule.id.to_string()[..8],
-                if rule.enabled { "yes" } else { "no" },
-                &rule.rule,
+                rule.id.to_string()[..8].to_string(),
+                if rule.enabled { "yes" } else { "no" }.to_string(),
+                rule.rule.clone(),
+                rule.id.to_string(),
+                rule.description.clone().unwrap_or_else(|| "-".to_string()),
+                if rule.global.unwrap_or(false) {
+                    "yes"
+                } else {
+                    "no"
+                }
+                .to_string(),
             ]);
         }
-        table::print_table(tbl);
+        tbl.print(&args.table);
     }
 
     Ok(())
@@ -328,16 +350,20 @@ async fn list_rule_instances(
     if use_json {
         json::print_json(&machines)?;
     } else {
-        let mut tbl = table::create_table(&["SHORTID", "NAME", "STATE", "PRIMARY_IP"]);
+        let mut tbl = TableBuilder::new(&["SHORTID", "NAME", "STATE", "PRIMARY_IP"])
+            .with_long_headers(&["ID", "IMAGE", "MEMORY"]);
         for m in &machines {
             tbl.add_row(vec![
-                &m.id.to_string()[..8],
-                &m.name,
-                &format!("{:?}", m.state).to_lowercase(),
-                m.primary_ip.as_deref().unwrap_or("-"),
+                m.id.to_string()[..8].to_string(),
+                m.name.clone(),
+                format!("{:?}", m.state).to_lowercase(),
+                m.primary_ip.clone().unwrap_or_else(|| "-".to_string()),
+                m.id.to_string(),
+                m.image.to_string(),
+                m.memory.to_string(),
             ]);
         }
-        table::print_table(tbl);
+        tbl.print(&args.table);
     }
 
     Ok(())

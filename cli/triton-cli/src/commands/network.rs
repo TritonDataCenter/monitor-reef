@@ -10,13 +10,20 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 
-use crate::output::{json, table};
+use crate::output::json;
+use crate::output::table::{TableBuilder, TableFormatArgs};
+
+#[derive(Args, Clone)]
+pub struct NetworkListArgs {
+    #[command(flatten)]
+    pub table: TableFormatArgs,
+}
 
 #[derive(Subcommand, Clone)]
 pub enum NetworkCommand {
     /// List networks
     #[command(alias = "ls")]
-    List,
+    List(NetworkListArgs),
     /// Get network details
     Get(NetworkGetArgs),
     /// Get default network
@@ -62,6 +69,9 @@ pub struct NetworkSetDefaultArgs {
 pub struct NetworkIpListArgs {
     /// Network ID
     pub network: String,
+
+    #[command(flatten)]
+    pub table: TableFormatArgs,
 }
 
 #[derive(Args, Clone)]
@@ -138,7 +148,7 @@ pub struct NetworkDeleteArgs {
 impl NetworkCommand {
     pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
-            Self::List => list_networks(client, use_json).await,
+            Self::List(args) => list_networks(args, client, use_json).await,
             Self::Get(args) => get_network(args, client, use_json).await,
             Self::GetDefault => get_default_network(client, use_json).await,
             Self::SetDefault(args) => set_default_network(args, client).await,
@@ -159,7 +169,7 @@ impl NetworkIpCommand {
     }
 }
 
-async fn list_networks(client: &TypedClient, use_json: bool) -> Result<()> {
+async fn list_networks(args: NetworkListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
     let response = client
         .inner()
@@ -173,17 +183,25 @@ async fn list_networks(client: &TypedClient, use_json: bool) -> Result<()> {
     if use_json {
         json::print_json(&networks)?;
     } else {
-        let mut tbl = table::create_table(&["SHORTID", "NAME", "SUBNET", "GATEWAY", "PUBLIC"]);
+        let mut tbl = TableBuilder::new(&["SHORTID", "NAME", "SUBNET", "GATEWAY", "PUBLIC"])
+            .with_long_headers(&["ID", "FABRIC", "VLAN"]);
         for net in &networks {
             tbl.add_row(vec![
-                &net.id.to_string()[..8],
-                &net.name,
-                net.subnet.as_deref().unwrap_or("-"),
-                net.gateway.as_deref().unwrap_or("-"),
-                if net.public { "yes" } else { "no" },
+                net.id.to_string()[..8].to_string(),
+                net.name.clone(),
+                net.subnet.clone().unwrap_or_else(|| "-".to_string()),
+                net.gateway.clone().unwrap_or_else(|| "-".to_string()),
+                if net.public { "yes" } else { "no" }.to_string(),
+                net.id.to_string(),
+                net.fabric
+                    .map(|f| f.to_string())
+                    .unwrap_or_else(|| "-".to_string()),
+                net.vlan_id
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "-".to_string()),
             ]);
         }
-        table::print_table(tbl);
+        tbl.print(&args.table);
     }
 
     Ok(())
@@ -428,7 +446,8 @@ async fn list_network_ips(
     if use_json {
         json::print_json(&ips)?;
     } else {
-        let mut tbl = table::create_table(&["IP", "RESERVED", "MANAGED", "OWNER"]);
+        let mut tbl = TableBuilder::new(&["IP", "RESERVED", "MANAGED", "OWNER"])
+            .with_long_headers(&["OWNERID", "BELONGS_TO_TYPE"]);
         for ip in &ips {
             let reserved_str = if ip.reserved {
                 "yes".to_string()
@@ -445,9 +464,25 @@ async fn list_network_ips(
                 .as_ref()
                 .map(|u| u.to_string()[..8].to_string())
                 .unwrap_or_else(|| "-".to_string());
-            tbl.add_row(vec![&ip.ip, &reserved_str, &managed_str, &owner_str]);
+            let owner_id = ip
+                .owner_uuid
+                .as_ref()
+                .map(|u| u.to_string())
+                .unwrap_or_else(|| "-".to_string());
+            let belongs_to_type = ip
+                .belongs_to_type
+                .clone()
+                .unwrap_or_else(|| "-".to_string());
+            tbl.add_row(vec![
+                ip.ip.clone(),
+                reserved_str,
+                managed_str,
+                owner_str,
+                owner_id,
+                belongs_to_type,
+            ]);
         }
-        table::print_table(tbl);
+        tbl.print(&args.table);
     }
 
     Ok(())

@@ -10,13 +10,20 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 
-use crate::output::{json, table};
+use crate::output::json;
+use crate::output::table::{TableBuilder, TableFormatArgs};
+
+#[derive(Args, Clone)]
+pub struct VlanListArgs {
+    #[command(flatten)]
+    pub table: TableFormatArgs,
+}
 
 #[derive(Subcommand, Clone)]
 pub enum VlanCommand {
     /// List VLANs
     #[command(alias = "ls")]
-    List,
+    List(VlanListArgs),
     /// Get VLAN details
     Get(VlanGetArgs),
     /// Create VLAN
@@ -75,12 +82,15 @@ pub struct VlanUpdateArgs {
 pub struct VlanNetworksArgs {
     /// VLAN ID
     pub vlan_id: u16,
+
+    #[command(flatten)]
+    pub table: TableFormatArgs,
 }
 
 impl VlanCommand {
     pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
-            Self::List => list_vlans(client, use_json).await,
+            Self::List(args) => list_vlans(args, client, use_json).await,
             Self::Get(args) => get_vlan(args, client, use_json).await,
             Self::Create(args) => create_vlan(args, client, use_json).await,
             Self::Delete(args) => delete_vlans(args, client).await,
@@ -90,7 +100,7 @@ impl VlanCommand {
     }
 }
 
-async fn list_vlans(client: &TypedClient, use_json: bool) -> Result<()> {
+async fn list_vlans(args: VlanListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
     let response = client
         .inner()
@@ -104,15 +114,15 @@ async fn list_vlans(client: &TypedClient, use_json: bool) -> Result<()> {
     if use_json {
         json::print_json(&vlans)?;
     } else {
-        let mut tbl = table::create_table(&["VLAN_ID", "NAME", "DESCRIPTION"]);
+        let mut tbl = TableBuilder::new(&["VLAN_ID", "NAME", "DESCRIPTION"]);
         for vlan in &vlans {
             tbl.add_row(vec![
-                &vlan.vlan_id.to_string(),
-                &vlan.name,
-                vlan.description.as_deref().unwrap_or("-"),
+                vlan.vlan_id.to_string(),
+                vlan.name.clone(),
+                vlan.description.clone().unwrap_or_else(|| "-".to_string()),
             ]);
         }
-        table::print_table(tbl);
+        tbl.print(&args.table);
     }
 
     Ok(())
@@ -245,16 +255,19 @@ async fn list_vlan_networks(
     if use_json {
         json::print_json(&networks)?;
     } else {
-        let mut tbl = table::create_table(&["SHORTID", "NAME", "SUBNET", "GATEWAY"]);
+        let mut tbl = TableBuilder::new(&["SHORTID", "NAME", "SUBNET", "GATEWAY"])
+            .with_long_headers(&["ID", "PUBLIC"]);
         for net in &networks {
             tbl.add_row(vec![
-                &net.id.to_string()[..8],
-                &net.name,
-                net.subnet.as_deref().unwrap_or("-"),
-                net.gateway.as_deref().unwrap_or("-"),
+                net.id.to_string()[..8].to_string(),
+                net.name.clone(),
+                net.subnet.clone().unwrap_or_else(|| "-".to_string()),
+                net.gateway.clone().unwrap_or_else(|| "-".to_string()),
+                net.id.to_string(),
+                if net.public { "yes" } else { "no" }.to_string(),
             ]);
         }
-        table::print_table(tbl);
+        tbl.print(&args.table);
     }
 
     Ok(())

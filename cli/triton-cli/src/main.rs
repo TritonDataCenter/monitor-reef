@@ -471,36 +471,51 @@ async fn main() -> Result<()> {
         }
         Commands::Nets => {
             let client = cli.build_client()?;
-            commands::network::NetworkCommand::List
-                .run(&client, cli.json)
-                .await
+            commands::network::NetworkCommand::List(commands::network::NetworkListArgs {
+                table: Default::default(),
+            })
+            .run(&client, cli.json)
+            .await
         }
         Commands::Vols => {
             let client = cli.build_client()?;
-            commands::volume::VolumeCommand::List
-                .run(&client, cli.json)
-                .await
+            commands::volume::VolumeCommand::List(commands::volume::VolumeListArgs {
+                table: Default::default(),
+            })
+            .run(&client, cli.json)
+            .await
         }
         Commands::Keys => {
             let client = cli.build_client()?;
-            commands::key::KeyCommand::List.run(&client, cli.json).await
+            commands::key::KeyCommand::List(commands::key::KeyListArgs {
+                table: Default::default(),
+            })
+            .run(&client, cli.json)
+            .await
         }
         Commands::Fwrules => {
             let client = cli.build_client()?;
-            commands::fwrule::FwruleCommand::List
-                .run(&client, cli.json)
-                .await
+            commands::fwrule::FwruleCommand::List(commands::fwrule::FwruleListArgs {
+                table: Default::default(),
+            })
+            .run(&client, cli.json)
+            .await
         }
         Commands::Vlans => {
             let client = cli.build_client()?;
-            commands::vlan::VlanCommand::List
-                .run(&client, cli.json)
-                .await
+            commands::vlan::VlanCommand::List(commands::vlan::VlanListArgs {
+                table: Default::default(),
+            })
+            .run(&client, cli.json)
+            .await
         }
         Commands::Profiles => {
-            commands::profile::ProfileCommand::List { json: cli.json }
-                .run()
-                .await
+            commands::profile::ProfileCommand::List(commands::profile::ProfileListArgs {
+                json: cli.json,
+                table: Default::default(),
+            })
+            .run()
+            .await
         }
         Commands::Ip(args) => {
             let client = cli.build_client()?;

@@ -10,7 +10,8 @@ use anyhow::Result;
 use clap::Args;
 use cloudapi_client::TypedClient;
 
-use crate::output::{json, table};
+use crate::output::json;
+use crate::output::table::{TableBuilder, TableFormatArgs};
 
 use super::common::resolve_user;
 
@@ -83,6 +84,9 @@ impl RbacKeyCommand {
 pub struct UserKeysArgs {
     /// User login or UUID
     pub user: String,
+
+    #[command(flatten)]
+    pub table: TableFormatArgs,
 }
 
 #[derive(Args, Clone)]
@@ -137,11 +141,15 @@ pub async fn list_user_keys(
     if use_json {
         json::print_json(&keys)?;
     } else {
-        let mut tbl = table::create_table(&["NAME", "FINGERPRINT"]);
+        let mut tbl = TableBuilder::new(&["NAME", "FINGERPRINT"]).with_long_headers(&["KEY"]);
         for key in &keys {
-            tbl.add_row(vec![&key.name, &key.fingerprint]);
+            tbl.add_row(vec![
+                key.name.clone(),
+                key.fingerprint.clone(),
+                key.key.clone(),
+            ]);
         }
-        table::print_table(tbl);
+        tbl.print(&args.table);
     }
 
     Ok(())

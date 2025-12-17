@@ -46,7 +46,7 @@ pub struct MigrationStartArgs {
     pub instance: String,
 
     /// Affinity rules (can be specified multiple times)
-    #[arg(long)]
+    #[arg(short = 'a', long)]
     pub affinity: Option<Vec<String>>,
 }
 

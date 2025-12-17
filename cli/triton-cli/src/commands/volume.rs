@@ -10,13 +10,26 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 
-use crate::output::{json, table};
+use crate::output::json;
+use crate::output::table::{TableBuilder, TableFormatArgs};
+
+#[derive(Args, Clone)]
+pub struct VolumeListArgs {
+    #[command(flatten)]
+    pub table: TableFormatArgs,
+}
+
+#[derive(Args, Clone)]
+pub struct VolumeSizesArgs {
+    #[command(flatten)]
+    pub table: TableFormatArgs,
+}
 
 #[derive(Subcommand, Clone)]
 pub enum VolumeCommand {
     /// List volumes
     #[command(alias = "ls")]
-    List,
+    List(VolumeListArgs),
     /// Get volume details
     Get(VolumeGetArgs),
     /// Create volume
@@ -25,7 +38,7 @@ pub enum VolumeCommand {
     #[command(alias = "rm")]
     Delete(VolumeDeleteArgs),
     /// List available volume sizes
-    Sizes,
+    Sizes(VolumeSizesArgs),
 }
 
 #[derive(Args, Clone)]
@@ -84,16 +97,16 @@ pub struct VolumeDeleteArgs {
 impl VolumeCommand {
     pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
-            Self::List => list_volumes(client, use_json).await,
+            Self::List(args) => list_volumes(args, client, use_json).await,
             Self::Get(args) => get_volume(args, client, use_json).await,
             Self::Create(args) => create_volume(args, client, use_json).await,
             Self::Delete(args) => delete_volumes(args, client).await,
-            Self::Sizes => list_volume_sizes(client, use_json).await,
+            Self::Sizes(args) => list_volume_sizes(args, client, use_json).await,
         }
     }
 }
 
-async fn list_volumes(client: &TypedClient, use_json: bool) -> Result<()> {
+async fn list_volumes(args: VolumeListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
     let response = client
         .inner()
@@ -107,17 +120,20 @@ async fn list_volumes(client: &TypedClient, use_json: bool) -> Result<()> {
     if use_json {
         json::print_json(&volumes)?;
     } else {
-        let mut tbl = table::create_table(&["SHORTID", "NAME", "SIZE", "STATE", "TYPE"]);
+        let mut tbl = TableBuilder::new(&["SHORTID", "NAME", "SIZE", "STATE", "TYPE"])
+            .with_long_headers(&["ID", "CREATED"]);
         for vol in &volumes {
             tbl.add_row(vec![
-                &vol.id.to_string()[..8],
-                &vol.name,
-                &format!("{} MB", vol.size),
-                &format!("{:?}", vol.state).to_lowercase(),
-                &vol.type_,
+                vol.id.to_string()[..8].to_string(),
+                vol.name.clone(),
+                format!("{} MB", vol.size),
+                format!("{:?}", vol.state).to_lowercase(),
+                vol.type_.clone(),
+                vol.id.to_string(),
+                vol.created.to_string(),
             ]);
         }
-        table::print_table(tbl);
+        tbl.print(&args.table);
     }
 
     Ok(())
@@ -374,7 +390,11 @@ async fn delete_volumes(args: VolumeDeleteArgs, client: &TypedClient) -> Result<
     Ok(())
 }
 
-async fn list_volume_sizes(client: &TypedClient, use_json: bool) -> Result<()> {
+async fn list_volume_sizes(
+    args: VolumeSizesArgs,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
     let account = &client.auth_config().account;
     let response = client
         .inner()
@@ -388,11 +408,11 @@ async fn list_volume_sizes(client: &TypedClient, use_json: bool) -> Result<()> {
     if use_json {
         json::print_json(&sizes)?;
     } else {
-        let mut tbl = table::create_table(&["SIZE"]);
+        let mut tbl = TableBuilder::new(&["SIZE"]);
         for size in &sizes {
-            tbl.add_row(vec![&format!("{} GB", size.size)]);
+            tbl.add_row(vec![format!("{} GB", size.size)]);
         }
-        table::print_table(tbl);
+        tbl.print(&args.table);
     }
 
     Ok(())
