@@ -12,7 +12,7 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 
-use crate::output::json;
+use crate::output::json::{self, print_json_stream};
 use crate::output::table::{TableBuilder, TableFormatArgs};
 
 #[derive(Args, Clone)]
@@ -212,7 +212,7 @@ async fn list_networks(args: NetworkListArgs, client: &TypedClient, use_json: bo
     };
 
     if use_json {
-        json::print_json(&networks)?;
+        print_json_stream(&networks)?;
     } else {
         let mut tbl = TableBuilder::new(&["SHORTID", "NAME", "SUBNET", "GATEWAY", "PUBLIC"])
             .with_long_headers(&["ID", "FABRIC", "VLAN"]);

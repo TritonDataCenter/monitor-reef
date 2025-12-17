@@ -8,9 +8,21 @@
 
 use serde::Serialize;
 
-/// Print a value as pretty JSON
+/// Print a value as pretty JSON (single object)
 pub fn print_json<T: Serialize>(value: &T) -> anyhow::Result<()> {
     let json = serde_json::to_string_pretty(value)?;
     println!("{}", json);
+    Ok(())
+}
+
+/// Print a slice as newline-delimited JSON (NDJSON)
+///
+/// This matches node-triton's jsonStream() output format where each
+/// element is printed on a separate line as compact JSON.
+pub fn print_json_stream<T: Serialize>(items: &[T]) -> anyhow::Result<()> {
+    for item in items {
+        let json = serde_json::to_string(item)?;
+        println!("{}", json);
+    }
     Ok(())
 }
