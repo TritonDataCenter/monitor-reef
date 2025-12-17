@@ -48,6 +48,14 @@ pub struct MigrationStartArgs {
     /// Affinity rules (can be specified multiple times)
     #[arg(short = 'a', long)]
     pub affinity: Option<Vec<String>>,
+
+    /// Wait for migration to complete
+    #[arg(long, short)]
+    pub wait: bool,
+
+    /// Wait timeout in seconds
+    #[arg(long, default_value = "1800")]
+    pub wait_timeout: u64,
 }
 
 #[derive(Args, Clone)]
@@ -179,7 +187,14 @@ async fn start_migration(
 
     println!("Migration started for instance {}", &instance_id[..8]);
 
-    if use_json {
+    if args.wait {
+        // Reuse the wait_migration logic
+        let wait_args = MigrationWaitArgs {
+            instance: instance_id.clone(),
+            timeout: args.wait_timeout,
+        };
+        wait_migration(wait_args, client).await?;
+    } else if use_json {
         json::print_json(&migration)?;
     } else {
         println!("State: {}", migration.state);

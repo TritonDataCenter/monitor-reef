@@ -60,6 +60,14 @@ pub struct DiskAddArgs {
     /// Disk name (optional, must be unique per instance)
     #[arg(long)]
     pub name: Option<String>,
+
+    /// Wait for disk addition to complete
+    #[arg(long, short)]
+    pub wait: bool,
+
+    /// Wait timeout in seconds
+    #[arg(long, default_value = "600")]
+    pub wait_timeout: u64,
 }
 
 #[derive(Args, Clone)]
@@ -193,6 +201,11 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
         &disk.id.to_string()[..8],
         disk.size
     );
+
+    if args.wait {
+        super::wait::wait_for_state(&machine_id, "running", args.wait_timeout, client).await?;
+        println!("Instance {} is running", &machine_id[..8]);
+    }
 
     if use_json {
         json::print_json(&disk)?;

@@ -92,6 +92,9 @@ pub struct VolumeDeleteArgs {
     /// Wait for deletion
     #[arg(long, short)]
     pub wait: bool,
+    /// Wait timeout in seconds
+    #[arg(long, default_value = "300")]
+    pub wait_timeout: u64,
 }
 
 impl VolumeCommand {
@@ -382,7 +385,7 @@ async fn delete_volumes(args: VolumeDeleteArgs, client: &TypedClient) -> Result<
         println!("Deleting volume {}", volume_name);
 
         if args.wait {
-            wait_for_volume_deletion(&volume_id, client).await?;
+            wait_for_volume_deletion(&volume_id, client, args.wait_timeout).await?;
             println!("Volume {} deleted", volume_name);
         }
     }
@@ -453,13 +456,17 @@ pub async fn resolve_volume(id_or_name: &str, client: &TypedClient) -> Result<St
     Err(anyhow::anyhow!("Volume not found: {}", id_or_name))
 }
 
-async fn wait_for_volume_deletion(volume_id: &str, client: &TypedClient) -> Result<()> {
+async fn wait_for_volume_deletion(
+    volume_id: &str,
+    client: &TypedClient,
+    timeout_secs: u64,
+) -> Result<()> {
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
 
     let account = &client.auth_config().account;
     let start = Instant::now();
-    let timeout = Duration::from_secs(300);
+    let timeout = Duration::from_secs(timeout_secs);
 
     loop {
         let result = client

@@ -53,6 +53,14 @@ pub struct NicAddArgs {
     /// Network ID
     #[arg(long)]
     pub network: String,
+
+    /// Wait for NIC addition to complete
+    #[arg(long, short)]
+    pub wait: bool,
+
+    /// Wait timeout in seconds
+    #[arg(long, default_value = "600")]
+    pub wait_timeout: u64,
 }
 
 #[derive(Args, Clone)]
@@ -157,6 +165,11 @@ async fn add_nic(args: NicAddArgs, client: &TypedClient) -> Result<()> {
 
     let nic = response.into_inner();
     println!("Added NIC {} with IP {}", nic.mac, nic.ip);
+
+    if args.wait {
+        super::wait::wait_for_state(&machine_id, "running", args.wait_timeout, client).await?;
+        println!("Instance {} is running", &machine_id[..8]);
+    }
 
     Ok(())
 }

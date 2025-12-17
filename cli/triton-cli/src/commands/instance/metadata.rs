@@ -6,6 +6,8 @@
 
 //! Instance metadata subcommands
 
+use std::path::PathBuf;
+
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
@@ -59,8 +61,20 @@ pub struct MetadataSetArgs {
     pub instance: String,
 
     /// Metadata to set (key=value, multiple allowed)
-    #[arg(required = true)]
+    #[arg(required_unless_present = "file")]
     pub metadata: Vec<String>,
+
+    /// Read metadata from JSON file (use '-' for stdin)
+    #[arg(short = 'f', long = "file")]
+    pub file: Option<PathBuf>,
+
+    /// Wait for metadata update to complete
+    #[arg(long, short)]
+    pub wait: bool,
+
+    /// Wait timeout in seconds
+    #[arg(long, default_value = "600")]
+    pub wait_timeout: u64,
 }
 
 #[derive(Args, Clone)]
@@ -161,20 +175,34 @@ async fn set_metadata(args: MetadataSetArgs, client: &TypedClient) -> Result<()>
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = &client.auth_config().account;
 
-    let mut meta_map = serde_json::Map::new();
-    for meta in &args.metadata {
-        if let Some((key, value)) = meta.split_once('=') {
-            meta_map.insert(
-                key.to_string(),
-                serde_json::Value::String(value.to_string()),
-            );
+    // Parse metadata from file or command line
+    let meta_map: serde_json::Map<String, serde_json::Value> = if let Some(file_path) = &args.file {
+        let content = if file_path.as_os_str() == "-" {
+            use std::io::Read;
+            let mut buffer = String::new();
+            std::io::stdin().read_to_string(&mut buffer)?;
+            buffer
         } else {
-            return Err(anyhow::anyhow!(
-                "Invalid metadata format '{}', expected key=value",
-                meta
-            ));
+            std::fs::read_to_string(file_path)?
+        };
+        serde_json::from_str(&content)?
+    } else {
+        let mut map = serde_json::Map::new();
+        for meta in &args.metadata {
+            if let Some((key, value)) = meta.split_once('=') {
+                map.insert(
+                    key.to_string(),
+                    serde_json::Value::String(value.to_string()),
+                );
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Invalid metadata format '{}', expected key=value",
+                    meta
+                ));
+            }
         }
-    }
+        map
+    };
 
     let request = AddMetadataRequest::from(meta_map.clone());
 
@@ -189,6 +217,11 @@ async fn set_metadata(args: MetadataSetArgs, client: &TypedClient) -> Result<()>
 
     for (key, _) in &meta_map {
         println!("Set metadata {}", key);
+    }
+
+    if args.wait {
+        super::wait::wait_for_state(&machine_id, "running", args.wait_timeout, client).await?;
+        println!("Instance {} is running", &machine_id[..8]);
     }
 
     Ok(())

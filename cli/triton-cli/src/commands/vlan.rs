@@ -6,6 +6,8 @@
 
 //! Fabric VLAN management commands
 
+use std::path::PathBuf;
+
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
@@ -76,6 +78,9 @@ pub struct VlanUpdateArgs {
     /// New description
     #[arg(long)]
     pub description: Option<String>,
+    /// Read update data from JSON file (use '-' for stdin)
+    #[arg(short = 'f', long = "file")]
+    pub file: Option<PathBuf>,
 }
 
 #[derive(Args, Clone)]
@@ -212,10 +217,33 @@ async fn delete_vlans(args: VlanDeleteArgs, client: &TypedClient) -> Result<()> 
 async fn update_vlan(args: VlanUpdateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
 
-    let request = cloudapi_client::types::UpdateFabricVlanRequest {
-        name: args.name.clone(),
-        description: args.description.clone(),
+    // Parse update data from file or command line
+    let (name, description) = if let Some(file_path) = &args.file {
+        let content = if file_path.as_os_str() == "-" {
+            use std::io::Read;
+            let mut buffer = String::new();
+            std::io::stdin().read_to_string(&mut buffer)?;
+            buffer
+        } else {
+            std::fs::read_to_string(file_path)?
+        };
+        let data: serde_json::Value = serde_json::from_str(&content)?;
+        let name = data
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .or(args.name.clone());
+        let description = data
+            .get("description")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .or(args.description.clone());
+        (name, description)
+    } else {
+        (args.name.clone(), args.description.clone())
     };
+
+    let request = cloudapi_client::types::UpdateFabricVlanRequest { name, description };
 
     let response = client
         .inner()

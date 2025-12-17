@@ -6,6 +6,8 @@
 
 //! Instance tag subcommands
 
+use std::path::PathBuf;
+
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
@@ -56,8 +58,20 @@ pub struct TagSetArgs {
     pub instance: String,
 
     /// Tags to set (key=value, multiple allowed)
-    #[arg(required = true)]
+    #[arg(required_unless_present = "file")]
     pub tags: Vec<String>,
+
+    /// Read tags from JSON file (use '-' for stdin)
+    #[arg(short = 'f', long = "file")]
+    pub file: Option<PathBuf>,
+
+    /// Wait for tag update to complete
+    #[arg(long, short)]
+    pub wait: bool,
+
+    /// Wait timeout in seconds
+    #[arg(long, default_value = "600")]
+    pub wait_timeout: u64,
 }
 
 #[derive(Args, Clone)]
@@ -154,17 +168,31 @@ async fn set_tags(args: TagSetArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = &client.auth_config().account;
 
-    let mut tag_map: Map<String, Value> = Map::new();
-    for tag in &args.tags {
-        if let Some((key, value)) = tag.split_once('=') {
-            tag_map.insert(key.to_string(), Value::String(value.to_string()));
+    // Parse tags from file or command line
+    let tag_map: Map<String, Value> = if let Some(file_path) = &args.file {
+        let content = if file_path.as_os_str() == "-" {
+            use std::io::Read;
+            let mut buffer = String::new();
+            std::io::stdin().read_to_string(&mut buffer)?;
+            buffer
         } else {
-            return Err(anyhow::anyhow!(
-                "Invalid tag format '{}', expected key=value",
-                tag
-            ));
+            std::fs::read_to_string(file_path)?
+        };
+        serde_json::from_str(&content)?
+    } else {
+        let mut map: Map<String, Value> = Map::new();
+        for tag in &args.tags {
+            if let Some((key, value)) = tag.split_once('=') {
+                map.insert(key.to_string(), Value::String(value.to_string()));
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Invalid tag format '{}', expected key=value",
+                    tag
+                ));
+            }
         }
-    }
+        map
+    };
 
     let request = TagsRequest::from(tag_map.clone());
 
@@ -183,6 +211,11 @@ async fn set_tags(args: TagSetArgs, client: &TypedClient) -> Result<()> {
             _ => value.to_string(),
         };
         println!("Set tag {}={}", key, val_str);
+    }
+
+    if args.wait {
+        super::wait::wait_for_state(&machine_id, "running", args.wait_timeout, client).await?;
+        println!("Instance {} is running", &machine_id[..8]);
     }
 
     Ok(())

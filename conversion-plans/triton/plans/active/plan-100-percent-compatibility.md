@@ -33,6 +33,23 @@ This plan details all remaining option gaps between the Rust `triton-cli` and `n
 
 **Short Flags:** Added `-s` to `image wait --state` and `-a` to `instance migration start --affinity`.
 
+### ✅ Phase 2 Complete (2025-12-17)
+
+**Wait/Timeout Support:** Added `--wait` and `--wait-timeout` options to async operations:
+- `instance nic add` - wait for instance to return to running state
+- `instance disk add` - wait for instance to return to running state
+- `instance snapshot create` - wait for snapshot state to become "created"
+- `instance tag set` - wait for instance to return to running state
+- `instance metadata set` - wait for instance to return to running state
+- `instance migration start` - added `--wait` and `--wait-timeout` to wait for migration completion
+- `volume delete` - added `--wait-timeout` (already had `--wait`)
+
+**File Input Support:** Added `-f/--file` option to read JSON data from file (or stdin with `-`):
+- `instance tag set` - read tags from JSON file
+- `instance metadata set` - read metadata from JSON file
+- `network ip update` - read update data from JSON file
+- `vlan update` - read update data from JSON file
+
 See updated gap inventory below for current status.
 
 ---
@@ -433,26 +450,26 @@ Compare with node-triton:
 
 Note: `account limits` uses a nested key-value format, not a table, so table formatting options don't apply.
 
-### Wait/Timeout Gaps (10 items)
+### Wait/Timeout Gaps (10 items) - ✅ COMPLETE
 
 | Command | `--wait` | `--wait-timeout` |
 |---------|----------|------------------|
-| `instance nic add` | ❌ | ❌ |
-| `instance disk add` | ❌ | ❌ |
-| `instance snapshot create` | ❌ | ❌ |
-| `instance tag set` | ❌ | ❌ |
-| `instance metadata set` | ❌ | ❌ |
-| `instance migration start` | ❌ | N/A |
-| `volume delete` | ✅ | ❌ |
+| `instance nic add` | ✅ | ✅ |
+| `instance disk add` | ✅ | ✅ |
+| `instance snapshot create` | ✅ | ✅ |
+| `instance tag set` | ✅ | ✅ |
+| `instance metadata set` | ✅ | ✅ |
+| `instance migration start` | ✅ | ✅ |
+| `volume delete` | ✅ | ✅ |
 
-### File Input Gaps (4 items)
+### File Input Gaps (4 items) - ✅ COMPLETE
 
 | Command | `-f, --file` |
 |---------|--------------|
-| `instance tag set` | ❌ |
-| `instance metadata set` | ❌ |
-| `network ip update` | ❌ |
-| `vlan update` | ❌ |
+| `instance tag set` | ✅ |
+| `instance metadata set` | ✅ |
+| `network ip update` | ✅ |
+| `vlan update` | ✅ |
 
 ### Short Flag Gaps (6 items) - ✅ COMPLETE
 

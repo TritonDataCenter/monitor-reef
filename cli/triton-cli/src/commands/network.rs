@@ -6,6 +6,8 @@
 
 //! Network management commands
 
+use std::path::PathBuf;
+
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
@@ -91,6 +93,9 @@ pub struct NetworkIpUpdateArgs {
     /// Reserve the IP
     #[arg(long)]
     pub reserve: Option<bool>,
+    /// Read update data from JSON file (use '-' for stdin)
+    #[arg(short = 'f', long = "file")]
+    pub file: Option<PathBuf>,
 }
 
 #[derive(Args, Clone)]
@@ -529,7 +534,24 @@ async fn update_network_ip(
     let account = &client.auth_config().account;
     let network_id = resolve_network(&args.network, client).await?;
 
-    let reserved = args.reserve.unwrap_or(false);
+    // Parse update data from file or command line
+    let reserved = if let Some(file_path) = &args.file {
+        let content = if file_path.as_os_str() == "-" {
+            use std::io::Read;
+            let mut buffer = String::new();
+            std::io::stdin().read_to_string(&mut buffer)?;
+            buffer
+        } else {
+            std::fs::read_to_string(file_path)?
+        };
+        let data: serde_json::Value = serde_json::from_str(&content)?;
+        data.get("reserved")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false)
+    } else {
+        args.reserve.unwrap_or(false)
+    };
+
     let request = cloudapi_client::types::UpdateNetworkIpRequest { reserved };
 
     let response = client

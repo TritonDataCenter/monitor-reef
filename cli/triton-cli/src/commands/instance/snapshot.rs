@@ -56,6 +56,14 @@ pub struct SnapshotCreateArgs {
     /// Snapshot name
     #[arg(long)]
     pub name: String,
+
+    /// Wait for snapshot creation to complete
+    #[arg(long, short)]
+    pub wait: bool,
+
+    /// Wait timeout in seconds
+    #[arg(long, default_value = "600")]
+    pub wait_timeout: u64,
 }
 
 #[derive(Args, Clone)]
@@ -178,11 +186,75 @@ async fn create_snapshot(
 
     println!("Creating snapshot {}", snapshot.name);
 
-    if use_json {
+    if args.wait {
+        let final_snapshot = wait_for_snapshot_state(
+            &machine_id,
+            &snapshot.name,
+            "created",
+            args.wait_timeout,
+            client,
+        )
+        .await?;
+        println!("Snapshot {} is created", final_snapshot.name);
+        if use_json {
+            json::print_json(&final_snapshot)?;
+        }
+    } else if use_json {
         json::print_json(&snapshot)?;
     }
 
     Ok(())
+}
+
+async fn wait_for_snapshot_state(
+    machine_id: &str,
+    snapshot_name: &str,
+    target_state: &str,
+    timeout_secs: u64,
+    client: &TypedClient,
+) -> Result<cloudapi_client::types::Snapshot> {
+    use std::time::{Duration, Instant};
+    use tokio::time::sleep;
+
+    let account = &client.auth_config().account;
+    let start = Instant::now();
+    let timeout = Duration::from_secs(timeout_secs);
+
+    loop {
+        let response = client
+            .inner()
+            .get_machine_snapshot()
+            .account(account)
+            .machine(machine_id)
+            .name(snapshot_name)
+            .send()
+            .await?;
+
+        let snapshot = response.into_inner();
+        let current_state = format!("{:?}", snapshot.state).to_lowercase();
+
+        if current_state == target_state.to_lowercase() {
+            return Ok(snapshot);
+        }
+
+        // Check for failed state
+        if current_state == "failed" {
+            return Err(anyhow::anyhow!(
+                "Snapshot entered failed state while waiting for {}",
+                target_state
+            ));
+        }
+
+        if start.elapsed() > timeout {
+            return Err(anyhow::anyhow!(
+                "Timeout waiting for snapshot to reach state {} (current: {})",
+                target_state,
+                current_state
+            ));
+        }
+
+        sleep(Duration::from_secs(2)).await;
+    }
 }
 
 async fn delete_snapshot(args: SnapshotDeleteArgs, client: &TypedClient) -> Result<()> {
