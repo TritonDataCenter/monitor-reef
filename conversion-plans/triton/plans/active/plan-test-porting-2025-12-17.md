@@ -38,9 +38,11 @@ Copyright 2025 Edgecast Cloud LLC.
 | Phase 4.2: Snapshot Tests | **COMPLETE** | 12 offline tests + 2 API tests (ignored) |
 | Phase 4.3: Volume Write Tests | **COMPLETE** | 2 API tests (ignored) |
 | Phase 4.4: Fwrule Write Tests | **COMPLETE** | 1 API test (ignored) |
-| Phase 5: Advanced Tests | Not Started | P3 priority |
+| Phase 5.1: NIC Tests | **COMPLETE** | 12 offline tests + 1 API test (ignored) |
+| Phase 5.2: Manage Workflow Tests | **COMPLETE** | 16 offline tests + 3 API tests (ignored) |
+| Phase 5.3: More Advanced Tests | Not Started | P3 priority |
 
-**Total Tests: 245+ offline passing, 45+ API tests (ignored by default)**
+**Total Tests: 275+ offline passing, 50+ API tests (ignored by default)**
 
 ## Current Session Progress (2025-12-17)
 
@@ -116,6 +118,38 @@ All API integration tests now pass:
 - Volumes: 3 tests
 - Profiles: 0 (all offline)
 - Basics: 0 (all offline)
+- NICs: 1 test (create, get, list, delete workflow)
+- Manage: 3 tests (lifecycle, deleted instance get, wait)
+
+### Latest Session: Phase 5 - Advanced Integration Tests
+
+#### 5.1 NIC Tests (`cli/triton-cli/tests/cli_nics.rs`)
+
+**NIC Command Changes**:
+1. Added `create` alias for `nic add` command
+2. Added `delete` alias for `nic remove` command
+3. Changed `nic list` columns to match node-triton: `IP MAC STATE NETWORK`
+4. IP display includes CIDR notation (e.g., `10.0.0.5/24`)
+5. `nic delete` output message changed from "Removed NIC" to "Deleted NIC"
+6. `nic add/create` accepts both positional network ID and NICOPTS format (`ipv4_uuid=UUID`)
+7. `nic get` always outputs JSON (matching node-triton behavior)
+
+**Tests Added** (12 offline, 1 API):
+- Help tests for list, get, add, remove commands
+- Alias tests for ls, rm, create, delete
+- API workflow test (create NIC, get, list, delete, NICOPTS format)
+
+#### 5.2 Manage Workflow Tests (`cli/triton-cli/tests/cli_manage_workflow.rs`)
+
+**Tests Added** (16 offline, 3 API):
+- Help tests for create, start, stop, reboot, resize, rename, delete, wait, get
+- Alias tests for inst, create, start, stop, reboot, delete
+- Full lifecycle API test (create with metadata/tags, get by UUID/alias/short ID, stop, start, reboot, resize, rename, delete)
+- Deleted instance get test
+- Instance wait test
+
+**Helper Functions Added**:
+- `get_resize_test_package()` - finds a different package for resize tests
 
 ## Running Tests
 

@@ -241,6 +241,41 @@ pub fn get_test_package() -> Option<String> {
     packages.first().map(|p| p.id.clone())
 }
 
+/// Find a package suitable for resize testing (different from the base test package)
+/// Returns the package name if found
+pub fn get_resize_test_package() -> Option<String> {
+    let config = config::load_config()?;
+
+    // Check if resize package is specified in config
+    if let Some(ref package) = config.resize_package {
+        return Some(package.clone());
+    }
+
+    // List packages and find a suitable one for resize
+    let (stdout, _, success) = run_triton_with_profile(["packages", "-j"]);
+    if !success {
+        return None;
+    }
+
+    let mut packages: Vec<PackageInfo> = json_stream_parse(&stdout);
+
+    // Filter out KVM packages
+    packages.retain(|p| !p.name.contains("kvm"));
+
+    // Sort by memory (smallest first)
+    packages.sort_by_key(|p| p.memory);
+
+    // Get the base test package to avoid selecting the same one
+    let base_pkg_id = get_test_package()?;
+
+    // Find a package that's different from the base package
+    // Prefer the second smallest package
+    packages
+        .iter()
+        .find(|p| p.id != base_pkg_id)
+        .map(|p| p.name.clone())
+}
+
 /// Create a test instance with the given alias and optional extra flags
 /// Returns the instance info on success
 pub fn create_test_instance(alias: &str, extra_flags: &[&str]) -> Option<InstanceInfo> {
