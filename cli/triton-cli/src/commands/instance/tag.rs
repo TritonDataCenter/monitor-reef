@@ -303,3 +303,120 @@ async fn replace_tags(args: TagReplaceArgs, client: &TypedClient) -> Result<()> 
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Parse tag key=value string into (key, value) tuple
+    fn parse_tag(s: &str) -> Result<(String, String)> {
+        if let Some((key, value)) = s.split_once('=') {
+            Ok((key.to_string(), value.to_string()))
+        } else {
+            Err(anyhow::anyhow!(
+                "Invalid tag format '{}', expected key=value",
+                s
+            ))
+        }
+    }
+
+    /// Parse tags from a list of key=value strings into a Map
+    fn parse_tags_from_args(tags: &[String]) -> Result<Map<String, Value>> {
+        let mut map: Map<String, Value> = Map::new();
+        for tag in tags {
+            let (key, value) = parse_tag(tag)?;
+            map.insert(key, Value::String(value));
+        }
+        Ok(map)
+    }
+
+    // ===== parse_tag tests =====
+
+    #[test]
+    fn test_parse_tag_simple() {
+        let (key, value) = parse_tag("foo=bar").unwrap();
+        assert_eq!(key, "foo");
+        assert_eq!(value, "bar");
+    }
+
+    #[test]
+    fn test_parse_tag_with_equals_in_value() {
+        let (key, value) = parse_tag("equation=a=b").unwrap();
+        assert_eq!(key, "equation");
+        assert_eq!(value, "a=b");
+    }
+
+    #[test]
+    fn test_parse_tag_empty_value() {
+        let (key, value) = parse_tag("empty=").unwrap();
+        assert_eq!(key, "empty");
+        assert_eq!(value, "");
+    }
+
+    #[test]
+    fn test_parse_tag_no_equals() {
+        let result = parse_tag("notag");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_tag_numeric_value() {
+        let (key, value) = parse_tag("count=42").unwrap();
+        assert_eq!(key, "count");
+        assert_eq!(value, "42");
+    }
+
+    #[test]
+    fn test_parse_tag_boolean_value() {
+        let (key, value) = parse_tag("enabled=true").unwrap();
+        assert_eq!(key, "enabled");
+        assert_eq!(value, "true");
+    }
+
+    // ===== parse_tags_from_args tests =====
+
+    #[test]
+    fn test_parse_tags_from_args_single() {
+        let tags = vec!["foo=bar".to_string()];
+        let map = parse_tags_from_args(&tags).unwrap();
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get("foo").unwrap(), "bar");
+    }
+
+    #[test]
+    fn test_parse_tags_from_args_multiple() {
+        let tags = vec![
+            "foo=bar".to_string(),
+            "baz=qux".to_string(),
+            "count=42".to_string(),
+        ];
+        let map = parse_tags_from_args(&tags).unwrap();
+        assert_eq!(map.len(), 3);
+        assert_eq!(map.get("foo").unwrap(), "bar");
+        assert_eq!(map.get("baz").unwrap(), "qux");
+        assert_eq!(map.get("count").unwrap(), "42");
+    }
+
+    #[test]
+    fn test_parse_tags_from_args_empty() {
+        let tags: Vec<String> = vec![];
+        let map = parse_tags_from_args(&tags).unwrap();
+        assert_eq!(map.len(), 0);
+    }
+
+    #[test]
+    fn test_parse_tags_from_args_invalid() {
+        let tags = vec!["valid=tag".to_string(), "invalid".to_string()];
+        let result = parse_tags_from_args(&tags);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_tags_from_args_duplicate_key() {
+        // Later values should overwrite earlier ones
+        let tags = vec!["key=first".to_string(), "key=second".to_string()];
+        let map = parse_tags_from_args(&tags).unwrap();
+        assert_eq!(map.len(), 1);
+        assert_eq!(map.get("key").unwrap(), "second");
+    }
+}

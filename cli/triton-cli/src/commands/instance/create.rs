@@ -675,3 +675,191 @@ async fn resolve_package(id_or_name: &str, client: &TypedClient) -> Result<Strin
 
     Err(anyhow::anyhow!("Package not found: {}", id_or_name))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ===== parse_key_value tests =====
+
+    #[test]
+    fn test_parse_key_value_simple() {
+        let (key, value) = parse_key_value("foo=bar").unwrap();
+        assert_eq!(key, "foo");
+        assert_eq!(value, "bar");
+    }
+
+    #[test]
+    fn test_parse_key_value_with_equals_in_value() {
+        let (key, value) = parse_key_value("formula=a=b+c").unwrap();
+        assert_eq!(key, "formula");
+        assert_eq!(value, "a=b+c");
+    }
+
+    #[test]
+    fn test_parse_key_value_empty_value() {
+        let (key, value) = parse_key_value("empty=").unwrap();
+        assert_eq!(key, "empty");
+        assert_eq!(value, "");
+    }
+
+    #[test]
+    fn test_parse_key_value_no_equals() {
+        let result = parse_key_value("noequals");
+        assert!(result.is_err());
+    }
+
+    // ===== parse_key_value_file tests =====
+
+    #[test]
+    fn test_parse_key_value_file_equals() {
+        let (key, filepath) = parse_key_value_file("user-script=/path/to/script.sh").unwrap();
+        assert_eq!(key, "user-script");
+        assert_eq!(filepath, "/path/to/script.sh");
+    }
+
+    #[test]
+    fn test_parse_key_value_file_at() {
+        let (key, filepath) = parse_key_value_file("user-script@/path/to/script.sh").unwrap();
+        assert_eq!(key, "user-script");
+        assert_eq!(filepath, "/path/to/script.sh");
+    }
+
+    #[test]
+    fn test_parse_key_value_file_no_separator() {
+        let result = parse_key_value_file("noseparator");
+        assert!(result.is_err());
+    }
+
+    // ===== parse_size tests =====
+
+    #[test]
+    fn test_parse_size_gb() {
+        assert_eq!(parse_size("10G").unwrap(), 10 * 1024);
+        assert_eq!(parse_size("10g").unwrap(), 10 * 1024);
+    }
+
+    #[test]
+    fn test_parse_size_mb_suffix() {
+        assert_eq!(parse_size("1024M").unwrap(), 1024);
+        assert_eq!(parse_size("1024m").unwrap(), 1024);
+    }
+
+    #[test]
+    fn test_parse_size_mb_no_suffix() {
+        assert_eq!(parse_size("10240").unwrap(), 10240);
+    }
+
+    #[test]
+    fn test_parse_size_invalid() {
+        assert!(parse_size("abc").is_err());
+        assert!(parse_size("").is_err());
+        assert!(parse_size("10X").is_err());
+    }
+
+    // ===== parse_volume_spec tests =====
+
+    #[test]
+    fn test_parse_volume_spec_name_only() {
+        let mount = parse_volume_spec("myvolume").unwrap();
+        assert_eq!(mount.name, "myvolume");
+        assert_eq!(mount.mountpoint, "/myvolume");
+        assert_eq!(mount.mode, None);
+    }
+
+    #[test]
+    fn test_parse_volume_spec_name_at_mountpoint() {
+        let mount = parse_volume_spec("myvolume@/data").unwrap();
+        assert_eq!(mount.name, "myvolume");
+        assert_eq!(mount.mountpoint, "/data");
+        assert_eq!(mount.mode, None);
+    }
+
+    #[test]
+    fn test_parse_volume_spec_full() {
+        let mount = parse_volume_spec("myvolume:ro:/data").unwrap();
+        assert_eq!(mount.name, "myvolume");
+        assert_eq!(mount.mountpoint, "/data");
+        assert_eq!(mount.mode, Some("ro".to_string()));
+    }
+
+    #[test]
+    fn test_parse_volume_spec_rw_mode() {
+        let mount = parse_volume_spec("myvolume:rw:/data").unwrap();
+        assert_eq!(mount.name, "myvolume");
+        assert_eq!(mount.mode, Some("rw".to_string()));
+    }
+
+    #[test]
+    fn test_parse_volume_spec_invalid_mode() {
+        let result = parse_volume_spec("myvolume:invalid:/data");
+        assert!(result.is_err());
+    }
+
+    // ===== parse_disk_spec tests =====
+
+    #[test]
+    fn test_parse_disk_spec_size_only() {
+        let disk = parse_disk_spec("10240", true).unwrap();
+        assert_eq!(disk.size, Some(10240));
+        assert_eq!(disk.image, None);
+        assert_eq!(disk.boot, Some(true));
+    }
+
+    #[test]
+    fn test_parse_disk_spec_size_gb() {
+        let disk = parse_disk_spec("10G", false).unwrap();
+        assert_eq!(disk.size, Some(10 * 1024));
+        assert_eq!(disk.boot, None);
+    }
+
+    #[test]
+    fn test_parse_disk_spec_image_and_size() {
+        let disk = parse_disk_spec("12345678-1234-1234-1234-123456789abc:20G", true).unwrap();
+        assert_eq!(
+            disk.image,
+            Some("12345678-1234-1234-1234-123456789abc".to_string())
+        );
+        assert_eq!(disk.size, Some(20 * 1024));
+        assert_eq!(disk.boot, Some(true));
+    }
+
+    // ===== parse_brand tests =====
+
+    #[test]
+    fn test_parse_brand_valid() {
+        assert!(matches!(
+            parse_brand("bhyve").unwrap(),
+            cloudapi_client::types::Brand::Bhyve
+        ));
+        assert!(matches!(
+            parse_brand("kvm").unwrap(),
+            cloudapi_client::types::Brand::Kvm
+        ));
+        assert!(matches!(
+            parse_brand("joyent").unwrap(),
+            cloudapi_client::types::Brand::Joyent
+        ));
+        assert!(matches!(
+            parse_brand("joyent-minimal").unwrap(),
+            cloudapi_client::types::Brand::JoyentMinimal
+        ));
+        assert!(matches!(
+            parse_brand("lx").unwrap(),
+            cloudapi_client::types::Brand::Lx
+        ));
+    }
+
+    #[test]
+    fn test_parse_brand_case_insensitive() {
+        assert!(parse_brand("BHYVE").is_ok());
+        assert!(parse_brand("KVM").is_ok());
+        assert!(parse_brand("Joyent").is_ok());
+    }
+
+    #[test]
+    fn test_parse_brand_invalid() {
+        assert!(parse_brand("invalid").is_err());
+        assert!(parse_brand("").is_err());
+    }
+}

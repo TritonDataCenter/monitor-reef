@@ -174,22 +174,65 @@ async fn get_volume(args: VolumeGetArgs, client: &TypedClient, use_json: bool) -
 }
 
 /// Parse volume size from string, supporting GiB format ("20G") or plain MB
+///
+/// Valid formats:
+/// - "42G" or "42g" - 42 gibibytes (converted to MiB)
+/// - "1024" - 1024 mebibytes
+///
+/// Invalid formats (will return error):
+/// - "foo" - non-numeric
+/// - "0" or "0G" - zero size
+/// - "-42" or "-42G" - negative size
+/// - "042" or "042G" - leading zeros (octal-like)
+/// - "42Gasdf" - trailing garbage after suffix
 fn parse_volume_size(size_str: &str) -> Result<u64> {
+    // Empty string is invalid
+    if size_str.is_empty() {
+        return Err(anyhow::anyhow!("Invalid size format: empty string"));
+    }
+
     // Check for GiB format (e.g., "20G")
-    if let Some(gib_str) = size_str.strip_suffix('G') {
+    if let Some(gib_str) = size_str
+        .strip_suffix('G')
+        .or_else(|| size_str.strip_suffix('g'))
+    {
+        // Check for leading zeros (octal-like, e.g., "042G")
+        if gib_str.len() > 1 && gib_str.starts_with('0') {
+            return Err(anyhow::anyhow!(
+                "Invalid size format: leading zeros not allowed: {}",
+                size_str
+            ));
+        }
+
         let gib: u64 = gib_str
             .parse()
             .map_err(|_| anyhow::anyhow!("Invalid size format: {}", size_str))?;
+
         if gib == 0 {
             return Err(anyhow::anyhow!("Size must be greater than 0"));
         }
+
         // 1 GiB = 1024 MiB
         Ok(gib * 1024)
     } else {
+        // Check for leading zeros (octal-like, e.g., "042")
+        if size_str.len() > 1 && size_str.starts_with('0') {
+            return Err(anyhow::anyhow!(
+                "Invalid size format: leading zeros not allowed: {}",
+                size_str
+            ));
+        }
+
         // Plain MB format
-        size_str
+        let mib: u64 = size_str
             .parse()
-            .map_err(|_| anyhow::anyhow!("Invalid size format: {}", size_str))
+            .map_err(|_| anyhow::anyhow!("Invalid size format: {}", size_str))?;
+
+        if mib == 0 {
+            return Err(anyhow::anyhow!("Size must be greater than 0"));
+        }
+
+        Ok(mib)
     }
 }
 
@@ -496,5 +539,128 @@ async fn wait_for_volume_deletion(
         }
 
         sleep(Duration::from_secs(2)).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ===== parse_volume_size tests =====
+    // Ported from node-triton test/unit/parseVolumeSize.test.js
+
+    #[test]
+    fn test_parse_volume_size_gib() {
+        // "42G" should equal 42 * 1024 = 43008 MiB
+        assert_eq!(parse_volume_size("42G").unwrap(), 42 * 1024);
+    }
+
+    #[test]
+    fn test_parse_volume_size_gib_100() {
+        assert_eq!(parse_volume_size("100G").unwrap(), 100 * 1024);
+    }
+
+    #[test]
+    fn test_parse_volume_size_plain_mib() {
+        // Plain number interpreted as MB
+        assert_eq!(parse_volume_size("1024").unwrap(), 1024);
+    }
+
+    // Invalid sizes - should all return errors
+
+    #[test]
+    fn test_parse_volume_size_invalid_foo() {
+        assert!(parse_volume_size("foo").is_err());
+    }
+
+    #[test]
+    fn test_parse_volume_size_invalid_zero_g() {
+        let result = parse_volume_size("0G");
+        // 0G is technically parseable but should be rejected for size being 0
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_volume_size_invalid_empty() {
+        assert!(parse_volume_size("").is_err());
+    }
+
+    #[test]
+    fn test_parse_volume_size_invalid_mixed() {
+        assert!(parse_volume_size("42Gasdf").is_err());
+        assert!(parse_volume_size("42gasdf").is_err());
+        assert!(parse_volume_size("42asdf").is_err());
+    }
+
+    #[test]
+    fn test_parse_volume_size_invalid_prefix() {
+        assert!(parse_volume_size("asdf42G").is_err());
+        assert!(parse_volume_size("asdf42g").is_err());
+        assert!(parse_volume_size("asdf42").is_err());
+    }
+
+    #[test]
+    fn test_parse_volume_size_invalid_leading_zero() {
+        // Leading zeros should be rejected (octal interpretation issue)
+        assert!(parse_volume_size("042g").is_err());
+        assert!(parse_volume_size("042G").is_err());
+        assert!(parse_volume_size("042").is_err());
+    }
+
+    // ===== parse_tags tests =====
+
+    #[test]
+    fn test_parse_tags_simple() {
+        let tags = vec!["foo=bar".to_string()];
+        let result = parse_tags(&tags);
+        assert_eq!(result.get("foo").unwrap(), "bar");
+    }
+
+    #[test]
+    fn test_parse_tags_boolean() {
+        let tags = vec!["enabled=true".to_string(), "disabled=false".to_string()];
+        let result = parse_tags(&tags);
+        assert_eq!(result.get("enabled").unwrap(), true);
+        assert_eq!(result.get("disabled").unwrap(), false);
+    }
+
+    #[test]
+    fn test_parse_tags_numeric() {
+        let tags = vec!["count=42".to_string()];
+        let result = parse_tags(&tags);
+        assert_eq!(result.get("count").unwrap(), 42);
+    }
+
+    #[test]
+    fn test_parse_tags_float() {
+        let tags = vec!["pi=3.14".to_string()];
+        let result = parse_tags(&tags);
+        // Check it's a number (float comparison is tricky)
+        assert!(result.get("pi").unwrap().is_f64());
+    }
+
+    #[test]
+    fn test_parse_tags_string_with_number_like_value() {
+        // Values that look like numbers but shouldn't be converted
+        let tags = vec!["version=1.0.0".to_string()];
+        let result = parse_tags(&tags);
+        // This should remain a string because it can't be parsed as a number
+        assert!(result.get("version").unwrap().is_string());
+    }
+
+    #[test]
+    fn test_parse_tags_empty() {
+        let tags: Vec<String> = vec![];
+        let result = parse_tags(&tags);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn test_parse_tags_ignores_invalid_format() {
+        // Tags without '=' are silently ignored
+        let tags = vec!["valid=tag".to_string(), "invalid-no-equals".to_string()];
+        let result = parse_tags(&tags);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result.get("valid").unwrap(), "tag");
     }
 }
