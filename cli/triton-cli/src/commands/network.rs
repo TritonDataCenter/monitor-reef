@@ -17,8 +17,24 @@ use crate::output::table::{TableBuilder, TableFormatArgs};
 
 #[derive(Args, Clone)]
 pub struct NetworkListArgs {
+    /// Filter by public network (true or false)
+    #[arg(long, value_parser = parse_bool_filter)]
+    pub public: Option<bool>,
+
     #[command(flatten)]
     pub table: TableFormatArgs,
+}
+
+/// Parse a boolean filter value ("true" or "false")
+fn parse_bool_filter(s: &str) -> Result<bool, String> {
+    match s.to_lowercase().as_str() {
+        "true" | "yes" | "1" => Ok(true),
+        "false" | "no" | "0" => Ok(false),
+        _ => Err(format!(
+            "Invalid boolean value '{}'. Use 'true' or 'false'.",
+            s
+        )),
+    }
 }
 
 #[derive(Subcommand, Clone)]
@@ -183,7 +199,17 @@ async fn list_networks(args: NetworkListArgs, client: &TypedClient, use_json: bo
         .send()
         .await?;
 
-    let networks = response.into_inner();
+    let all_networks = response.into_inner();
+
+    // Apply public filter if specified
+    let networks: Vec<_> = if let Some(public_filter) = args.public {
+        all_networks
+            .into_iter()
+            .filter(|net| net.public == public_filter)
+            .collect()
+    } else {
+        all_networks
+    };
 
     if use_json {
         json::print_json(&networks)?;

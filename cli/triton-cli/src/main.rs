@@ -46,7 +46,7 @@ struct Cli {
     key_id: Option<String>,
 
     /// Output as JSON
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     json: bool,
 
     /// Verbose output
@@ -209,11 +209,11 @@ enum Commands {
 
     /// List networks (shortcut for 'network list')
     #[command(alias = "networks")]
-    Nets,
+    Nets(commands::network::NetworkListArgs),
 
     /// List volumes (shortcut for 'volume list')
     #[command(alias = "volumes")]
-    Vols,
+    Vols(commands::volume::VolumeListArgs),
 
     /// List SSH keys (shortcut for 'key list')
     Keys,
@@ -469,21 +469,17 @@ async fn main() -> Result<()> {
                 .run(&client, cli.json)
                 .await
         }
-        Commands::Nets => {
+        Commands::Nets(args) => {
             let client = cli.build_client()?;
-            commands::network::NetworkCommand::List(commands::network::NetworkListArgs {
-                table: Default::default(),
-            })
-            .run(&client, cli.json)
-            .await
+            commands::network::NetworkCommand::List(args.clone())
+                .run(&client, cli.json)
+                .await
         }
-        Commands::Vols => {
+        Commands::Vols(args) => {
             let client = cli.build_client()?;
-            commands::volume::VolumeCommand::List(commands::volume::VolumeListArgs {
-                table: Default::default(),
-            })
-            .run(&client, cli.json)
-            .await
+            commands::volume::VolumeCommand::List(args.clone())
+                .run(&client, cli.json)
+                .await
         }
         Commands::Keys => {
             let client = cli.build_client()?;

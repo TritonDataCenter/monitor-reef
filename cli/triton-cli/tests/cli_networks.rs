@@ -427,7 +427,10 @@ fn test_network_get_by_name() {
     );
 }
 
-/// Test `triton networks public=true` filters by public networks
+/// Test `triton networks --public=true` filters by public networks
+///
+/// Note: node-triton uses positional `public=true` syntax, but our Rust CLI
+/// uses `--public=true` flag syntax which is more consistent with clap conventions.
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_networks_filter_public_true() {
@@ -437,7 +440,7 @@ fn test_networks_filter_public_true() {
     }
 
     let output = triton_with_profile()
-        .args(["networks", "public=true", "-j"])
+        .args(["networks", "--public=true", "-j"])
         .output()
         .expect("Failed to run command");
 
@@ -453,7 +456,7 @@ fn test_networks_filter_public_true() {
     }
 }
 
-/// Test `triton networks public=false` filters by non-public networks
+/// Test `triton networks --public=false` filters by non-public networks
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_networks_filter_public_false() {
@@ -463,7 +466,7 @@ fn test_networks_filter_public_false() {
     }
 
     let output = triton_with_profile()
-        .args(["networks", "public=false", "-j"])
+        .args(["networks", "--public=false", "-j"])
         .output()
         .expect("Failed to run command");
 
@@ -479,22 +482,13 @@ fn test_networks_filter_public_false() {
     }
 }
 
-/// Test `triton networks public=bogus` returns error
+/// Test `triton networks --public=bogus` returns error
 #[test]
-#[ignore = "requires API access - run with make triton-test-api"]
 fn test_networks_filter_public_invalid() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
-
-    let output = triton_with_profile()
-        .args(["networks", "public=bogus"])
-        .output()
-        .expect("Failed to run command");
-
-    assert!(
-        !output.status.success(),
-        "Command should fail with invalid filter value"
-    );
+    // This test doesn't require API access - it's testing argument parsing
+    triton_cmd()
+        .args(["networks", "--public=bogus"])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains("Invalid boolean value"));
 }
