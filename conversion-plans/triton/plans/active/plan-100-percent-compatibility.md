@@ -61,7 +61,8 @@ This plan details all remaining option gaps between the Rust `triton-cli` and `n
 **Firewall Options:**
 - Added `--disabled` flag to `fwrule create` (inverse of enabled)
 - Added `-D` short flag for `--description`
-- `--log` deferred (requires CloudAPI schema change)
+- Added `--log, -l` flag to `fwrule create` for TCP connection logging
+- Added `--log` flag to `fwrule update` for TCP connection logging
 
 **Key Options:**
 - Added `--authorized-keys, -A` to `key list` for OpenSSH authorized_keys format output
@@ -70,14 +71,16 @@ This plan details all remaining option gaps between the Rust `triton-cli` and `n
 **Image Options:**
 - Added `--homepage` and `--eula` to `image update`
 - Added `--dry-run` to `image export`, `image share`, `image unshare`
+- Added multi-state support to `image wait` (-s can accept comma-separated states)
+- Added support for multiple IMAGE arguments to `image wait`
+- Changed default states to "active,failed" to match node-triton
 
 **SSH Options:**
 - Added `--no-disable-mux` to `instance ssh` to control SSH ControlMaster behavior
 
 ## Deferred Items
 
-1. **`fwrule create --log`** - Requires adding `log` field to CloudAPI CreateFirewallRuleRequest
-2. **`image wait` multi-state** - Support comma-separated states
+All previously deferred items have been implemented.
 
 See updated gap inventory below for current status.
 
@@ -364,13 +367,14 @@ This also fixed `role-tags add` and `role-tags remove` commands which now proper
 
 | Command | Missing | Description | Status |
 |---------|---------|-------------|--------|
-| `fwrule create` | `--log, -l` | Enable TCP connection logging | Deferred (requires API change) |
+| `fwrule create` | `--log, -l` | Enable TCP connection logging | ✅ Complete |
 | `fwrule create` | `--disabled, -d` | Create rule in disabled state | ✅ Complete |
 | `fwrule create` | `-D` short for `--description` | Short flag alias | ✅ Complete |
+| `fwrule update` | `--log` | Enable/disable TCP connection logging | ✅ Complete |
 
 **File:** `cli/triton-cli/src/commands/fwrule.rs`
 
-**Note:** `--log` requires adding a `log` field to the CloudAPI CreateFirewallRuleRequest type. This has been deferred.
+**Implementation Note:** Added `log` field to `FirewallRule`, `CreateFirewallRuleRequest`, and `UpdateFirewallRuleRequest` in `apis/cloudapi-api/src/types/firewall.rs` to match node CloudAPI's support for TCP connection logging.
 
 ---
 
@@ -390,7 +394,8 @@ This also fixed `role-tags add` and `role-tags remove` commands which now proper
 | Command | Missing | Description | Status |
 |---------|---------|-------------|--------|
 | `image get` | `-a, --all` | Include inactive images | N/A (list has `--all`) |
-| `image wait` | Multi-state | Support comma-separated states | Deferred |
+| `image wait` | Multi-state | Support comma-separated states | ✅ Complete |
+| `image wait` | Multiple images | Support multiple IMAGE arguments | ✅ Complete |
 | `image export` | `--dry-run` | Show what would be exported | ✅ Complete |
 | `image share` | `--dry-run` | Show what would be shared | ✅ Complete |
 | `image unshare` | `--dry-run` | Show what would be unshared | ✅ Complete |
@@ -398,6 +403,8 @@ This also fixed `role-tags add` and `role-tags remove` commands which now proper
 | `image update` | `--eula` | Update EULA field | ✅ Complete |
 
 **File:** `cli/triton-cli/src/commands/image.rs`
+
+**Implementation Note:** `image wait` now accepts multiple states via `-s state1,state2` or repeated `-s state1 -s state2` flags, and defaults to "active,failed" to match node-triton behavior.
 
 ---
 

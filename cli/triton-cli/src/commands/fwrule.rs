@@ -57,6 +57,9 @@ pub struct FwruleCreateArgs {
     /// Create rule in disabled state (rules are enabled by default)
     #[arg(short = 'd', long)]
     pub disabled: bool,
+    /// Enable TCP connection logging for this rule
+    #[arg(short = 'l', long)]
+    pub log: bool,
 }
 
 #[derive(Args, Clone)]
@@ -90,6 +93,9 @@ pub struct FwruleUpdateArgs {
     /// New description
     #[arg(long)]
     pub description: Option<String>,
+    /// Enable TCP connection logging for this rule
+    #[arg(long = "log")]
+    pub enable_log: Option<bool>,
 }
 
 #[derive(Args, Clone)]
@@ -176,6 +182,7 @@ async fn get_rule(args: FwruleGetArgs, client: &TypedClient, use_json: bool) -> 
         println!("ID:          {}", rule.id);
         println!("Rule:        {}", rule.rule);
         println!("Enabled:     {}", rule.enabled);
+        println!("Log:         {}", rule.log);
         if let Some(desc) = &rule.description {
             println!("Description: {}", desc);
         }
@@ -190,6 +197,7 @@ async fn create_rule(args: FwruleCreateArgs, client: &TypedClient, use_json: boo
     let request = cloudapi_client::types::CreateFirewallRuleRequest {
         rule: args.rule.clone(),
         enabled: Some(!args.disabled),
+        log: if args.log { Some(true) } else { None },
         description: args.description.clone(),
     };
 
@@ -203,9 +211,10 @@ async fn create_rule(args: FwruleCreateArgs, client: &TypedClient, use_json: boo
     let rule = response.into_inner();
 
     println!(
-        "Created firewall rule {} ({})",
+        "Created firewall rule {} ({}{})",
         &rule.id.to_string()[..8],
-        if rule.enabled { "enabled" } else { "disabled" }
+        if rule.enabled { "enabled" } else { "disabled" },
+        if rule.log { ", logging" } else { "" }
     );
 
     if use_json {
@@ -255,6 +264,7 @@ async fn enable_rules(args: FwruleEnableArgs, client: &TypedClient) -> Result<()
         let request = cloudapi_client::types::UpdateFirewallRuleRequest {
             rule: None,
             enabled: Some(true),
+            log: None,
             description: None,
         };
 
@@ -282,6 +292,7 @@ async fn disable_rules(args: FwruleDisableArgs, client: &TypedClient) -> Result<
         let request = cloudapi_client::types::UpdateFirewallRuleRequest {
             rule: None,
             enabled: Some(false),
+            log: None,
             description: None,
         };
 
@@ -307,6 +318,7 @@ async fn update_rule(args: FwruleUpdateArgs, client: &TypedClient, use_json: boo
     let request = cloudapi_client::types::UpdateFirewallRuleRequest {
         rule: args.rule.clone(),
         enabled: None,
+        log: args.enable_log,
         description: args.description.clone(),
     };
 

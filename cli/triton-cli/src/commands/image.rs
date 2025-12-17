@@ -221,11 +221,13 @@ pub struct ImageExportArgs {
 
 #[derive(Args, Clone)]
 pub struct ImageWaitArgs {
-    /// Image ID or name[@version]
-    pub image: String,
-    /// Target state (default: active)
-    #[arg(short = 's', long, default_value = "active")]
-    pub state: String,
+    /// Image ID(s) or name[@version]
+    #[arg(required = true)]
+    pub images: Vec<String>,
+    /// Target state(s) to wait for (comma-separated or multiple -s flags)
+    /// Default is "active,failed"
+    #[arg(short = 's', long = "states", value_delimiter = ',', default_values_t = vec!["active".to_string(), "failed".to_string()])]
+    pub states: Vec<String>,
     /// Timeout in seconds
     #[arg(long, default_value = "600")]
     pub timeout: u64,
@@ -628,7 +630,7 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
     );
 
     if args.wait {
-        wait_for_image_state(&image.id.to_string(), "active", 600, client).await?;
+        wait_for_image_states(&image.id.to_string(), &["active", "failed"], 600, client).await?;
         println!("Image is active");
     }
 
@@ -794,24 +796,76 @@ async fn export_image(args: ImageExportArgs, client: &TypedClient, use_json: boo
 }
 
 async fn wait_image(args: ImageWaitArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let image_id = resolve_image(&args.image, client).await?;
-
-    wait_for_image_state(&image_id, &args.state, args.timeout, client).await?;
-    println!("Image reached state: {}", args.state);
-
-    // Get final image state
     let account = &client.auth_config().account;
-    let response = client
-        .inner()
-        .get_image()
-        .account(account)
-        .dataset(&image_id)
-        .send()
-        .await?;
-    let image = response.into_inner();
+    let states: Vec<&str> = args.states.iter().map(|s| s.as_str()).collect();
+    let total = args.images.len();
+
+    // First resolve all images and check if any are already in target state
+    let mut images_to_wait: Vec<(String, String)> = Vec::new(); // (id, display_name)
+    let mut done = 0;
+
+    for image_ref in &args.images {
+        let image_id = resolve_image(image_ref, client).await?;
+
+        // Get current state
+        let response = client
+            .inner()
+            .get_image()
+            .account(account)
+            .dataset(&image_id)
+            .send()
+            .await?;
+        let image = response.into_inner();
+        let current_state = format!("{:?}", image.state).to_lowercase();
+
+        if states.iter().any(|s| s.to_lowercase() == current_state) {
+            done += 1;
+            println!(
+                "{}/{}: Image {} ({}@{}) already {}",
+                done, total, image.id, image.name, image.version, current_state
+            );
+        } else {
+            images_to_wait.push((
+                image_id.clone(),
+                format!("{} ({}@{})", image.id, image.name, image.version),
+            ));
+        }
+    }
+
+    if images_to_wait.is_empty() {
+        return Ok(());
+    }
+
+    // Print waiting message
+    if images_to_wait.len() == 1 {
+        println!(
+            "Waiting for image {} to enter state (states: {})",
+            images_to_wait[0].1,
+            states.join(", ")
+        );
+    } else {
+        println!(
+            "Waiting for {} images to enter state (states: {})",
+            images_to_wait.len(),
+            states.join(", ")
+        );
+    }
+
+    // Wait for each image
+    let mut final_images = Vec::new();
+    for (image_id, display_name) in &images_to_wait {
+        let image = wait_for_image_states(image_id, &states, args.timeout, client).await?;
+        done += 1;
+        let final_state = format!("{:?}", image.state).to_lowercase();
+        println!(
+            "{}/{}: Image {} moved to state {}",
+            done, total, display_name, final_state
+        );
+        final_images.push(image);
+    }
 
     if use_json {
-        json::print_json(&image)?;
+        json::print_json(&final_images)?;
     }
 
     Ok(())
@@ -865,12 +919,12 @@ pub async fn resolve_image(id_or_name: &str, client: &TypedClient) -> Result<Str
     Err(anyhow::anyhow!("Image not found: {}", id_or_name))
 }
 
-async fn wait_for_image_state(
+async fn wait_for_image_states(
     image_id: &str,
-    target_state: &str,
+    target_states: &[&str],
     timeout_secs: u64,
     client: &TypedClient,
-) -> Result<()> {
+) -> Result<Image> {
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
 
@@ -890,18 +944,18 @@ async fn wait_for_image_state(
         let image = response.into_inner();
         let current_state = format!("{:?}", image.state).to_lowercase();
 
-        if current_state == target_state.to_lowercase() {
-            return Ok(());
-        }
-
-        if current_state == "failed" {
-            return Err(anyhow::anyhow!("Image entered failed state"));
+        // Check if current state matches any target state
+        if target_states
+            .iter()
+            .any(|s| s.to_lowercase() == current_state)
+        {
+            return Ok(image);
         }
 
         if start.elapsed() > timeout {
             return Err(anyhow::anyhow!(
-                "Timeout waiting for image state: {}",
-                target_state
+                "Timeout waiting for image states: {}",
+                target_states.join(", ")
             ));
         }
 

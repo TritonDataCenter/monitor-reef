@@ -9613,6 +9613,12 @@
             "default": null,
             "type": "boolean"
           },
+          "log": {
+            "nullable": true,
+            "description": "Enable TCP connection logging (defaults to false)",
+            "default": null,
+            "type": "boolean"
+          },
           "rule": {
             "description": "Rule text",
             "type": "string"
@@ -10152,6 +10158,11 @@
           "id": {
             "description": "Rule UUID",
             "type": "string"
+          },
+          "log": {
+            "description": "Enable TCP connection logging for this rule",
+            "default": false,
+            "type": "boolean"
           },
           "role-tag": {
             "nullable": true,
@@ -11628,6 +11639,12 @@
           "enabled": {
             "nullable": true,
             "description": "Enabled",
+            "default": null,
+            "type": "boolean"
+          },
+          "log": {
+            "nullable": true,
+            "description": "Enable TCP connection logging",
             "default": null,
             "type": "boolean"
           },

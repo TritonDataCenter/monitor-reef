@@ -29,6 +29,9 @@ pub struct FirewallRule {
     pub rule: String,
     /// Enabled
     pub enabled: bool,
+    /// Enable TCP connection logging for this rule
+    #[serde(default)]
+    pub log: bool,
     /// Global rule
     #[serde(default)]
     pub global: Option<bool>,
@@ -55,6 +58,9 @@ pub struct CreateFirewallRuleRequest {
     /// Enabled (defaults to false)
     #[serde(default)]
     pub enabled: Option<bool>,
+    /// Enable TCP connection logging (defaults to false)
+    #[serde(default)]
+    pub log: Option<bool>,
     /// Description
     #[serde(default)]
     pub description: Option<String>,
@@ -70,6 +76,9 @@ pub struct UpdateFirewallRuleRequest {
     /// Enabled
     #[serde(default)]
     pub enabled: Option<bool>,
+    /// Enable TCP connection logging
+    #[serde(default)]
+    pub log: Option<bool>,
     /// Description
     #[serde(default)]
     pub description: Option<String>,
