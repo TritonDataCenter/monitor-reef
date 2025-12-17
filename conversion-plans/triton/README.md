@@ -68,8 +68,7 @@ conversion-plans/triton/
 
 | File | Purpose |
 |------|---------|
-| [validation-prompt.md](prompts/validation-prompt.md) | Full CLI validation against node-triton |
-| [compatibility-analysis-prompt.md](prompts/compatibility-analysis-prompt.md) | Option/argument compatibility analysis |
+| [triton-cli-evaluation-prompt.md](prompts/triton-cli-evaluation-prompt.md) | Comprehensive CLI evaluation (command coverage, option compatibility, new features) |
 
 ## Reports
 
