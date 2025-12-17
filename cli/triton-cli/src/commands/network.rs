@@ -252,17 +252,14 @@ async fn get_network(args: NetworkGetArgs, client: &TypedClient, use_json: bool)
 
     let network = response.into_inner();
 
+    // Always output JSON for 'get' commands (matching node-triton behavior)
+    // -j flag controls compact vs pretty output
     if use_json {
-        json::print_json(&network)?;
+        // Compact JSON (one line)
+        println!("{}", serde_json::to_string(&network)?);
     } else {
-        println!("ID:      {}", network.id);
-        println!("Name:    {}", network.name);
-        println!("Subnet:  {}", network.subnet.as_deref().unwrap_or("-"));
-        println!("Gateway: {}", network.gateway.as_deref().unwrap_or("-"));
-        println!("Public:  {}", network.public);
-        if let Some(fabric) = network.fabric {
-            println!("Fabric:  {}", fabric);
-        }
+        // Pretty JSON (indented)
+        json::print_json(&network)?;
     }
 
     Ok(())
