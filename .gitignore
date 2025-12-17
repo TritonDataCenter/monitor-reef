@@ -3,3 +3,6 @@
 /rust
 .env
 .idea/
+
+# Test configuration (contains credentials)
+cli/triton-cli/tests/config.json

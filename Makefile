@@ -23,6 +23,7 @@ include ./deps/eng/tools/mk/Makefile.rust.targ
 .PHONY: service-build service-test service-run
 .PHONY: client-build client-test
 .PHONY: package-build package-test
+.PHONY: triton-test triton-test-api triton-test-all
 .PHONY: openapi-generate openapi-list openapi-check
 .PHONY: dev-setup workspace-test integration-test
 .PHONY: list
@@ -145,6 +146,24 @@ package-build: | $(CARGO_EXEC) ## Build specific package (usage: make package-bu
 package-test: | $(CARGO_EXEC) ## Test specific package (usage: make package-test PACKAGE=my-package)
 	@if [ -z "$(PACKAGE)" ]; then echo "Usage: make package-test PACKAGE=my-package"; exit 1; fi
 	$(CARGO) test -p $(PACKAGE)
+
+# Triton CLI test commands
+triton-test: | $(CARGO_EXEC) ## Run triton-cli offline tests (no API required)
+	$(CARGO) test -p triton-cli
+
+triton-test-api: | $(CARGO_EXEC) ## Run triton-cli API tests (requires tests/config.json)
+	@if [ ! -f cli/triton-cli/tests/config.json ]; then \
+		echo "Error: cli/triton-cli/tests/config.json not found"; \
+		echo "Copy config.json.sample and configure for your environment"; \
+		exit 1; \
+	fi
+	$(CARGO) test -p triton-cli -- --ignored
+
+triton-test-all: | $(CARGO_EXEC) ## Run all triton-cli tests (offline + API)
+	@if [ ! -f cli/triton-cli/tests/config.json ]; then \
+		echo "Warning: No config.json - API tests will fail"; \
+	fi
+	$(CARGO) test -p triton-cli -- --include-ignored
 
 # OpenAPI management commands (using dropshot-api-manager)
 openapi-generate: | $(CARGO_EXEC) ## Generate OpenAPI specs from API traits
