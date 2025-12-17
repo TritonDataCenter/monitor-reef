@@ -30,10 +30,11 @@ Copyright 2025 Edgecast Cloud LLC.
 | Phase 3.4: Account Tests | **COMPLETE** | 18 tests (6 offline + 5 API ignored) |
 | Phase 3.5: Package Tests | **COMPLETE** | 23 tests (10 offline + 6 API ignored) |
 | Phase 3.6: Image Tests | **COMPLETE** | 25 tests (12 offline + 6 API ignored) |
+| Phase 3.7: Instance Tag Tests | **COMPLETE** | 17 offline tests, tag commands fixed |
 | Phase 4: Write Operations | Not Started | Requires allow_write_actions |
 | Phase 5: Advanced Tests | Not Started | P3 priority |
 
-**Total Tests: 166 offline passing, 31 API tests passing**
+**Total Tests: 183 offline passing, 31 API tests passing**
 
 ## Current Session Progress (2025-12-17)
 
@@ -68,6 +69,17 @@ Copyright 2025 Edgecast Cloud LLC.
    - Without `-j`: pretty-printed JSON
    - With `-j`: compact JSON (single line)
    - File: `cli/triton-cli/src/commands/package.rs` lines 109-134
+
+7. **Instance tag commands** - Major refactor to match node-triton behavior:
+   - `tag list` / `tags`: Always outputs JSON (pretty-printed without `-j`, compact with `-j`)
+   - `tag get`: Plain text output, `-j` flag for JSON-quoted values
+   - `tag set`: Outputs resulting tags as JSON after modification
+   - `tag delete`: Supports multiple keys, added `-a`/`--all` flag, `-w` wait flag
+   - `tag replace-all`: Renamed from `replace`, outputs resulting tags as JSON
+   - Added `inst tags INST` shortcut for `inst tag list INST`
+   - Tag value type parsing: "true"/"false" -> bool, numeric -> number
+   - File loading: Supports both JSON object and key=value .kv format files
+   - File: `cli/triton-cli/src/commands/instance/tag.rs`
 
 ### All API Tests Passing
 
@@ -460,7 +472,7 @@ Port from `cli-volumes.test.js` and `cli-volumes-size.test.js`:
 | `cli/triton-cli/tests/cli_account.rs` | Account tests | DONE |
 | `cli/triton-cli/tests/cli_packages.rs` | Package tests | DONE |
 | `cli/triton-cli/tests/cli_images.rs` | Image tests | DONE |
-| `cli/triton-cli/tests/cli_instance_tag.rs` | Tag tests | TODO |
+| `cli/triton-cli/tests/cli_instance_tag.rs` | Tag tests | DONE |
 
 ## Source Files to Reference
 

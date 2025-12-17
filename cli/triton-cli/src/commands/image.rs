@@ -894,7 +894,6 @@ pub async fn resolve_image(id_or_name: &str, client: &TypedClient) -> Result<Str
         .filter(|img| {
             // Short ID is first segment of UUID (before first dash)
             img.id
-                .to_string()
                 .split('-')
                 .next()
                 .map(|short| short == name)

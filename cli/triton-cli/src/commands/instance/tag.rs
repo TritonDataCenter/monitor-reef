@@ -12,10 +12,7 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 use cloudapi_client::types::TagsRequest;
-use dialoguer::Confirm;
 use serde_json::{Map, Value};
-
-use crate::output::{json, table};
 
 #[derive(Subcommand, Clone)]
 pub enum TagCommand {
@@ -29,12 +26,13 @@ pub enum TagCommand {
     /// Set tag(s) on an instance
     Set(TagSetArgs),
 
-    /// Delete a tag from an instance
+    /// Delete tag(s) from an instance
     #[command(alias = "rm")]
     Delete(TagDeleteArgs),
 
     /// Replace all tags on an instance
-    Replace(TagReplaceArgs),
+    #[command(name = "replace-all")]
+    ReplaceAll(TagReplaceAllArgs),
 }
 
 #[derive(Args, Clone)]
@@ -50,6 +48,10 @@ pub struct TagGetArgs {
 
     /// Tag key
     pub key: String,
+
+    /// JSON output (quoted string/value)
+    #[arg(short = 'j', long = "json")]
+    pub json: bool,
 }
 
 #[derive(Args, Clone)]
@@ -58,24 +60,28 @@ pub struct TagSetArgs {
     pub instance: String,
 
     /// Tags to set (key=value, multiple allowed)
-    #[arg(required_unless_present = "file")]
+    #[arg(required_unless_present = "files")]
     pub tags: Vec<String>,
 
-    /// Read tags from JSON file (use '-' for stdin)
-    #[arg(short = 'f', long = "file")]
-    pub file: Option<PathBuf>,
+    /// Read tags from file (JSON object or key=value pairs). Can be used multiple times.
+    #[arg(short = 'f', long = "file", action = clap::ArgAction::Append)]
+    pub files: Option<Vec<PathBuf>>,
 
     /// Wait for tag update to complete
     #[arg(long, short)]
     pub wait: bool,
 
     /// Wait timeout in seconds
-    #[arg(long, default_value = "600")]
+    #[arg(long, default_value = "120")]
     pub wait_timeout: u64,
 
     /// Suppress output after setting tags
     #[arg(short = 'q', long = "quiet")]
     pub quiet: bool,
+
+    /// JSON output (compact, single line)
+    #[arg(short = 'j', long = "json")]
+    pub json: bool,
 }
 
 #[derive(Args, Clone)]
@@ -83,26 +89,50 @@ pub struct TagDeleteArgs {
     /// Instance ID or name
     pub instance: String,
 
-    /// Tag key to delete
-    pub key: String,
+    /// Tag key(s) to delete
+    pub keys: Vec<String>,
 
-    /// Skip confirmation
+    /// Delete all tags on the instance
+    #[arg(short = 'a', long = "all")]
+    pub all: bool,
+
+    /// Wait for tag update to complete
     #[arg(long, short)]
-    pub force: bool,
+    pub wait: bool,
+
+    /// Wait timeout in seconds
+    #[arg(long, default_value = "120")]
+    pub wait_timeout: u64,
 }
 
 #[derive(Args, Clone)]
-pub struct TagReplaceArgs {
+pub struct TagReplaceAllArgs {
     /// Instance ID or name
     pub instance: String,
 
     /// Tags to set (key=value, multiple allowed)
-    #[arg(required = true)]
+    #[arg(required_unless_present = "files")]
     pub tags: Vec<String>,
 
-    /// Skip confirmation
+    /// Read tags from file (JSON object or key=value pairs). Can be used multiple times.
+    #[arg(short = 'f', long = "file", action = clap::ArgAction::Append)]
+    pub files: Option<Vec<PathBuf>>,
+
+    /// Wait for tag update to complete
     #[arg(long, short)]
-    pub force: bool,
+    pub wait: bool,
+
+    /// Wait timeout in seconds
+    #[arg(long, default_value = "120")]
+    pub wait_timeout: u64,
+
+    /// Suppress output after replacing tags
+    #[arg(short = 'q', long = "quiet")]
+    pub quiet: bool,
+
+    /// JSON output (compact, single line)
+    #[arg(short = 'j', long = "json")]
+    pub json: bool,
 }
 
 impl TagCommand {
@@ -112,11 +142,16 @@ impl TagCommand {
             Self::Get(args) => get_tag(args, client).await,
             Self::Set(args) => set_tags(args, client).await,
             Self::Delete(args) => delete_tag(args, client).await,
-            Self::Replace(args) => replace_tags(args, client).await,
+            Self::ReplaceAll(args) => replace_all_tags(args, client).await,
         }
     }
 }
 
+/// List tags on an instance
+///
+/// Output format matches node-triton:
+/// - Without -j: pretty-printed JSON
+/// - With -j: compact JSON
 pub async fn list_tags(args: TagListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = &client.auth_config().account;
@@ -131,24 +166,22 @@ pub async fn list_tags(args: TagListArgs, client: &TypedClient, use_json: bool) 
 
     let tags = response.into_inner();
 
+    // node-triton always outputs JSON for tag list
+    // -j means compact JSON, otherwise pretty-print
     if use_json {
-        json::print_json(&tags)?;
+        println!("{}", serde_json::to_string(&tags)?);
     } else {
-        let mut tbl = table::create_table(&["KEY", "VALUE"]);
-        // Tags is a HashMap<String, serde_json::Value>
-        for (key, value) in tags.iter() {
-            let value_str = match value {
-                serde_json::Value::String(s) => s.clone(),
-                _ => value.to_string(),
-            };
-            tbl.add_row(vec![key, &value_str]);
-        }
-        table::print_table(tbl);
+        println!("{}", serde_json::to_string_pretty(&tags)?);
     }
 
     Ok(())
 }
 
+/// Get a single tag value
+///
+/// Output format matches node-triton:
+/// - Without -j: plain value (string representation)
+/// - With -j: JSON-encoded value (e.g., "bar" for string, true for bool)
 async fn get_tag(args: TagGetArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = &client.auth_config().account;
@@ -162,43 +195,131 @@ async fn get_tag(args: TagGetArgs, client: &TypedClient) -> Result<()> {
         .send()
         .await?;
 
-    let value = response.into_inner();
-    println!("{}", value);
+    // The API returns a string, but for tags it could be a typed value
+    // We need to get all tags to know the actual type
+    let tags_response = client
+        .inner()
+        .list_machine_tags()
+        .account(account)
+        .machine(&machine_id)
+        .send()
+        .await?;
+
+    let tags = tags_response.into_inner();
+    let value = tags.get(&args.key).cloned().unwrap_or_else(|| {
+        // Fallback to the direct response if not found in tags
+        Value::String(response.into_inner())
+    });
+
+    if args.json {
+        // Output as JSON (e.g., "bar" for strings, true for bools)
+        println!("{}", serde_json::to_string(&value)?);
+    } else {
+        // Output plain value
+        match &value {
+            Value::String(s) => println!("{}", s),
+            Value::Bool(b) => println!("{}", b),
+            Value::Number(n) => println!("{}", n),
+            _ => println!("{}", value),
+        }
+    }
 
     Ok(())
 }
 
+/// Parse a tag value string into the appropriate JSON type.
+/// Matches node-triton behavior: "true"/"false" -> bool, numeric strings -> number
+fn parse_tag_value(value: &str) -> Value {
+    let trimmed = value.trim();
+    if trimmed == "true" {
+        Value::Bool(true)
+    } else if trimmed == "false" {
+        Value::Bool(false)
+    } else if let Ok(num) = trimmed.parse::<f64>() {
+        // Use Number type for numeric values
+        if let Some(n) = serde_json::Number::from_f64(num) {
+            Value::Number(n)
+        } else {
+            Value::String(value.to_string())
+        }
+    } else {
+        Value::String(value.to_string())
+    }
+}
+
+/// Load tags from a file (JSON object or key=value pairs)
+fn load_tags_from_file(file_path: &std::path::Path) -> Result<Map<String, Value>> {
+    let content = if file_path.as_os_str() == "-" {
+        use std::io::Read;
+        let mut buffer = String::new();
+        std::io::stdin().read_to_string(&mut buffer)?;
+        buffer
+    } else {
+        std::fs::read_to_string(file_path)?
+    };
+
+    let trimmed = content.trim();
+
+    // If content starts with '{', parse as JSON object
+    if trimmed.starts_with('{') {
+        let obj: Map<String, Value> = serde_json::from_str(trimmed)?;
+        Ok(obj)
+    } else {
+        // Parse as key=value pairs (one per line)
+        let mut map: Map<String, Value> = Map::new();
+        for line in trimmed.lines() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            if let Some((key, value)) = line.split_once('=') {
+                map.insert(key.trim().to_string(), parse_tag_value(value));
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Invalid tag format '{}', expected key=value",
+                    line
+                ));
+            }
+        }
+        Ok(map)
+    }
+}
+
+/// Set tags and output the resulting tags as JSON
 async fn set_tags(args: TagSetArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = &client.auth_config().account;
 
-    // Parse tags from file or command line
-    let tag_map: Map<String, Value> = if let Some(file_path) = &args.file {
-        let content = if file_path.as_os_str() == "-" {
-            use std::io::Read;
-            let mut buffer = String::new();
-            std::io::stdin().read_to_string(&mut buffer)?;
-            buffer
-        } else {
-            std::fs::read_to_string(file_path)?
-        };
-        serde_json::from_str(&content)?
-    } else {
-        let mut map: Map<String, Value> = Map::new();
-        for tag in &args.tags {
-            if let Some((key, value)) = tag.split_once('=') {
-                map.insert(key.to_string(), Value::String(value.to_string()));
-            } else {
-                return Err(anyhow::anyhow!(
-                    "Invalid tag format '{}', expected key=value",
-                    tag
-                ));
+    // Collect tags from files first, then command line args (args win over files)
+    let mut tag_map: Map<String, Value> = Map::new();
+
+    // Load from files if provided
+    if let Some(files) = &args.files {
+        for file_path in files {
+            let file_tags = load_tags_from_file(file_path)?;
+            for (key, value) in file_tags {
+                tag_map.insert(key, value);
             }
         }
-        map
-    };
+    }
 
-    let request = TagsRequest::from(tag_map.clone());
+    // Parse command line args (overwrite file values)
+    for tag in &args.tags {
+        if let Some((key, value)) = tag.split_once('=') {
+            tag_map.insert(key.to_string(), parse_tag_value(value));
+        } else {
+            return Err(anyhow::anyhow!(
+                "Invalid tag format '{}', expected key=value",
+                tag
+            ));
+        }
+    }
+
+    if tag_map.is_empty() {
+        return Err(anyhow::anyhow!("No tags specified"));
+    }
+
+    let request = TagsRequest::from(tag_map);
 
     client
         .inner()
@@ -209,70 +330,117 @@ async fn set_tags(args: TagSetArgs, client: &TypedClient) -> Result<()> {
         .send()
         .await?;
 
-    if !args.quiet {
-        for (key, value) in &tag_map {
-            let val_str = match value {
-                Value::String(s) => s.clone(),
-                _ => value.to_string(),
-            };
-            println!("Set tag {}={}", key, val_str);
-        }
-    }
-
     if args.wait {
         super::wait::wait_for_state(&machine_id, "running", args.wait_timeout, client).await?;
-        if !args.quiet {
-            println!("Instance {} is running", &machine_id[..8]);
+    }
+
+    // Output the updated tags (matching node-triton behavior)
+    if !args.quiet {
+        // Fetch all tags to show the complete set
+        let response = client
+            .inner()
+            .list_machine_tags()
+            .account(account)
+            .machine(&machine_id)
+            .send()
+            .await?;
+
+        let updated_tags = response.into_inner();
+
+        // -j means compact JSON, otherwise pretty-print
+        if args.json {
+            println!("{}", serde_json::to_string(&updated_tags)?);
+        } else {
+            println!("{}", serde_json::to_string_pretty(&updated_tags)?);
         }
     }
 
     Ok(())
 }
 
+/// Delete tag(s) from an instance
+///
+/// Output format matches node-triton:
+/// - For each deleted tag: "Deleted tag NAME on instance INST"
+/// - For --all: "Deleted all tags on instance INST"
 async fn delete_tag(args: TagDeleteArgs, client: &TypedClient) -> Result<()> {
-    if !args.force
-        && !Confirm::new()
-            .with_prompt(format!("Delete tag {}?", args.key))
-            .default(false)
-            .interact()?
-    {
-        return Ok(());
+    // Validate args
+    if args.all && !args.keys.is_empty() {
+        return Err(anyhow::anyhow!("cannot specify both tag names and --all"));
+    }
+    if !args.all && args.keys.is_empty() {
+        return Err(anyhow::anyhow!("must specify tag name(s) or --all"));
     }
 
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = &client.auth_config().account;
 
-    client
-        .inner()
-        .delete_machine_tag()
-        .account(account)
-        .machine(&machine_id)
-        .tag(&args.key)
-        .send()
-        .await?;
+    if args.all {
+        // Delete all tags
+        client
+            .inner()
+            .delete_machine_tags()
+            .account(account)
+            .machine(&machine_id)
+            .send()
+            .await?;
 
-    println!("Deleted tag {}", args.key);
+        if args.wait {
+            super::wait::wait_for_state(&machine_id, "running", args.wait_timeout, client).await?;
+        }
+
+        println!("Deleted all tags on instance {}", args.instance);
+    } else {
+        // Delete individual tags (de-duplicate keys)
+        let mut seen = std::collections::HashSet::new();
+        let unique_keys: Vec<_> = args.keys.iter().filter(|k| seen.insert(*k)).collect();
+
+        for key in unique_keys {
+            client
+                .inner()
+                .delete_machine_tag()
+                .account(account)
+                .machine(&machine_id)
+                .tag(key)
+                .send()
+                .await?;
+
+            if args.wait {
+                super::wait::wait_for_state(&machine_id, "running", args.wait_timeout, client)
+                    .await?;
+            }
+
+            println!("Deleted tag {} on instance {}", key, args.instance);
+        }
+    }
 
     Ok(())
 }
 
-async fn replace_tags(args: TagReplaceArgs, client: &TypedClient) -> Result<()> {
-    if !args.force
-        && !Confirm::new()
-            .with_prompt("Replace all tags? (existing tags will be removed)")
-            .default(false)
-            .interact()?
-    {
-        return Ok(());
-    }
-
+/// Replace all tags on an instance
+///
+/// Output format matches node-triton: JSON with updated tags
+async fn replace_all_tags(args: TagReplaceAllArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = &client.auth_config().account;
 
+    // Collect tags from files first, then command line args (args win over files)
     let mut tag_map: Map<String, Value> = Map::new();
+
+    // Load from files if provided
+    if let Some(files) = &args.files {
+        for file_path in files {
+            let file_tags = load_tags_from_file(file_path)?;
+            for (key, value) in file_tags {
+                tag_map.insert(key, value);
+            }
+        }
+    }
+
+    // Parse command line args (overwrite file values)
     for tag in &args.tags {
         if let Some((key, value)) = tag.split_once('=') {
-            tag_map.insert(key.to_string(), Value::String(value.to_string()));
+            tag_map.insert(key.to_string(), parse_tag_value(value));
         } else {
             return Err(anyhow::anyhow!(
                 "Invalid tag format '{}', expected key=value",
@@ -281,7 +449,11 @@ async fn replace_tags(args: TagReplaceArgs, client: &TypedClient) -> Result<()> 
         }
     }
 
-    let request = TagsRequest::from(tag_map.clone());
+    if tag_map.is_empty() {
+        return Err(anyhow::anyhow!("no tags were provided"));
+    }
+
+    let request = TagsRequest::from(tag_map);
 
     client
         .inner()
@@ -292,13 +464,29 @@ async fn replace_tags(args: TagReplaceArgs, client: &TypedClient) -> Result<()> 
         .send()
         .await?;
 
-    println!("Replaced all tags");
-    for (key, value) in &tag_map {
-        let val_str = match value {
-            Value::String(s) => s.clone(),
-            _ => value.to_string(),
-        };
-        println!("  {}={}", key, val_str);
+    if args.wait {
+        super::wait::wait_for_state(&machine_id, "running", args.wait_timeout, client).await?;
+    }
+
+    // Output the updated tags (matching node-triton behavior)
+    if !args.quiet {
+        // Fetch all tags to show the complete set
+        let response = client
+            .inner()
+            .list_machine_tags()
+            .account(account)
+            .machine(&machine_id)
+            .send()
+            .await?;
+
+        let updated_tags = response.into_inner();
+
+        // -j means compact JSON, otherwise pretty-print
+        if args.json {
+            println!("{}", serde_json::to_string(&updated_tags)?);
+        } else {
+            println!("{}", serde_json::to_string_pretty(&updated_tags)?);
+        }
     }
 
     Ok(())

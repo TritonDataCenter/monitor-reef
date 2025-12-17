@@ -72,10 +72,10 @@ pub fn json_stream_parse<T: DeserializeOwned>(output: &str) -> Vec<T> {
     let trimmed = output.trim();
 
     // First, try parsing as a JSON array (Rust CLI format)
-    if trimmed.starts_with('[') {
-        if let Ok(items) = serde_json::from_str::<Vec<T>>(trimmed) {
-            return items;
-        }
+    if trimmed.starts_with('[')
+        && let Ok(items) = serde_json::from_str::<Vec<T>>(trimmed)
+    {
+        return items;
     }
 
     // Fall back to NDJSON parsing (Node.js format)

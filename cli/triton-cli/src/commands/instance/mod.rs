@@ -110,11 +110,14 @@ pub enum InstanceCommand {
     },
 
     /// Manage instance tags
-    #[command(alias = "tags")]
     Tag {
         #[command(subcommand)]
         command: tag::TagCommand,
     },
+
+    /// List instance tags (shortcut for 'tag list')
+    #[command(hide = true)]
+    Tags(tag::TagListArgs),
 
     /// Manage instance metadata
     #[command(alias = "metadatas")]
@@ -160,6 +163,7 @@ impl InstanceCommand {
             Self::Snapshot { command } => command.run(client, json).await,
             Self::Disk { command } => command.run(client, json).await,
             Self::Tag { command } => command.run(client, json).await,
+            Self::Tags(args) => tag::list_tags(args, client, json).await,
             Self::Metadata { command } => command.run(client, json).await,
             Self::Ip(args) => get::ip(args, client).await,
             Self::Migration { command } => command.run(client, json).await,
