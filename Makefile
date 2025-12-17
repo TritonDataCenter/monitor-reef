@@ -18,7 +18,7 @@ include ./deps/eng/tools/mk/Makefile.targ
 include ./deps/eng/tools/mk/Makefile.rust.defs
 include ./deps/eng/tools/mk/Makefile.rust.targ
 
-.PHONY: help build test clean lint format audit audit-update
+.PHONY: help build build-release test clean lint format audit audit-update
 .PHONY: api-new service-new client-new
 .PHONY: service-build service-test service-run
 .PHONY: client-build client-test
@@ -47,6 +47,9 @@ help: ## Show this help message
 build: | $(CARGO_EXEC) ## Build all APIs, services and clients
 	$(CARGO) build
 
+build-release: | $(CARGO_EXEC) ## Build all APIs, services and clients
+	$(CARGO) build --release
+
 test: | $(CARGO_EXEC) ## Run all tests
 	$(CARGO) test
 
@@ -55,6 +58,9 @@ clean:: | $(CARGO_EXEC) ## Clean build artifacts
 
 lint: | $(CARGO_EXEC) ## Run clippy linter
 	$(CARGO) clippy $(RUST_CLIPPY_ARGS)
+
+lint-fix: | $(CARGO_EXEC) ## Run clippy linter
+	$(CARGO) clippy --fix --allow-dirty $(RUST_CLIPPY_ARGS)
 
 format: | $(CARGO_EXEC) ## Format all code
 	$(CARGO) fmt
