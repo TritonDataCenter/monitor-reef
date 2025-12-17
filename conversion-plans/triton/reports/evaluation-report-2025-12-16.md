@@ -20,7 +20,7 @@ Copyright 2025 Edgecast Cloud LLC.
 | Metric | Current | Target | Gap |
 |--------|---------|--------|-----|
 | Command Coverage (node-triton) | 107/107 | 100% | 0 missing |
-| Option Compatibility | ~90% | 100% | ~25 TODO items |
+| Option Compatibility | ~95% | 100% | ~20 TODO items |
 | Functionality (node-smartdc) | 100% | 100% | 0 gaps |
 | New Features | 12 documented | - | - |
 
@@ -248,10 +248,10 @@ All shortcuts **Complete**: `insts`, `create`, `ssh`, `start`, `stop`, `reboot`,
 
 | Option | Short | Node.js | Rust | Status |
 |--------|-------|---------|------|--------|
-| file | -f | `--file FILE` | Positional `FILE` | **Different syntax** |
+| file | -f | `--file FILE` | `-f/--file FILE` (default: ./rbac.json) | **Compatible** |
 | dry-run | -n | `--dry-run` | `--dry-run` | **Compatible** |
-| yes/force | -y | `--yes` | `--force` (alias `--yes`) | **Compatible** |
-| dev-create-keys-and-profiles | | `--dev-create-keys-and-profiles` | `--dev-create-keys-and-profiles` | **Partial** (stub) |
+| yes/force | -y | `--yes` | `--force` / `-y` (alias `--yes`) | **Compatible** |
+| dev-create-keys-and-profiles | | `--dev-create-keys-and-profiles` | `--dev-create-keys-and-profiles` | **Complete** |
 
 ### Priority Option Gaps
 
@@ -262,8 +262,12 @@ All shortcuts **Complete**: `insts`, `create`, `ssh`, `start`, `stop`, `reboot`,
 | `image copy` | Missing positional `DATACENTER` syntax | P3 |
 | `profile create` | Missing `-f/--file`, `--copy`, `--no-docker` | P3 |
 | `volume create` | Missing `-w/--wait`, `--wait-timeout`, `--tag`, `-a/--affinity` | P2 |
-| `rbac apply` | `-f FILE` positional only (not flag) | P3 |
-| `rbac apply` | `--dev-create-keys-and-profiles` is stub | P3 |
+
+**Recently Completed:**
+| Command | Feature | Status |
+|---------|---------|--------|
+| `rbac apply` | `-f/--file FILE` flag with default `./rbac.json` | **Complete** |
+| `rbac apply` | `--dev-create-keys-and-profiles` (SSH key gen + profile creation) | **Complete** |
 
 ---
 
@@ -387,10 +391,10 @@ None identified. All core functionality is complete.
 
 - [ ] Add `--homepage`, `--eula`, `--acl` to `image create`
 - [ ] Add positional `DATACENTER` syntax to `image copy`
-- [ ] Add `-f/--file FILE` flag syntax to `rbac apply` (currently positional only)
+- [x] ~~Add `-f/--file FILE` flag syntax to `rbac apply`~~ **COMPLETE**
 - [ ] Add `--copy PROFILE` to `profile create`
 - [ ] Add `--no-docker` to `profile create`
-- [ ] Implement `--dev-create-keys-and-profiles` for `rbac apply`
+- [x] ~~Implement `--dev-create-keys-and-profiles` for `rbac apply`~~ **COMPLETE**
 - [ ] Add `--dry-run` to `image create`
 
 ---
@@ -439,7 +443,7 @@ The Rust `triton-cli` achieves:
 
 - **100% command coverage** with node-triton
 - **100% functionality coverage** with node-smartdc
-- **~90% option compatibility** with node-triton (remaining gaps are P2/P3)
+- **~95% option compatibility** with node-triton (remaining gaps are P2/P3)
 - **12+ new features** unique to the Rust implementation
 
 The CLI is **production-ready** for all core use cases. The remaining option compatibility gaps are minor and can be addressed incrementally.

@@ -12,20 +12,23 @@ use cloudapi_client::TypedClient;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::process::Command;
 
+use crate::config::{Config, Profile, paths};
 use crate::output::{json, table};
 
 use super::common::resolve_user;
 
 #[derive(Args, Clone)]
 pub struct ApplyArgs {
-    /// Path to RBAC configuration file (JSON format)
+    /// Path to RBAC configuration file (JSON format, default: ./rbac.json)
+    #[arg(short = 'f', long = "file", default_value = "./rbac.json")]
     pub file: PathBuf,
     /// Show what would be done without making changes
     #[arg(long, short = 'n')]
     pub dry_run: bool,
     /// Skip confirmation prompts
-    #[arg(long, short, visible_alias = "yes", short_alias = 'y')]
+    #[arg(long, short = 'y', visible_alias = "yes")]
     pub force: bool,
     /// Generate SSH keys and CLI profiles for each user (development/testing only)
     #[arg(long, hide = true)]
@@ -272,15 +275,18 @@ pub async fn rbac_info(client: &TypedClient, use_json: bool) -> Result<()> {
 }
 
 pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    // Check for unimplemented dev option
-    if args.dev_create_keys_and_profiles {
-        return Err(anyhow::anyhow!(
-            "The --dev-create-keys-and-profiles option is not yet implemented.\n\
-             This development option would automatically generate SSH keys and \n\
-             CLI profiles for each RBAC user. For now, please create keys and \n\
-             profiles manually."
-        ));
-    }
+    // Resolve the current profile for dev mode (if enabled)
+    let base_profile = if args.dev_create_keys_and_profiles {
+        let profile_name = Config::load().ok().and_then(|c| c.profile).ok_or_else(|| {
+            anyhow::anyhow!(
+                "--dev-create-keys-and-profiles requires a configured profile.\n\
+                     Use 'triton profile create' to create one first."
+            )
+        })?;
+        Some(Profile::load(&profile_name)?)
+    } else {
+        None
+    };
 
     // Read and parse the config file
     let content = std::fs::read_to_string(&args.file).map_err(|e| {
@@ -539,6 +545,31 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
 
     // Dry run mode
     if args.dry_run {
+        // Collect users that would be created for dev mode preview
+        let users_to_create: Vec<RbacConfigUser> = changes
+            .iter()
+            .filter_map(|c| {
+                if let RbacChange::CreateUser {
+                    login,
+                    email,
+                    first_name,
+                    last_name,
+                    company_name,
+                } = c
+                {
+                    Some(RbacConfigUser {
+                        login: login.clone(),
+                        email: email.clone(),
+                        first_name: first_name.clone(),
+                        last_name: last_name.clone(),
+                        company_name: company_name.clone(),
+                    })
+                } else {
+                    None
+                }
+            })
+            .collect();
+
         if use_json {
             let change_results: Vec<_> = changes
                 .iter()
@@ -570,6 +601,34 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
         } else {
             println!("[dry-run] {} change(s) would be applied.", changes.len());
         }
+
+        // Show dev mode preview if enabled
+        if let Some(profile) = &base_profile {
+            if !users_to_create.is_empty() {
+                if !use_json {
+                    println!();
+                    println!(
+                        "[dry-run] Dev mode would create keys/profiles for {} user(s):",
+                        users_to_create.len()
+                    );
+                    for user in &users_to_create {
+                        println!("  - Generate SSH key for user '{}'", user.login);
+                        println!(
+                            "  - Upload key '{}-{}' to CloudAPI",
+                            profile.name, user.login
+                        );
+                        println!(
+                            "  - Create CLI profile '{}-user-{}'",
+                            profile.name, user.login
+                        );
+                    }
+                }
+            } else if !use_json {
+                println!();
+                println!("[dry-run] Dev mode: No new users would be created.");
+            }
+        }
+
         return Ok(());
     }
 
@@ -599,6 +658,8 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
         roles_deleted: 0,
     };
     let mut results = Vec::new();
+    // Track successfully created users for dev mode
+    let mut created_users: Vec<RbacConfigUser> = Vec::new();
 
     for change in &changes {
         let result = execute_rbac_change(change, client).await;
@@ -621,7 +682,23 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
                     println!("  {} {}", action, name);
                 }
                 match change {
-                    RbacChange::CreateUser { .. } => summary.users_created += 1,
+                    RbacChange::CreateUser {
+                        login,
+                        email,
+                        first_name,
+                        last_name,
+                        company_name,
+                    } => {
+                        summary.users_created += 1;
+                        // Track for dev mode key/profile generation
+                        created_users.push(RbacConfigUser {
+                            login: login.clone(),
+                            email: email.clone(),
+                            first_name: first_name.clone(),
+                            last_name: last_name.clone(),
+                            company_name: company_name.clone(),
+                        });
+                    }
                     RbacChange::UpdateUser { .. } => summary.users_updated += 1,
                     RbacChange::DeleteUser { .. } => summary.users_deleted += 1,
                     RbacChange::CreatePolicy { .. } => summary.policies_created += 1,
@@ -682,6 +759,16 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
                 "  Roles: {} created, {} updated, {} deleted",
                 summary.roles_created, summary.roles_updated, summary.roles_deleted
             );
+        }
+    }
+
+    // Dev mode: generate SSH keys and create CLI profiles for newly created users
+    if let Some(profile) = base_profile {
+        if !created_users.is_empty() {
+            execute_dev_actions(&created_users, &profile, client, false, use_json).await?;
+        } else if !use_json {
+            println!();
+            println!("Dev mode: No new users were created, skipping key/profile generation.");
         }
     }
 
@@ -888,6 +975,188 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             Ok(())
         }
     }
+}
+
+/// Generate an SSH key for a user using ssh-keygen
+fn generate_ssh_key(user_login: &str, profile_name: &str) -> Result<(PathBuf, String, String)> {
+    // Create dev-keys directory
+    let keys_dir = paths::config_dir().join("dev-keys");
+    std::fs::create_dir_all(&keys_dir)?;
+
+    let key_name = format!("{}-{}", profile_name, user_login);
+    let key_path = keys_dir.join(&key_name);
+
+    // Remove existing key files if present
+    let _ = std::fs::remove_file(&key_path);
+    let _ = std::fs::remove_file(key_path.with_extension("pub"));
+
+    // Generate ed25519 key using ssh-keygen
+    let output = Command::new("ssh-keygen")
+        .args([
+            "-t",
+            "ed25519",
+            "-N",
+            "",
+            "-f",
+            key_path
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("Invalid path for key: {}", key_path.display()))?,
+            "-C",
+            &format!("{}-dev", user_login),
+        ])
+        .output()
+        .map_err(|e| anyhow::anyhow!("Failed to run ssh-keygen: {}", e))?;
+
+    if !output.status.success() {
+        return Err(anyhow::anyhow!(
+            "ssh-keygen failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    // Read the public key
+    let pub_key_path = key_path.with_extension("pub");
+    let public_key = std::fs::read_to_string(&pub_key_path)
+        .map_err(|e| anyhow::anyhow!("Failed to read public key: {}", e))?
+        .trim()
+        .to_string();
+
+    // Extract fingerprint from the key (parse from the public key content)
+    // The fingerprint will be returned from the API when we upload it
+    Ok((key_path, public_key, key_name))
+}
+
+/// Create a CLI profile for an RBAC user
+fn create_user_profile(
+    base_profile: &Profile,
+    user_login: &str,
+    key_fingerprint: &str,
+) -> Result<String> {
+    let profile_name = format!("{}-user-{}", base_profile.name, user_login);
+
+    let profile = Profile {
+        name: profile_name.clone(),
+        url: base_profile.url.clone(),
+        account: base_profile.account.clone(),
+        key_id: key_fingerprint.to_string(),
+        insecure: base_profile.insecure,
+        user: Some(user_login.to_string()),
+        roles: None,
+        act_as_account: base_profile.act_as_account.clone(),
+    };
+
+    profile.save()?;
+    Ok(profile_name)
+}
+
+/// Execute dev mode actions (key generation and profile creation)
+async fn execute_dev_actions(
+    users: &[RbacConfigUser],
+    base_profile: &Profile,
+    client: &TypedClient,
+    _dry_run: bool,
+    use_json: bool,
+) -> Result<()> {
+    let account = &client.auth_config().account;
+
+    if users.is_empty() {
+        if !use_json {
+            println!("No users to create keys/profiles for.");
+        }
+        return Ok(());
+    }
+
+    if !use_json {
+        println!();
+        println!(
+            "Dev mode: Creating keys and profiles for {} user(s):",
+            users.len()
+        );
+        println!();
+    }
+
+    // Execute: Generate keys, upload them, create profiles
+    for user in users {
+        // Generate SSH key
+        if !use_json {
+            println!("  Generating SSH key for user '{}'...", user.login);
+        }
+        let (key_path, public_key, key_name) = generate_ssh_key(&user.login, &base_profile.name)?;
+
+        if !use_json {
+            println!("    Key saved to: {}", key_path.display());
+        }
+
+        // Upload the public key to CloudAPI
+        // First we need to get the user's UUID
+        let user_id = resolve_user(&user.login, client).await?;
+
+        if !use_json {
+            println!(
+                "  Uploading key '{}' for user '{}'...",
+                key_name, user.login
+            );
+        }
+
+        let request = cloudapi_client::types::CreateSshKeyRequest {
+            name: key_name.clone(),
+            key: public_key,
+        };
+
+        let key_response = client
+            .inner()
+            .create_user_key()
+            .account(account)
+            .uuid(&user_id)
+            .body(request)
+            .send()
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to upload key for user '{}': {}", user.login, e)
+            })?;
+
+        let uploaded_key = key_response.into_inner();
+        let fingerprint = &uploaded_key.fingerprint;
+
+        if !use_json {
+            println!("    Key fingerprint: {}", fingerprint);
+        }
+
+        // Create CLI profile
+        let profile_name = format!("{}-user-{}", base_profile.name, user.login);
+        if !use_json {
+            println!("  Creating CLI profile '{}'...", profile_name);
+        }
+
+        create_user_profile(base_profile, &user.login, fingerprint)?;
+
+        if !use_json {
+            println!("    Profile created successfully");
+            println!();
+        }
+    }
+
+    if !use_json {
+        println!(
+            "Dev mode complete. Created {} key(s) and profile(s).",
+            users.len()
+        );
+        println!();
+        println!(
+            "Keys are stored in: {}",
+            paths::config_dir().join("dev-keys").display()
+        );
+        println!();
+        println!("To use a profile, run:");
+        for user in users {
+            println!(
+                "  triton -p {}-user-{} <command>",
+                base_profile.name, user.login
+            );
+        }
+    }
+
+    Ok(())
 }
 
 pub async fn rbac_reset(args: ResetArgs, client: &TypedClient) -> Result<()> {
