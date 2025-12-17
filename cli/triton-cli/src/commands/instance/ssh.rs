@@ -49,6 +49,11 @@ pub struct SshArgs {
     #[arg(long)]
     pub no_proxy: bool,
 
+    /// Don't disable SSH ControlMaster (mux). By default, SSH connection
+    /// multiplexing is disabled due to known issues with stdout/stderr.
+    #[arg(long)]
+    pub no_disable_mux: bool,
+
     /// Command to run on instance
     #[arg(trailing_var_arg = true)]
     pub command: Vec<String>,
@@ -252,6 +257,28 @@ fn get_tag_string(tags: &serde_json::Map<String, Value>, key: &str) -> Option<St
 /// Build and execute the SSH command
 fn execute_ssh(args: &SshArgs, config: &SshConfig) -> Result<()> {
     let mut ssh_cmd = Command::new("ssh");
+
+    // By default, disable ControlMaster (mux) to work around stdout/stderr issues
+    // See: https://github.com/TritonDataCenter/node-triton/issues/52
+    if !args.no_disable_mux {
+        // We need both options to effectively disable mux:
+        // - ControlMaster=no prevents new mux sessions
+        // - ControlPath to non-existent file prevents using existing mux
+        let null_control_path = if cfg!(windows) {
+            "NUL".to_string()
+        } else {
+            // Use a path that should never exist
+            format!(
+                "{}/.triton/tmp/nullSshControlPath",
+                std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())
+            )
+        };
+        ssh_cmd
+            .arg("-o")
+            .arg("ControlMaster=no")
+            .arg("-o")
+            .arg(format!("ControlPath={}", null_control_path));
+    }
 
     // Add ProxyJump if we have a proxy configured
     if let Some(ref proxy) = config.proxy {

@@ -199,6 +199,12 @@ pub struct ImageUpdateArgs {
     /// New description
     #[arg(long)]
     pub description: Option<String>,
+    /// New homepage URL
+    #[arg(long)]
+    pub homepage: Option<String>,
+    /// New EULA URL
+    #[arg(long)]
+    pub eula: Option<String>,
 }
 
 #[derive(Args, Clone)]
@@ -208,6 +214,9 @@ pub struct ImageExportArgs {
     /// Manta path for export
     #[arg(long)]
     pub manta_path: String,
+    /// Dry run - show what would be exported without exporting
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Args, Clone)]
@@ -228,6 +237,9 @@ pub struct ImageShareArgs {
     pub image: String,
     /// Account UUID to share the image with
     pub account: String,
+    /// Dry run - show what would be shared without sharing
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Args, Clone)]
@@ -236,6 +248,9 @@ pub struct ImageUnshareArgs {
     pub image: String,
     /// Account UUID to unshare the image from
     pub account: String,
+    /// Dry run - show what would be unshared without unsharing
+    #[arg(long)]
+    pub dry_run: bool,
 }
 
 #[derive(Args, Clone)]
@@ -734,8 +749,8 @@ async fn update_image(args: ImageUpdateArgs, client: &TypedClient, use_json: boo
         name: args.name.clone(),
         version: args.version.clone(),
         description: args.description.clone(),
-        homepage: None,
-        eula: None,
+        homepage: args.homepage.clone(),
+        eula: args.eula.clone(),
         acl: None,
         tags: None,
     };
@@ -756,6 +771,14 @@ async fn export_image(args: ImageExportArgs, client: &TypedClient, use_json: boo
     let account = &client.auth_config().account;
     let image_id = resolve_image(&args.image, client).await?;
     let image_uuid: cloudapi_client::Uuid = image_id.parse()?;
+
+    // Handle dry-run
+    if args.dry_run {
+        println!("Dry run - would export image:");
+        println!("  Image: {} ({})", args.image, &image_id[..8]);
+        println!("  Manta path: {}", args.manta_path);
+        return Ok(());
+    }
 
     let image = client
         .export_image(account, &image_uuid, args.manta_path.clone())
@@ -895,6 +918,14 @@ async fn share_image(args: ImageShareArgs, client: &TypedClient, use_json: bool)
         .parse()
         .map_err(|_| anyhow::anyhow!("Invalid account UUID: {}", args.account))?;
 
+    // Handle dry-run
+    if args.dry_run {
+        println!("Dry run - would share image:");
+        println!("  Image: {} ({})", args.image, &image_id[..8]);
+        println!("  With account: {}", args.account);
+        return Ok(());
+    }
+
     let image = client
         .share_image(account, &image_uuid, target_account)
         .await?;
@@ -916,6 +947,14 @@ async fn unshare_image(args: ImageUnshareArgs, client: &TypedClient, use_json: b
         .account
         .parse()
         .map_err(|_| anyhow::anyhow!("Invalid account UUID: {}", args.account))?;
+
+    // Handle dry-run
+    if args.dry_run {
+        println!("Dry run - would unshare image:");
+        println!("  Image: {} ({})", args.image, &image_id[..8]);
+        println!("  From account: {}", args.account);
+        return Ok(());
+    }
 
     let image = client
         .unshare_image(account, &image_uuid, target_account)

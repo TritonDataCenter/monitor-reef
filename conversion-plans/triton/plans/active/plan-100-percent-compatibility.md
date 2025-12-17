@@ -10,18 +10,18 @@ Copyright 2025 Edgecast Cloud LLC.
 
 **Created:** 2025-12-16
 **Updated:** 2025-12-17
-**Status:** In Progress
+**Status:** ✅ Complete
 **Goal:** Achieve 100% option compatibility with node-triton
 
 ## Executive Summary
 
 This plan details all remaining option gaps between the Rust `triton-cli` and `node-triton`. The analysis identified **~85 gaps** organized into actionable work items.
 
-| Priority | Items | Effort | Impact |
-|----------|-------|--------|--------|
-| P1 - High | ~40 | Medium | Common use cases |
-| P2 - Medium | ~25 | Low-Medium | Less common use cases |
-| P3 - Low | ~20 | Low | Rare use cases |
+| Priority | Items | Effort | Impact | Status |
+|----------|-------|--------|--------|--------|
+| P1 - High | ~40 | Medium | Common use cases | ✅ Complete |
+| P2 - Medium | ~25 | Low-Medium | Less common use cases | ✅ Complete |
+| P3 - Low | ~20 | Low | Rare use cases | ✅ Complete |
 
 **Key Insight:** Creating a shared table formatting utility would close ~30% of all gaps at once.
 
@@ -49,6 +49,35 @@ This plan details all remaining option gaps between the Rust `triton-cli` and `n
 - `instance metadata set` - read metadata from JSON file
 - `network ip update` - read update data from JSON file
 - `vlan update` - read update data from JSON file
+
+### ✅ Phase 3 Complete (2025-12-17)
+
+**RBAC Options:** Already complete - `--all`, `--no-color`, `--dry-run`, `--roles` were already present.
+
+**Quiet/Primary Flags:** Already present in the codebase.
+
+### ✅ Phase 4 Complete (2025-12-17)
+
+**Firewall Options:**
+- Added `--disabled` flag to `fwrule create` (inverse of enabled)
+- Added `-D` short flag for `--description`
+- `--log` deferred (requires CloudAPI schema change)
+
+**Key Options:**
+- Added `--authorized-keys, -A` to `key list` for OpenSSH authorized_keys format output
+- Added `--yes, -y` as visible alias for `--force` in `key delete`
+
+**Image Options:**
+- Added `--homepage` and `--eula` to `image update`
+- Added `--dry-run` to `image export`, `image share`, `image unshare`
+
+**SSH Options:**
+- Added `--no-disable-mux` to `instance ssh` to control SSH ControlMaster behavior
+
+## Deferred Items
+
+1. **`fwrule create --log`** - Requires adding `log` field to CloudAPI CreateFirewallRuleRequest
+2. **`image wait` multi-state** - Support comma-separated states
 
 See updated gap inventory below for current status.
 
@@ -297,10 +326,10 @@ Note: Verify CloudAPI supports this via the `primary` field in the request body.
 
 | Command | Missing Option | Description | Status |
 |---------|----------------|-------------|--------|
-| `rbac info` | `--all, -a` | Include all info for full report | Pending |
-| `rbac info` | `--no-color` | Disable ANSI color codes | Pending |
-| `rbac reset` | `--dry-run, -n` | Show what would be deleted | Pending |
-| `rbac user` | `--roles, -r` | Include roles in output | Pending |
+| `rbac info` | `--all, -a` | Include all info for full report | ✅ Complete |
+| `rbac info` | `--no-color` | Disable ANSI color codes | ✅ Complete |
+| `rbac reset` | `--dry-run, -n` | Show what would be deleted | ✅ Complete |
+| `rbac user` | `--roles, -r` | Include roles in output | ✅ Complete |
 | `rbac role-tags` | `--edit, -e` | Edit in $EDITOR | ✅ Complete |
 
 **Files to modify:**
@@ -333,82 +362,75 @@ This also fixed `role-tags add` and `role-tags remove` commands which now proper
 
 ### 8. Firewall Rule Options
 
-| Command | Missing | Description |
-|---------|---------|-------------|
-| `fwrule create` | `--log, -l` | Enable TCP connection logging |
-| `fwrule create` | `--disabled, -d` | Create rule in disabled state |
+| Command | Missing | Description | Status |
+|---------|---------|-------------|--------|
+| `fwrule create` | `--log, -l` | Enable TCP connection logging | Deferred (requires API change) |
+| `fwrule create` | `--disabled, -d` | Create rule in disabled state | ✅ Complete |
+| `fwrule create` | `-D` short for `--description` | Short flag alias | ✅ Complete |
 
 **File:** `cli/triton-cli/src/commands/fwrule.rs`
 
-**Note:** Rust currently uses `--enabled` (opposite logic). Consider adding `--disabled` as well for compatibility.
-
-**Estimated effort:** 30 minutes
+**Note:** `--log` requires adding a `log` field to the CloudAPI CreateFirewallRuleRequest type. This has been deferred.
 
 ---
 
 ### 9. Key Command Options
 
-| Command | Missing | Description |
-|---------|---------|-------------|
-| `key list` | `--authorized-keys, -A` | Output in OpenSSH authorized_keys format |
-| `key delete` | `--yes, -y` | Hidden auto-confirm flag |
+| Command | Missing | Description | Status |
+|---------|---------|-------------|--------|
+| `key list` | `--authorized-keys, -A` | Output in OpenSSH authorized_keys format | ✅ Complete |
+| `key delete` | `--yes, -y` | Hidden auto-confirm flag | ✅ Complete |
 
 **File:** `cli/triton-cli/src/commands/key.rs`
-
-**Estimated effort:** 30 minutes
 
 ---
 
 ### 10. Image Command Options
 
-| Command | Missing | Description |
-|---------|---------|-------------|
-| `image get` | `-a, --all` | Include inactive images |
-| `image wait` | Multi-state | Support comma-separated states |
-| `image export` | `--dry-run` | Show what would be exported |
-| `image share` | `--dry-run` | Show what would be shared |
-| `image unshare` | `--dry-run` | Show what would be unshared |
-| `image update` | `--homepage` | Update homepage field |
-| `image update` | `--eula` | Update EULA field |
+| Command | Missing | Description | Status |
+|---------|---------|-------------|--------|
+| `image get` | `-a, --all` | Include inactive images | N/A (list has `--all`) |
+| `image wait` | Multi-state | Support comma-separated states | Deferred |
+| `image export` | `--dry-run` | Show what would be exported | ✅ Complete |
+| `image share` | `--dry-run` | Show what would be shared | ✅ Complete |
+| `image unshare` | `--dry-run` | Show what would be unshared | ✅ Complete |
+| `image update` | `--homepage` | Update homepage field | ✅ Complete |
+| `image update` | `--eula` | Update EULA field | ✅ Complete |
 
 **File:** `cli/triton-cli/src/commands/image.rs`
-
-**Estimated effort:** 1 hour
 
 ---
 
 ### 11. SSH Command Options
 
-| Command | Missing | Description |
-|---------|---------|-------------|
-| `instance ssh` | `--no-disable-mux` | Control SSH multiplexing |
+| Command | Missing | Description | Status |
+|---------|---------|-------------|--------|
+| `instance ssh` | `--no-disable-mux` | Control SSH multiplexing | ✅ Complete |
 
 **File:** `cli/triton-cli/src/commands/instance/ssh.rs`
-
-**Estimated effort:** 15 minutes
 
 ---
 
 ## Implementation Order
 
-### Phase 1: High-Impact Quick Wins
-1. **Shared table formatting** (3-4 hours) - Fixes ~25 gaps
-2. **Missing short flags** (30 min) - Simple attribute changes
+### Phase 1: High-Impact Quick Wins ✅ COMPLETE
+1. **Shared table formatting** (3-4 hours) - Fixes ~25 gaps ✅
+2. **Missing short flags** (30 min) - Simple attribute changes ✅
 
-### Phase 2: Async Operation Improvements
-3. **`--wait`/`--wait-timeout`** (2-3 hours) - Pattern exists, copy it
-4. **`--file` input support** (1-2 hours) - Pattern exists in RBAC
+### Phase 2: Async Operation Improvements ✅ COMPLETE
+3. **`--wait`/`--wait-timeout`** (2-3 hours) - Pattern exists, copy it ✅
+4. **`--file` input support** (1-2 hours) - Pattern exists in RBAC ✅
 
-### Phase 3: Medium Priority
-5. **`--quiet` flags** (30 min)
-6. **Instance NIC `--primary`** (30 min)
-7. **RBAC options** (1-2 hours)
+### Phase 3: Medium Priority ✅ COMPLETE
+5. **`--quiet` flags** (30 min) ✅ (already present)
+6. **Instance NIC `--primary`** (30 min) ✅ (already present)
+7. **RBAC options** (1-2 hours) ✅
 
-### Phase 4: Polish
-8. **Firewall options** (30 min)
-9. **Key options** (30 min)
-10. **Image options** (1 hour)
-11. **SSH options** (15 min)
+### Phase 4: Polish ✅ COMPLETE
+8. **Firewall options** (30 min) ✅ (`--disabled`, `-D`; `--log` deferred)
+9. **Key options** (30 min) ✅
+10. **Image options** (1 hour) ✅
+11. **SSH options** (15 min) ✅
 
 ---
 

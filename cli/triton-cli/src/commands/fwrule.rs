@@ -52,11 +52,11 @@ pub struct FwruleCreateArgs {
     /// Rule text (e.g., "FROM any TO vm <uuid> ALLOW tcp PORT 22")
     pub rule: String,
     /// Rule description
-    #[arg(long)]
+    #[arg(short = 'D', long)]
     pub description: Option<String>,
-    /// Enable rule (default: true)
-    #[arg(long, default_value = "true")]
-    pub enabled: bool,
+    /// Create rule in disabled state (rules are enabled by default)
+    #[arg(short = 'd', long)]
+    pub disabled: bool,
 }
 
 #[derive(Args, Clone)]
@@ -189,7 +189,7 @@ async fn create_rule(args: FwruleCreateArgs, client: &TypedClient, use_json: boo
 
     let request = cloudapi_client::types::CreateFirewallRuleRequest {
         rule: args.rule.clone(),
-        enabled: Some(args.enabled),
+        enabled: Some(!args.disabled),
         description: args.description.clone(),
     };
 

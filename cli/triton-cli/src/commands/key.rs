@@ -17,6 +17,10 @@ use crate::output::table::{TableBuilder, TableFormatArgs};
 pub struct KeyListArgs {
     #[command(flatten)]
     pub table: TableFormatArgs,
+
+    /// Output in authorized_keys format (one key per line)
+    #[arg(short = 'A', long = "authorized-keys")]
+    pub authorized_keys: bool,
 }
 
 #[derive(Subcommand, Clone)]
@@ -53,7 +57,7 @@ pub struct KeyDeleteArgs {
     /// Key name(s) or fingerprint(s)
     pub keys: Vec<String>,
     /// Skip confirmation
-    #[arg(long, short)]
+    #[arg(long, short, visible_alias = "yes", short_alias = 'y')]
     pub force: bool,
 }
 
@@ -76,6 +80,11 @@ async fn list_keys(args: KeyListArgs, client: &TypedClient, use_json: bool) -> R
 
     if use_json {
         json::print_json(&keys)?;
+    } else if args.authorized_keys {
+        // Output in authorized_keys format (one key per line)
+        for key in &keys {
+            println!("{}", key.key.trim());
+        }
     } else {
         let mut tbl = TableBuilder::new(&["NAME", "FINGERPRINT"]).with_long_headers(&["KEY"]);
         for key in &keys {

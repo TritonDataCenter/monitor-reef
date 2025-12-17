@@ -489,6 +489,7 @@ async fn main() -> Result<()> {
             let client = cli.build_client()?;
             commands::key::KeyCommand::List(commands::key::KeyListArgs {
                 table: Default::default(),
+                authorized_keys: false,
             })
             .run(&client, cli.json)
             .await
