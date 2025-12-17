@@ -23,6 +23,7 @@ clap_complete = "4.4"
 tokio = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = "0.9"
 anyhow = { workspace = true }
 thiserror = "2.0"
 directories = "5.0"

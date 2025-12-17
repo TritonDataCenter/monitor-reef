@@ -8,6 +8,7 @@
 
 mod apply;
 mod common;
+mod editor;
 mod keys;
 mod policy;
 mod role;

@@ -9,8 +9,11 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
+use serde::Deserialize;
 
 use crate::output::{json, table};
+
+use super::editor;
 
 /// Policy subcommands (modern pattern)
 #[derive(Subcommand, Clone)]
@@ -42,6 +45,7 @@ pub enum PolicySubcommand {
 /// Legacy (action flag) pattern:
 ///   triton rbac policy POLICY           # show policy (default)
 ///   triton rbac policy -a [FILE]        # add policy from file or stdin
+///   triton rbac policy -e POLICY        # edit policy in $EDITOR
 ///   triton rbac policy -d POLICY...     # delete policy(s)
 #[derive(Args, Clone)]
 #[command(args_conflicts_with_subcommands = true)]
@@ -50,11 +54,15 @@ pub struct RbacPolicyCommand {
     pub command: Option<PolicySubcommand>,
 
     /// Add a new policy (legacy compat: read from FILE, "-" for stdin, or interactive)
-    #[arg(short = 'a', long = "add", conflicts_with = "delete")]
+    #[arg(short = 'a', long = "add", conflicts_with_all = ["delete", "edit"])]
     pub add: bool,
 
+    /// Edit policy in $EDITOR (legacy compat)
+    #[arg(short = 'e', long = "edit", conflicts_with_all = ["add", "delete"])]
+    pub edit: bool,
+
     /// Delete policy(s) (legacy compat)
-    #[arg(short = 'd', long = "delete", conflicts_with = "add")]
+    #[arg(short = 'd', long = "delete", conflicts_with_all = ["add", "edit"])]
     pub delete: bool,
 
     /// Skip confirmation (for delete)
@@ -64,6 +72,7 @@ pub struct RbacPolicyCommand {
     /// Policy(s) or file argument
     /// For show: POLICY name/uuid
     /// For add: optional FILE path (or "-" for stdin)
+    /// For edit: POLICY name/uuid
     /// For delete: one or more POLICY name/uuid
     #[arg(trailing_var_arg = true)]
     pub args: Vec<String>,
@@ -129,6 +138,12 @@ impl RbacPolicyCommand {
             // -a/--add: add policy from file or stdin
             let file = self.args.first().map(|s| s.as_str());
             add_policy_from_file(file, client, use_json).await
+        } else if self.edit {
+            // -e/--edit: edit policy in $EDITOR
+            if self.args.is_empty() {
+                anyhow::bail!("POLICY argument required for edit");
+            }
+            edit_policy_in_editor(&self.args[0], client).await
         } else if self.delete {
             // -d/--delete: delete policy(s)
             if self.args.is_empty() {
@@ -151,6 +166,7 @@ impl RbacPolicyCommand {
                 "Usage: triton rbac policy <SUBCOMMAND>\n\
                  Or:    triton rbac policy POLICY           (show policy)\n\
                  Or:    triton rbac policy -a [FILE]        (add policy)\n\
+                 Or:    triton rbac policy -e POLICY        (edit policy)\n\
                  Or:    triton rbac policy -d POLICY...     (delete policies)\n\n\
                  Run 'triton rbac policy --help' for more information"
             );
@@ -428,4 +444,115 @@ async fn add_policy_from_file(
     }
 
     Ok(())
+}
+
+/// Struct for deserializing edited policy YAML (comments are ignored by serde_yaml)
+#[derive(Deserialize)]
+struct PolicyEdit {
+    /// Policy name
+    name: String,
+    /// Policy rules
+    #[serde(default)]
+    rules: Vec<String>,
+    /// Description
+    #[serde(default)]
+    description: Option<String>,
+}
+
+/// Convert a Policy to commented YAML for editing
+fn policy_to_commented_yaml(policy: &cloudapi_client::types::Policy, account: &str) -> String {
+    let rules = editor::format_yaml_list(&policy.rules, "  ");
+    let description = policy.description.as_deref().unwrap_or("");
+
+    format!(
+        r#"# Policy: {name}
+# ID: {id}
+# Account: {account}
+# Edit below, save and quit to apply changes
+
+# Policy name (required)
+name: {name}
+
+# Description (optional)
+description: {description}
+
+# Policy rules (at least one required)
+# See https://docs.tritondatacenter.com/public-cloud/rbac/rules for syntax
+rules:
+{rules}
+"#,
+        name = policy.name,
+        id = policy.id,
+        account = account,
+        description = description,
+        rules = rules,
+    )
+}
+
+/// Edit policy in $EDITOR (legacy -e flag support)
+async fn edit_policy_in_editor(policy_ref: &str, client: &TypedClient) -> Result<()> {
+    let account = client.auth_config().account.clone();
+
+    // Fetch current policy
+    let response = client
+        .inner()
+        .get_policy()
+        .account(&account)
+        .policy(policy_ref)
+        .send()
+        .await?;
+    let policy = response.into_inner();
+
+    let filename = format!("{}-policy-{}.yaml", account, policy.name);
+    let original_yaml = policy_to_commented_yaml(&policy, &account);
+
+    let mut current_yaml = original_yaml.clone();
+    loop {
+        let result = editor::edit_in_editor(&current_yaml, &filename)?;
+
+        if !result.changed {
+            println!("No changes made");
+            return Ok(());
+        }
+
+        match serde_yaml::from_str::<PolicyEdit>(&result.content) {
+            Ok(edited) => {
+                if edited.rules.is_empty() {
+                    eprintln!("Error: At least one rule is required");
+                    if !editor::prompt_retry()? {
+                        anyhow::bail!("Aborted");
+                    }
+                    current_yaml = result.content;
+                    continue;
+                }
+
+                // Build update request
+                let request = cloudapi_client::types::UpdatePolicyRequest {
+                    name: Some(edited.name.clone()),
+                    rules: Some(edited.rules),
+                    description: edited.description,
+                };
+
+                // Update the policy
+                client
+                    .inner()
+                    .update_policy()
+                    .account(&account)
+                    .policy(&policy.name)
+                    .body(request)
+                    .send()
+                    .await?;
+
+                println!("Updated policy \"{}\"", edited.name);
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("Error parsing YAML: {}", e);
+                if !editor::prompt_retry()? {
+                    anyhow::bail!("Aborted");
+                }
+                current_yaml = result.content; // Keep user's edits for retry
+            }
+        }
+    }
 }

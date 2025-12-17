@@ -139,16 +139,16 @@ Node.js triton uses action flags (`-a`, `-e`, `-d`) instead of subcommands. The 
 |------|-------------|--------|
 | **User action flags** | | |
 | Support `-a` action flag | Add user (alternative to `user create`) | [x] |
-| Support `-e` action flag | Edit user in $EDITOR | [ ] |
+| Support `-e` action flag | Edit user in $EDITOR | [x] |
 | Support `-d` action flag | Delete user (alternative to `user delete`) | [x] |
 | Support `-k` flag on user get | Show keys inline | [x] |
 | **Role action flags** | | |
 | Support `-a` action flag on role | Add role from file/stdin/interactive | [x] |
-| Support `-e` action flag on role | Edit role in $EDITOR | [ ] |
+| Support `-e` action flag on role | Edit role in $EDITOR | [x] |
 | Support `-d` action flag on role | Delete role(s) | [x] |
 | **Policy action flags** | | |
 | Support `-a` action flag on policy | Add policy from file/stdin/interactive | [x] |
-| Support `-e` action flag on policy | Edit policy in $EDITOR | [ ] |
+| Support `-e` action flag on policy | Edit policy in $EDITOR | [x] |
 | Support `-d` action flag on policy | Delete policy(s) | [x] |
 | **Key action flags** | | |
 | Support `-a` action flag on key | Add key from file | [x] |
@@ -162,9 +162,9 @@ Node.js triton uses action flags (`-a`, `-e`, `-d`) instead of subcommands. The 
 **Notes:**
 - `--dev-create-keys-and-profiles` flag is accepted but returns an error until SSH key generation is implemented
 
-### Planned: $EDITOR Integration for `-e` Flag
+### Implemented: $EDITOR Integration for `-e` Flag
 
-The `-e` flag will launch the user's `$EDITOR` to edit RBAC objects (users, roles, policies) in commented YAML format.
+The `-e` flag launches the user's `$EDITOR` to edit RBAC objects (users, roles, policies) in commented YAML format.
 
 **Implementation approach** (based on node-triton `lib/common.js:editInEditor`):
 

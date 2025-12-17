@@ -9,10 +9,12 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
+use serde::Deserialize;
 
 use crate::output::{json, table};
 
 use super::common::resolve_user;
+use super::editor;
 
 /// User subcommands (modern pattern)
 #[derive(Subcommand, Clone)]
@@ -45,6 +47,7 @@ pub enum UserSubcommand {
 ///   triton rbac user USER           # show user (default)
 ///   triton rbac user -k USER        # show user with keys
 ///   triton rbac user -a [FILE]      # add user from file or stdin
+///   triton rbac user -e USER        # edit user in $EDITOR
 ///   triton rbac user -d USER...     # delete user(s)
 #[derive(Args, Clone)]
 #[command(args_conflicts_with_subcommands = true)]
@@ -53,11 +56,15 @@ pub struct RbacUserCommand {
     pub command: Option<UserSubcommand>,
 
     /// Add a new user (legacy compat: read from FILE, "-" for stdin, or interactive)
-    #[arg(short = 'a', long = "add", conflicts_with = "delete")]
+    #[arg(short = 'a', long = "add", conflicts_with_all = ["delete", "edit"])]
     pub add: bool,
 
+    /// Edit user in $EDITOR (legacy compat)
+    #[arg(short = 'e', long = "edit", conflicts_with_all = ["add", "delete"])]
+    pub edit: bool,
+
     /// Delete user(s) (legacy compat)
-    #[arg(short = 'd', long = "delete", conflicts_with = "add")]
+    #[arg(short = 'd', long = "delete", conflicts_with_all = ["add", "edit"])]
     pub delete: bool,
 
     /// Include SSH keys when showing user
@@ -71,6 +78,7 @@ pub struct RbacUserCommand {
     /// User(s) or file argument
     /// For show: USER login/uuid
     /// For add: optional FILE path (or "-" for stdin)
+    /// For edit: USER login/uuid
     /// For delete: one or more USER login/uuid
     #[arg(trailing_var_arg = true)]
     pub args: Vec<String>,
@@ -151,6 +159,12 @@ impl RbacUserCommand {
             // -a/--add: add user from file or stdin
             let file = self.args.first().map(|s| s.as_str());
             add_user_from_file(file, client, use_json).await
+        } else if self.edit {
+            // -e/--edit: edit user in $EDITOR
+            if self.args.is_empty() {
+                anyhow::bail!("USER argument required for edit");
+            }
+            edit_user_in_editor(&self.args[0], client).await
         } else if self.delete {
             // -d/--delete: delete user(s)
             if self.args.is_empty() {
@@ -174,6 +188,7 @@ impl RbacUserCommand {
                 "Usage: triton rbac user <SUBCOMMAND>\n\
                  Or:    triton rbac user USER           (show user)\n\
                  Or:    triton rbac user -a [FILE]      (add user)\n\
+                 Or:    triton rbac user -e USER        (edit user)\n\
                  Or:    triton rbac user -d USER...     (delete users)\n\n\
                  Run 'triton rbac user --help' for more information"
             );
@@ -529,4 +544,131 @@ async fn add_user_from_file(
     }
 
     Ok(())
+}
+
+/// Struct for deserializing edited user YAML (comments are ignored by serde_yaml)
+#[derive(Deserialize)]
+struct UserEdit {
+    /// User login (cannot be changed)
+    #[allow(dead_code)]
+    login: String,
+    /// Email address
+    email: String,
+    /// Company name
+    #[serde(default)]
+    company_name: Option<String>,
+    /// First name
+    #[serde(default)]
+    first_name: Option<String>,
+    /// Last name
+    #[serde(default)]
+    last_name: Option<String>,
+    /// Phone number
+    #[serde(default)]
+    phone: Option<String>,
+}
+
+/// Convert a User to commented YAML for editing
+fn user_to_commented_yaml(user: &cloudapi_client::types::User, account: &str) -> String {
+    let company = user.company_name.as_deref().unwrap_or("");
+    let first = user.first_name.as_deref().unwrap_or("");
+    let last = user.last_name.as_deref().unwrap_or("");
+    let phone = user.phone.as_deref().unwrap_or("");
+
+    format!(
+        r#"# User: {login}
+# ID: {id}
+# Account: {account}
+# Edit below, save and quit to apply changes
+# Note: login cannot be changed
+
+# User login (read-only)
+login: {login}
+
+# Email address (required)
+email: {email}
+
+# Company name (optional)
+company_name: {company}
+
+# First name (optional)
+first_name: {first}
+
+# Last name (optional)
+last_name: {last}
+
+# Phone number (optional)
+phone: {phone}
+"#,
+        login = user.login,
+        id = user.id,
+        account = account,
+        email = user.email,
+        company = company,
+        first = first,
+        last = last,
+        phone = phone,
+    )
+}
+
+/// Edit user in $EDITOR (legacy -e flag support)
+async fn edit_user_in_editor(user_ref: &str, client: &TypedClient) -> Result<()> {
+    let account = client.auth_config().account.clone();
+    let user_id = resolve_user(user_ref, client).await?;
+
+    // Fetch current user
+    let response = client
+        .inner()
+        .get_user()
+        .account(&account)
+        .uuid(&user_id)
+        .send()
+        .await?;
+    let user = response.into_inner();
+
+    let filename = format!("{}-user-{}.yaml", account, user.login);
+    let original_yaml = user_to_commented_yaml(&user, &account);
+
+    let mut current_yaml = original_yaml.clone();
+    loop {
+        let result = editor::edit_in_editor(&current_yaml, &filename)?;
+
+        if !result.changed {
+            println!("No changes made");
+            return Ok(());
+        }
+
+        match serde_yaml::from_str::<UserEdit>(&result.content) {
+            Ok(edited) => {
+                // Build update request
+                let request = cloudapi_client::types::UpdateUserRequest {
+                    email: Some(edited.email),
+                    company_name: edited.company_name,
+                    first_name: edited.first_name,
+                    last_name: edited.last_name,
+                    phone: edited.phone,
+                };
+
+                // Update the user
+                client
+                    .inner()
+                    .update_user()
+                    .account(&account)
+                    .uuid(&user_id)
+                    .body(request)
+                    .send()
+                    .await?;
+
+                println!("Updated user \"{}\"", user.login);
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("Error parsing YAML: {}", e);
+                if !editor::prompt_retry()? {
+                    anyhow::bail!("Aborted");
+                }
+                current_yaml = result.content; // Keep user's edits for retry
+            }
+        }
+    }
 }

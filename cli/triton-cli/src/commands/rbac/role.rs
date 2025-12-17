@@ -9,8 +9,11 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
+use serde::Deserialize;
 
 use crate::output::{json, table};
+
+use super::editor;
 
 /// Role subcommands (modern pattern)
 #[derive(Subcommand, Clone)]
@@ -42,6 +45,7 @@ pub enum RoleSubcommand {
 /// Legacy (action flag) pattern:
 ///   triton rbac role ROLE           # show role (default)
 ///   triton rbac role -a [FILE]      # add role from file or stdin
+///   triton rbac role -e ROLE        # edit role in $EDITOR
 ///   triton rbac role -d ROLE...     # delete role(s)
 #[derive(Args, Clone)]
 #[command(args_conflicts_with_subcommands = true)]
@@ -50,11 +54,15 @@ pub struct RbacRoleCommand {
     pub command: Option<RoleSubcommand>,
 
     /// Add a new role (legacy compat: read from FILE, "-" for stdin, or interactive)
-    #[arg(short = 'a', long = "add", conflicts_with = "delete")]
+    #[arg(short = 'a', long = "add", conflicts_with_all = ["delete", "edit"])]
     pub add: bool,
 
+    /// Edit role in $EDITOR (legacy compat)
+    #[arg(short = 'e', long = "edit", conflicts_with_all = ["add", "delete"])]
+    pub edit: bool,
+
     /// Delete role(s) (legacy compat)
-    #[arg(short = 'd', long = "delete", conflicts_with = "add")]
+    #[arg(short = 'd', long = "delete", conflicts_with_all = ["add", "edit"])]
     pub delete: bool,
 
     /// Skip confirmation (for delete)
@@ -64,6 +72,7 @@ pub struct RbacRoleCommand {
     /// Role(s) or file argument
     /// For show: ROLE name/uuid
     /// For add: optional FILE path (or "-" for stdin)
+    /// For edit: ROLE name/uuid
     /// For delete: one or more ROLE name/uuid
     #[arg(trailing_var_arg = true)]
     pub args: Vec<String>,
@@ -135,6 +144,12 @@ impl RbacRoleCommand {
             // -a/--add: add role from file or stdin
             let file = self.args.first().map(|s| s.as_str());
             add_role_from_file(file, client, use_json).await
+        } else if self.edit {
+            // -e/--edit: edit role in $EDITOR
+            if self.args.is_empty() {
+                anyhow::bail!("ROLE argument required for edit");
+            }
+            edit_role_in_editor(&self.args[0], client).await
         } else if self.delete {
             // -d/--delete: delete role(s)
             if self.args.is_empty() {
@@ -157,6 +172,7 @@ impl RbacRoleCommand {
                 "Usage: triton rbac role <SUBCOMMAND>\n\
                  Or:    triton rbac role ROLE           (show role)\n\
                  Or:    triton rbac role -a [FILE]      (add role)\n\
+                 Or:    triton rbac role -e ROLE        (edit role)\n\
                  Or:    triton rbac role -d ROLE...     (delete roles)\n\n\
                  Run 'triton rbac role --help' for more information"
             );
@@ -495,4 +511,128 @@ async fn add_role_from_file(
     }
 
     Ok(())
+}
+
+/// Struct for deserializing edited role YAML (comments are ignored by serde_yaml)
+#[derive(Deserialize)]
+struct RoleEdit {
+    /// Role name
+    name: String,
+    /// Users assigned to this role
+    #[serde(default)]
+    members: Vec<String>,
+    /// Policies attached to this role
+    #[serde(default)]
+    policies: Vec<String>,
+    /// Default members (automatically assigned)
+    #[serde(default)]
+    default_members: Vec<String>,
+}
+
+/// Convert a Role to commented YAML for editing
+fn role_to_commented_yaml(role: &cloudapi_client::types::Role, account: &str) -> String {
+    let members = editor::format_yaml_list(&role.members, "  ");
+    let policies = editor::format_yaml_list(&role.policies, "  ");
+    let default_members = editor::format_yaml_list(&role.default_members, "  ");
+
+    format!(
+        r#"# Role: {name}
+# ID: {id}
+# Account: {account}
+# Edit below, save and quit to apply changes
+
+# Role name (required)
+name: {name}
+
+# Users assigned to this role
+members:
+{members}
+
+# Policies attached to this role
+policies:
+{policies}
+
+# Default members (automatically assigned to new users)
+default_members:
+{default_members}
+"#,
+        name = role.name,
+        id = role.id,
+        account = account,
+        members = members,
+        policies = policies,
+        default_members = default_members,
+    )
+}
+
+/// Edit role in $EDITOR (legacy -e flag support)
+async fn edit_role_in_editor(role_ref: &str, client: &TypedClient) -> Result<()> {
+    let account = client.auth_config().account.clone();
+
+    // Fetch current role
+    let response = client
+        .inner()
+        .get_role()
+        .account(&account)
+        .role(role_ref)
+        .send()
+        .await?;
+    let role = response.into_inner();
+
+    let filename = format!("{}-role-{}.yaml", account, role.name);
+    let original_yaml = role_to_commented_yaml(&role, &account);
+
+    let mut current_yaml = original_yaml.clone();
+    loop {
+        let result = editor::edit_in_editor(&current_yaml, &filename)?;
+
+        if !result.changed {
+            println!("No changes made");
+            return Ok(());
+        }
+
+        match serde_yaml::from_str::<RoleEdit>(&result.content) {
+            Ok(edited) => {
+                // Build update request
+                let request = cloudapi_client::types::UpdateRoleRequest {
+                    name: Some(edited.name.clone()),
+                    members: if edited.members.is_empty() {
+                        None
+                    } else {
+                        Some(edited.members)
+                    },
+                    policies: if edited.policies.is_empty() {
+                        None
+                    } else {
+                        Some(edited.policies)
+                    },
+                    default_members: if edited.default_members.is_empty() {
+                        None
+                    } else {
+                        Some(edited.default_members)
+                    },
+                };
+
+                // Update the role
+                client
+                    .inner()
+                    .update_role()
+                    .account(&account)
+                    .role(&role.name)
+                    .body(request)
+                    .send()
+                    .await?;
+
+                println!("Updated role \"{}\"", edited.name);
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("Error parsing YAML: {}", e);
+                if !editor::prompt_retry()? {
+                    anyhow::bail!("Aborted");
+                }
+                current_yaml = result.content; // Keep user's edits for retry
+            }
+        }
+    }
 }
