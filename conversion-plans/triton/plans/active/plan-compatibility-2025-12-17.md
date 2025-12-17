@@ -139,16 +139,16 @@ Node.js triton uses action flags (`-a`, `-e`, `-d`) instead of subcommands. The 
 |------|-------------|--------|
 | **User action flags** | | |
 | Support `-a` action flag | Add user (alternative to `user create`) | [x] |
-| Support `-e` action flag | Edit user in $EDITOR | [-] Intentional difference |
+| Support `-e` action flag | Edit user in $EDITOR | [ ] |
 | Support `-d` action flag | Delete user (alternative to `user delete`) | [x] |
 | Support `-k` flag on user get | Show keys inline | [x] |
 | **Role action flags** | | |
 | Support `-a` action flag on role | Add role from file/stdin/interactive | [x] |
-| Support `-e` action flag on role | Edit role in $EDITOR | [-] Intentional difference |
+| Support `-e` action flag on role | Edit role in $EDITOR | [ ] |
 | Support `-d` action flag on role | Delete role(s) | [x] |
 | **Policy action flags** | | |
 | Support `-a` action flag on policy | Add policy from file/stdin/interactive | [x] |
-| Support `-e` action flag on policy | Edit policy in $EDITOR | [-] Intentional difference |
+| Support `-e` action flag on policy | Edit policy in $EDITOR | [ ] |
 | Support `-d` action flag on policy | Delete policy(s) | [x] |
 | **Key action flags** | | |
 | Support `-a` action flag on key | Add key from file | [x] |
@@ -160,8 +160,230 @@ Node.js triton uses action flags (`-a`, `-e`, `-d`) instead of subcommands. The 
 | Add plural list aliases | `users`, `roles`, `policies` commands | [x] |
 
 **Notes:**
-- `$EDITOR` integration for `-e` flag would be a separate feature request
 - `--dev-create-keys-and-profiles` flag is accepted but returns an error until SSH key generation is implemented
+
+### Planned: $EDITOR Integration for `-e` Flag
+
+The `-e` flag will launch the user's `$EDITOR` to edit RBAC objects (users, roles, policies) in commented YAML format.
+
+**Implementation approach** (based on node-triton `lib/common.js:editInEditor`):
+
+1. **Fetch** current object from CloudAPI
+2. **Serialize** to commented YAML using template strings
+3. **Write** to temp file: `triton-<pid>-edit-<account>-<type>-<name>.yaml`
+4. **Spawn** `$EDITOR` (fallback: `/usr/bin/vi`) with `stdio: inherit`
+5. **Read back** edited content after editor exits
+6. **Parse** YAML with `serde_yaml` (comments are ignored)
+7. **Validate** changes and detect if content actually changed
+8. **Retry loop** on parse/validation errors (prompt user to re-edit)
+9. **Update** via CloudAPI if changed
+
+**Commented YAML format** (template-based, comments stripped on parse):
+
+```yaml
+# Role: admin-role
+# ID: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+# Account: myaccount
+# Edit below, save and quit to apply changes
+
+# Role name (required, cannot change for built-in roles)
+name: admin-role
+
+# Users assigned to this role
+members:
+  - alice
+  - bob
+
+# Policies attached to this role
+policies:
+  - admin-policy
+
+# Default members (automatically assigned to new users)
+default_members: []
+```
+
+**Core implementation** in `cli/triton-cli/src/commands/rbac/editor.rs`:
+
+```rust
+use std::env;
+use std::fs;
+use std::io::{self, Write};
+use std::process::{Command, Stdio};
+use anyhow::{anyhow, Result};
+
+/// Result of editing in $EDITOR
+pub struct EditResult {
+    pub content: String,
+    pub changed: bool,
+}
+
+/// Launch $EDITOR to edit text, returns edited content and whether it changed
+pub fn edit_in_editor(text: &str, filename: &str) -> Result<EditResult> {
+    let tmp_dir = env::temp_dir();
+    let tmp_path = tmp_dir.join(format!(
+        "triton-{}-edit-{}",
+        std::process::id(),
+        filename
+    ));
+
+    fs::write(&tmp_path, text)?;
+
+    let editor = env::var("EDITOR").unwrap_or_else(|_| "/usr/bin/vi".into());
+
+    // Parse editor command (handles "code --wait", "vim", etc.)
+    let mut parts = editor.split_whitespace();
+    let program = parts.next().ok_or_else(|| anyhow!("Empty EDITOR"))?;
+    let mut cmd = Command::new(program);
+    for arg in parts {
+        cmd.arg(arg);
+    }
+
+    let status = cmd
+        .arg(&tmp_path)
+        .stdin(Stdio::inherit())
+        .stdout(Stdio::inherit())
+        .stderr(Stdio::inherit())
+        .status()?;
+
+    if !status.success() {
+        fs::remove_file(&tmp_path).ok();
+        return Err(anyhow!(
+            "Editor exited with status: {}",
+            status.code().unwrap_or(-1)
+        ));
+    }
+
+    let after_text = fs::read_to_string(&tmp_path)?;
+    fs::remove_file(&tmp_path).ok();
+
+    Ok(EditResult {
+        changed: after_text != text,
+        content: after_text,
+    })
+}
+
+/// Prompt user to retry editing after an error
+pub fn prompt_retry() -> Result<bool> {
+    eprint!("Press Enter to re-edit, Ctrl+C to abort: ");
+    io::stderr().flush()?;
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    Ok(true)
+}
+```
+
+**YAML serializers** (one per type, in respective command files):
+
+```rust
+// Example for Role in rbac/role.rs
+fn role_to_commented_yaml(role: &Role, account: &str) -> String {
+    let members = if role.members.is_empty() {
+        "  []".to_string()
+    } else {
+        role.members.iter()
+            .map(|m| format!("  - {}", m))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    let policies = if role.policies.is_empty() {
+        "  []".to_string()
+    } else {
+        role.policies.iter()
+            .map(|p| format!("  - {}", p.name))
+            .collect::<Vec<_>>()
+            .join("\n")
+    };
+
+    format!(r#"# Role: {name}
+# ID: {id}
+# Account: {account}
+# Edit below, save and quit to apply changes
+
+# Role name (required)
+name: {name}
+
+# Users assigned to this role
+members:
+{members}
+
+# Policies attached to this role
+policies:
+{policies}
+
+# Default members (automatically assigned)
+default_members: []
+"#,
+        name = role.name,
+        id = role.id,
+        account = account,
+        members = members,
+        policies = policies,
+    )
+}
+
+// Deserialize struct (comments ignored by serde_yaml)
+#[derive(Deserialize)]
+struct RoleEdit {
+    name: String,
+    #[serde(default)]
+    members: Vec<String>,
+    #[serde(default)]
+    policies: Vec<String>,
+    #[serde(default)]
+    default_members: Vec<String>,
+}
+```
+
+**Edit flow with retry loop**:
+
+```rust
+async fn edit_role(client: &TypedClient, role_id: &str) -> Result<()> {
+    let role = client.get_role(role_id).await?;
+    let account = client.auth_config().account.clone();
+    let filename = format!("{}-role-{}.yaml", account, role.name);
+    let original_yaml = role_to_commented_yaml(&role, &account);
+
+    let mut current_yaml = original_yaml.clone();
+    loop {
+        let result = edit_in_editor(&current_yaml, &filename)?;
+
+        if !result.changed {
+            println!("No changes made");
+            return Ok(());
+        }
+
+        match serde_yaml::from_str::<RoleEdit>(&result.content) {
+            Ok(edited) => {
+                // Validate and update
+                client.update_role(&role.id, &edited).await?;
+                println!("Updated role \"{}\"", edited.name);
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("Error parsing YAML: {}", e);
+                if !prompt_retry()? {
+                    return Err(anyhow!("Aborted"));
+                }
+                current_yaml = result.content; // Keep user's edits for retry
+            }
+        }
+    }
+}
+```
+
+**Dependencies** (add to workspace `Cargo.toml`):
+
+```toml
+serde_yaml = "0.9"
+```
+
+**Files to modify:**
+- `cli/triton-cli/src/commands/rbac/editor.rs` (new - core edit_in_editor function)
+- `cli/triton-cli/src/commands/rbac/mod.rs` (add editor module)
+- `cli/triton-cli/src/commands/rbac/user.rs` (add -e flag handling)
+- `cli/triton-cli/src/commands/rbac/role.rs` (add -e flag handling)
+- `cli/triton-cli/src/commands/rbac/policy.rs` (add -e flag handling)
 
 ### Implemented: Action Flag Implementation Approach
 
