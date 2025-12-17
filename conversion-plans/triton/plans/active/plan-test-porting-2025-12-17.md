@@ -34,10 +34,13 @@ Copyright 2025 Edgecast Cloud LLC.
 | Phase 3.8: Key Tests | **COMPLETE** | 21 tests (14 offline + 2 API ignored) |
 | Phase 3.9: Fwrule Tests | **COMPLETE** | 26 tests (17 offline + 2 API ignored) |
 | Phase 3.10: Volume Tests | **COMPLETE** | 25 tests (15 offline + 3 API ignored) |
-| Phase 4: Write Operations | Not Started | Requires allow_write_actions |
+| Phase 4.1: Instance Tag Write Tests | **COMPLETE** | 2 API tests (ignored) |
+| Phase 4.2: Snapshot Tests | **COMPLETE** | 12 offline tests + 2 API tests (ignored) |
+| Phase 4.3: Volume Write Tests | **COMPLETE** | 2 API tests (ignored) |
+| Phase 4.4: Fwrule Write Tests | **COMPLETE** | 1 API test (ignored) |
 | Phase 5: Advanced Tests | Not Started | P3 priority |
 
-**Total Tests: 228 offline passing, 38 API tests (ignored by default)**
+**Total Tests: 245+ offline passing, 45+ API tests (ignored by default)**
 
 ## Current Session Progress (2025-12-17)
 
@@ -402,53 +405,100 @@ Port from `cli-account.test.js`:
 
 ---
 
-## Phase 4: CLI Integration Tests - Write Operations (P2 - Important)
+## Phase 4: CLI Integration Tests - Write Operations (P2 - Important) - COMPLETE
 
 **Requires:** `allow_write_actions: true` in test config
 
-### 4.1 Instance Tag Tests
+### 4.1 Instance Tag Tests (COMPLETE)
 
 **File:** `cli/triton-cli/tests/cli_instance_tag.rs`
 
 Port from `cli-instance-tag.test.js` (243 lines):
 
-- [ ] Create test instance with initial tag
-- [ ] `triton inst tag ls` lists tags
-- [ ] `triton inst tag set` adds/updates tags
-- [ ] `triton inst tag get <key>` gets single tag
-- [ ] `triton inst tag rm <key>` removes tag
-- [ ] `triton inst tag replace-all` replaces all tags
-- [ ] Cleanup test instance
+- [x] Create test instance with initial tag
+- [x] `triton inst tag ls` lists tags
+- [x] `triton inst tag set` adds/updates tags (with type coercion: bool, number, string)
+- [x] `triton inst tag get <key>` gets single tag (plain text and -j JSON)
+- [x] `triton inst tag set -f tags.json` loads from JSON file
+- [x] `triton inst tag set -f tags.kv` loads from key=value file
+- [x] `triton inst tag rm <key>` removes tags (multiple keys supported)
+- [x] `triton inst tag replace-all` replaces all tags
+- [x] `triton inst tag delete -a` deletes all tags
+- [x] Cleanup test instance
 
-### 4.2 Snapshot Tests
+### 4.2 Snapshot Tests (COMPLETE)
 
 **File:** `cli/triton-cli/tests/cli_snapshots.rs`
 
-- [ ] Create snapshot
-- [ ] List snapshots
-- [ ] Get snapshot
-- [ ] Delete snapshot
+**Offline tests (12 tests):**
+- [x] Help tests for snapshot commands
+- [x] List, create, get, delete help
+- [x] Aliases (ls, rm)
 
-### 4.3 Volume Tests
+**API tests (2 ignored):**
+- [x] Full snapshot workflow (create, get, list, delete, boot from snapshot)
+- [x] List snapshots on instance with no snapshots
+
+### 4.3 Volume Tests (COMPLETE)
 
 **File:** `cli/triton-cli/tests/cli_volumes.rs`
 
 Port from `cli-volumes.test.js` and `cli-volumes-size.test.js`:
 
-- [ ] Create volume
-- [ ] List volumes
-- [ ] Get volume
-- [ ] Delete volume
-- [ ] Size parsing edge cases
+**API write tests (2 ignored):**
+- [x] Create volume with invalid name (error handling)
+- [x] Create volume with invalid size (error handling)
+- [x] Create volume with invalid type (error handling)
+- [x] Create volume with invalid network (error handling)
+- [x] Create volume with invalid tag format (error handling)
+- [x] Create valid volume with tags
+- [x] Get volume (verify name, type, tags)
+- [x] Delete volume
+- [x] Verify volume deleted (ResourceNotFound)
+- [x] Create volume on fabric network
+- [x] Verify volume on correct network
 
-### 4.4 Firewall Rules Tests
+### 4.4 Firewall Rules Tests (COMPLETE)
 
 **File:** `cli/triton-cli/tests/cli_fwrules.rs`
 
-- [ ] Create rule
-- [ ] List rules
-- [ ] Update rule
-- [ ] Delete rule
+**API write test (1 ignored):**
+- [x] Create rule (disabled)
+- [x] Get disabled rule
+- [x] Create rule (enabled with description and log)
+- [x] Get enabled rule
+- [x] Enable rule
+- [x] Disable rule
+- [x] Update rule (change rule text)
+- [x] Update log setting
+- [x] List rules
+- [x] List instances affected by rule
+- [x] Instance fwrules list
+- [x] Delete rule
+- [x] Enable firewall on instance
+- [x] Verify firewall enabled
+- [x] Disable firewall on instance
+- [x] Verify firewall disabled
+- [x] Cleanup test instance
+
+### Infrastructure Added for Phase 4
+
+**File:** `cli/triton-cli/tests/common/mod.rs`
+
+New helper functions:
+- `run_triton_with_profile()` - Run triton with test profile environment
+- `safe_triton()` - Assert success and return stdout
+- `get_test_image()` - Find suitable base/minimal image for tests
+- `get_test_package()` - Find smallest non-KVM package
+- `create_test_instance()` - Create instance with wait and JSON output
+- `delete_test_instance()` - Delete instance (silent if not found)
+- `allow_write_actions()` - Check if write tests are enabled
+- `short_id()` - Get first segment of UUID
+
+New types:
+- `ImageInfo` - Deserialize image list output
+- `PackageInfo` - Deserialize package list output
+- `InstanceInfo` - Deserialize instance create output
 
 ---
 

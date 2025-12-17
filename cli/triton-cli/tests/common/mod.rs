@@ -106,6 +106,203 @@ pub fn fixture_path(name: &str) -> std::path::PathBuf {
     fixtures_dir().join(name)
 }
 
+// =============================================================================
+// Write operation test helpers
+// =============================================================================
+
+use serde::Deserialize;
+
+/// Image info returned from `triton images -j`
+#[derive(Debug, Clone, Deserialize)]
+pub struct ImageInfo {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    #[serde(default)]
+    pub published_at: Option<String>,
+}
+
+/// Package info returned from `triton packages -j`
+#[derive(Debug, Clone, Deserialize)]
+pub struct PackageInfo {
+    pub id: String,
+    pub name: String,
+    pub memory: u64,
+}
+
+/// Instance info returned from `triton instance create -wj`
+#[derive(Debug, Clone, Deserialize)]
+pub struct InstanceInfo {
+    pub id: String,
+    pub name: String,
+    pub state: String,
+    #[serde(default)]
+    pub tags: std::collections::HashMap<String, serde_json::Value>,
+}
+
+/// Run triton with profile environment and return (stdout, stderr, success)
+pub fn run_triton_with_profile<I, S>(args: I) -> (String, String, bool)
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let profile_env = config::get_profile_env();
+    let env: Vec<(&str, &str)> = profile_env.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    run_triton_with_env(args, &env)
+}
+
+/// Safe triton execution - asserts success and empty stderr
+/// Returns stdout on success, panics on failure
+pub fn safe_triton<I, S>(args: I) -> String
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr> + std::fmt::Debug,
+{
+    let args_vec: Vec<S> = args.into_iter().collect();
+    let args_str: Vec<String> = args_vec
+        .iter()
+        .map(|s| s.as_ref().to_string_lossy().to_string())
+        .collect();
+    let (stdout, stderr, success) = run_triton_with_profile(&args_vec);
+    assert!(
+        success,
+        "triton command failed: args={:?}\nstdout: {}\nstderr: {}",
+        args_str, stdout, stderr
+    );
+    // Note: Some commands may write to stderr for progress, so we don't assert empty stderr
+    stdout
+}
+
+/// Find a suitable test image (base or minimal image)
+/// Returns the image ID if found
+pub fn get_test_image() -> Option<String> {
+    let config = config::load_config()?;
+
+    // Check if image is specified in config
+    if let Some(ref image) = config.image {
+        return Some(image.clone());
+    }
+
+    // List images and find a suitable one
+    let (stdout, _, success) = run_triton_with_profile(["images", "-j"]);
+    if !success {
+        return None;
+    }
+
+    let images: Vec<ImageInfo> = json_stream_parse(&stdout);
+
+    // Candidate image names in order of preference
+    let candidates = [
+        "base-64-lts",
+        "base-64",
+        "minimal-64-lts",
+        "minimal-64",
+        "base-32-lts",
+        "base-32",
+        "minimal-32",
+        "base",
+    ];
+
+    // Find the first matching image (images are typically sorted by published_at desc)
+    for candidate in &candidates {
+        if let Some(img) = images.iter().find(|i| i.name == *candidate) {
+            return Some(img.id.clone());
+        }
+    }
+
+    // If no candidate found, return the first image if any exist
+    images.first().map(|i| i.id.clone())
+}
+
+/// Find the smallest available test package (non-KVM)
+/// Returns the package ID if found
+pub fn get_test_package() -> Option<String> {
+    let config = config::load_config()?;
+
+    // Check if package is specified in config
+    if let Some(ref package) = config.package {
+        return Some(package.clone());
+    }
+
+    // List packages and find the smallest one
+    let (stdout, _, success) = run_triton_with_profile(["packages", "-j"]);
+    if !success {
+        return None;
+    }
+
+    let mut packages: Vec<PackageInfo> = json_stream_parse(&stdout);
+
+    // Filter out KVM packages
+    packages.retain(|p| !p.name.contains("kvm"));
+
+    // Sort by memory (smallest first)
+    packages.sort_by_key(|p| p.memory);
+
+    packages.first().map(|p| p.id.clone())
+}
+
+/// Create a test instance with the given alias and optional extra flags
+/// Returns the instance info on success
+pub fn create_test_instance(alias: &str, extra_flags: &[&str]) -> Option<InstanceInfo> {
+    let img_id = get_test_image()?;
+    let pkg_id = get_test_package()?;
+
+    let mut args = vec![
+        "instance".to_string(),
+        "create".to_string(),
+        "-w".to_string(),
+        "-j".to_string(),
+        "-n".to_string(),
+        alias.to_string(),
+    ];
+
+    for flag in extra_flags {
+        args.push(flag.to_string());
+    }
+
+    args.push(img_id);
+    args.push(pkg_id);
+
+    let (stdout, stderr, success) = run_triton_with_profile(args.iter().map(|s| s.as_str()));
+    if !success {
+        eprintln!("Failed to create instance: stderr={}", stderr);
+        return None;
+    }
+
+    // Parse the JSON stream output - the last line should be the final instance state
+    let instances: Vec<InstanceInfo> = json_stream_parse(&stdout);
+    instances.into_iter().last()
+}
+
+/// Delete a test instance by name or ID (like rm -f, doesn't error if not found)
+pub fn delete_test_instance(name_or_id: &str) {
+    // First check if the instance exists
+    let (stdout, _, success) = run_triton_with_profile(["instance", "get", "-j", name_or_id]);
+
+    if !success {
+        // Instance doesn't exist, that's fine
+        return;
+    }
+
+    // Parse to get the ID
+    if let Ok(inst) = serde_json::from_str::<InstanceInfo>(&stdout) {
+        // Delete with force and wait
+        let _ = run_triton_with_profile(["instance", "rm", "-f", "-w", &inst.id]);
+    }
+}
+
+/// Check if write actions are allowed in the test config
+pub fn allow_write_actions() -> bool {
+    config::load_config()
+        .map(|c| c.allow_write_actions)
+        .unwrap_or(false)
+}
+
+/// Get the short ID (first segment before dash) from a UUID
+pub fn short_id(uuid: &str) -> String {
+    uuid.split('-').next().unwrap_or(uuid).to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

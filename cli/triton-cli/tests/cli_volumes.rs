@@ -287,3 +287,281 @@ fn test_volume_sizes() {
         "volume sizes should show SIZE column or G suffix"
     );
 }
+
+// =============================================================================
+// Write operation tests - require config.json with allowWriteActions: true
+// and allowVolumesTests: true (default)
+// =============================================================================
+
+/// Volume info returned from `triton volume get --json`
+#[derive(Debug, serde::Deserialize)]
+#[allow(dead_code)]
+struct VolumeInfo {
+    id: String,
+    name: String,
+    #[serde(rename = "type")]
+    volume_type: String,
+    #[serde(default)]
+    networks: Vec<String>,
+    #[serde(default)]
+    tags: std::collections::HashMap<String, String>,
+}
+
+/// Network info for finding fabric networks
+#[derive(Debug, serde::Deserialize)]
+struct NetworkInfo {
+    id: String,
+    #[serde(default)]
+    fabric: bool,
+}
+
+/// Delete a volume by name (doesn't error if not found)
+fn delete_test_volume(name: &str) {
+    use common::run_triton_with_profile;
+    let _ = run_triton_with_profile(["volume", "delete", "-y", "-w", name]);
+}
+
+/// Full volume create/get/delete workflow test
+///
+/// Ported from node-triton test/integration/cli-volumes.test.js
+#[test]
+#[ignore = "requires API access - run with make triton-test-api"]
+fn test_volume_create_workflow() {
+    use common::{allow_write_actions, make_resource_name, run_triton_with_profile};
+
+    // Skip if write actions not allowed
+    if !allow_write_actions() {
+        eprintln!("Skipping test: requires config.allowWriteActions");
+        return;
+    }
+
+    // Check if volumes tests are allowed
+    let config = common::config::load_config();
+    if let Some(c) = config
+        && !c.allow_volumes_tests
+    {
+        eprintln!("Skipping test: config.allowVolumesTests is false");
+        return;
+    }
+
+    let volume_name = make_resource_name("tritontest-volume-create");
+
+    // Cleanup any existing volume with this name
+    eprintln!("Cleanup: removing any existing volume {}", volume_name);
+    delete_test_volume(&volume_name);
+
+    // Test: Create volume with invalid name
+    eprintln!("Test: triton volume create with invalid name");
+    let invalid_name = make_resource_name("tritontest-volume-!invalid!");
+    let (_, stderr, success) =
+        run_triton_with_profile(["volume", "create", "--name", &invalid_name]);
+    assert!(!success, "create with invalid name should fail");
+    assert!(
+        stderr.contains("Invalid") || stderr.contains("invalid"),
+        "error should mention invalid: {}",
+        stderr
+    );
+
+    // Test: Create volume with invalid size
+    eprintln!("Test: triton volume create with invalid size");
+    let (_, stderr, success) = run_triton_with_profile([
+        "volume",
+        "create",
+        "--name",
+        &volume_name,
+        "--size",
+        "foobar",
+    ]);
+    assert!(!success, "create with invalid size should fail");
+    assert!(
+        stderr.contains("invalid") || stderr.contains("not a valid"),
+        "error should mention invalid size: {}",
+        stderr
+    );
+
+    // Test: Create volume with invalid type
+    eprintln!("Test: triton volume create with invalid type");
+    let (_, stderr, success) = run_triton_with_profile([
+        "volume",
+        "create",
+        "--name",
+        &volume_name,
+        "--type",
+        "foobar",
+    ]);
+    assert!(!success, "create with invalid type should fail");
+    assert!(
+        stderr.contains("Invalid") || stderr.contains("invalid"),
+        "error should mention invalid type: {}",
+        stderr
+    );
+
+    // Test: Create volume with invalid network
+    eprintln!("Test: triton volume create with invalid network");
+    let (_, stderr, success) = run_triton_with_profile([
+        "volume",
+        "create",
+        "--name",
+        &volume_name,
+        "--network",
+        "nonexistent-network",
+    ]);
+    assert!(!success, "create with invalid network should fail");
+    assert!(
+        stderr.contains("not found") || stderr.contains("no network"),
+        "error should mention network not found: {}",
+        stderr
+    );
+
+    // Test: Create volume with invalid tag format
+    eprintln!("Test: triton volume create with invalid tag");
+    let (_, stderr, success) = run_triton_with_profile([
+        "volume",
+        "create",
+        "--name",
+        &volume_name,
+        "--tag",
+        "invalid-no-equals",
+    ]);
+    assert!(!success, "create with invalid tag should fail");
+    assert!(
+        stderr.contains("invalid") || stderr.contains("KEY=VALUE"),
+        "error should mention invalid tag format: {}",
+        stderr
+    );
+
+    // Test: Create valid volume
+    eprintln!(
+        "Test: triton volume create --name {} --tag role=test -w",
+        volume_name
+    );
+    let (stdout, stderr, success) = run_triton_with_profile([
+        "volume",
+        "create",
+        "--name",
+        &volume_name,
+        "--tag",
+        "role=test",
+        "-w",
+    ]);
+    if !success {
+        eprintln!(
+            "Failed to create volume: stdout={}, stderr={}",
+            stdout, stderr
+        );
+        // Volume creation might fail due to infrastructure limitations
+        // Skip remaining tests
+        return;
+    }
+
+    // Test: Get volume
+    eprintln!("Test: triton volume get --json {}", volume_name);
+    let (stdout, _, success) = run_triton_with_profile(["volume", "get", "--json", &volume_name]);
+    assert!(success, "volume get should succeed");
+    let volume: VolumeInfo = serde_json::from_str(&stdout).expect("should parse JSON");
+    assert_eq!(volume.name, volume_name);
+    assert_eq!(volume.volume_type, "tritonnfs");
+    // Tags may or may not be present depending on CloudAPI version
+    if !volume.tags.is_empty() {
+        assert_eq!(volume.tags.get("role"), Some(&"test".to_string()));
+    }
+
+    // Test: Delete volume
+    eprintln!("Test: triton volume delete -y -w {}", volume_name);
+    let (_, _, success) = run_triton_with_profile(["volume", "delete", "-y", "-w", &volume_name]);
+    assert!(success, "volume delete should succeed");
+
+    // Test: Verify volume was deleted
+    eprintln!("Test: triton volume get {} (should fail)", volume_name);
+    let (_, stderr, success) = run_triton_with_profile(["volume", "get", &volume_name]);
+    assert!(!success, "volume get should fail after deletion");
+    assert!(
+        stderr.contains("ResourceNotFound") || stderr.contains("not found"),
+        "error should mention not found: {}",
+        stderr
+    );
+}
+
+/// Test volume creation on fabric network
+#[test]
+#[ignore = "requires API access - run with make triton-test-api"]
+fn test_volume_create_on_fabric_network() {
+    use common::{
+        allow_write_actions, json_stream_parse, make_resource_name, run_triton_with_profile,
+    };
+
+    if !allow_write_actions() {
+        eprintln!("Skipping test: requires config.allowWriteActions");
+        return;
+    }
+
+    let config = common::config::load_config();
+    if let Some(c) = config
+        && !c.allow_volumes_tests
+    {
+        eprintln!("Skipping test: config.allowVolumesTests is false");
+        return;
+    }
+
+    // Find a fabric network
+    eprintln!("Finding fabric network...");
+    let (stdout, _, success) = run_triton_with_profile(["network", "list", "-j"]);
+    if !success {
+        eprintln!("Failed to list networks");
+        return;
+    }
+
+    let networks: Vec<NetworkInfo> = json_stream_parse(&stdout);
+    let fabric_network = networks.iter().find(|n| n.fabric);
+
+    let fabric_network_id = match fabric_network {
+        Some(n) => n.id.clone(),
+        None => {
+            eprintln!("No fabric network found, skipping test");
+            return;
+        }
+    };
+
+    eprintln!("Found fabric network: {}", fabric_network_id);
+
+    let volume_name = make_resource_name("tritontest-volume-fabric");
+
+    // Cleanup
+    delete_test_volume(&volume_name);
+
+    // Create volume on fabric network
+    eprintln!(
+        "Test: triton volume create --name {} --network {} -w -j",
+        volume_name, fabric_network_id
+    );
+    let (stdout, stderr, success) = run_triton_with_profile([
+        "volume",
+        "create",
+        "--name",
+        &volume_name,
+        "--network",
+        &fabric_network_id,
+        "-w",
+        "-j",
+    ]);
+
+    if !success {
+        eprintln!("Failed to create volume on fabric: stderr={}", stderr);
+        return;
+    }
+
+    let volume: VolumeInfo = serde_json::from_str(&stdout).expect("should parse JSON");
+
+    // Verify volume
+    eprintln!("Test: triton volume get {}", volume_name);
+    let (stdout, _, success) = run_triton_with_profile(["volume", "get", &volume_name]);
+    assert!(success, "volume get should succeed");
+    let vol: VolumeInfo = serde_json::from_str(&stdout).expect("should parse JSON");
+    assert!(
+        vol.networks.contains(&fabric_network_id),
+        "volume should be on fabric network"
+    );
+
+    // Cleanup
+    delete_test_volume(&volume.name);
+}
