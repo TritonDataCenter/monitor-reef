@@ -137,12 +137,25 @@ Node.js triton uses action flags (`-a`, `-e`, `-d`) instead of subcommands. The 
 
 | Item | Description | Status |
 |------|-------------|--------|
-| Support `-a` action flag | Add user (alternative to `user create`) | [ ] Experimental |
+| **User action flags** | | |
+| Support `-a` action flag | Add user (alternative to `user create`) | [x] |
 | Support `-e` action flag | Edit user in $EDITOR | [-] Intentional difference |
-| Support `-d` action flag | Delete user (alternative to `user delete`) | [ ] Experimental |
+| Support `-d` action flag | Delete user (alternative to `user delete`) | [x] |
 | Support `-k` flag on user get | Show keys inline | [x] |
+| **Role action flags** | | |
+| Support `-a` action flag on role | Add role from file/stdin/interactive | [x] |
+| Support `-e` action flag on role | Edit role in $EDITOR | [-] Intentional difference |
+| Support `-d` action flag on role | Delete role(s) | [x] |
+| **Policy action flags** | | |
+| Support `-a` action flag on policy | Add policy from file/stdin/interactive | [x] |
+| Support `-e` action flag on policy | Edit policy in $EDITOR | [-] Intentional difference |
+| Support `-d` action flag on policy | Delete policy(s) | [x] |
+| **Key action flags** | | |
+| Support `-a` action flag on key | Add key from file | [x] |
+| Support `-d` action flag on key | Delete key(s) | [x] |
+| Support `-n` flag on key add | Key name for add | [x] |
+| **Common** | | |
 | Add `-y/--yes` alias | For confirmation skipping | [x] |
-| Add `-n` short form | Name for key commands | [x] (pre-existing) |
 | Add `--dev-create-keys-and-profiles` | Development mode for apply | [x] (hidden, not implemented) |
 | Add plural list aliases | `users`, `roles`, `policies` commands | [x] |
 
@@ -150,38 +163,52 @@ Node.js triton uses action flags (`-a`, `-e`, `-d`) instead of subcommands. The 
 - `$EDITOR` integration for `-e` flag would be a separate feature request
 - `--dev-create-keys-and-profiles` flag is accepted but returns an error until SSH key generation is implemented
 
-### Experimental: Action Flag Implementation Approach
+### Implemented: Action Flag Implementation Approach
 
-Clap supports commands that have both subcommands AND direct flags/arguments using `Option<Subcommand>`. The approach:
+Clap supports commands that have both subcommands AND direct flags/arguments using `Option<Subcommand>`. This pattern has been applied to all RBAC commands (user, role, policy, key).
 
-1. Change `RbacUserCommand` from a pure enum to an `Args` struct with:
-   - `#[command(subcommand)] command: Option<UserSubcommand>` - optional subcommand
-   - `-a/--add` flag (conflicts with subcommand)
-   - `-d/--delete` flag (conflicts with subcommand)
-   - Positional `users: Vec<String>` for USER arguments
-   - `-k/--keys` flag for show mode
-   - `-y/--yes` flag for delete confirmation
+**Implementation pattern:**
+
+1. Convert the command enum (e.g., `RbacUserCommand`) to an `Args` struct with:
+   - `#[command(subcommand)] command: Option<Subcommand>` - optional subcommand
+   - `-a/--add` flag (conflicts with `-d`)
+   - `-d/--delete` flag (conflicts with `-a`)
+   - Positional args for context-specific arguments
+   - Additional flags as needed (`-k/--keys`, `-n/--name`, `-y/--yes`)
 
 2. Dispatch logic in `run()`:
    - If subcommand present → delegate to subcommand (modern pattern)
-   - If `-a` flag → create user (legacy compat)
-   - If `-d` flag → delete user(s) (legacy compat)
-   - Otherwise → show user (default action)
+   - If `-a` flag → add/create from file/stdin/interactive (legacy compat)
+   - If `-d` flag → delete (legacy compat)
+   - Otherwise → show (default action)
 
 3. This allows both patterns to coexist:
    ```bash
-   # Modern (subcommand) pattern
+   # Modern (subcommand) pattern - preferred for new scripts
    triton rbac user create LOGIN --email foo@bar.com
    triton rbac user delete USER
+   triton rbac role create NAME --policy ...
+   triton rbac policy create NAME --rule ...
 
-   # Legacy (action flag) pattern
+   # Legacy (action flag) pattern - node-triton compatibility
    triton rbac user -a FILE        # add from file
    triton rbac user -d USER...     # delete
    triton rbac user USER           # show (default)
    triton rbac user -k USER        # show with keys
+   triton rbac role -a FILE        # add role from file
+   triton rbac role -d ROLE...     # delete role(s)
+   triton rbac policy -a FILE      # add policy from file
+   triton rbac policy -d POLICY... # delete policy(s)
+   triton rbac key -a USER FILE    # add key from file
+   triton rbac key -d USER KEY...  # delete key(s)
    ```
 
-**Files:** `cli/triton-cli/src/commands/rbac/user.rs`, `cli/triton-cli/src/commands/rbac/mod.rs`
+**Files:**
+- `cli/triton-cli/src/commands/rbac/user.rs`
+- `cli/triton-cli/src/commands/rbac/role.rs`
+- `cli/triton-cli/src/commands/rbac/policy.rs`
+- `cli/triton-cli/src/commands/rbac/keys.rs`
+- `cli/triton-cli/src/commands/rbac/mod.rs`
 
 ---
 

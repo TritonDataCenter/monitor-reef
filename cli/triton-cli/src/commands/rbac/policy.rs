@@ -12,8 +12,9 @@ use cloudapi_client::TypedClient;
 
 use crate::output::{json, table};
 
+/// Policy subcommands (modern pattern)
 #[derive(Subcommand, Clone)]
-pub enum RbacPolicyCommand {
+pub enum PolicySubcommand {
     /// List RBAC policies
     #[command(alias = "ls")]
     List,
@@ -26,6 +27,46 @@ pub enum RbacPolicyCommand {
     /// Delete policy(s)
     #[command(alias = "rm")]
     Delete(PolicyDeleteArgs),
+}
+
+/// RBAC policy command supporting both subcommands and action flags
+///
+/// This command supports two patterns for compatibility:
+///
+/// Modern (subcommand) pattern:
+///   triton rbac policy list
+///   triton rbac policy get POLICY
+///   triton rbac policy create NAME --rule ...
+///   triton rbac policy delete POLICY
+///
+/// Legacy (action flag) pattern:
+///   triton rbac policy POLICY           # show policy (default)
+///   triton rbac policy -a [FILE]        # add policy from file or stdin
+///   triton rbac policy -d POLICY...     # delete policy(s)
+#[derive(Args, Clone)]
+#[command(args_conflicts_with_subcommands = true)]
+pub struct RbacPolicyCommand {
+    #[command(subcommand)]
+    pub command: Option<PolicySubcommand>,
+
+    /// Add a new policy (legacy compat: read from FILE, "-" for stdin, or interactive)
+    #[arg(short = 'a', long = "add", conflicts_with = "delete")]
+    pub add: bool,
+
+    /// Delete policy(s) (legacy compat)
+    #[arg(short = 'd', long = "delete", conflicts_with = "add")]
+    pub delete: bool,
+
+    /// Skip confirmation (for delete)
+    #[arg(short = 'y', long = "yes")]
+    pub yes: bool,
+
+    /// Policy(s) or file argument
+    /// For show: POLICY name/uuid
+    /// For add: optional FILE path (or "-" for stdin)
+    /// For delete: one or more POLICY name/uuid
+    #[arg(trailing_var_arg = true)]
+    pub args: Vec<String>,
 }
 
 #[derive(Args, Clone)]
@@ -72,12 +113,47 @@ pub struct PolicyDeleteArgs {
 
 impl RbacPolicyCommand {
     pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
-        match self {
-            Self::List => list_policies(client, use_json).await,
-            Self::Get(args) => get_policy(args, client, use_json).await,
-            Self::Create(args) => create_policy(args, client, use_json).await,
-            Self::Update(args) => update_policy(args, client, use_json).await,
-            Self::Delete(args) => delete_policies(args, client).await,
+        // If a subcommand is provided, use the modern pattern
+        if let Some(cmd) = self.command {
+            return match cmd {
+                PolicySubcommand::List => list_policies(client, use_json).await,
+                PolicySubcommand::Get(args) => get_policy(args, client, use_json).await,
+                PolicySubcommand::Create(args) => create_policy(args, client, use_json).await,
+                PolicySubcommand::Update(args) => update_policy(args, client, use_json).await,
+                PolicySubcommand::Delete(args) => delete_policies(args, client).await,
+            };
+        }
+
+        // Legacy action flag pattern
+        if self.add {
+            // -a/--add: add policy from file or stdin
+            let file = self.args.first().map(|s| s.as_str());
+            add_policy_from_file(file, client, use_json).await
+        } else if self.delete {
+            // -d/--delete: delete policy(s)
+            if self.args.is_empty() {
+                anyhow::bail!("POLICY argument(s) required for delete");
+            }
+            let args = PolicyDeleteArgs {
+                policies: self.args,
+                force: self.yes,
+            };
+            delete_policies(args, client).await
+        } else if !self.args.is_empty() {
+            // Default: show policy
+            let args = PolicyGetArgs {
+                policy: self.args[0].clone(),
+            };
+            get_policy(args, client, use_json).await
+        } else {
+            // No args and no subcommand - show usage hint
+            anyhow::bail!(
+                "Usage: triton rbac policy <SUBCOMMAND>\n\
+                 Or:    triton rbac policy POLICY           (show policy)\n\
+                 Or:    triton rbac policy -a [FILE]        (add policy)\n\
+                 Or:    triton rbac policy -d POLICY...     (delete policies)\n\n\
+                 Run 'triton rbac policy --help' for more information"
+            );
         }
     }
 }
@@ -231,6 +307,124 @@ pub async fn delete_policies(args: PolicyDeleteArgs, client: &TypedClient) -> Re
             .await?;
 
         println!("Deleted policy '{}'", policy_ref);
+    }
+
+    Ok(())
+}
+
+/// Add policy from file (legacy -a flag support)
+///
+/// Reads policy JSON from:
+/// - A file path
+/// - stdin (when file is "-")
+/// - Interactive prompts (when file is None)
+async fn add_policy_from_file(
+    file: Option<&str>,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
+    use std::io::{self, Read};
+
+    // Read JSON input based on source
+    let json_data: serde_json::Value = match file {
+        Some("-") => {
+            // Read from stdin
+            let mut buffer = String::new();
+            io::stdin().read_to_string(&mut buffer)?;
+            serde_json::from_str(&buffer)
+                .map_err(|e| anyhow::anyhow!("invalid JSON on stdin: {}", e))?
+        }
+        Some(path) => {
+            // Read from file
+            let content = std::fs::read_to_string(path)
+                .map_err(|e| anyhow::anyhow!("failed to read file '{}': {}", path, e))?;
+            serde_json::from_str(&content)
+                .map_err(|e| anyhow::anyhow!("invalid JSON in '{}': {}", path, e))?
+        }
+        None => {
+            // Interactive mode - prompt for fields
+            use dialoguer::Input;
+
+            let name: String = Input::new().with_prompt("Name").interact_text()?;
+
+            let description: String = Input::new()
+                .with_prompt("Description (optional)")
+                .allow_empty(true)
+                .interact_text()?;
+
+            println!("Enter rules (one per line, empty line to finish):");
+            println!("See https://docs.tritondatacenter.com/public-cloud/rbac/rules for syntax.");
+            let mut rules = Vec::new();
+            loop {
+                let rule: String = Input::new()
+                    .with_prompt("Rule")
+                    .allow_empty(true)
+                    .interact_text()?;
+                if rule.is_empty() {
+                    break;
+                }
+                rules.push(rule);
+            }
+
+            serde_json::json!({
+                "name": name,
+                "description": if description.is_empty() { None } else { Some(description) },
+                "rules": rules,
+            })
+        }
+    };
+
+    // Extract required fields
+    let name = json_data
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("missing required field: name"))?
+        .to_string();
+
+    // Extract rules array
+    let rules: Vec<String> = json_data
+        .get("rules")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+
+    if rules.is_empty() {
+        return Err(anyhow::anyhow!(
+            "At least one rule is required for a policy"
+        ));
+    }
+
+    // Extract optional description
+    let description = json_data
+        .get("description")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    // Create the policy
+    let account = &client.auth_config().account;
+    let request = cloudapi_client::types::CreatePolicyRequest {
+        name: name.clone(),
+        rules,
+        description,
+    };
+
+    let response = client
+        .inner()
+        .create_policy()
+        .account(account)
+        .body(request)
+        .send()
+        .await?;
+
+    let policy = response.into_inner();
+    println!("Created policy '{}' ({})", policy.name, policy.id);
+
+    if use_json {
+        json::print_json(&policy)?;
     }
 
     Ok(())

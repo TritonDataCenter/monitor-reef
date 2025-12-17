@@ -14,6 +14,71 @@ use crate::output::{json, table};
 
 use super::common::resolve_user;
 
+/// RBAC key command supporting action flags for node-triton compatibility
+///
+/// This command supports:
+///   triton rbac key USER KEY           # show key (default)
+///   triton rbac key -a [-n NAME] USER FILE  # add key from file
+///   triton rbac key -d USER KEY...     # delete key(s)
+#[derive(Args, Clone)]
+pub struct RbacKeyCommand {
+    /// Add a new key (legacy compat)
+    #[arg(short = 'a', long = "add", conflicts_with = "delete")]
+    pub add: bool,
+
+    /// Delete key(s) (legacy compat)
+    #[arg(short = 'd', long = "delete", conflicts_with = "add")]
+    pub delete: bool,
+
+    /// Key name (for add)
+    #[arg(short = 'n', long = "name")]
+    pub name: Option<String>,
+
+    /// Skip confirmation (for delete)
+    #[arg(short = 'y', long = "yes")]
+    pub yes: bool,
+
+    /// Arguments: USER KEY (for show), USER FILE (for add), USER KEY... (for delete)
+    #[arg(trailing_var_arg = true)]
+    pub args: Vec<String>,
+}
+
+impl RbacKeyCommand {
+    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
+        if self.add {
+            // -a/--add: add key from file
+            if self.args.len() < 2 {
+                anyhow::bail!("Usage: triton rbac key -a [-n NAME] USER FILE");
+            }
+            let user = &self.args[0];
+            let file = &self.args[1];
+            add_key_from_file(user, file, self.name, client, use_json).await
+        } else if self.delete {
+            // -d/--delete: delete key(s)
+            if self.args.len() < 2 {
+                anyhow::bail!("Usage: triton rbac key -d USER KEY...");
+            }
+            let user = &self.args[0];
+            let keys: Vec<String> = self.args[1..].to_vec();
+            delete_keys(user, keys, self.yes, client).await
+        } else if self.args.len() >= 2 {
+            // Default: show key
+            let args = UserKeyGetArgs {
+                user: self.args[0].clone(),
+                key: self.args[1].clone(),
+            };
+            get_user_key(args, client, use_json).await
+        } else {
+            anyhow::bail!(
+                "Usage: triton rbac key USER KEY           (show key)\n\
+                 Or:    triton rbac key -a [-n NAME] USER FILE  (add key)\n\
+                 Or:    triton rbac key -d USER KEY...     (delete keys)\n\n\
+                 Run 'triton rbac key --help' for more information"
+            );
+        }
+    }
+}
+
 #[derive(Args, Clone)]
 pub struct UserKeysArgs {
     /// User login or UUID
@@ -184,6 +249,109 @@ pub async fn delete_user_key(args: UserKeyDeleteArgs, client: &TypedClient) -> R
         .await?;
 
     println!("Deleted key '{}' from user '{}'", args.key, args.user);
+
+    Ok(())
+}
+
+/// Add key from file (legacy -a flag support)
+async fn add_key_from_file(
+    user: &str,
+    file: &str,
+    name: Option<String>,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
+    use std::io::{self, Read};
+
+    let account = &client.auth_config().account;
+    let user_id = resolve_user(user, client).await?;
+
+    // Read key from file or stdin
+    let key_data = if file == "-" {
+        let mut buffer = String::new();
+        io::stdin().read_to_string(&mut buffer)?;
+        buffer.trim().to_string()
+    } else {
+        std::fs::read_to_string(file)
+            .map_err(|e| anyhow::anyhow!("Failed to read key file '{}': {}", file, e))?
+            .trim()
+            .to_string()
+    };
+
+    // Extract name from key comment if not provided
+    let key_name = match name {
+        Some(n) => n,
+        None => {
+            // Try to extract comment from SSH key (last part after spaces)
+            key_data
+                .split_whitespace()
+                .nth(2)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| "imported-key".to_string())
+        }
+    };
+
+    let request = cloudapi_client::types::CreateSshKeyRequest {
+        name: key_name.clone(),
+        key: key_data,
+    };
+
+    let response = client
+        .inner()
+        .create_user_key()
+        .account(account)
+        .uuid(&user_id)
+        .body(request)
+        .send()
+        .await?;
+
+    let key = response.into_inner();
+    println!(
+        "Added user {} key \"{}\"{}",
+        user,
+        key.fingerprint,
+        if !key_name.is_empty() {
+            format!(" ({})", key.name)
+        } else {
+            String::new()
+        }
+    );
+
+    if use_json {
+        json::print_json(&key)?;
+    }
+
+    Ok(())
+}
+
+/// Delete multiple keys (legacy -d flag support)
+async fn delete_keys(user: &str, keys: Vec<String>, yes: bool, client: &TypedClient) -> Result<()> {
+    let account = &client.auth_config().account;
+    let user_id = resolve_user(user, client).await?;
+
+    for key in &keys {
+        if !yes {
+            use dialoguer::Confirm;
+            if !Confirm::new()
+                .with_prompt(format!("Delete user {} key \"{}\"?", user, key))
+                .default(false)
+                .interact()?
+            {
+                continue;
+            }
+        }
+
+        client
+            .inner()
+            .delete_user_key()
+            .account(account)
+            .uuid(&user_id)
+            .name(key)
+            .send()
+            .await?;
+
+        println!("Deleted user {} key \"{}\"", user, key);
+    }
 
     Ok(())
 }

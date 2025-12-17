@@ -19,7 +19,7 @@ use clap::Subcommand;
 use cloudapi_client::TypedClient;
 
 pub use apply::{ApplyArgs, ResetArgs};
-pub use keys::{UserKeyAddArgs, UserKeyDeleteArgs, UserKeyGetArgs, UserKeysArgs};
+pub use keys::{RbacKeyCommand, UserKeyAddArgs, UserKeyDeleteArgs, UserKeysArgs};
 pub use policy::RbacPolicyCommand;
 pub use role::RbacRoleCommand;
 pub use role_tags::RoleTagsCommand;
@@ -34,38 +34,29 @@ pub enum RbacCommand {
     /// Reset (delete) all RBAC users, roles, and policies
     Reset(ResetArgs),
     /// Manage RBAC users
-    User {
-        #[command(subcommand)]
-        command: RbacUserCommand,
-    },
+    User(#[command(flatten)] RbacUserCommand),
     /// List RBAC users (alias for 'user list')
     #[command(hide = true)]
     Users,
     /// Manage RBAC roles
-    Role {
-        #[command(subcommand)]
-        command: RbacRoleCommand,
-    },
+    Role(#[command(flatten)] RbacRoleCommand),
     /// List RBAC roles (alias for 'role list')
     #[command(hide = true)]
     Roles,
     /// Manage RBAC policies
-    Policy {
-        #[command(subcommand)]
-        command: RbacPolicyCommand,
-    },
+    Policy(#[command(flatten)] RbacPolicyCommand),
     /// List RBAC policies (alias for 'policy list')
     #[command(hide = true)]
     Policies,
     /// List SSH keys for a sub-user
     Keys(UserKeysArgs),
-    /// Get SSH key for a sub-user
-    Key(UserKeyGetArgs),
-    /// Add SSH key to a sub-user
-    #[command(alias = "add-key")]
+    /// Manage SSH keys for a sub-user (show/add/delete)
+    Key(#[command(flatten)] RbacKeyCommand),
+    /// Add SSH key to a sub-user (deprecated: use 'key -a' instead)
+    #[command(alias = "add-key", hide = true)]
     KeyAdd(UserKeyAddArgs),
-    /// Delete SSH key from a sub-user
-    #[command(alias = "delete-key", alias = "rm-key")]
+    /// Delete SSH key from a sub-user (deprecated: use 'key -d' instead)
+    #[command(alias = "delete-key", alias = "rm-key", hide = true)]
     KeyDelete(UserKeyDeleteArgs),
     /// Manage role tags on resources
     #[command(alias = "role-tag")]
@@ -81,14 +72,14 @@ impl RbacCommand {
             Self::Info => apply::rbac_info(client, use_json).await,
             Self::Apply(args) => apply::rbac_apply(args, client, use_json).await,
             Self::Reset(args) => apply::rbac_reset(args, client).await,
-            Self::User { command } => command.run(client, use_json).await,
+            Self::User(command) => command.run(client, use_json).await,
             Self::Users => user::list_users(client, use_json).await,
-            Self::Role { command } => command.run(client, use_json).await,
+            Self::Role(command) => command.run(client, use_json).await,
             Self::Roles => role::list_roles(client, use_json).await,
-            Self::Policy { command } => command.run(client, use_json).await,
+            Self::Policy(command) => command.run(client, use_json).await,
             Self::Policies => policy::list_policies(client, use_json).await,
             Self::Keys(args) => keys::list_user_keys(args, client, use_json).await,
-            Self::Key(args) => keys::get_user_key(args, client, use_json).await,
+            Self::Key(command) => command.run(client, use_json).await,
             Self::KeyAdd(args) => keys::add_user_key(args, client, use_json).await,
             Self::KeyDelete(args) => keys::delete_user_key(args, client).await,
             Self::RoleTags { command } => command.run(client, use_json).await,

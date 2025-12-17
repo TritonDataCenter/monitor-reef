@@ -12,8 +12,9 @@ use cloudapi_client::TypedClient;
 
 use crate::output::{json, table};
 
+/// Role subcommands (modern pattern)
 #[derive(Subcommand, Clone)]
-pub enum RbacRoleCommand {
+pub enum RoleSubcommand {
     /// List RBAC roles
     #[command(alias = "ls")]
     List,
@@ -26,6 +27,46 @@ pub enum RbacRoleCommand {
     /// Delete role(s)
     #[command(alias = "rm")]
     Delete(RoleDeleteArgs),
+}
+
+/// RBAC role command supporting both subcommands and action flags
+///
+/// This command supports two patterns for compatibility:
+///
+/// Modern (subcommand) pattern:
+///   triton rbac role list
+///   triton rbac role get ROLE
+///   triton rbac role create NAME --policy ...
+///   triton rbac role delete ROLE
+///
+/// Legacy (action flag) pattern:
+///   triton rbac role ROLE           # show role (default)
+///   triton rbac role -a [FILE]      # add role from file or stdin
+///   triton rbac role -d ROLE...     # delete role(s)
+#[derive(Args, Clone)]
+#[command(args_conflicts_with_subcommands = true)]
+pub struct RbacRoleCommand {
+    #[command(subcommand)]
+    pub command: Option<RoleSubcommand>,
+
+    /// Add a new role (legacy compat: read from FILE, "-" for stdin, or interactive)
+    #[arg(short = 'a', long = "add", conflicts_with = "delete")]
+    pub add: bool,
+
+    /// Delete role(s) (legacy compat)
+    #[arg(short = 'd', long = "delete", conflicts_with = "add")]
+    pub delete: bool,
+
+    /// Skip confirmation (for delete)
+    #[arg(short = 'y', long = "yes")]
+    pub yes: bool,
+
+    /// Role(s) or file argument
+    /// For show: ROLE name/uuid
+    /// For add: optional FILE path (or "-" for stdin)
+    /// For delete: one or more ROLE name/uuid
+    #[arg(trailing_var_arg = true)]
+    pub args: Vec<String>,
 }
 
 #[derive(Args, Clone)]
@@ -78,12 +119,47 @@ pub struct RoleDeleteArgs {
 
 impl RbacRoleCommand {
     pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
-        match self {
-            Self::List => list_roles(client, use_json).await,
-            Self::Get(args) => get_role(args, client, use_json).await,
-            Self::Create(args) => create_role(args, client, use_json).await,
-            Self::Update(args) => update_role(args, client, use_json).await,
-            Self::Delete(args) => delete_roles(args, client).await,
+        // If a subcommand is provided, use the modern pattern
+        if let Some(cmd) = self.command {
+            return match cmd {
+                RoleSubcommand::List => list_roles(client, use_json).await,
+                RoleSubcommand::Get(args) => get_role(args, client, use_json).await,
+                RoleSubcommand::Create(args) => create_role(args, client, use_json).await,
+                RoleSubcommand::Update(args) => update_role(args, client, use_json).await,
+                RoleSubcommand::Delete(args) => delete_roles(args, client).await,
+            };
+        }
+
+        // Legacy action flag pattern
+        if self.add {
+            // -a/--add: add role from file or stdin
+            let file = self.args.first().map(|s| s.as_str());
+            add_role_from_file(file, client, use_json).await
+        } else if self.delete {
+            // -d/--delete: delete role(s)
+            if self.args.is_empty() {
+                anyhow::bail!("ROLE argument(s) required for delete");
+            }
+            let args = RoleDeleteArgs {
+                roles: self.args,
+                force: self.yes,
+            };
+            delete_roles(args, client).await
+        } else if !self.args.is_empty() {
+            // Default: show role
+            let args = RoleGetArgs {
+                role: self.args[0].clone(),
+            };
+            get_role(args, client, use_json).await
+        } else {
+            // No args and no subcommand - show usage hint
+            anyhow::bail!(
+                "Usage: triton rbac role <SUBCOMMAND>\n\
+                 Or:    triton rbac role ROLE           (show role)\n\
+                 Or:    triton rbac role -a [FILE]      (add role)\n\
+                 Or:    triton rbac role -d ROLE...     (delete roles)\n\n\
+                 Run 'triton rbac role --help' for more information"
+            );
         }
     }
 }
@@ -264,6 +340,158 @@ pub async fn delete_roles(args: RoleDeleteArgs, client: &TypedClient) -> Result<
             .await?;
 
         println!("Deleted role '{}'", role_ref);
+    }
+
+    Ok(())
+}
+
+/// Add role from file (legacy -a flag support)
+///
+/// Reads role JSON from:
+/// - A file path
+/// - stdin (when file is "-")
+/// - Interactive prompts (when file is None)
+async fn add_role_from_file(
+    file: Option<&str>,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
+    use std::io::{self, Read};
+
+    // Read JSON input based on source
+    let json_data: serde_json::Value = match file {
+        Some("-") => {
+            // Read from stdin
+            let mut buffer = String::new();
+            io::stdin().read_to_string(&mut buffer)?;
+            serde_json::from_str(&buffer)
+                .map_err(|e| anyhow::anyhow!("invalid JSON on stdin: {}", e))?
+        }
+        Some(path) => {
+            // Read from file
+            let content = std::fs::read_to_string(path)
+                .map_err(|e| anyhow::anyhow!("failed to read file '{}': {}", path, e))?;
+            serde_json::from_str(&content)
+                .map_err(|e| anyhow::anyhow!("invalid JSON in '{}': {}", path, e))?
+        }
+        None => {
+            // Interactive mode - prompt for fields
+            use dialoguer::Input;
+
+            let name: String = Input::new().with_prompt("Name").interact_text()?;
+
+            let policies_str: String = Input::new()
+                .with_prompt("Policies (comma-separated, optional)")
+                .allow_empty(true)
+                .interact_text()?;
+
+            let members_str: String = Input::new()
+                .with_prompt("Members (comma-separated user logins, optional)")
+                .allow_empty(true)
+                .interact_text()?;
+
+            let default_members_str: String = Input::new()
+                .with_prompt("Default members (comma-separated user logins, optional)")
+                .allow_empty(true)
+                .interact_text()?;
+
+            let policies: Vec<String> = if policies_str.is_empty() {
+                vec![]
+            } else {
+                policies_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect()
+            };
+
+            let members: Vec<String> = if members_str.is_empty() {
+                vec![]
+            } else {
+                members_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect()
+            };
+
+            let default_members: Vec<String> = if default_members_str.is_empty() {
+                vec![]
+            } else {
+                default_members_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .collect()
+            };
+
+            serde_json::json!({
+                "name": name,
+                "policies": policies,
+                "members": members,
+                "default_members": default_members,
+            })
+        }
+    };
+
+    // Extract required fields
+    let name = json_data
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow::anyhow!("missing required field: name"))?
+        .to_string();
+
+    // Extract optional arrays (support both naming conventions)
+    let policies: Option<Vec<String>> = json_data
+        .get("policies")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .filter(|v: &Vec<String>| !v.is_empty());
+
+    let members: Option<Vec<String>> = json_data
+        .get("members")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .filter(|v: &Vec<String>| !v.is_empty());
+
+    let default_members: Option<Vec<String>> = json_data
+        .get("default_members")
+        .or_else(|| json_data.get("defaultMembers"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .filter(|v: &Vec<String>| !v.is_empty());
+
+    // Create the role
+    let account = &client.auth_config().account;
+    let request = cloudapi_client::types::CreateRoleRequest {
+        name: name.clone(),
+        policies,
+        members,
+        default_members,
+    };
+
+    let response = client
+        .inner()
+        .create_role()
+        .account(account)
+        .body(request)
+        .send()
+        .await?;
+
+    let role = response.into_inner();
+    println!("Created role '{}' ({})", role.name, role.id);
+
+    if use_json {
+        json::print_json(&role)?;
     }
 
     Ok(())
