@@ -120,21 +120,15 @@ async fn get_package(args: PackageGetArgs, client: &TypedClient, use_json: bool)
 
     let package = response.into_inner();
 
+    // node-triton outputs JSON by default for package get:
+    // - Without -j: pretty-printed JSON (4-space indent)
+    // - With -j: compact JSON (single line)
     if use_json {
-        json::print_json(&package)?;
+        // Compact JSON (single line)
+        println!("{}", serde_json::to_string(&package)?);
     } else {
-        println!("ID:          {}", package.id);
-        println!("Name:        {}", package.name);
-        println!("Memory:      {} MB", package.memory);
-        println!("Disk:        {} MB", package.disk);
-        println!("Swap:        {} MB", package.swap);
-        if package.vcpus > 0 {
-            println!("vCPUs:       {}", package.vcpus);
-        }
-        if let Some(lwps) = package.lwps {
-            println!("LWPs:        {}", lwps);
-        }
-        println!("Default:     {}", package.default);
+        // Pretty-printed JSON (default)
+        json::print_json(&package)?;
     }
 
     Ok(())

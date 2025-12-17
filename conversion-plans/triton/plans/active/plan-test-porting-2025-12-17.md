@@ -26,12 +26,58 @@ Copyright 2025 Edgecast Cloud LLC.
 | Phase 2: Unit Tests | **COMPLETE** | 51 unit tests passing |
 | Phase 3.1: CLI Basics Tests | **COMPLETE** | 32 integration tests passing |
 | Phase 3.2: Profile Tests | **COMPLETE** | 17 profile tests passing (env profile, list, help) |
-| Phase 3.3: Network Tests | **COMPLETE** | 16 tests (10 offline + 6 API ignored) |
-| Phase 3.4: Other Read-Only API Tests | Not Started | Requires API access |
+| Phase 3.3: Network Tests | **COMPLETE** | 17 tests (8 offline + 9 API ignored) |
+| Phase 3.4: Account Tests | **COMPLETE** | 18 tests (6 offline + 5 API ignored) |
+| Phase 3.5: Package Tests | **COMPLETE** | 23 tests (10 offline + 6 API ignored) |
+| Phase 3.6: Image Tests | **COMPLETE** | 25 tests (12 offline + 6 API ignored) |
 | Phase 4: Write Operations | Not Started | Requires allow_write_actions |
 | Phase 5: Advanced Tests | Not Started | P3 priority |
 
-**Total Tests: 116 passing** (51 unit + 32 cli_basics + 16 cli_networks + 17 cli_profiles)
+**Total Tests: 166 offline passing, 31 API tests passing**
+
+## Current Session Progress (2025-12-17)
+
+### Fixes Applied This Session
+
+1. **`account get` output** - Changed to match node-triton format:
+   - Uses lowercase field names (`login:`, `email:`, `companyName:`, etc.)
+   - Added `long_ago()` function for relative timestamps (`1d`, `41w`)
+   - File: `cli/triton-cli/src/commands/account.rs`
+
+2. **`account limits` output** - Changed to match node-triton format:
+   - Shows table with `TYPE  USED  LIMIT` columns (was showing "Provisioning Limits:" header)
+   - JSON output returns `[]` array (was returning `{}` object)
+   - File: `cli/triton-cli/src/commands/account.rs`
+
+3. **`image get` output** - Changed to output JSON by default (matching node-triton)
+   - File: `cli/triton-cli/src/commands/image.rs` line 521-538
+
+4. **`json_stream_parse()` test helper** - Updated to handle both formats:
+   - NDJSON (node-triton style): one JSON object per line
+   - JSON array (Rust CLI style): pretty-printed `[...]` array
+   - File: `cli/triton-cli/tests/common/mod.rs`
+
+5. **`image get` short ID resolution** - Fixed to match node-triton behavior:
+   - Now lists ALL images (without name filter) when looking up by name or short ID
+   - Short ID is first segment of UUID (before first dash), exact match required
+   - Prefers name matches over short ID matches
+   - Returns most recent image when multiple name matches exist
+   - File: `cli/triton-cli/src/commands/image.rs` lines 860-929
+
+6. **`package get` output** - Changed to output JSON by default (matching node-triton):
+   - Without `-j`: pretty-printed JSON
+   - With `-j`: compact JSON (single line)
+   - File: `cli/triton-cli/src/commands/package.rs` lines 109-134
+
+### All API Tests Passing
+
+All 31 API integration tests now pass:
+- Account: 5 tests
+- Images: 6 tests
+- Networks: 9 tests
+- Packages: 6 tests
+- Profiles: 0 (all offline)
+- Basics: 0 (all offline)
 
 ## Running Tests
 
@@ -248,11 +294,76 @@ Port from `cli-networks.test.js`:
 - [x] `triton networks public=false` filters by non-public
 - [x] `triton networks public=bogus` returns error
 
-### 3.4 Other Read-Only Tests
+### 3.4 Account Tests (COMPLETE)
 
-- [ ] `cli-account.test.js` - `triton account get`
-- [ ] Package listing tests
-- [ ] Image listing tests
+**File:** `cli/triton-cli/tests/cli_account.rs`
+
+Port from `cli-account.test.js`:
+
+**Offline tests (always run):**
+- [x] `triton account -h` shows help
+- [x] `triton account --help` shows help
+- [x] `triton help account` shows help
+- [x] `triton account get -h` shows help
+- [x] `triton account limits -h` shows help
+- [x] `triton account update -h` shows help
+
+**API tests (ignored by default):**
+- [x] `triton account get` returns account info
+- [x] `triton account get -j` returns JSON
+- [x] `triton account limits` returns limit info
+- [x] `triton account limits -j` returns JSON array
+- [x] `triton account update foo=bar` fails with invalid field
+
+### 3.5 Package Tests (COMPLETE)
+
+**File:** `cli/triton-cli/tests/cli_packages.rs`
+
+**Offline tests (always run):**
+- [x] `triton package -h` shows help
+- [x] `triton package --help` shows help
+- [x] `triton help package` shows help
+- [x] `triton package list -h` shows help
+- [x] `triton package get -h` shows help
+- [x] `triton package help get` shows help
+- [x] `triton package get` without args shows error
+- [x] `triton pkg` alias works
+- [x] `triton pkg ls` alias works
+- [x] `triton pkgs` shortcut works
+
+**API tests (ignored by default):**
+- [x] `triton packages` lists packages (table output)
+- [x] `triton package list` lists packages
+- [x] `triton packages -j` returns JSON
+- [x] `triton package get ID` returns package details
+- [x] `triton package get SHORTID` returns package details
+- [x] `triton package get NAME` returns package details
+
+### 3.6 Image Tests (COMPLETE)
+
+**File:** `cli/triton-cli/tests/cli_images.rs`
+
+**Offline tests (always run):**
+- [x] `triton image -h` shows help
+- [x] `triton image --help` shows help
+- [x] `triton help image` shows help
+- [x] `triton image list -h` shows help
+- [x] `triton image get -h` shows help
+- [x] `triton image help get` shows help
+- [x] `triton image get` without args shows error
+- [x] `triton img` alias works
+- [x] `triton img ls` alias works
+- [x] `triton imgs` shortcut works
+- [x] `triton image create -h` shows help
+- [x] `triton image delete -h` shows help
+
+**API tests (ignored by default):**
+- [x] `triton images` lists images (table output)
+- [x] `triton image list` lists images
+- [x] `triton images -j` returns JSON with id, name, version
+- [x] `triton image get ID` returns image details
+- [x] `triton image get SHORTID` returns image details
+- [x] `triton image get NAME` returns image details
 
 ---
 
@@ -346,6 +457,9 @@ Port from `cli-volumes.test.js` and `cli-volumes-size.test.js`:
 | `cli/triton-cli/tests/cli_basics.rs` | Basic CLI tests | DONE |
 | `cli/triton-cli/tests/cli_profiles.rs` | Profile tests | DONE |
 | `cli/triton-cli/tests/cli_networks.rs` | Network tests | DONE |
+| `cli/triton-cli/tests/cli_account.rs` | Account tests | DONE |
+| `cli/triton-cli/tests/cli_packages.rs` | Package tests | DONE |
+| `cli/triton-cli/tests/cli_images.rs` | Image tests | DONE |
 | `cli/triton-cli/tests/cli_instance_tag.rs` | Tag tests | TODO |
 
 ## Source Files to Reference

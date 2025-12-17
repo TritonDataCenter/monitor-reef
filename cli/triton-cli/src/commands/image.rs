@@ -518,7 +518,7 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-async fn get_image(args: ImageGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+async fn get_image(args: ImageGetArgs, client: &TypedClient, _use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
     let image_id = resolve_image(&args.image, client).await?;
 
@@ -532,22 +532,8 @@ async fn get_image(args: ImageGetArgs, client: &TypedClient, use_json: bool) -> 
 
     let image = response.into_inner();
 
-    if use_json {
-        json::print_json(&image)?;
-    } else {
-        println!("ID:          {}", image.id);
-        println!("Name:        {}", image.name);
-        println!("Version:     {}", image.version);
-        if let Some(state) = &image.state {
-            println!("State:       {:?}", state);
-        }
-        println!("Type:        {:?}", image.type_);
-        println!("OS:          {}", image.os);
-        if let Some(desc) = &image.description {
-            println!("Description: {}", desc);
-        }
-        println!("Public:      {}", image.public.unwrap_or(false));
-    }
+    // Always output JSON for `image get` to match node-triton behavior
+    json::print_json(&image)?;
 
     Ok(())
 }
@@ -872,8 +858,13 @@ async fn wait_image(args: ImageWaitArgs, client: &TypedClient, use_json: bool) -
 }
 
 /// Resolve image name[@version] or short ID to full UUID
+///
+/// Matches node-triton behavior (lib/tritonapi.js getImage):
+/// - If full UUID, use directly
+/// - Otherwise, list all images and match by name or short ID
+/// - Short ID is the first segment of UUID (before first dash)
 pub async fn resolve_image(id_or_name: &str, client: &TypedClient) -> Result<String> {
-    // UUID check
+    // UUID check - call API directly
     if uuid::Uuid::parse_str(id_or_name).is_ok() {
         return Ok(id_or_name.to_string());
     }
@@ -886,37 +877,55 @@ pub async fn resolve_image(id_or_name: &str, client: &TypedClient) -> Result<Str
     };
 
     let account = &client.auth_config().account;
-    let response = client
-        .inner()
-        .list_images()
-        .account(account)
-        .name(name)
-        .send()
-        .await?;
 
+    // Build list request - only filter by name/version if version is specified
+    // (matches node-triton behavior which lists all images for name-only lookups)
+    let mut request = client.inner().list_images().account(account);
+    if let Some(v) = version {
+        request = request.name(name).version(v);
+    }
+    let response = request.send().await?;
     let images = response.into_inner();
 
-    // Try short ID match first (at least 8 characters)
-    if id_or_name.len() >= 8 {
-        for img in &images {
-            if img.id.to_string().starts_with(id_or_name) {
-                return Ok(img.id.to_string());
-            }
-        }
+    // Collect name matches and short ID matches (like node-triton)
+    let mut name_matches: Vec<_> = images.iter().filter(|img| img.name == name).collect();
+    let short_id_matches: Vec<_> = images
+        .iter()
+        .filter(|img| {
+            // Short ID is first segment of UUID (before first dash)
+            img.id
+                .to_string()
+                .split('-')
+                .next()
+                .map(|short| short == name)
+                .unwrap_or(false)
+        })
+        .collect();
+
+    // Prefer name matches (sorted by published_at, return most recent)
+    if name_matches.len() == 1 {
+        return Ok(name_matches[0].id.to_string());
+    } else if name_matches.len() > 1 {
+        // Sort by published_at ascending, return last (most recent)
+        name_matches.sort_by(|a, b| a.published_at.cmp(&b.published_at));
+        return Ok(name_matches.last().unwrap().id.to_string());
     }
 
-    // Match by name (and optionally version)
-    for img in &images {
-        if let Some(v) = version {
-            if img.version == v {
-                return Ok(img.id.to_string());
-            }
-        } else {
-            return Ok(img.id.to_string());
-        }
+    // Fall back to short ID matches
+    if short_id_matches.len() == 1 {
+        return Ok(short_id_matches[0].id.to_string());
+    } else if short_id_matches.len() > 1 {
+        return Err(anyhow::anyhow!(
+            "no image with name \"{}\" was found and \"{}\" is an ambiguous short id",
+            name,
+            name
+        ));
     }
 
-    Err(anyhow::anyhow!("Image not found: {}", id_or_name))
+    Err(anyhow::anyhow!(
+        "no image with name or short id \"{}\" was found",
+        name
+    ))
 }
 
 async fn wait_for_image_states(

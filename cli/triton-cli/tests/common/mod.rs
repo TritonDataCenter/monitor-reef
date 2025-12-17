@@ -66,8 +66,19 @@ where
     (stdout, stderr, success)
 }
 
-/// Parse JSON stream output (newline-delimited JSON) into a Vec
+/// Parse JSON output into a Vec
+/// Handles both NDJSON (newline-delimited JSON) and regular JSON arrays
 pub fn json_stream_parse<T: DeserializeOwned>(output: &str) -> Vec<T> {
+    let trimmed = output.trim();
+
+    // First, try parsing as a JSON array (Rust CLI format)
+    if trimmed.starts_with('[') {
+        if let Ok(items) = serde_json::from_str::<Vec<T>>(trimmed) {
+            return items;
+        }
+    }
+
+    // Fall back to NDJSON parsing (Node.js format)
     output
         .lines()
         .filter(|line| !line.trim().is_empty())

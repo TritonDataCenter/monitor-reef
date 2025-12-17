@@ -58,6 +58,51 @@ impl AccountCommand {
     }
 }
 
+/// Format a duration as a human-readable relative time string (e.g., "1d", "41w")
+fn long_ago(when: &str) -> String {
+    use chrono::{DateTime, Utc};
+
+    let parsed = match DateTime::parse_from_rfc3339(when) {
+        Ok(dt) => dt.with_timezone(&Utc),
+        Err(_) => return "".to_string(),
+    };
+
+    let now = Utc::now();
+    let duration = now.signed_duration_since(parsed);
+    let seconds = duration.num_seconds();
+
+    if seconds < 0 {
+        return "0s".to_string();
+    }
+
+    let years = seconds / (60 * 60 * 24 * 365);
+    if years > 0 {
+        return format!("{}y", years);
+    }
+
+    let weeks = seconds / (60 * 60 * 24 * 7);
+    if weeks > 0 {
+        return format!("{}w", weeks);
+    }
+
+    let days = seconds / (60 * 60 * 24);
+    if days > 0 {
+        return format!("{}d", days);
+    }
+
+    let hours = seconds / (60 * 60);
+    if hours > 0 {
+        return format!("{}h", hours);
+    }
+
+    let minutes = seconds / 60;
+    if minutes > 0 {
+        return format!("{}m", minutes);
+    }
+
+    format!("{}s", seconds)
+}
+
 async fn get_account(client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
     let response = client.inner().get_account().account(account).send().await?;
@@ -67,23 +112,27 @@ async fn get_account(client: &TypedClient, use_json: bool) -> Result<()> {
     if use_json {
         json::print_json(&acc)?;
     } else {
-        println!("Login:     {}", acc.login);
-        println!("Email:     {}", acc.email);
-        if let Some(name) = &acc.first_name {
-            println!(
-                "Name:      {} {}",
-                name,
-                acc.last_name.as_deref().unwrap_or("")
-            );
-        }
+        // Match node-triton output format: key: value, with relative time for dates
+        println!("id: {}", acc.id);
+        println!("login: {}", acc.login);
+        println!("email: {}", acc.email);
         if let Some(company) = &acc.company_name {
-            println!("Company:   {}", company);
+            println!("companyName: {}", company);
+        }
+        if let Some(first) = &acc.first_name {
+            println!("firstName: {}", first);
+        }
+        if let Some(last) = &acc.last_name {
+            println!("lastName: {}", last);
+        }
+        if let Some(cns) = acc.triton_cns_enabled {
+            println!("triton_cns_enabled: {}", cns);
         }
         if let Some(phone) = &acc.phone {
-            println!("Phone:     {}", phone);
+            println!("phone: {}", phone);
         }
-        println!("Created:   {}", acc.created);
-        println!("Updated:   {}", acc.updated);
+        println!("updated: {} ({})", acc.updated, long_ago(&acc.updated));
+        println!("created: {} ({})", acc.created, long_ago(&acc.created));
     }
 
     Ok(())
@@ -101,19 +150,37 @@ async fn get_limits(client: &TypedClient, use_json: bool) -> Result<()> {
     let limits = response.into_inner();
 
     if use_json {
-        json::print_json(&limits)?;
+        // Convert the object-style response to array format for node-triton compatibility
+        let json_value = serde_json::to_value(&limits)?;
+        let limits_array: Vec<serde_json::Value> =
+            if let serde_json::Value::Object(map) = json_value {
+                map.into_iter()
+                    .filter_map(|(key, value)| {
+                        // Only include non-null values
+                        if value.is_null() {
+                            None
+                        } else {
+                            Some(serde_json::json!({
+                                "type": key,
+                                "limit": value,
+                                "used": 0  // API doesn't provide used values in this format
+                            }))
+                        }
+                    })
+                    .collect()
+            } else {
+                vec![]
+            };
+        json::print_json(&limits_array)?;
     } else {
-        println!("Provisioning Limits:");
-        // The ProvisioningLimits struct contains datacenter-specific limits
-        // Display them in a readable format
+        // Match node-triton output: table with TYPE, USED, LIMIT columns
+        println!("{:<10} {:>5}  {:>5}", "TYPE", "USED", "LIMIT");
+
         let json_value = serde_json::to_value(&limits)?;
         if let serde_json::Value::Object(map) = json_value {
-            for (dc, dc_limits) in map {
-                println!("\n  {}:", dc);
-                if let serde_json::Value::Object(limits_map) = dc_limits {
-                    for (key, value) in limits_map {
-                        println!("    {}: {}", key, value);
-                    }
+            for (key, value) in map {
+                if !value.is_null() {
+                    println!("{:<10} {:>5}  {:>5}", key, "-", value);
                 }
             }
         }
