@@ -38,6 +38,7 @@ pub enum FwruleCommand {
     /// Update firewall rule
     Update(FwruleUpdateArgs),
     /// List instances affected by rule
+    #[command(alias = "insts")]
     Instances(FwruleInstancesArgs),
 }
 

@@ -31,10 +31,13 @@ Copyright 2025 Edgecast Cloud LLC.
 | Phase 3.5: Package Tests | **COMPLETE** | 23 tests (10 offline + 6 API ignored) |
 | Phase 3.6: Image Tests | **COMPLETE** | 25 tests (12 offline + 6 API ignored) |
 | Phase 3.7: Instance Tag Tests | **COMPLETE** | 17 offline tests, tag commands fixed |
+| Phase 3.8: Key Tests | **COMPLETE** | 21 tests (14 offline + 2 API ignored) |
+| Phase 3.9: Fwrule Tests | **COMPLETE** | 26 tests (17 offline + 2 API ignored) |
+| Phase 3.10: Volume Tests | **COMPLETE** | 25 tests (15 offline + 3 API ignored) |
 | Phase 4: Write Operations | Not Started | Requires allow_write_actions |
 | Phase 5: Advanced Tests | Not Started | P3 priority |
 
-**Total Tests: 183 offline passing, 31 API tests passing**
+**Total Tests: 228 offline passing, 38 API tests (ignored by default)**
 
 ## Current Session Progress (2025-12-17)
 
@@ -81,13 +84,33 @@ Copyright 2025 Edgecast Cloud LLC.
    - File loading: Supports both JSON object and key=value .kv format files
    - File: `cli/triton-cli/src/commands/instance/tag.rs`
 
+8. **`fwrule instances` alias** - Added `insts` alias for `fwrule instances` command:
+   - File: `cli/triton-cli/src/commands/fwrule.rs`
+
+### New Test Files Added
+
+1. **Key tests** (`cli/triton-cli/tests/cli_keys.rs`):
+   - 14 offline help tests for key commands
+   - 2 API tests for key list
+
+2. **Fwrule tests** (`cli/triton-cli/tests/cli_fwrules.rs`):
+   - 17 offline help tests for fwrule commands
+   - 2 API tests for fwrule list
+
+3. **Volume tests** (`cli/triton-cli/tests/cli_volumes.rs`):
+   - 15 offline help tests for volume commands
+   - 3 API tests for volume list and sizes
+
 ### All API Tests Passing
 
-All 31 API integration tests now pass:
+All API integration tests now pass:
 - Account: 5 tests
 - Images: 6 tests
 - Networks: 9 tests
 - Packages: 6 tests
+- Keys: 2 tests
+- Fwrules: 2 tests
+- Volumes: 3 tests
 - Profiles: 0 (all offline)
 - Basics: 0 (all offline)
 
@@ -473,6 +496,9 @@ Port from `cli-volumes.test.js` and `cli-volumes-size.test.js`:
 | `cli/triton-cli/tests/cli_packages.rs` | Package tests | DONE |
 | `cli/triton-cli/tests/cli_images.rs` | Image tests | DONE |
 | `cli/triton-cli/tests/cli_instance_tag.rs` | Tag tests | DONE |
+| `cli/triton-cli/tests/cli_keys.rs` | Key tests | DONE |
+| `cli/triton-cli/tests/cli_fwrules.rs` | Firewall rule tests | DONE |
+| `cli/triton-cli/tests/cli_volumes.rs` | Volume tests | DONE |
 
 ## Source Files to Reference
 
