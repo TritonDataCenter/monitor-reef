@@ -25,11 +25,12 @@ Copyright 2025 Edgecast Cloud LLC.
 | Phase 1: Test Infrastructure | **COMPLETE** | All dev-deps, helpers, fixtures in place |
 | Phase 2: Unit Tests | **COMPLETE** | 51 unit tests passing |
 | Phase 3.1: CLI Basics Tests | **COMPLETE** | 32 integration tests passing |
-| Phase 3.2-3.4: Read-Only API Tests | Not Started | Requires API access |
+| Phase 3.2: Profile Tests | **COMPLETE** | 10 profile tests passing (env profile, list, help) |
+| Phase 3.3-3.4: Read-Only API Tests | Not Started | Requires API access |
 | Phase 4: Write Operations | Not Started | Requires allow_write_actions |
 | Phase 5: Advanced Tests | Not Started | P3 priority |
 
-**Total Tests: 83 passing**
+**Total Tests: 100 passing** (51 unit + 32 cli_basics + 17 cli_profiles)
 
 ## Phase 1: Test Infrastructure Setup (COMPLETE)
 
@@ -160,15 +161,23 @@ Port from `target/node-triton/test/integration/cli-basics.test.js` (74 lines):
 - [x] Help for all subcommands (instance, volume, network, package, image, profile, key, fwrule, account, env)
 - [x] Command aliases (inst, ls, pkg, img, net, vol)
 
-### 3.2 Profile Tests (Read-Only)
+### 3.2 Profile Tests (Read-Only) (COMPLETE)
 
 **File:** `cli/triton-cli/tests/cli_profiles.rs`
 
 Port read-only parts from `cli-profiles.test.js`:
 
-- [ ] `triton profile get env` reads from environment
-- [ ] `triton profile list` lists profiles
-- [ ] Profile validation errors
+- [x] `triton profile get env` reads from environment (TRITON_* and SDC_* vars)
+- [x] `triton profile get env` with optional user field
+- [x] `triton profile get env` with insecure flag
+- [x] `triton profile get env` fails when required vars missing
+- [x] `triton profile list` lists profiles (includes env profile)
+- [x] `triton profile list` with empty config
+- [x] `triton profile list -h` shows help
+- [x] `triton profile get -h` shows help
+- [x] `triton profile ls` alias works
+
+**Bug Fixed:** `profile get env` now correctly uses `env_profile()` instead of trying to load from file.
 
 ### 3.3 Network Tests (Read-Only)
 
@@ -270,15 +279,15 @@ Port from `cli-volumes.test.js` and `cli-volumes-size.test.js`:
 
 ## Files to Create
 
-| File | Purpose |
-|------|---------|
-| `cli/triton-cli/tests/common/mod.rs` | Test helpers |
-| `cli/triton-cli/tests/common/config.rs` | Test configuration |
-| `cli/triton-cli/tests/fixtures/*` | Test fixtures |
-| `cli/triton-cli/tests/cli_basics.rs` | Basic CLI tests |
-| `cli/triton-cli/tests/cli_profiles.rs` | Profile tests |
-| `cli/triton-cli/tests/cli_networks.rs` | Network tests |
-| `cli/triton-cli/tests/cli_instance_tag.rs` | Tag tests |
+| File | Purpose | Status |
+|------|---------|--------|
+| `cli/triton-cli/tests/common/mod.rs` | Test helpers | DONE |
+| `cli/triton-cli/tests/common/config.rs` | Test configuration | DONE |
+| `cli/triton-cli/tests/fixtures/*` | Test fixtures | DONE |
+| `cli/triton-cli/tests/cli_basics.rs` | Basic CLI tests | DONE |
+| `cli/triton-cli/tests/cli_profiles.rs` | Profile tests | DONE |
+| `cli/triton-cli/tests/cli_networks.rs` | Network tests | TODO |
+| `cli/triton-cli/tests/cli_instance_tag.rs` | Tag tests | TODO |
 
 ## Source Files to Reference
 

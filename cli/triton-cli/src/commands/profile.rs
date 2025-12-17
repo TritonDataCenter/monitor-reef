@@ -214,14 +214,21 @@ fn list_profiles(args: ProfileListArgs) -> Result<()> {
 }
 
 fn get_profile(name: Option<String>, use_json: bool) -> Result<()> {
+    use crate::config::env_profile;
+
     let profile = match name {
+        Some(n) if n == "env" => env_profile()?,
         Some(n) => Profile::load(&n)?,
         None => {
             let config = Config::load()?;
             let current = config
                 .current_profile()
                 .ok_or_else(|| anyhow::anyhow!("No current profile set"))?;
-            Profile::load(current)?
+            if current == "env" {
+                env_profile()?
+            } else {
+                Profile::load(current)?
+            }
         }
     };
 
