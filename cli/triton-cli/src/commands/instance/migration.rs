@@ -56,6 +56,10 @@ pub struct MigrationStartArgs {
     /// Wait timeout in seconds
     #[arg(long, default_value = "1800")]
     pub wait_timeout: u64,
+
+    /// Suppress output after starting migration
+    #[arg(short = 'q', long = "quiet")]
+    pub quiet: bool,
 }
 
 #[derive(Args, Clone)]
@@ -185,7 +189,9 @@ async fn start_migration(
 
     let migration = response.into_inner();
 
-    println!("Migration started for instance {}", &instance_id[..8]);
+    if !args.quiet {
+        println!("Migration started for instance {}", &instance_id[..8]);
+    }
 
     if args.wait {
         // Reuse the wait_migration logic
@@ -194,11 +200,13 @@ async fn start_migration(
             timeout: args.wait_timeout,
         };
         wait_migration(wait_args, client).await?;
-    } else if use_json {
-        json::print_json(&migration)?;
-    } else {
-        println!("State: {}", migration.state);
-        println!("Phase: {}", migration.phase);
+    } else if !args.quiet {
+        if use_json {
+            json::print_json(&migration)?;
+        } else {
+            println!("State: {}", migration.state);
+            println!("Phase: {}", migration.phase);
+        }
     }
 
     Ok(())

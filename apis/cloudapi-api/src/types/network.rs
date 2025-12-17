@@ -225,6 +225,9 @@ pub struct Nic {
 pub struct AddNicRequest {
     /// Network UUID
     pub network: Uuid,
+    /// Make this NIC the primary NIC for the instance
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub primary: Option<bool>,
 }
 
 /// Network IP information

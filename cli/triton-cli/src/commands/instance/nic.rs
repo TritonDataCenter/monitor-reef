@@ -54,6 +54,10 @@ pub struct NicAddArgs {
     #[arg(long)]
     pub network: String,
 
+    /// Make the new NIC the primary NIC for the instance
+    #[arg(short = 'p', long)]
+    pub primary: bool,
+
     /// Wait for NIC addition to complete
     #[arg(long, short)]
     pub wait: bool,
@@ -152,6 +156,7 @@ async fn add_nic(args: NicAddArgs, client: &TypedClient) -> Result<()> {
 
     let request = cloudapi_client::types::AddNicRequest {
         network: args.network.clone(),
+        primary: if args.primary { Some(true) } else { None },
     };
 
     let response = client

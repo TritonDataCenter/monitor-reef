@@ -71,6 +71,10 @@ pub struct RbacUserCommand {
     #[arg(short = 'k', long = "keys")]
     pub keys: bool,
 
+    /// Include roles and default_roles when showing user
+    #[arg(short = 'r', long = "roles")]
+    pub roles: bool,
+
     /// Skip confirmation (for delete)
     #[arg(short = 'y', long = "yes")]
     pub yes: bool,
@@ -91,6 +95,9 @@ pub struct UserGetArgs {
     /// Include SSH keys for the user
     #[arg(long, short)]
     pub keys: bool,
+    /// Include roles and default_roles for the user
+    #[arg(long, short)]
+    pub roles: bool,
 }
 
 #[derive(Args, Clone)]
@@ -180,6 +187,7 @@ impl RbacUserCommand {
             let args = UserGetArgs {
                 user: self.args[0].clone(),
                 keys: self.keys,
+                roles: self.roles,
             };
             get_user(args, client, use_json).await
         } else {
@@ -254,17 +262,56 @@ async fn get_user(args: UserGetArgs, client: &TypedClient, use_json: bool) -> Re
         None
     };
 
-    if use_json {
-        if let Some(keys) = keys {
-            // Combine user and keys into a single JSON object
-            let mut combined = serde_json::to_value(&user)?;
-            if let serde_json::Value::Object(ref mut map) = combined {
-                map.insert("keys".to_string(), serde_json::to_value(&keys)?);
+    // Optionally fetch roles if -r/--roles flag is set
+    let (user_roles, user_default_roles) = if args.roles {
+        // Fetch all roles and check which ones the user belongs to
+        let roles_response = client.inner().list_roles().account(account).send().await?;
+        let all_roles = roles_response.into_inner();
+
+        let mut roles = Vec::new();
+        let mut default_roles = Vec::new();
+
+        for role in &all_roles {
+            // Check if user is in members (by login or UUID)
+            if role
+                .members
+                .iter()
+                .any(|m| m == &user.login || m == &user.id.to_string())
+            {
+                roles.push(role.name.clone());
             }
-            json::print_json(&combined)?;
-        } else {
-            json::print_json(&user)?;
+            // Check if user is in default_members
+            if role
+                .default_members
+                .iter()
+                .any(|m| m == &user.login || m == &user.id.to_string())
+            {
+                default_roles.push(role.name.clone());
+            }
         }
+
+        (Some(roles), Some(default_roles))
+    } else {
+        (None, None)
+    };
+
+    if use_json {
+        let mut combined = serde_json::to_value(&user)?;
+        if let serde_json::Value::Object(ref mut map) = combined {
+            if let Some(ref keys) = keys {
+                map.insert("keys".to_string(), serde_json::to_value(keys)?);
+            }
+            if let Some(ref roles) = user_roles {
+                map.insert("roles".to_string(), serde_json::to_value(roles)?);
+            }
+            if let Some(ref default_roles) = user_default_roles {
+                map.insert(
+                    "default_roles".to_string(),
+                    serde_json::to_value(default_roles)?,
+                );
+            }
+        }
+        json::print_json(&combined)?;
     } else {
         println!("ID:         {}", user.id);
         println!("Login:      {}", user.login);
@@ -284,6 +331,28 @@ async fn get_user(args: UserGetArgs, client: &TypedClient, use_json: bool) -> Re
         }
         println!("Created:    {}", user.created);
         println!("Updated:    {}", user.updated);
+
+        // Display roles if fetched
+        if let Some(roles) = user_roles {
+            println!("Roles:");
+            if roles.is_empty() {
+                println!("  (no roles)");
+            } else {
+                for role in &roles {
+                    println!("  - {}", role);
+                }
+            }
+        }
+        if let Some(default_roles) = user_default_roles {
+            println!("Default Roles:");
+            if default_roles.is_empty() {
+                println!("  (no default roles)");
+            } else {
+                for role in &default_roles {
+                    println!("  - {}", role);
+                }
+            }
+        }
 
         // Display keys if fetched
         if let Some(keys) = keys {

@@ -29,7 +29,7 @@ pub use user::RbacUserCommand;
 #[derive(Subcommand, Clone)]
 pub enum RbacCommand {
     /// Show RBAC summary information
-    Info,
+    Info(apply::InfoArgs),
     /// Apply RBAC configuration from a file
     Apply(ApplyArgs),
     /// Reset (delete) all RBAC users, roles, and policies
@@ -70,7 +70,7 @@ pub enum RbacCommand {
 impl RbacCommand {
     pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
-            Self::Info => apply::rbac_info(client, use_json).await,
+            Self::Info(args) => apply::rbac_info(args, client, use_json).await,
             Self::Apply(args) => apply::rbac_apply(args, client, use_json).await,
             Self::Reset(args) => apply::rbac_reset(args, client).await,
             Self::User(command) => command.run(client, use_json).await,

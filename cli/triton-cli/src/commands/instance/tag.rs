@@ -72,6 +72,10 @@ pub struct TagSetArgs {
     /// Wait timeout in seconds
     #[arg(long, default_value = "600")]
     pub wait_timeout: u64,
+
+    /// Suppress output after setting tags
+    #[arg(short = 'q', long = "quiet")]
+    pub quiet: bool,
 }
 
 #[derive(Args, Clone)]
@@ -205,17 +209,21 @@ async fn set_tags(args: TagSetArgs, client: &TypedClient) -> Result<()> {
         .send()
         .await?;
 
-    for (key, value) in &tag_map {
-        let val_str = match value {
-            Value::String(s) => s.clone(),
-            _ => value.to_string(),
-        };
-        println!("Set tag {}={}", key, val_str);
+    if !args.quiet {
+        for (key, value) in &tag_map {
+            let val_str = match value {
+                Value::String(s) => s.clone(),
+                _ => value.to_string(),
+            };
+            println!("Set tag {}={}", key, val_str);
+        }
     }
 
     if args.wait {
         super::wait::wait_for_state(&machine_id, "running", args.wait_timeout, client).await?;
-        println!("Instance {} is running", &machine_id[..8]);
+        if !args.quiet {
+            println!("Instance {} is running", &machine_id[..8]);
+        }
     }
 
     Ok(())

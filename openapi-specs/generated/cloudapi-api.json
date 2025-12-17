@@ -9371,6 +9371,11 @@
           "network": {
             "description": "Network UUID",
             "type": "string"
+          },
+          "primary": {
+            "nullable": true,
+            "description": "Make this NIC the primary NIC for the instance",
+            "type": "boolean"
           }
         },
         "required": [

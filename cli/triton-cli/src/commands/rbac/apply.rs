@@ -20,6 +20,16 @@ use crate::output::{json, table};
 use super::common::resolve_user;
 
 #[derive(Args, Clone)]
+pub struct InfoArgs {
+    /// Include all info for a more full report (includes SSH keys per user)
+    #[arg(short = 'a', long = "all")]
+    pub all: bool,
+    /// Do not color the output with ANSI codes
+    #[arg(long = "no-color")]
+    pub no_color: bool,
+}
+
+#[derive(Args, Clone)]
 pub struct ApplyArgs {
     /// Path to RBAC configuration file (JSON format, default: ./rbac.json)
     #[arg(short = 'f', long = "file", default_value = "./rbac.json")]
@@ -40,6 +50,9 @@ pub struct ResetArgs {
     /// Skip confirmation prompt
     #[arg(long, short, visible_alias = "yes", short_alias = 'y')]
     pub force: bool,
+    /// Show what would be deleted without making changes
+    #[arg(long, short = 'n')]
+    pub dry_run: bool,
 }
 
 /// RBAC configuration file format
@@ -189,7 +202,7 @@ pub struct RbacInfo {
     policies: Vec<cloudapi_client::types::Policy>,
 }
 
-pub async fn rbac_info(client: &TypedClient, use_json: bool) -> Result<()> {
+pub async fn rbac_info(args: InfoArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
 
     // Fetch all RBAC data concurrently
@@ -202,6 +215,41 @@ pub async fn rbac_info(client: &TypedClient, use_json: bool) -> Result<()> {
     let users = users_result?.into_inner();
     let roles = roles_result?.into_inner();
     let policies = policies_result?.into_inner();
+
+    // If --all flag is set, fetch keys for each user
+    let user_keys: HashMap<String, Vec<cloudapi_client::types::SshKey>> = if args.all {
+        let mut keys_map = HashMap::new();
+        for user in &users {
+            let keys_result = client
+                .inner()
+                .list_user_keys()
+                .account(account)
+                .uuid(user.id.to_string())
+                .send()
+                .await;
+            if let Ok(keys) = keys_result {
+                keys_map.insert(user.id.to_string(), keys.into_inner());
+            }
+        }
+        keys_map
+    } else {
+        HashMap::new()
+    };
+
+    // Helper for ANSI styling (respects --no-color)
+    use std::io::IsTerminal;
+    let use_color = !args.no_color && std::io::stdout().is_terminal();
+    let stylize = |s: &str, style: &str| -> String {
+        if !use_color {
+            s.to_string()
+        } else {
+            match style {
+                "bold" => format!("\x1b[1m{}\x1b[0m", s),
+                "red" => format!("\x1b[31m{}\x1b[0m", s),
+                _ => s.to_string(),
+            }
+        }
+    };
 
     if use_json {
         let info = RbacInfo {
@@ -222,9 +270,26 @@ pub async fn rbac_info(client: &TypedClient, use_json: bool) -> Result<()> {
         // Users section
         if !users.is_empty() {
             println!("Users:");
-            let mut tbl = table::create_table(&["SHORTID", "LOGIN", "EMAIL"]);
+            let headers = if args.all {
+                vec!["SHORTID", "LOGIN", "EMAIL", "KEYS"]
+            } else {
+                vec!["SHORTID", "LOGIN", "EMAIL"]
+            };
+            let mut tbl = table::create_table(&headers);
             for user in &users {
-                tbl.add_row(vec![&user.id.to_string()[..8], &user.login, &user.email]);
+                let user_id_str = user.id.to_string();
+                let short_id = &user_id_str[..8];
+                if args.all {
+                    let keys_count = user_keys.get(&user_id_str).map(|k| k.len()).unwrap_or(0);
+                    let keys_str = if keys_count == 0 {
+                        stylize("no keys", "red")
+                    } else {
+                        format!("{} key(s)", keys_count)
+                    };
+                    tbl.add_row(vec![short_id, &user.login, &user.email, &keys_str]);
+                } else {
+                    tbl.add_row(vec![short_id, &user.login, &user.email]);
+                }
             }
             table::print_table(tbl);
             println!();
@@ -236,7 +301,7 @@ pub async fn rbac_info(client: &TypedClient, use_json: bool) -> Result<()> {
             let mut tbl = table::create_table(&["SHORTID", "NAME", "POLICIES", "MEMBERS"]);
             for role in &roles {
                 let policies_str = if role.policies.is_empty() {
-                    "-".to_string()
+                    stylize("no policies", "red")
                 } else {
                     role.policies.join(", ")
                 };
@@ -261,11 +326,12 @@ pub async fn rbac_info(client: &TypedClient, use_json: bool) -> Result<()> {
             println!("Policies:");
             let mut tbl = table::create_table(&["SHORTID", "NAME", "RULES"]);
             for policy in &policies {
-                tbl.add_row(vec![
-                    &policy.id.to_string()[..8],
-                    &policy.name,
-                    &format!("{} rule(s)", policy.rules.len()),
-                ]);
+                let rules_str = if policy.rules.is_empty() {
+                    stylize("no rules", "red")
+                } else {
+                    format!("{} rule(s)", policy.rules.len())
+                };
+                tbl.add_row(vec![&policy.id.to_string()[..8], &policy.name, &rules_str]);
             }
             table::print_table(tbl);
         }
@@ -1215,6 +1281,12 @@ pub async fn rbac_reset(args: ResetArgs, client: &TypedClient) -> Result<()> {
         );
     }
     println!();
+
+    // Dry run mode - just show what would be deleted
+    if args.dry_run {
+        println!("[dry-run] {} item(s) would be deleted.", total);
+        return Ok(());
+    }
 
     // Confirm if not forced
     if !args.force {

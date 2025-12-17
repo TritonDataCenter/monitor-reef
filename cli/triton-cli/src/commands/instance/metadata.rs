@@ -75,6 +75,10 @@ pub struct MetadataSetArgs {
     /// Wait timeout in seconds
     #[arg(long, default_value = "600")]
     pub wait_timeout: u64,
+
+    /// Suppress output after setting metadata
+    #[arg(short = 'q', long = "quiet")]
+    pub quiet: bool,
 }
 
 #[derive(Args, Clone)]
@@ -215,13 +219,17 @@ async fn set_metadata(args: MetadataSetArgs, client: &TypedClient) -> Result<()>
         .send()
         .await?;
 
-    for (key, _) in &meta_map {
-        println!("Set metadata {}", key);
+    if !args.quiet {
+        for (key, _) in &meta_map {
+            println!("Set metadata {}", key);
+        }
     }
 
     if args.wait {
         super::wait::wait_for_state(&machine_id, "running", args.wait_timeout, client).await?;
-        println!("Instance {} is running", &machine_id[..8]);
+        if !args.quiet {
+            println!("Instance {} is running", &machine_id[..8]);
+        }
     }
 
     Ok(())
