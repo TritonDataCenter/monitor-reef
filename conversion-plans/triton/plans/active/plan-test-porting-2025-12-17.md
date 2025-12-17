@@ -25,12 +25,52 @@ Copyright 2025 Edgecast Cloud LLC.
 | Phase 1: Test Infrastructure | **COMPLETE** | All dev-deps, helpers, fixtures in place |
 | Phase 2: Unit Tests | **COMPLETE** | 51 unit tests passing |
 | Phase 3.1: CLI Basics Tests | **COMPLETE** | 32 integration tests passing |
-| Phase 3.2: Profile Tests | **COMPLETE** | 10 profile tests passing (env profile, list, help) |
-| Phase 3.3-3.4: Read-Only API Tests | Not Started | Requires API access |
+| Phase 3.2: Profile Tests | **COMPLETE** | 17 profile tests passing (env profile, list, help) |
+| Phase 3.3: Network Tests | **COMPLETE** | 16 tests (10 offline + 6 API ignored) |
+| Phase 3.4: Other Read-Only API Tests | Not Started | Requires API access |
 | Phase 4: Write Operations | Not Started | Requires allow_write_actions |
 | Phase 5: Advanced Tests | Not Started | P3 priority |
 
-**Total Tests: 100 passing** (51 unit + 32 cli_basics + 17 cli_profiles)
+**Total Tests: 116 passing** (51 unit + 32 cli_basics + 16 cli_networks + 17 cli_profiles)
+
+## Running Tests
+
+### Offline Tests (No API Required)
+
+Tests that don't require API access run with:
+
+```bash
+make triton-test
+```
+
+### API Integration Tests (Requires Config)
+
+Tests requiring CloudAPI access are marked with `#[ignore]`. To run them:
+
+1. **Create test configuration**:
+   ```bash
+   cp cli/triton-cli/tests/config.json.sample cli/triton-cli/tests/config.json
+   # Edit config.json with your settings
+   ```
+
+2. **Run the API tests**:
+   ```bash
+   # Run only API tests (requires config.json)
+   make triton-test-api
+
+   # Run ALL tests (offline + API)
+   make triton-test-all
+   ```
+
+3. **Configuration options** (in `config.json`):
+   - `profileName`: Use existing profile from `~/.triton/profiles.d/` (e.g., `"env"`)
+   - `profile`: Inline profile with `url`, `account`, `keyId`, `insecure`
+   - `allowWriteActions`: Enable tests that create/modify resources (default: false)
+   - `allowImageCreate`: Enable image creation tests (default: false)
+   - `skipKvmTests`: Skip KVM-specific tests
+   - `skipAffinityTests`: Skip multi-CN affinity tests
+
+**Note:** The `TRITON_TEST_CONFIG` environment variable can point to an alternate config file location.
 
 ## Phase 1: Test Infrastructure Setup (COMPLETE)
 
@@ -179,15 +219,34 @@ Port read-only parts from `cli-profiles.test.js`:
 
 **Bug Fixed:** `profile get env` now correctly uses `env_profile()` instead of trying to load from file.
 
-### 3.3 Network Tests (Read-Only)
+### 3.3 Network Tests (Read-Only) (COMPLETE)
 
 **File:** `cli/triton-cli/tests/cli_networks.rs`
 
 Port from `cli-networks.test.js`:
 
-- [ ] `triton networks -h` shows help
-- [ ] `triton networks -j` returns JSON array
-- [ ] `triton network get <id>` returns network details
+**Offline tests (always run):**
+- [x] `triton networks -h` shows help
+- [x] `triton networks --help` shows help
+- [x] `triton help networks` shows help
+- [x] `triton network list -h` shows help
+- [x] `triton network get -h` shows help
+- [x] `triton network help get` shows help
+- [x] `triton network get` without args shows error
+- [x] `triton net` alias works
+- [x] `triton net ls` alias works
+
+**API tests (ignored by default):**
+- [x] `triton networks` lists networks (table output)
+- [x] `triton network list` lists networks
+- [x] `triton networks -j` returns JSON array
+- [x] `triton networks -l` shows long format
+- [x] `triton network get ID` returns network details
+- [x] `triton network get SHORTID` returns network details
+- [x] `triton network get NAME` returns network details
+- [x] `triton networks public=true` filters by public
+- [x] `triton networks public=false` filters by non-public
+- [x] `triton networks public=bogus` returns error
 
 ### 3.4 Other Read-Only Tests
 
@@ -286,7 +345,7 @@ Port from `cli-volumes.test.js` and `cli-volumes-size.test.js`:
 | `cli/triton-cli/tests/fixtures/*` | Test fixtures | DONE |
 | `cli/triton-cli/tests/cli_basics.rs` | Basic CLI tests | DONE |
 | `cli/triton-cli/tests/cli_profiles.rs` | Profile tests | DONE |
-| `cli/triton-cli/tests/cli_networks.rs` | Network tests | TODO |
+| `cli/triton-cli/tests/cli_networks.rs` | Network tests | DONE |
 | `cli/triton-cli/tests/cli_instance_tag.rs` | Tag tests | TODO |
 
 ## Source Files to Reference

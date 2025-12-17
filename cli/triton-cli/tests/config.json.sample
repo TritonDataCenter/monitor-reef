@@ -1,0 +1,15 @@
+{
+    "profileName": "env",
+
+    "allowWriteActions": false,
+
+    "allowImageCreate": false,
+
+    "allowVolumesTests": true,
+
+    "skipAffinityTests": false,
+
+    "skipKvmTests": false,
+
+    "skipFlexDiskTests": false
+}
