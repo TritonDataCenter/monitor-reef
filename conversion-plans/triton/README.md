@@ -15,11 +15,10 @@ This directory contains documentation for the triton-cli Rust implementation pro
 | Metric | Status |
 |--------|--------|
 | Command Coverage | 100% (107/107 commands) |
-| Short Option Compatibility | ~85% |
-| Long Option Compatibility | ~95% |
-| Behavioral Parity | ~90% |
+| Option Compatibility | ~95% |
+| Functionality (node-smartdc) | 100% |
 
-**Active Work:** [plan-compatibility-2025-12-17.md](plans/active/plan-compatibility-2025-12-17.md)
+**Active Work:** [plan-100-percent-compatibility.md](plans/active/plan-100-percent-compatibility.md)
 
 ## Directory Structure
 
@@ -82,7 +81,7 @@ conversion-plans/triton/
 
 | File | Status | Focus |
 |------|--------|-------|
-| [plan-compatibility-2025-12-17.md](plans/active/plan-compatibility-2025-12-17.md) | Active | Option/argument compatibility |
+| [plan-100-percent-compatibility.md](plans/active/plan-100-percent-compatibility.md) | Active | 95% → 100% option compatibility |
 
 ## Completed Plans
 
@@ -98,6 +97,8 @@ conversion-plans/triton/
 | [plan-low-priority-2025-12-16.md](plans/completed/plan-low-priority-2025-12-16.md) | P2/P3 features |
 | [plan-vnc-proxy-2025-12-16.md](plans/completed/plan-vnc-proxy-2025-12-16.md) | VNC proxy implementation |
 | [affinity-support-plan.md](plans/completed/affinity-support-plan.md) | Affinity rules |
+| [plan-compatibility-2025-12-17.md](plans/completed/plan-compatibility-2025-12-17.md) | Initial compatibility work |
+| [plan-remaining-gaps-2025-12-16.md](plans/completed/plan-remaining-gaps-2025-12-16.md) | Gap analysis (RBAC apply completed) |
 
 ## Reference
 
