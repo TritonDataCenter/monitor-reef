@@ -351,7 +351,7 @@ async fn list_images(args: ImageListArgs, client: &TypedClient, use_json: bool) 
     }
 
     if use_json {
-        json::print_json(&images)?;
+        json::print_json_stream(&images)?;
     } else {
         print_images_table(&images, &args);
     }

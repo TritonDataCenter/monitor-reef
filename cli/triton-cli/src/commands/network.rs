@@ -214,22 +214,28 @@ async fn list_networks(args: NetworkListArgs, client: &TypedClient, use_json: bo
     if use_json {
         print_json_stream(&networks)?;
     } else {
-        let mut tbl = TableBuilder::new(&["SHORTID", "NAME", "SUBNET", "GATEWAY", "PUBLIC"])
-            .with_long_headers(&["ID", "FABRIC", "VLAN"]);
+        // node-triton columns: SHORTID, NAME, SUBNET, GATEWAY, FABRIC, VLAN, PUBLIC
+        let mut tbl = TableBuilder::new(&[
+            "SHORTID", "NAME", "SUBNET", "GATEWAY", "FABRIC", "VLAN", "PUBLIC",
+        ])
+        .with_long_headers(&["ID"]);
         for net in &networks {
             tbl.add_row(vec![
                 net.id.to_string()[..8].to_string(),
                 net.name.clone(),
                 net.subnet.clone().unwrap_or_else(|| "-".to_string()),
                 net.gateway.clone().unwrap_or_else(|| "-".to_string()),
-                if net.public { "yes" } else { "no" }.to_string(),
-                net.id.to_string(),
+                // FABRIC: show true/false, or - if not present
                 net.fabric
-                    .map(|f| f.to_string())
+                    .map(|f| if f { "true" } else { "false" }.to_string())
                     .unwrap_or_else(|| "-".to_string()),
+                // VLAN: show ID or - if not a fabric network
                 net.vlan_id
                     .map(|v| v.to_string())
                     .unwrap_or_else(|| "-".to_string()),
+                // PUBLIC: show true/false
+                if net.public { "true" } else { "false" }.to_string(),
+                net.id.to_string(),
             ]);
         }
         tbl.print(&args.table);

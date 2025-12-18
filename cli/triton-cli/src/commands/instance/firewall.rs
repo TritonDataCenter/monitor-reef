@@ -77,7 +77,7 @@ pub async fn list_rules(args: FwrulesArgs, client: &TypedClient, use_json: bool)
     let rules = response.into_inner();
 
     if use_json {
-        json::print_json(&rules)?;
+        json::print_json_stream(&rules)?;
     } else {
         let mut tbl = table::create_table(&["SHORTID", "ENABLED", "RULE"]);
 

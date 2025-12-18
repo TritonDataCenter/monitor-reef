@@ -127,7 +127,7 @@ pub async fn list_disks(args: DiskListArgs, client: &TypedClient, use_json: bool
     let disks = response.into_inner();
 
     if use_json {
-        json::print_json(&disks)?;
+        json::print_json_stream(&disks)?;
     } else {
         let mut tbl = table::create_table(&["SHORTID", "SIZE_MB", "BOOT", "STATE"]);
         for disk in &disks {

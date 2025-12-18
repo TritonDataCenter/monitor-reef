@@ -212,7 +212,12 @@ fn test_profile_list_shows_env() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
 
-    let profiles: Vec<Value> = serde_json::from_str(&stdout).expect("Should parse JSON array");
+    // node-triton outputs NDJSON (one JSON object per line), not a JSON array
+    let profiles: Vec<Value> = stdout
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_str(line).expect("Should parse JSON line"))
+        .collect();
 
     // Should have at least the env profile
     assert!(!profiles.is_empty(), "Should have at least one profile");
@@ -239,8 +244,13 @@ fn test_profile_list_empty() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
 
-    // Should be an empty array
-    let profiles: Vec<Value> = serde_json::from_str(&stdout).expect("Should parse JSON array");
+    // node-triton outputs NDJSON (one JSON object per line), not a JSON array
+    // With no profiles, output should be empty
+    let profiles: Vec<Value> = stdout
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_str(line).expect("Should parse JSON line"))
+        .collect();
     assert!(profiles.is_empty(), "Should be empty with no profiles");
 }
 

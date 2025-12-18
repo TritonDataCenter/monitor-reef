@@ -9323,9 +9323,9 @@
             "description": "State/Province",
             "type": "string"
           },
-          "tritonCnsEnabled": {
+          "triton_cns_enabled": {
             "nullable": true,
-            "description": "Triton CNS enabled",
+            "description": "Triton CNS enabled Note: This field uses snake_case in the API response, not camelCase",
             "default": null,
             "type": "boolean"
           },
@@ -11538,7 +11538,7 @@
             "default": null,
             "type": "string"
           },
-          "tritonCnsEnabled": {
+          "triton_cns_enabled": {
             "nullable": true,
             "description": "Triton CNS enabled",
             "default": null,

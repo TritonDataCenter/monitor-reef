@@ -8,9 +8,11 @@
 
 use serde::Serialize;
 
-/// Print a value as pretty JSON (single object)
+/// Print a value as compact JSON (single line)
+///
+/// This matches node-triton's JSON output format for single objects.
 pub fn print_json<T: Serialize>(value: &T) -> anyhow::Result<()> {
-    let json = serde_json::to_string_pretty(value)?;
+    let json = serde_json::to_string(value)?;
     println!("{}", json);
     Ok(())
 }

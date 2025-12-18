@@ -26,8 +26,12 @@ pub async fn run(client: &TypedClient, use_json: bool) -> Result<()> {
     if use_json {
         json::print_json(&services)?;
     } else {
-        let mut tbl = table::create_table(&["SERVICE", "URL"]);
-        for (name, url) in &services {
+        // Sort by name for consistent output (matching node-triton)
+        let mut entries: Vec<_> = services.iter().collect();
+        entries.sort_by_key(|(name, _)| name.as_str());
+
+        let mut tbl = table::create_table(&["NAME", "ENDPOINT"]);
+        for (name, url) in entries {
             tbl.add_row(vec![name, url]);
         }
         table::print_table(tbl);

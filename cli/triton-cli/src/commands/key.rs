@@ -79,18 +79,19 @@ async fn list_keys(args: KeyListArgs, client: &TypedClient, use_json: bool) -> R
     let keys = response.into_inner();
 
     if use_json {
-        json::print_json(&keys)?;
+        json::print_json_stream(&keys)?;
     } else if args.authorized_keys {
         // Output in authorized_keys format (one key per line)
         for key in &keys {
             println!("{}", key.key.trim());
         }
     } else {
-        let mut tbl = TableBuilder::new(&["NAME", "FINGERPRINT"]).with_long_headers(&["KEY"]);
+        // node-triton shows FINGERPRINT first, then NAME
+        let mut tbl = TableBuilder::new(&["FINGERPRINT", "NAME"]).with_long_headers(&["KEY"]);
         for key in &keys {
             tbl.add_row(vec![
-                key.name.clone(),
                 key.fingerprint.clone(),
+                key.name.clone(),
                 key.key.clone(),
             ]);
         }

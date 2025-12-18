@@ -7,12 +7,11 @@
 //! Instance list command
 
 use anyhow::Result;
-use chrono::{DateTime, Utc};
 use clap::Args;
 use cloudapi_client::TypedClient;
 use cloudapi_client::types::Machine;
 
-use crate::output::{json, table};
+use crate::output::{self, json, table};
 
 #[derive(Args, Clone)]
 pub struct ListArgs {
@@ -123,7 +122,7 @@ pub async fn run(args: ListArgs, client: &TypedClient, use_json: bool) -> Result
     let machines = response.into_inner();
 
     if use_json {
-        json::print_json(&machines)?;
+        json::print_json_stream(&machines)?;
     } else {
         print_machines_table(&machines, &args);
     }
@@ -224,26 +223,5 @@ fn get_field_value(m: &Machine, field: &str) -> String {
 }
 
 fn format_age(created: &str) -> String {
-    // Try to parse as RFC 3339
-    if let Ok(created_dt) = DateTime::parse_from_rfc3339(created) {
-        let now = Utc::now();
-        let created_utc = created_dt.with_timezone(&Utc);
-        let duration = now.signed_duration_since(created_utc);
-
-        if duration.num_days() >= 365 {
-            format!("{}y", duration.num_days() / 365)
-        } else if duration.num_days() >= 30 {
-            format!("{}mo", duration.num_days() / 30)
-        } else if duration.num_days() >= 1 {
-            format!("{}d", duration.num_days())
-        } else if duration.num_hours() >= 1 {
-            format!("{}h", duration.num_hours())
-        } else if duration.num_minutes() >= 1 {
-            format!("{}m", duration.num_minutes())
-        } else {
-            "now".to_string()
-        }
-    } else {
-        "-".to_string()
-    }
+    output::format_age(created)
 }

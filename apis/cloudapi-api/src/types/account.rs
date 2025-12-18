@@ -52,7 +52,8 @@ pub struct Account {
     /// Last update timestamp
     pub updated: Timestamp,
     /// Triton CNS enabled
-    #[serde(default)]
+    /// Note: This field uses snake_case in the API response, not camelCase
+    #[serde(default, rename = "triton_cns_enabled")]
     pub triton_cns_enabled: Option<bool>,
 }
 
@@ -91,7 +92,7 @@ pub struct UpdateAccountRequest {
     #[serde(default)]
     pub phone: Option<String>,
     /// Triton CNS enabled
-    #[serde(default)]
+    #[serde(default, rename = "triton_cns_enabled")]
     pub triton_cns_enabled: Option<bool>,
 }
 

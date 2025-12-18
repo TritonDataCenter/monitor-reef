@@ -7,7 +7,7 @@
 //! Table output formatting
 
 use clap::Args;
-use comfy_table::{CellAlignment, ColumnConstraint, Table, presets::NOTHING};
+use comfy_table::{CellAlignment, Table, presets::NOTHING};
 
 /// Common table formatting options matching node-triton's getCliTableOptions()
 #[derive(Args, Clone, Default, Debug)]
@@ -108,6 +108,20 @@ impl TableBuilder {
         // Build the table
         let mut table = Table::new();
         table.load_preset(NOTHING);
+        table.set_content_arrangement(comfy_table::ContentArrangement::Disabled);
+
+        // Set padding on all columns: no left padding, 2 spaces right (for column spacing)
+        let num_cols = column_indices.len();
+        for col_idx in 0..num_cols {
+            if let Some(column) = table.column_mut(col_idx) {
+                if col_idx == num_cols - 1 {
+                    // Last column should have no right padding
+                    column.set_padding((0, 0));
+                } else {
+                    column.set_padding((0, 2));
+                }
+            }
+        }
 
         if !opts.no_header {
             let header_row: Vec<&str> = column_indices
@@ -130,12 +144,25 @@ impl TableBuilder {
 }
 
 /// Create a new table with headers
+///
+/// Uses no-padding format to match node-triton's tabula output
 pub fn create_table(headers: &[&str]) -> Table {
     let mut table = Table::new();
     table.load_preset(NOTHING);
-    // Remove default cell padding to match node-triton's tabula output
     table.set_content_arrangement(comfy_table::ContentArrangement::Disabled);
     table.set_header(headers);
+
+    // Set padding on all columns: no left padding, 2 spaces right (for column spacing)
+    for col_idx in 0..headers.len() {
+        if let Some(column) = table.column_mut(col_idx) {
+            column.set_padding((0, 2));
+        }
+    }
+    // Last column should have no right padding
+    if let Some(last_col) = table.column_mut(headers.len() - 1) {
+        last_col.set_padding((0, 0));
+    }
+
     table
 }
 
@@ -168,11 +195,17 @@ pub fn create_table_with_alignment(headers: &[&str], right_aligned: &[usize]) ->
 }
 
 /// Create a new table without headers
+///
+/// Uses no-padding format to match node-triton's tabula output
 pub fn create_table_no_header(num_columns: usize) -> Table {
     let mut table = Table::new();
     table.load_preset(NOTHING);
-    // Set empty column constraints if needed
-    let _ = num_columns; // Just to document we expect this many columns
+    table.set_content_arrangement(comfy_table::ContentArrangement::Disabled);
+
+    // We need to add a dummy row first to be able to set column padding
+    // The actual rows will be added by the caller
+    // For now, just return the table - padding will be applied when rows are added
+    let _ = num_columns;
     table
 }
 

@@ -107,7 +107,7 @@ async fn list_packages(args: PackageListArgs, client: &TypedClient, use_json: bo
     });
 
     if use_json {
-        json::print_json(&packages)?;
+        json::print_json_stream(&packages)?;
     } else {
         // Columns: SHORTID(0), NAME(1), MEMORY(2), SWAP(3), DISK(4), VCPUS(5)
         // Right-align numeric columns to match node-triton

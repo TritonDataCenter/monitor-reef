@@ -42,3 +42,59 @@ pub fn format_mb(mb: u64) -> String {
         format!("{}M", mb)
     }
 }
+
+/// Format a timestamp as human-readable age (matches node-triton format)
+///
+/// node-triton uses years > weeks > days > hours > minutes > seconds
+/// with single letter suffixes (y, w, d, h, m, s)
+///
+/// Examples:
+/// - 365+ days ago -> "1y"
+/// - 7+ days ago -> "2w"
+/// - 1+ days ago -> "3d"
+/// - 1+ hours ago -> "4h"
+/// - 1+ minutes ago -> "5m"
+/// - recent -> "30s"
+pub fn format_age(timestamp: &str) -> String {
+    use chrono::{DateTime, Utc};
+
+    if let Ok(created_dt) = DateTime::parse_from_rfc3339(timestamp) {
+        let now = Utc::now();
+        let created_utc = created_dt.with_timezone(&Utc);
+        let duration = now.signed_duration_since(created_utc);
+
+        let seconds = duration.num_seconds();
+        let years = seconds / 60 / 60 / 24 / 365;
+        if years > 0 {
+            return format!("{}y", years);
+        }
+
+        let weeks = seconds / 60 / 60 / 24 / 7;
+        if weeks > 0 {
+            return format!("{}w", weeks);
+        }
+
+        let days = seconds / 60 / 60 / 24;
+        if days > 0 {
+            return format!("{}d", days);
+        }
+
+        let hours = seconds / 60 / 60;
+        if hours > 0 {
+            return format!("{}h", hours);
+        }
+
+        let minutes = seconds / 60;
+        if minutes > 0 {
+            return format!("{}m", minutes);
+        }
+
+        if seconds > 0 {
+            return format!("{}s", seconds);
+        }
+
+        "0s".to_string()
+    } else {
+        "-".to_string()
+    }
+}

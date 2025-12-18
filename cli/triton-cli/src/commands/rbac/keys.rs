@@ -139,7 +139,7 @@ pub async fn list_user_keys(
     let keys = response.into_inner();
 
     if use_json {
-        json::print_json(&keys)?;
+        json::print_json_stream(&keys)?;
     } else {
         let mut tbl = TableBuilder::new(&["NAME", "FINGERPRINT"]).with_long_headers(&["KEY"]);
         for key in &keys {

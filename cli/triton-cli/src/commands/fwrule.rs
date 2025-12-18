@@ -135,26 +135,25 @@ async fn list_rules(args: FwruleListArgs, client: &TypedClient, use_json: bool) 
     let rules = response.into_inner();
 
     if use_json {
-        json::print_json(&rules)?;
+        json::print_json_stream(&rules)?;
     } else {
-        let mut tbl = TableBuilder::new(&["SHORTID", "ENABLED", "RULE"]).with_long_headers(&[
-            "ID",
-            "DESCRIPTION",
-            "GLOBAL",
-        ]);
+        // node-triton columns: SHORTID, ENABLED, GLOBAL, LOG, RULE
+        let mut tbl = TableBuilder::new(&["SHORTID", "ENABLED", "GLOBAL", "LOG", "RULE"])
+            .with_long_headers(&["ID", "DESCRIPTION"]);
         for rule in &rules {
             tbl.add_row(vec![
                 rule.id.to_string()[..8].to_string(),
-                if rule.enabled { "yes" } else { "no" }.to_string(),
+                if rule.enabled { "true" } else { "false" }.to_string(),
+                if rule.global.unwrap_or(false) {
+                    "true"
+                } else {
+                    "false"
+                }
+                .to_string(),
+                if rule.log { "true" } else { "false" }.to_string(),
                 rule.rule.clone(),
                 rule.id.to_string(),
                 rule.description.clone().unwrap_or_else(|| "-".to_string()),
-                if rule.global.unwrap_or(false) {
-                    "yes"
-                } else {
-                    "no"
-                }
-                .to_string(),
             ]);
         }
         tbl.print(&args.table);

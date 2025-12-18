@@ -187,12 +187,12 @@ pub async fn list_roles(client: &TypedClient, use_json: bool) -> Result<()> {
     let roles = response.into_inner();
 
     if use_json {
-        json::print_json(&roles)?;
+        json::print_json_stream(&roles)?;
     } else {
-        let mut tbl = table::create_table(&["SHORTID", "NAME", "POLICIES", "MEMBERS"]);
+        // node-triton columns: NAME, POLICIES, MEMBERS (no SHORTID)
+        let mut tbl = table::create_table(&["NAME", "POLICIES", "MEMBERS"]);
         for role in &roles {
             tbl.add_row(vec![
-                &role.id.to_string()[..8],
                 &role.name,
                 &role.policies.join(", "),
                 &role.members.join(", "),

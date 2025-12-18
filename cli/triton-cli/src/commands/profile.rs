@@ -187,7 +187,7 @@ fn list_profiles(args: ProfileListArgs) -> Result<()> {
     }
 
     if args.json {
-        json::print_json(&profiles_to_show)?;
+        json::print_json_stream(&profiles_to_show)?;
     } else {
         let mut tbl = TableBuilder::new(&["NAME", "CURR", "ACCOUNT", "USER", "URL"])
             .with_long_headers(&["KEYID", "INSECURE"]);

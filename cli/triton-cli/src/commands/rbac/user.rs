@@ -211,9 +211,10 @@ pub async fn list_users(client: &TypedClient, use_json: bool) -> Result<()> {
     let users = response.into_inner();
 
     if use_json {
-        json::print_json(&users)?;
+        json::print_json_stream(&users)?;
     } else {
-        let mut tbl = table::create_table(&["SHORTID", "LOGIN", "EMAIL", "NAME"]);
+        // node-triton columns: LOGIN, EMAIL, NAME, CDATE (no SHORTID)
+        let mut tbl = table::create_table(&["LOGIN", "EMAIL", "NAME", "CDATE"]);
         for user in &users {
             let name = match (&user.first_name, &user.last_name) {
                 (Some(f), Some(l)) => format!("{} {}", f, l),
@@ -222,10 +223,10 @@ pub async fn list_users(client: &TypedClient, use_json: bool) -> Result<()> {
                 (None, None) => "-".to_string(),
             };
             tbl.add_row(vec![
-                &user.id.to_string()[..8],
                 &user.login,
                 &user.email,
                 &name,
+                &user.created.to_string(),
             ]);
         }
         table::print_table(tbl);

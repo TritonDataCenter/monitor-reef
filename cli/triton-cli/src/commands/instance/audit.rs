@@ -37,7 +37,7 @@ pub async fn run(args: AuditArgs, client: &TypedClient, use_json: bool) -> Resul
     let audits = response.into_inner();
 
     if use_json {
-        json::print_json(&audits)?;
+        json::print_json_stream(&audits)?;
     } else {
         let mut tbl = table::create_table(&["TIME", "ACTION", "SUCCESS", "CALLER"]);
 

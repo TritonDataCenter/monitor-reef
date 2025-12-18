@@ -186,15 +186,16 @@ pub async fn list_policies(client: &TypedClient, use_json: bool) -> Result<()> {
     let policies = response.into_inner();
 
     if use_json {
-        json::print_json(&policies)?;
+        json::print_json_stream(&policies)?;
     } else {
-        let mut tbl = table::create_table(&["SHORTID", "NAME", "RULES", "DESCRIPTION"]);
+        // node-triton columns: NAME, DESCRIPTION, NRULES (no SHORTID)
+        let mut tbl = table::create_table(&["NAME", "DESCRIPTION", "NRULES"]);
         for policy in &policies {
+            let nrules = policy.rules.len().to_string();
             tbl.add_row(vec![
-                &policy.id.to_string()[..8],
                 &policy.name,
-                &format!("{} rule(s)", policy.rules.len()),
                 policy.description.as_deref().unwrap_or("-"),
+                &nrules,
             ]);
         }
         table::print_table(tbl);

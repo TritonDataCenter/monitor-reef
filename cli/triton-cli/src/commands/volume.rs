@@ -10,8 +10,8 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 
-use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::output::{self, json};
 
 #[derive(Args, Clone)]
 pub struct VolumeListArgs {
@@ -121,17 +121,19 @@ async fn list_volumes(args: VolumeListArgs, client: &TypedClient, use_json: bool
     let volumes = response.into_inner();
 
     if use_json {
-        json::print_json(&volumes)?;
+        json::print_json_stream(&volumes)?;
     } else {
-        let mut tbl = TableBuilder::new(&["SHORTID", "NAME", "SIZE", "STATE", "TYPE"])
+        // node-triton column order: SHORTID, NAME, SIZE, TYPE, STATE, AGE
+        let mut tbl = TableBuilder::new(&["SHORTID", "NAME", "SIZE", "TYPE", "STATE", "AGE"])
             .with_long_headers(&["ID", "CREATED"]);
         for vol in &volumes {
             tbl.add_row(vec![
                 vol.id.to_string()[..8].to_string(),
                 vol.name.clone(),
                 format!("{} MB", vol.size),
-                format!("{:?}", vol.state).to_lowercase(),
                 vol.type_.clone(),
+                format!("{:?}", vol.state).to_lowercase(),
+                output::format_age(&vol.created.to_string()),
                 vol.id.to_string(),
                 vol.created.to_string(),
             ]);

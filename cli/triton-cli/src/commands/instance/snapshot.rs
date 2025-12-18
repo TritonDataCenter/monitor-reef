@@ -119,7 +119,7 @@ pub async fn list_snapshots(
     let snapshots = response.into_inner();
 
     if use_json {
-        json::print_json(&snapshots)?;
+        json::print_json_stream(&snapshots)?;
     } else {
         let mut tbl = table::create_table(&["NAME", "STATE", "CREATED"]);
         for snap in &snapshots {
