@@ -333,6 +333,13 @@ pub fn allow_write_actions() -> bool {
         .unwrap_or(false)
 }
 
+/// Check if image creation is allowed in the test config
+pub fn allow_image_create() -> bool {
+    config::load_config()
+        .map(|c| c.allow_image_create)
+        .unwrap_or(false)
+}
+
 /// Get the short ID (first segment before dash) from a UUID
 pub fn short_id(uuid: &str) -> String {
     uuid.split('-').next().unwrap_or(uuid).to_string()

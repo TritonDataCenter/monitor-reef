@@ -130,9 +130,10 @@ async fn list_vlans(args: VlanListArgs, client: &TypedClient, use_json: bool) ->
                     match field {
                         "vlan_id" => {
                             if let Ok(id) = value.parse::<u16>()
-                                && vlan.vlan_id != id {
-                                    return false;
-                                }
+                                && vlan.vlan_id != id
+                            {
+                                return false;
+                            }
                         }
                         "name" => {
                             if vlan.name != value {

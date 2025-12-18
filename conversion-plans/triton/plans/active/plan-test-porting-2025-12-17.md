@@ -44,8 +44,10 @@ Copyright 2025 Edgecast Cloud LLC.
 | Phase 5.4: IP Tests | **COMPLETE** | 15 offline tests + 6 API tests (ignored) |
 | Phase 5.5: Deletion Protection Tests | **COMPLETE** | 15 offline tests + 2 API tests (ignored) |
 | Phase 5.6: Migration Tests | **COMPLETE** | 26 offline tests + 5 API tests (ignored) |
+| Phase 6.1: Subcommand Tests | **COMPLETE** | 175 offline tests for all subcommand help/aliases |
+| Phase 6.2: Image Create Tests | **COMPLETE** | 25 offline tests + 1 API test (ignored) |
 
-**Total Tests: 354+ offline passing, 72+ API tests (ignored by default)**
+**Total Tests: 554+ offline passing, 73+ API tests (ignored by default)**
 
 ## Current Session Progress (2025-12-17)
 
@@ -211,6 +213,32 @@ All API integration tests now pass:
 
 **New Makefile Target Added**:
 - `make triton-test-file TEST=<name>` - Run specific test file
+
+#### 6.1 Subcommand Tests (`cli/triton-cli/tests/cli_subcommands.rs`)
+
+**Tests Added** (175 offline):
+- Comprehensive help tests for ALL subcommands
+- Tests for `triton help <subcmd>` and `triton <subcmd> -h` forms
+- Alias consistency tests verifying all command aliases work
+- Top-level shortcut verification (fwrules, images, pkgs, networks, etc.)
+
+**Note**: Tests verify that:
+- True aliases (same command level) produce identical help output
+- Top-level shortcuts work correctly (different help but same functionality)
+
+#### 6.2 Image Create Tests (`cli/triton-cli/tests/cli_image_create.rs`)
+
+**Tests Added** (25 offline, 1 API):
+- Help tests for image create, share, unshare, update, tag, delete, wait, clone, copy, export
+- No-args error tests for commands requiring arguments
+- API workflow test (requires allowImageCreate: true):
+  - Create origin instance
+  - Create image from instance
+  - Create derived instance from image
+  - Test image share/unshare
+  - Test image update
+  - Test image tag
+  - Cleanup
 
 ## Running Tests
 
@@ -651,6 +679,8 @@ New types:
 | `cli/triton-cli/tests/cli_ips.rs` | Network IP tests | DONE |
 | `cli/triton-cli/tests/cli_deletion_protection.rs` | Deletion protection tests | DONE |
 | `cli/triton-cli/tests/cli_migrations.rs` | Migration tests | DONE |
+| `cli/triton-cli/tests/cli_subcommands.rs` | Subcommand help/alias tests | DONE |
+| `cli/triton-cli/tests/cli_image_create.rs` | Image creation workflow tests | DONE |
 
 ## Source Files to Reference
 
