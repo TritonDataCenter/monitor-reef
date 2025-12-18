@@ -45,8 +45,8 @@ fn test_version() {
 The version test should verify the actual version format. This is a simple fix.
 
 **Action Items:**
-- [ ] Update `test_version()` in `cli_basics.rs` to check for semver pattern
-- [ ] Optionally check for URL if the Rust CLI includes one
+- [x] Update `test_version()` in `cli_basics.rs` to check for semver pattern
+- [ ] Optionally check for URL if the Rust CLI includes one (skipped - not included in Rust CLI)
 
 ---
 
@@ -94,8 +94,10 @@ error: the following required arguments were not provided
 3. **API Compatibility:** The important behavior (success vs failure) is preserved.
 
 **Action Items:**
-- [ ] Document exit code behavior in CLI help or README
-- [ ] Consider adding `--exit-code-compat` flag if backward compatibility is critical (optional, low priority)
+- [ ] Document exit code behavior in CLI help or README (pending team discussion)
+- [ ] Consider adding `--exit-code-compat` flag if backward compatibility is critical (pending team discussion)
+
+**Note:** Exit code differences documented in `conversion-plans/triton/reference/exit-code-comparison.md` for team review.
 
 ---
 
@@ -141,9 +143,9 @@ var argv = [
 The `--script` option is an important feature for instance provisioning. It should be tested.
 
 **Action Items:**
-- [ ] Create a simple test script file in `cli/triton-cli/tests/fixtures/`
-- [ ] Add `--script` option to the `test_instance_manage_workflow()` test
-- [ ] Verify the user-script metadata is set on the created instance
+- [x] Create a simple test script file in `cli/triton-cli/tests/fixtures/` (already existed as `user-script.sh`)
+- [x] Add `--script` option to the `test_instance_manage_workflow()` test
+- [x] Verify the user-script metadata is set on the created instance
 
 ---
 
@@ -235,7 +237,7 @@ Add documentation noting:
 
 ## Acceptance Criteria
 
-- [ ] Version test checks for semver pattern
-- [ ] User-script option tested in workflow test
-- [ ] Exit code behavior documented
-- [ ] All tests pass: `make package-test PACKAGE=triton-cli`
+- [x] Version test checks for semver pattern
+- [x] User-script option tested in workflow test
+- [ ] Exit code behavior documented (pending team discussion, see reference/exit-code-comparison.md)
+- [x] All tests pass: `make package-test PACKAGE=triton-cli`

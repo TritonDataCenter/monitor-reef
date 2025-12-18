@@ -259,16 +259,20 @@ fn test_instance_manage_workflow() {
         eprintln!("Using resize package: {}", resize_pkg_name);
     }
 
-    // Test: triton create -wj with metadata, tag, and name
+    // Test: triton create -wj with metadata, tag, script, and name
+    // Matches node-triton test which includes --script option
+    let script_path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/user-script.sh");
     eprintln!(
-        "Test: triton create -wj -m foo=bar --tag blah=bling -n {} {} {}",
-        inst_alias, img_id, pkg_id
+        "Test: triton create -wj -m foo=bar --script {} --tag blah=bling -n {} {} {}",
+        script_path, inst_alias, img_id, pkg_id
     );
     let (stdout, stderr, success) = run_triton_with_profile([
         "create",
         "-wj",
         "-m",
         "foo=bar",
+        "--script",
+        script_path,
         "--tag",
         "blah=bling",
         "-n",
@@ -300,13 +304,18 @@ fn test_instance_manage_workflow() {
     );
 
     // Verify metadata was set
-    if let Some(metadata) = &instance.metadata
-        && let Some(foo) = metadata.get("foo")
-    {
-        assert_eq!(
-            foo.as_str(),
-            Some("bar"),
-            "foo metadata should be set to 'bar'"
+    if let Some(metadata) = &instance.metadata {
+        if let Some(foo) = metadata.get("foo") {
+            assert_eq!(
+                foo.as_str(),
+                Some("bar"),
+                "foo metadata should be set to 'bar'"
+            );
+        }
+        // Verify user-script from --script option was set
+        assert!(
+            metadata.get("user-script").is_some(),
+            "user-script metadata should be set from --script option"
         );
     }
 

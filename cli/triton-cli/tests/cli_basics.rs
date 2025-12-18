@@ -22,11 +22,12 @@ fn triton_cmd() -> Command {
 
 #[test]
 fn test_triton_version() {
+    // Matches node-triton test: checks for semver pattern
     triton_cmd()
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::contains("triton"));
+        .stdout(predicate::str::is_match(r"triton \d+\.\d+\.\d+").unwrap());
 }
 
 #[test]
