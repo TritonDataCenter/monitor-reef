@@ -184,8 +184,9 @@ impl CertGenerator {
 
         // Set random serial number
         let mut serial = [0u8; 16];
-        getrandom::fill(&mut serial)
-            .map_err(|e| AuthError::SigningError(format!("Failed to generate random serial: {}", e)))?;
+        getrandom::fill(&mut serial).map_err(|e| {
+            AuthError::SigningError(format!("Failed to generate random serial: {}", e))
+        })?;
         params.serial_number = Some(SerialNumber::from_slice(&serial));
 
         // Not a CA
