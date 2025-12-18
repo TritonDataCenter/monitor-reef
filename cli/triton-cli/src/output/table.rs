@@ -139,7 +139,10 @@ impl TableBuilder {
             table.add_row(display_row);
         }
 
-        println!("{table}");
+        // Trim leading/trailing whitespace from each line
+        for line in table.trim_fmt().lines() {
+            println!("{}", line.trim_start());
+        }
     }
 }
 
@@ -152,17 +155,6 @@ pub fn create_table(headers: &[&str]) -> Table {
     table.set_content_arrangement(comfy_table::ContentArrangement::Disabled);
     table.set_header(headers);
 
-    // Set padding on all columns: no left padding, 2 spaces right (for column spacing)
-    for col_idx in 0..headers.len() {
-        if let Some(column) = table.column_mut(col_idx) {
-            column.set_padding((0, 2));
-        }
-    }
-    // Last column should have no right padding
-    if let Some(last_col) = table.column_mut(headers.len() - 1) {
-        last_col.set_padding((0, 0));
-    }
-
     table
 }
 
@@ -173,22 +165,14 @@ pub fn create_table(headers: &[&str]) -> Table {
 pub fn create_table_with_alignment(headers: &[&str], right_aligned: &[usize]) -> Table {
     let mut table = Table::new();
     table.load_preset(NOTHING);
-    // Remove default cell padding to match node-triton's tabula output
     table.set_content_arrangement(comfy_table::ContentArrangement::Disabled);
     table.set_header(headers);
 
-    // Set padding on all columns
-    for col_idx in 0..headers.len() {
+    // Set alignment on specified columns
+    for &col_idx in right_aligned {
         if let Some(column) = table.column_mut(col_idx) {
-            column.set_padding((0, 2)); // No left padding, 2 right (for spacing between columns)
-            if right_aligned.contains(&col_idx) {
-                column.set_cell_alignment(CellAlignment::Right);
-            }
+            column.set_cell_alignment(CellAlignment::Right);
         }
-    }
-    // Last column should have no right padding
-    if let Some(last_col) = table.column_mut(headers.len() - 1) {
-        last_col.set_padding((0, 0));
     }
 
     table
@@ -210,6 +194,12 @@ pub fn create_table_no_header(num_columns: usize) -> Table {
 }
 
 /// Format a table and print it
+///
+/// Removes leading/trailing whitespace from each line to match node-triton output
 pub fn print_table(table: Table) {
-    println!("{table}");
+    // trim_fmt() removes trailing whitespace, but NOTHING preset still has
+    // a leading space from the left border placeholder. Trim each line.
+    for line in table.trim_fmt().lines() {
+        println!("{}", line.trim_start());
+    }
 }

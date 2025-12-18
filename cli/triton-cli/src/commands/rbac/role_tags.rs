@@ -46,12 +46,12 @@ pub enum RoleTagsCommand {
     /// Add role tags to a resource
     Add(RoleTagsAddArgs),
     /// Remove role tags from a resource
-    #[command(alias = "rm")]
+    #[command(visible_alias = "rm")]
     Remove(RoleTagsRemoveArgs),
     /// Clear all role tags from a resource
     Clear(RoleTagsClearArgs),
     /// Edit role tags in $EDITOR
-    #[command(alias = "e")]
+    #[command(visible_alias = "e")]
     Edit(RoleTagsEditArgs),
 }
 

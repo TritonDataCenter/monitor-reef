@@ -36,7 +36,7 @@ pub mod list;
 #[derive(Subcommand, Clone)]
 pub enum InstanceCommand {
     /// List instances
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List(list::ListArgs),
 
     /// Get instance details
@@ -46,7 +46,7 @@ pub enum InstanceCommand {
     Create(create::CreateArgs),
 
     /// Delete instance(s)
-    #[command(alias = "rm")]
+    #[command(visible_alias = "rm")]
     Delete(delete::DeleteArgs),
 
     /// Start instance(s)
@@ -89,21 +89,21 @@ pub enum InstanceCommand {
     DisableDeletionProtection(protection::DisableProtectionArgs),
 
     /// Manage instance NICs
-    #[command(alias = "nics")]
+    #[command(visible_alias = "nics")]
     Nic {
         #[command(subcommand)]
         command: nic::NicCommand,
     },
 
     /// Manage instance snapshots
-    #[command(alias = "snapshots")]
+    #[command(visible_alias = "snapshots")]
     Snapshot {
         #[command(subcommand)]
         command: snapshot::SnapshotCommand,
     },
 
     /// Manage instance disks
-    #[command(alias = "disks")]
+    #[command(visible_alias = "disks")]
     Disk {
         #[command(subcommand)]
         command: disk::DiskCommand,
@@ -120,7 +120,7 @@ pub enum InstanceCommand {
     Tags(tag::TagListArgs),
 
     /// Manage instance metadata
-    #[command(alias = "metadatas")]
+    #[command(visible_alias = "metadatas")]
     Metadata {
         #[command(subcommand)]
         command: metadata::MetadataCommand,

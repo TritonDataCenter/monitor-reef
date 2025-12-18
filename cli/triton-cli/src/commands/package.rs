@@ -15,7 +15,7 @@ use crate::output::{format_mb, json, table};
 #[derive(Subcommand, Clone)]
 pub enum PackageCommand {
     /// List packages
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List(PackageListArgs),
     /// Get package details
     Get(PackageGetArgs),

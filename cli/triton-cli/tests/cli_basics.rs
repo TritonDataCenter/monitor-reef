@@ -22,12 +22,15 @@ fn triton_cmd() -> Command {
 
 #[test]
 fn test_triton_version() {
-    // Matches node-triton test: checks for semver pattern
+    // Matches node-triton format: "Triton CLI X.Y.Z" with URL on second line
     triton_cmd()
         .arg("--version")
         .assert()
         .success()
-        .stdout(predicate::str::is_match(r"triton \d+\.\d+\.\d+").unwrap());
+        .stdout(predicate::str::is_match(r"Triton CLI \d+\.\d+\.\d+").unwrap())
+        .stdout(predicate::str::contains(
+            "https://github.com/TritonDataCenter/triton-rust-monorepo",
+        ));
 }
 
 #[test]

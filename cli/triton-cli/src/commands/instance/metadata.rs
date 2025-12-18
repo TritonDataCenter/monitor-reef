@@ -19,7 +19,7 @@ use crate::output::{json, table};
 #[derive(Subcommand, Clone)]
 pub enum MetadataCommand {
     /// List metadata on an instance
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List(MetadataListArgs),
 
     /// Get a metadata value
@@ -29,7 +29,7 @@ pub enum MetadataCommand {
     Set(MetadataSetArgs),
 
     /// Delete metadata from an instance
-    #[command(alias = "rm")]
+    #[command(visible_alias = "rm")]
     Delete(MetadataDeleteArgs),
 
     /// Delete all metadata from an instance

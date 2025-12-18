@@ -16,7 +16,7 @@ use crate::output::{json, table};
 #[derive(Subcommand, Clone)]
 pub enum SnapshotCommand {
     /// List snapshots for an instance
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List(SnapshotListArgs),
 
     /// Get snapshot details
@@ -26,7 +26,7 @@ pub enum SnapshotCommand {
     Create(SnapshotCreateArgs),
 
     /// Delete a snapshot
-    #[command(alias = "rm")]
+    #[command(visible_alias = "rm")]
     Delete(SnapshotDeleteArgs),
 
     /// Boot from a snapshot (rollback)

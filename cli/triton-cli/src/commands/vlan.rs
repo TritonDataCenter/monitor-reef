@@ -28,14 +28,14 @@ pub struct VlanListArgs {
 #[derive(Subcommand, Clone)]
 pub enum VlanCommand {
     /// List VLANs
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List(VlanListArgs),
     /// Get VLAN details
     Get(VlanGetArgs),
     /// Create VLAN
     Create(VlanCreateArgs),
     /// Delete VLAN
-    #[command(alias = "rm")]
+    #[command(visible_alias = "rm")]
     Delete(VlanDeleteArgs),
     /// Update VLAN
     Update(VlanUpdateArgs),

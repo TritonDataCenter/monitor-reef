@@ -117,7 +117,8 @@ pub struct Image {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub homepage: Option<String>,
     /// Published timestamp
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Note: This field uses snake_case in the API response, not camelCase
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "published_at")]
     pub published_at: Option<Timestamp>,
     /// Owner UUID (API version >= 7.1.0)
     #[serde(default, skip_serializing_if = "Option::is_none")]

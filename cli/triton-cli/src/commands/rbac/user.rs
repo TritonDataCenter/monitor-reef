@@ -20,7 +20,7 @@ use super::editor;
 #[derive(Subcommand, Clone)]
 pub enum UserSubcommand {
     /// List RBAC users
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List,
     /// Get user details
     Get(UserGetArgs),
@@ -29,7 +29,7 @@ pub enum UserSubcommand {
     /// Update user
     Update(UserUpdateArgs),
     /// Delete user(s)
-    #[command(alias = "rm")]
+    #[command(visible_alias = "rm")]
     Delete(UserDeleteArgs),
 }
 

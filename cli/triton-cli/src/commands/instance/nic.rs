@@ -17,18 +17,18 @@ use crate::output::{json, table};
 #[derive(Subcommand, Clone)]
 pub enum NicCommand {
     /// List NICs on an instance
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List(NicListArgs),
 
     /// Get NIC details
     Get(NicGetArgs),
 
     /// Add a NIC to an instance
-    #[command(alias = "create")]
+    #[command(visible_alias = "create")]
     Add(NicAddArgs),
 
     /// Remove a NIC from an instance
-    #[command(aliases = ["rm", "delete"])]
+    #[command(visible_aliases = ["rm", "delete"])]
     Remove(NicRemoveArgs),
 }
 

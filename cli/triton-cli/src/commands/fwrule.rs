@@ -22,14 +22,14 @@ pub struct FwruleListArgs {
 #[derive(Subcommand, Clone)]
 pub enum FwruleCommand {
     /// List firewall rules
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List(FwruleListArgs),
     /// Get firewall rule details
     Get(FwruleGetArgs),
     /// Create firewall rule
     Create(FwruleCreateArgs),
     /// Delete firewall rule(s)
-    #[command(alias = "rm")]
+    #[command(visible_alias = "rm")]
     Delete(FwruleDeleteArgs),
     /// Enable firewall rule(s)
     Enable(FwruleEnableArgs),
@@ -38,7 +38,7 @@ pub enum FwruleCommand {
     /// Update firewall rule
     Update(FwruleUpdateArgs),
     /// List instances affected by rule
-    #[command(alias = "insts")]
+    #[command(visible_alias = "insts")]
     Instances(FwruleInstancesArgs),
 }
 

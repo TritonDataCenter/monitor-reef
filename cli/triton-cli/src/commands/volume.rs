@@ -28,14 +28,14 @@ pub struct VolumeSizesArgs {
 #[derive(Subcommand, Clone)]
 pub enum VolumeCommand {
     /// List volumes
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List(VolumeListArgs),
     /// Get volume details
     Get(VolumeGetArgs),
     /// Create volume
     Create(VolumeCreateArgs),
     /// Delete volume(s)
-    #[command(alias = "rm")]
+    #[command(visible_alias = "rm")]
     Delete(VolumeDeleteArgs),
     /// List available volume sizes
     Sizes(VolumeSizesArgs),

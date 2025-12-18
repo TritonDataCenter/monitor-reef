@@ -26,14 +26,14 @@ pub struct KeyListArgs {
 #[derive(Subcommand, Clone)]
 pub enum KeyCommand {
     /// List SSH keys
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List(KeyListArgs),
     /// Get SSH key details
     Get(KeyGetArgs),
     /// Add SSH key
     Add(KeyAddArgs),
     /// Delete SSH key(s)
-    #[command(alias = "rm")]
+    #[command(visible_alias = "rm")]
     Delete(KeyDeleteArgs),
 }
 
@@ -76,7 +76,9 @@ async fn list_keys(args: KeyListArgs, client: &TypedClient, use_json: bool) -> R
     let account = &client.auth_config().account;
     let response = client.inner().list_keys().account(account).send().await?;
 
-    let keys = response.into_inner();
+    let mut keys = response.into_inner();
+    // Sort by name (case-insensitive) to match node-triton behavior
+    keys.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
     if use_json {
         json::print_json_stream(&keys)?;

@@ -7,12 +7,13 @@
 //! Account info/overview command
 
 use anyhow::Result;
-use cloudapi_client::TypedClient;
+use cloudapi_client::{ClientInfo, TypedClient};
 
 use crate::output::json;
 
 pub async fn run(client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
+    let profile_url = client.inner().baseurl();
 
     // Fetch account details
     let acc_response = client.inner().get_account().account(account).send().await?;
@@ -32,39 +33,47 @@ pub async fn run(client: &TypedClient, use_json: bool) -> Result<()> {
         .iter()
         .filter(|m| format!("{:?}", m.state).to_lowercase() == "running")
         .count();
-    let stopped = machines
-        .iter()
-        .filter(|m| format!("{:?}", m.state).to_lowercase() == "stopped")
-        .count();
     let total_memory: u64 = machines.iter().map(|m| m.memory).sum();
     let total_disk: u64 = machines.iter().map(|m| m.disk).sum();
 
+    // Build full name from first/last name
+    let full_name = match (&acc.first_name, &acc.last_name) {
+        (Some(first), Some(last)) => format!("{} {}", first, last),
+        (Some(first), None) => first.clone(),
+        (None, Some(last)) => last.clone(),
+        (None, None) => "-".to_string(),
+    };
+
     if use_json {
+        // Match node-triton JSON format
         let info = serde_json::json!({
             "login": acc.login,
+            "name": full_name,
             "email": acc.email,
-            "instances": {
-                "total": machines.len(),
-                "running": running,
-                "stopped": stopped,
-            },
-            "memory_used_mb": total_memory,
-            "disk_used_mb": total_disk,
+            "url": profile_url,
+            "totalDisk": total_disk * 1024 * 1024,  // Convert MB to bytes
+            "totalMemory": total_memory * 1024 * 1024,  // Convert MB to bytes
+            "instances": machines.len(),
+            "running": running,
         });
         json::print_json(&info)?;
     } else {
-        println!("Account: {}", acc.login);
-        println!("Email:   {}", acc.email);
-        println!();
-        println!("Instances:");
-        println!("  Total:   {}", machines.len());
-        println!("  Running: {}", running);
-        println!("  Stopped: {}", stopped);
-        println!();
-        println!("Resources:");
-        println!("  Memory:  {} MB", total_memory);
-        println!("  Disk:    {} MB", total_disk);
+        // Match node-triton text format
+        println!("login: {}", acc.login);
+        println!("name: {}", full_name);
+        println!("email: {}", acc.email);
+        println!("url: {}", profile_url);
+        println!("totalDisk: {}", format_gib(total_disk));
+        println!("totalMemory: {}", format_gib(total_memory));
+        println!("instances: {}", machines.len());
+        println!("    running: {}", running);
     }
 
     Ok(())
+}
+
+/// Format MB value as GiB with one decimal place
+fn format_gib(mb: u64) -> String {
+    let gib = mb as f64 / 1024.0;
+    format!("{:.1} GiB", gib)
 }

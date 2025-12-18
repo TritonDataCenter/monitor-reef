@@ -6,12 +6,76 @@
 
 //! Instance list command
 
+use std::collections::HashMap;
+
 use anyhow::Result;
 use clap::Args;
 use cloudapi_client::TypedClient;
 use cloudapi_client::types::Machine;
+use serde::Serialize;
 
 use crate::output::{self, json, table};
+
+/// Augmented machine output with computed fields for node-triton compatibility
+#[derive(Serialize)]
+struct AugmentedMachine {
+    #[serde(flatten)]
+    machine: Machine,
+    /// Short ID (first 8 chars of UUID)
+    shortid: String,
+    /// Image name@version
+    img: String,
+    /// Instance flags (B=bhyve, D=docker, F=firewall, K=kvm, P=deletion_protection)
+    flags: String,
+    /// Age of the instance
+    age: String,
+}
+
+impl AugmentedMachine {
+    fn from_machine(m: &Machine, image_map: &HashMap<String, String>) -> Self {
+        let shortid = m.id[..8.min(m.id.len())].to_string();
+
+        let img = image_map
+            .get(&m.image)
+            .cloned()
+            .unwrap_or_else(|| m.image[..8.min(m.image.len())].to_string());
+
+        let flags = {
+            let mut flags = Vec::new();
+            let brand_str = format!("{:?}", m.brand).to_lowercase();
+            if brand_str == "bhyve" {
+                flags.push('B');
+            }
+            if m.docker.unwrap_or(false) {
+                flags.push('D');
+            }
+            if m.firewall_enabled.unwrap_or(false) {
+                flags.push('F');
+            }
+            if brand_str == "kvm" {
+                flags.push('K');
+            }
+            if m.deletion_protection.unwrap_or(false) {
+                flags.push('P');
+            }
+            if flags.is_empty() {
+                "-".to_string()
+            } else {
+                flags.into_iter().collect()
+            }
+        };
+
+        let age = output::format_age(&m.created);
+
+        AugmentedMachine {
+            machine: m.clone(),
+            shortid,
+            img,
+            flags,
+            age,
+        }
+    }
+}
 
 #[derive(Args, Clone)]
 pub struct ListArgs {
@@ -118,19 +182,41 @@ pub async fn run(args: ListArgs, client: &TypedClient, use_json: bool) -> Result
         }
     }
 
-    let response = req.send().await?;
-    let machines = response.into_inner();
+    // Fetch machines and images in parallel for performance
+    let images_req = client.inner().list_images().account(account).send();
+    let (machines_response, images_response) = tokio::join!(req.send(), images_req);
+
+    let machines = machines_response?.into_inner();
+
+    // Build image UUID -> name@version map
+    let image_map: HashMap<String, String> = images_response
+        .map(|r| {
+            r.into_inner()
+                .into_iter()
+                .map(|img| (img.id.clone(), format!("{}@{}", img.name, img.version)))
+                .collect()
+        })
+        .unwrap_or_default();
 
     if use_json {
-        json::print_json_stream(&machines)?;
+        // Augment machines with computed fields for node-triton compatibility
+        let augmented: Vec<AugmentedMachine> = machines
+            .iter()
+            .map(|m| AugmentedMachine::from_machine(m, &image_map))
+            .collect();
+        json::print_json_stream(&augmented)?;
     } else {
-        print_machines_table(&machines, &args);
+        print_machines_table(&machines, &args, &image_map);
     }
 
     Ok(())
 }
 
-fn print_machines_table(machines: &[Machine], args: &ListArgs) {
+fn print_machines_table(
+    machines: &[Machine],
+    args: &ListArgs,
+    image_map: &HashMap<String, String>,
+) {
     // Handle --short: just print IDs
     if args.short {
         for m in machines {
@@ -170,7 +256,10 @@ fn print_machines_table(machines: &[Machine], args: &ListArgs) {
     };
 
     for m in machines {
-        let row: Vec<String> = columns.iter().map(|col| get_field_value(m, col)).collect();
+        let row: Vec<String> = columns
+            .iter()
+            .map(|col| get_field_value(m, col, image_map))
+            .collect();
         let row_refs: Vec<&str> = row.iter().map(|s| s.as_str()).collect();
         tbl.add_row(row_refs);
     }
@@ -179,13 +268,19 @@ fn print_machines_table(machines: &[Machine], args: &ListArgs) {
 }
 
 /// Get a field value from a Machine by field name
-fn get_field_value(m: &Machine, field: &str) -> String {
+fn get_field_value(m: &Machine, field: &str, image_map: &HashMap<String, String>) -> String {
     match field.to_lowercase().as_str() {
         "id" => m.id.clone(),
         "shortid" => m.id[..8.min(m.id.len())].to_string(),
         "name" => m.name.clone(),
         "image" => m.image.clone(),
-        "img" => m.image[..8.min(m.image.len())].to_string(),
+        "img" => {
+            // Look up image name@version from map, fall back to short UUID
+            image_map
+                .get(&m.image)
+                .cloned()
+                .unwrap_or_else(|| m.image[..8.min(m.image.len())].to_string())
+        }
         "state" => format!("{:?}", m.state).to_lowercase(),
         "brand" => format!("{:?}", m.brand).to_lowercase(),
         "package" => m.package.clone(),

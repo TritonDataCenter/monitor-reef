@@ -10266,9 +10266,9 @@
             "description": "Public image (API version >= 7.1.0)",
             "type": "boolean"
           },
-          "publishedAt": {
+          "published_at": {
             "nullable": true,
-            "description": "Published timestamp",
+            "description": "Published timestamp Note: This field uses snake_case in the API response, not camelCase",
             "type": "string"
           },
           "requirements": {
@@ -10936,9 +10936,14 @@
         ]
       },
       "Network": {
-        "description": "Network information",
+        "description": "Network information\n\nNote: CloudAPI returns snake_case for this object, so we use snake_case to match the API response format for CLI compatibility with node-triton.",
         "type": "object",
         "properties": {
+          "description": {
+            "nullable": true,
+            "description": "Description",
+            "type": "string"
+          },
           "fabric": {
             "nullable": true,
             "description": "Fabric network",
@@ -10954,7 +10959,7 @@
             "description": "Network UUID",
             "type": "string"
           },
-          "internetNat": {
+          "internet_nat": {
             "nullable": true,
             "description": "Internet NAT",
             "type": "boolean"
@@ -10968,12 +10973,12 @@
             "description": "Netmask",
             "type": "string"
           },
-          "provisionEndIp": {
+          "provision_end_ip": {
             "nullable": true,
             "description": "Provision end IP",
             "type": "string"
           },
-          "provisionStartIp": {
+          "provision_start_ip": {
             "nullable": true,
             "description": "Provision start IP",
             "type": "string"
@@ -11008,9 +11013,17 @@
             "description": "Subnet",
             "type": "string"
           },
-          "vlanId": {
+          "suffixes": {
             "nullable": true,
-            "description": "VLAN ID",
+            "description": "DNS suffixes for CNS",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "vlan_id": {
+            "nullable": true,
+            "description": "VLAN ID Note: This field uses snake_case in the API response, not camelCase",
             "type": "integer",
             "format": "uint16",
             "minimum": 0

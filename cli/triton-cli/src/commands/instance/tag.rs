@@ -17,7 +17,7 @@ use serde_json::{Map, Value};
 #[derive(Subcommand, Clone)]
 pub enum TagCommand {
     /// List tags on an instance
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List(TagListArgs),
 
     /// Get a tag value
@@ -27,7 +27,7 @@ pub enum TagCommand {
     Set(TagSetArgs),
 
     /// Delete tag(s) from an instance
-    #[command(alias = "rm")]
+    #[command(visible_alias = "rm")]
     Delete(TagDeleteArgs),
 
     /// Replace all tags on an instance

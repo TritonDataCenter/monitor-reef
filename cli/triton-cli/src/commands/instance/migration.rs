@@ -17,17 +17,17 @@ pub enum MigrationCommand {
     /// Get the current migration status of an instance
     Get(MigrationGetArgs),
     /// List migrations (alias for get)
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List(MigrationGetArgs),
     /// Estimate migration for an instance
     Estimate(MigrationEstimateArgs),
     /// Start/begin migration of an instance
-    #[command(alias = "start")]
+    #[command(visible_alias = "start")]
     Begin(MigrationBeginArgs),
     /// Sync migration data
     Sync(MigrationSyncArgs),
     /// Switch to migrated instance (finalize)
-    #[command(alias = "finalize")]
+    #[command(visible_alias = "finalize")]
     Switch(MigrationSwitchArgs),
     /// Wait for a migration to complete
     Wait(MigrationWaitArgs),

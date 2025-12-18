@@ -62,8 +62,10 @@ pub struct NetworkIpPath {
 }
 
 /// Network information
+///
+/// Note: CloudAPI returns snake_case for this object, so we use snake_case
+/// to match the API response format for CLI compatibility with node-triton.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct Network {
     /// Network UUID
     pub id: Uuid,
@@ -74,6 +76,9 @@ pub struct Network {
     /// Fabric network
     #[serde(default)]
     pub fabric: Option<bool>,
+    /// Description
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     /// Gateway
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gateway: Option<String>,
@@ -93,8 +98,12 @@ pub struct Network {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub netmask: Option<String>,
     /// VLAN ID
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Note: This field uses snake_case in the API response, not camelCase
+    #[serde(default, skip_serializing_if = "Option::is_none", rename = "vlan_id")]
     pub vlan_id: Option<u16>,
+    /// DNS suffixes for CNS
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub suffixes: Option<Vec<String>>,
     /// Resolvers
     #[serde(default)]
     pub resolvers: Option<Vec<String>>,

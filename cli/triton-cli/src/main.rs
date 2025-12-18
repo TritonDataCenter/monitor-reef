@@ -21,10 +21,19 @@ use commands::{
 };
 use config::profile::{Config, Profile};
 
+/// Custom version string matching node-triton format
+fn version_string() -> &'static str {
+    concat!(
+        "Triton CLI ",
+        env!("CARGO_PKG_VERSION"),
+        "\nhttps://github.com/TritonDataCenter/triton-rust-monorepo"
+    )
+}
+
 #[derive(Parser)]
 #[command(
     name = "triton",
-    version,
+    version = version_string(),
     about = "Triton cloud management CLI",
     long_about = "User-friendly command-line interface for Triton CloudAPI"
 )]

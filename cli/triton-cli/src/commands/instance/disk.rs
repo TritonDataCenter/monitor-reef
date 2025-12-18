@@ -16,7 +16,7 @@ use crate::output::{json, table};
 #[derive(Subcommand, Clone)]
 pub enum DiskCommand {
     /// List disks on an instance
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List(DiskListArgs),
 
     /// Get disk details
@@ -29,7 +29,7 @@ pub enum DiskCommand {
     Resize(DiskResizeArgs),
 
     /// Delete a disk
-    #[command(alias = "rm")]
+    #[command(visible_alias = "rm")]
     Delete(DiskDeleteArgs),
 }
 

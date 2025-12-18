@@ -19,7 +19,7 @@ use super::editor;
 #[derive(Subcommand, Clone)]
 pub enum RoleSubcommand {
     /// List RBAC roles
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List,
     /// Get role details
     Get(RoleGetArgs),
@@ -28,7 +28,7 @@ pub enum RoleSubcommand {
     /// Update role
     Update(RoleUpdateArgs),
     /// Delete role(s)
-    #[command(alias = "rm")]
+    #[command(visible_alias = "rm")]
     Delete(RoleDeleteArgs),
 }
 

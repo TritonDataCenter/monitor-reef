@@ -54,13 +54,13 @@ pub enum RbacCommand {
     /// Manage SSH keys for a sub-user (show/add/delete)
     Key(#[command(flatten)] RbacKeyCommand),
     /// Add SSH key to a sub-user (deprecated: use 'key -a' instead)
-    #[command(alias = "add-key", hide = true)]
+    #[command(visible_alias = "add-key", hide = true)]
     KeyAdd(UserKeyAddArgs),
     /// Delete SSH key from a sub-user (deprecated: use 'key -d' instead)
-    #[command(alias = "delete-key", alias = "rm-key", hide = true)]
+    #[command(visible_alias = "delete-key", visible_alias = "rm-key", hide = true)]
     KeyDelete(UserKeyDeleteArgs),
     /// Manage role tags on resources
-    #[command(alias = "role-tag")]
+    #[command(visible_alias = "role-tag")]
     RoleTags {
         #[command(subcommand)]
         command: RoleTagsCommand,

@@ -30,7 +30,7 @@ pub struct ProfileListArgs {
 #[derive(Subcommand, Clone)]
 pub enum ProfileCommand {
     /// List all profiles
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List(ProfileListArgs),
 
     /// Get current profile details
@@ -79,7 +79,7 @@ pub enum ProfileCommand {
     },
 
     /// Delete a profile
-    #[command(alias = "rm")]
+    #[command(visible_alias = "rm")]
     Delete {
         /// Profile name(s)
         names: Vec<String>,

@@ -19,7 +19,7 @@ use super::editor;
 #[derive(Subcommand, Clone)]
 pub enum PolicySubcommand {
     /// List RBAC policies
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List,
     /// Get policy details
     Get(PolicyGetArgs),
@@ -28,7 +28,7 @@ pub enum PolicySubcommand {
     /// Update policy
     Update(PolicyUpdateArgs),
     /// Delete policy(s)
-    #[command(alias = "rm")]
+    #[command(visible_alias = "rm")]
     Delete(PolicyDeleteArgs),
 }
 
