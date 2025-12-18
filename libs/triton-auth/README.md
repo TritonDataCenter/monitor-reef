@@ -104,9 +104,9 @@ Tests are organized to mirror the original node-smartdc-auth test structure:
 | `signers.test.js` | `tests/signers_test.rs` | 10 | Signature generation, request signing |
 | `fs-keys.test.js` | `tests/fs_keys_test.rs` | 14 | File loading, fingerprints, formats |
 | `agent-keys.test.js` | `tests/agent_keys_test.rs` | 8 | SSH agent integration |
-| (unit tests) | `src/*.rs` | 17 | Internal module tests |
+| (unit tests) | `src/*.rs` | 31 | Internal module tests |
 
-**Total: 49 tests**
+**Total: 63 tests**
 
 ### Test Vector Compatibility
 
@@ -217,6 +217,44 @@ let config = AuthConfig::new(
 let (date_header, auth_header) = sign_request(&config, "GET", "/myaccount/machines").await?;
 ```
 
+### TLS Certificate Generation (Docker/CMON)
+
+Generate client TLS certificates for authenticating with Triton Docker and CMON services:
+
+```rust
+use triton_auth::{CertGenerator, CertPurpose, DEFAULT_CERT_LIFETIME_DAYS};
+
+// Create generator using SSH key from agent
+let generator = CertGenerator::new("aa:bb:cc:...")?;
+
+// Generate Docker client certificate
+let cert = generator.generate(
+    "myaccount",
+    CertPurpose::Docker,
+    DEFAULT_CERT_LIFETIME_DAYS,  // 10 years
+)?;
+
+// Use the generated certificate and key
+println!("Certificate:\n{}", cert.cert_pem);
+println!("Private Key:\n{}", cert.key_pem);
+
+// For CMON, use CertPurpose::Cmon instead
+let cmon_cert = generator.generate("myaccount", CertPurpose::Cmon, 365)?;
+```
+
+**Certificate Properties:**
+- Subject: `CN=<account_name>`
+- Issuer: `CN=<md5_fingerprint_base64>`
+- Key: ECDSA P-256 (generated per certificate)
+- Extended Key Usage: `clientAuth` + custom Joyent OID
+
+**SSH Key Requirements:**
+| Key Type | Supported | Notes |
+|----------|-----------|-------|
+| RSA | ✅ | SHA-256 signatures |
+| ECDSA | ✅ | All curves |
+| Ed25519 | ❌ | Cannot sign X.509 certificates |
+
 ## Converting Encrypted Keys
 
 If you have an encrypted PKCS#1 key (`Proc-Type: 4,ENCRYPTED`), convert it to OpenSSH format:
@@ -238,6 +276,8 @@ ssh-keygen -t rsa -o -f ~/.ssh/id_rsa_new
 3. **P-521 ECDSA from SEC1**: Only P-256 and P-384 are supported for SEC1 format. P-521 requires OpenSSH format.
 
 4. **SHA256 fingerprints**: While SHA256 fingerprints can be parsed, MD5 is used for CloudAPI compatibility.
+
+5. **Ed25519 for certificate generation**: Ed25519 keys cannot be used to generate TLS certificates for Docker/CMON. The SSH agent protocol does not support Ed25519 signatures for X.509 certificate signing. Use RSA or ECDSA keys instead.
 
 ## Security Notes
 
