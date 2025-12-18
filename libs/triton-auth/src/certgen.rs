@@ -28,7 +28,6 @@ use crate::error::AuthError;
 use crate::ssh_agent::{SshAgentClient, SshIdentity};
 
 use der::asn1::ObjectIdentifier;
-use rand::rngs::OsRng;
 use rcgen::{
     CertificateParams, CustomExtension, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa,
     KeyPair, KeyUsagePurpose, SerialNumber,
@@ -185,7 +184,8 @@ impl CertGenerator {
 
         // Set random serial number
         let mut serial = [0u8; 16];
-        rand::RngCore::fill_bytes(&mut OsRng, &mut serial);
+        getrandom::fill(&mut serial)
+            .map_err(|e| AuthError::SigningError(format!("Failed to generate random serial: {}", e)))?;
         params.serial_number = Some(SerialNumber::from_slice(&serial));
 
         // Not a CA
