@@ -171,6 +171,10 @@ triton-test-all: | $(CARGO_EXEC) ## Run all triton-cli tests (offline + API)
 	fi
 	$(CARGO) test -p triton-cli -- --include-ignored
 
+triton-test-file: | $(CARGO_EXEC) ## Run specific triton-cli test file (usage: make triton-test-file TEST=cli_vlans)
+	@if [ -z "$(TEST)" ]; then echo "Usage: make triton-test-file TEST=cli_vlans"; exit 1; fi
+	$(CARGO) test -p triton-cli --test $(TEST)
+
 # OpenAPI management commands (using dropshot-api-manager)
 openapi-generate: | $(CARGO_EXEC) ## Generate OpenAPI specs from API traits
 	@echo "Generating OpenAPI specs using dropshot-api-manager..."

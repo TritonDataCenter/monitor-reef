@@ -13,13 +13,23 @@ use cloudapi_client::TypedClient;
 #[derive(Args, Clone)]
 pub struct EnableProtectionArgs {
     /// Instance ID(s) or name(s)
+    #[arg(required = true)]
     pub instances: Vec<String>,
+
+    /// Wait for operation to complete (default: operation is synchronous)
+    #[arg(short = 'w', long)]
+    pub wait: bool,
 }
 
 #[derive(Args, Clone)]
 pub struct DisableProtectionArgs {
     /// Instance ID(s) or name(s)
+    #[arg(required = true)]
     pub instances: Vec<String>,
+
+    /// Wait for operation to complete (default: operation is synchronous)
+    #[arg(short = 'w', long)]
+    pub wait: bool,
 }
 
 pub async fn enable(args: EnableProtectionArgs, client: &TypedClient) -> Result<()> {
@@ -32,9 +42,10 @@ pub async fn enable(args: EnableProtectionArgs, client: &TypedClient) -> Result<
             .enable_deletion_protection(account, &machine_id.parse()?, None)
             .await?;
 
+        // Use full UUID with quotes to match node-triton output format
         println!(
-            "Enabled deletion protection for instance {}",
-            &machine_id[..8]
+            "Enabled deletion protection for instance \"{}\"",
+            machine_id
         );
     }
 
@@ -51,9 +62,10 @@ pub async fn disable(args: DisableProtectionArgs, client: &TypedClient) -> Resul
             .disable_deletion_protection(account, &machine_id.parse()?, None)
             .await?;
 
+        // Use full UUID with quotes to match node-triton output format
         println!(
-            "Disabled deletion protection for instance {}",
-            &machine_id[..8]
+            "Disabled deletion protection for instance \"{}\"",
+            machine_id
         );
     }
 

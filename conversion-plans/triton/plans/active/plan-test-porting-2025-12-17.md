@@ -40,9 +40,12 @@ Copyright 2025 Edgecast Cloud LLC.
 | Phase 4.4: Fwrule Write Tests | **COMPLETE** | 1 API test (ignored) |
 | Phase 5.1: NIC Tests | **COMPLETE** | 12 offline tests + 1 API test (ignored) |
 | Phase 5.2: Manage Workflow Tests | **COMPLETE** | 16 offline tests + 3 API tests (ignored) |
-| Phase 5.3: More Advanced Tests | Not Started | P3 priority |
+| Phase 5.3: VLAN Tests | **COMPLETE** | 23 offline tests + 9 API tests (ignored) |
+| Phase 5.4: IP Tests | **COMPLETE** | 15 offline tests + 6 API tests (ignored) |
+| Phase 5.5: Deletion Protection Tests | **COMPLETE** | 15 offline tests + 2 API tests (ignored) |
+| Phase 5.6: Migration Tests | **COMPLETE** | 26 offline tests + 5 API tests (ignored) |
 
-**Total Tests: 275+ offline passing, 50+ API tests (ignored by default)**
+**Total Tests: 354+ offline passing, 72+ API tests (ignored by default)**
 
 ## Current Session Progress (2025-12-17)
 
@@ -150,6 +153,64 @@ All API integration tests now pass:
 
 **Helper Functions Added**:
 - `get_resize_test_package()` - finds a different package for resize tests
+
+#### 5.3 VLAN Tests (`cli/triton-cli/tests/cli_vlans.rs`)
+
+**VLAN Command Changes**:
+1. Changed `vlan get`, `vlan delete`, `vlan update`, `vlan networks` to accept both numeric ID and name
+2. Added `resolve_vlan()` function for name-to-ID resolution
+3. Changed `vlan list` JSON output to NDJSON format (one JSON per line)
+4. Changed `vlan create` to only output JSON when `-j` flag is used
+5. Added `required = true` to `vlan delete` args to require at least one VLAN
+
+**Tests Added** (23 offline, 9 API):
+- Help tests for list, get, create, delete, update, networks commands
+- Alias tests for ls, rm
+- No-args error tests for get, create, delete, networks
+- API tests for list (table and JSON), get by ID/name, networks
+- Write tests for create/delete workflow, delete by name
+
+#### 5.4 IP Tests (`cli/triton-cli/tests/cli_ips.rs`)
+
+**Tests Added** (15 offline, 6 API):
+- Help tests for network ip list, get, update commands
+- Alias tests for ls, net ip
+- No-args error tests for list, get
+- API tests for list (table and JSON), get by ID/shortid/name
+
+#### 5.5 Deletion Protection Tests (`cli/triton-cli/tests/cli_deletion_protection.rs`)
+
+**Deletion Protection Command Changes**:
+1. Changed output format to use quotes around instance ID (matching node-triton)
+2. Added `-w`/`--wait` flag to enable/disable commands
+3. Added `required = true` to instances args to require at least one instance
+
+**Tests Added** (15 offline, 2 API):
+- Help tests for enable-deletion-protection, disable-deletion-protection
+- Alias tests for inst enable/disable
+- No-args error tests
+- API workflow test (create with protection, verify, try delete, disable, enable)
+- Test create instance with --deletion-protection flag
+
+#### 5.6 Migration Tests (`cli/triton-cli/tests/cli_migrations.rs`)
+
+**Migration Command Changes**:
+1. Renamed `Start` to `Begin` (with `start` alias for backwards compat)
+2. Renamed `Finalize` to `Switch` (with `finalize` alias)
+3. Added `Sync` command for migration sync action
+4. Added `List` command (alias for get)
+5. Changed output messages to match node-triton format: "Done - <action> finished"
+6. Added `wait_for_action()` helper for waiting on migration actions
+7. Added `-w`/`--wait` flag to all action commands (begin, sync, switch, abort)
+
+**Tests Added** (26 offline, 5 API):
+- Help tests for get, list, begin, sync, switch, abort, wait, estimate commands
+- Alias tests for ls, start, finalize
+- No-args error tests for all commands
+- API tests for get (status/no migration), estimate, begin command
+
+**New Makefile Target Added**:
+- `make triton-test-file TEST=<name>` - Run specific test file
 
 ## Running Tests
 
@@ -536,16 +597,16 @@ New types:
 
 ---
 
-## Phase 5: Advanced Integration Tests (P3 - Nice-to-Have)
+## Phase 5: Advanced Integration Tests (P3 - Nice-to-Have) - COMPLETE
 
-### Tests to Port (if time permits)
+### Tests Ported
 
-- [ ] `cli-manage-workflow.test.js` - Full instance lifecycle
-- [ ] `cli-migrations.test.js` - Instance migrations
-- [ ] `cli-deletion-protection.test.js` - Deletion protection
-- [ ] `cli-nics.test.js` - NIC management
-- [ ] `cli-vlans.test.js` - VLAN management
-- [ ] `cli-ips.test.js` - IP management
+- [x] `cli-manage-workflow.test.js` - Full instance lifecycle
+- [x] `cli-migrations.test.js` - Instance migrations
+- [x] `cli-deletion-protection.test.js` - Deletion protection
+- [x] `cli-nics.test.js` - NIC management
+- [x] `cli-vlans.test.js` - VLAN management
+- [x] `cli-ips.test.js` - IP management
 
 ### Tests to Skip (Special Infrastructure Required)
 
@@ -583,6 +644,13 @@ New types:
 | `cli/triton-cli/tests/cli_keys.rs` | Key tests | DONE |
 | `cli/triton-cli/tests/cli_fwrules.rs` | Firewall rule tests | DONE |
 | `cli/triton-cli/tests/cli_volumes.rs` | Volume tests | DONE |
+| `cli/triton-cli/tests/cli_nics.rs` | NIC tests | DONE |
+| `cli/triton-cli/tests/cli_manage_workflow.rs` | Instance lifecycle tests | DONE |
+| `cli/triton-cli/tests/cli_snapshots.rs` | Snapshot tests | DONE |
+| `cli/triton-cli/tests/cli_vlans.rs` | VLAN tests | DONE |
+| `cli/triton-cli/tests/cli_ips.rs` | Network IP tests | DONE |
+| `cli/triton-cli/tests/cli_deletion_protection.rs` | Deletion protection tests | DONE |
+| `cli/triton-cli/tests/cli_migrations.rs` | Migration tests | DONE |
 
 ## Source Files to Reference
 

@@ -16,14 +16,21 @@ use crate::output::json;
 pub enum MigrationCommand {
     /// Get the current migration status of an instance
     Get(MigrationGetArgs),
+    /// List migrations (alias for get)
+    #[command(alias = "ls")]
+    List(MigrationGetArgs),
     /// Estimate migration for an instance
     Estimate(MigrationEstimateArgs),
-    /// Start migration of an instance
-    Start(MigrationStartArgs),
+    /// Start/begin migration of an instance
+    #[command(alias = "start")]
+    Begin(MigrationBeginArgs),
+    /// Sync migration data
+    Sync(MigrationSyncArgs),
+    /// Switch to migrated instance (finalize)
+    #[command(alias = "finalize")]
+    Switch(MigrationSwitchArgs),
     /// Wait for a migration to complete
     Wait(MigrationWaitArgs),
-    /// Finalize (switch to) a migrated instance
-    Finalize(MigrationFinalizeArgs),
     /// Abort an in-progress migration
     Abort(MigrationAbortArgs),
 }
@@ -41,7 +48,7 @@ pub struct MigrationEstimateArgs {
 }
 
 #[derive(Args, Clone)]
-pub struct MigrationStartArgs {
+pub struct MigrationBeginArgs {
     /// Instance ID or name
     pub instance: String,
 
@@ -49,7 +56,7 @@ pub struct MigrationStartArgs {
     #[arg(short = 'a', long)]
     pub affinity: Option<Vec<String>>,
 
-    /// Wait for migration to complete
+    /// Wait for action to complete
     #[arg(long, short)]
     pub wait: bool,
 
@@ -63,6 +70,34 @@ pub struct MigrationStartArgs {
 }
 
 #[derive(Args, Clone)]
+pub struct MigrationSyncArgs {
+    /// Instance ID or name
+    pub instance: String,
+
+    /// Wait for action to complete
+    #[arg(long, short)]
+    pub wait: bool,
+
+    /// Wait timeout in seconds
+    #[arg(long, default_value = "1800")]
+    pub wait_timeout: u64,
+}
+
+#[derive(Args, Clone)]
+pub struct MigrationSwitchArgs {
+    /// Instance ID or name
+    pub instance: String,
+
+    /// Wait for action to complete
+    #[arg(long, short)]
+    pub wait: bool,
+
+    /// Wait timeout in seconds
+    #[arg(long, default_value = "1800")]
+    pub wait_timeout: u64,
+}
+
+#[derive(Args, Clone)]
 pub struct MigrationWaitArgs {
     /// Instance ID or name
     pub instance: String,
@@ -73,25 +108,28 @@ pub struct MigrationWaitArgs {
 }
 
 #[derive(Args, Clone)]
-pub struct MigrationFinalizeArgs {
-    /// Instance ID or name
-    pub instance: String,
-}
-
-#[derive(Args, Clone)]
 pub struct MigrationAbortArgs {
     /// Instance ID or name
     pub instance: String,
+
+    /// Wait for action to complete
+    #[arg(long, short)]
+    pub wait: bool,
+
+    /// Wait timeout in seconds
+    #[arg(long, default_value = "1800")]
+    pub wait_timeout: u64,
 }
 
 impl MigrationCommand {
     pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
-            Self::Get(args) => get_migration(args, client, use_json).await,
+            Self::Get(args) | Self::List(args) => get_migration(args, client, use_json).await,
             Self::Estimate(args) => estimate_migration(args, client, use_json).await,
-            Self::Start(args) => start_migration(args, client, use_json).await,
+            Self::Begin(args) => begin_migration(args, client, use_json).await,
+            Self::Sync(args) => sync_migration(args, client, use_json).await,
+            Self::Switch(args) => switch_migration(args, client, use_json).await,
             Self::Wait(args) => wait_migration(args, client).await,
-            Self::Finalize(args) => finalize_migration(args, client, use_json).await,
             Self::Abort(args) => abort_migration(args, client, use_json).await,
         }
     }
@@ -165,8 +203,8 @@ async fn estimate_migration(
     Ok(())
 }
 
-async fn start_migration(
-    args: MigrationStartArgs,
+async fn begin_migration(
+    args: MigrationBeginArgs,
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
@@ -189,27 +227,148 @@ async fn start_migration(
 
     let migration = response.into_inner();
 
-    if !args.quiet {
-        println!("Migration started for instance {}", &instance_id[..8]);
-    }
-
     if args.wait {
-        // Reuse the wait_migration logic
-        let wait_args = MigrationWaitArgs {
-            instance: instance_id.clone(),
-            timeout: args.wait_timeout,
-        };
-        wait_migration(wait_args, client).await?;
+        // Wait for the action to complete
+        wait_for_action(&instance_id, "begin", args.wait_timeout, client).await?;
+        // Output node-triton compatible message
+        println!("Done - begin finished");
     } else if !args.quiet {
         if use_json {
             json::print_json(&migration)?;
         } else {
+            println!("Migration started for instance {}", &instance_id[..8]);
             println!("State: {}", migration.state);
             println!("Phase: {}", migration.phase);
         }
     }
 
     Ok(())
+}
+
+async fn sync_migration(
+    args: MigrationSyncArgs,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
+    let account = &client.auth_config().account;
+    let instance_id = super::get::resolve_instance(&args.instance, client).await?;
+
+    let request = cloudapi_client::types::MigrateRequest {
+        action: cloudapi_client::types::MigrationAction::Sync,
+        affinity: None,
+    };
+
+    let response = client
+        .inner()
+        .migrate()
+        .account(account)
+        .machine(&instance_id)
+        .body(request)
+        .send()
+        .await?;
+
+    let migration = response.into_inner();
+
+    if args.wait {
+        wait_for_action(&instance_id, "sync", args.wait_timeout, client).await?;
+        println!("Done - sync finished");
+    } else if use_json {
+        json::print_json(&migration)?;
+    } else {
+        println!("State: {}", migration.state);
+        println!("Phase: {}", migration.phase);
+    }
+
+    Ok(())
+}
+
+async fn switch_migration(
+    args: MigrationSwitchArgs,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
+    let account = &client.auth_config().account;
+    let instance_id = super::get::resolve_instance(&args.instance, client).await?;
+
+    let request = cloudapi_client::types::MigrateRequest {
+        action: cloudapi_client::types::MigrationAction::Switch,
+        affinity: None,
+    };
+
+    let response = client
+        .inner()
+        .migrate()
+        .account(account)
+        .machine(&instance_id)
+        .body(request)
+        .send()
+        .await?;
+
+    let migration = response.into_inner();
+
+    if args.wait {
+        wait_for_action(&instance_id, "switch", args.wait_timeout, client).await?;
+        println!("Done - switch finished");
+    } else if use_json {
+        json::print_json(&migration)?;
+    } else {
+        println!("State: {}", migration.state);
+        println!("Phase: {}", migration.phase);
+    }
+
+    Ok(())
+}
+
+/// Wait for a migration action to complete
+async fn wait_for_action(
+    instance_id: &str,
+    action: &str,
+    timeout_secs: u64,
+    client: &TypedClient,
+) -> Result<()> {
+    let account = &client.auth_config().account;
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(timeout_secs);
+
+    loop {
+        if start.elapsed() > timeout {
+            return Err(anyhow::anyhow!(
+                "Migration {} timed out after {} seconds",
+                action,
+                timeout_secs
+            ));
+        }
+
+        let response = client
+            .inner()
+            .get_migration()
+            .account(account)
+            .machine(instance_id)
+            .send()
+            .await?;
+
+        let migration = response.into_inner();
+
+        match migration.state.as_str() {
+            "successful" | "finished" | "paused" => {
+                // Action completed
+                return Ok(());
+            }
+            "failed" | "aborted" => {
+                return Err(anyhow::anyhow!(
+                    "Migration {}: state={}, phase={}",
+                    action,
+                    migration.state,
+                    migration.phase
+                ));
+            }
+            _ => {
+                // Still in progress
+            }
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
 }
 
 async fn wait_migration(args: MigrationWaitArgs, client: &TypedClient) -> Result<()> {
@@ -267,42 +426,6 @@ async fn wait_migration(args: MigrationWaitArgs, client: &TypedClient) -> Result
     }
 }
 
-async fn finalize_migration(
-    args: MigrationFinalizeArgs,
-    client: &TypedClient,
-    use_json: bool,
-) -> Result<()> {
-    let account = &client.auth_config().account;
-    let instance_id = super::get::resolve_instance(&args.instance, client).await?;
-
-    let request = cloudapi_client::types::MigrateRequest {
-        action: cloudapi_client::types::MigrationAction::Switch,
-        affinity: None,
-    };
-
-    let response = client
-        .inner()
-        .migrate()
-        .account(account)
-        .machine(&instance_id)
-        .body(request)
-        .send()
-        .await?;
-
-    let migration = response.into_inner();
-
-    println!("Migration finalized for instance {}", &instance_id[..8]);
-
-    if use_json {
-        json::print_json(&migration)?;
-    } else {
-        println!("State: {}", migration.state);
-        println!("Phase: {}", migration.phase);
-    }
-
-    Ok(())
-}
-
 async fn abort_migration(
     args: MigrationAbortArgs,
     client: &TypedClient,
@@ -327,11 +450,13 @@ async fn abort_migration(
 
     let migration = response.into_inner();
 
-    println!("Migration aborted for instance {}", &instance_id[..8]);
-
-    if use_json {
+    if args.wait {
+        wait_for_action(&instance_id, "abort", args.wait_timeout, client).await?;
+        println!("Done - abort finished");
+    } else if use_json {
         json::print_json(&migration)?;
     } else {
+        println!("Migration aborted for instance {}", &instance_id[..8]);
         println!("State: {}", migration.state);
         println!("Phase: {}", migration.phase);
     }
