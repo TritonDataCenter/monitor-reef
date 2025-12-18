@@ -40,7 +40,7 @@ fn parse_bool_filter(s: &str) -> Result<bool, String> {
 #[derive(Subcommand, Clone)]
 pub enum NetworkCommand {
     /// List networks
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List(NetworkListArgs),
     /// Get network details
     Get(NetworkGetArgs),
@@ -51,7 +51,7 @@ pub enum NetworkCommand {
     /// Create a fabric network
     Create(NetworkCreateArgs),
     /// Delete a fabric network
-    #[command(alias = "rm")]
+    #[command(visible_alias = "rm")]
     Delete(NetworkDeleteArgs),
     /// Manage network IPs
     Ip {
@@ -63,7 +63,7 @@ pub enum NetworkCommand {
 #[derive(Subcommand, Clone)]
 pub enum NetworkIpCommand {
     /// List IPs in a network
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List(NetworkIpListArgs),
     /// Get IP details
     Get(NetworkIpGetArgs),
@@ -202,7 +202,7 @@ async fn list_networks(args: NetworkListArgs, client: &TypedClient, use_json: bo
     let all_networks = response.into_inner();
 
     // Apply public filter if specified
-    let networks: Vec<_> = if let Some(public_filter) = args.public {
+    let mut networks: Vec<_> = if let Some(public_filter) = args.public {
         all_networks
             .into_iter()
             .filter(|net| net.public == public_filter)
@@ -210,6 +210,15 @@ async fn list_networks(args: NetworkListArgs, client: &TypedClient, use_json: bo
     } else {
         all_networks
     };
+
+    // Sort by public (true first), then by name to match node-triton behavior
+    networks.sort_by(|a, b| {
+        // Public networks come first (reverse bool comparison: true > false)
+        match b.public.cmp(&a.public) {
+            std::cmp::Ordering::Equal => a.name.cmp(&b.name),
+            other => other,
+        }
+    });
 
     if use_json {
         print_json_stream(&networks)?;

@@ -21,14 +21,14 @@ use crate::output::{json, table};
 #[derive(Subcommand, Clone)]
 pub enum ImageCommand {
     /// List images
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List(ImageListArgs),
     /// Get image details
     Get(ImageGetArgs),
     /// Create image from instance
     Create(ImageCreateArgs),
     /// Delete image
-    #[command(alias = "rm")]
+    #[command(visible_alias = "rm")]
     Delete(ImageDeleteArgs),
     /// Clone image to account
     Clone(ImageCloneArgs),
@@ -54,7 +54,7 @@ pub enum ImageCommand {
 #[derive(Subcommand, Clone)]
 pub enum ImageTagCommand {
     /// List tags on an image
-    #[command(alias = "ls")]
+    #[command(visible_alias = "ls")]
     List(ImageTagListArgs),
 
     /// Get a tag value
@@ -64,7 +64,7 @@ pub enum ImageTagCommand {
     Set(ImageTagSetArgs),
 
     /// Delete a tag from an image
-    #[command(alias = "rm")]
+    #[command(visible_alias = "rm")]
     Delete(ImageTagDeleteArgs),
 }
 
@@ -406,21 +406,17 @@ fn print_images_table(images: &[Image], args: &ImageListArgs) {
     }
 
     // Determine columns based on --long or --output
+    // Default columns match node-triton: shortid, name, version, flags, os, type, pubdate
     let columns: Vec<&str> = if let Some(ref output) = args.output {
         output.split(',').map(|s| s.trim()).collect()
     } else if args.long {
         vec![
-            "id",
-            "name",
-            "version",
-            "state",
-            "type",
-            "os",
-            "public",
-            "published",
+            "id", "name", "version", "flags", "os", "type", "public", "pubdate",
         ]
     } else {
-        vec!["shortid", "name", "version", "state", "type", "os"]
+        vec![
+            "shortid", "name", "version", "flags", "os", "type", "pubdate",
+        ]
     };
 
     // Create header (uppercase)
@@ -457,15 +453,40 @@ fn get_image_field_value(img: &Image, field: &str) -> String {
             .as_ref()
             .map(|s| format!("{:?}", s).to_lowercase())
             .unwrap_or_else(|| "-".to_string()),
-        "type" => format!("{:?}", img.type_).to_lowercase(),
+        "type" => format_image_type(&img.type_),
         "os" => img.os.clone(),
         "description" | "desc" => img.description.clone().unwrap_or_else(|| "-".to_string()),
         "public" => img
             .public
             .map(|p| p.to_string())
             .unwrap_or_else(|| "-".to_string()),
+        "flags" => {
+            // Flags: I=incremental (has origin), S=shared (has ACL but not public), P=public
+            // Order matches node-triton: I, S, P
+            let mut flags = String::new();
+            // I = incremental (derived from another image)
+            if img.origin.is_some() {
+                flags.push('I');
+            }
+            // S = shared (has ACL but not public)
+            let is_public = img.public.unwrap_or(false);
+            let has_acl = img.acl.as_ref().map(|a| !a.is_empty()).unwrap_or(false);
+            if has_acl && !is_public {
+                flags.push('S');
+            }
+            // P = public
+            if is_public {
+                flags.push('P');
+            }
+            if flags.is_empty() {
+                "-".to_string()
+            } else {
+                flags
+            }
+        }
         "owner" => img.owner.clone().unwrap_or_else(|| "-".to_string()),
         "published" | "published_at" => format_published(&img.published_at),
+        "pubdate" => format_pubdate(&img.published_at),
         "size" | "image_size" => img
             .image_size
             .map(format_size)
@@ -474,6 +495,32 @@ fn get_image_field_value(img: &Image, field: &str) -> String {
         "eula" => img.eula.clone().unwrap_or_else(|| "-".to_string()),
         "origin" => img.origin.clone().unwrap_or_else(|| "-".to_string()),
         _ => "-".to_string(),
+    }
+}
+
+/// Format image type with hyphen like node-triton (e.g., "lx-dataset", "zone-dataset")
+fn format_image_type(type_: &cloudapi_client::types::ImageType) -> String {
+    match type_ {
+        cloudapi_client::types::ImageType::Zvol => "zvol".to_string(),
+        cloudapi_client::types::ImageType::LxDataset => "lx-dataset".to_string(),
+        cloudapi_client::types::ImageType::ZoneDataset => "zone-dataset".to_string(),
+        cloudapi_client::types::ImageType::Other => "other".to_string(),
+    }
+}
+
+/// Format pubdate as YYYY-MM-DD (matching node-triton)
+fn format_pubdate(published_at: &Option<String>) -> String {
+    match published_at {
+        Some(timestamp) => {
+            // Try to parse as RFC 3339 and extract just the date part
+            if let Ok(dt) = DateTime::parse_from_rfc3339(timestamp) {
+                dt.format("%Y-%m-%d").to_string()
+            } else {
+                // Fall back to returning the raw string truncated to date
+                timestamp.split('T').next().unwrap_or("-").to_string()
+            }
+        }
+        None => "-".to_string(),
     }
 }
 
