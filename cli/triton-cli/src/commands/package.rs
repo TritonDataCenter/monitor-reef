@@ -10,7 +10,7 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 
-use crate::output::{json, table};
+use crate::output::{format_mb, json, table};
 
 #[derive(Subcommand, Clone)]
 pub enum PackageCommand {
@@ -82,10 +82,39 @@ async fn list_packages(args: PackageListArgs, client: &TypedClient, use_json: bo
         })
         .collect();
 
+    // Sort by group (or name prefix), then memory to match node-triton behavior
+    // node-triton's _groupPlus is: group || (name prefix before first '-') || ''
+    let mut packages = packages;
+    packages.sort_by(|a, b| {
+        let group_a = a.group.as_deref().unwrap_or_else(|| {
+            a.name
+                .split('-')
+                .next()
+                .filter(|_| a.name.contains('-'))
+                .unwrap_or("")
+        });
+        let group_b = b.group.as_deref().unwrap_or_else(|| {
+            b.name
+                .split('-')
+                .next()
+                .filter(|_| b.name.contains('-'))
+                .unwrap_or("")
+        });
+        match group_a.cmp(group_b) {
+            std::cmp::Ordering::Equal => a.memory.cmp(&b.memory),
+            other => other,
+        }
+    });
+
     if use_json {
         json::print_json(&packages)?;
     } else {
-        let mut tbl = table::create_table(&["SHORTID", "NAME", "MEMORY", "DISK", "VCPUS"]);
+        // Columns: SHORTID(0), NAME(1), MEMORY(2), SWAP(3), DISK(4), VCPUS(5)
+        // Right-align numeric columns to match node-triton
+        let mut tbl = table::create_table_with_alignment(
+            &["SHORTID", "NAME", "MEMORY", "SWAP", "DISK", "VCPUS"],
+            &[2, 3, 4, 5], // MEMORY, SWAP, DISK, VCPUS
+        );
         for pkg in &packages {
             let vcpus_str = if pkg.vcpus > 0 {
                 pkg.vcpus.to_string()
@@ -95,8 +124,9 @@ async fn list_packages(args: PackageListArgs, client: &TypedClient, use_json: bo
             tbl.add_row(vec![
                 &pkg.id.to_string()[..8],
                 &pkg.name,
-                &format!("{} MB", pkg.memory),
-                &format!("{} MB", pkg.disk),
+                &format_mb(pkg.memory),
+                &format_mb(pkg.swap),
+                &format_mb(pkg.disk),
                 &vcpus_str,
             ]);
         }

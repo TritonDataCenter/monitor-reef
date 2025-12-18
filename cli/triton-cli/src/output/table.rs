@@ -7,7 +7,7 @@
 //! Table output formatting
 
 use clap::Args;
-use comfy_table::{Table, presets::NOTHING};
+use comfy_table::{CellAlignment, ColumnConstraint, Table, presets::NOTHING};
 
 /// Common table formatting options matching node-triton's getCliTableOptions()
 #[derive(Args, Clone, Default, Debug)]
@@ -133,7 +133,37 @@ impl TableBuilder {
 pub fn create_table(headers: &[&str]) -> Table {
     let mut table = Table::new();
     table.load_preset(NOTHING);
+    // Remove default cell padding to match node-triton's tabula output
+    table.set_content_arrangement(comfy_table::ContentArrangement::Disabled);
     table.set_header(headers);
+    table
+}
+
+/// Create a new table with headers and right-aligned columns
+///
+/// `right_aligned` specifies which column indices should be right-aligned
+/// (matching node-triton's behavior for numeric columns)
+pub fn create_table_with_alignment(headers: &[&str], right_aligned: &[usize]) -> Table {
+    let mut table = Table::new();
+    table.load_preset(NOTHING);
+    // Remove default cell padding to match node-triton's tabula output
+    table.set_content_arrangement(comfy_table::ContentArrangement::Disabled);
+    table.set_header(headers);
+
+    // Set padding on all columns
+    for col_idx in 0..headers.len() {
+        if let Some(column) = table.column_mut(col_idx) {
+            column.set_padding((0, 2)); // No left padding, 2 right (for spacing between columns)
+            if right_aligned.contains(&col_idx) {
+                column.set_cell_alignment(CellAlignment::Right);
+            }
+        }
+    }
+    // Last column should have no right padding
+    if let Some(last_col) = table.column_mut(headers.len() - 1) {
+        last_col.set_padding((0, 0));
+    }
+
     table
 }
 
