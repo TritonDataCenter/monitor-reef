@@ -18,10 +18,12 @@ include ./deps/eng/tools/mk/Makefile.targ
 include ./deps/eng/tools/mk/Makefile.rust.defs
 include ./deps/eng/tools/mk/Makefile.rust.targ
 
-.PHONY: help build test clean lint format
+.PHONY: help build build-release test clean lint format audit audit-update
 .PHONY: api-new service-new client-new
 .PHONY: service-build service-test service-run
 .PHONY: client-build client-test
+.PHONY: package-build package-test
+.PHONY: triton-test triton-test-api triton-test-all
 .PHONY: openapi-generate openapi-list openapi-check
 .PHONY: dev-setup workspace-test integration-test
 .PHONY: list
@@ -45,6 +47,9 @@ help: ## Show this help message
 build: | $(CARGO_EXEC) ## Build all APIs, services and clients
 	$(CARGO) build
 
+build-release: | $(CARGO_EXEC) ## Build all APIs, services and clients with --release
+	$(CARGO) build --release
+
 test: | $(CARGO_EXEC) ## Run all tests
 	$(CARGO) test
 
@@ -54,8 +59,17 @@ clean:: | $(CARGO_EXEC) ## Clean build artifacts
 lint: | $(CARGO_EXEC) ## Run clippy linter
 	$(CARGO) clippy $(RUST_CLIPPY_ARGS)
 
+lint-fix: | $(CARGO_EXEC) ## Run clippy linter
+	$(CARGO) clippy --fix --allow-dirty $(RUST_CLIPPY_ARGS)
+
 format: | $(CARGO_EXEC) ## Format all code
 	$(CARGO) fmt
+
+audit: | $(CARGO_EXEC) ## Run security audit on dependencies
+	$(CARGO) audit
+
+audit-update: | $(CARGO_EXEC) ## Update advisory database and run audit
+	$(CARGO) audit --update
 
 workspace-test: | $(CARGO_EXEC) ## Run all workspace tests
 	$(CARGO) test --workspace
@@ -129,6 +143,15 @@ client-build: | $(CARGO_EXEC) ## Build specific client (usage: make client-build
 client-test: | $(CARGO_EXEC) ## Test specific client (usage: make client-test CLIENT=my-service-client)
 	@if [ -z "$(CLIENT)" ]; then echo "Usage: make client-test CLIENT=my-service-client"; exit 1; fi
 	$(CARGO) test -p $(CLIENT)
+
+# Generic package commands (for any crate in the workspace)
+package-build: | $(CARGO_EXEC) ## Build specific package (usage: make package-build PACKAGE=my-package)
+	@if [ -z "$(PACKAGE)" ]; then echo "Usage: make package-build PACKAGE=my-package"; exit 1; fi
+	$(CARGO) build -p $(PACKAGE)
+
+package-test: | $(CARGO_EXEC) ## Test specific package (usage: make package-test PACKAGE=my-package)
+	@if [ -z "$(PACKAGE)" ]; then echo "Usage: make package-test PACKAGE=my-package"; exit 1; fi
+	$(CARGO) test -p $(PACKAGE)
 
 # OpenAPI management commands (using dropshot-api-manager)
 openapi-generate: | $(CARGO_EXEC) ## Generate OpenAPI specs from API traits

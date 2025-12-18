@@ -11,6 +11,7 @@ members = [
     "cli/bugview-cli",
     "clients/internal/bugview-client",
     "clients/internal/jira-client",
+    "libs/triton-auth",
     "openapi-manager",
     "services/bugview-service",
     "services/jira-stub-server",
