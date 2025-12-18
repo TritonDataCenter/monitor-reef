@@ -501,6 +501,7 @@ async fn main() -> Result<()> {
         Commands::Vlans => {
             let client = cli.build_client()?;
             commands::vlan::VlanCommand::List(commands::vlan::VlanListArgs {
+                filters: vec![],
                 table: Default::default(),
             })
             .run(&client, cli.json)

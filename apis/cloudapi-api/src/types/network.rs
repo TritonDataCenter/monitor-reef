@@ -108,7 +108,6 @@ pub struct Network {
 
 /// Fabric VLAN information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct FabricVlan {
     /// VLAN ID
     pub vlan_id: u16,
@@ -120,8 +119,7 @@ pub struct FabricVlan {
 }
 
 /// Request to create fabric VLAN
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CreateFabricVlanRequest {
     /// VLAN ID
     pub vlan_id: u16,
@@ -133,8 +131,7 @@ pub struct CreateFabricVlanRequest {
 }
 
 /// Request to update fabric VLAN
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct UpdateFabricVlanRequest {
     /// VLAN name
     #[serde(default)]

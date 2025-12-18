@@ -535,15 +535,14 @@ async fn get_network_ip(
 
     let ip = response.into_inner();
 
+    // Always output JSON for 'get' commands (matching node-triton behavior)
+    // -j flag controls compact vs pretty output
     if use_json {
-        json::print_json(&ip)?;
+        // Compact JSON (one line)
+        println!("{}", serde_json::to_string(&ip)?);
     } else {
-        println!("IP:       {}", ip.ip);
-        println!("Reserved: {}", ip.reserved);
-        println!("Managed:  {}", ip.managed.unwrap_or(false));
-        if let Some(owner) = &ip.owner_uuid {
-            println!("Owner:    {}", owner);
-        }
+        // Pretty JSON (indented)
+        json::print_json(&ip)?;
     }
 
     Ok(())

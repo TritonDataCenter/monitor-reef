@@ -17,6 +17,10 @@ use crate::output::table::{TableBuilder, TableFormatArgs};
 
 #[derive(Args, Clone)]
 pub struct VlanListArgs {
+    /// Filters in FIELD=VALUE format (e.g., vlan_id=2, name=myvlan)
+    #[arg(value_name = "FILTER")]
+    pub filters: Vec<String>,
+
     #[command(flatten)]
     pub table: TableFormatArgs,
 }
@@ -41,8 +45,8 @@ pub enum VlanCommand {
 
 #[derive(Args, Clone)]
 pub struct VlanGetArgs {
-    /// VLAN ID
-    pub vlan_id: u16,
+    /// VLAN ID or name
+    pub vlan: String,
 }
 
 #[derive(Args, Clone)]
@@ -61,8 +65,9 @@ pub struct VlanCreateArgs {
 
 #[derive(Args, Clone)]
 pub struct VlanDeleteArgs {
-    /// VLAN ID(s)
-    pub vlan_ids: Vec<u16>,
+    /// VLAN ID(s) or name(s)
+    #[arg(required = true)]
+    pub vlans: Vec<String>,
     /// Skip confirmation
     #[arg(long, short)]
     pub force: bool,
@@ -70,8 +75,8 @@ pub struct VlanDeleteArgs {
 
 #[derive(Args, Clone)]
 pub struct VlanUpdateArgs {
-    /// VLAN ID
-    pub vlan_id: u16,
+    /// VLAN ID or name
+    pub vlan: String,
     /// New name
     #[arg(long)]
     pub name: Option<String>,
@@ -85,8 +90,8 @@ pub struct VlanUpdateArgs {
 
 #[derive(Args, Clone)]
 pub struct VlanNetworksArgs {
-    /// VLAN ID
-    pub vlan_id: u16,
+    /// VLAN ID or name
+    pub vlan: String,
 
     #[command(flatten)]
     pub table: TableFormatArgs,
@@ -116,8 +121,43 @@ async fn list_vlans(args: VlanListArgs, client: &TypedClient, use_json: bool) ->
 
     let vlans = response.into_inner();
 
+    // Apply client-side filters (like node-triton)
+    let vlans: Vec<_> = vlans
+        .into_iter()
+        .filter(|vlan| {
+            for filter in &args.filters {
+                if let Some((field, value)) = filter.split_once('=') {
+                    match field {
+                        "vlan_id" => {
+                            if let Ok(id) = value.parse::<u16>()
+                                && vlan.vlan_id != id {
+                                    return false;
+                                }
+                        }
+                        "name" => {
+                            if vlan.name != value {
+                                return false;
+                            }
+                        }
+                        "description" => {
+                            let desc = vlan.description.as_deref().unwrap_or("");
+                            if desc != value {
+                                return false;
+                            }
+                        }
+                        _ => {} // Ignore unknown fields
+                    }
+                }
+            }
+            true
+        })
+        .collect();
+
     if use_json {
-        json::print_json(&vlans)?;
+        // Output NDJSON format (one JSON object per line) like node-triton
+        for vlan in &vlans {
+            println!("{}", serde_json::to_string(&vlan)?);
+        }
     } else {
         let mut tbl = TableBuilder::new(&["VLAN_ID", "NAME", "DESCRIPTION"]);
         for vlan in &vlans {
@@ -133,29 +173,51 @@ async fn list_vlans(args: VlanListArgs, client: &TypedClient, use_json: bool) ->
     Ok(())
 }
 
-async fn get_vlan(args: VlanGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+async fn get_vlan(args: VlanGetArgs, client: &TypedClient, _use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
+    let vlan_id = resolve_vlan(&args.vlan, client).await?;
+
     let response = client
         .inner()
         .get_fabric_vlan()
         .account(account)
-        .vlan_id(args.vlan_id)
+        .vlan_id(vlan_id)
         .send()
         .await?;
 
     let vlan = response.into_inner();
 
-    if use_json {
-        json::print_json(&vlan)?;
-    } else {
-        println!("VLAN ID:     {}", vlan.vlan_id);
-        println!("Name:        {}", vlan.name);
-        if let Some(desc) = &vlan.description {
-            println!("Description: {}", desc);
+    // Always output JSON for 'get' commands (matching node-triton behavior)
+    json::print_json(&vlan)?;
+
+    Ok(())
+}
+
+/// Resolve VLAN name or ID to numeric VLAN ID
+async fn resolve_vlan(id_or_name: &str, client: &TypedClient) -> Result<u16> {
+    // Try parsing as numeric ID first
+    if let Ok(vlan_id) = id_or_name.parse::<u16>() {
+        return Ok(vlan_id);
+    }
+
+    // Otherwise, look up by name
+    let account = &client.auth_config().account;
+    let response = client
+        .inner()
+        .list_fabric_vlans()
+        .account(account)
+        .send()
+        .await?;
+
+    let vlans = response.into_inner();
+
+    for vlan in &vlans {
+        if vlan.name == id_or_name {
+            return Ok(vlan.vlan_id);
         }
     }
 
-    Ok(())
+    Err(anyhow::anyhow!("VLAN not found: {}", id_or_name))
 }
 
 async fn create_vlan(args: VlanCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
@@ -176,10 +238,11 @@ async fn create_vlan(args: VlanCreateArgs, client: &TypedClient, use_json: bool)
         .await?;
     let vlan = response.into_inner();
 
-    println!("Created VLAN {} ({})", vlan.vlan_id, vlan.name);
-
     if use_json {
+        // Output JSON only (node-triton compat)
         json::print_json(&vlan)?;
+    } else {
+        println!("Created VLAN {} ({})", vlan.vlan_id, vlan.name);
     }
 
     Ok(())
@@ -188,7 +251,9 @@ async fn create_vlan(args: VlanCreateArgs, client: &TypedClient, use_json: bool)
 async fn delete_vlans(args: VlanDeleteArgs, client: &TypedClient) -> Result<()> {
     let account = &client.auth_config().account;
 
-    for vlan_id in &args.vlan_ids {
+    for vlan in &args.vlans {
+        let vlan_id = resolve_vlan(vlan, client).await?;
+
         if !args.force {
             use dialoguer::Confirm;
             if !Confirm::new()
@@ -204,7 +269,7 @@ async fn delete_vlans(args: VlanDeleteArgs, client: &TypedClient) -> Result<()> 
             .inner()
             .delete_fabric_vlan()
             .account(account)
-            .vlan_id(*vlan_id)
+            .vlan_id(vlan_id)
             .send()
             .await?;
 
@@ -216,6 +281,7 @@ async fn delete_vlans(args: VlanDeleteArgs, client: &TypedClient) -> Result<()> 
 
 async fn update_vlan(args: VlanUpdateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
+    let vlan_id = resolve_vlan(&args.vlan, client).await?;
 
     // Parse update data from file or command line
     let (name, description) = if let Some(file_path) = &args.file {
@@ -249,7 +315,7 @@ async fn update_vlan(args: VlanUpdateArgs, client: &TypedClient, use_json: bool)
         .inner()
         .update_fabric_vlan()
         .account(account)
-        .vlan_id(args.vlan_id)
+        .vlan_id(vlan_id)
         .body(request)
         .send()
         .await?;
@@ -270,18 +336,23 @@ async fn list_vlan_networks(
     use_json: bool,
 ) -> Result<()> {
     let account = &client.auth_config().account;
+    let vlan_id = resolve_vlan(&args.vlan, client).await?;
+
     let response = client
         .inner()
         .list_fabric_networks()
         .account(account)
-        .vlan_id(args.vlan_id)
+        .vlan_id(vlan_id)
         .send()
         .await?;
 
     let networks = response.into_inner();
 
     if use_json {
-        json::print_json(&networks)?;
+        // Output NDJSON format (one JSON object per line) like node-triton
+        for net in &networks {
+            println!("{}", serde_json::to_string(&net)?);
+        }
     } else {
         let mut tbl = TableBuilder::new(&["SHORTID", "NAME", "SUBNET", "GATEWAY"])
             .with_long_headers(&["ID", "PUBLIC"]);

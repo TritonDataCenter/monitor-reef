@@ -9585,7 +9585,7 @@
             "description": "VLAN name",
             "type": "string"
           },
-          "vlanId": {
+          "vlan_id": {
             "description": "VLAN ID",
             "type": "integer",
             "format": "uint16",
@@ -9594,7 +9594,7 @@
         },
         "required": [
           "name",
-          "vlanId"
+          "vlan_id"
         ]
       },
       "CreateFirewallRuleRequest": {
@@ -10119,7 +10119,7 @@
             "description": "VLAN name",
             "type": "string"
           },
-          "vlanId": {
+          "vlan_id": {
             "description": "VLAN ID",
             "type": "integer",
             "format": "uint16",
@@ -10128,7 +10128,7 @@
         },
         "required": [
           "name",
-          "vlanId"
+          "vlan_id"
         ]
       },
       "FirewallRule": {
