@@ -83,6 +83,7 @@ pub fn swagger_ui_html(spec_url: &str, title: &str) -> String {
 <body>
   <div id="swagger-ui"></div>
   <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@{version}/swagger-ui-bundle.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@{version}/swagger-ui-standalone-preset.js"></script>
   <script>
     window.onload = () => {{
       SwaggerUIBundle({{
@@ -90,7 +91,7 @@ pub fn swagger_ui_html(spec_url: &str, title: &str) -> String {
         dom_id: '#swagger-ui',
         presets: [
           SwaggerUIBundle.presets.apis,
-          SwaggerUIBundle.SwaggerUIStandalonePreset
+          SwaggerUIStandalonePreset
         ],
         layout: "StandaloneLayout"
       }});
@@ -126,6 +127,7 @@ mod tests {
         assert!(html.contains("cdn.jsdelivr.net/npm/swagger-ui-dist@"));
         assert!(html.contains("swagger-ui.css"));
         assert!(html.contains("swagger-ui-bundle.js"));
+        assert!(html.contains("swagger-ui-standalone-preset.js"));
     }
 
     #[test]
