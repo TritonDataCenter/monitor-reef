@@ -11,7 +11,7 @@ members = [
     "cli/bugview-cli",
     "clients/internal/bugview-client",
     "clients/internal/jira-client",
-    "libs/swagger-ui-dropshot",
+    "libs/openapi-viewer",
     "openapi-manager",
     "services/bugview-service",
     "services/jira-stub-server",

@@ -25,7 +25,7 @@ schemars = { workspace = true }
 bugview-api = { path = "../../apis/bugview-api" }
 jira-api = { path = "../../apis/jira-api" }
 jira-client = { path = "../../clients/internal/jira-client" }
-swagger-ui-dropshot = { path = "../../libs/swagger-ui-dropshot" }
+openapi-viewer = { path = "../../libs/openapi-viewer" }
 reqwest = { workspace = true, features = ["json"] }
 askama = "0.12"
 http = "1.1"

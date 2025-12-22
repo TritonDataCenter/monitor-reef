@@ -274,12 +274,12 @@ dependencies = [
  "jira-api",
  "jira-client",
  "jira-stub-server",
+ "openapi-viewer",
  "rand",
  "reqwest",
  "schemars",
  "serde",
  "serde_json",
- "swagger-ui-dropshot",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -1452,6 +1452,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "openapi-viewer"
+version = "0.1.0"
+
+[[package]]
 name = "openapiv3"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2274,10 +2278,6 @@ checksum = "c64fc7232dd8d2e4ac5ce4ef302b1d81e0b80d055b9d77c7c4f51f6aa4c867d6"
 dependencies = [
  "is_ci",
 ]
-
-[[package]]
-name = "swagger-ui-dropshot"
-version = "0.1.0"
 
 [[package]]
 name = "syn"

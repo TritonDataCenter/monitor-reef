@@ -5,10 +5,10 @@
 # Copyright 2025 Edgecast Cloud LLC.
 
 [package]
-name = "swagger-ui-dropshot"
+name = "openapi-viewer"
 version = "0.1.0"
 edition.workspace = true
 license = "MPL-2.0"
-description = "Swagger UI helper for Dropshot-based services"
+description = "OpenAPI documentation viewers (Swagger UI, Redoc, RapiDoc) for Dropshot-based services"
 
 [dependencies]

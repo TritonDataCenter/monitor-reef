@@ -281,4 +281,28 @@ pub trait BugviewApi {
     async fn get_swagger_ui(
         rqctx: RequestContext<Self::Context>,
     ) -> Result<Response<Body>, HttpError>;
+
+    /// Redoc
+    ///
+    /// Renders Redoc documentation for exploring the API.
+    #[endpoint {
+        method = GET,
+        path = "/redoc",
+        tags = ["documentation"],
+    }]
+    async fn get_redoc(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<Response<Body>, HttpError>;
+
+    /// RapiDoc
+    ///
+    /// Renders RapiDoc documentation for exploring the API.
+    #[endpoint {
+        method = GET,
+        path = "/rapidoc",
+        tags = ["documentation"],
+    }]
+    async fn get_rapidoc(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<Response<Body>, HttpError>;
 }

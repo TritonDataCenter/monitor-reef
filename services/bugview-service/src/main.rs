@@ -497,13 +497,43 @@ impl BugviewApi for BugviewServiceImpl {
     async fn get_swagger_ui(
         _rqctx: RequestContext<Self::Context>,
     ) -> Result<Response<Body>, HttpError> {
-        let html = swagger_ui_dropshot::swagger_ui_html("/api-docs/openapi.json", "Bugview API");
+        let html = openapi_viewer::swagger_ui_html("/api-docs/openapi.json", "Bugview API");
         Response::builder()
             .status(200)
             .header("Content-Type", "text/html; charset=utf-8")
             .header(
                 "Content-Security-Policy",
-                swagger_ui_dropshot::CSP_SWAGGER_UI,
+                openapi_viewer::CSP_OPENAPI_VIEWER,
+            )
+            .body(html.into())
+            .map_err(|e| HttpError::for_internal_error(format!("Failed to build response: {}", e)))
+    }
+
+    async fn get_redoc(
+        _rqctx: RequestContext<Self::Context>,
+    ) -> Result<Response<Body>, HttpError> {
+        let html = openapi_viewer::redoc_html("/api-docs/openapi.json", "Bugview API");
+        Response::builder()
+            .status(200)
+            .header("Content-Type", "text/html; charset=utf-8")
+            .header(
+                "Content-Security-Policy",
+                openapi_viewer::CSP_OPENAPI_VIEWER,
+            )
+            .body(html.into())
+            .map_err(|e| HttpError::for_internal_error(format!("Failed to build response: {}", e)))
+    }
+
+    async fn get_rapidoc(
+        _rqctx: RequestContext<Self::Context>,
+    ) -> Result<Response<Body>, HttpError> {
+        let html = openapi_viewer::rapidoc_html("/api-docs/openapi.json", "Bugview API");
+        Response::builder()
+            .status(200)
+            .header("Content-Type", "text/html; charset=utf-8")
+            .header(
+                "Content-Security-Policy",
+                openapi_viewer::CSP_OPENAPI_VIEWER,
             )
             .body(html.into())
             .map_err(|e| HttpError::for_internal_error(format!("Failed to build response: {}", e)))

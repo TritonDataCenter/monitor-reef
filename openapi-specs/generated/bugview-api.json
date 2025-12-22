@@ -294,6 +294,46 @@
         }
       }
     },
+    "/rapidoc": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "summary": "RapiDoc",
+        "description": "Renders RapiDoc documentation for exploring the API.",
+        "operationId": "get_rapidoc",
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/redoc": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "summary": "Redoc",
+        "description": "Renders Redoc documentation for exploring the API.",
+        "operationId": "get_redoc",
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/swagger-ui": {
       "get": {
         "tags": [
