@@ -6,6 +6,32 @@
     "version": "0.1.0"
   },
   "paths": {
+    "/api-docs/openapi.json": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "summary": "Get OpenAPI specification",
+        "description": "Returns the OpenAPI JSON specification for this API.",
+        "operationId": "get_openapi_spec",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
     "/bugview": {
       "get": {
         "tags": [
@@ -267,6 +293,26 @@
           }
         }
       }
+    },
+    "/swagger-ui": {
+      "get": {
+        "tags": [
+          "documentation"
+        ],
+        "summary": "Swagger UI",
+        "description": "Renders an interactive Swagger UI for exploring the API.",
+        "operationId": "get_swagger_ui",
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -466,6 +512,9 @@
     }
   },
   "tags": [
+    {
+      "name": "documentation"
+    },
     {
       "name": "html"
     },

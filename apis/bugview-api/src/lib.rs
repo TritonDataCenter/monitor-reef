@@ -253,4 +253,32 @@ pub trait BugviewApi {
     async fn redirect_bugview_root(
         rqctx: RequestContext<Self::Context>,
     ) -> Result<Response<Body>, HttpError>;
+
+    // ========================================================================
+    // Documentation
+    // ========================================================================
+
+    /// Get OpenAPI specification
+    ///
+    /// Returns the OpenAPI JSON specification for this API.
+    #[endpoint {
+        method = GET,
+        path = "/api-docs/openapi.json",
+        tags = ["documentation"],
+    }]
+    async fn get_openapi_spec(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<serde_json::Value>, HttpError>;
+
+    /// Swagger UI
+    ///
+    /// Renders an interactive Swagger UI for exploring the API.
+    #[endpoint {
+        method = GET,
+        path = "/swagger-ui",
+        tags = ["documentation"],
+    }]
+    async fn get_swagger_ui(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<Response<Body>, HttpError>;
 }

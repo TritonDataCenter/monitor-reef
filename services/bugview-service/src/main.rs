@@ -478,6 +478,36 @@ impl BugviewApi for BugviewServiceImpl {
             .body(Body::empty())
             .map_err(|e| HttpError::for_internal_error(format!("Failed to build redirect: {}", e)))
     }
+
+    // ========================================================================
+    // Documentation
+    // ========================================================================
+
+    async fn get_openapi_spec(
+        _rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<serde_json::Value>, HttpError> {
+        // Embed the OpenAPI spec at compile time
+        let spec: serde_json::Value = serde_json::from_str(include_str!(
+            "../../../openapi-specs/generated/bugview-api.json"
+        ))
+        .map_err(|e| HttpError::for_internal_error(format!("Failed to parse OpenAPI spec: {}", e)))?;
+        Ok(HttpResponseOk(spec))
+    }
+
+    async fn get_swagger_ui(
+        _rqctx: RequestContext<Self::Context>,
+    ) -> Result<Response<Body>, HttpError> {
+        let html = swagger_ui_dropshot::swagger_ui_html("/api-docs/openapi.json", "Bugview API");
+        Response::builder()
+            .status(200)
+            .header("Content-Type", "text/html; charset=utf-8")
+            .header(
+                "Content-Security-Policy",
+                swagger_ui_dropshot::CSP_SWAGGER_UI,
+            )
+            .body(html.into())
+            .map_err(|e| HttpError::for_internal_error(format!("Failed to build response: {}", e)))
+    }
 }
 
 #[tokio::main]
