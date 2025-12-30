@@ -602,6 +602,93 @@ pub fn should_use_mdapi(config: &MdapiConfig) -> bool {
     config.enabled && !config.endpoint.is_empty()
 }
 
+/// Information about a bucket returned by list_buckets
+///
+/// This struct holds essential bucket metadata needed for evacuation operations.
+/// It matches the `Bucket` struct from rust-libmanta mdapi module.
+#[derive(Debug, Clone)]
+pub struct BucketInfo {
+    /// Unique bucket identifier
+    pub id: Uuid,
+    /// Bucket name
+    pub name: String,
+    /// Owner account UUID
+    pub owner: Uuid,
+}
+
+/// List all buckets for a given owner
+///
+/// Discovers all buckets in the mdapi deployment that belong to the specified
+/// owner. This is used during evacuation to find all buckets that may contain
+/// objects stored on the shark being evacuated.
+///
+/// # Arguments
+/// * `client` - The mdapi client instance
+/// * `owner` - Owner UUID to filter buckets
+///
+/// # Returns
+/// * `Result<Vec<BucketInfo>, Error>` - List of buckets or error
+///
+/// # Errors
+/// * Returns Error::Mdapi if the RPC call fails
+/// * Returns Error::Internal for malformed responses
+///
+/// # Notes
+/// The underlying rust-libmanta list_buckets is not yet fully implemented.
+/// Currently returns an empty list with a debug log. When the mdapi Fast RPC
+/// is completed, this will return actual bucket data.
+///
+/// # Example
+/// ```rust,ignore
+/// let client = mdapi_client::create_client("mdapi.example.com:2030")?;
+/// let owner = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")?;
+/// let buckets = mdapi_client::list_buckets(&client, owner)?;
+///
+/// for bucket in buckets {
+///     println!("Bucket: {} ({})", bucket.name, bucket.id);
+/// }
+/// ```
+pub fn list_buckets(
+    client: &MdapiClient,
+    owner: Uuid,
+) -> Result<Vec<BucketInfo>, Error> {
+    debug!(
+        "Discovering buckets for owner {} via mdapi",
+        owner
+    );
+
+    // Call rust-libmanta's list_buckets
+    // Note: Currently not implemented, returns "Not implemented" error
+    match client.list_buckets(owner, None, 1000) {
+        Ok(buckets) => {
+            debug!("Discovered {} buckets", buckets.len());
+            let bucket_infos = buckets
+                .into_iter()
+                .map(|b| BucketInfo {
+                    id: b.id,
+                    name: b.name,
+                    owner: b.owner,
+                })
+                .collect();
+            Ok(bucket_infos)
+        }
+        Err(e) => {
+            // Check if it's the "Not implemented" error
+            let error_msg = format!("{}", e);
+            if error_msg.contains("Not implemented") {
+                debug!(
+                    "Mdapi list_buckets not yet implemented, returning empty list"
+                );
+                // Return empty list for now - evacuation will use default_bucket_id
+                Ok(Vec::new())
+            } else {
+                error!("Failed to list buckets: {}", e);
+                Err(Error::from(e))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

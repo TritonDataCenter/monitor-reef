@@ -107,10 +107,26 @@ pub struct MdapiConfig {
     pub enabled: bool,
     /// Mdapi service endpoint (host:port)
     pub endpoint: String,
-    /// Default bucket ID for operations (optional)
+    /// Default bucket ID for operations (optional for multi-bucket mode)
+    ///
+    /// In multi-bucket mode (single_bucket_mode=false), this is used as a
+    /// fallback if bucket discovery fails.
+    ///
+    /// In single-bucket mode (single_bucket_mode=true), this is required and
+    /// only this bucket will be evacuated.
     pub default_bucket_id: Option<uuid::Uuid>,
     /// Connection timeout in milliseconds
     pub connection_timeout_ms: u64,
+    /// Single-bucket mode for testing/phased migration
+    ///
+    /// If true, only evacuate objects from default_bucket_id.
+    /// If false (default), auto-discover and evacuate all buckets.
+    ///
+    /// Single-bucket mode is useful for:
+    /// - Testing mdapi integration with a single bucket
+    /// - Phased migration (evacuate one bucket at a time)
+    /// - Limited deployments with only one bucket
+    pub single_bucket_mode: bool,
 }
 
 impl Default for MdapiConfig {
@@ -120,6 +136,7 @@ impl Default for MdapiConfig {
             endpoint: "localhost:2030".to_string(),
             default_bucket_id: None,
             connection_timeout_ms: 5000,
+            single_bucket_mode: false, // Default to multi-bucket discovery
         }
     }
 }
