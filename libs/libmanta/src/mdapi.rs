@@ -24,7 +24,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
+use std::net::ToSocketAddrs;
 use uuid::Uuid;
+
+use fast_rpc::client as fast_client;
+use fast_rpc::protocol::{FastMessage, FastMessageId};
 
 /// Errors that can occur during mdapi client operations
 #[derive(Debug)]
@@ -188,10 +192,7 @@ pub struct Conditions {
     #[serde(rename = "if-match", skip_serializing_if = "Option::is_none")]
     pub if_match: Option<Vec<String>>,
     /// Match if object ETag is NOT in this list
-    #[serde(
-        rename = "if-none-match",
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(rename = "if-none-match", skip_serializing_if = "Option::is_none")]
     pub if_none_match: Option<Vec<String>>,
     /// Match if object modified since this timestamp
     #[serde(
@@ -266,9 +267,12 @@ struct DeleteBucketPayload {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct ListBucketsPayload {
     owner: Uuid,
+    vnode: u64,
     #[serde(skip_serializing_if = "Option::is_none")]
     prefix: Option<String>,
-    limit: u32,
+    limit: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    marker: Option<String>,
     request_id: Uuid,
 }
 
@@ -370,6 +374,114 @@ impl MdapiClient {
         } else {
             Ok(())
         }
+    }
+
+    /// Make a Fast RPC call to the mdapi service
+    ///
+    /// # Arguments
+    ///
+    /// * `method` - RPC method name
+    /// * `payload` - Request payload to serialize
+    ///
+    /// # Returns
+    ///
+    /// JSON value containing the response data
+    fn call<T: Serialize>(
+        &self,
+        method: &str,
+        payload: &T,
+    ) -> Result<Value, MdapiError> {
+        // Convert payload to JSON
+        let args = serde_json::to_value(vec![payload]).map_err(|e| {
+            MdapiError::SerializationError(format!(
+                "Failed to serialize payload: {}",
+                e
+            ))
+        })?;
+
+        // Create TCP connection to mdapi service
+        let addr = self
+            .endpoint
+            .to_socket_addrs()
+            .map_err(|e| {
+                MdapiError::IoError(format!(
+                    "Failed to resolve endpoint {}: {}",
+                    self.endpoint, e
+                ))
+            })?
+            .next()
+            .ok_or_else(|| {
+                MdapiError::IoError(format!(
+                    "No address found for endpoint {}",
+                    self.endpoint
+                ))
+            })?;
+
+        let mut stream = std::net::TcpStream::connect(addr).map_err(|e| {
+            MdapiError::IoError(format!(
+                "Failed to connect to {}: {}",
+                self.endpoint, e
+            ))
+        })?;
+
+        // Send Fast RPC request
+        let mut msg_id = FastMessageId::new();
+        fast_client::send(method.to_string(), args, &mut msg_id, &mut stream)
+            .map_err(|e| {
+            MdapiError::RpcError(format!("Failed to send RPC request: {}", e))
+        })?;
+
+        // Receive Fast RPC response
+        let mut response_data: Option<Value> = None;
+        let mut response_error: Option<String> = None;
+
+        let recv_cb = |msg: &FastMessage| {
+            // Check if this is an error response
+            if let Some(error_obj) = msg.data.d.get(0) {
+                if let Some(err_name) = error_obj.get("name") {
+                    if err_name.as_str() == Some("FastRequestError")
+                        || err_name.as_str() == Some("PostgresError")
+                        || err_name.as_str() == Some("BucketNotFoundError")
+                        || err_name.as_str() == Some("ObjectNotFoundError")
+                    {
+                        response_error = Some(
+                            error_obj
+                                .get("message")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or("Unknown error")
+                                .to_string(),
+                        );
+                        return Ok(());
+                    }
+                }
+            }
+
+            // Extract successful response data (first element of array)
+            if let Some(data) = msg.data.d.get(0) {
+                response_data = Some(data.clone());
+            } else {
+                response_error =
+                    Some("Empty response from mdapi service".to_string());
+            }
+            Ok(())
+        };
+
+        fast_client::receive(&mut stream, recv_cb).map_err(|e| {
+            MdapiError::RpcError(format!(
+                "Failed to receive RPC response: {}",
+                e
+            ))
+        })?;
+
+        // Return error if one was received
+        if let Some(err) = response_error {
+            return Err(MdapiError::RpcError(err));
+        }
+
+        // Return response data
+        response_data.ok_or_else(|| {
+            MdapiError::RpcError("No response data received".to_string())
+        })
     }
 
     /// Get bucket metadata
@@ -477,6 +589,7 @@ impl MdapiClient {
     /// # Arguments
     ///
     /// * `owner` - Owner account UUID
+    /// * `vnode` - Virtual node (shard) to query
     /// * `prefix` - Optional name prefix filter
     /// * `limit` - Maximum results to return (1-1024)
     ///
@@ -487,22 +600,48 @@ impl MdapiClient {
     /// # Errors
     ///
     /// Returns `MdapiError::InvalidLimit` if limit is out of range
+    /// Returns `MdapiError::RpcError` if the RPC call fails
+    ///
+    /// # Example
+    ///
+    /// ```no_run
+    /// # use libmanta::mdapi::MdapiClient;
+    /// # use uuid::Uuid;
+    /// # let client = MdapiClient::new("localhost:2030")?;
+    /// let owner = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")?;
+    /// let buckets = client.list_buckets(owner, 0, None, 100)?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     pub fn list_buckets(
         &self,
         owner: Uuid,
+        vnode: u64,
         prefix: Option<&str>,
         limit: u32,
     ) -> Result<Vec<Bucket>, MdapiError> {
         Self::validate_limit(limit)?;
 
-        let _payload = ListBucketsPayload {
+        let payload = ListBucketsPayload {
             owner,
+            vnode,
             prefix: prefix.map(String::from),
-            limit,
+            limit: limit as u64,
+            marker: None,
             request_id: Self::generate_request_id(),
         };
-        // TODO: Implement Fast RPC call
-        Err(MdapiError::Other("Not implemented".to_string()))
+
+        let response = self.call("listBuckets", &payload)?;
+
+        // Parse response as array of buckets
+        let buckets: Vec<Bucket> =
+            serde_json::from_value(response).map_err(|e| {
+                MdapiError::SerializationError(format!(
+                    "Failed to parse buckets response: {}",
+                    e
+                ))
+            })?;
+
+        Ok(buckets)
     }
 
     /// Get object metadata
@@ -715,8 +854,10 @@ mod tests {
     #[test]
     fn test_bucket_serialization() {
         let bucket = Bucket {
-            id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
-            owner: Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001").unwrap(),
+            id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")
+                .unwrap(),
+            owner: Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001")
+                .unwrap(),
             name: "test-bucket".to_string(),
             created: "2025-01-01T00:00:00.000Z".to_string(),
         };
@@ -777,8 +918,10 @@ mod tests {
     #[test]
     fn test_deleted_object_serialization() {
         let deleted = DeletedObject {
-            id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),
-            owner: Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001").unwrap(),
+            id: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")
+                .unwrap(),
+            owner: Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001")
+                .unwrap(),
             bucket_id: Uuid::parse_str("770e8400-e29b-41d4-a716-446655440002")
                 .unwrap(),
             name: "deleted-object.txt".to_string(),
@@ -841,12 +984,12 @@ mod tests {
 
     #[test]
     fn test_object_payload_construction() {
-        let owner = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")
-            .unwrap();
-        let bucket_id = Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001")
-            .unwrap();
-        let object_id = Uuid::parse_str("770e8400-e29b-41d4-a716-446655440002")
-            .unwrap();
+        let owner =
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let bucket_id =
+            Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001").unwrap();
+        let object_id =
+            Uuid::parse_str("770e8400-e29b-41d4-a716-446655440002").unwrap();
 
         let sharks = vec![StorageNodeIdentifier {
             datacenter: "us-east-1".to_string(),
@@ -875,5 +1018,118 @@ mod tests {
         // Verify serialization works
         let json = serde_json::to_value(&payload);
         assert!(json.is_ok());
+    }
+
+    #[test]
+    fn test_list_buckets_payload_serialization() {
+        let owner =
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let request_id =
+            Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001").unwrap();
+
+        let payload = ListBucketsPayload {
+            owner,
+            vnode: 0,
+            prefix: Some("test-".to_string()),
+            limit: 100,
+            marker: None,
+            request_id,
+        };
+
+        // Verify serialization works
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["owner"], owner.to_string());
+        assert_eq!(json["vnode"], 0);
+        assert_eq!(json["prefix"], "test-");
+        assert_eq!(json["limit"], 100);
+        assert_eq!(json["request_id"], request_id.to_string());
+
+        // Verify marker is omitted when None
+        assert!(json.get("marker").is_none());
+    }
+
+    #[test]
+    fn test_list_buckets_response_parsing() {
+        // Simulate a response from mdapi listBuckets
+        let response_json = serde_json::json!([
+            {
+                "id": "550e8400-e29b-41d4-a716-446655440000",
+                "owner": "660e8400-e29b-41d4-a716-446655440001",
+                "name": "bucket1",
+                "created": "2025-01-01T00:00:00.000Z"
+            },
+            {
+                "id": "770e8400-e29b-41d4-a716-446655440002",
+                "owner": "660e8400-e29b-41d4-a716-446655440001",
+                "name": "bucket2",
+                "created": "2025-01-02T00:00:00.000Z"
+            }
+        ]);
+
+        // Parse as Vec<Bucket>
+        let buckets: Vec<Bucket> =
+            serde_json::from_value(response_json).unwrap();
+
+        assert_eq!(buckets.len(), 2);
+        assert_eq!(buckets[0].name, "bucket1");
+        assert_eq!(buckets[1].name, "bucket2");
+        assert_eq!(
+            buckets[0].id,
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap()
+        );
+    }
+
+    #[test]
+    fn test_list_buckets_empty_response() {
+        // Empty array response
+        let response_json = serde_json::json!([]);
+
+        // Parse as Vec<Bucket>
+        let buckets: Vec<Bucket> =
+            serde_json::from_value(response_json).unwrap();
+
+        assert_eq!(buckets.len(), 0);
+    }
+
+    #[test]
+    fn test_list_buckets_with_prefix() {
+        let owner =
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let request_id =
+            Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001").unwrap();
+
+        let payload = ListBucketsPayload {
+            owner,
+            vnode: 0,
+            prefix: Some("prod-".to_string()),
+            limit: 50,
+            marker: None,
+            request_id,
+        };
+
+        // Verify prefix is included in serialization
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["prefix"], "prod-");
+    }
+
+    #[test]
+    fn test_list_buckets_with_marker() {
+        let owner =
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let request_id =
+            Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001").unwrap();
+
+        let payload = ListBucketsPayload {
+            owner,
+            vnode: 0,
+            prefix: None,
+            limit: 100,
+            marker: Some("bucket-100".to_string()),
+            request_id,
+        };
+
+        // Verify marker is included when Some
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["marker"], "bucket-100");
     }
 }
