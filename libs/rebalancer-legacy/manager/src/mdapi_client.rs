@@ -869,7 +869,8 @@ mod tests {
 
         if let Err(Error::Internal(e)) = result {
             assert_eq!(e.code, InternalErrorCode::BadMdapiClient);
-            assert!(e.msg.contains("missing port"));
+            let error_msg = format!("{}", Error::Internal(e.clone()));
+            assert!(error_msg.contains("missing port"));
         } else {
             panic!("Expected Internal error with BadMdapiClient");
         }
@@ -927,7 +928,8 @@ mod tests {
         assert!(result.is_err());
         if let Err(Error::Internal(e)) = result {
             assert_eq!(e.code, InternalErrorCode::BadMantaObject);
-            assert!(e.msg.contains("Invalid owner UUID"));
+            let error_msg = format!("{}", Error::Internal(e.clone()));
+            assert!(error_msg.contains("Invalid owner UUID"));
         } else {
             panic!("Expected Internal error with BadMantaObject");
         }
@@ -944,7 +946,8 @@ mod tests {
         assert!(result.is_err());
         if let Err(Error::Internal(e)) = result {
             assert_eq!(e.code, InternalErrorCode::BadMantaObject);
-            assert!(e.msg.contains("Invalid object_id UUID"));
+            let error_msg = format!("{}", Error::Internal(e.clone()));
+            assert!(error_msg.contains("Invalid object_id UUID"));
         } else {
             panic!("Expected Internal error with BadMantaObject");
         }
