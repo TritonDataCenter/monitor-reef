@@ -184,6 +184,9 @@ rebalancer_adm_tests: | $(CARGO_EXEC)
 doc_tests: | $(CARGO_EXEC)
 	RUST_LOG=remora=trace $(CARGO) test --doc
 
+mdapitests: | $(CARGO_EXEC)
+	RUST_LOG=remora=trace $(CARGO) test --package manager --lib mdapi_client
+
 test: agenttests jobtests managertests rebalancer_adm_tests doc_tests
 
 #
