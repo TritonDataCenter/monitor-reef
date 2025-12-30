@@ -658,8 +658,9 @@ pub fn list_buckets(
     );
 
     // Call rust-libmanta's list_buckets
-    // Note: Currently not implemented, returns "Not implemented" error
-    match client.list_buckets(owner, None, 1000) {
+    // Query vnode 0 for buckets - in a complete implementation, we would
+    // query all vnodes and aggregate results
+    match client.list_buckets(owner, 0, None, 1000) {
         Ok(buckets) => {
             debug!("Discovered {} buckets", buckets.len());
             let bucket_infos = buckets
