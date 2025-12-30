@@ -16,6 +16,7 @@ indoc = "0.3.5"
 Inflector = "0.11.4"
 lazy_static = "1.4.0"
 libmanta = { path = "../../libmanta", features = ["postgres"] }
+md5 = "0.7.0"
 mime = "0.3.13"
 moray = { path = "../../moray", features = ["postgres"] }
 sharkspotter = { path = "../../sharkspotter", features = ["postgres"] }

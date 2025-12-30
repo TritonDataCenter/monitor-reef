@@ -43,8 +43,8 @@
 //!    ```
 
 use libmanta::mdapi::{
-    Conditions, ListParams, MdapiClient, MdapiError, ObjectPayload,
-    ObjectUpdate, StorageNodeIdentifier,
+    Conditions, ListParams, MdapiClient, ObjectPayload, ObjectUpdate,
+    StorageNodeIdentifier,
 };
 use libmanta::moray::{MantaObject, MantaObjectShark};
 use rebalancer::error::{Error, InternalError, InternalErrorCode};
