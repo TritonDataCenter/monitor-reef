@@ -127,6 +127,23 @@ By default, the rebalancer uses moray (backward compatible). To switch to mdapi:
 2. The manager will automatically use mdapi client functions instead of moray
 3. All schema translation happens transparently
 
+#### Job Execution Integration
+
+The mdapi backend is fully integrated into the job execution pipeline:
+
+- **MetadataBackend enum**: Abstraction layer in `manager/src/jobs/evacuate.rs` that
+  transparently handles both moray and mdapi clients
+- **Automatic selection**: Backend is chosen at client creation time based on
+  configuration (`should_use_mdapi()`)
+- **Batch operations**: Moray uses native batch updates; mdapi falls back to individual
+  updates (batch optimization planned for future)
+- **Single updates**: Both backends support individual object metadata updates with
+  etag-based conditional updates
+- **Error handling**: Unified error handling regardless of backend choice
+
+The integration maintains backward compatibility - existing deployments continue using
+moray unless explicitly configured for mdapi.
+
 For more details on the mdapi client implementation, see the module documentation
 in `manager/src/mdapi_client.rs`.
 

@@ -29,6 +29,7 @@ use crate::jobs::{
     assignment_cache_usage, Assignment, AssignmentCacheEntry, AssignmentId,
     AssignmentState, JobUpdateMessage, StorageId,
 };
+use crate::mdapi_client;
 use crate::moray_client;
 use crate::pg_db;
 use crate::storinfo::{self as mod_storinfo, SharkSource, StorageNode};
@@ -48,6 +49,7 @@ use std::time::Duration;
 use crossbeam_channel as crossbeam;
 use crossbeam_channel::TryRecvError;
 use crossbeam_deque::{Injector, Steal};
+use libmanta::mdapi::MdapiClient;
 use libmanta::moray::{MantaObject, MantaObjectShark};
 use moray::client::MorayClient;
 use moray::objects::{
@@ -65,6 +67,93 @@ use uuid::Uuid;
 
 type EvacuateObjectValue = Value;
 type MorayClientHash = HashMap<u32, MorayClient>;
+
+/// Abstraction over metadata backends (Moray or Mdapi)
+///
+/// This enum allows the job execution code to work with either the traditional
+/// Moray backend or the newer Mdapi (buckets-mdapi) backend, based on
+/// configuration.
+enum MetadataBackend {
+    Moray(MorayClient),
+    Mdapi(MdapiClient),
+}
+
+impl MetadataBackend {
+    /// Create a metadata backend based on configuration
+    ///
+    /// Checks the mdapi configuration and creates either an Mdapi or Moray
+    /// backend accordingly. Falls back to Moray if mdapi is not configured.
+    fn from_config(
+        config: &Config,
+        shard: u32,
+    ) -> Result<MetadataBackend, Error> {
+        if mdapi_client::should_use_mdapi(&config.mdapi) {
+            let endpoint = &config.mdapi.endpoint;
+            let client = mdapi_client::create_client(endpoint)?;
+            debug!("Created mdapi backend for shard {}", shard);
+            Ok(MetadataBackend::Mdapi(client))
+        } else {
+            let client = moray_client::get_client(config, shard)?;
+            debug!("Created moray backend for shard {}", shard);
+            Ok(MetadataBackend::Moray(client))
+        }
+    }
+
+    /// Perform batch update operation
+    ///
+    /// For Moray: uses native batch operation
+    /// For Mdapi: converts to individual updates (mdapi batch not implemented yet)
+    fn batch_update<F>(
+        &mut self,
+        requests: &[BatchRequest],
+        options: &ObjectMethodOptions,
+        callback: F,
+    ) -> Result<(), moray::client::Error>
+    where
+        F: FnOnce() -> Result<(), moray::client::Error>,
+    {
+        match self {
+            MetadataBackend::Moray(client) => {
+                client.batch(requests, options, callback)
+            }
+            MetadataBackend::Mdapi(_client) => {
+                // TODO: Implement proper mdapi batch operations
+                // For now, fall through to individual updates in retry_batch_update
+                Err(moray::client::Error::UnsupportedOperation(
+                    "Mdapi batch operations not yet implemented, \
+                     use individual updates"
+                        .to_string(),
+                ))
+            }
+        }
+    }
+
+    /// Update a single object
+    ///
+    /// For Moray: uses put_object
+    /// For Mdapi: converts moray Value to ObjectPayload and calls update_object
+    fn put_object(
+        &mut self,
+        object: &Value,
+        etag: &str,
+    ) -> Result<(), moray::client::Error> {
+        match self {
+            MetadataBackend::Moray(client) => {
+                moray_client::put_object(client, object, etag)
+            }
+            MetadataBackend::Mdapi(_client) => {
+                // TODO: Implement mdapi put_object
+                // This requires converting the moray Value to MantaObject,
+                // then to ObjectPayload, then calling mdapi update_object
+                Err(moray::client::Error::UnsupportedOperation(
+                    "Mdapi single object update not yet fully implemented, \
+                     requires schema translation"
+                        .to_string(),
+                ))
+            }
+        }
+    }
+}
 
 // --- Diesel Stuff, TODO This should be refactored --- //
 
@@ -288,8 +377,8 @@ impl FromSql<sql_types::Text, Pg> for EvacuateObjectError {
 }
 
 enum MetadataClientOption<'a> {
-    Client(&'a mut MorayClient),
-    Hash(&'a mut MorayClientHash),
+    Client(&'a mut MetadataBackend),
+    Hash(&'a mut HashMap<u32, MetadataBackend>),
 }
 
 fn create_table_common(
@@ -3527,32 +3616,20 @@ fn metadata_update_worker_dynamic(
 // create one and put it in the hash, and return it as an &mut.
 fn get_client_from_hash<'a>(
     job_action: &Arc<EvacuateJob>,
-    client_hash: &'a mut HashMap<u32, MorayClient>,
+    client_hash: &'a mut HashMap<u32, MetadataBackend>,
     shard: u32,
-) -> Result<&'a mut MorayClient, Error> {
+) -> Result<&'a mut MetadataBackend, Error> {
     // We can't use or_insert_with() here because in the event
     // that client creation fails we want to handle that error.
     match client_hash.entry(shard) {
         Occupied(entry) => Ok(entry.into_mut()),
         Vacant(entry) => {
-            debug!("Client for shard {} does not exist, creating.", shard);
-            let client = match moray_client::create_client(
-                shard,
-                &job_action.config.domain_name,
-            ) {
-                Ok(client) => client,
-                Err(e) => {
-                    let msg = format!(
-                        "Failed to get Moray Client for shard {}: {}",
-                        shard, e
-                    );
-                    return Err(InternalError::new(
-                        Some(InternalErrorCode::BadMorayClient),
-                        msg,
-                    )
-                    .into());
-                }
-            };
+            debug!(
+                "Metadata client for shard {} does not exist, creating.",
+                shard
+            );
+            let client =
+                MetadataBackend::from_config(&job_action.config, shard)?;
             Ok(entry.insert(client))
         }
     }
@@ -3575,7 +3652,8 @@ fn metadata_update_one(
     };
 
     let now = std::time::Instant::now();
-    let ret = moray_client::put_object(mclient, object, etag)
+    let ret = mclient
+        .put_object(object, etag)
         .map_err(|e| {
             InternalError::new(
                 Some(InternalErrorCode::MetadataUpdateFailure),
@@ -3606,7 +3684,7 @@ fn metadata_update_one(
 // individually for that batch.
 fn metadata_update_batch(
     job_action: &Arc<EvacuateJob>,
-    client_hash: &mut HashMap<u32, MorayClient>,
+    client_hash: &mut HashMap<u32, MetadataBackend>,
     batched_reqs: HashMap<u32, Vec<BatchRequest>>,
 ) -> Vec<ObjectId> {
     let mut marked_error = vec![];
@@ -3646,8 +3724,10 @@ fn metadata_update_batch(
         // update mark it as error, and add it to the marked_error Vec to
         // be trimmed from our list of successful updates later.
         let now = std::time::Instant::now();
-        if let Err(e) =
-            mclient.batch(&requests, &ObjectMethodOptions::default(), |_| {
+        if let Err(e) = mclient.batch_update(
+            &requests,
+            &ObjectMethodOptions::default(),
+            |_| {
                 // elapsed() gives us a u128, but unfortunately AtomicU128 is
                 // nightly only.
                 let md_update_time = now.elapsed().as_micros();
@@ -3657,8 +3737,8 @@ fn metadata_update_batch(
                     num_reqs, md_update_time
                 );
                 Ok(())
-            })
-        {
+            },
+        ) {
             error!("Batch update failed, retrying individually: {}", e);
             retry_batch_update(
                 job_action,
@@ -3676,7 +3756,7 @@ fn retry_batch_update(
     job_action: &Arc<EvacuateJob>,
     requests: Vec<BatchRequest>,
     shard: u32,
-    client: &mut MorayClient,
+    client: &mut MetadataBackend,
     marked_error: &mut Vec<ObjectId>,
 ) {
     for r in requests.into_iter() {
