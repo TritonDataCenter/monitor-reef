@@ -107,18 +107,26 @@ impl MetadataBackend {
         &mut self,
         requests: &[BatchRequest],
         options: &ObjectMethodOptions,
-        callback: F,
+        mut callback: F,
     ) -> Result<(), Error>
     where
         F: FnMut(Vec<Value>) -> Result<(), Error>,
     {
         match self {
             MetadataBackend::Moray(client) => {
-                client.batch(requests, options, callback)
-                    .map_err(|e| InternalError::new(
-                        Some(InternalErrorCode::MetadataUpdateFailure),
-                        format!("Batch update failed: {}", e.description()),
-                    ).into())
+                // Wrap callback to convert error types
+                client.batch(requests, options, |values| {
+                    callback(values).map_err(|_e| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::Other,
+                            "Callback failed"
+                        )
+                    })
+                })
+                .map_err(|e| InternalError::new(
+                    Some(InternalErrorCode::MetadataUpdateFailure),
+                    format!("Batch update failed: {}", e.description()),
+                ).into())
             }
             MetadataBackend::Mdapi(_client) => {
                 // TODO: Implement proper mdapi batch operations
