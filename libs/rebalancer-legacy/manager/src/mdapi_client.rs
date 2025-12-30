@@ -522,17 +522,13 @@ pub fn batch_update(
 /// # Notes
 /// This matches the algorithm in manta-buckets-api lib/common.js getDataLocation()
 pub fn calculate_vnode(owner: &str, bucket: &str, object_key: &str) -> u64 {
-    use md5::{Digest, Md5};
-
     // Create composite key in same format as buckets-mdapi
     let tkey = format!("{}:{}:{}", owner, bucket, object_key);
 
     trace!("Calculating vnode for key: {}", tkey);
 
     // Hash the key using MD5
-    let mut hasher = Md5::new();
-    hasher.update(tkey.as_bytes());
-    let hash_result = hasher.finalize();
+    let hash_result = md5::compute(tkey.as_bytes());
 
     // Convert hash bytes to u128 (MD5 is 128 bits)
     let mut hash_value: u128 = 0;
