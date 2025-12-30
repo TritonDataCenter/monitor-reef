@@ -99,6 +99,31 @@ impl Default for ConfigOptions {
     }
 }
 
+/// Configuration for manta-buckets-mdapi client integration
+#[derive(Deserialize, Debug, Clone)]
+#[serde(default)]
+pub struct MdapiConfig {
+    /// Enable mdapi client for bucket-based metadata operations
+    pub enabled: bool,
+    /// Mdapi service endpoint (host:port)
+    pub endpoint: String,
+    /// Default bucket ID for operations (optional)
+    pub default_bucket_id: Option<uuid::Uuid>,
+    /// Connection timeout in milliseconds
+    pub connection_timeout_ms: u64,
+}
+
+impl Default for MdapiConfig {
+    fn default() -> Self {
+        MdapiConfig {
+            enabled: false,
+            endpoint: "localhost:2030".to_string(),
+            default_bucket_id: None,
+            connection_timeout_ms: 5000,
+        }
+    }
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct Config {
     pub domain_name: String,
@@ -114,6 +139,9 @@ pub struct Config {
 
     #[serde(default)]
     pub options: ConfigOptions,
+
+    #[serde(default)]
+    pub mdapi: MdapiConfig,
 
     #[serde(default = "Config::default_port")]
     pub listen_port: u16,
@@ -135,6 +163,7 @@ impl Default for Config {
             shards: vec![],
             snaplink_cleanup_required: false,
             options: ConfigOptions::default(),
+            mdapi: MdapiConfig::default(),
             listen_port: 80,
             max_fill_percentage: 100,
             log_level: Level::Debug,

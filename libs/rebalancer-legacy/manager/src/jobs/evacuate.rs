@@ -1899,11 +1899,12 @@ impl UpdateMetadata for EvacuateJob {
                 if !shark_found {
                     shark_found = true;
                 } else {
-                    let msg =
-                        format!("Found duplicate shark while attempting \
+                    let msg = format!(
+                        "Found duplicate shark while attempting \
                         to update metadata. Manta Object: {:?}, New Shark: \
                         {:?}",
-                         object, new_shark);
+                        object, new_shark
+                    );
                     return Err(InternalError::new(
                         Some(InternalErrorCode::DuplicateShark),
                         msg,

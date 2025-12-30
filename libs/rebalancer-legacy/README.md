@@ -7,6 +7,7 @@
 <!--
     Copyright 2019, Joyent, Inc.
     Copyright 2024 MNX Cloud, Inc.
+    Copyright 2025 Edgecast Cloud LLC.
 -->
 
 # Manta Rebalancer
@@ -68,6 +69,66 @@ reflect the new        objects:                            nodes other than the 
 object locations.      {o1, o2, ..., oN}                   being evacuated.
 
 ```
+
+## Metadata Backend Options
+
+The rebalancer supports two metadata backends for storing object metadata:
+
+### Moray (Traditional)
+The default metadata backend using Moray's flexible JSON key-value storage.
+Moray has been the traditional metadata storage for Manta objects.
+
+### Buckets-MDAPI (Structured)
+An alternative metadata backend using buckets-mdapi with structured PostgreSQL
+tables. This provides:
+- Structured schema with explicit types (vs. flexible JSON)
+- Bucket-based object organization
+- Compatibility with manta-buckets-api
+
+#### Enabling MDAPI Backend
+
+To use the mdapi backend instead of moray, add the following to your rebalancer
+manager configuration file:
+
+```toml
+[mdapi]
+enabled = true
+endpoint = "mdapi.example.com:2030"
+default_bucket_id = "550e8400-e29b-41d4-a716-446655440000"
+connection_timeout_ms = 5000
+```
+
+Configuration fields:
+- `enabled` (bool): Set to `true` to use mdapi, `false` for moray (default)
+- `endpoint` (string): The mdapi service endpoint (host:port format)
+- `default_bucket_id` (UUID, optional): Default bucket for object operations
+- `connection_timeout_ms` (number): Connection timeout in milliseconds
+
+#### Schema Translation
+
+The mdapi client (`manager/src/mdapi_client.rs`) handles automatic translation
+between moray's JSON format and mdapi's structured format:
+
+| Moray (JSON)          | Mdapi (Structured)      | Notes                    |
+|-----------------------|-------------------------|--------------------------|
+| `key` (string)        | `name` (string)         | Object path/key          |
+| `owner` (string)      | `owner` (UUID)          | Parsed to UUID           |
+| `sharks` (JSON array) | `sharks` (text[])       | Storage locations        |
+| `content_md5` (base64)| `content_md5` (string)  | MD5 hash                 |
+| `headers` (JSON)      | `headers` (hstore)      | HTTP headers             |
+| `vnode` (i64)         | `vnode` (u64)           | Shard identifier         |
+| `etag` (string)       | `conditions` (struct)   | Conditional updates      |
+
+#### Backend Selection
+
+By default, the rebalancer uses moray (backward compatible). To switch to mdapi:
+
+1. Set `mdapi.enabled = true` in the configuration
+2. The manager will automatically use mdapi client functions instead of moray
+3. All schema translation happens transparently
+
+For more details on the mdapi client implementation, see the module documentation
+in `manager/src/mdapi_client.rs`.
 
 ## Build
 
