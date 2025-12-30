@@ -93,7 +93,7 @@ impl MetadataBackend {
             debug!("Created mdapi backend for shard {}", shard);
             Ok(MetadataBackend::Mdapi(client))
         } else {
-            let client = moray_client::get_client(config, shard)?;
+            let client = moray_client::create_client(shard, &config.domain_name)?;
             debug!("Created moray backend for shard {}", shard);
             Ok(MetadataBackend::Moray(client))
         }
@@ -108,22 +108,26 @@ impl MetadataBackend {
         requests: &[BatchRequest],
         options: &ObjectMethodOptions,
         callback: F,
-    ) -> Result<(), moray::client::Error>
+    ) -> Result<(), Error>
     where
-        F: FnOnce() -> Result<(), moray::client::Error>,
+        F: FnMut(Vec<Value>) -> Result<(), Error>,
     {
         match self {
             MetadataBackend::Moray(client) => {
                 client.batch(requests, options, callback)
+                    .map_err(|e| InternalError::new(
+                        Some(InternalErrorCode::MetadataUpdateFailure),
+                        format!("Batch update failed: {}", e.description()),
+                    ).into())
             }
             MetadataBackend::Mdapi(_client) => {
                 // TODO: Implement proper mdapi batch operations
                 // For now, fall through to individual updates in retry_batch_update
-                Err(moray::client::Error::UnsupportedOperation(
+                Err(InternalError::new(
+                    Some(InternalErrorCode::MetadataUpdateFailure),
                     "Mdapi batch operations not yet implemented, \
-                     use individual updates"
-                        .to_string(),
-                ))
+                     use individual updates".to_string(),
+                ).into())
             }
         }
     }
@@ -136,7 +140,7 @@ impl MetadataBackend {
         &mut self,
         object: &Value,
         etag: &str,
-    ) -> Result<(), moray::client::Error> {
+    ) -> Result<(), Error> {
         match self {
             MetadataBackend::Moray(client) => {
                 moray_client::put_object(client, object, etag)
@@ -145,11 +149,11 @@ impl MetadataBackend {
                 // TODO: Implement mdapi put_object
                 // This requires converting the moray Value to MantaObject,
                 // then to ObjectPayload, then calling mdapi update_object
-                Err(moray::client::Error::UnsupportedOperation(
+                Err(InternalError::new(
+                    Some(InternalErrorCode::MetadataUpdateFailure),
                     "Mdapi single object update not yet fully implemented, \
-                     requires schema translation"
-                        .to_string(),
-                ))
+                     requires schema translation".to_string(),
+                ).into())
             }
         }
     }
@@ -3522,7 +3526,7 @@ fn metadata_update_worker_static(
         // the shard connections.  It also allows us to manage our max
         // number of per-shard connections by simply tuning the number of
         // metadata update worker threads.
-        let mut client_hash: HashMap<u32, MorayClient> = HashMap::new();
+        let mut client_hash: HashMap<u32, MetadataBackend> = HashMap::new();
 
         debug!(
             "Started metadata update worker: {:?}",
@@ -3577,7 +3581,7 @@ fn metadata_update_worker_dynamic(
         // the shard connections.  It also allows us to manage our max
         // number of per-shard connections by simply tuning the number of
         // metadata update worker threads.
-        let mut client_hash: HashMap<u32, MorayClient> = HashMap::new();
+        let mut client_hash: HashMap<u32, MetadataBackend> = HashMap::new();
 
         metrics_gauge_inc(MD_THREAD_GAUGE);
 
@@ -3727,7 +3731,7 @@ fn metadata_update_batch(
         if let Err(e) = mclient.batch_update(
             &requests,
             &ObjectMethodOptions::default(),
-            |_| {
+            |_values| {
                 // elapsed() gives us a u128, but unfortunately AtomicU128 is
                 // nightly only.
                 let md_update_time = now.elapsed().as_micros();
@@ -3821,7 +3825,7 @@ fn batch_add_putobj(
 fn metadata_update_assignment(
     job_action: &Arc<EvacuateJob>,
     ace: AssignmentCacheEntry,
-    client_hash: &mut HashMap<u32, MorayClient>,
+    client_hash: &mut HashMap<u32, MetadataBackend>,
 ) {
     info!("Updating metadata for assignment: {}", ace.id);
 
