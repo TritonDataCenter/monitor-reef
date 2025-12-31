@@ -48,6 +48,7 @@
 
 pub mod config;
 pub mod directdb;
+pub mod mdapi_discovery;
 pub mod util;
 
 use lazy_static::lazy_static;
@@ -406,13 +407,14 @@ where
 
     let mut start_id = conf.begin;
     let mut end_id = conf.begin + conf.chunk_size - 1;
-    let mut largest_id = match find_largest_id_value(&log, &mut mclient, id_name) {
-        Ok(id) => id,
-        Err(e) => {
-            error!(&log, "Error finding largest ID: {}, using 0", e);
-            0
-        }
-    };
+    let mut largest_id =
+        match find_largest_id_value(&log, &mut mclient, id_name) {
+            Ok(id) => id,
+            Err(e) => {
+                error!(&log, "Error finding largest ID: {}, using 0", e);
+                0
+            }
+        };
 
     // clamp largest_id to conf.end if it is set and less than the largest found
     if conf.end > 0 && conf.end < largest_id {
@@ -722,11 +724,80 @@ pub fn run_multithreaded(
     shark_fix_common(&mut conf, &log);
     validate_sharks(&conf, &log)?;
 
+    // Moray/DirectDB discovery (existing)
     for shard in conf.min_shard..=conf.max_shard {
         if conf.direct_db {
             run_direct_db_shard_thread(&pool, shard, &obj_tx, &conf, &log);
         } else {
             run_moray_shard_thread(&pool, shard, &obj_tx, &conf, &log)?;
+        }
+    }
+
+    // Mdapi discovery (NEW)
+    if let Some(ref endpoint) = conf.mdapi_endpoint {
+        use libmanta::mdapi::MdapiClient;
+        use slog::{info, warn};
+
+        info!(log, "Starting mdapi discovery from endpoint: {}", endpoint);
+
+        // Create mdapi client
+        let mdapi_client = MdapiClient::new(endpoint).map_err(|e| {
+            let msg = format!("Failed to create mdapi client: {}", e);
+            slog::error!(log, "{}", msg);
+            Error::new(ErrorKind::Other, msg)
+        })?;
+
+        // Get owners to query
+        let owners = match &conf.owners {
+            Some(o) => o.clone(),
+            None => {
+                warn!(
+                    log,
+                    "No owners configured for mdapi discovery, skipping mdapi"
+                );
+                vec![]
+            }
+        };
+
+        if !owners.is_empty() {
+            // Spawn mdapi discovery threads for each shard
+            for shard in conf.min_shard..=conf.max_shard {
+                let mdapi_client_clone = mdapi_client.clone();
+                let obj_tx_clone = obj_tx.clone();
+                let sharks_clone = conf.sharks.clone();
+                let owners_clone = owners.clone();
+                let log_clone = log.clone();
+
+                pool.execute(move || {
+                    match mdapi_discovery::discover_mdapi_objects_for_shard(
+                        &mdapi_client_clone,
+                        &owners_clone,
+                        shard,
+                        &sharks_clone,
+                        &obj_tx_clone,
+                        &log_clone,
+                    ) {
+                        Ok(count) => {
+                            info!(
+                                log_clone,
+                                "Mdapi discovery for shard {} complete: {} objects",
+                                shard,
+                                count
+                            );
+                        }
+                        Err(e) => {
+                            slog::error!(
+                                log_clone,
+                                "Mdapi discovery failed for shard {}: {}",
+                                shard,
+                                e
+                            );
+                            let mut error_list = ERROR_LIST.lock().unwrap();
+                            error_list.push(e);
+                        }
+                    }
+                });
+            }
         }
     }
 

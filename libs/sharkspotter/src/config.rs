@@ -12,6 +12,7 @@ use clap::{value_t, App, AppSettings, Arg, ArgMatches};
 use slog::Level;
 use std::io::{Error, ErrorKind};
 use std::str::FromStr;
+use uuid::Uuid;
 
 const MAX_THREADS: usize = 100;
 
@@ -31,6 +32,10 @@ pub struct Config {
     pub max_threads: usize,
     pub direct_db: bool,
     pub log_level: Level,
+    /// Mdapi endpoint for bucket object discovery (e.g., "mdapi.domain.com:2030")
+    pub mdapi_endpoint: Option<String>,
+    /// Owners to query for bucket objects (required for mdapi discovery)
+    pub owners: Option<Vec<Uuid>>,
 }
 
 impl Default for Config {
@@ -50,6 +55,8 @@ impl Default for Config {
             max_threads: 50,
             direct_db: false,
             log_level: Level::Debug,
+            mdapi_endpoint: None,
+            owners: None,
         }
     }
 }
