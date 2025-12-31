@@ -5,5 +5,11 @@
         "host": "2.moray.staging.joyent.us",
         "last": true
       }
-   ]
+   ],
+  "mdapi": {
+    "enabled": true,
+    "endpoint": "localhost:2030",
+    "connection_timeout_ms": 5000,
+    "single_bucket_mode": false
+  }
 }
