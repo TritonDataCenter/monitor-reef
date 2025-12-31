@@ -191,49 +191,216 @@ impl MetadataBackend {
                         .into()
                     })
             }
-            MetadataBackend::Mdapi(_client) => {
-                // TODO: Implement proper mdapi batch operations
-                // For now, fall through to individual updates in retry_batch_update
-                Err(InternalError::new(
-                    Some(InternalErrorCode::MetadataUpdateFailure),
-                    "Mdapi batch operations not yet implemented, \
-                     use individual updates"
-                        .to_string(),
-                )
-                .into())
-            }
-            MetadataBackend::Hybrid { moray, mdapi: _ } => {
-                // Partition requests by object type
-                // For now, all requests go through moray since we don't have
-                // access to object metadata in the request itself.
-                // The actual routing happens in put_object when we have the full object.
-                // This is a simplified implementation for batch operations.
-                //
-                // TODO: Enhance batch request structure to include object metadata
-                // for proper routing in hybrid mode
+            MetadataBackend::Mdapi(client) => {
+                // Extract objects from batch requests
+                let mut manta_objects = Vec::new();
+                let mut values_for_callback = Vec::new();
 
-                warn!("Hybrid backend batch_update routing all requests to moray. \
-                       Individual updates via put_object will route correctly.");
-
-                moray
-                    .batch(requests, options, |values| {
-                        callback(values).map_err(|_e| {
-                            std::io::Error::new(
-                                std::io::ErrorKind::Other,
-                                "Callback failed",
+                for req in requests {
+                    let br =
+                        match req {
+                            BatchRequest::Put(br) => br,
+                            _ => return Err(InternalError::new(
+                                Some(InternalErrorCode::MetadataUpdateFailure),
+                                "Unexpected batch request type".to_string(),
                             )
-                        })
-                    })
+                            .into()),
+                        };
+
+                    // Deserialize to MantaObject
+                    let manta_object: MantaObject = serde_json::from_value(
+                        br.value.clone(),
+                    )
                     .map_err(|e| {
                         InternalError::new(
-                            Some(InternalErrorCode::MetadataUpdateFailure),
-                            format!(
-                                "Hybrid batch update failed: {}",
-                                e.description()
-                            ),
+                            Some(InternalErrorCode::BadMantaObject),
+                            format!("Failed to deserialize object: {}", e),
                         )
-                        .into()
-                    })
+                    })?;
+
+                    // Extract bucket_id
+                    let bucket_id = br
+                        .value
+                        .get("bucket_id")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| {
+                            InternalError::new(
+                                Some(InternalErrorCode::BadMantaObject),
+                                "Object missing bucket_id field".to_string(),
+                            )
+                        })
+                        .and_then(|s| {
+                            Uuid::parse_str(s).map_err(|e| {
+                                InternalError::new(
+                                    Some(InternalErrorCode::BadMantaObject),
+                                    format!("Invalid bucket_id: {}", e),
+                                )
+                            })
+                        })?;
+
+                    // Extract etag
+                    let etag = match &br.options.etag {
+                        Etag::Specified(e) => Some(e.as_str()),
+                        _ => None,
+                    };
+
+                    manta_objects.push((manta_object, bucket_id, etag));
+                    values_for_callback.push(br.value.clone());
+                }
+
+                // Convert to references for mdapi_client
+                let manta_object_refs: Vec<(&MantaObject, Uuid, Option<&str>)> =
+                    manta_objects
+                        .iter()
+                        .map(|(obj, bid, etag)| (obj, *bid, *etag))
+                        .collect();
+
+                // Call mdapi batch_update
+                let result =
+                    mdapi_client::batch_update(client, manta_object_refs)?;
+
+                debug!(
+                    "Mdapi batch update: {} successful, {} failed",
+                    result.successful, result.failed
+                );
+
+                // If any failed, return error
+                if result.failed > 0 {
+                    let error_msg = format!(
+                        "Mdapi batch update had {} failures: {:?}",
+                        result.failed,
+                        result
+                            .errors
+                            .iter()
+                            .map(|(name, _)| name.as_str())
+                            .collect::<Vec<_>>()
+                    );
+                    return Err(InternalError::new(
+                        Some(InternalErrorCode::MetadataUpdateFailure),
+                        error_msg,
+                    )
+                    .into());
+                }
+
+                // Call callback with values
+                callback(values_for_callback)?;
+                Ok(())
+            }
+            MetadataBackend::Hybrid { moray, mdapi } => {
+                // Partition requests by object type
+                let mut moray_requests = Vec::new();
+                let mut mdapi_requests = Vec::new();
+                let mut mdapi_objects = Vec::new();
+                let mut all_values = Vec::new();
+
+                for req in requests {
+                    let br =
+                        match req {
+                            BatchRequest::Put(br) => br,
+                            _ => return Err(InternalError::new(
+                                Some(InternalErrorCode::MetadataUpdateFailure),
+                                "Unexpected batch request type".to_string(),
+                            )
+                            .into()),
+                        };
+
+                    if is_bucket_object(&br.value) {
+                        // Bucket object - route to mdapi
+                        let manta_object: MantaObject = serde_json::from_value(
+                            br.value.clone(),
+                        )
+                        .map_err(|e| {
+                            InternalError::new(
+                                Some(InternalErrorCode::BadMantaObject),
+                                format!(
+                                    "Failed to deserialize bucket object: {}",
+                                    e
+                                ),
+                            )
+                        })?;
+
+                        let bucket_id = br
+                            .value
+                            .get("bucket_id")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| {
+                                InternalError::new(
+                                    Some(InternalErrorCode::BadMantaObject),
+                                    "Bucket object missing bucket_id"
+                                        .to_string(),
+                                )
+                            })
+                            .and_then(|s| {
+                                Uuid::parse_str(s).map_err(|e| {
+                                    InternalError::new(
+                                        Some(InternalErrorCode::BadMantaObject),
+                                        format!("Invalid bucket_id: {}", e),
+                                    )
+                                })
+                            })?;
+
+                        let etag = match &br.options.etag {
+                            Etag::Specified(e) => Some(e.as_str()),
+                            _ => None,
+                        };
+
+                        mdapi_objects.push((manta_object, bucket_id, etag));
+                        mdapi_requests.push(br.clone());
+                    } else {
+                        // Traditional object - route to moray
+                        moray_requests.push(BatchRequest::Put(br.clone()));
+                    }
+
+                    all_values.push(br.value.clone());
+                }
+
+                debug!(
+                    "Hybrid batch: {} moray, {} mdapi requests",
+                    moray_requests.len(),
+                    mdapi_requests.len()
+                );
+
+                // Process moray requests if any
+                if !moray_requests.is_empty() {
+                    moray
+                        .batch(&moray_requests, options, |_values| Ok(()))
+                        .map_err(|e| {
+                            InternalError::new(
+                                Some(InternalErrorCode::MetadataUpdateFailure),
+                                format!(
+                                    "Hybrid moray batch failed: {}",
+                                    e.description()
+                                ),
+                            )
+                        })?;
+                }
+
+                // Process mdapi requests if any
+                if !mdapi_objects.is_empty() {
+                    let mdapi_refs: Vec<(&MantaObject, Uuid, Option<&str>)> =
+                        mdapi_objects
+                            .iter()
+                            .map(|(obj, bid, etag)| (obj, *bid, *etag))
+                            .collect();
+
+                    let result = mdapi_client::batch_update(mdapi, mdapi_refs)?;
+
+                    if result.failed > 0 {
+                        let error_msg = format!(
+                            "Hybrid mdapi batch had {} failures",
+                            result.failed
+                        );
+                        return Err(InternalError::new(
+                            Some(InternalErrorCode::MetadataUpdateFailure),
+                            error_msg,
+                        )
+                        .into());
+                    }
+                }
+
+                // Call callback with all values
+                callback(all_values)?;
+                Ok(())
             }
         }
     }
@@ -248,27 +415,97 @@ impl MetadataBackend {
             MetadataBackend::Moray(client) => {
                 moray_client::put_object(client, object, etag)
             }
-            MetadataBackend::Mdapi(_client) => {
-                // TODO: Implement mdapi put_object
-                // This requires converting the moray Value to MantaObject,
-                // then to ObjectPayload, then calling mdapi update_object
-                Err(InternalError::new(
-                    Some(InternalErrorCode::MetadataUpdateFailure),
-                    "Mdapi single object update not yet fully implemented, \
-                     requires schema translation"
-                        .to_string(),
+            MetadataBackend::Mdapi(client) => {
+                // Deserialize Value to MantaObject
+                let manta_object: MantaObject =
+                    serde_json::from_value(object.clone()).map_err(|e| {
+                        InternalError::new(
+                            Some(InternalErrorCode::BadMantaObject),
+                            format!("Failed to deserialize object: {}", e),
+                        )
+                    })?;
+
+                // Extract bucket_id from object
+                let bucket_id = object
+                    .get("bucket_id")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| {
+                        InternalError::new(
+                            Some(InternalErrorCode::BadMantaObject),
+                            "Object missing bucket_id field".to_string(),
+                        )
+                    })
+                    .and_then(|s| {
+                        Uuid::parse_str(s).map_err(|e| {
+                            InternalError::new(
+                                Some(InternalErrorCode::BadMantaObject),
+                                format!("Invalid bucket_id UUID: {}", e),
+                            )
+                        })
+                    })?;
+
+                debug!(
+                    "Updating object {} in bucket {} via mdapi",
+                    manta_object.name, bucket_id
+                );
+
+                // Call mdapi put_object
+                mdapi_client::put_object(
+                    client,
+                    &manta_object,
+                    bucket_id,
+                    Some(etag),
                 )
-                .into())
             }
-            MetadataBackend::Hybrid { moray, mdapi: _ } => {
+            MetadataBackend::Hybrid { moray, mdapi } => {
                 // Route based on object type
                 if is_bucket_object(object) {
-                    // Bucket object - would go to mdapi, but not yet implemented
-                    // Fall back to moray for now
-                    warn!("Bucket object routed to moray (mdapi put_object not yet implemented)");
-                    moray_client::put_object(moray, object, etag)
+                    // Bucket object - use mdapi
+                    let manta_object: MantaObject = serde_json::from_value(
+                        object.clone(),
+                    )
+                    .map_err(|e| {
+                        InternalError::new(
+                            Some(InternalErrorCode::BadMantaObject),
+                            format!(
+                                "Failed to deserialize bucket object: {}",
+                                e
+                            ),
+                        )
+                    })?;
+
+                    let bucket_id = object
+                        .get("bucket_id")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| {
+                            InternalError::new(
+                                Some(InternalErrorCode::BadMantaObject),
+                                "Bucket object missing bucket_id field"
+                                    .to_string(),
+                            )
+                        })
+                        .and_then(|s| {
+                            Uuid::parse_str(s).map_err(|e| {
+                                InternalError::new(
+                                    Some(InternalErrorCode::BadMantaObject),
+                                    format!("Invalid bucket_id UUID: {}", e),
+                                )
+                            })
+                        })?;
+
+                    debug!(
+                        "Hybrid: routing bucket object {} to mdapi",
+                        manta_object.name
+                    );
+                    mdapi_client::put_object(
+                        mdapi,
+                        &manta_object,
+                        bucket_id,
+                        Some(etag),
+                    )
                 } else {
                     // Traditional Manta object - use moray
+                    debug!("Hybrid: routing traditional object to moray");
                     moray_client::put_object(moray, object, etag)
                 }
             }
