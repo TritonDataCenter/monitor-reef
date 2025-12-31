@@ -1207,6 +1207,7 @@ mod tests {
             endpoint: "mdapi.example.com:2030".to_string(),
             default_bucket_id: Some(Uuid::new_v4()),
             connection_timeout_ms: 5000,
+            single_bucket_mode: false,
         };
 
         assert_eq!(should_use_mdapi(&config), true);
@@ -1219,6 +1220,7 @@ mod tests {
             endpoint: "mdapi.example.com:2030".to_string(),
             default_bucket_id: Some(Uuid::new_v4()),
             connection_timeout_ms: 5000,
+            single_bucket_mode: false,
         };
 
         assert_eq!(should_use_mdapi(&config), false);
@@ -1231,6 +1233,7 @@ mod tests {
             endpoint: String::new(),
             default_bucket_id: Some(Uuid::new_v4()),
             connection_timeout_ms: 5000,
+            single_bucket_mode: false,
         };
 
         assert_eq!(should_use_mdapi(&config), false);
