@@ -652,10 +652,7 @@ pub fn list_buckets(
     client: &MdapiClient,
     owner: Uuid,
 ) -> Result<Vec<BucketInfo>, Error> {
-    debug!(
-        "Discovering buckets for owner {} via mdapi",
-        owner
-    );
+    debug!("Discovering buckets for owner {} via mdapi", owner);
 
     // Call rust-libmanta's list_buckets
     // Query vnode 0 for buckets - in a complete implementation, we would

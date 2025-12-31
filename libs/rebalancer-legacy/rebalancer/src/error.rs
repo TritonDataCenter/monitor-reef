@@ -38,15 +38,29 @@ impl std::error::Error for Error {
             Error::ParseUuid(e) => e.description(),
             Error::DieselConnection(e) => e.description(),
             Error::Mdapi(e) => match e {
-                libmanta::mdapi::MdapiError::BucketAlreadyExists(_) => "Bucket already exists",
-                libmanta::mdapi::MdapiError::BucketNotFound(_) => "Bucket not found",
-                libmanta::mdapi::MdapiError::ObjectNotFound(_) => "Object not found",
+                libmanta::mdapi::MdapiError::BucketAlreadyExists(_) => {
+                    "Bucket already exists"
+                }
+                libmanta::mdapi::MdapiError::BucketNotFound(_) => {
+                    "Bucket not found"
+                }
+                libmanta::mdapi::MdapiError::ObjectNotFound(_) => {
+                    "Object not found"
+                }
                 libmanta::mdapi::MdapiError::InvalidLimit(_) => "Invalid limit",
-                libmanta::mdapi::MdapiError::PreconditionFailed(_) => "Precondition failed",
-                libmanta::mdapi::MdapiError::DatabaseError(_) => "Database error",
-                libmanta::mdapi::MdapiError::InvalidContentMd5(_) => "Invalid content MD5",
+                libmanta::mdapi::MdapiError::PreconditionFailed(_) => {
+                    "Precondition failed"
+                }
+                libmanta::mdapi::MdapiError::DatabaseError(_) => {
+                    "Database error"
+                }
+                libmanta::mdapi::MdapiError::InvalidContentMd5(_) => {
+                    "Invalid content MD5"
+                }
                 libmanta::mdapi::MdapiError::RpcError(_) => "RPC error",
-                libmanta::mdapi::MdapiError::SerializationError(_) => "Serialization error",
+                libmanta::mdapi::MdapiError::SerializationError(_) => {
+                    "Serialization error"
+                }
                 libmanta::mdapi::MdapiError::IoError(_) => "IO error",
                 libmanta::mdapi::MdapiError::Other(_) => "Other error",
             },
