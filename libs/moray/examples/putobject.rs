@@ -8,8 +8,8 @@ extern crate serde_json;
 use moray::buckets;
 use moray::client::MorayClient;
 use moray::objects::{self, Etag};
-use slog::{o, Drain, Logger};
-use std::io::{Error, ErrorKind};
+use slog::{Drain, Logger, o};
+use std::io::Error;
 use std::sync::Mutex;
 
 fn main() -> Result<(), Error> {
@@ -30,20 +30,16 @@ fn main() -> Result<(), Error> {
     let mut mclient = MorayClient::from_parts(ip_arr, port, log, None)?;
 
     println!("===confirming bucket exists===");
-    match mclient.get_bucket(bucket_name, bucket_opts, |b| {
+    if let Err(e) = mclient.get_bucket(bucket_name, bucket_opts, |b| {
         dbg!(b);
         Ok(())
     }) {
-        Err(e) => {
-            eprintln!(
-                "You must create a bucket named '{}' first. \
-                 Run the createbucket example to do so.",
-                bucket_name
-            );
-            let e = Error::new(ErrorKind::Other, e);
-            return Err(e);
-        }
-        Ok(()) => (),
+        eprintln!(
+            "You must create a bucket named '{}' first. \
+             Run the createbucket example to do so.",
+            bucket_name
+        );
+        return Err(Error::other(e));
     }
 
     /* opts.etag defaults to undefined, and will clobber any existing value */
@@ -51,7 +47,7 @@ fn main() -> Result<(), Error> {
     mclient.put_object(
         "rust_test_bucket",
         "circle_constant",
-        json!({"aNumber": 6.28}),
+        json!({"aNumber": 6.5}),
         &opts,
         |o| {
             println!("Put object with undefined etag returns:\n {:?}\n", &o);
@@ -69,7 +65,7 @@ fn main() -> Result<(), Error> {
     mclient.put_object(
         "rust_test_bucket",
         "circle_constant",
-        json!({"aNumber": 6.2831}),
+        json!({"aNumber": 6.51}),
         &opts,
         |o| {
             println!(
@@ -90,7 +86,7 @@ fn main() -> Result<(), Error> {
     match mclient.put_object(
         "rust_test_bucket",
         "circle_constant",
-        json!({"aNumber": 3.14159}),
+        json!({"aNumber": 3.5}),
         &opts,
         |o| {
             dbg!(&o);
@@ -98,8 +94,7 @@ fn main() -> Result<(), Error> {
         },
     ) {
         Ok(()) => {
-            return Err(Error::new(
-                ErrorKind::Other,
+            return Err(Error::other(
                 "replacing object with 'Nulled' etag should fail",
             ));
         }
@@ -119,7 +114,7 @@ fn main() -> Result<(), Error> {
         .put_object(
             "rust_test_bucket",
             "viva_la_pi",
-            json!({"aNumber": 3.14159}),
+            json!({"aNumber": 3.5}),
             &opts,
             |o| {
                 println!(

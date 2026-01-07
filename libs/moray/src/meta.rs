@@ -2,8 +2,8 @@
  * Copyright 2019 Joyent, Inc.
  */
 
-use rust_fast::{client as fast_client, protocol::FastMessageId};
-use serde_json::{self, json, Value};
+use fast_rpc::{client as fast_client, protocol::FastMessageId};
+use serde_json::{self, Value, json};
 use std::io::Error;
 use std::net::TcpStream;
 
@@ -12,12 +12,12 @@ use std::net::TcpStream;
 /// * stmt: The SQL query statement
 /// * vals: A vector of values to insert
 /// * opts: Query options.  Acceptable formats include:
-///     * String or &str: `r#{ "key": <value> }#`
-///     * Map<String, serde_json::value::Value>
-///     * serde_json::value::Value
-///     * Other formats for which serde_json implements the From trait
+///   * String or &str: `r#{ "key": <value> }#`
+///   * Map<String, serde_json::value::Value>
+///   * serde_json::value::Value
+///   * Other formats for which serde_json implements the From trait
 /// * query_handler: will be called with the response as a
-/// &serde_json::value::Value
+///   `&serde_json::value::Value`
 ///
 /// Note:  The serde_json::value::Value From trait for Strings and &str's simply
 /// encodes them as Value::String's.  For our use case opts must be a JSON

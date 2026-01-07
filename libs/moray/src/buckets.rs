@@ -2,10 +2,10 @@
  * Copyright 2019 Joyent, Inc.
  */
 
-use rust_fast::{client as fast_client, protocol::FastMessageId};
+use fast_rpc::{client as fast_client, protocol::FastMessageId};
 use serde::{Deserialize, Serialize};
-use serde_json::{self, json, Value};
-use std::io::{Error, ErrorKind};
+use serde_json::{self, Value, json};
+use std::io::Error;
 use std::net::TcpStream;
 use uuid::Uuid;
 
@@ -88,7 +88,7 @@ where
 
     resp_data.iter().fold(result, |_r, bucket_data| {
         serde_json::from_value::<BucketIntermediate>(bucket_data.clone())
-            .map_err(|e| Error::new(ErrorKind::Other, e))
+            .map_err(Error::other)
             .and_then(|bi| {
                 cb(Bucket {
                     name: bi.name,
@@ -144,7 +144,7 @@ where
         Methods::List => {
             // Use default
         }
-        _ => return Err(Error::new(ErrorKind::Other, "Unsupported Method")),
+        _ => return Err(Error::other("Unsupported Method")),
     }
 
     fast_client::send(method.method(), arg, &mut msg_id, stream).and_then(
@@ -164,24 +164,25 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use quickcheck::{quickcheck, Arbitrary, Gen};
-    use rand::distributions::Alphanumeric;
+    use quickcheck::{Arbitrary, Gen, quickcheck};
     use rand::Rng;
+    use rand::distr::Alphanumeric;
     use serde_json::Map;
-    use std::iter;
 
-    pub fn random_string<G: Gen>(g: &mut G, len: usize) -> String {
-        iter::repeat(())
-            .map(|()| g.sample(Alphanumeric))
+    pub fn random_string(_g: &mut Gen, len: usize) -> String {
+        rand::rng()
+            .sample_iter(Alphanumeric)
             .take(len)
+            .map(char::from)
             .collect()
     }
 
     impl Arbitrary for BucketOptions {
-        fn arbitrary<G: Gen>(g: &mut G) -> BucketOptions {
-            let version = g.gen::<u32>();
-            let guarantee_order = g.gen::<bool>();
-            let sync_updates = g.gen::<bool>();
+        fn arbitrary(_g: &mut Gen) -> BucketOptions {
+            let mut rng = rand::rng();
+            let version = rng.random::<u32>();
+            let guarantee_order = rng.random::<bool>();
+            let sync_updates = rng.random::<bool>();
 
             BucketOptions {
                 version,
@@ -192,12 +193,13 @@ mod tests {
     }
 
     impl Arbitrary for Bucket {
-        fn arbitrary<G: Gen>(g: &mut G) -> Bucket {
-            let index_len = g.gen::<u8>() as usize;
-            let mtime_len = g.gen::<u8>() as usize;
-            let name_len = g.gen::<u8>() as usize;
-            let post_len = g.gen::<u8>() as usize;
-            let pre_len = g.gen::<u8>() as usize;
+        fn arbitrary(g: &mut Gen) -> Bucket {
+            let mut rng = rand::rng();
+            let index_len = rng.random::<u8>() as usize;
+            let mtime_len = rng.random::<u8>() as usize;
+            let name_len = rng.random::<u8>() as usize;
+            let post_len = rng.random::<u8>() as usize;
+            let pre_len = rng.random::<u8>() as usize;
 
             // TODO: further randomize index
             let index = json!({

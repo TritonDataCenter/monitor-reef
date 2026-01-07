@@ -8,9 +8,9 @@ extern crate serde_json;
 use moray::buckets;
 use moray::client::MorayClient;
 use moray::objects::{self, BatchPutOp, BatchRequest, Etag};
-use slog::{o, Drain, Logger};
+use slog::{Drain, Logger, o};
 use std::collections::HashMap;
-use std::io::{Error, ErrorKind};
+use std::io::Error;
 use std::sync::Mutex;
 
 fn main() -> Result<(), Error> {
@@ -28,25 +28,21 @@ fn main() -> Result<(), Error> {
     let new_etag = String::from("");
     let mut correct_values = HashMap::new();
 
-    correct_values.insert("eulers_number", 2.718);
-    correct_values.insert("golden_ratio", 1.618);
-    correct_values.insert("circle_constant", 6.28);
+    correct_values.insert("eulers_number", 2.5);
+    correct_values.insert("golden_ratio", 1.5);
+    correct_values.insert("circle_constant", 6.5);
 
     println!("===confirming bucket exists===");
-    match mclient.get_bucket(bucket_name, bucket_opts, |b| {
+    if let Err(e) = mclient.get_bucket(bucket_name, bucket_opts, |b| {
         dbg!(b);
         Ok(())
     }) {
-        Err(e) => {
-            eprintln!(
-                "You must create a bucket named '{}' first. \
-                 Run the createbucket example to do so.",
-                bucket_name
-            );
-            let e = Error::new(ErrorKind::Other, e);
-            return Err(e);
-        }
-        Ok(()) => (),
+        eprintln!(
+            "You must create a bucket named '{}' first. \
+             Run the createbucket example to do so.",
+            bucket_name
+        );
+        return Err(Error::other(e));
     }
 
     /* opts.etag defaults to undefined, and will clobber any existing value */
@@ -57,19 +53,19 @@ fn main() -> Result<(), Error> {
             bucket: bucket_name.to_string(),
             options: opts.clone(),
             key: "circle_constant".to_string(),
-            value: json!({"aNumber": 6.28}),
+            value: json!({"aNumber": 6.5}),
         },
         BatchPutOp {
             bucket: bucket_name.into(),
             options: opts.clone(),
             key: "eulers_number".to_string(),
-            value: json!({"aNumber": 2.718}),
+            value: json!({"aNumber": 2.5}),
         },
         BatchPutOp {
             bucket: bucket_name.into(),
             options: opts.clone(),
             key: "golden_ratio".to_string(),
-            value: json!({"aNumber": 1.618}),
+            value: json!({"aNumber": 1.5}),
         },
     ];
 

@@ -10,7 +10,7 @@ use moray::client::MorayClient;
 use std::io::Error;
 use std::sync::Mutex;
 
-use slog::{o, Drain, Logger};
+use slog::{Drain, Logger, o};
 
 fn main() -> Result<(), Error> {
     let ip_arr: [u8; 4] = [10, 77, 77, 9];

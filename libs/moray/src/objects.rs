@@ -2,10 +2,10 @@
  * Copyright 2020 Joyent, Inc.
  */
 
-use rust_fast::{client as fast_client, protocol::FastMessageId};
+use fast_rpc::{client as fast_client, protocol::FastMessageId};
 use serde::ser::Serializer;
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::{Error, ErrorKind};
 use std::net::TcpStream;
 use uuid::Uuid;
@@ -27,7 +27,7 @@ pub struct MorayObject {
 /// * Undefined: Clobber any object on put
 /// * Nulled: An object with the same key must not exist
 /// * Specified(String): The object will only be added or overwritten if the
-///     etag (String) matches the existing value
+///   etag (String) matches the existing value
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub enum Etag {
     Undefined,
@@ -162,15 +162,15 @@ where
                 .map_err(|e| {
                     // TODO: this should propagate error up
                     eprintln!("ERROR: {}", &e);
-                    Error::new(ErrorKind::Other, e)
+                    Error::other(e)
                 })
                 .and_then(|obj| cb(obj))
         })
     } else {
-        assert_eq!(fm_data.is_object(), true);
+        assert!(fm_data.is_object());
 
         serde_json::from_value::<MorayObject>(fm_data.clone())
-            .map_err(|e| Error::new(ErrorKind::Other, e))
+            .map_err(Error::other)
             .and_then(cb)?;
 
         result
@@ -221,12 +221,10 @@ where
             let arr: Vec<PutObjectReturn> =
                 serde_json::from_value(resp.data.d.clone())?;
             if arr.len() != 1 {
-                return Err(Error::new(
-                    ErrorKind::Other,
-                    format!("Expected response to be a single element Array, got: {:?}",
-                        arr
-                    ),
-                ));
+                return Err(Error::other(format!(
+                    "Expected response to be a single element Array, got: {:?}",
+                    arr
+                )));
             }
             object_handler(arr[0].etag.as_str())
         })
@@ -293,10 +291,7 @@ where
     F: FnMut(Vec<Value>) -> Result<(), Error>,
 {
     // We only support Put Operations right now
-    if requests.iter().any(|r| match r {
-        BatchRequest::Put(_) => false,
-        _ => true,
-    }) {
+    if requests.iter().any(|r| !matches!(r, BatchRequest::Put(_))) {
         return Err(Error::new(
             ErrorKind::InvalidInput,
             "Only Put operations are supported",
@@ -360,7 +355,9 @@ mod test {
             filter: String::from("(mydelete=filter)"),
         }));
 
-        assert!(batch(&mut dummy_stream, &requests, &opts, |_| Ok(())).is_err());
+        assert!(
+            batch(&mut dummy_stream, &requests, &opts, |_| Ok(())).is_err()
+        );
 
         listen_handle.join().unwrap();
     }

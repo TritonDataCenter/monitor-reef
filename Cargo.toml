@@ -17,6 +17,7 @@ members = [
     "libs/cueball-tcp-stream-connection",
     "libs/cueball",
     "libs/libmanta",
+    "libs/moray",
     "openapi-manager",
     "services/bugview-service",
     "services/jira-stub-server",

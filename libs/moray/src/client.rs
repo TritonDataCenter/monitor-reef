@@ -3,8 +3,8 @@
  */
 
 use cueball::backend::Backend;
-use cueball::connection_pool::types::ConnectionPoolOptions;
 use cueball::connection_pool::ConnectionPool;
+use cueball::connection_pool::types::ConnectionPoolOptions;
 use cueball_static_resolver::StaticIpResolver;
 use cueball_tcp_stream_connection::TcpStreamWrapper;
 
@@ -14,7 +14,7 @@ use std::ops::DerefMut;
 use std::str::FromStr;
 
 use serde_json::{self, Value};
-use std::io::{Error, ErrorKind};
+use std::io::Error;
 
 use std::net::{IpAddr, SocketAddr};
 
@@ -86,10 +86,10 @@ impl MorayClient {
         let mut conn = self
             .connection_pool
             .claim()
-            .map_err(|e| Error::new(ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| Error::other(e.to_string()))?;
 
         buckets::get_list_buckets(
-            &mut (*conn).deref_mut(),
+            (*conn).deref_mut(),
             "",
             opts,
             buckets::Methods::List,
@@ -109,10 +109,10 @@ impl MorayClient {
         let mut conn = self
             .connection_pool
             .claim()
-            .map_err(|e| Error::new(ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| Error::other(e.to_string()))?;
 
         buckets::get_list_buckets(
-            &mut (*conn).deref_mut(),
+            (*conn).deref_mut(),
             name,
             opts,
             buckets::Methods::Get,
@@ -133,10 +133,10 @@ impl MorayClient {
         let mut conn = self
             .connection_pool
             .claim()
-            .map_err(|e| Error::new(ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| Error::other(e.to_string()))?;
 
         objects::get_find_objects(
-            &mut (*conn).deref_mut(),
+            (*conn).deref_mut(),
             bucket,
             key,
             opts,
@@ -158,9 +158,9 @@ impl MorayClient {
         let mut conn = self
             .connection_pool
             .claim()
-            .map_err(|e| Error::new(ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| Error::other(e.to_string()))?;
         objects::get_find_objects(
-            &mut (*conn).deref_mut(),
+            (*conn).deref_mut(),
             bucket,
             filter,
             opts,
@@ -183,9 +183,9 @@ impl MorayClient {
         let mut conn = self
             .connection_pool
             .claim()
-            .map_err(|e| Error::new(ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| Error::other(e.to_string()))?;
         objects::put_object(
-            &mut (*conn).deref_mut(),
+            (*conn).deref_mut(),
             bucket,
             key,
             value,
@@ -201,10 +201,9 @@ impl MorayClient {
         opts: buckets::MethodOptions,
     ) -> Result<(), Error> {
         buckets::create_bucket(
-            &mut self
-                .connection_pool
+            self.connection_pool
                 .claim()
-                .map_err(|e| Error::new(ErrorKind::Other, e.to_string()))?
+                .map_err(|e| Error::other(e.to_string()))?
                 .deref_mut(),
             name,
             config,
@@ -224,8 +223,8 @@ impl MorayClient {
         let mut conn = self
             .connection_pool
             .claim()
-            .map_err(|e| Error::new(ErrorKind::Other, e.to_string()))?;
-        objects::batch(&mut (*conn).deref_mut(), requests, opts, object_handler)
+            .map_err(|e| Error::other(e.to_string()))?;
+        objects::batch((*conn).deref_mut(), requests, opts, object_handler)
     }
 
     pub fn sql<F, V>(
@@ -240,10 +239,9 @@ impl MorayClient {
         V: Into<Value>,
     {
         meta::sql(
-            &mut self
-                .connection_pool
+            self.connection_pool
                 .claim()
-                .map_err(|e| Error::new(ErrorKind::Other, e.to_string()))?
+                .map_err(|e| Error::other(e.to_string()))?
                 .deref_mut(),
             stmt,
             vals,

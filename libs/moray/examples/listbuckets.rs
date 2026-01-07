@@ -5,8 +5,8 @@
 use moray::buckets;
 use moray::client::MorayClient;
 
-use slog::{o, Drain, Logger};
-use std::io::{Error, ErrorKind};
+use slog::{Drain, Logger, o};
+use std::io::Error;
 use std::net::IpAddr;
 use std::net::SocketAddr;
 use std::str::FromStr;
@@ -72,12 +72,12 @@ fn main() -> Result<(), Error> {
     let ip_arr = match ipaddr {
         IpAddr::V4(ip) => ip.octets(),
         _ => {
-            return Err(Error::new(ErrorKind::Other, "Need IPv4"));
+            return Err(Error::other("Need IPv4"));
         }
     };
 
     let port: u16 = 2021;
-    let addr = format!("{}:{}", ipaddr.to_string(), port.to_string().as_str());
+    let addr = format!("{}:{}", ipaddr, port);
 
     let opts = buckets::MethodOptions::default();
     println!("MorayClient from_str");
@@ -85,7 +85,7 @@ fn main() -> Result<(), Error> {
 
     println!("MorayClient SocketAddr");
     let sockaddr = SocketAddr::from_str(addr.as_str()).unwrap();
-    client_sockaddr(sockaddr.clone(), opts.clone(), log.clone())?;
+    client_sockaddr(sockaddr, opts.clone(), log.clone())?;
 
     println!("MorayClient from_parts");
     client_fromparts(ip_arr, port, opts.clone(), log.clone())?;

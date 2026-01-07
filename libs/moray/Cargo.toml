@@ -1,52 +1,38 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
 [package]
 name = "moray"
 version = "0.11.4"
+description = "Rust client for Moray key-value store"
+repository = "https://github.com/TritonDataCenter/rust-moray"
+keywords = ["moray", "manta", "joyent", "triton"]
+license = "MPL-2.0"
 authors = ["Rui Loura <rui@joyent.com>",
            "Jon Anderson <jon.andereson@joyent.com"]
-edition = "2018"
+edition.workspace = true
 
 [dependencies]
-cueball = "0.3.1"
-cueball-static-resolver = "0.3.0"
-cueball-tcp-stream-connection = "0.3.0"
+cueball = { path = "../cueball" }
+cueball-static-resolver = { path = "../cueball-static-resolver" }
+cueball-tcp-stream-connection = { path = "../cueball-tcp-stream-connection" }
+fast-rpc = { path = "../fast" }
+libmanta = { path = "../libmanta" }
 
-rust_fast = { git = "https://github.com/joyent/rust-fast", tag="v0.2.0" }
-libmanta = { git = "https://github.com/joyent/rust-libmanta", tag="v0.7.0" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+slog = { version = "2.7", features = ["max_level_trace"] }
+uuid = { version = "1.0", features = ["v4"] }
 
-serde = { version = "1.0.89", features = ["derive"] }
-serde_json = "1.0.39"
-slog = { version = "2.4.1", features = [ "max_level_trace" ] }
-slog-bunyan = { git = "https://github.com/kellymclaughlin/bunyan", branch = "build-on-smartos" }
-
-uuid = {version = "0.7.4", features = ["v4"] }
 trust-dns-resolver = "0.11.1"
-unicode-normalization = "=0.1.5"
-
-[patch.crates-io]
-# We require the use of certain constructs which unfortunately were not
-# included in the latest released version of diesel (1.4.3).  We are hopeful
-# that in a later version (presumably 1.4.4), they will be included, however
-# the minimum rustc version required will surely be higher then -- minimally,
-# at 1.37.  The patch tables below reference a version of diesel and related
-# utility macros that rust-moray can safely use until we are able to move to an
-# officially released version of diesel which hopefully has the structures and
-# macros that we rely on.  In summary, there are two things that need to happen
-# in the future to move to the next diesel release.  First, we need to upgrade
-# rustc to something more current (ideally rustc 1.40) and then we need to
-# confirm whether or not the new release of diesel will contain the constructs
-# needed to successfully build rust-moray.  If it does not, then we will have to
-# consider avenues for eliminating their use from within the rust-moray code.
-# Finally, dependencies listed in the patch section of this project are
-# transitive, so they should also be used when builing any depedencies that also
-# rely on diesel (which is a good thing).
-diesel = { git = "https://github.com/diesel-rs/diesel", rev = "f75e930e166eb448e3c41d5cdc7251cfcad681f6"}
-diesel_derives = { git = "https://github.com/diesel-rs/diesel" , rev = "f75e930e166eb448e3c41d5cdc7251cfcad681f6"}
-
 
 [dev-dependencies]
-slog-term = "2.4.0"
-rand = "0.6.4"
-quickcheck = "0.8.0"
+quickcheck = "1.0"
+rand = "0.9"
+slog-term = "2.9"
 
 [features]
 default = []

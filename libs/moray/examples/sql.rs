@@ -3,7 +3,7 @@
  */
 use moray::client::MorayClient;
 use serde_json::{Map, Value};
-use slog::{o, Drain, Logger};
+use slog::{Drain, Logger, o};
 use std::io::Error;
 use std::sync::Mutex;
 
