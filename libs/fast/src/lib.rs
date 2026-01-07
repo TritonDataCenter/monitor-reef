@@ -24,7 +24,7 @@
 //! * VERSION   1-byte integer.  The only supported value is "1".
 //!
 //! * TYPE      1-byte integer.  The only supported value is TYPE_JSON (0x1),
-//!           indicating that the data payload is an encoded JSON object.
+//!   indicating that the data payload is an encoded JSON object.
 //!
 //! * STATUS    1-byte integer.  The only supported values are:
 //!
@@ -35,17 +35,17 @@
 //!     * STATUS_ERROR 0x3  indicates an "error" message
 //!
 //! * MSGID0...MSGID3    4-byte big-endian unsigned integer, a unique identifier
-//!                    for this message.
+//!   for this message.
 //!
 //! * CRC0...CRC3        4-byte big-endian unsigned integer representing the CRC16
-//!                     value of the data payload
+//!   value of the data payload
 //!
 //! * DLEN0...DLEN4      4-byte big-endian unsigned integer representing the number
-//!                    of bytes of data payload that follow
+//!   of bytes of data payload that follow
 //!
 //! * DATA0...DATAN      Data payload.  This is a JSON-encoded object (for TYPE =
-//!                    TYPE_JSON).  The encoding length in bytes is given by the
-//!                    DLEN0...DLEN4 bytes.
+//!   TYPE_JSON).  The encoding length in bytes is given by the
+//!   DLEN0...DLEN4 bytes.
 //!
 //! ### Status
 //!

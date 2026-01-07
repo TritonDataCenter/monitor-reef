@@ -5,19 +5,19 @@
 //! server consumers of this crate, but they are exposed for the special case of
 //! someone needing to implement custom client or server code.
 
-use std::io::{Error, ErrorKind};
+use std::io::Error;
 use std::sync::atomic::AtomicUsize;
 use std::time::{SystemTime, UNIX_EPOCH};
-use std::{io, str, usize};
+use std::{io, str};
 
 use byteorder::{BigEndian, ByteOrder};
-use bytes::{BufMut, BytesMut};
+use bytes::{Buf, BufMut, BytesMut};
 use crc16::*;
 use num::{FromPrimitive, ToPrimitive};
 use num_derive::{FromPrimitive, ToPrimitive};
-use serde_derive::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio_io::_tokio_codec::{Decoder, Encoder};
+use tokio_util::codec::{Decoder, Encoder};
 
 const FP_OFF_TYPE: usize = 0x1;
 const FP_OFF_STATUS: usize = 0x2;
@@ -54,7 +54,7 @@ impl Iterator for FastMessageId {
         // Increment our count. This is why we started at zero.
         let id_value = self.0.get_mut();
         let current = *id_value;
-        *id_value = (*id_value + 1) % (usize::max_value() - 1);
+        *id_value = (*id_value + 1) % (usize::MAX - 1);
 
         Some(current)
     }
@@ -78,7 +78,7 @@ impl From<FastParseError> for Error {
         match pfr {
             FastParseError::NotEnoughBytes(_) => {
                 let msg = "Unable to parse message: not enough bytes";
-                Error::new(ErrorKind::Other, msg)
+                Error::other(msg)
             }
             FastParseError::IOError(e) => e,
         }
@@ -104,7 +104,7 @@ impl FastMessageServerError {
 
 impl From<FastMessageServerError> for Error {
     fn from(err: FastMessageServerError) -> Self {
-        Error::new(ErrorKind::Other, format!("{}: {}", err.name, err.message))
+        Error::other(format!("{}: {}", err.name, err.message))
     }
 }
 
@@ -244,12 +244,12 @@ impl FastMessage {
         let msg_type =
             FromPrimitive::from_u8(buf[FP_OFF_TYPE]).ok_or_else(|| {
                 let msg = "Failed to parse message type";
-                FastParseError::IOError(Error::new(ErrorKind::Other, msg))
+                FastParseError::IOError(Error::other(msg))
             })?;
         let status =
             FromPrimitive::from_u8(buf[FP_OFF_STATUS]).ok_or_else(|| {
                 let msg = "Failed to parse message status";
-                FastParseError::IOError(Error::new(ErrorKind::Other, msg))
+                FastParseError::IOError(Error::other(msg))
             })?;
         let msg_id = BigEndian::read_u32(&buf[FP_OFF_MSGID..FP_OFF_MSGID + 4]);
         let expected_crc =
@@ -282,7 +282,7 @@ impl FastMessage {
         let calculated_crc = u32::from(State::<ARC>::calculate(data_buf));
         if crc != calculated_crc {
             let msg = "Calculated CRC does not match the provided CRC";
-            Err(FastParseError::IOError(Error::new(ErrorKind::Other, msg)))
+            Err(FastParseError::IOError(Error::other(msg)))
         } else {
             Ok(())
         }
@@ -292,11 +292,11 @@ impl FastMessage {
         match str::from_utf8(data_buf) {
             Ok(data_str) => serde_json::from_str(data_str).map_err(|_e| {
                 let msg = "Failed to parse data payload as JSON";
-                FastParseError::IOError(Error::new(ErrorKind::Other, msg))
+                FastParseError::IOError(Error::other(msg))
             }),
             Err(_) => {
                 let msg = "Failed to parse data payload as UTF-8";
-                Err(FastParseError::IOError(Error::new(ErrorKind::Other, msg)))
+                Err(FastParseError::IOError(Error::other(msg)))
             }
         }
     }
@@ -359,7 +359,7 @@ impl Decoder for FastRpc {
                 msgs.reserve(1);
             }
 
-            match FastMessage::parse(&buf) {
+            match FastMessage::parse(buf) {
                 Ok(parsed_msg) => {
                     // TODO: Handle the error case here!
                     let data_str =
@@ -381,7 +381,7 @@ impl Decoder for FastRpc {
                         "failed to parse Fast request: {}",
                         Error::from(err)
                     );
-                    Err(Error::new(ErrorKind::Other, msg))
+                    Err(Error::other(msg))
                 }
             }?
         }
@@ -394,13 +394,12 @@ impl Decoder for FastRpc {
     }
 }
 
-impl Encoder for FastRpc {
-    type Item = Vec<FastMessage>;
+impl Encoder<Vec<FastMessage>> for FastRpc {
     //TODO: Create custom FastMessage error type
     type Error = io::Error;
     fn encode(
         &mut self,
-        item: Self::Item,
+        item: Vec<FastMessage>,
         buf: &mut BytesMut,
     ) -> Result<(), io::Error> {
         let results: Vec<Result<(), String>> =
@@ -408,7 +407,7 @@ impl Encoder for FastRpc {
         let result: Result<Vec<()>, String> = results.iter().cloned().collect();
         match result {
             Ok(_) => Ok(()),
-            Err(errs) => Err(Error::new(ErrorKind::Other, errs)),
+            Err(errs) => Err(Error::other(errs)),
         }
     }
 }
@@ -433,12 +432,12 @@ pub(crate) fn encode_msg(
             buf.put_u8(FP_VERSION_CURRENT);
             buf.put_u8(msg_type_u8);
             buf.put_u8(status_u8);
-            buf.put_u32_be(msg.id);
-            buf.put_u32_be(u32::from(State::<ARC>::calculate(
+            buf.put_u32(msg.id);
+            buf.put_u32(u32::from(State::<ARC>::calculate(
                 data_str.as_bytes(),
             )));
-            buf.put_u32_be(data_str.len() as u32);
-            buf.put(data_str);
+            buf.put_u32(data_str.len() as u32);
+            buf.put_slice(data_str.as_bytes());
             Ok(())
         }
         (None, Some(_)) => Err(String::from("Invalid message type")),
@@ -451,27 +450,27 @@ pub(crate) fn encode_msg(
 mod test {
     use super::*;
 
-    use std::iter;
-
-    use quickcheck::{quickcheck, Arbitrary, Gen};
-    use rand::distributions::Alphanumeric;
-    use rand::seq::SliceRandom;
+    use quickcheck::{Arbitrary, Gen, quickcheck};
     use rand::Rng;
+    use rand::distr::Alphanumeric;
+    use rand::seq::IndexedRandom;
     use serde_json::Map;
 
-    fn random_string<G: Gen>(g: &mut G, len: usize) -> String {
-        iter::repeat(())
-            .map(|()| g.sample(Alphanumeric))
+    fn random_string(_g: &mut Gen, len: usize) -> String {
+        rand::rng()
+            .sample_iter(Alphanumeric)
             .take(len)
+            .map(char::from)
             .collect()
     }
 
-    fn nested_object<G: Gen>(g: &mut G) -> Value {
-        let k_len = g.gen::<u8>() as usize;
-        let v_len = g.gen::<u8>() as usize;
-        let k = random_string(g, k_len);
-        let v = random_string(g, v_len);
-        let count = g.gen::<u64>();
+    fn nested_object(_g: &mut Gen) -> Value {
+        let mut rng = rand::rng();
+        let k_len = rng.random::<u8>() as usize;
+        let v_len = rng.random::<u8>() as usize;
+        let k = random_string(_g, k_len);
+        let v = random_string(_g, v_len);
+        let count = rng.random::<u64>();
         let mut inner_obj = Map::new();
         let mut outer_obj = Map::new();
         let _ = inner_obj.insert(k, Value::String(v));
@@ -487,10 +486,11 @@ mod test {
     struct MessageCount(u8);
 
     impl Arbitrary for MessageCount {
-        fn arbitrary<G: Gen>(g: &mut G) -> MessageCount {
-            let mut c = 0;
+        fn arbitrary(_g: &mut Gen) -> MessageCount {
+            let mut rng = rand::rng();
+            let mut c = 0u8;
             while c == 0 {
-                c = g.gen::<u8>()
+                c = rng.random::<u8>()
             }
 
             MessageCount(c)
@@ -498,34 +498,37 @@ mod test {
     }
 
     impl Arbitrary for FastMessageStatus {
-        fn arbitrary<G: Gen>(g: &mut G) -> FastMessageStatus {
+        fn arbitrary(_g: &mut Gen) -> FastMessageStatus {
+            let mut rng = rand::rng();
             let choices = [
                 FastMessageStatus::Data,
                 FastMessageStatus::End,
                 FastMessageStatus::Error,
             ];
 
-            choices.choose(g).unwrap().clone()
+            choices.choose(&mut rng).unwrap().clone()
         }
     }
 
     impl Arbitrary for FastMessageType {
-        fn arbitrary<G: Gen>(g: &mut G) -> FastMessageType {
+        fn arbitrary(_g: &mut Gen) -> FastMessageType {
+            let mut rng = rand::rng();
             let choices = [FastMessageType::Json];
 
-            choices.choose(g).unwrap().clone()
+            choices.choose(&mut rng).unwrap().clone()
         }
     }
 
     impl Arbitrary for FastMessageMetaData {
-        fn arbitrary<G: Gen>(g: &mut G) -> FastMessageMetaData {
+        fn arbitrary(g: &mut Gen) -> FastMessageMetaData {
             let name = random_string(g, 10);
             FastMessageMetaData::new(name)
         }
     }
 
     impl Arbitrary for FastMessageData {
-        fn arbitrary<G: Gen>(g: &mut G) -> FastMessageData {
+        fn arbitrary(g: &mut Gen) -> FastMessageData {
+            let mut rng = rand::rng();
             let md = FastMessageMetaData::arbitrary(g);
 
             let choices = [
@@ -535,17 +538,18 @@ mod test {
                 Value::Array(vec![nested_object(g)]),
             ];
 
-            let value = choices.choose(g).unwrap().clone();
+            let value = choices.choose(&mut rng).unwrap().clone();
 
             FastMessageData { m: md, d: value }
         }
     }
 
     impl Arbitrary for FastMessage {
-        fn arbitrary<G: Gen>(g: &mut G) -> FastMessage {
+        fn arbitrary(g: &mut Gen) -> FastMessage {
+            let mut rng = rand::rng();
             let msg_type = FastMessageType::arbitrary(g);
             let status = FastMessageStatus::arbitrary(g);
-            let id = g.gen::<u32>();
+            let id = rng.random::<u32>();
 
             let data = FastMessageData::arbitrary(g);
             let data_str = serde_json::to_string(&data).unwrap();

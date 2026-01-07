@@ -2,12 +2,11 @@
 
 //! This module provides the interface for creating Fast clients.
 
-use std::io::{Error, ErrorKind};
+use std::io::{Error, ErrorKind, Read, Write};
 use std::net::TcpStream;
 
 use bytes::BytesMut;
 use serde_json::Value;
-use tokio::prelude::*;
 
 use crate::protocol;
 use crate::protocol::{
@@ -38,7 +37,7 @@ pub fn send(
     let mut write_buf = BytesMut::new();
     match protocol::encode_msg(&msg, &mut write_buf) {
         Ok(_) => stream.write(write_buf.as_ref()),
-        Err(err_str) => Err(Error::new(ErrorKind::Other, err_str)),
+        Err(err_str) => Err(Error::other(err_str)),
     }
 }
 
@@ -127,7 +126,7 @@ where
                     }
                     FastMessageStatus::Error => {
                         result = serde_json::from_value(fm.data.d)
-                            .or_else(|_| Err(unspecified_error().into()))
+                            .map_err(|_| unspecified_error().into())
                             .and_then(
                                 |e: FastMessageServerError| Err(e.into()),
                             );

@@ -4,61 +4,58 @@ use std::io::Error;
 use std::net::{SocketAddr, TcpStream};
 use std::process;
 
-use clap::{crate_version, value_t, App, Arg, ArgMatches};
+use clap::{Arg, ArgMatches, Command, crate_version};
 use serde_json::Value;
 
 use fast_rpc::client;
 use fast_rpc::protocol::{FastMessage, FastMessageId};
 
-static APP: &'static str = "fastcall";
-static DEFAULT_HOST: &'static str = "127.0.0.1";
+static APP: &str = "fastcall";
+static DEFAULT_HOST: &str = "127.0.0.1";
 const DEFAULT_PORT: u32 = 2030;
 
-pub fn parse_opts<'a, 'b>(app: String) -> ArgMatches<'a> {
-    App::new(app)
+pub fn parse_opts(app: &'static str) -> ArgMatches {
+    Command::new(app)
         .about("Command-line tool for making a node-fast RPC method call")
         .version(crate_version!())
         .arg(
-            Arg::with_name("host")
+            Arg::new("host")
                 .help("DNS name or IP address for remote server")
                 .long("host")
-                .short("h")
-                .takes_value(true)
+                .short('h')
                 .required(false),
         )
         .arg(
-            Arg::with_name("port")
+            Arg::new("port")
                 .help("TCP port for remote server (Default: 2030)")
                 .long("port")
-                .short("p")
-                .takes_value(true),
+                .short('p')
+                .value_parser(clap::value_parser!(u32)),
         )
         .arg(
-            Arg::with_name("method")
+            Arg::new("method")
                 .help("Name of remote RPC method call")
                 .long("method")
-                .short("m")
-                .takes_value(true)
+                .short('m')
                 .required(true),
         )
         .arg(
-            Arg::with_name("args")
+            Arg::new("args")
                 .help("JSON-encoded arguments for RPC method call")
                 .long("args")
-                .takes_value(true)
                 .required(true),
         )
         .arg(
-            Arg::with_name("abandon")
+            Arg::new("abandon")
                 .long("abandon-immediately")
-                .short("a")
-                .takes_value(false),
+                .short('a')
+                .action(clap::ArgAction::SetTrue),
         )
         .arg(
-            Arg::with_name("leave_open")
+            Arg::new("leave_open")
                 .long("leave-conn-open")
-                .short("c")
-                .takes_value(false),
+                .short('c')
+                .action(clap::ArgAction::SetTrue),
         )
         .get_matches()
 }
@@ -79,11 +76,16 @@ fn response_handler(msg: &FastMessage) -> Result<(), Error> {
 }
 
 fn main() {
-    let matches = parse_opts(APP.to_string());
-    let host = String::from(matches.value_of("host").unwrap_or(DEFAULT_HOST));
-    let port = value_t!(matches, "port", u32).unwrap_or(DEFAULT_PORT);
-    let addr = [host, String::from(":"), port.to_string()]
-        .concat()
+    let matches = parse_opts(APP);
+    let host = matches
+        .get_one::<String>("host")
+        .map(|s| s.as_str())
+        .unwrap_or(DEFAULT_HOST);
+    let port = matches
+        .get_one::<u32>("port")
+        .copied()
+        .unwrap_or(DEFAULT_PORT);
+    let addr = format!("{}:{}", host, port)
         .parse::<SocketAddr>()
         .unwrap_or_else(|e| {
             eprintln!(
@@ -94,13 +96,23 @@ fn main() {
             process::exit(1)
         });
     let method =
-        String::from(matches.value_of("method").unwrap_or_else(|| {
-            eprintln!("Failed to parse method argument as String");
-            process::exit(1)
-        }));
-    let args = value_t!(matches, "args", Value).unwrap_or_else(|e| e.exit());
+        matches
+            .get_one::<String>("method")
+            .cloned()
+            .unwrap_or_else(|| {
+                eprintln!("Failed to parse method argument as String");
+                process::exit(1)
+            });
+    let args_str = matches.get_one::<String>("args").unwrap_or_else(|| {
+        eprintln!("Failed to get args argument");
+        process::exit(1)
+    });
+    let args: Value = serde_json::from_str(args_str).unwrap_or_else(|e| {
+        eprintln!("Failed to parse args as JSON: {}", e);
+        process::exit(1)
+    });
 
-    let mut stream = TcpStream::connect(&addr).unwrap_or_else(|e| {
+    let mut stream = TcpStream::connect(addr).unwrap_or_else(|e| {
         eprintln!("Failed to connect to server: {}", e);
         process::exit(1)
     });

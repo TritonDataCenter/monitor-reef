@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
-# Copyright 2025 Edgecast Cloud LLC.
+# Copyright 2026 Edgecast Cloud LLC.
 
 [workspace]
 members = [
@@ -11,6 +11,7 @@ members = [
     "cli/bugview-cli",
     "clients/internal/bugview-client",
     "clients/internal/jira-client",
+    "libs/fast",
     "openapi-manager",
     "services/bugview-service",
     "services/jira-stub-server",
@@ -33,7 +34,7 @@ tokio = { version = "1.48", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 anyhow = "1.0"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "cargo"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # NOTE: schemars version is tied to dropshot compatibility
