@@ -4,52 +4,58 @@
 
 use std::io::Error;
 
+use futures::{SinkExt, StreamExt};
 use serde_json::json;
-use slog::{debug, error, o, Drain, Logger};
-use tokio;
-use tokio::codec::Decoder;
+use slog::{Drain, Logger, debug, error, o};
 use tokio::net::TcpStream;
-use tokio::prelude::*;
+use tokio_util::codec::Decoder;
 
 use crate::protocol::{FastMessage, FastMessageData, FastRpc};
 
-/// Create a task to be used by the tokio runtime for handling responses to Fast
-/// protocol requests.
-pub fn make_task<F>(
+/// Handle Fast protocol requests on a TCP stream.
+///
+/// This async function processes incoming Fast messages and sends responses.
+pub async fn handle_connection<F>(
     socket: TcpStream,
     mut response_handler: F,
     log: Option<&Logger>,
-) -> impl Future<Item = (), Error = ()> + Send
+) -> Result<(), Error>
 where
     F: FnMut(&FastMessage, &Logger) -> Result<Vec<FastMessage>, Error> + Send,
 {
-    let (tx, rx) = FastRpc.framed(socket).split();
+    let (mut tx, mut rx) = FastRpc.framed(socket).split();
 
     // If no logger was provided use the slog StdLog drain by default
-    let rx_log = log
+    let log = log
         .cloned()
         .unwrap_or_else(|| Logger::root(slog_stdlog::StdLog.fuse(), o!()));
 
-    let tx_log = rx_log.clone();
-    tx.send_all(rx.and_then(move |x| {
-        debug!(rx_log, "processing fast message");
-        respond(x, &mut response_handler, &rx_log)
-    }))
-    .then(move |res| {
-        if let Err(e) = res {
-            error!(tx_log, "failed to process connection"; "err" => %e);
+    while let Some(result) = rx.next().await {
+        match result {
+            Ok(msgs) => {
+                debug!(log, "processing fast message");
+                let responses = respond(msgs, &mut response_handler, &log);
+                if let Err(e) = tx.send(responses).await {
+                    error!(log, "failed to send response"; "err" => %e);
+                    return Err(e);
+                }
+                debug!(log, "transmitted response to client");
+            }
+            Err(e) => {
+                error!(log, "failed to process connection"; "err" => %e);
+                return Err(e);
+            }
         }
+    }
 
-        debug!(tx_log, "transmitted response to client");
-        Ok(())
-    })
+    Ok(())
 }
 
 fn respond<F>(
     msgs: Vec<FastMessage>,
     response_handler: &mut F,
     log: &Logger,
-) -> impl Future<Item = Vec<FastMessage>, Error = Error> + Send
+) -> Vec<FastMessage>
 where
     F: FnMut(&FastMessage, &Logger) -> Result<Vec<FastMessage>, Error> + Send,
 {
@@ -58,7 +64,7 @@ where
     let mut responses: Vec<FastMessage> = Vec::new();
 
     for msg in msgs {
-        match response_handler(&msg, &log) {
+        match response_handler(&msg, log) {
             Ok(mut response) => {
                 // Make sure there is room in responses to fit another response plus an
                 // end message
@@ -97,5 +103,5 @@ where
         }
     }
 
-    Box::new(future::ok(responses))
+    responses
 }
