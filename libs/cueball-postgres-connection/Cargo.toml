@@ -1,0 +1,27 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "cueball-postgres-connection"
+version = "0.4.0"
+authors = ["Kelly McLaughlin <kelly.mclaughlin@joyent.com>"]
+description = "An implementation of the cueball Connection trait for postgres::Client"
+repository = "https://github.com/TritonDataCenter/monitor-reef"
+keywords = ["pool", "joyent", "manta", "triton"]
+license = "MPL-2.0"
+edition.workspace = true
+
+[dependencies]
+cueball = { path = "../cueball" }
+native-tls = "0.2"
+postgres = "0.19"
+postgres-native-tls = "0.5"
+serde = { workspace = true }
+
+[dev-dependencies]
+cueball-static-resolver = { path = "../cueball-static-resolver" }
+slog = "2.7"
+slog-term = "2.9"
