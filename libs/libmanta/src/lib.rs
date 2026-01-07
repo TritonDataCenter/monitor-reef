@@ -1,6 +1,6 @@
 // Copyright 2019 Joyent, Inc.
 
-#[macro_use]
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
 extern crate diesel;
 
 pub mod moray;

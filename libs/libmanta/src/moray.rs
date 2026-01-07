@@ -1,14 +1,17 @@
 // Copyright 2019 Joyent, Inc.
 
 use crate::util;
-use base64;
-use diesel::sql_types;
-use md5;
+use base64::{Engine, engine::general_purpose::STANDARD};
+use md5::{Digest, Md5};
 use quickcheck::{Arbitrary, Gen};
 use rand::Rng;
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
+
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+use diesel::sql_types;
 
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 use std::io::Write;
@@ -22,9 +25,6 @@ use diesel::{
 #[cfg(feature = "sqlite")]
 use diesel::sqlite::Sqlite;
 
-#[cfg(feature = "sqlite")]
-use diesel::backend;
-
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 #[serde(tag = "type")]
 pub enum ObjectType {
@@ -35,18 +35,16 @@ pub enum ObjectType {
     Directory(MantaDirectory),
 }
 
-#[derive(
-    Deserialize,
-    Serialize,
-    Default,
-    PartialEq,
-    Debug,
-    Clone,
-    FromSqlRow,
-    AsExpression,
+#[derive(Deserialize, Serialize, Default, PartialEq, Debug, Clone)]
+#[cfg_attr(
+    any(feature = "sqlite", feature = "postgres"),
+    derive(diesel::deserialize::FromSqlRow, diesel::expression::AsExpression)
+)]
+#[cfg_attr(
+    any(feature = "sqlite", feature = "postgres"),
+    diesel(sql_type = diesel::sql_types::Text)
 )]
 #[serde(rename_all = "camelCase")]
-#[sql_type = "sql_types::Text"]
 pub struct MantaObject {
     pub headers: Value,
     pub key: String,
@@ -82,13 +80,12 @@ pub struct MantaObject {
 
 #[cfg(feature = "sqlite")]
 impl ToSql<sql_types::Text, Sqlite> for MantaObject {
-    fn to_sql<W: Write>(
-        &self,
-        out: &mut Output<W, Sqlite>,
+    fn to_sql<'b>(
+        &'b self,
+        out: &mut Output<'b, '_, Sqlite>,
     ) -> serialize::Result {
         let manta_str = serde_json::to_string(&self).unwrap();
-        out.write_all(manta_str.as_bytes())?;
-
+        out.set_value(manta_str);
         Ok(IsNull::No)
     }
 }
@@ -96,38 +93,40 @@ impl ToSql<sql_types::Text, Sqlite> for MantaObject {
 #[cfg(feature = "sqlite")]
 impl FromSql<sql_types::Text, Sqlite> for MantaObject {
     fn from_sql(
-        bytes: Option<backend::RawValue<Sqlite>>,
+        bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {
-        let manta_obj: MantaObject =
-            serde_json::from_str(not_none!(bytes).read_text())?;
+        let s = <String as FromSql<sql_types::Text, Sqlite>>::from_sql(bytes)?;
+        let manta_obj: MantaObject = serde_json::from_str(&s)?;
         Ok(manta_obj)
     }
 }
 
 #[cfg(feature = "postgres")]
-use diesel::pg::{Pg, PgValue};
+use diesel::pg::Pg;
 
 #[cfg(feature = "postgres")]
 impl ToSql<sql_types::Text, Pg> for MantaObject {
-    fn to_sql<W: Write>(&self, out: &mut Output<W, Pg>) -> serialize::Result {
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
         let manta_str = serde_json::to_string(&self).unwrap();
         out.write_all(manta_str.as_bytes())?;
-
         Ok(IsNull::No)
     }
 }
 
 #[cfg(feature = "postgres")]
 impl FromSql<sql_types::Text, Pg> for MantaObject {
-    fn from_sql(bytes: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let t: PgValue = not_none!(bytes);
-        let t_str = String::from_utf8_lossy(t.as_bytes());
-        let manta_obj: MantaObject = serde_json::from_str(&t_str)?;
+    fn from_sql(
+        bytes: <Pg as diesel::backend::Backend>::RawValue<'_>,
+    ) -> deserialize::Result<Self> {
+        let s = <String as FromSql<sql_types::Text, Pg>>::from_sql(bytes)?;
+        let manta_obj: MantaObject = serde_json::from_str(&s)?;
         Ok(manta_obj)
     }
 }
 
-#[derive(Deserialize, Serialize, Default, PartialEq, Debug, Clone)]
+#[derive(
+    Clone, Debug, Default, Deserialize, JsonSchema, PartialEq, Serialize,
+)]
 pub struct MantaObjectShark {
     pub datacenter: String,
     pub manta_storage_id: String,
@@ -150,8 +149,9 @@ pub struct MantaDirectory {
 
 // Implement Arbitrary traits for testing
 impl Arbitrary for MantaObjectShark {
-    fn arbitrary<G: Gen>(g: &mut G) -> MantaObjectShark {
-        let len = g.gen_range(1, 100) as usize;
+    fn arbitrary(g: &mut Gen) -> MantaObjectShark {
+        let mut rng = rand::rng();
+        let len = rng.random_range(1..100usize);
         let msid = format!(
             "{}.{}.{}",
             len,
@@ -166,8 +166,9 @@ impl Arbitrary for MantaObjectShark {
 }
 
 impl Arbitrary for MantaObject {
-    fn arbitrary<G: Gen>(g: &mut G) -> MantaObject {
-        let len = g.gen::<u8>() as usize;
+    fn arbitrary(g: &mut Gen) -> MantaObject {
+        let mut rng = rand::rng();
+        let len = rng.random::<u8>() as usize;
 
         let mut headers_map = Map::new();
         headers_map.insert(
@@ -187,10 +188,10 @@ impl Arbitrary for MantaObject {
 
         // We don't want negative numbers here, but these fields are
         // indexes and postgres bigint's the max of which is i64::MAX.
-        let mtime: i64 = g.gen_range(0, std::i64::MAX);
-        let vnode: i64 = g.gen_range(0, std::i64::MAX);
+        let mtime: i64 = rng.random_range(0..i64::MAX);
+        let vnode: i64 = rng.random_range(0..i64::MAX);
 
-        let content_length: u64 = g.gen();
+        let content_length: u64 = rng.random();
         let headers = Value::Object(headers_map);
         let key = util::random_string(g, len);
         let creator = util::random_string(g, len);
@@ -199,8 +200,8 @@ impl Arbitrary for MantaObject {
         let owner = Uuid::new_v4().to_string();
         let roles: Vec<String> = vec![util::random_string(g, len)];
 
-        let md5_sum = md5::compute(util::random_string(g, len));
-        let content_md5: String = base64::encode(&*md5_sum);
+        let md5_sum = Md5::digest(util::random_string(g, len));
+        let content_md5: String = STANDARD.encode(md5_sum);
 
         let etag: String = Uuid::new_v4().to_string();
         let content_type: String = util::random_string(g, len);
@@ -237,7 +238,6 @@ mod tests {
     use super::*;
     use quickcheck::quickcheck;
     use regex::Regex;
-    use serde_json;
     use std::str::FromStr;
 
     quickcheck!(
