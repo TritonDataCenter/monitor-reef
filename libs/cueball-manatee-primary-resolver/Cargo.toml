@@ -6,7 +6,7 @@ description = """
 An implementation of the cueball Resolver trait that is specific to the Joyent manatee project. It queries a zookeeper
 cluster to determine the PostgreSQL replication primary from a set of PostgreSQL replication peers.
 """
-repository = "https://github.com/joyent/rust-cueball"
+repository = "https://github.com/TritonDataCenter/monitor-reef"
 keywords = ["pool","joyent"]
 readme = "./README.md"
 license = "MPL-2.0"

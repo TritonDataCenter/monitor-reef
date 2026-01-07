@@ -6,13 +6,13 @@ use std::sync::{Arc, Barrier, Mutex};
 use std::time::Duration;
 use std::{thread, time};
 
-use slog::{info, o, Drain, Logger};
+use slog::{Drain, Logger, info, o};
 
 use cueball::backend;
 use cueball::backend::{Backend, BackendAddress, BackendPort};
 use cueball::connection::Connection;
-use cueball::connection_pool::types::ConnectionPoolOptions;
 use cueball::connection_pool::ConnectionPool;
+use cueball::connection_pool::types::ConnectionPoolOptions;
 use cueball::error::Error;
 use cueball::resolver::{BackendAddedMsg, BackendMsg, Resolver};
 
@@ -20,7 +20,7 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
 pub struct DummyConnection {
-    addr: SocketAddr,
+    _addr: SocketAddr,
     connected: bool,
 }
 
@@ -29,7 +29,7 @@ impl DummyConnection {
         let addr = SocketAddr::from((b.address, b.port));
 
         DummyConnection {
-            addr: addr,
+            _addr: addr,
             connected: false,
         }
     }
@@ -58,7 +58,7 @@ pub struct FakeResolver {
 impl FakeResolver {
     pub fn new(backends: Vec<(BackendAddress, BackendPort)>) -> Self {
         FakeResolver {
-            backends: backends,
+            backends,
             pool_tx: None,
             running: false,
         }
@@ -76,7 +76,7 @@ impl Resolver for FakeResolver {
             let backend_key = backend::srv_key(&backend);
             let backend_msg = BackendMsg::AddedMsg(BackendAddedMsg {
                 key: backend_key,
-                backend: backend,
+                backend,
             });
             s.send(backend_msg).unwrap();
         });
@@ -182,5 +182,7 @@ fn main() {
     let m_claim3 = pool.try_claim();
     assert!(m_claim3.is_some());
 
-    loop {}
+    loop {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
 }

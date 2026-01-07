@@ -6,7 +6,7 @@ description = """
 Runs a manatee primary resolver instance and prints its logging, as well as
 messages received over the cueball channel, to standard out.
 """
-repository = "https://github.com/joyent/rust-cueball"
+repository = "https://github.com/TritonDataCenter/monitor-reef"
 keywords = ["pool","joyent"]
 readme = "./README.md"
 license = "MPL-2.0"

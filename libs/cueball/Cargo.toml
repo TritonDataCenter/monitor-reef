@@ -1,31 +1,33 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
 [package]
 name = "cueball"
-version = "0.3.5"
+version = "0.4.0"
 authors = [
-        "Kelly McLaughlin <kelly.mclaughlin@joyent.com>",
-        "Jon Anderson <jon.anderson@joyent.com>",
-        "Isaac Davis <isaac.davis@joyent.com>"
+    "Kelly McLaughlin <kelly.mclaughlin@joyent.com>",
+    "Jon Anderson <jon.anderson@joyent.com>",
+    "Isaac Davis <isaac.davis@joyent.com>",
 ]
-description = """
-A connection pool to manage connections to a multi-node service.
-"""
-repository = "https://github.com/joyent/rust-cueball"
-keywords = ["pool","joyent"]
-readme = "../README.md"
+description = "A connection pool to manage connections to a multi-node service"
+repository = "https://github.com/TritonDataCenter/monitor-reef"
+keywords = ["pool", "joyent", "manta", "triton"]
 license = "MPL-2.0"
-edition = "2018"
+edition.workspace = true
 
 [dependencies]
-backoff = "0.1.5"
-base64 = "0.10.1"
-chrono = "0.4.7"
-derive_more = "0.14.0"
-rand = "0.7.0"
-sha1 = "0.6.0"
-slog = "2"
-slog-stdlog = "3"
-timer = "0.2.0"
-typenum = "= 1.10.0"
+backoff = "0.4"
+base64 = "0.22"
+chrono = { workspace = true }
+derive_more = { version = "1.0", features = ["add", "add_assign", "display", "from", "into"] }
+rand = "0.9"
+sha1 = "0.10"
+slog = "2.7"
+slog-stdlog = "4"
+timer = "0.2"
 
 [dev-dependencies]
-slog-term = "2.4.0"
+slog-term = "2.9"

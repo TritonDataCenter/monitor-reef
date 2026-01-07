@@ -7,10 +7,9 @@ use std::ops::{Deref, DerefMut};
 use native_tls::Certificate as NativeCertificate;
 use native_tls::Error as NativeError;
 use native_tls::TlsConnector;
-use postgres;
 use postgres::{Client, NoTls};
 use postgres_native_tls::MakeTlsConnector;
-use serde_derive::Deserialize;
+use serde::Deserialize;
 
 use cueball::backend::Backend;
 use cueball::connection::Connection;
@@ -46,12 +45,11 @@ impl Connection for PostgresConnection {
     type Error = postgres::Error;
 
     fn connect(&mut self) -> Result<(), Self::Error> {
-        let connection =
-            if let Some(tls_connector) = make_tls_connector(&self.tls_config) {
-                Client::connect(&self.url, tls_connector)?
-            } else {
-                Client::connect(&self.url, NoTls)?
-            };
+        let connection = if let Some(tls_connector) = make_tls_connector(&self.tls_config) {
+            Client::connect(&self.url, tls_connector)?
+        } else {
+            Client::connect(&self.url, NoTls)?
+        };
         self.connection = Some(connection);
         self.connected = true;
         Ok(())
@@ -84,7 +82,7 @@ impl Deref for PostgresConnection {
     type Target = Client;
 
     fn deref(&self) -> &Client {
-        &self.connection.as_ref().unwrap()
+        self.connection.as_ref().unwrap()
     }
 }
 
@@ -113,10 +111,7 @@ impl From<PostgresConnectionConfig> for String {
         let at = if user.is_empty() { "" } else { "@" };
 
         let host = config.host.unwrap_or_else(|| String::from("localhost"));
-        let port = config
-            .port
-            .map(|p| p.to_string())
-            .unwrap_or_else(|| "".to_string());
+        let port = config.port.map(|p| p.to_string()).unwrap_or_default();
 
         let colon = if port.is_empty() { "" } else { ":" };
 
@@ -124,8 +119,7 @@ impl From<PostgresConnectionConfig> for String {
 
         let slash = if database.is_empty() { "" } else { "/" };
 
-        let application_name =
-            config.application_name.unwrap_or_else(|| "".into());
+        let application_name = config.application_name.unwrap_or_else(|| "".into());
         let question_mark = "?";
 
         let app_name_param = if application_name.is_empty() {
@@ -176,16 +170,17 @@ pub enum TlsConnectMode {
     VerifyFull,
 }
 
-impl ToString for TlsConnectMode {
-    fn to_string(&self) -> String {
-        match self {
-            TlsConnectMode::Disable => String::from("disable"),
-            TlsConnectMode::Allow => String::from("allow"),
-            TlsConnectMode::Prefer => String::from("prefer"),
-            TlsConnectMode::Require => String::from("require"),
-            TlsConnectMode::VerifyCa => String::from("verify-ca"),
-            TlsConnectMode::VerifyFull => String::from("verify-full"),
-        }
+impl std::fmt::Display for TlsConnectMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let s = match self {
+            TlsConnectMode::Disable => "disable",
+            TlsConnectMode::Allow => "allow",
+            TlsConnectMode::Prefer => "prefer",
+            TlsConnectMode::Require => "require",
+            TlsConnectMode::VerifyCa => "verify-ca",
+            TlsConnectMode::VerifyFull => "verify-full",
+        };
+        write!(f, "{}", s)
     }
 }
 
@@ -249,9 +244,7 @@ fn make_tls_connector(tls_config: &TlsConfig) -> Option<MakeTlsConnector> {
     let m_cert = tls_config.certificate.clone();
     match tls_config.mode {
         TlsConnectMode::Disable => None,
-        TlsConnectMode::Allow
-        | TlsConnectMode::Prefer
-        | TlsConnectMode::Require => {
+        TlsConnectMode::Allow | TlsConnectMode::Prefer | TlsConnectMode::Require => {
             if let Some(cert) = m_cert {
                 // root cert supplied, use it to verify server certs
                 let connector = TlsConnector::builder()

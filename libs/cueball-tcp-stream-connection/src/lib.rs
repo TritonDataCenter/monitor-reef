@@ -30,7 +30,7 @@ impl Connection for TcpStreamWrapper {
     type Error = IOError;
 
     fn connect(&mut self) -> Result<(), Self::Error> {
-        let stream = TcpStream::connect(&self.addr)?;
+        let stream = TcpStream::connect(self.addr)?;
         self.stream = Some(stream);
         self.connected = true;
         Ok(())
@@ -47,7 +47,7 @@ impl Deref for TcpStreamWrapper {
     type Target = TcpStream;
 
     fn deref(&self) -> &TcpStream {
-        &self.stream.as_ref().unwrap()
+        self.stream.as_ref().unwrap()
     }
 }
 

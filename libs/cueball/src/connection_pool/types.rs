@@ -6,7 +6,7 @@ use std::fmt;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::Duration;
 
-use derive_more::{Add, AddAssign, Display, From, Into, Sub, SubAssign};
+use derive_more::{Add, AddAssign, Display, From, Into};
 use slog::Logger;
 
 use crate::backend::{Backend, BackendKey};
@@ -102,7 +102,7 @@ where
     C: Connection,
 {
     fn partial_cmp(&self, other: &ConnectionKeyPair<C>) -> Option<Ordering> {
-        (self.0).0.partial_cmp(&(other.0).0)
+        Some(self.cmp(other))
     }
 }
 
@@ -124,12 +124,12 @@ where
     }
 }
 
-impl<C> Into<(BackendKey, Option<C>)> for ConnectionKeyPair<C>
+impl<C> From<ConnectionKeyPair<C>> for (BackendKey, Option<C>)
 where
     C: Connection,
 {
-    fn into(self) -> (BackendKey, Option<C>) {
-        ((self.0).0, (self.0).1)
+    fn from(val: ConnectionKeyPair<C>) -> Self {
+        ((val.0).0, (val.0).1)
     }
 }
 
@@ -147,10 +147,21 @@ where
     Ord,
     PartialOrd,
     PartialEq,
-    Sub,
-    SubAssign,
 )]
 pub struct ConnectionCount(u32);
+
+impl std::ops::Sub for ConnectionCount {
+    type Output = Self;
+    fn sub(self, other: Self) -> Self {
+        ConnectionCount(self.0 - other.0)
+    }
+}
+
+impl std::ops::SubAssign for ConnectionCount {
+    fn sub_assign(&mut self, other: Self) {
+        self.0 -= other.0;
+    }
+}
 
 // The internal data structures used to manage the connection pool.
 #[doc(hidden)]
@@ -192,7 +203,7 @@ where
         ProtectedData(Arc::new((Mutex::new(connection_data), Condvar::new())))
     }
 
-    pub fn connection_data_lock(&self) -> MutexGuard<ConnectionData<C>> {
+    pub fn connection_data_lock(&self) -> MutexGuard<'_, ConnectionData<C>> {
         (self.0).0.lock().unwrap()
     }
 
@@ -225,12 +236,12 @@ where
     }
 }
 
-impl<C> Into<Arc<(Mutex<ConnectionData<C>>, Condvar)>> for ProtectedData<C>
+impl<C> From<ProtectedData<C>> for Arc<(Mutex<ConnectionData<C>>, Condvar)>
 where
     C: Connection,
 {
-    fn into(self) -> Arc<(Mutex<ConnectionData<C>>, Condvar)> {
-        self.0
+    fn from(val: ProtectedData<C>) -> Self {
+        val.0
     }
 }
 
@@ -246,7 +257,7 @@ impl RebalanceCheck {
         RebalanceCheck(Arc::new((Mutex::new(false), Condvar::new())))
     }
 
-    pub fn get_lock(&self) -> MutexGuard<bool> {
+    pub fn get_lock(&self) -> MutexGuard<'_, bool> {
         (self.0).0.lock().unwrap()
     }
 
@@ -270,9 +281,9 @@ impl Clone for RebalanceCheck {
     }
 }
 
-impl Into<Arc<(Mutex<bool>, Condvar)>> for RebalanceCheck {
-    fn into(self) -> Arc<(Mutex<bool>, Condvar)> {
-        self.0
+impl From<RebalanceCheck> for Arc<(Mutex<bool>, Condvar)> {
+    fn from(val: RebalanceCheck) -> Self {
+        val.0
     }
 }
 

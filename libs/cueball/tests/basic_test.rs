@@ -6,13 +6,13 @@ use std::sync::{Arc, Barrier, Mutex};
 use std::time::Duration;
 use std::{thread, time};
 
-use slog::{o, Drain, Logger};
+use slog::{Drain, Logger, o};
 
 use cueball::backend;
 use cueball::backend::{Backend, BackendAddress, BackendPort};
 use cueball::connection::Connection;
-use cueball::connection_pool::types::{ConnectionCount, ConnectionPoolOptions};
 use cueball::connection_pool::ConnectionPool;
+use cueball::connection_pool::types::{ConnectionCount, ConnectionPoolOptions};
 use cueball::error::Error;
 use cueball::resolver::{BackendAddedMsg, BackendMsg, Resolver};
 
@@ -20,7 +20,7 @@ const HEARTBEAT_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
 pub struct DummyConnection {
-    addr: SocketAddr,
+    _addr: SocketAddr,
     connected: bool,
 }
 
@@ -29,7 +29,7 @@ impl DummyConnection {
         let addr = SocketAddr::from((b.address, b.port));
 
         DummyConnection {
-            addr: addr,
+            _addr: addr,
             connected: false,
         }
     }
@@ -58,7 +58,7 @@ pub struct FakeResolver {
 impl FakeResolver {
     pub fn new(backends: Vec<(BackendAddress, BackendPort)>) -> Self {
         FakeResolver {
-            backends: backends,
+            backends,
             pool_tx: None,
             running: false,
         }
@@ -76,7 +76,7 @@ impl Resolver for FakeResolver {
             let backend_key = backend::srv_key(&backend);
             let backend_msg = BackendMsg::AddedMsg(BackendAddedMsg {
                 key: backend_key,
-                backend: backend,
+                backend,
             });
             s.send(backend_msg).unwrap();
         });
@@ -117,17 +117,17 @@ fn connection_pool_claim() {
         connection_check_interval: None,
     };
 
-    let max_connections = pool_opts.max_connections.unwrap().clone();
+    let max_connections = pool_opts.max_connections.unwrap();
 
     let pool = ConnectionPool::new(pool_opts, resolver, DummyConnection::new);
 
     // Wait for total_connections to reach the maximum
     let mut all_conns_established = false;
     while !all_conns_established {
-        if let Some(stats) = pool.get_stats() {
-            if stats.total_connections == max_connections.into() {
-                all_conns_established = true;
-            }
+        if let Some(stats) = pool.get_stats()
+            && stats.total_connections == max_connections.into()
+        {
+            all_conns_established = true;
         }
     }
 
@@ -209,7 +209,7 @@ fn connection_pool_stop() {
         connection_check_interval: None,
     };
 
-    let max_connections = pool_opts.max_connections.unwrap().clone();
+    let max_connections = pool_opts.max_connections.unwrap();
 
     let mut pool =
         ConnectionPool::new(pool_opts, resolver, DummyConnection::new);
@@ -217,10 +217,10 @@ fn connection_pool_stop() {
     // Wait for total_connections to reach the maximum
     let mut all_conns_established = false;
     while !all_conns_established {
-        if let Some(stats) = pool.get_stats() {
-            if stats.total_connections == max_connections.into() {
-                all_conns_established = true;
-            }
+        if let Some(stats) = pool.get_stats()
+            && stats.total_connections == max_connections.into()
+        {
+            all_conns_established = true;
         }
     }
 
@@ -250,7 +250,7 @@ fn connection_pool_accounting() {
     };
 
     let max_connections: ConnectionCount =
-        pool_opts.max_connections.unwrap().clone().into();
+        pool_opts.max_connections.unwrap().into();
 
     let mut pool =
         ConnectionPool::new(pool_opts, resolver, DummyConnection::new);
@@ -258,10 +258,10 @@ fn connection_pool_accounting() {
     // Wait for total_connections to reach the maximum
     let mut all_conns_established = false;
     while !all_conns_established {
-        if let Some(stats) = pool.get_stats() {
-            if stats.total_connections == max_connections {
-                all_conns_established = true;
-            }
+        if let Some(stats) = pool.get_stats()
+            && stats.total_connections == max_connections
+        {
+            all_conns_established = true;
         }
     }
 
@@ -362,17 +362,17 @@ fn connection_pool_decoherence() {
     };
 
     let max_connections: ConnectionCount =
-        pool_opts.max_connections.unwrap().clone().into();
+        pool_opts.max_connections.unwrap().into();
 
     let pool = ConnectionPool::new(pool_opts, resolver, DummyConnection::new);
 
     // Wait for total_connections to reach the maximum
     let mut all_conns_established = false;
     while !all_conns_established {
-        if let Some(stats) = pool.get_stats() {
-            if stats.total_connections == max_connections {
-                all_conns_established = true;
-            }
+        if let Some(stats) = pool.get_stats()
+            && stats.total_connections == max_connections
+        {
+            all_conns_established = true;
         }
     }
 
@@ -405,5 +405,5 @@ fn connection_pool_no_backends() {
     thread::sleep(sleep_time);
 
     // we should only get here if the pool rebalance does not panic
-    assert!(true);
+    // (if it panicked, the test would fail before reaching this point)
 }

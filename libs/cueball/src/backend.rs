@@ -2,8 +2,8 @@
 
 use std::net::IpAddr;
 
-use base64;
-use sha1::Sha1;
+use base64::{Engine, engine::general_purpose::STANDARD};
+use sha1::{Digest, Sha1};
 
 use derive_more::{Display, From, Into};
 
@@ -57,5 +57,5 @@ pub fn srv_key(backend: &Backend) -> BackendKey {
     sha1.update(b"||");
     sha1.update(backend.address.to_string().as_bytes());
 
-    base64::encode(&sha1.digest().bytes()).into()
+    STANDARD.encode(sha1.finalize()).into()
 }
