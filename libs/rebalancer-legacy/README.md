@@ -147,6 +147,123 @@ moray unless explicitly configured for mdapi.
 For more details on the mdapi client implementation, see the module documentation
 in `manager/src/mdapi_client.rs`.
 
+### SAPI Deployment Configuration
+
+In production Triton deployments, the rebalancer configuration is managed via SAPI
+(Services API) metadata. The SAPI template (`sapi_manifests/rebalancer/template`)
+generates the configuration file dynamically based on metadata variables.
+
+#### SAPI Metadata Variables
+
+The following SAPI metadata variables control mdapi configuration:
+
+| Variable | Type | Default | Description |
+|----------|------|---------|-------------|
+| `MDAPI_ENABLED` | Boolean | false | Enable mdapi client integration |
+| `MDAPI_ENDPOINT` | String | "localhost:2030" | Mdapi service endpoint (host:port) |
+| `MDAPI_DEFAULT_BUCKET_ID` | String (UUID) | None | Optional bucket ID for single-bucket mode |
+| `MDAPI_CONNECTION_TIMEOUT_MS` | Integer | 5000 | Connection timeout in milliseconds |
+| `MDAPI_SINGLE_BUCKET_MODE` | Boolean | false | Single-bucket mode (testing/phased migration) |
+
+#### Setting SAPI Metadata
+
+To enable mdapi for a rebalancer service instance:
+
+```bash
+# Enable mdapi with default settings
+sapiadm update <rebalancer-uuid> \
+  metadata.MDAPI_ENABLED=true \
+  metadata.MDAPI_ENDPOINT="buckets-mdapi.east.joyent.us:2030"
+
+# Optional: Enable single-bucket testing mode
+sapiadm update <rebalancer-uuid> \
+  metadata.MDAPI_SINGLE_BUCKET_MODE=true \
+  metadata.MDAPI_DEFAULT_BUCKET_ID="550e8400-e29b-41d4-a716-446655440000"
+
+# Optional: Adjust connection timeout
+sapiadm update <rebalancer-uuid> \
+  metadata.MDAPI_CONNECTION_TIMEOUT_MS=10000
+```
+
+After updating SAPI metadata, the config-agent will automatically regenerate
+the configuration file and send SIGUSR1 to the rebalancer process for a hot
+reload (no service restart required).
+
+#### Deployment Scenarios
+
+**Scenario 1: Moray-Only (Default)**
+- No SAPI metadata changes required
+- Backward compatible with existing deployments
+- Only moray metadata tier is used
+
+**Scenario 2: Mdapi-Only (Bucket Objects Only)**
+```bash
+sapiadm update <rebalancer-uuid> \
+  metadata.MDAPI_ENABLED=true \
+  metadata.MDAPI_ENDPOINT="buckets-mdapi.east.joyent.us:2030" \
+  metadata.DOMAIN_NAME=""
+```
+- Only mdapi is used
+- Evacuates bucket objects only
+- Traditional Manta objects are not evacuated
+
+**Scenario 3: Hybrid Mode (Complete Evacuation - Production)**
+```bash
+sapiadm update <rebalancer-uuid> \
+  metadata.MDAPI_ENABLED=true \
+  metadata.MDAPI_ENDPOINT="buckets-mdapi.east.joyent.us:2030"
+```
+- Both moray and mdapi are used
+- Complete shark evacuation (traditional + bucket objects)
+- Recommended for production deployments
+
+**Scenario 4: Single-Bucket Testing (Phased Migration)**
+```bash
+sapiadm update <rebalancer-uuid> \
+  metadata.MDAPI_ENABLED=true \
+  metadata.MDAPI_ENDPOINT="buckets-mdapi.east.joyent.us:2030" \
+  metadata.MDAPI_SINGLE_BUCKET_MODE=true \
+  metadata.MDAPI_DEFAULT_BUCKET_ID="550e8400-e29b-41d4-a716-446655440000"
+```
+- Only evacuates one specific bucket
+- Safe testing before full deployment
+- Useful for phased migration strategies
+
+#### Troubleshooting
+
+**Connection Issues**
+```bash
+# Check mdapi endpoint is reachable from rebalancer zone
+ping buckets-mdapi.east.joyent.us
+
+# Verify mdapi service is running
+svcs -Z <mdapi-zone> buckets-mdapi
+
+# Check rebalancer logs for mdapi errors
+tail -f /var/log/rebalancer.log | grep -i mdapi
+```
+
+**Configuration Verification**
+```bash
+# View current SAPI metadata
+sapiadm get <rebalancer-uuid> | json metadata
+
+# View generated configuration file
+cat /opt/smartdc/rebalancer/config.json | json mdapi
+```
+
+**Hot Reload Not Working**
+```bash
+# Manually trigger config reload
+kill -USR1 <rebalancer-pid>
+
+# Verify config-agent is running
+svcs config-agent
+
+# Check config-agent logs
+tail -f /var/svc/log/smartdc-config-agent:default.log
+```
+
 ## Build
 
 ### Binaries
