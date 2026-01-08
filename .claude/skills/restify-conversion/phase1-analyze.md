@@ -27,6 +27,8 @@ Verify the path exists and contains a Restify service:
 - Check for `package.json`
 - Check for `lib/` directory (structure varies - may be `lib/endpoints/`, `lib/server/endpoints/`, or `lib/*.js`)
 
+**Do not assume any specific structure** - always search the entire `lib/` tree recursively for route definitions.
+
 ### 2. Extract Service Metadata
 
 From `package.json`:
