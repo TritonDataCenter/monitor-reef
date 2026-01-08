@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Network management commands
 
@@ -255,13 +255,13 @@ async fn list_networks(args: NetworkListArgs, client: &TypedClient, use_json: bo
 
 async fn get_network(args: NetworkGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
-    let network_id = resolve_network(&args.network, client).await?;
+    let network_uuid = resolve_network(&args.network, client).await?;
 
     let response = client
         .inner()
         .get_network()
         .account(account)
-        .network(&network_id)
+        .network(network_uuid)
         .send()
         .await?;
 
@@ -299,11 +299,10 @@ async fn get_default_network(client: &TypedClient, use_json: bool) -> Result<()>
 
 async fn set_default_network(args: NetworkSetDefaultArgs, client: &TypedClient) -> Result<()> {
     let account = &client.auth_config().account;
-    let network_id = resolve_network(&args.network, client).await?;
-    let network_uuid: cloudapi_client::Uuid = network_id.parse()?;
+    let network_uuid = resolve_network(&args.network, client).await?;
 
     let request = cloudapi_client::types::UpdateConfigRequest {
-        default_network: Some(network_uuid.to_string()),
+        default_network: Some(network_uuid),
     };
 
     client
@@ -314,7 +313,7 @@ async fn set_default_network(args: NetworkSetDefaultArgs, client: &TypedClient) 
         .send()
         .await?;
 
-    println!("Default network set to {}", network_id);
+    println!("Default network set to {}", network_uuid);
 
     Ok(())
 }
@@ -370,11 +369,12 @@ async fn create_network(
         .await?;
 
     let network = response.into_inner();
+    let network_id_str = network.id.to_string();
 
     println!(
         "Created network {} ({})",
         &network.name,
-        &network.id[..8.min(network.id.len())]
+        &network_id_str[..8]
     );
 
     if use_json {
@@ -405,12 +405,16 @@ async fn delete_network(args: NetworkDeleteArgs, client: &TypedClient) -> Result
         }
     }
 
+    let network_uuid: uuid::Uuid = network_id
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid network UUID: {}", network_id))?;
+
     client
         .inner()
         .delete_fabric_network()
         .account(account)
         .vlan_id(vlan_id)
-        .id(&network_id)
+        .id(network_uuid)
         .send()
         .await?;
 
@@ -419,7 +423,7 @@ async fn delete_network(args: NetworkDeleteArgs, client: &TypedClient) -> Result
     Ok(())
 }
 
-/// Resolve network name or ID to (UUID, name, vlan_id) for fabric networks
+/// Resolve network name or ID to (UUID string, name, vlan_id) for fabric networks
 async fn resolve_fabric_network(
     id_or_name: &str,
     client: &TypedClient,
@@ -447,17 +451,18 @@ async fn resolve_fabric_network(
         let networks = networks_response.into_inner();
 
         for net in &networks {
+            let net_id_str = net.id.to_string();
             // Match by UUID
-            if net.id == id_or_name {
-                return Ok((net.id.clone(), net.name.clone(), vlan.vlan_id));
+            if net_id_str == id_or_name {
+                return Ok((net_id_str, net.name.clone(), vlan.vlan_id));
             }
             // Match by short ID
-            if id_or_name.len() >= 8 && net.id.starts_with(id_or_name) {
-                return Ok((net.id.clone(), net.name.clone(), vlan.vlan_id));
+            if id_or_name.len() >= 8 && net_id_str.starts_with(id_or_name) {
+                return Ok((net_id_str, net.name.clone(), vlan.vlan_id));
             }
             // Match by name
             if net.name == id_or_name {
-                return Ok((net.id.clone(), net.name.clone(), vlan.vlan_id));
+                return Ok((net_id_str, net.name.clone(), vlan.vlan_id));
             }
         }
     }
@@ -474,13 +479,13 @@ async fn list_network_ips(
     use_json: bool,
 ) -> Result<()> {
     let account = &client.auth_config().account;
-    let network_id = resolve_network(&args.network, client).await?;
+    let network_uuid = resolve_network(&args.network, client).await?;
 
     let response = client
         .inner()
         .list_network_ips()
         .account(account)
-        .network(&network_id)
+        .network(network_uuid)
         .send()
         .await?;
 
@@ -537,13 +542,13 @@ async fn get_network_ip(
     use_json: bool,
 ) -> Result<()> {
     let account = &client.auth_config().account;
-    let network_id = resolve_network(&args.network, client).await?;
+    let network_uuid = resolve_network(&args.network, client).await?;
 
     let response = client
         .inner()
         .get_network_ip()
         .account(account)
-        .network(&network_id)
+        .network(network_uuid)
         .ip_address(&args.ip)
         .send()
         .await?;
@@ -569,7 +574,7 @@ async fn update_network_ip(
     use_json: bool,
 ) -> Result<()> {
     let account = &client.auth_config().account;
-    let network_id = resolve_network(&args.network, client).await?;
+    let network_uuid = resolve_network(&args.network, client).await?;
 
     // Parse update data from file or command line
     let reserved = if let Some(file_path) = &args.file {
@@ -595,7 +600,7 @@ async fn update_network_ip(
         .inner()
         .update_network_ip()
         .account(account)
-        .network(&network_id)
+        .network(network_uuid)
         .ip_address(&args.ip)
         .body(request)
         .send()
@@ -613,9 +618,9 @@ async fn update_network_ip(
 }
 
 /// Resolve network name or short ID to full UUID
-pub async fn resolve_network(id_or_name: &str, client: &TypedClient) -> Result<String> {
-    if uuid::Uuid::parse_str(id_or_name).is_ok() {
-        return Ok(id_or_name.to_string());
+pub async fn resolve_network(id_or_name: &str, client: &TypedClient) -> Result<uuid::Uuid> {
+    if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
+        return Ok(uuid);
     }
 
     let account = &client.auth_config().account;
@@ -632,7 +637,7 @@ pub async fn resolve_network(id_or_name: &str, client: &TypedClient) -> Result<S
     if id_or_name.len() >= 8 {
         for net in &networks {
             if net.id.to_string().starts_with(id_or_name) {
-                return Ok(net.id.to_string());
+                return Ok(net.id);
             }
         }
     }
@@ -640,7 +645,7 @@ pub async fn resolve_network(id_or_name: &str, client: &TypedClient) -> Result<S
     // Try exact name match
     for net in &networks {
         if net.name == id_or_name {
-            return Ok(net.id.to_string());
+            return Ok(net.id);
         }
     }
 

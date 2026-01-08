@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Instance delete command
 
@@ -34,14 +34,15 @@ pub async fn run(args: DeleteArgs, client: &TypedClient) -> Result<()> {
 
     for instance in &args.instances {
         let machine_id = super::get::resolve_instance(instance, client).await?;
+        let id_str = machine_id.to_string();
 
         if !args.force
             && !Confirm::new()
-                .with_prompt(format!("Delete instance {}?", &machine_id[..8]))
+                .with_prompt(format!("Delete instance {}?", &id_str[..8]))
                 .default(false)
                 .interact()?
         {
-            println!("Skipping {}", &machine_id[..8]);
+            println!("Skipping {}", &id_str[..8]);
             continue;
         }
 
@@ -49,16 +50,16 @@ pub async fn run(args: DeleteArgs, client: &TypedClient) -> Result<()> {
             .inner()
             .delete_machine()
             .account(account)
-            .machine(&machine_id)
+            .machine(machine_id)
             .send()
             .await?;
 
-        println!("Deleting instance {}", &machine_id[..8]);
+        println!("Deleting instance {}", &id_str[..8]);
 
         if args.wait {
             println!("Waiting for instance to be deleted...");
-            super::wait::wait_for_state(&machine_id, "deleted", args.wait_timeout, client).await?;
-            println!("Instance {} deleted", &machine_id[..8]);
+            super::wait::wait_for_state(machine_id, "deleted", args.wait_timeout, client).await?;
+            println!("Instance {} deleted", &id_str[..8]);
         }
     }
 

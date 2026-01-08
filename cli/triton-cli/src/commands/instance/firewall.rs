@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Instance firewall commands
 
@@ -35,12 +35,11 @@ pub async fn enable(args: EnableFirewallArgs, client: &TypedClient) -> Result<()
 
     for instance in &args.instances {
         let machine_id = super::get::resolve_instance(instance, client).await?;
+        let id_str = machine_id.to_string();
 
-        client
-            .enable_firewall(account, &machine_id.parse()?, None)
-            .await?;
+        client.enable_firewall(account, &machine_id, None).await?;
 
-        println!("Enabled firewall for instance {}", &machine_id[..8]);
+        println!("Enabled firewall for instance {}", &id_str[..8]);
     }
 
     Ok(())
@@ -51,12 +50,11 @@ pub async fn disable(args: DisableFirewallArgs, client: &TypedClient) -> Result<
 
     for instance in &args.instances {
         let machine_id = super::get::resolve_instance(instance, client).await?;
+        let id_str = machine_id.to_string();
 
-        client
-            .disable_firewall(account, &machine_id.parse()?, None)
-            .await?;
+        client.disable_firewall(account, &machine_id, None).await?;
 
-        println!("Disabled firewall for instance {}", &machine_id[..8]);
+        println!("Disabled firewall for instance {}", &id_str[..8]);
     }
 
     Ok(())
@@ -70,7 +68,7 @@ pub async fn list_rules(args: FwrulesArgs, client: &TypedClient, use_json: bool)
         .inner()
         .list_machine_firewall_rules()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .send()
         .await?;
 

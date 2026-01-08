@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Instance deletion protection commands
 
@@ -39,7 +39,7 @@ pub async fn enable(args: EnableProtectionArgs, client: &TypedClient) -> Result<
         let machine_id = super::get::resolve_instance(instance, client).await?;
 
         client
-            .enable_deletion_protection(account, &machine_id.parse()?, None)
+            .enable_deletion_protection(account, &machine_id, None)
             .await?;
 
         // Use full UUID with quotes to match node-triton output format
@@ -59,7 +59,7 @@ pub async fn disable(args: DisableProtectionArgs, client: &TypedClient) -> Resul
         let machine_id = super::get::resolve_instance(instance, client).await?;
 
         client
-            .disable_deletion_protection(account, &machine_id.parse()?, None)
+            .disable_deletion_protection(account, &machine_id, None)
             .await?;
 
         // Use full UUID with quotes to match node-triton output format

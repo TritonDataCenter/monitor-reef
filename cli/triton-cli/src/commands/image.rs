@@ -484,7 +484,10 @@ fn get_image_field_value(img: &Image, field: &str) -> String {
                 flags
             }
         }
-        "owner" => img.owner.clone().unwrap_or_else(|| "-".to_string()),
+        "owner" => img
+            .owner
+            .map(|u| u.to_string())
+            .unwrap_or_else(|| "-".to_string()),
         "published" | "published_at" => format_published(&img.published_at),
         "pubdate" => format_pubdate(&img.published_at),
         "size" | "image_size" => img
@@ -493,7 +496,10 @@ fn get_image_field_value(img: &Image, field: &str) -> String {
             .unwrap_or_else(|| "-".to_string()),
         "homepage" => img.homepage.clone().unwrap_or_else(|| "-".to_string()),
         "eula" => img.eula.clone().unwrap_or_else(|| "-".to_string()),
-        "origin" => img.origin.clone().unwrap_or_else(|| "-".to_string()),
+        "origin" => img
+            .origin
+            .map(|u| u.to_string())
+            .unwrap_or_else(|| "-".to_string()),
         _ => "-".to_string(),
     }
 }
@@ -567,13 +573,13 @@ fn format_size(bytes: u64) -> String {
 
 async fn get_image(args: ImageGetArgs, client: &TypedClient, _use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_id = resolve_image(&args.image, client).await?;
+    let image_uuid = resolve_image(&args.image, client).await?;
 
     let response = client
         .inner()
         .get_image()
         .account(account)
-        .dataset(&image_id)
+        .dataset(image_uuid)
         .send()
         .await?;
 
@@ -590,8 +596,19 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
     let machine_id =
         crate::commands::instance::get::resolve_instance(&args.instance, client).await?;
 
-    // ACL is just Vec<String> (account UUIDs as strings)
-    let acl = args.acl.clone();
+    // ACL is Vec<Uuid> (account UUIDs)
+    let acl = if let Some(acl_strings) = &args.acl {
+        let mut acl_uuids = Vec::new();
+        for acl_str in acl_strings {
+            let uuid: uuid::Uuid = acl_str
+                .parse()
+                .map_err(|_| anyhow::anyhow!("Invalid ACL UUID: {}", acl_str))?;
+            acl_uuids.push(uuid);
+        }
+        Some(acl_uuids)
+    } else {
+        None
+    };
 
     // Parse tags into serde_json::Map
     let tags = if let Some(tag_strings) = &args.tags {
@@ -612,7 +629,7 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
     };
 
     let request = cloudapi_client::types::CreateImageRequest {
-        machine: machine_id.clone(),
+        machine: machine_id,
         name: args.name.clone(),
         version: args.version.clone(),
         description: args.description.clone(),
@@ -663,7 +680,7 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
     );
 
     if args.wait {
-        wait_for_image_states(&image.id.to_string(), &["active", "failed"], 600, client).await?;
+        wait_for_image_states(image.id, &["active", "failed"], 600, client).await?;
         println!("Image is active");
     }
 
@@ -678,7 +695,7 @@ async fn delete_images(args: ImageDeleteArgs, client: &TypedClient) -> Result<()
     let account = &client.auth_config().account;
 
     for image_name in &args.images {
-        let image_id = resolve_image(image_name, client).await?;
+        let image_uuid = resolve_image(image_name, client).await?;
 
         if !args.force {
             use dialoguer::Confirm;
@@ -695,7 +712,7 @@ async fn delete_images(args: ImageDeleteArgs, client: &TypedClient) -> Result<()
             .inner()
             .delete_image()
             .account(account)
-            .dataset(&image_id)
+            .dataset(image_uuid)
             .send()
             .await?;
 
@@ -707,13 +724,16 @@ async fn delete_images(args: ImageDeleteArgs, client: &TypedClient) -> Result<()
 
 async fn clone_image(args: ImageCloneArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_id = resolve_image(&args.image, client).await?;
-    let image_uuid: cloudapi_client::Uuid = image_id.parse()?;
+    let image_uuid = resolve_image(&args.image, client).await?;
 
     // Handle dry-run
     if args.dry_run {
         println!("Dry run - would clone image:");
-        println!("  Source image: {} ({})", args.image, &image_id[..8]);
+        println!(
+            "  Source image: {} ({})",
+            args.image,
+            &image_uuid.to_string()[..8]
+        );
         return Ok(());
     }
 
@@ -777,8 +797,7 @@ async fn copy_image(args: ImageCopyArgs, client: &TypedClient, use_json: bool) -
 
 async fn update_image(args: ImageUpdateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_id = resolve_image(&args.image, client).await?;
-    let image_uuid: cloudapi_client::Uuid = image_id.parse()?;
+    let image_uuid = resolve_image(&args.image, client).await?;
 
     let request = cloudapi_client::UpdateImageRequest {
         name: args.name.clone(),
@@ -804,13 +823,12 @@ async fn update_image(args: ImageUpdateArgs, client: &TypedClient, use_json: boo
 
 async fn export_image(args: ImageExportArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_id = resolve_image(&args.image, client).await?;
-    let image_uuid: cloudapi_client::Uuid = image_id.parse()?;
+    let image_uuid = resolve_image(&args.image, client).await?;
 
     // Handle dry-run
     if args.dry_run {
         println!("Dry run - would export image:");
-        println!("  Image: {} ({})", args.image, &image_id[..8]);
+        println!("  Image: {} ({})", args.image, &image_uuid.to_string()[..8]);
         println!("  Manta path: {}", args.manta_path);
         return Ok(());
     }
@@ -834,18 +852,18 @@ async fn wait_image(args: ImageWaitArgs, client: &TypedClient, use_json: bool) -
     let total = args.images.len();
 
     // First resolve all images and check if any are already in target state
-    let mut images_to_wait: Vec<(String, String)> = Vec::new(); // (id, display_name)
+    let mut images_to_wait: Vec<(uuid::Uuid, String)> = Vec::new(); // (id, display_name)
     let mut done = 0;
 
     for image_ref in &args.images {
-        let image_id = resolve_image(image_ref, client).await?;
+        let image_uuid = resolve_image(image_ref, client).await?;
 
         // Get current state
         let response = client
             .inner()
             .get_image()
             .account(account)
-            .dataset(&image_id)
+            .dataset(image_uuid)
             .send()
             .await?;
         let image = response.into_inner();
@@ -859,7 +877,7 @@ async fn wait_image(args: ImageWaitArgs, client: &TypedClient, use_json: bool) -
             );
         } else {
             images_to_wait.push((
-                image_id.clone(),
+                image_uuid,
                 format!("{} ({}@{})", image.id, image.name, image.version),
             ));
         }
@@ -886,8 +904,8 @@ async fn wait_image(args: ImageWaitArgs, client: &TypedClient, use_json: bool) -
 
     // Wait for each image
     let mut final_images = Vec::new();
-    for (image_id, display_name) in &images_to_wait {
-        let image = wait_for_image_states(image_id, &states, args.timeout, client).await?;
+    for (image_uuid, display_name) in &images_to_wait {
+        let image = wait_for_image_states(*image_uuid, &states, args.timeout, client).await?;
         done += 1;
         let final_state = format!("{:?}", image.state).to_lowercase();
         println!(
@@ -910,10 +928,10 @@ async fn wait_image(args: ImageWaitArgs, client: &TypedClient, use_json: bool) -
 /// - If full UUID, use directly
 /// - Otherwise, list all images and match by name or short ID
 /// - Short ID is the first segment of UUID (before first dash)
-pub async fn resolve_image(id_or_name: &str, client: &TypedClient) -> Result<String> {
+pub async fn resolve_image(id_or_name: &str, client: &TypedClient) -> Result<uuid::Uuid> {
     // UUID check - call API directly
-    if uuid::Uuid::parse_str(id_or_name).is_ok() {
-        return Ok(id_or_name.to_string());
+    if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
+        return Ok(uuid);
     }
 
     // Parse name@version
@@ -941,6 +959,7 @@ pub async fn resolve_image(id_or_name: &str, client: &TypedClient) -> Result<Str
         .filter(|img| {
             // Short ID is first segment of UUID (before first dash)
             img.id
+                .to_string()
                 .split('-')
                 .next()
                 .map(|short| short == name)
@@ -950,16 +969,16 @@ pub async fn resolve_image(id_or_name: &str, client: &TypedClient) -> Result<Str
 
     // Prefer name matches (sorted by published_at, return most recent)
     if name_matches.len() == 1 {
-        return Ok(name_matches[0].id.to_string());
+        return Ok(name_matches[0].id);
     } else if name_matches.len() > 1 {
         // Sort by published_at ascending, return last (most recent)
         name_matches.sort_by(|a, b| a.published_at.cmp(&b.published_at));
-        return Ok(name_matches.last().unwrap().id.to_string());
+        return Ok(name_matches.last().unwrap().id);
     }
 
     // Fall back to short ID matches
     if short_id_matches.len() == 1 {
-        return Ok(short_id_matches[0].id.to_string());
+        return Ok(short_id_matches[0].id);
     } else if short_id_matches.len() > 1 {
         return Err(anyhow::anyhow!(
             "no image with name \"{}\" was found and \"{}\" is an ambiguous short id",
@@ -975,7 +994,7 @@ pub async fn resolve_image(id_or_name: &str, client: &TypedClient) -> Result<Str
 }
 
 async fn wait_for_image_states(
-    image_id: &str,
+    image_uuid: uuid::Uuid,
     target_states: &[&str],
     timeout_secs: u64,
     client: &TypedClient,
@@ -992,7 +1011,7 @@ async fn wait_for_image_states(
             .inner()
             .get_image()
             .account(account)
-            .dataset(image_id)
+            .dataset(image_uuid)
             .send()
             .await?;
 
@@ -1020,8 +1039,7 @@ async fn wait_for_image_states(
 
 async fn share_image(args: ImageShareArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_id = resolve_image(&args.image, client).await?;
-    let image_uuid: cloudapi_client::Uuid = image_id.parse()?;
+    let image_uuid = resolve_image(&args.image, client).await?;
     let target_account: cloudapi_client::Uuid = args
         .account
         .parse()
@@ -1030,7 +1048,7 @@ async fn share_image(args: ImageShareArgs, client: &TypedClient, use_json: bool)
     // Handle dry-run
     if args.dry_run {
         println!("Dry run - would share image:");
-        println!("  Image: {} ({})", args.image, &image_id[..8]);
+        println!("  Image: {} ({})", args.image, &image_uuid.to_string()[..8]);
         println!("  With account: {}", args.account);
         return Ok(());
     }
@@ -1050,8 +1068,7 @@ async fn share_image(args: ImageShareArgs, client: &TypedClient, use_json: bool)
 
 async fn unshare_image(args: ImageUnshareArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_id = resolve_image(&args.image, client).await?;
-    let image_uuid: cloudapi_client::Uuid = image_id.parse()?;
+    let image_uuid = resolve_image(&args.image, client).await?;
     let target_account: cloudapi_client::Uuid = args
         .account
         .parse()
@@ -1060,7 +1077,7 @@ async fn unshare_image(args: ImageUnshareArgs, client: &TypedClient, use_json: b
     // Handle dry-run
     if args.dry_run {
         println!("Dry run - would unshare image:");
-        println!("  Image: {} ({})", args.image, &image_id[..8]);
+        println!("  Image: {} ({})", args.image, &image_uuid.to_string()[..8]);
         println!("  From account: {}", args.account);
         return Ok(());
     }
@@ -1091,14 +1108,14 @@ async fn list_image_tags(
     use_json: bool,
 ) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_id = resolve_image(&args.image, client).await?;
+    let image_uuid = resolve_image(&args.image, client).await?;
 
     // Get image to retrieve tags
     let response = client
         .inner()
         .get_image()
         .account(account)
-        .dataset(&image_id)
+        .dataset(image_uuid)
         .send()
         .await?;
 
@@ -1126,14 +1143,14 @@ async fn list_image_tags(
 
 async fn get_image_tag(args: ImageTagGetArgs, client: &TypedClient) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_id = resolve_image(&args.image, client).await?;
+    let image_uuid = resolve_image(&args.image, client).await?;
 
     // Get image to retrieve tags
     let response = client
         .inner()
         .get_image()
         .account(account)
-        .dataset(&image_id)
+        .dataset(image_uuid)
         .send()
         .await?;
 
@@ -1155,15 +1172,14 @@ async fn get_image_tag(args: ImageTagGetArgs, client: &TypedClient) -> Result<()
 
 async fn set_image_tags(args: ImageTagSetArgs, client: &TypedClient) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_id = resolve_image(&args.image, client).await?;
-    let image_uuid: cloudapi_client::Uuid = image_id.parse()?;
+    let image_uuid = resolve_image(&args.image, client).await?;
 
     // Get existing image to merge tags
     let response = client
         .inner()
         .get_image()
         .account(account)
-        .dataset(&image_id)
+        .dataset(image_uuid)
         .send()
         .await?;
 
@@ -1218,15 +1234,14 @@ async fn delete_image_tag(args: ImageTagDeleteArgs, client: &TypedClient) -> Res
     }
 
     let account = &client.auth_config().account;
-    let image_id = resolve_image(&args.image, client).await?;
-    let image_uuid: cloudapi_client::Uuid = image_id.parse()?;
+    let image_uuid = resolve_image(&args.image, client).await?;
 
     // Get existing image to remove tag
     let response = client
         .inner()
         .get_image()
         .account(account)
-        .dataset(&image_id)
+        .dataset(image_uuid)
         .send()
         .await?;
 

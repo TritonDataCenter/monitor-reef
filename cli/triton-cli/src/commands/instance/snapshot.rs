@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Instance snapshot subcommands
 
@@ -112,7 +112,7 @@ pub async fn list_snapshots(
         .inner()
         .list_machine_snapshots()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .send()
         .await?;
 
@@ -143,7 +143,7 @@ async fn get_snapshot(args: SnapshotGetArgs, client: &TypedClient, use_json: boo
         .inner()
         .get_machine_snapshot()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .name(&args.name)
         .send()
         .await?;
@@ -177,7 +177,7 @@ async fn create_snapshot(
         .inner()
         .create_machine_snapshot()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .body(request)
         .send()
         .await?;
@@ -188,7 +188,7 @@ async fn create_snapshot(
 
     if args.wait {
         let final_snapshot = wait_for_snapshot_state(
-            &machine_id,
+            machine_id,
             &snapshot.name,
             "created",
             args.wait_timeout,
@@ -207,7 +207,7 @@ async fn create_snapshot(
 }
 
 async fn wait_for_snapshot_state(
-    machine_id: &str,
+    machine_id: uuid::Uuid,
     snapshot_name: &str,
     target_state: &str,
     timeout_secs: u64,
@@ -274,7 +274,7 @@ async fn delete_snapshot(args: SnapshotDeleteArgs, client: &TypedClient) -> Resu
         .inner()
         .delete_machine_snapshot()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .name(&args.name)
         .send()
         .await?;
@@ -287,19 +287,20 @@ async fn delete_snapshot(args: SnapshotDeleteArgs, client: &TypedClient) -> Resu
 async fn boot_snapshot(args: SnapshotBootArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = &client.auth_config().account;
+    let id_str = machine_id.to_string();
 
     client
         .inner()
         .start_machine_from_snapshot()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .name(&args.name)
         .send()
         .await?;
 
     println!(
         "Booting instance {} from snapshot {}",
-        &machine_id[..8],
+        &id_str[..8],
         args.name
     );
 

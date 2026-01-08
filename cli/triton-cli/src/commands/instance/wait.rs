@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Instance wait command
 
@@ -34,19 +34,20 @@ pub async fn run(args: WaitArgs, client: &TypedClient, use_json: bool) -> Result
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let states = args.state.unwrap_or_else(|| vec!["running".to_string()]);
 
-    let machine = wait_for_states(&machine_id, &states, args.timeout, client).await?;
+    let machine = wait_for_states(machine_id, &states, args.timeout, client).await?;
 
     if use_json {
         json::print_json(&machine)?;
     } else {
-        println!("Instance {} is {:?}", &machine_id[..8], machine.state);
+        let id_str = machine_id.to_string();
+        println!("Instance {} is {:?}", &id_str[..8], machine.state);
     }
 
     Ok(())
 }
 
 pub async fn wait_for_state(
-    machine_id: &str,
+    machine_id: uuid::Uuid,
     target_state: &str,
     timeout_secs: u64,
     client: &TypedClient,
@@ -62,7 +63,7 @@ pub async fn wait_for_state(
 }
 
 pub async fn wait_for_states(
-    machine_id: &str,
+    machine_id: uuid::Uuid,
     target_states: &[String],
     timeout_secs: u64,
     client: &TypedClient,

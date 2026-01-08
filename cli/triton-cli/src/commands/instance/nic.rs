@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Instance NIC subcommands
 
@@ -118,7 +118,7 @@ impl From<&cloudapi_client::types::Nic> for NicOutput {
             netmask: nic.netmask.clone(),
             gateway: nic.gateway.clone().unwrap_or_default(),
             state: nic.state.clone().unwrap_or_default(),
-            network: nic.network.clone(),
+            network: nic.network.to_string(),
         }
     }
 }
@@ -140,7 +140,7 @@ pub async fn list_nics(args: NicListArgs, client: &TypedClient, use_json: bool) 
         .inner()
         .list_nics()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .send()
         .await?;
 
@@ -191,7 +191,7 @@ async fn get_nic(args: NicGetArgs, client: &TypedClient, use_json: bool) -> Resu
         .inner()
         .get_nic()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .mac(&args.mac)
         .send()
         .await?;
@@ -238,7 +238,7 @@ async fn add_nic(args: NicAddArgs, client: &TypedClient, use_json: bool) -> Resu
         .iter()
         .any(|arg| arg.contains('=') && arg.contains("ipv4_"));
 
-    let network = if has_opts {
+    let network_str = if has_opts {
         // Parse NICOPTS
         let (uuid, _ips) = parse_nic_opts(&args.network_or_opts)?;
         // Note: CloudAPI AddNicRequest only supports 'network' field
@@ -252,6 +252,8 @@ async fn add_nic(args: NicAddArgs, client: &TypedClient, use_json: bool) -> Resu
             .clone()
     };
 
+    let network: uuid::Uuid = network_str.parse()?;
+
     let request = cloudapi_client::types::AddNicRequest {
         network,
         primary: if args.primary { Some(true) } else { None },
@@ -261,7 +263,7 @@ async fn add_nic(args: NicAddArgs, client: &TypedClient, use_json: bool) -> Resu
         .inner()
         .add_nic()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .body(request)
         .send()
         .await?;
@@ -273,7 +275,7 @@ async fn add_nic(args: NicAddArgs, client: &TypedClient, use_json: bool) -> Resu
     }
 
     if args.wait {
-        super::wait::wait_for_state(&machine_id, "running", args.wait_timeout, client).await?;
+        super::wait::wait_for_state(machine_id, "running", args.wait_timeout, client).await?;
     }
 
     if use_json {
@@ -304,7 +306,7 @@ async fn remove_nic(args: NicRemoveArgs, client: &TypedClient) -> Result<()> {
         .inner()
         .remove_nic()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .mac(&args.mac)
         .send()
         .await?;

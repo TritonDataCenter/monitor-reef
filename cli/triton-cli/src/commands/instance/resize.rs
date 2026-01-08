@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Instance resize command
 
@@ -30,21 +30,22 @@ pub struct ResizeArgs {
 pub async fn run(args: ResizeArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = &client.auth_config().account;
+    let id_str = machine_id.to_string();
 
     client
-        .resize_machine(account, &machine_id.parse()?, args.package.clone(), None)
+        .resize_machine(account, &machine_id, args.package.clone(), None)
         .await?;
 
     println!(
         "Resizing instance {} to package {}",
-        &machine_id[..8],
+        &id_str[..8],
         args.package
     );
 
     if args.wait {
         println!("Waiting for resize to complete...");
-        super::wait::wait_for_state(&machine_id, "running", args.wait_timeout, client).await?;
-        println!("Instance {} resize complete", &machine_id[..8]);
+        super::wait::wait_for_state(machine_id, "running", args.wait_timeout, client).await?;
+        println!("Instance {} resize complete", &id_str[..8]);
     }
 
     Ok(())

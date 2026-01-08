@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Instance tag subcommands
 
@@ -160,7 +160,7 @@ pub async fn list_tags(args: TagListArgs, client: &TypedClient, use_json: bool) 
         .inner()
         .list_machine_tags()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .send()
         .await?;
 
@@ -190,7 +190,7 @@ async fn get_tag(args: TagGetArgs, client: &TypedClient) -> Result<()> {
         .inner()
         .get_machine_tag()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .tag(&args.key)
         .send()
         .await?;
@@ -201,7 +201,7 @@ async fn get_tag(args: TagGetArgs, client: &TypedClient) -> Result<()> {
         .inner()
         .list_machine_tags()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .send()
         .await?;
 
@@ -325,13 +325,13 @@ async fn set_tags(args: TagSetArgs, client: &TypedClient) -> Result<()> {
         .inner()
         .add_machine_tags()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .body(request)
         .send()
         .await?;
 
     if args.wait {
-        super::wait::wait_for_state(&machine_id, "running", args.wait_timeout, client).await?;
+        super::wait::wait_for_state(machine_id, "running", args.wait_timeout, client).await?;
     }
 
     // Output the updated tags (matching node-triton behavior)
@@ -341,7 +341,7 @@ async fn set_tags(args: TagSetArgs, client: &TypedClient) -> Result<()> {
             .inner()
             .list_machine_tags()
             .account(account)
-            .machine(&machine_id)
+            .machine(machine_id)
             .send()
             .await?;
 
@@ -381,12 +381,12 @@ async fn delete_tag(args: TagDeleteArgs, client: &TypedClient) -> Result<()> {
             .inner()
             .delete_machine_tags()
             .account(account)
-            .machine(&machine_id)
+            .machine(machine_id)
             .send()
             .await?;
 
         if args.wait {
-            super::wait::wait_for_state(&machine_id, "running", args.wait_timeout, client).await?;
+            super::wait::wait_for_state(machine_id, "running", args.wait_timeout, client).await?;
         }
 
         println!("Deleted all tags on instance {}", args.instance);
@@ -400,13 +400,13 @@ async fn delete_tag(args: TagDeleteArgs, client: &TypedClient) -> Result<()> {
                 .inner()
                 .delete_machine_tag()
                 .account(account)
-                .machine(&machine_id)
+                .machine(machine_id)
                 .tag(key)
                 .send()
                 .await?;
 
             if args.wait {
-                super::wait::wait_for_state(&machine_id, "running", args.wait_timeout, client)
+                super::wait::wait_for_state(machine_id, "running", args.wait_timeout, client)
                     .await?;
             }
 
@@ -459,13 +459,13 @@ async fn replace_all_tags(args: TagReplaceAllArgs, client: &TypedClient) -> Resu
         .inner()
         .replace_machine_tags()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .body(request)
         .send()
         .await?;
 
     if args.wait {
-        super::wait::wait_for_state(&machine_id, "running", args.wait_timeout, client).await?;
+        super::wait::wait_for_state(machine_id, "running", args.wait_timeout, client).await?;
     }
 
     // Output the updated tags (matching node-triton behavior)
@@ -475,7 +475,7 @@ async fn replace_all_tags(args: TagReplaceAllArgs, client: &TypedClient) -> Resu
             .inner()
             .list_machine_tags()
             .account(account)
-            .machine(&machine_id)
+            .machine(machine_id)
             .send()
             .await?;
 

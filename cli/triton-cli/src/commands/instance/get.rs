@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Instance get and IP commands
 
@@ -26,13 +26,13 @@ pub struct IpArgs {
 
 pub async fn run(args: GetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
-    let machine_id = resolve_instance(&args.instance, client).await?;
+    let machine_uuid = resolve_instance(&args.instance, client).await?;
 
     let response = client
         .inner()
         .get_machine()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_uuid)
         .send()
         .await?;
 
@@ -65,13 +65,13 @@ pub async fn run(args: GetArgs, client: &TypedClient, use_json: bool) -> Result<
 
 pub async fn ip(args: IpArgs, client: &TypedClient) -> Result<()> {
     let account = &client.auth_config().account;
-    let machine_id = resolve_instance(&args.instance, client).await?;
+    let machine_uuid = resolve_instance(&args.instance, client).await?;
 
     let response = client
         .inner()
         .get_machine()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_uuid)
         .send()
         .await?;
 
@@ -87,10 +87,10 @@ pub async fn ip(args: IpArgs, client: &TypedClient) -> Result<()> {
 }
 
 /// Resolve instance name or short ID to full UUID
-pub async fn resolve_instance(id_or_name: &str, client: &TypedClient) -> Result<String> {
+pub async fn resolve_instance(id_or_name: &str, client: &TypedClient) -> Result<uuid::Uuid> {
     // First try as UUID
-    if uuid::Uuid::parse_str(id_or_name).is_ok() {
-        return Ok(id_or_name.to_string());
+    if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
+        return Ok(uuid);
     }
 
     // Try as short ID or name
@@ -108,7 +108,7 @@ pub async fn resolve_instance(id_or_name: &str, client: &TypedClient) -> Result<
     if id_or_name.len() >= 8 {
         for m in &machines {
             if m.id.to_string().starts_with(id_or_name) {
-                return Ok(m.id.to_string());
+                return Ok(m.id);
             }
         }
     }
@@ -116,7 +116,7 @@ pub async fn resolve_instance(id_or_name: &str, client: &TypedClient) -> Result<
     // Try exact name match
     for m in &machines {
         if m.name == id_or_name {
-            return Ok(m.id.to_string());
+            return Ok(m.id);
         }
     }
 

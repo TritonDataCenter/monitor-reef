@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Volume management commands
 
@@ -152,7 +152,7 @@ async fn get_volume(args: VolumeGetArgs, client: &TypedClient, use_json: bool) -
         .inner()
         .get_volume()
         .account(account)
-        .id(&volume_id)
+        .id(volume_id)
         .send()
         .await?;
 
@@ -423,14 +423,15 @@ async fn delete_volumes(args: VolumeDeleteArgs, client: &TypedClient) -> Result<
             .inner()
             .delete_volume()
             .account(account)
-            .id(&volume_id)
+            .id(volume_id)
             .send()
             .await?;
 
         println!("Deleting volume {}", volume_name);
 
         if args.wait {
-            wait_for_volume_deletion(&volume_id, client, args.wait_timeout).await?;
+            let volume_id_str = volume_id.to_string();
+            wait_for_volume_deletion(&volume_id_str, client, args.wait_timeout).await?;
             println!("Volume {} deleted", volume_name);
         }
     }
@@ -467,9 +468,9 @@ async fn list_volume_sizes(
 }
 
 /// Resolve volume name or short ID to full UUID
-pub async fn resolve_volume(id_or_name: &str, client: &TypedClient) -> Result<String> {
-    if uuid::Uuid::parse_str(id_or_name).is_ok() {
-        return Ok(id_or_name.to_string());
+pub async fn resolve_volume(id_or_name: &str, client: &TypedClient) -> Result<uuid::Uuid> {
+    if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
+        return Ok(uuid);
     }
 
     let account = &client.auth_config().account;
@@ -486,7 +487,7 @@ pub async fn resolve_volume(id_or_name: &str, client: &TypedClient) -> Result<St
     if id_or_name.len() >= 8 {
         for vol in &volumes {
             if vol.id.to_string().starts_with(id_or_name) {
-                return Ok(vol.id.to_string());
+                return Ok(vol.id);
             }
         }
     }
@@ -494,7 +495,7 @@ pub async fn resolve_volume(id_or_name: &str, client: &TypedClient) -> Result<St
     // Try exact name match
     for vol in &volumes {
         if vol.name == id_or_name {
-            return Ok(vol.id.to_string());
+            return Ok(vol.id);
         }
     }
 

@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Instance list command
 
@@ -32,13 +32,14 @@ struct AugmentedMachine {
 }
 
 impl AugmentedMachine {
-    fn from_machine(m: &Machine, image_map: &HashMap<String, String>) -> Self {
-        let shortid = m.id[..8.min(m.id.len())].to_string();
+    fn from_machine(m: &Machine, image_map: &HashMap<uuid::Uuid, String>) -> Self {
+        let id_str = m.id.to_string();
+        let shortid = id_str[..8.min(id_str.len())].to_string();
 
-        let img = image_map
-            .get(&m.image)
-            .cloned()
-            .unwrap_or_else(|| m.image[..8.min(m.image.len())].to_string());
+        let img = image_map.get(&m.image).cloned().unwrap_or_else(|| {
+            let image_str = m.image.to_string();
+            image_str[..8.min(image_str.len())].to_string()
+        });
 
         let flags = {
             let mut flags = Vec::new();
@@ -152,7 +153,10 @@ pub async fn run(args: ListArgs, client: &TypedClient, use_json: bool) -> Result
         req = req.state(state);
     }
     if let Some(image) = &args.image {
-        req = req.image(image);
+        let image_uuid: uuid::Uuid = image
+            .parse()
+            .map_err(|_| anyhow::anyhow!("Invalid image UUID: {}", image))?;
+        req = req.image(image_uuid);
     }
     // Note: package filter may need to be done client-side if not supported by API
     // if let Some(pkg) = &args.package {
@@ -189,11 +193,11 @@ pub async fn run(args: ListArgs, client: &TypedClient, use_json: bool) -> Result
     let machines = machines_response?.into_inner();
 
     // Build image UUID -> name@version map
-    let image_map: HashMap<String, String> = images_response
+    let image_map: HashMap<uuid::Uuid, String> = images_response
         .map(|r| {
             r.into_inner()
                 .into_iter()
-                .map(|img| (img.id.clone(), format!("{}@{}", img.name, img.version)))
+                .map(|img| (img.id, format!("{}@{}", img.name, img.version)))
                 .collect()
         })
         .unwrap_or_default();
@@ -215,12 +219,13 @@ pub async fn run(args: ListArgs, client: &TypedClient, use_json: bool) -> Result
 fn print_machines_table(
     machines: &[Machine],
     args: &ListArgs,
-    image_map: &HashMap<String, String>,
+    image_map: &HashMap<uuid::Uuid, String>,
 ) {
     // Handle --short: just print IDs
     if args.short {
         for m in machines {
-            let short_id = &m.id[..8.min(m.id.len())];
+            let id_str = m.id.to_string();
+            let short_id = &id_str[..8.min(id_str.len())];
             println!("{}", short_id);
         }
         return;
@@ -268,18 +273,21 @@ fn print_machines_table(
 }
 
 /// Get a field value from a Machine by field name
-fn get_field_value(m: &Machine, field: &str, image_map: &HashMap<String, String>) -> String {
+fn get_field_value(m: &Machine, field: &str, image_map: &HashMap<uuid::Uuid, String>) -> String {
     match field.to_lowercase().as_str() {
-        "id" => m.id.clone(),
-        "shortid" => m.id[..8.min(m.id.len())].to_string(),
+        "id" => m.id.to_string(),
+        "shortid" => {
+            let id_str = m.id.to_string();
+            id_str[..8.min(id_str.len())].to_string()
+        }
         "name" => m.name.clone(),
-        "image" => m.image.clone(),
+        "image" => m.image.to_string(),
         "img" => {
             // Look up image name@version from map, fall back to short UUID
-            image_map
-                .get(&m.image)
-                .cloned()
-                .unwrap_or_else(|| m.image[..8.min(m.image.len())].to_string())
+            image_map.get(&m.image).cloned().unwrap_or_else(|| {
+                let image_str = m.image.to_string();
+                image_str[..8.min(image_str.len())].to_string()
+            })
         }
         "state" => format!("{:?}", m.state).to_lowercase(),
         "brand" => format!("{:?}", m.brand).to_lowercase(),

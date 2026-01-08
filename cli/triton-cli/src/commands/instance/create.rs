@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Instance create command
 
@@ -165,11 +165,16 @@ pub async fn run(args: CreateArgs, client: &TypedClient, use_json: bool) -> Resu
 
     // Handle networks (simple mode)
     if let Some(networks) = &args.network {
-        let network_ids: Vec<String> = networks
+        let network_strs: Vec<&str> = networks
             .iter()
             .flat_map(|n| n.split(','))
-            .map(|s| s.trim().to_string())
+            .map(|s| s.trim())
             .collect();
+        let mut network_ids: Vec<uuid::Uuid> = Vec::new();
+        for network_str in network_strs {
+            let network_id = super::super::network::resolve_network(network_str, client).await?;
+            network_ids.push(network_id);
+        }
         request = request.networks(network_ids);
     }
 
@@ -271,17 +276,14 @@ pub async fn run(args: CreateArgs, client: &TypedClient, use_json: bool) -> Resu
         .await?;
 
     let machine = response.into_inner();
+    let id_str = machine.id.to_string();
 
-    println!(
-        "Creating instance {} ({})",
-        &machine.name,
-        &machine.id[..8.min(machine.id.len())]
-    );
+    println!("Creating instance {} ({})", &machine.name, &id_str[..8]);
 
     // Wait if requested
     if args.wait {
         println!("Waiting for instance to be running...");
-        super::wait::wait_for_state(&machine.id, "running", args.wait_timeout, client).await?;
+        super::wait::wait_for_state(machine.id, "running", args.wait_timeout, client).await?;
         println!("Instance is running");
     }
 
@@ -469,7 +471,9 @@ fn parse_disk_spec(spec: &str, is_first: bool) -> Result<cloudapi_client::types:
 
     if parts.len() == 2 {
         // IMAGE:SIZE format
-        let image = parts[0].to_string();
+        let image: uuid::Uuid = parts[0]
+            .parse()
+            .map_err(|_| anyhow::anyhow!("Invalid image UUID in disk spec: {}", parts[0]))?;
         let size = parse_size(parts[1])?;
         Ok(cloudapi_client::types::DiskSpec {
             image: Some(image),
@@ -599,8 +603,9 @@ async fn resolve_image(id_or_name: &str, client: &TypedClient) -> Result<String>
         let images = response.into_inner();
 
         for img in &images {
-            if img.id.starts_with(id_or_name) {
-                return Ok(img.id.to_string());
+            let img_id_str = img.id.to_string();
+            if img_id_str.starts_with(id_or_name) {
+                return Ok(img_id_str);
             }
         }
         return Err(anyhow::anyhow!("Image not found: {}", id_or_name));
@@ -660,8 +665,9 @@ async fn resolve_package(id_or_name: &str, client: &TypedClient) -> Result<Strin
     if is_short_uuid {
         // Find by UUID prefix
         for pkg in &packages {
-            if pkg.id.starts_with(id_or_name) {
-                return Ok(pkg.id.to_string());
+            let pkg_id_str = pkg.id.to_string();
+            if pkg_id_str.starts_with(id_or_name) {
+                return Ok(pkg_id_str);
             }
         }
     } else {
@@ -818,7 +824,7 @@ mod tests {
         let disk = parse_disk_spec("12345678-1234-1234-1234-123456789abc:20G", true).unwrap();
         assert_eq!(
             disk.image,
-            Some("12345678-1234-1234-1234-123456789abc".to_string())
+            Some(uuid::Uuid::parse_str("12345678-1234-1234-1234-123456789abc").unwrap())
         );
         assert_eq!(disk.size, Some(20 * 1024));
         assert_eq!(disk.boot, Some(true));

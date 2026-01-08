@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Instance SSH command
 //!
@@ -88,7 +88,7 @@ pub async fn run(args: SshArgs, client: &TypedClient) -> Result<()> {
         .inner()
         .get_machine()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .send()
         .await
         .context("Failed to get instance")?;
@@ -137,7 +137,7 @@ async fn resolve_ssh_config(
         user.clone()
     } else {
         // Try to get default_user from image
-        fetch_image_default_user(&machine.image, client).await
+        fetch_image_default_user(machine.image, client).await
     };
 
     // Determine proxy configuration (unless disabled)
@@ -177,7 +177,7 @@ async fn resolve_proxy_config(
         .inner()
         .get_machine()
         .account(account)
-        .machine(&proxy_id)
+        .machine(proxy_id)
         .send()
         .await
         .with_context(|| format!("Failed to get SSH proxy instance '{}'", proxy_ref))?;
@@ -204,7 +204,7 @@ async fn resolve_proxy_config(
         proxy_user
     } else {
         // Try to get default_user from proxy's image
-        fetch_image_default_user(&proxy_machine.image, client).await
+        fetch_image_default_user(proxy_machine.image, client).await
     };
 
     Ok(Some(ProxyConfig {
@@ -214,7 +214,7 @@ async fn resolve_proxy_config(
 }
 
 /// Fetch an image by UUID and get its default user
-async fn fetch_image_default_user(image_id: &str, client: &TypedClient) -> String {
+async fn fetch_image_default_user(image_id: uuid::Uuid, client: &TypedClient) -> String {
     let account = &client.auth_config().account;
 
     // Try to fetch the image

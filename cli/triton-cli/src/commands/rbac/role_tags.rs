@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! RBAC role tags management commands
 
@@ -127,12 +127,23 @@ async fn role_tags_set(args: RoleTagsSetArgs, client: &TypedClient, use_json: bo
         role_tag: args.roles.clone(),
     };
 
+    // Parse resource_id to UUID for resources that require it
+    let resource_uuid: Option<uuid::Uuid> = match args.resource_type {
+        RoleTagResource::Instance
+        | RoleTagResource::Image
+        | RoleTagResource::Network
+        | RoleTagResource::Fwrule => Some(resource_id.parse().map_err(|_| {
+            anyhow::anyhow!("Invalid UUID for {:?}: {}", args.resource_type, resource_id)
+        })?),
+        _ => None,
+    };
+
     let response = match args.resource_type {
         RoleTagResource::Instance => client
             .inner()
             .replace_machine_role_tags()
             .account(account)
-            .machine(&resource_id)
+            .machine(resource_uuid.unwrap())
             .body(request)
             .send()
             .await?
@@ -141,7 +152,7 @@ async fn role_tags_set(args: RoleTagsSetArgs, client: &TypedClient, use_json: bo
             .inner()
             .replace_image_role_tags()
             .account(account)
-            .dataset(&resource_id)
+            .dataset(resource_uuid.unwrap())
             .body(request)
             .send()
             .await?
@@ -150,7 +161,7 @@ async fn role_tags_set(args: RoleTagsSetArgs, client: &TypedClient, use_json: bo
             .inner()
             .replace_network_role_tags()
             .account(account)
-            .network(&resource_id)
+            .network(resource_uuid.unwrap())
             .body(request)
             .send()
             .await?
@@ -177,7 +188,7 @@ async fn role_tags_set(args: RoleTagsSetArgs, client: &TypedClient, use_json: bo
             .inner()
             .replace_fwrule_role_tags()
             .account(account)
-            .id(&resource_id)
+            .id(resource_uuid.unwrap())
             .body(request)
             .send()
             .await?
@@ -461,13 +472,24 @@ async fn get_current_role_tags(
 ) -> Result<Vec<String>> {
     let account = &client.auth_config().account;
 
+    // Parse to UUID for resources that require it
+    let resource_uuid: Option<uuid::Uuid> = match resource_type {
+        RoleTagResource::Instance
+        | RoleTagResource::Image
+        | RoleTagResource::Network
+        | RoleTagResource::Fwrule => Some(resource_id.parse().map_err(|_| {
+            anyhow::anyhow!("Invalid UUID for {:?}: {}", resource_type, resource_id)
+        })?),
+        _ => None,
+    };
+
     match resource_type {
         RoleTagResource::Instance => {
             let machine = client
                 .inner()
                 .get_machine()
                 .account(account)
-                .machine(resource_id)
+                .machine(resource_uuid.unwrap())
                 .send()
                 .await?
                 .into_inner();
@@ -478,7 +500,7 @@ async fn get_current_role_tags(
                 .inner()
                 .get_image()
                 .account(account)
-                .dataset(resource_id)
+                .dataset(resource_uuid.unwrap())
                 .send()
                 .await?
                 .into_inner();
@@ -489,7 +511,7 @@ async fn get_current_role_tags(
                 .inner()
                 .get_network()
                 .account(account)
-                .network(resource_id)
+                .network(resource_uuid.unwrap())
                 .send()
                 .await?
                 .into_inner();
@@ -522,7 +544,7 @@ async fn get_current_role_tags(
                 .inner()
                 .get_firewall_rule()
                 .account(account)
-                .id(resource_id)
+                .id(resource_uuid.unwrap())
                 .send()
                 .await?
                 .into_inner();

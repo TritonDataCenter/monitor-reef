@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Instance migration commands
 
@@ -143,7 +143,7 @@ async fn get_migration(args: MigrationGetArgs, client: &TypedClient, use_json: b
         .inner()
         .get_migration()
         .account(account)
-        .machine(&instance_id)
+        .machine(instance_id)
         .send()
         .await?;
 
@@ -182,7 +182,7 @@ async fn estimate_migration(
         .inner()
         .migrate_machine_estimate()
         .account(account)
-        .machine(&instance_id)
+        .machine(instance_id)
         .send()
         .await?;
 
@@ -210,6 +210,7 @@ async fn begin_migration(
 ) -> Result<()> {
     let account = &client.auth_config().account;
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
+    let id_str = instance_id.to_string();
 
     let request = cloudapi_client::types::MigrateRequest {
         action: cloudapi_client::types::MigrationAction::Begin,
@@ -220,7 +221,7 @@ async fn begin_migration(
         .inner()
         .migrate()
         .account(account)
-        .machine(&instance_id)
+        .machine(instance_id)
         .body(request)
         .send()
         .await?;
@@ -229,14 +230,14 @@ async fn begin_migration(
 
     if args.wait {
         // Wait for the action to complete
-        wait_for_action(&instance_id, "begin", args.wait_timeout, client).await?;
+        wait_for_action(instance_id, "begin", args.wait_timeout, client).await?;
         // Output node-triton compatible message
         println!("Done - begin finished");
     } else if !args.quiet {
         if use_json {
             json::print_json(&migration)?;
         } else {
-            println!("Migration started for instance {}", &instance_id[..8]);
+            println!("Migration started for instance {}", &id_str[..8]);
             println!("State: {}", migration.state);
             println!("Phase: {}", migration.phase);
         }
@@ -262,7 +263,7 @@ async fn sync_migration(
         .inner()
         .migrate()
         .account(account)
-        .machine(&instance_id)
+        .machine(instance_id)
         .body(request)
         .send()
         .await?;
@@ -270,7 +271,7 @@ async fn sync_migration(
     let migration = response.into_inner();
 
     if args.wait {
-        wait_for_action(&instance_id, "sync", args.wait_timeout, client).await?;
+        wait_for_action(instance_id, "sync", args.wait_timeout, client).await?;
         println!("Done - sync finished");
     } else if use_json {
         json::print_json(&migration)?;
@@ -299,7 +300,7 @@ async fn switch_migration(
         .inner()
         .migrate()
         .account(account)
-        .machine(&instance_id)
+        .machine(instance_id)
         .body(request)
         .send()
         .await?;
@@ -307,7 +308,7 @@ async fn switch_migration(
     let migration = response.into_inner();
 
     if args.wait {
-        wait_for_action(&instance_id, "switch", args.wait_timeout, client).await?;
+        wait_for_action(instance_id, "switch", args.wait_timeout, client).await?;
         println!("Done - switch finished");
     } else if use_json {
         json::print_json(&migration)?;
@@ -321,7 +322,7 @@ async fn switch_migration(
 
 /// Wait for a migration action to complete
 async fn wait_for_action(
-    instance_id: &str,
+    instance_id: uuid::Uuid,
     action: &str,
     timeout_secs: u64,
     client: &TypedClient,
@@ -392,7 +393,7 @@ async fn wait_migration(args: MigrationWaitArgs, client: &TypedClient) -> Result
             .inner()
             .get_migration()
             .account(account)
-            .machine(&instance_id)
+            .machine(instance_id)
             .send()
             .await?;
 
@@ -433,6 +434,7 @@ async fn abort_migration(
 ) -> Result<()> {
     let account = &client.auth_config().account;
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
+    let id_str = instance_id.to_string();
 
     let request = cloudapi_client::types::MigrateRequest {
         action: cloudapi_client::types::MigrationAction::Abort,
@@ -443,7 +445,7 @@ async fn abort_migration(
         .inner()
         .migrate()
         .account(account)
-        .machine(&instance_id)
+        .machine(instance_id)
         .body(request)
         .send()
         .await?;
@@ -451,12 +453,12 @@ async fn abort_migration(
     let migration = response.into_inner();
 
     if args.wait {
-        wait_for_action(&instance_id, "abort", args.wait_timeout, client).await?;
+        wait_for_action(instance_id, "abort", args.wait_timeout, client).await?;
         println!("Done - abort finished");
     } else if use_json {
         json::print_json(&migration)?;
     } else {
-        println!("Migration aborted for instance {}", &instance_id[..8]);
+        println!("Migration aborted for instance {}", &id_str[..8]);
         println!("State: {}", migration.state);
         println!("Phase: {}", migration.phase);
     }

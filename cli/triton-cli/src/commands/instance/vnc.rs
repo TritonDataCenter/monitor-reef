@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Instance VNC command
 //!
@@ -95,7 +95,7 @@ pub async fn run(args: VncArgs, client: &TypedClient, json: bool) -> Result<()> 
     if args.url_only {
         if json {
             let info = VncInfo {
-                instance: machine_id,
+                instance: machine_id.to_string(),
                 url: vnc_url,
             };
             crate::output::json::print_json(&info)?;

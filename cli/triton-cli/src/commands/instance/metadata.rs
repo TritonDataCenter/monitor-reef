@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Instance metadata subcommands
 
@@ -131,7 +131,7 @@ pub async fn list_metadata(
         .inner()
         .list_machine_metadata()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .send()
         .await?;
     let metadata = response.into_inner();
@@ -164,7 +164,7 @@ async fn get_metadata(args: MetadataGetArgs, client: &TypedClient) -> Result<()>
         .inner()
         .get_machine_metadata()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .key(&args.key)
         .send()
         .await?;
@@ -214,7 +214,7 @@ async fn set_metadata(args: MetadataSetArgs, client: &TypedClient) -> Result<()>
         .inner()
         .add_machine_metadata()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .body(request)
         .send()
         .await?;
@@ -226,9 +226,10 @@ async fn set_metadata(args: MetadataSetArgs, client: &TypedClient) -> Result<()>
     }
 
     if args.wait {
-        super::wait::wait_for_state(&machine_id, "running", args.wait_timeout, client).await?;
+        let id_str = machine_id.to_string();
+        super::wait::wait_for_state(machine_id, "running", args.wait_timeout, client).await?;
         if !args.quiet {
-            println!("Instance {} is running", &machine_id[..8]);
+            println!("Instance {} is running", &id_str[..8]);
         }
     }
 
@@ -252,7 +253,7 @@ async fn delete_metadata(args: MetadataDeleteArgs, client: &TypedClient) -> Resu
         .inner()
         .delete_machine_metadata()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .key(&args.key)
         .send()
         .await?;
@@ -279,7 +280,7 @@ async fn delete_all_metadata(args: MetadataDeleteAllArgs, client: &TypedClient) 
         .inner()
         .delete_all_machine_metadata()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .send()
         .await?;
 

@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Firewall rule management commands
 
@@ -170,7 +170,7 @@ async fn get_rule(args: FwruleGetArgs, client: &TypedClient, use_json: bool) -> 
         .inner()
         .get_firewall_rule()
         .account(account)
-        .id(&rule_id)
+        .id(rule_id)
         .send()
         .await?;
 
@@ -245,7 +245,7 @@ async fn delete_rules(args: FwruleDeleteArgs, client: &TypedClient) -> Result<()
             .inner()
             .delete_firewall_rule()
             .account(account)
-            .id(&resolved_id)
+            .id(resolved_id)
             .send()
             .await?;
 
@@ -272,7 +272,7 @@ async fn enable_rules(args: FwruleEnableArgs, client: &TypedClient) -> Result<()
             .inner()
             .update_firewall_rule()
             .account(account)
-            .id(&resolved_id)
+            .id(resolved_id)
             .body(request)
             .send()
             .await?;
@@ -300,7 +300,7 @@ async fn disable_rules(args: FwruleDisableArgs, client: &TypedClient) -> Result<
             .inner()
             .update_firewall_rule()
             .account(account)
-            .id(&resolved_id)
+            .id(resolved_id)
             .body(request)
             .send()
             .await?;
@@ -326,7 +326,7 @@ async fn update_rule(args: FwruleUpdateArgs, client: &TypedClient, use_json: boo
         .inner()
         .update_firewall_rule()
         .account(account)
-        .id(&rule_id)
+        .id(rule_id)
         .body(request)
         .send()
         .await?;
@@ -353,7 +353,7 @@ async fn list_rule_instances(
         .inner()
         .list_firewall_rule_machines()
         .account(account)
-        .id(&rule_id)
+        .id(rule_id)
         .send()
         .await?;
 
@@ -382,9 +382,9 @@ async fn list_rule_instances(
 }
 
 /// Resolve firewall rule short ID to full UUID
-async fn resolve_rule(id_or_short: &str, client: &TypedClient) -> Result<String> {
-    if uuid::Uuid::parse_str(id_or_short).is_ok() {
-        return Ok(id_or_short.to_string());
+async fn resolve_rule(id_or_short: &str, client: &TypedClient) -> Result<uuid::Uuid> {
+    if let Ok(uuid) = uuid::Uuid::parse_str(id_or_short) {
+        return Ok(uuid);
     }
 
     let account = &client.auth_config().account;
@@ -401,7 +401,7 @@ async fn resolve_rule(id_or_short: &str, client: &TypedClient) -> Result<String>
     if id_or_short.len() >= 8 {
         for rule in &rules {
             if rule.id.to_string().starts_with(id_or_short) {
-                return Ok(rule.id.to_string());
+                return Ok(rule.id);
             }
         }
     }

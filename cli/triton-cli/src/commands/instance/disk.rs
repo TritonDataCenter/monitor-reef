@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Instance disk subcommands
 
@@ -120,7 +120,7 @@ pub async fn list_disks(args: DiskListArgs, client: &TypedClient, use_json: bool
         .inner()
         .list_machine_disks()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .send()
         .await?;
 
@@ -152,13 +152,14 @@ pub async fn list_disks(args: DiskListArgs, client: &TypedClient, use_json: bool
 async fn get_disk(args: DiskGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = &client.auth_config().account;
+    let disk_id: uuid::Uuid = args.disk.parse()?;
 
     let response = client
         .inner()
         .get_machine_disk()
         .account(account)
-        .machine(&machine_id)
-        .disk(&args.disk)
+        .machine(machine_id)
+        .disk(disk_id)
         .send()
         .await?;
 
@@ -179,6 +180,7 @@ async fn get_disk(args: DiskGetArgs, client: &TypedClient, use_json: bool) -> Re
 async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = &client.auth_config().account;
+    let id_str = machine_id.to_string();
 
     let request = cloudapi_client::types::CreateDiskRequest {
         size: args.size as u64,
@@ -189,7 +191,7 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
         .inner()
         .create_machine_disk()
         .account(account)
-        .machine(&machine_id)
+        .machine(machine_id)
         .body(request)
         .send()
         .await?;
@@ -203,8 +205,8 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
     );
 
     if args.wait {
-        super::wait::wait_for_state(&machine_id, "running", args.wait_timeout, client).await?;
-        println!("Instance {} is running", &machine_id[..8]);
+        super::wait::wait_for_state(machine_id, "running", args.wait_timeout, client).await?;
+        println!("Instance {} is running", &id_str[..8]);
     }
 
     if use_json {
@@ -217,6 +219,7 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
 async fn resize_disk(args: DiskResizeArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = &client.auth_config().account;
+    let disk_id: uuid::Uuid = args.disk.parse()?;
 
     let request = cloudapi_client::ResizeDiskRequest {
         size: args.size as u64,
@@ -224,7 +227,7 @@ async fn resize_disk(args: DiskResizeArgs, client: &TypedClient) -> Result<()> {
     };
 
     client
-        .resize_disk(account, &machine_id.parse()?, &args.disk.parse()?, &request)
+        .resize_disk(account, &machine_id, &disk_id, &request)
         .await?;
 
     println!("Resizing disk {} to {} MiB", &args.disk[..8], args.size);
@@ -244,13 +247,14 @@ async fn delete_disk(args: DiskDeleteArgs, client: &TypedClient) -> Result<()> {
 
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = &client.auth_config().account;
+    let disk_id: uuid::Uuid = args.disk.parse()?;
 
     client
         .inner()
         .delete_machine_disk()
         .account(account)
-        .machine(&machine_id)
-        .disk(&args.disk)
+        .machine(machine_id)
+        .disk(disk_id)
         .send()
         .await?;
 
