@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Account info/overview command
 
@@ -74,8 +74,14 @@ pub async fn run(client: &TypedClient, use_json: bool) -> Result<()> {
         println!("email: {}", acc.email);
         println!("url: {}", profile_url);
         // node-triton converts to bytes with *1000*1000 then displays with humanSizeFromBytes
-        println!("totalDisk: {}", human_size_from_bytes(total_disk * 1000 * 1000));
-        println!("totalMemory: {}", human_size_from_bytes(total_memory * 1000 * 1000));
+        println!(
+            "totalDisk: {}",
+            human_size_from_bytes(total_disk * 1000 * 1000)
+        );
+        println!(
+            "totalMemory: {}",
+            human_size_from_bytes(total_memory * 1000 * 1000)
+        );
         println!("instances: {}", machines.len());
         for (state, count) in &states {
             println!("    {}: {}", state, count);

@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Image management commands
 
@@ -755,7 +755,7 @@ async fn copy_image(args: ImageCopyArgs, client: &TypedClient, use_json: bool) -
     }
 
     // Create a placeholder UUID for the local image - the API will create a new one
-    let local_uuid = source_image_uuid.clone();
+    let local_uuid = source_image_uuid;
 
     let image = client
         .import_image_from_datacenter(account, &local_uuid, source_dc.clone(), source_image_uuid)

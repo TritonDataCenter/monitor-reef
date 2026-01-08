@@ -596,6 +596,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]
@@ -609,6 +610,7 @@ dependencies = [
  "reqwest",
  "serde_json",
  "tokio",
+ "uuid",
 ]
 
 [[package]]

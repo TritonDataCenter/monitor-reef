@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! CloudAPI CLI - Command-line interface for Triton CloudAPI
 //!
@@ -24,6 +24,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use cloudapi_api::{DOCS_URL, FAVICON_URL};
 use cloudapi_client::{AuthConfig, KeySource, TypedClient};
+use uuid::Uuid;
 
 /// Get environment variable with fallback
 ///
@@ -251,11 +252,13 @@ async fn main() -> Result<()> {
             }
         }
         Commands::StartMachine { machine } => {
-            client.start_machine(&account, &machine, None).await?;
+            let machine_id: Uuid = machine.parse()?;
+            client.start_machine(&account, &machine_id, None).await?;
             println!("Machine started");
         }
         Commands::StopMachine { machine } => {
-            client.stop_machine(&account, &machine, None).await?;
+            let machine_id: Uuid = machine.parse()?;
+            client.stop_machine(&account, &machine_id, None).await?;
             println!("Machine stopped");
         }
         Commands::ListImages { raw } => {

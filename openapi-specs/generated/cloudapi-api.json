@@ -1225,7 +1225,8 @@
             "description": "Network UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -1281,7 +1282,8 @@
             "description": "Network UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -1347,7 +1349,8 @@
             "description": "Network UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -1396,7 +1399,8 @@
             "description": "Network UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -1717,7 +1721,8 @@
             "description": "Firewall rule UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -1762,7 +1767,8 @@
             "description": "Firewall rule UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -1817,7 +1823,8 @@
             "description": "Firewall rule UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -1872,7 +1879,8 @@
             "description": "Firewall rule UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -1910,7 +1918,8 @@
             "description": "Firewall rule UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -1957,7 +1966,8 @@
             "description": "Firewall rule UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -2004,7 +2014,8 @@
             "description": "Firewall rule UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -2051,7 +2062,8 @@
             "description": "Firewall rule UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -2100,7 +2112,8 @@
             "description": "Firewall rule UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -2169,7 +2182,8 @@
             "description": "Filter by owner",
             "schema": {
               "nullable": true,
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -2362,7 +2376,8 @@
             "description": "Filter by owner",
             "schema": {
               "nullable": true,
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -2447,7 +2462,8 @@
             "description": "Image UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -2492,7 +2508,8 @@
             "description": "Image UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -2548,7 +2565,8 @@
             "description": "Image UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -2609,7 +2627,8 @@
             "description": "Image UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -2647,7 +2666,8 @@
             "description": "Image UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -3117,7 +3137,8 @@
             "description": "Filter by image UUID",
             "schema": {
               "nullable": true,
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -3305,7 +3326,8 @@
             "description": "Filter by image UUID",
             "schema": {
               "nullable": true,
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -3423,7 +3445,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -3470,7 +3493,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -3526,7 +3550,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -3587,7 +3612,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -3625,7 +3651,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -3672,7 +3699,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -3721,7 +3749,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -3773,7 +3802,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -3823,7 +3853,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -3879,7 +3910,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -3931,7 +3963,8 @@
             "description": "Disk UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -3940,7 +3973,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -3986,7 +4020,8 @@
             "description": "Disk UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -3995,7 +4030,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -4057,7 +4093,8 @@
             "description": "Disk UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -4066,7 +4103,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -4105,7 +4143,8 @@
             "description": "Disk UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -4114,7 +4153,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -4162,7 +4202,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -4212,7 +4253,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -4264,7 +4306,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -4314,7 +4357,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -4374,7 +4418,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -4413,7 +4458,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -4474,7 +4520,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -4530,7 +4577,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -4578,7 +4626,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -4628,7 +4677,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -4675,7 +4725,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -4733,7 +4784,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -4783,7 +4835,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -4839,7 +4892,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -4900,7 +4954,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -4955,7 +5010,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -5003,7 +5059,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -5051,7 +5108,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -5101,7 +5159,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -5157,7 +5216,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -5209,7 +5269,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -5264,7 +5325,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -5319,7 +5381,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -5367,7 +5430,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -5424,7 +5488,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -5472,7 +5537,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -5530,7 +5596,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -5588,7 +5655,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -5627,7 +5695,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -5677,7 +5746,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -5733,7 +5803,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -5781,7 +5852,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -5839,7 +5911,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -5923,7 +5996,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -5971,7 +6045,8 @@
             "description": "Machine UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -6139,7 +6214,8 @@
             "description": "Network UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -6184,7 +6260,8 @@
             "description": "Network UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -6239,7 +6316,8 @@
             "description": "Network UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -6286,7 +6364,8 @@
             "description": "Network UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -6335,7 +6414,8 @@
             "description": "Network UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -6395,7 +6475,8 @@
             "description": "Network UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -6449,7 +6530,8 @@
             "description": "Network UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -6513,7 +6595,8 @@
             "description": "Network UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -9067,7 +9150,8 @@
             "description": "Volume UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -9112,7 +9196,8 @@
             "description": "Volume UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -9173,7 +9258,8 @@
             "description": "Volume UUID",
             "required": true,
             "schema": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           }
         ],
@@ -9249,7 +9335,8 @@
           },
           "user": {
             "description": "User UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [
@@ -9297,7 +9384,8 @@
           },
           "id": {
             "description": "Account UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "lastName": {
             "nullable": true,
@@ -9370,7 +9458,8 @@
         "properties": {
           "network": {
             "description": "Network UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "primary": {
             "nullable": true,
@@ -9446,7 +9535,8 @@
           "defaultNetwork": {
             "nullable": true,
             "description": "Default network UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -9480,7 +9570,8 @@
           },
           "user": {
             "description": "User UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [
@@ -9638,7 +9729,8 @@
             "default": null,
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           "description": {
@@ -9661,7 +9753,8 @@
           },
           "machine": {
             "description": "Machine UUID to create image from",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "name": {
             "description": "Image name",
@@ -9750,7 +9843,8 @@
           },
           "image": {
             "description": "Image UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "locality": {
             "nullable": true,
@@ -9778,7 +9872,8 @@
             "default": null,
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           "nics": {
@@ -9976,7 +10071,8 @@
             "default": null,
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           "size": {
@@ -10033,7 +10129,8 @@
           },
           "id": {
             "description": "Disk UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "pciSlot": {
             "nullable": true,
@@ -10076,7 +10173,8 @@
           "image": {
             "nullable": true,
             "description": "Image UUID for this disk (for boot disk or additional image-backed disks)",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "size": {
             "nullable": true,
@@ -10157,7 +10255,8 @@
           },
           "id": {
             "description": "Rule UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "log": {
             "description": "Enable TCP connection logging for this rule",
@@ -10197,7 +10296,8 @@
             "description": "ACL - list of account UUIDs with access (API version >= 7.1.0)",
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           "description": {
@@ -10234,7 +10334,8 @@
           },
           "id": {
             "description": "Image UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "imageSize": {
             "nullable": true,
@@ -10250,7 +10351,8 @@
           "origin": {
             "nullable": true,
             "description": "Origin image UUID (API version >= 7.1.0)",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "os": {
             "description": "Operating system",
@@ -10259,7 +10361,8 @@
           "owner": {
             "nullable": true,
             "description": "Owner UUID (API version >= 7.1.0)",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "public": {
             "nullable": true,
@@ -10447,7 +10550,8 @@
           "computeNode": {
             "nullable": true,
             "description": "Compute node UUID (server hosting the VM)",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "created": {
             "description": "Creation timestamp",
@@ -10514,11 +10618,13 @@
           },
           "id": {
             "description": "Machine UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "image": {
             "description": "Image UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "ips": {
             "description": "IP addresses (always present)",
@@ -10549,7 +10655,8 @@
             "description": "Network UUIDs (API version >= 7.1.0)",
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           "nics": {
@@ -10638,12 +10745,14 @@
           "id": {
             "nullable": true,
             "description": "Disk UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "image": {
             "nullable": true,
             "description": "Image UUID (for image-backed disks)",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "size": {
             "description": "Disk size in MB",
@@ -10679,7 +10788,8 @@
           },
           "network": {
             "description": "Network UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "primary": {
             "description": "Primary NIC",
@@ -10802,7 +10912,8 @@
           },
           "vmUuid": {
             "description": "Machine UUID being migrated\n\nNote: The Node.js CloudAPI translates VMAPI's `vm_uuid` to `machine`. We keep `vm_uuid` here for direct VMAPI compatibility, but the field may be renamed to `machine` in the response.",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [
@@ -10957,7 +11068,8 @@
           },
           "id": {
             "description": "Network UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "internet_nat": {
             "nullable": true,
@@ -11047,7 +11159,8 @@
           "belongsToUuid": {
             "nullable": true,
             "description": "Belongs to UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "ip": {
             "description": "IP address",
@@ -11062,7 +11175,8 @@
           "ownerUuid": {
             "nullable": true,
             "description": "Owner UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "reserved": {
             "description": "Reserved",
@@ -11097,7 +11211,8 @@
           },
           "network": {
             "description": "Network UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "primary": {
             "description": "Primary NIC",
@@ -11133,7 +11248,8 @@
           },
           "network": {
             "description": "Network UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "primary": {
             "nullable": true,
@@ -11194,7 +11310,8 @@
           },
           "id": {
             "description": "Package UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "lwps": {
             "nullable": true,
@@ -11281,7 +11398,8 @@
           },
           "id": {
             "description": "Policy UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "name": {
             "description": "Policy name",
@@ -11361,7 +11479,8 @@
           },
           "id": {
             "description": "Role UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "members": {
             "description": "Members (user UUIDs or logins)",
@@ -11567,7 +11686,8 @@
             "nullable": true,
             "description": "Default network UUID",
             "default": null,
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -11808,7 +11928,8 @@
           },
           "id": {
             "description": "User UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "lastName": {
             "nullable": true,
@@ -11860,7 +11981,8 @@
           },
           "id": {
             "description": "Volume UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "name": {
             "description": "Volume name",
@@ -11871,19 +11993,22 @@
             "default": [],
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           "ownerUuid": {
             "description": "Owner UUID",
-            "type": "string"
+            "type": "string",
+            "format": "uuid"
           },
           "refs": {
             "description": "References (machines using this volume)",
             "default": [],
             "type": "array",
             "items": {
-              "type": "string"
+              "type": "string",
+              "format": "uuid"
             }
           },
           "size": {
