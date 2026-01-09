@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! TLS Certificate Generation for Docker and CMON
 //!
@@ -168,20 +168,19 @@ impl CertGenerator {
         let not_before = now.checked_sub(backdate).unwrap_or(now);
         let not_after = not_before + Duration::from_secs(SECONDS_PER_DAY * lifetime_days as u64);
 
-        params.not_before = time::OffsetDateTime::from_unix_timestamp(
-            not_before
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs() as i64,
-        )
-        .unwrap();
-        params.not_after = time::OffsetDateTime::from_unix_timestamp(
-            not_after
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs() as i64,
-        )
-        .unwrap();
+        let not_before_secs = not_before
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| AuthError::SigningError(format!("Invalid not_before time: {}", e)))?
+            .as_secs() as i64;
+        params.not_before = time::OffsetDateTime::from_unix_timestamp(not_before_secs)
+            .map_err(|e| AuthError::SigningError(format!("Invalid not_before timestamp: {}", e)))?;
+
+        let not_after_secs = not_after
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| AuthError::SigningError(format!("Invalid not_after time: {}", e)))?
+            .as_secs() as i64;
+        params.not_after = time::OffsetDateTime::from_unix_timestamp(not_after_secs)
+            .map_err(|e| AuthError::SigningError(format!("Invalid not_after timestamp: {}", e)))?;
 
         // Set random serial number
         let mut serial = [0u8; 16];

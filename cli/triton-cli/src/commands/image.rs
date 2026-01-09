@@ -968,12 +968,13 @@ pub async fn resolve_image(id_or_name: &str, client: &TypedClient) -> Result<uui
         .collect();
 
     // Prefer name matches (sorted by published_at, return most recent)
-    if name_matches.len() == 1 {
-        return Ok(name_matches[0].id);
-    } else if name_matches.len() > 1 {
+    if !name_matches.is_empty() {
         // Sort by published_at ascending, return last (most recent)
         name_matches.sort_by(|a, b| a.published_at.cmp(&b.published_at));
-        return Ok(name_matches.last().unwrap().id);
+        // Safe: we just checked is_empty() above
+        if let Some(most_recent) = name_matches.last() {
+            return Ok(most_recent.id);
+        }
     }
 
     // Fall back to short ID matches

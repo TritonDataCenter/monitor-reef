@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Subcommand existence and help consistency tests.
 //!
@@ -13,7 +13,7 @@
 //! 2. `triton help <subcmd>` and `triton <subcmd> -h` produce equivalent output
 //! 3. Aliases produce the same help as their canonical commands
 
-#![allow(deprecated)]
+#![allow(deprecated, clippy::expect_used)]
 
 mod common;
 

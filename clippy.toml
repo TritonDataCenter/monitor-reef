@@ -4,16 +4,6 @@
 #
 # Copyright 2026 Edgecast Cloud LLC.
 
-[package]
-name = "example-api"
-version = "0.1.0"
-edition.workspace = true
-
-[dependencies]
-dropshot = { workspace = true }
-schemars = { workspace = true }
-serde = { workspace = true }
-
-[lints]
-workspace = true
-
+# Allow unwrap() and expect() in test code
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true

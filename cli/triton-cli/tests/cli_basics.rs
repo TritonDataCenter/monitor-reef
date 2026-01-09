@@ -2,14 +2,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Basic CLI tests - help, version, etc.
 //!
 //! Ported from node-triton test/integration/cli-basics.test.js
 
 // Allow deprecated - cargo_bin is standard for CLI testing
-#![allow(deprecated)]
+#![allow(deprecated, clippy::expect_used)]
 
 mod common;
 

@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Triton CLI - User-friendly command-line interface for Triton CloudAPI
 
@@ -313,7 +313,7 @@ impl Cli {
                 &url,
                 auth_config,
                 self.insecure,
-            ));
+            )?);
         }
 
         // Otherwise, load from profile
@@ -364,7 +364,7 @@ impl Cli {
             &final_url,
             auth_config,
             insecure,
-        ))
+        )?)
     }
 }
 

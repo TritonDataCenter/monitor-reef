@@ -16,6 +16,13 @@ use crate::output::json;
 
 use super::common::resolve_user;
 
+/// Parse resource ID as UUID, returning an error if invalid
+fn parse_resource_uuid(resource_id: &str, resource_type: &RoleTagResource) -> Result<uuid::Uuid> {
+    resource_id
+        .parse()
+        .map_err(|_| anyhow::anyhow!("Invalid UUID for {:?}: {}", resource_type, resource_id))
+}
+
 /// Resource types that support role tags
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
 pub enum RoleTagResource {
@@ -127,45 +134,43 @@ async fn role_tags_set(args: RoleTagsSetArgs, client: &TypedClient, use_json: bo
         role_tag: args.roles.clone(),
     };
 
-    // Parse resource_id to UUID for resources that require it
-    let resource_uuid: Option<uuid::Uuid> = match args.resource_type {
-        RoleTagResource::Instance
-        | RoleTagResource::Image
-        | RoleTagResource::Network
-        | RoleTagResource::Fwrule => Some(resource_id.parse().map_err(|_| {
-            anyhow::anyhow!("Invalid UUID for {:?}: {}", args.resource_type, resource_id)
-        })?),
-        _ => None,
-    };
-
     let response = match args.resource_type {
-        RoleTagResource::Instance => client
-            .inner()
-            .replace_machine_role_tags()
-            .account(account)
-            .machine(resource_uuid.unwrap())
-            .body(request)
-            .send()
-            .await?
-            .into_inner(),
-        RoleTagResource::Image => client
-            .inner()
-            .replace_image_role_tags()
-            .account(account)
-            .dataset(resource_uuid.unwrap())
-            .body(request)
-            .send()
-            .await?
-            .into_inner(),
-        RoleTagResource::Network => client
-            .inner()
-            .replace_network_role_tags()
-            .account(account)
-            .network(resource_uuid.unwrap())
-            .body(request)
-            .send()
-            .await?
-            .into_inner(),
+        RoleTagResource::Instance => {
+            let uuid = parse_resource_uuid(&resource_id, &args.resource_type)?;
+            client
+                .inner()
+                .replace_machine_role_tags()
+                .account(account)
+                .machine(uuid)
+                .body(request)
+                .send()
+                .await?
+                .into_inner()
+        }
+        RoleTagResource::Image => {
+            let uuid = parse_resource_uuid(&resource_id, &args.resource_type)?;
+            client
+                .inner()
+                .replace_image_role_tags()
+                .account(account)
+                .dataset(uuid)
+                .body(request)
+                .send()
+                .await?
+                .into_inner()
+        }
+        RoleTagResource::Network => {
+            let uuid = parse_resource_uuid(&resource_id, &args.resource_type)?;
+            client
+                .inner()
+                .replace_network_role_tags()
+                .account(account)
+                .network(uuid)
+                .body(request)
+                .send()
+                .await?
+                .into_inner()
+        }
         RoleTagResource::Package => client
             .inner()
             .replace_package_role_tags()
@@ -184,15 +189,18 @@ async fn role_tags_set(args: RoleTagsSetArgs, client: &TypedClient, use_json: bo
             .send()
             .await?
             .into_inner(),
-        RoleTagResource::Fwrule => client
-            .inner()
-            .replace_fwrule_role_tags()
-            .account(account)
-            .id(resource_uuid.unwrap())
-            .body(request)
-            .send()
-            .await?
-            .into_inner(),
+        RoleTagResource::Fwrule => {
+            let uuid = parse_resource_uuid(&resource_id, &args.resource_type)?;
+            client
+                .inner()
+                .replace_fwrule_role_tags()
+                .account(account)
+                .id(uuid)
+                .body(request)
+                .send()
+                .await?
+                .into_inner()
+        }
         RoleTagResource::User => client
             .inner()
             .replace_user_role_tags()
@@ -472,46 +480,38 @@ async fn get_current_role_tags(
 ) -> Result<Vec<String>> {
     let account = &client.auth_config().account;
 
-    // Parse to UUID for resources that require it
-    let resource_uuid: Option<uuid::Uuid> = match resource_type {
-        RoleTagResource::Instance
-        | RoleTagResource::Image
-        | RoleTagResource::Network
-        | RoleTagResource::Fwrule => Some(resource_id.parse().map_err(|_| {
-            anyhow::anyhow!("Invalid UUID for {:?}: {}", resource_type, resource_id)
-        })?),
-        _ => None,
-    };
-
     match resource_type {
         RoleTagResource::Instance => {
+            let uuid = parse_resource_uuid(resource_id, resource_type)?;
             let machine = client
                 .inner()
                 .get_machine()
                 .account(account)
-                .machine(resource_uuid.unwrap())
+                .machine(uuid)
                 .send()
                 .await?
                 .into_inner();
             Ok(machine.role_tag.unwrap_or_default())
         }
         RoleTagResource::Image => {
+            let uuid = parse_resource_uuid(resource_id, resource_type)?;
             let image = client
                 .inner()
                 .get_image()
                 .account(account)
-                .dataset(resource_uuid.unwrap())
+                .dataset(uuid)
                 .send()
                 .await?
                 .into_inner();
             Ok(image.role_tag.unwrap_or_default())
         }
         RoleTagResource::Network => {
+            let uuid = parse_resource_uuid(resource_id, resource_type)?;
             let network = client
                 .inner()
                 .get_network()
                 .account(account)
-                .network(resource_uuid.unwrap())
+                .network(uuid)
                 .send()
                 .await?
                 .into_inner();
@@ -540,11 +540,12 @@ async fn get_current_role_tags(
             Ok(key.role_tag.unwrap_or_default())
         }
         RoleTagResource::Fwrule => {
+            let uuid = parse_resource_uuid(resource_id, resource_type)?;
             let rule = client
                 .inner()
                 .get_firewall_rule()
                 .account(account)
-                .id(resource_uuid.unwrap())
+                .id(uuid)
                 .send()
                 .await?
                 .into_inner();

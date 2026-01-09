@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! SSH agent key tests for triton-auth
 //!
@@ -245,7 +245,8 @@ async fn test_agent_fingerprint_matches_file() {
     let pub_key = triton_auth::agent::find_key_in_agent(ID_RSA_MD5)
         .await
         .expect("Key should be in agent");
-    let agent_fp = triton_auth::fingerprint::md5_fingerprint(&pub_key);
+    let agent_fp = triton_auth::fingerprint::md5_fingerprint(&pub_key)
+        .expect("Failed to compute MD5 fingerprint");
 
     // Get fingerprint from file-loaded key
     let key_path = test_keys_dir().join("id_rsa");

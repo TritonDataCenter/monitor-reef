@@ -28,6 +28,10 @@ edition = "2024"
 [profile.release]
 panic = "abort"
 
+[workspace.lints.clippy]
+unwrap_used = "deny"
+expect_used = "deny"
+
 [workspace.dependencies]
 dropshot = { version = "0.16.4" }
 dropshot-api-manager = "0.2.3"

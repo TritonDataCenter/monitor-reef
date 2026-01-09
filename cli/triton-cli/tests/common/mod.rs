@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Test helpers for triton-cli integration tests
 //!
@@ -14,7 +14,8 @@
 
 // Allow unused code - these helpers are infrastructure for integration tests
 // Allow deprecated - cargo_bin is standard for CLI testing
-#![allow(dead_code, deprecated)]
+// Allow expect/unwrap - these are test helpers and panicking is appropriate
+#![allow(dead_code, deprecated, clippy::expect_used, clippy::unwrap_used)]
 
 pub mod config;
 

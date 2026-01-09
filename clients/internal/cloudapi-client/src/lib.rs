@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Triton CloudAPI Client Library
 //!
@@ -72,7 +72,12 @@
 pub mod auth;
 
 // Include the Progenitor-generated client code
-include!(concat!(env!("OUT_DIR"), "/client.rs"));
+// Allow unwrap in generated code - Progenitor uses it in Client::new()
+#[allow(clippy::unwrap_used)]
+mod generated {
+    include!(concat!(env!("OUT_DIR"), "/client.rs"));
+}
+pub use generated::*;
 
 // Re-export triton-auth types for convenience
 pub use triton_auth::{AuthConfig, AuthError, KeySource};
@@ -274,15 +279,21 @@ impl TypedClient {
     /// * `base_url` - CloudAPI base URL (e.g., "https://cloudapi.example.com")
     /// * `auth_config` - Authentication configuration
     /// * `insecure` - If true, skip TLS certificate validation (use with caution)
-    pub fn new_with_insecure(base_url: &str, auth_config: AuthConfig, insecure: bool) -> Self {
+    ///
+    /// # Errors
+    /// Returns an error if the HTTP client cannot be built.
+    pub fn new_with_insecure(
+        base_url: &str,
+        auth_config: AuthConfig,
+        insecure: bool,
+    ) -> Result<Self, reqwest::Error> {
         let http_client = reqwest::Client::builder()
             .danger_accept_invalid_certs(insecure)
-            .build()
-            .expect("Failed to build HTTP client");
-        Self {
+            .build()?;
+        Ok(Self {
             inner: Client::new_with_client(base_url, http_client, auth_config.clone()),
             auth_config,
-        }
+        })
     }
 
     /// Access the underlying Progenitor client for non-wrapped methods

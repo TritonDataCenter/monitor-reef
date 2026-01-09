@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! SSH key fingerprint handling for Triton authentication
 //!
@@ -171,6 +171,10 @@ impl std::str::FromStr for Fingerprint {
 ///
 /// Returns format like "aa:bb:cc:dd:ee:ff:..."
 ///
+/// # Errors
+///
+/// Returns an error if the public key cannot be encoded to bytes.
+///
 /// # Example
 ///
 /// ```ignore
@@ -178,22 +182,24 @@ impl std::str::FromStr for Fingerprint {
 /// use triton_auth::fingerprint::md5_fingerprint;
 ///
 /// let key: PublicKey = /* load key */;
-/// let fp = md5_fingerprint(&key);
+/// let fp = md5_fingerprint(&key)?;
 /// // fp = "fa:56:a1:6b:cc:04:97:fe:e2:98:54:c4:2e:0d:26:c6"
 /// ```
-pub fn md5_fingerprint(key: &PublicKey) -> String {
-    // Get the key in OpenSSH wire format (type + key data)
-    // unwrap() is safe here because encoding a valid PublicKey should always succeed
-    let key_bytes = key.to_bytes().expect("Failed to encode public key");
-    md5_fingerprint_bytes(&key_bytes)
+pub fn md5_fingerprint(key: &PublicKey) -> Result<String, ssh_key::Error> {
+    let key_bytes = key.to_bytes()?;
+    Ok(md5_fingerprint_bytes(&key_bytes))
 }
 
 /// Calculate SHA256 fingerprint of an SSH public key in base64 format
 ///
 /// Returns format like "SHA256:base64data"
-pub fn sha256_fingerprint(key: &PublicKey) -> String {
-    let key_bytes = key.to_bytes().expect("Failed to encode public key");
-    sha256_fingerprint_bytes(&key_bytes)
+///
+/// # Errors
+///
+/// Returns an error if the public key cannot be encoded to bytes.
+pub fn sha256_fingerprint(key: &PublicKey) -> Result<String, ssh_key::Error> {
+    let key_bytes = key.to_bytes()?;
+    Ok(sha256_fingerprint_bytes(&key_bytes))
 }
 
 /// Calculate MD5 fingerprint from raw public key bytes (OpenSSH wire format)

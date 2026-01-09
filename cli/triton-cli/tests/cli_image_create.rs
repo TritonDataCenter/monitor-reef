@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Image creation and management tests.
 //!
@@ -21,7 +21,7 @@
 //! 6. Test image tag
 //! 7. Cleanup
 
-#![allow(deprecated)]
+#![allow(deprecated, clippy::expect_used)]
 
 mod common;
 

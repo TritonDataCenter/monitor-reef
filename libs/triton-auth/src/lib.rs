@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Triton HTTP Signature Authentication Library
 //!
@@ -195,7 +195,7 @@ pub async fn sign_request(
             let pub_key = agent::find_key_in_agent(fingerprint).await?;
             let key_type = KeyType::from_public_key(&pub_key);
             // Always compute MD5 fingerprint for the Authorization header
-            let md5_fp = md5_fingerprint(&pub_key);
+            let md5_fp = md5_fingerprint(&pub_key)?;
 
             // Create signing string using MD5 fingerprint
             let signer = create_signer_with_fp(config, key_type, &md5_fp);
@@ -208,7 +208,7 @@ pub async fn sign_request(
             let key = KeyLoader::load_private_key(&config.key_source).await?;
             let key_type = KeyType::from_private_key(&key);
             // Always compute MD5 fingerprint for the Authorization header
-            let md5_fp = md5_fingerprint(key.public_key());
+            let md5_fp = md5_fingerprint(key.public_key())?;
 
             // Create signing string and sign
             let signer = create_signer_with_fp(config, key_type, &md5_fp);
@@ -222,7 +222,7 @@ pub async fn sign_request(
                 Ok(pub_key) => {
                     let key_type = KeyType::from_public_key(&pub_key);
                     // Always compute MD5 fingerprint for the Authorization header
-                    let md5_fp = md5_fingerprint(&pub_key);
+                    let md5_fp = md5_fingerprint(&pub_key)?;
 
                     let signer = create_signer_with_fp(config, key_type, &md5_fp);
                     let signing_string = signer.signing_string(method, path, &date);
@@ -239,7 +239,7 @@ pub async fn sign_request(
                     .await?;
                     let key_type = KeyType::from_private_key(&key);
                     // Always compute MD5 fingerprint for the Authorization header
-                    let md5_fp = md5_fingerprint(key.public_key());
+                    let md5_fp = md5_fingerprint(key.public_key())?;
 
                     let signer = create_signer_with_fp(config, key_type, &md5_fp);
                     let signing_string = signer.signing_string(method, path, &date);
