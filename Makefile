@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
-# Copyright 2025 Edgecast Cloud LLC.
+# Copyright 2026 Edgecast Cloud LLC.
 
 # Triton Rust Monorepo Makefile
 # Common development commands for working with trait-based Dropshot APIs
@@ -22,6 +22,7 @@ include ./deps/eng/tools/mk/Makefile.rust.targ
 .PHONY: api-new service-new client-new
 .PHONY: service-build service-test service-run
 .PHONY: client-build client-test
+.PHONY: package-build package-test
 .PHONY: openapi-generate openapi-list openapi-check
 .PHONY: dev-setup workspace-test integration-test
 .PHONY: list
@@ -129,6 +130,15 @@ client-build: | $(CARGO_EXEC) ## Build specific client (usage: make client-build
 client-test: | $(CARGO_EXEC) ## Test specific client (usage: make client-test CLIENT=my-service-client)
 	@if [ -z "$(CLIENT)" ]; then echo "Usage: make client-test CLIENT=my-service-client"; exit 1; fi
 	$(CARGO) test -p $(CLIENT)
+
+# Generic package commands (for any crate in the workspace)
+package-build: | $(CARGO_EXEC) ## Build specific package (usage: make package-build PACKAGE=my-package)
+	@if [ -z "$(PACKAGE)" ]; then echo "Usage: make package-build PACKAGE=my-package"; exit 1; fi
+	$(CARGO) build -p $(PACKAGE)
+
+package-test: | $(CARGO_EXEC) ## Test specific package (usage: make package-test PACKAGE=my-package)
+	@if [ -z "$(PACKAGE)" ]; then echo "Usage: make package-test PACKAGE=my-package"; exit 1; fi
+	$(CARGO) test -p $(PACKAGE)
 
 # OpenAPI management commands (using dropshot-api-manager)
 openapi-generate: | $(CARGO_EXEC) ## Generate OpenAPI specs from API traits
