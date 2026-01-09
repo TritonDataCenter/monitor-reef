@@ -59,7 +59,6 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
                 ..ManagedApiMetadata::default()
             },
             api_description: bugview_api::bugview_api_mod::stub_api_description,
-            extra_validation: None,
         },
         ManagedApiConfig {
             ident: "jira-api",
@@ -74,7 +73,6 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
                 ..ManagedApiMetadata::default()
             },
             api_description: jira_api::jira_api_mod::stub_api_description,
-            extra_validation: None,
         },
     ];
     let managed_apis = dropshot_api_manager::ManagedApis::new(apis)?;
