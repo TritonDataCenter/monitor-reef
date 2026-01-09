@@ -2,14 +2,14 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 mod html;
 mod jira_client;
 mod search;
 mod token_cache;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use bugview_api::{
     BugviewApi, IssueDetails, IssueListQuery, IssueListResponse, IssuePath, IssueSummary,
     LabelPath, RemoteLink,
@@ -492,11 +492,12 @@ async fn main() -> Result<()> {
 
     // Load configuration from environment
     // Required credentials - fail fast if not set rather than starting with invalid config
-    let jira_url = std::env::var("JIRA_URL").expect("JIRA_URL environment variable is required");
+    let jira_url =
+        std::env::var("JIRA_URL").context("JIRA_URL environment variable is required")?;
     let jira_username =
-        std::env::var("JIRA_USERNAME").expect("JIRA_USERNAME environment variable is required");
+        std::env::var("JIRA_USERNAME").context("JIRA_USERNAME environment variable is required")?;
     let jira_password =
-        std::env::var("JIRA_PASSWORD").expect("JIRA_PASSWORD environment variable is required");
+        std::env::var("JIRA_PASSWORD").context("JIRA_PASSWORD environment variable is required")?;
     let default_label =
         std::env::var("JIRA_DEFAULT_LABEL").unwrap_or_else(|_| "public".to_string());
     let allowed_labels = std::env::var("JIRA_ALLOWED_LABELS")

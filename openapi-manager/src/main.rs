@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 use anyhow::{Context, Result};
 use camino::Utf8PathBuf;
@@ -12,17 +12,17 @@ use dropshot_api_manager::{Environment, ManagedApiConfig};
 use dropshot_api_manager_types::{ManagedApiMetadata, Versions};
 use std::process::ExitCode;
 
-fn workspace_root() -> Utf8PathBuf {
+fn workspace_root() -> Result<Utf8PathBuf> {
     Utf8PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
-        .unwrap()
-        .to_path_buf()
+        .map(|p| p.to_path_buf())
+        .context("openapi-manager must be in a subdirectory of the workspace root")
 }
 
 fn environment() -> Result<Environment> {
     let env = Environment::new(
         "cargo openapi".to_string(),
-        workspace_root(),
+        workspace_root()?,
         "openapi-specs/generated",
     )?;
     Ok(env)
@@ -30,7 +30,7 @@ fn environment() -> Result<Environment> {
 
 /// Read the version from a crate's Cargo.toml.
 fn crate_version(crate_path: &str) -> Result<semver::Version> {
-    let manifest_path = workspace_root().join(crate_path).join("Cargo.toml");
+    let manifest_path = workspace_root()?.join(crate_path).join("Cargo.toml");
     let manifest = Manifest::from_path(&manifest_path)
         .with_context(|| format!("failed to read {}", manifest_path))?;
     let package = manifest
@@ -59,7 +59,6 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
                 ..ManagedApiMetadata::default()
             },
             api_description: bugview_api::bugview_api_mod::stub_api_description,
-            extra_validation: None,
         },
         ManagedApiConfig {
             ident: "jira-api",
@@ -74,7 +73,6 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
                 ..ManagedApiMetadata::default()
             },
             api_description: jira_api::jira_api_mod::stub_api_description,
-            extra_validation: None,
         },
     ];
     let managed_apis = dropshot_api_manager::ManagedApis::new(apis)?;
