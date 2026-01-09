@@ -170,6 +170,7 @@ pub enum InternalErrorCode {
     JobBuilderError,       // Errors building a Job
     MaxObjectsLimit,       // The max_objects limit has been reached
     DbQuery,               // Unexpected result from a database query
+    InvalidState,          // Invalid configuration or state
 }
 
 impl fmt::Display for InternalError {
