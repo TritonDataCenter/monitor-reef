@@ -150,6 +150,66 @@ pub struct VmInfo {
 
 Document these in the Phase 1 plan under "Field Naming Exceptions".
 
+## UUID Handling (IMPORTANT Behavior Change)
+
+**Node.js Triton services only accept lowercase UUIDs.** This is a strict requirement:
+- `69cd99e2-eccc-11f0-88a8-17e540bad9e0` - Valid
+- `69CD99E2-ECCC-11F0-88A8-17E540BAD9E0` - **Invalid** (rejected by Node.js)
+- `69Cd99e2-eccc-11f0-88a8-17e540bad9e0` - **Invalid** (even one uppercase char)
+
+**Rust's `uuid` crate follows Postel's Law** - be liberal in what you accept:
+- **Parses** UUIDs in any case (uppercase, lowercase, mixed all work)
+- **Always emits** UUIDs in lowercase hyphenated format
+
+**This means Rust services will be MORE PERMISSIVE on input** while maintaining compatibility on output. This is an intentional, documented behavior change.
+
+### Using uuid::Uuid
+
+Prefer `uuid::Uuid` over `String` for UUID fields to get automatic parsing and validation:
+
+```rust
+use uuid::Uuid;
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct VmPath {
+    pub uuid: Uuid,  // Automatically parses any case, always serializes lowercase
+}
+```
+
+When the Rust service makes calls to existing Node.js services, the uuid crate will emit lowercase UUIDs, maintaining compatibility.
+
+### When UUIDs Accept Special Values
+
+When a field accepts either a UUID or special string values (e.g., "default", "latest"), use an untagged enum instead of `String`:
+
+```rust
+use uuid::Uuid;
+
+/// Accepts either a UUID or the literal "default"
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum UuidOrDefault {
+    Uuid(Uuid),
+    Special(SpecialValue),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum SpecialValue {
+    Default,
+}
+```
+
+This approach:
+- Validates UUIDs are properly formatted (and normalizes to lowercase)
+- Only accepts the specific special values you define
+- Rejects invalid inputs like typos ("defualt") at parse time
+- Makes the API contract explicit in the OpenAPI spec
+
+**Use plain `String` only when:**
+- You need to preserve the original casing for logging/debugging
+- The value is passed through without validation to another service
+
 ## Variable HTTP Status Codes
 
 Some endpoints return different status codes based on conditions (e.g., 200 when healthy, 503 when unhealthy).
