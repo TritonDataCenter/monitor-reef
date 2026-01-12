@@ -12,9 +12,9 @@ license = "MPL-2.0"
 edition = "2018"
 
 [dependencies]
-cueball = { path = '../../cueball', version = '0.3.5' }
+cueball = { path = '../cueball' }
 
 [dev-dependencies]
-cueball-tcp-stream-connection = { path = '../../connections/tcp-stream-connection', version = '0.3.0' }
+cueball-tcp-stream-connection = { path = '../cueball-tcp-stream-connection'}
 slog = "2.4.1"
 slog-term = "2.4.0"
