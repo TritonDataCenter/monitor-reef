@@ -5970,16 +5970,14 @@ mod tests {
         use crate::config::{Config, MdapiConfig};
 
         // Config with both moray and mdapi enabled
-        let config = Config {
-            domain_name: "us-east.joyent.us".to_string(),
-            mdapi: MdapiConfig {
-                enabled: true,
-                endpoint: "mdapi.example.com:2030".to_string(),
-                default_bucket_id: None,
-                connection_timeout_ms: 5000,
-                single_bucket_mode: false,
-            },
-            ..Default::default()
+        let mut config = Config::default();
+        config.domain_name = "us-east.joyent.us".to_string();
+        config.mdapi = MdapiConfig {
+            enabled: true,
+            endpoint: "mdapi.example.com:2030".to_string(),
+            default_bucket_id: None,
+            connection_timeout_ms: 5000,
+            single_bucket_mode: false,
         };
 
         // Note: This will fail without a real moray/mdapi service
@@ -5998,14 +5996,9 @@ mod tests {
         use crate::config::{Config, MdapiConfig};
 
         // Config with only moray
-        let config = Config {
-            domain_name: "us-east.joyent.us".to_string(),
-            mdapi: MdapiConfig {
-                enabled: false,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
+        let mut config = Config::default();
+        config.domain_name = "us-east.joyent.us".to_string();
+        config.mdapi.enabled = false;
 
         let use_mdapi = mdapi_client::should_use_mdapi(&config.mdapi);
         let use_moray = !config.domain_name.is_empty();
@@ -6020,16 +6013,14 @@ mod tests {
         use crate::config::{Config, MdapiConfig};
 
         // Config with only mdapi
-        let config = Config {
-            domain_name: String::new(),
-            mdapi: MdapiConfig {
-                enabled: true,
-                endpoint: "mdapi.example.com:2030".to_string(),
-                default_bucket_id: None,
-                connection_timeout_ms: 5000,
-                single_bucket_mode: false,
-            },
-            ..Default::default()
+        let mut config = Config::default();
+        config.domain_name = String::new();
+        config.mdapi = MdapiConfig {
+            enabled: true,
+            endpoint: "mdapi.example.com:2030".to_string(),
+            default_bucket_id: None,
+            connection_timeout_ms: 5000,
+            single_bucket_mode: false,
         };
 
         let use_mdapi = mdapi_client::should_use_mdapi(&config.mdapi);
@@ -6045,14 +6036,9 @@ mod tests {
         use crate::config::{Config, MdapiConfig};
 
         // Config with neither backend
-        let config = Config {
-            domain_name: String::new(),
-            mdapi: MdapiConfig {
-                enabled: false,
-                ..Default::default()
-            },
-            ..Default::default()
-        };
+        let mut config = Config::default();
+        config.domain_name = String::new();
+        config.mdapi.enabled = false;
 
         let use_mdapi = mdapi_client::should_use_mdapi(&config.mdapi);
         let use_moray = !config.domain_name.is_empty();

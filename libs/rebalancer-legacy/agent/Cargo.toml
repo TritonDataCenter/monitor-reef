@@ -16,7 +16,9 @@ gotham_derive = "0.4.0"
 hyper = "0.12"
 joyent-rust-utils = { path = "../../rust-utils" }
 lazy_static = "1.4.0"
+
 libmanta = { path = "../../libmanta" }
+
 mime = "0.3.13"
 moray = { path = "../../moray" }
 rebalancer = { path = "../rebalancer" }
