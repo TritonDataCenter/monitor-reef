@@ -14,6 +14,6 @@ edition = "2018"
 
 [dependencies]
 clap = "2.32"
-cueball = { path = "../../cueball", version = "0.3.5" }
-cueball-manatee-primary-resolver = { path = "../../resolvers/manatee-primary-resolver", version = "0.5.1" }
+cueball = { path = "../../libs/cueball" }
+cueball-manatee-primary-resolver = { path = "../../libs/cueball-manatee-primary-resolver" }
 slog = { version = "2.4.1", features = [ "max_level_trace" ] }

@@ -2,7 +2,7 @@
  * Copyright 2019 Joyent, Inc.
  */
 
-use rust_fast::{client as fast_client, protocol::FastMessageId};
+use fast_rpc::{client as fast_client, protocol::FastMessageId};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, json, Value};
 use std::io::{Error, ErrorKind};

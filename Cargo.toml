@@ -1,8 +1,26 @@
 [workspace]
 members = [
+    # manta-rebalancer (original)
     "agent",
     "manager",
-    "rebalancer"
+    "rebalancer",
+
+    # Merged libraries
+    "libs/fast",
+    "libs/cueball",
+    #"libs/cueball-dns-resolver",
+    #"libs/cueball-manatee-primary-resolver",
+    #"libs/cueball-postgres-connection",
+    "libs/cueball-static-resolver",
+    "libs/cueball-tcp-stream-connection",
+    "libs/libmanta",
+    "libs/moray",
+    "libs/quickcheck-helpers",
+    "libs/rust-utils",
+    "libs/sharkspotter",
+
+    # CLI tools
+    #"cli/manatee-echo-resolver",
 ]
 
 [profile.dev]
@@ -30,3 +48,6 @@ panic = "abort"
 # builing any depedencies that also rely on diesel (which is a good thing).
 diesel = { git = "https://github.com/diesel-rs/diesel", rev = "f75e930e166eb448e3c41d5cdc7251cfcad681f6"}
 diesel_derives = { git = "https://github.com/diesel-rs/diesel" , rev = "f75e930e166eb448e3c41d5cdc7251cfcad681f6"}
+
+proc-macro2 = { git = "https://github.com/dtolnay/proc-macro2", tag = "1.0.19"}
+async-trait= { git = "https://github.com/dtolnay/async-trait", tag = "0.1.36"}
