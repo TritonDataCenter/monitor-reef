@@ -226,7 +226,7 @@ list: ## List all APIs, services and clients
 	@ls -1 openapi-specs/generated/ 2>/dev/null || echo "  No specs generated yet (run: make openapi-generate)"
 
 # Validation and CI commands
-check:: | $(CARGO_EXEC) ## Run all validation checks (CI-ready)
+check:: | $(CARGO_EXEC) coverage ## Run all validation checks (CI-ready)
 	@echo "Running all validation checks..."
 	$(CARGO) test --workspace
 	$(MAKE) openapi-check
@@ -253,6 +253,8 @@ coverage: | $(CARGO_EXEC) ## Run code coverage check (line >= 40%)
 		--timeout $(COVERAGE_TIMEOUT) \
 		--fail-under $(COVERAGE_LINE_THRESHOLD) \
 		--exclude-files 'clients/internal/*' \
+		--exclude-files 'rust/*' \
+		--exclude-files 'deps/*' \
 		--exclude api-template \
 		--exclude service-template \
 		--exclude client-template
