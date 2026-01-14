@@ -241,14 +241,14 @@ regen-clients: | $(CARGO_EXEC) ## Regenerate all client libraries
 
 # Code coverage
 coverage: | $(CARGO_EXEC) ## Run code coverage check (line >= 40%)
-	@if ! command -v cargo-tarpaulin >/dev/null 2>&1; then \
+	@if ! $(CARGO) tarpaulin --version >/dev/null 2>&1; then \
 		echo "cargo-tarpaulin not found, installing..."; \
-		cargo install cargo-tarpaulin; \
+		$(CARGO) install --features vendored-openssl cargo-tarpaulin; \
 	fi
 	@echo "Running code coverage analysis..."
 	@echo "Threshold: line >= $(COVERAGE_LINE_THRESHOLD)%"
 	@echo ""
-	cargo tarpaulin \
+	$(CARGO) tarpaulin \
 		--workspace \
 		--timeout $(COVERAGE_TIMEOUT) \
 		--fail-under $(COVERAGE_LINE_THRESHOLD) \
