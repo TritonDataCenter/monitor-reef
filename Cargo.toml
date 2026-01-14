@@ -1,9 +1,9 @@
 [workspace]
 members = [
-    # manta-rebalancer (original)
-    "agent",
-    "manager",
-    "rebalancer",
+    # manta-rebalancer (legacy)
+    "libs/rebalancer-legacy/agent",
+    "libs/rebalancer-legacy/manager",
+    "libs/rebalancer-legacy/rebalancer",
 
     # Merged libraries
     "libs/fast",

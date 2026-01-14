@@ -16,9 +16,12 @@ RUST_TOOLCHAIN = 1.40.0
 # Rust < 1.49 must specify sun-solaris target:
 RUST_BOOTSTRAP_TARGET = x86_64-sun-solaris
 
-ENGBLD_REQUIRE       := $(shell git submodule update --init deps/eng)
-include ./deps/eng/tools/mk/Makefile.defs
-include ./deps/eng/tools/mk/Makefile.rust.defs
+# Path to repository root (deps/ is at root level)
+REPO_ROOT = ../..
+
+ENGBLD_REQUIRE       := $(shell git submodule update --init $(REPO_ROOT)/deps/eng)
+include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.defs
+include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.defs
 
 TOP ?= $(error Unable to access eng.git submodule Makefiles.)
 
@@ -47,9 +50,9 @@ ENGBLD_USE_BUILDIMAGE   = true
 CLEAN_FILES += rebalancer-agent-*.tar.gz rebalancer-agent-*.manifest
 
 ifeq ($(shell uname -s),SunOS)
-    include ./deps/eng/tools/mk/Makefile.agent_prebuilt.defs
+    include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.agent_prebuilt.defs
 endif
-include ./deps/eng/tools/mk/Makefile.smf.defs
+include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.smf.defs
 
 #
 # Repo-specific targets
@@ -70,7 +73,7 @@ debug: | $(CARGO_EXEC)
 	cp manager/src/config.json target/debug/
 
 .PHONY: release
-release: all pg deps/manta-scripts/.git $(SMF_MANIFESTS)
+release: all pg $(REPO_ROOT)/deps/manta-scripts/.git $(SMF_MANIFESTS)
 	@echo "Building $(RELEASE_TARBALL)"
 	# application dir
 	@mkdir -p $(RELSTAGEDIR)/root/opt/smartdc/$(NAME)/bin
@@ -96,7 +99,7 @@ release: all pg deps/manta-scripts/.git $(SMF_MANIFESTS)
 	    $(RELSTAGEDIR)/root/opt/smartdc/$(NAME)/smf/methods/
 	# boot
 	@mkdir -p $(RELSTAGEDIR)/root/opt/smartdc/boot/scripts
-	cp -R $(TOP)/deps/manta-scripts/*.sh \
+	cp -R $(REPO_ROOT)/deps/manta-scripts/*.sh \
 	    $(RELSTAGEDIR)/root/opt/smartdc/boot/scripts/
 	cp -R $(TOP)/boot/* \
 	    $(RELSTAGEDIR)/root/opt/smartdc/boot/
@@ -112,10 +115,10 @@ publish: release pkg_agent
 	cp $(TOP)/$(AGENT_MANIFEST) $(ENGBLD_BITS_DIR)/$(NAME)/$(AGENT_MANIFEST)
 
 .PHONY: pg
-pg: deps/postgresql12/.git
+pg: $(REPO_ROOT)/deps/postgresql12/.git
 	PATH=/usr/bin:$$PATH $(MAKE) -f Makefile.postgres \
 	RELSTAGEDIR="$(RELSTAGEDIR)" \
-	DEPSDIR="$(TOP)/deps" pg12
+	DEPSDIR="$(REPO_ROOT)/deps" pg12
 
 doc: | $(CARGO_EXEC)
 	$(CARGO) doc
@@ -186,10 +189,10 @@ test: agenttests jobtests managertests rebalancer_adm_tests doc_tests
 #
 # Included target definitions.
 #
-include ./deps/eng/tools/mk/Makefile.deps
+include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.deps
 ifeq ($(shell uname -s),SunOS)
-    include ./deps/eng/tools/mk/Makefile.agent_prebuilt.targ
+    include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.agent_prebuilt.targ
 endif
-include ./deps/eng/tools/mk/Makefile.smf.targ
-include ./deps/eng/tools/mk/Makefile.targ
-include ./deps/eng/tools/mk/Makefile.rust.targ
+include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.smf.targ
+include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.targ
+include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.targ

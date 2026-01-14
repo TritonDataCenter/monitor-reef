@@ -3,7 +3,7 @@ name = "manager"
 version = "0.5.2"
 authors = ["Jenkins Agent <jenkins-agent@joyent.com>"]
 edition = "2018"
-workspace = ".."
+workspace = "../../.."
 
 [dependencies]
 assert_cli = "0.6.3"
@@ -15,10 +15,10 @@ hyper = "0.12"
 indoc = "0.3.5"
 Inflector = "0.11.4"
 lazy_static = "1.4.0"
-libmanta = { path = "../libs/libmanta", features = ["postgres"] }
+libmanta = { path = "../../libmanta", features = ["postgres"] }
 mime = "0.3.13"
-moray = { path = "../libs/moray", features = ["postgres"] }
-sharkspotter = { path = "../libs/sharkspotter", features = ["postgres"] }
+moray = { path = "../../moray", features = ["postgres"] }
+sharkspotter = { path = "../../sharkspotter", features = ["postgres"] }
 diesel = { version = "1.4.2", features = ["postgres"] }
 rand = "0.7.0"
 reqwest = "0.9.24"
@@ -29,7 +29,7 @@ gotham = "0.4.0"
 gotham_derive = "0.4.0"
 prometheus = "0.7.0"
 quickcheck = "0.8.5"
-quickcheck_helpers = { path = "../libs/quickcheck-helpers" }
+quickcheck_helpers = { path = "../../quickcheck-helpers" }
 rebalancer = { path = "../rebalancer", features = ["postgres"] }
 serde_derive = "1.0.91"
 serde = { version = "1.0.91", features = ["derive"] }

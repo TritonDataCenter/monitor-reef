@@ -2,7 +2,7 @@
 name = "agent"
 version = "0.1.0"
 edition = "2018"
-workspace = ".."
+workspace = "../../.."
 
 [features]
 # No features by default
@@ -14,11 +14,11 @@ futures = "0.1.29"
 gotham = "0.4.0"
 gotham_derive = "0.4.0"
 hyper = "0.12"
-joyent-rust-utils = { path = "../libs/rust-utils" }
+joyent-rust-utils = { path = "../../rust-utils" }
 lazy_static = "1.4.0"
-libmanta = { path = "../libs/libmanta" }
+libmanta = { path = "../../libmanta" }
 mime = "0.3.13"
-moray = { path = "../libs/moray" }
+moray = { path = "../../moray" }
 rebalancer = { path = "../rebalancer" }
 reqwest = "0.9.24"
 rusqlite = "0.19.0"
