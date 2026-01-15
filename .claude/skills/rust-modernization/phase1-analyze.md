@@ -186,6 +186,29 @@ rg "map_err\(\|_\|" libs/<crate>/src/ --type rust
 
 **Document findings for Phase 2 fixes.**
 
+### 1.10 Review Documentation Accuracy
+
+Check module-level documentation and doc comments for stale information:
+
+```bash
+# Look at lib.rs module docs
+head -150 libs/<crate>/src/lib.rs
+
+# Check for version numbers, protocol specs, API descriptions
+rg "VERSION|version" libs/<crate>/src/ --type rust -C 2
+```
+
+**Common documentation issues after modernization:**
+
+| Issue | Example | Fix |
+|-------|---------|-----|
+| Stale version numbers | Docs say "version 1" but code uses version 2 | Update docs to match code |
+| Removed APIs still documented | Function deleted but still in examples | Remove from docs |
+| Changed signatures | `make_task()` → `handle_connection()` | Update function names/signatures |
+| Typos | "protcol" instead of "protocol" | Fix spelling |
+
+**Document any docs that need updating in Phase 2.**
+
 ## Output
 
 After analysis, you should know:
@@ -196,5 +219,6 @@ After analysis, you should know:
 5. Estimated complexity (Low/Medium/High)
 6. Any blockers (unmodernized dependencies)
 7. **Panic/error handling issues to fix**
+8. **Documentation that needs updating**
 
 Proceed to Phase 2 with this information.

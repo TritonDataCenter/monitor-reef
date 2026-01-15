@@ -223,6 +223,30 @@ barrier.clone().wait();
 barrier.wait();
 ```
 
+### 2.10 Update Documentation
+
+Fix documentation issues identified in Phase 1:
+
+**Module-level docs (lib.rs):**
+- Update version numbers to match code
+- Fix typos
+- Update API descriptions for changed functions
+- Remove documentation for deleted functions
+
+**Doc comments on public items:**
+- Update function signatures in examples
+- Verify return types match new async signatures
+- Check that code examples still compile conceptually
+
+**Example:**
+```rust
+// Before (stale after modernization)
+//! * VERSION   1-byte integer.  The only supported value is "1".
+
+// After (matches actual code)
+//! * VERSION   1-byte integer.  The current version is "2" (0x2).
+```
+
 ## Output
 
 At the end of this phase:
@@ -231,5 +255,6 @@ At the end of this phase:
 - Examples compile (if any)
 - **Error handling issues fixed (from Phase 1 analysis)**
 - **Code simplified where applicable**
+- **Documentation updated to match modernized code**
 
 Proceed to Phase 3 for validation.

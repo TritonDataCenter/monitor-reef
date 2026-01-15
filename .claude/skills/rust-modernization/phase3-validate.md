@@ -38,7 +38,45 @@ If you see `0 passed` but test files exist:
 2. Move integration tests to `tests/` directory
 3. Re-run and verify test count increases
 
-### 3.3 Enable in arch-lint.toml
+### 3.3 Review Error Path Test Coverage
+
+After modernization, verify tests exist for critical error paths:
+
+**Check for coverage of:**
+- Handler/callback error paths (errors returned to callers/clients)
+- Connection/stream error handling (what happens when I/O fails)
+- Malformed input rejection (invalid data should error, not panic)
+- Async cancellation behavior (if applicable)
+
+```bash
+# Look for error-related tests
+rg "Error|error|Err\(" libs/<crate>/tests/ --type rust
+rg "#\[test\]" -A 10 libs/<crate>/ --type rust | grep -i error
+```
+
+**If critical error paths lack tests, consider adding basic coverage:**
+
+```rust
+#[test]
+fn test_handler_error_returns_error_response() {
+    // Test that when handler fails, proper error is returned
+}
+
+#[test]
+fn test_malformed_input_rejected() {
+    // Test that invalid input returns error, not panic
+}
+```
+
+**Priority for test coverage:**
+| Path | Priority | Reason |
+|------|----------|--------|
+| Handler errors → error responses | High | Clients depend on proper error format |
+| Malformed protocol data | High | Security: shouldn't crash on bad input |
+| Connection failures | Medium | Should fail gracefully |
+| Edge cases (empty input, etc.) | Low | Nice to have |
+
+### 3.4 Enable in arch-lint.toml
 
 Edit `arch-lint.toml` and remove the crate from the exclude list:
 
@@ -52,7 +90,7 @@ exclude = [
 ]
 ```
 
-### 3.4 Enable in tarpaulin.toml
+### 3.5 Enable in tarpaulin.toml
 
 Edit `tarpaulin.toml` and remove the crate from exclude-files:
 
@@ -65,7 +103,7 @@ exclude-files = [
 ]
 ```
 
-### 3.5 Run Full Validation Suite (Required)
+### 3.6 Run Full Validation Suite (Required)
 
 Before committing, run the full validation suite:
 
@@ -82,7 +120,26 @@ This runs:
 
 All checks must pass before proceeding to commit.
 
-### 3.6 Commit
+### 3.7 Final Error Handling Check
+
+Before committing, verify no error context is being discarded:
+
+```bash
+# Check for patterns that discard error information
+rg "map_err\(\|_\|" libs/<crate>/src/ --type rust
+```
+
+If any `map_err(|_|` patterns remain, fix them to preserve error context:
+
+```rust
+// Bad: discards original error
+.map_err(|_| Error::other("parse failed"))
+
+// Good: includes original error
+.map_err(|e| Error::other(format!("parse failed: {}", e)))
+```
+
+### 3.8 Commit
 
 Stage all changes:
 
@@ -111,7 +168,7 @@ EOF
 )"
 ```
 
-### 3.7 Verify Commit
+### 3.9 Verify Commit
 
 ```bash
 git status
@@ -126,11 +183,14 @@ Before marking complete, verify:
 
 - [ ] `make package-build PACKAGE=<name>` succeeds
 - [ ] `make package-test PACKAGE=<name>` succeeds
+- [ ] Error path test coverage reviewed (critical paths have tests)
 - [ ] Crate removed from arch-lint.toml exclude list (must pass, no exclusions)
 - [ ] Crate removed from tarpaulin.toml exclude-files list
 - [ ] Crate added to "Modernized" section in workspace Cargo.toml
 - [ ] Crate removed from "To be modernized" comments
 - [ ] `make format check coverage` passes (includes arch-lint)
+- [ ] No `map_err(|_|` patterns remain (error context preserved)
+- [ ] Documentation updated to match code (versions, API names, typos fixed)
 - [ ] Single atomic commit created
 
 ## Common Issues

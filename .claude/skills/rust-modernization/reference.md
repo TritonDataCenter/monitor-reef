@@ -471,6 +471,35 @@ if let Some(v) = value {
 }
 ```
 
+### Silent Fallbacks Need Logging
+
+When using defensive `unwrap_or()` fallbacks for "impossible" cases, add logging so you know if the impossible happens:
+
+**Before (silent failure - hard to debug in production):**
+```rust
+// Comment says "should never happen" but if it does, you'll never know
+let id = msg_id.next().unwrap_or(0);
+```
+
+**After (logs when fallback triggers):**
+```rust
+let id = msg_id.next().unwrap_or_else(|| {
+    // This log tells you something unexpected happened
+    eprintln!("WARNING: msg_id.next() returned None unexpectedly, using 0");
+    0
+});
+```
+
+**When to use this pattern:**
+| Situation | Approach |
+|-----------|----------|
+| True invariant (e.g., `Some` after `is_some()` check) | Use `if let` instead |
+| Iterator that "always" returns `Some` | Log on fallback |
+| System time before UNIX_EPOCH | Log on fallback |
+| Parse that "can't fail" on trusted input | Log on fallback |
+
+**Why this matters:** Silent fallbacks mask bugs. In production, you might have thousands of requests silently using fallback values with no indication anything is wrong. Logging makes the problem visible.
+
 ---
 
 ## Code Simplification Patterns
