@@ -1,4 +1,8 @@
 // Copyright 2019 Joyent, Inc.
+// Copyright 2026 Edgecast Cloud LLC.
+
+// Allow legacy doc formatting from upstream code
+#![allow(clippy::doc_overindented_list_items)]
 
 //! Fast: A simple RPC protcol used by Joyent products
 //!

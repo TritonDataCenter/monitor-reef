@@ -1,15 +1,18 @@
 // Copyright 2020 Joyent, Inc.
+// Copyright 2026 Edgecast Cloud LLC.
 
-use std::io::{Error, ErrorKind};
+// Tests are allowed to panic and use unwrap/expect
+#![allow(clippy::unwrap_used, clippy::expect_used)]
+
+use std::io::Error;
 use std::net::{Shutdown, SocketAddr, TcpStream};
-use std::process;
 use std::sync::{Arc, Barrier, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use serde_json::Value;
-use slog::{debug, error, info, o, Drain, Logger};
+use slog::{Drain, Logger, debug, error, info, o};
 use tokio::net::TcpListener;
-use tokio::prelude::*;
 
 use fast_rpc::client;
 use fast_rpc::protocol::{FastMessage, FastMessageId};
@@ -32,11 +35,11 @@ fn msg_handler(
     let response: Vec<FastMessage> = vec![];
 
     match msg.data.m.name.as_str() {
-        "echo" => echo_handler(msg, response, &log),
-        _ => Err(Error::new(
-            ErrorKind::Other,
-            format!("Unsupported function: {}", msg.data.m.name),
-        )),
+        "echo" => echo_handler(msg, response, log),
+        _ => Err(Error::other(format!(
+            "Unsupported function: {}",
+            msg.data.m.name
+        ))),
     }
 }
 
@@ -50,23 +53,34 @@ fn run_server(barrier: Arc<Barrier>) {
     let addr_str = "127.0.0.1:56652".to_string();
     match addr_str.parse::<SocketAddr>() {
         Ok(addr) => {
-            let listener = TcpListener::bind(&addr).expect("failed to bind");
-            info!(root_log, "listening for fast requests"; "address" => addr);
+            // Use a tokio runtime for the server
+            let rt = tokio::runtime::Runtime::new()
+                .expect("failed to create runtime");
+            rt.block_on(async {
+                let listener = TcpListener::bind(&addr).await.expect("failed to bind");
+                info!(root_log, "listening for fast requests"; "address" => addr);
 
-            barrier.wait();
+                // Signal to the test that the server is ready
+                barrier.wait();
 
-            tokio::run({
-                let process_log = root_log.clone();
-                let err_log = root_log.clone();
-                listener
-                    .incoming()
-                    .map_err(move |e| error!(&err_log, "failed to accept socket"; "err" => %e))
-                    .for_each(move |socket| {
-                        let task = server::make_task(socket, msg_handler, Some(&process_log));
-                        tokio::spawn(task);
-                        Ok(())
-                    })
-            })
+                loop {
+                    match listener.accept().await {
+                        Ok((socket, _)) => {
+                            let process_log = root_log.clone();
+                            tokio::spawn(async move {
+                                if let Err(e) =
+                                    server::handle_connection(socket, msg_handler, Some(&process_log)).await
+                                {
+                                    error!(process_log, "connection error"; "err" => %e);
+                                }
+                            });
+                        }
+                        Err(e) => {
+                            error!(root_log, "failed to accept socket"; "err" => %e);
+                        }
+                    }
+                }
+            });
         }
         Err(e) => {
             eprintln!("error parsing address: {}", e);
@@ -99,15 +113,16 @@ fn client_server_comms() {
     let barrier_clone = barrier.clone();
     let _h_server = thread::spawn(move || run_server(barrier_clone));
 
-    barrier.clone().wait();
+    barrier.wait();
+
+    // Give the server a moment to fully start accepting connections
+    thread::sleep(Duration::from_millis(100));
 
     let addr_str = "127.0.0.1:56652".to_string();
     let addr = addr_str.parse::<SocketAddr>().unwrap();
 
-    let mut stream = TcpStream::connect(&addr).unwrap_or_else(|e| {
-        eprintln!("Failed to connect to server: {}", e);
-        process::exit(1)
-    });
+    let mut stream =
+        TcpStream::connect(addr).expect("Failed to connect to server");
 
     (1..100).for_each(|x| {
         let data_size = x * 1000;

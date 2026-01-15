@@ -1,18 +1,21 @@
 // Copyright 2020 Joyent, Inc.
+// Copyright 2026 Edgecast Cloud LLC.
+
+// Examples are CLI tools where panicking on errors is acceptable
+#![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::env;
-use std::io::{Error, ErrorKind};
+use std::io::Error;
 use std::net::SocketAddr;
 use std::sync::Mutex;
 use std::thread;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use chrono::prelude::*;
-use serde_derive::{Deserialize, Serialize};
-use serde_json::{json, Value};
-use slog::{debug, error, info, o, Drain, Logger};
+use serde::{Deserialize, Serialize};
+use serde_json::{Value, json};
+use slog::{Drain, Logger, debug, error, info, o};
 use tokio::net::TcpListener;
-use tokio::prelude::*;
 
 use fast_rpc::protocol::{FastMessage, FastMessageData};
 use fast_rpc::server;
@@ -37,8 +40,9 @@ struct FastBenchPayload {
 
 impl DatePayload {
     fn new() -> DatePayload {
-        //TODO: Do this only with chrono and time libs
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time before Unix epoch");
         let now_micros = now.as_secs() * 1_000 + now.subsec_millis() as u64;
         let now2 = Utc::now();
         DatePayload {
@@ -49,7 +53,7 @@ impl DatePayload {
 }
 
 fn other_error(msg: &str) -> Error {
-    Error::new(ErrorKind::Other, String::from(msg))
+    Error::other(String::from(msg))
 }
 
 fn date_handler(
@@ -90,7 +94,6 @@ fn yes_handler(
 ) -> Result<Vec<FastMessage>, Error> {
     debug!(log, "handling yes function request");
 
-    //TODO: Too much nesting, need to refactor
     match msg.data.d {
         Value::Array(_) => {
             let data_clone = msg.data.clone();
@@ -134,7 +137,7 @@ fn fastbench_handler(
 ) -> Result<Vec<FastMessage>, Error> {
     debug!(log, "handling fastbench function request");
 
-    match msg.data.d {
+    match &msg.data.d {
         Value::Array(_) => {
             let data_clone = msg.data.clone();
             let payload_result: Result<Vec<FastBenchPayload>, _> =
@@ -142,16 +145,14 @@ fn fastbench_handler(
             match payload_result {
                 Ok(payloads) => {
                     if payloads.len() == 1 {
-                        if payloads[0].delay.is_some() {
-                            let delay_duration = Duration::from_millis(
-                                payloads[0]
-                                    .delay
-                                    .expect("failed to unwrap delay value"),
-                            );
+                        if let Some(delay) = payloads[0].delay {
+                            let delay_duration = Duration::from_millis(delay);
                             thread::sleep(delay_duration);
                         }
                         let echo_payloads =
-                            payloads[0].echo.as_array().unwrap();
+                            payloads[0].echo.as_array().ok_or_else(|| {
+                                other_error("echo field must be an array")
+                            })?;
                         let mut resp_payloads = Vec::new();
                         for i in echo_payloads {
                             let echo_response = json!({"value": i.clone()});
@@ -173,7 +174,7 @@ fn fastbench_handler(
                     }
                 }
                 Err(_) => Err(other_error(
-                    "Failed to parse JSON data as payload for yes function",
+                    "Failed to parse JSON data as payload for fastbench function",
                 )),
             }
         }
@@ -188,18 +189,19 @@ fn msg_handler(
     let response: Vec<FastMessage> = vec![];
 
     match msg.data.m.name.as_str() {
-        "date" => date_handler(msg, response, &log),
-        "echo" => echo_handler(msg, response, &log),
-        "yes" => yes_handler(msg, response, &log),
-        "fastbench" => fastbench_handler(msg, response, &log),
-        _ => Err(Error::new(
-            ErrorKind::Other,
-            format!("Unsupported function: {}", msg.data.m.name),
-        )),
+        "date" => date_handler(msg, response, log),
+        "echo" => echo_handler(msg, response, log),
+        "yes" => yes_handler(msg, response, log),
+        "fastbench" => fastbench_handler(msg, response, log),
+        _ => Err(Error::other(format!(
+            "Unsupported function: {}",
+            msg.data.m.name
+        ))),
     }
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let plain = slog_term::PlainSyncDecorator::new(std::io::stdout());
     let root_log = Logger::root(
         Mutex::new(slog_term::FullFormat::new(plain).build()).fuse(),
@@ -207,20 +209,30 @@ fn main() {
     );
 
     let addr = env::args().nth(1).unwrap_or("127.0.0.1:2030".to_string());
-    let addr = addr.parse::<SocketAddr>().unwrap();
+    let addr: SocketAddr = addr.parse().expect("Invalid address");
 
-    let listener = TcpListener::bind(&addr).expect("failed to bind");
-    info!(root_log, "listening for fast requests"; "address" => addr);
+    let listener = TcpListener::bind(&addr).await.expect("failed to bind");
+    info!(root_log, "listening for fast requests"; "address" => %addr);
 
-    tokio::run({
-        let process_log = root_log.clone();
-        let err_log = root_log.clone();
-        listener
-            .incoming()
-            .map_err(move |e| error!(&err_log, "failed to accept socket"; "err" => %e))
-            .for_each(move |socket| {
-                let task = server::make_task(socket, msg_handler, Some(&process_log));
-                tokio::spawn(task)
-            })
-    });
+    loop {
+        match listener.accept().await {
+            Ok((socket, _)) => {
+                let process_log = root_log.clone();
+                tokio::spawn(async move {
+                    if let Err(e) = server::handle_connection(
+                        socket,
+                        msg_handler,
+                        Some(&process_log),
+                    )
+                    .await
+                    {
+                        error!(process_log, "connection error"; "err" => %e);
+                    }
+                });
+            }
+            Err(e) => {
+                error!(root_log, "failed to accept socket"; "err" => %e);
+            }
+        }
+    }
 }

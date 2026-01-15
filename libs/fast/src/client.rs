@@ -1,13 +1,13 @@
 // Copyright 2019 Joyent, Inc.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! This module provides the interface for creating Fast clients.
 
-use std::io::{Error, ErrorKind};
+use std::io::{Error, ErrorKind, Read, Write};
 use std::net::TcpStream;
 
 use bytes::BytesMut;
 use serde_json::Value;
-use tokio::prelude::*;
 
 use crate::protocol;
 use crate::protocol::{
@@ -28,17 +28,14 @@ pub fn send(
     msg_id: &mut FastMessageId,
     stream: &mut TcpStream,
 ) -> Result<usize, Error> {
-    // It is safe to call unwrap on the msg_id iterator because the
-    // implementation of Iterator for FastMessageId will only ever return
-    // Some(id). The Option return type is required by the Iterator trait.
-    let msg = FastMessage::data(
-        msg_id.next().unwrap() as u32,
-        FastMessageData::new(method, args),
-    );
+    // FastMessageId iterator always returns Some(id), so unwrap_or(0) is a
+    // defensive fallback that should never trigger.
+    let id = msg_id.next().unwrap_or(0) as u32;
+    let msg = FastMessage::data(id, FastMessageData::new(method, args));
     let mut write_buf = BytesMut::new();
     match protocol::encode_msg(&msg, &mut write_buf) {
         Ok(_) => stream.write(write_buf.as_ref()),
-        Err(err_str) => Err(Error::new(ErrorKind::Other, err_str)),
+        Err(err_str) => Err(Error::other(err_str)),
     }
 }
 
@@ -115,7 +112,8 @@ where
                 done = true;
             }
             Ok(fm) => {
-                offset += fm.msg_size.unwrap();
+                // msg_size is always Some for non-End status messages
+                offset += fm.msg_size.unwrap_or(0);
                 match fm.status {
                     FastMessageStatus::Data | FastMessageStatus::End => {
                         if let Err(e) = response_handler(&fm) {
@@ -126,11 +124,13 @@ where
                         }
                     }
                     FastMessageStatus::Error => {
-                        result = serde_json::from_value(fm.data.d)
-                            .or_else(|_| Err(unspecified_error().into()))
-                            .and_then(
-                                |e: FastMessageServerError| Err(e.into()),
-                            );
+                        result =
+                            serde_json::from_value::<FastMessageServerError>(
+                                fm.data.d,
+                            )
+                            .map(|e| e.into())
+                            .map_err(|_| unspecified_error().into())
+                            .and_then(Err);
 
                         done = true;
                     }

@@ -24,7 +24,6 @@ exclude = [
     "libs/cueball-static-resolver",
     "libs/cueball-tcp-stream-connection",
     "libs/cueball",
-    "libs/fast",
     "libs/libmanta",
     "libs/moray",
     "libs/quickcheck-helpers",
