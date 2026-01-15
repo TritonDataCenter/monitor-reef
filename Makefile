@@ -22,7 +22,7 @@ include ./deps/eng/tools/mk/Makefile.rust.targ
 .PHONY: api-new service-new client-new
 .PHONY: service-build service-test service-run
 .PHONY: client-build client-test
-.PHONY: package-build package-test
+.PHONY: package-build package-test package-examples package-build-all
 .PHONY: openapi-generate openapi-list openapi-check
 .PHONY: dev-setup workspace-test integration-test
 .PHONY: list coverage arch-lint
@@ -139,6 +139,14 @@ package-build: | $(CARGO_EXEC) ## Build specific package (usage: make package-bu
 package-test: | $(CARGO_EXEC) ## Test specific package (usage: make package-test PACKAGE=my-package)
 	@if [ -z "$(PACKAGE)" ]; then echo "Usage: make package-test PACKAGE=my-package"; exit 1; fi
 	$(CARGO) test -p $(PACKAGE)
+
+package-examples: | $(CARGO_EXEC) ## Build examples for package (usage: make package-examples PACKAGE=my-package)
+	@if [ -z "$(PACKAGE)" ]; then echo "Usage: make package-examples PACKAGE=my-package"; exit 1; fi
+	$(CARGO) build -p $(PACKAGE) --examples
+
+package-build-all: | $(CARGO_EXEC) ## Build package with examples and tests (usage: make package-build-all PACKAGE=my-package)
+	@if [ -z "$(PACKAGE)" ]; then echo "Usage: make package-build-all PACKAGE=my-package"; exit 1; fi
+	$(CARGO) build -p $(PACKAGE) --examples --tests
 
 # OpenAPI management commands (using dropshot-api-manager)
 openapi-generate: | $(CARGO_EXEC) ## Generate OpenAPI specs from API traits

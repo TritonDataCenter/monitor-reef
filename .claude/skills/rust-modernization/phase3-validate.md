@@ -113,11 +113,11 @@ Before marking complete, verify:
 
 - [ ] `make package-build PACKAGE=<name>` succeeds
 - [ ] `make package-test PACKAGE=<name>` succeeds
-- [ ] Crate removed from arch-lint.toml exclude list
+- [ ] Crate removed from arch-lint.toml exclude list (must pass, no exclusions)
 - [ ] Crate removed from tarpaulin.toml exclude-files list
 - [ ] Crate added to "Modernized" section in workspace Cargo.toml
 - [ ] Crate removed from "To be modernized" comments
-- [ ] `make format check coverage` passes
+- [ ] `make format check coverage` passes (includes arch-lint)
 - [ ] Single atomic commit created
 
 ## Common Issues
@@ -138,7 +138,14 @@ The crate may have patterns that arch-lint flags:
 - `no-sync-io`: Sync I/O in async context
 - `no-panic-in-lib`: Panics in library code
 
-Either fix the issues or document why they're acceptable.
+**These issues must be fixed.** Arch-lint exclusions are not allowed for modernized crates.
+
+Common fixes:
+- `panic!()` → Return `Result` type with `?` operator
+- `unwrap()` → `?` or proper error handling
+- Sync I/O in async code → Use `tokio::fs` or move to sync function
+
+If fixing these requires API changes, that's acceptable during modernization. Callers will be updated when their crates are modernized.
 
 ### Coverage too low
 

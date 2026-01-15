@@ -54,6 +54,44 @@ Before starting any modernization, verify:
 
 2. **NEVER call cargo directly** - even for quick checks. The Makefile wraps cargo with the correct environment variables and paths.
 
+## Modernization Principles
+
+### Delete Before Modernizing
+
+**For library crates, deleting unused code is better than modernizing it.**
+
+During analysis, identify which public functions/modules are actually used by other crates in the repo. Dead code should be deleted, not modernized. This reduces maintenance burden and keeps the API surface clean.
+
+### All Crates Must Pass arch-lint
+
+Every modernized crate must pass arch-lint with **no exclusions**. This means:
+
+- **No panic in library code** - Convert `panic!()` to `Result` types
+- **No sync I/O in async context** - Use async I/O or justify sync usage
+- **Proper error handling** - No swallowed errors
+
+If fixing these issues requires API changes, that's acceptable during modernization.
+
+### Convert Panics to Results
+
+Legacy code often uses `panic!()` for error handling. Modernized code should:
+
+```rust
+// Before (legacy)
+pub fn do_thing(path: &str) -> String {
+    let file = fs::File::open(path).unwrap(); // or panic!()
+    // ...
+}
+
+// After (modern)
+pub fn do_thing(path: &str) -> Result<String, std::io::Error> {
+    let file = fs::File::open(path)?;
+    // ...
+}
+```
+
+Callers will need to be updated when their crates are modernized.
+
 ## Orchestration Flow
 
 When asked to modernize a crate, execute this flow:
@@ -125,7 +163,6 @@ Located in `libs/` and commented out in workspace Cargo.toml under "To be modern
 |-------|------------------|------------|
 | fast | tokio 0.1, bytes 0.4, quickcheck 0.8 | High |
 | quickcheck-helpers | quickcheck 0.8 | Low |
-| rust-utils | base64 0.10, md-5 0.8, trust-dns-resolver | Low |
 | cueball | tokio 0.1, futures 0.1 | Medium |
 | cueball-* | cueball dependencies | Low-Medium |
 | libmanta | TBD | Medium |
@@ -133,18 +170,23 @@ Located in `libs/` and commented out in workspace Cargo.toml under "To be modern
 | sharkspotter | TBD | TBD |
 | rebalancer-legacy/* | Multiple | High |
 
+### Crates to Inline (Not Modernize Separately)
+
+| Crate | Reason | Action |
+|-------|--------|--------|
+| rust-utils | Only used by rebalancer-legacy, tiny crate | Inline `calculate_md5` into rebalancer-legacy when modernizing that crate, delete `net` module (unused) |
+
 ## Dependency Order
 
 Some crates depend on others. Modernize in this order:
 1. `fast` (no internal deps)
 2. `quickcheck-helpers` (no internal deps)
-3. `rust-utils` (no internal deps)
-4. `cueball` (no internal deps)
-5. `cueball-*` resolvers/connections (depend on cueball)
-6. `libmanta` (may depend on others)
-7. `moray` (depends on fast-rpc)
-8. `sharkspotter` (depends on moray, libmanta)
-9. `rebalancer-legacy/*` (depends on many)
+3. `cueball` (no internal deps)
+4. `cueball-*` resolvers/connections (depend on cueball)
+5. `libmanta` (may depend on others)
+6. `moray` (depends on fast-rpc)
+7. `sharkspotter` (depends on moray, libmanta)
+8. `rebalancer-legacy/*` (depends on many; inline rust-utils here)
 
 ## Error Handling
 

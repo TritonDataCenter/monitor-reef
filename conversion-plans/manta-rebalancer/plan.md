@@ -309,6 +309,10 @@ cargo metadata --no-deps --format-version 1 | jq '.packages[].name'
      - `arch-lint.toml` - remove from `[analyzer].exclude` list
      - `tarpaulin.toml` - remove from `exclude-files` list
    - This ensures modernized crates build with the workspace and get the same quality checks as new code
+   - **rust-utils**: Do NOT modernize separately. When modernizing rebalancer-legacy:
+     - Inline `calculate_md5()` function directly into rebalancer (it's ~10 lines)
+     - Delete the `net` module (never used by any crate)
+     - Remove rust-utils dependency and delete the crate
 2. **Dropshot Rewrite**: Implement new APIs in target locations (apis/, services/)
 3. **Test Migration**: Port tests from rebalancer-legacy to new structure
 4. **Cleanup**: Remove rebalancer-legacy after rewrite is complete

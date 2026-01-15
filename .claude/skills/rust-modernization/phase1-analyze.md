@@ -65,7 +65,43 @@ Look for these patterns that indicate modernization needs:
 - `value_t!()` macro
 - `ArgMatches<'a>`
 
-### 1.4 Check for Examples
+### 1.4 Identify Dead Code (Library Crates)
+
+**For library crates, deleting unused code is better than modernizing it.**
+
+For each public function, type, and module in the crate:
+
+1. Search for usages across the repo:
+   ```bash
+   # Search for imports of this crate's items
+   rg "use crate_name::" --type rust
+   rg "crate_name::" --type rust
+   ```
+
+2. Check Cargo.toml dependencies - which crates depend on this one?
+   ```bash
+   rg "crate-name" --glob "*/Cargo.toml"
+   ```
+
+3. For each public item, verify it's actually imported/used somewhere
+
+**Decision matrix:**
+
+| Used by other crates? | Action |
+|-----------------------|--------|
+| Yes, actively used | Modernize the code |
+| No, never imported | Delete it |
+| Only used in tests | Consider deleting or keep minimal |
+
+**Benefits of deleting dead code:**
+- Less code to modernize and maintain
+- Smaller dependency footprint
+- Cleaner API surface
+- Faster builds
+
+Document which items will be deleted vs modernized before proceeding.
+
+### 1.5 Check for Examples
 
 ```bash
 # Check if examples directory exists
@@ -73,13 +109,13 @@ Look for these patterns that indicate modernization needs:
 
 Examples often use the same patterns and need updating too.
 
-### 1.5 Check for Tests
+### 1.6 Check for Tests
 
 Look in:
 - `src/` files for `#[cfg(test)]` modules
 - `tests/` directory for integration tests
 
-### 1.6 Estimate Complexity
+### 1.7 Estimate Complexity
 
 **Low complexity:**
 - Only needs Cargo.toml updates
@@ -97,7 +133,7 @@ Look in:
 - Large source (>1000 lines)
 - Examples that need updating
 
-### 1.7 Check Dependencies on Other libs/ Crates
+### 1.8 Check Dependencies on Other libs/ Crates
 
 Some crates depend on others in the monorepo:
 - `moray` depends on `fast-rpc`
@@ -111,9 +147,11 @@ If the dependency isn't modernized yet, either:
 ## Output
 
 After analysis, you should know:
-1. Which dependencies need updating
-2. Which code patterns need fixing
-3. Estimated complexity (Low/Medium/High)
-4. Any blockers (unmodernized dependencies)
+1. Which public items are dead code (to be deleted)
+2. Which public items are used (to be modernized)
+3. Which dependencies need updating
+4. Which code patterns need fixing
+5. Estimated complexity (Low/Medium/High)
+6. Any blockers (unmodernized dependencies)
 
 Proceed to Phase 2 with this information.
