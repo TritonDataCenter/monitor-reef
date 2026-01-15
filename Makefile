@@ -265,8 +265,8 @@ coverage: | $(CARGO_EXEC) ## Run code coverage check (line >= 40%)
 #  - https://github.com/rust-lang/rust-clippy/issues/4377
 #  - https://github.com/rust-lang/rfcs/pull/3639
 arch-lint: | $(CARGO_EXEC) ## Run architecture lints
-	@if ! arch-lint --version >/dev/null 2>&1; then \
+	@if ! $(CARGO_HOME)/bin/arch-lint --version >/dev/null 2>&1; then \
 		echo "arch-lint not found, installing..."; \
 		$(CARGO) install arch-lint-cli; \
 	fi
-	arch-lint check
+	$(CARGO_HOME)/bin/arch-lint check
