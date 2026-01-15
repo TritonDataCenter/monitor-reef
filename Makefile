@@ -10,10 +10,6 @@
 RUST_USE_BOOTSTRAP = false
 RUST_CLIPPY_ARGS = --all-targets --all-features -- -D warnings
 
-# Coverage thresholds
-COVERAGE_LINE_THRESHOLD = 40
-COVERAGE_TIMEOUT = 300
-
 ENGBLD_REQUIRE :=       $(shell git submodule update --init deps/eng)
 include ./deps/eng/tools/mk/Makefile.defs
 TOP ?= $(error Unable to access eng.git submodule Makefiles.)
@@ -240,25 +236,14 @@ regen-clients: | $(CARGO_EXEC) ## Regenerate all client libraries
 	$(CARGO) build
 	@echo "All clients regenerated. Test with: make test"
 
-# Code coverage
+# Code coverage (configuration in tarpaulin.toml)
 coverage: | $(CARGO_EXEC) ## Run code coverage check (line >= 40%)
 	@if ! $(CARGO) tarpaulin --version >/dev/null 2>&1; then \
 		echo "cargo-tarpaulin not found, installing..."; \
 		$(CARGO) install --features vendored-openssl cargo-tarpaulin; \
 	fi
 	@echo "Running code coverage analysis..."
-	@echo "Threshold: line >= $(COVERAGE_LINE_THRESHOLD)%"
-	@echo ""
-	$(CARGO) tarpaulin \
-		--workspace \
-		--timeout $(COVERAGE_TIMEOUT) \
-		--fail-under $(COVERAGE_LINE_THRESHOLD) \
-		--exclude-files 'clients/internal/*' \
-		--exclude-files 'rust/*' \
-		--exclude-files 'deps/*' \
-		--exclude api-template \
-		--exclude service-template \
-		--exclude client-template
+	$(CARGO) tarpaulin
 
 # Hopefully, something similar to the no-sync-io check will be added to clippy
 # in the future and we won't need this utility:
