@@ -304,6 +304,11 @@ cargo metadata --no-deps --format-version 1 | jq '.packages[].name'
 ## Future Work (Post-Merge)
 
 1. **Modernization**: Update Rust editions, dependency versions (separate commits)
+   - As each legacy crate is modernized, fully enable it by:
+     - `Cargo.toml` - uncomment from workspace members (if commented out)
+     - `arch-lint.toml` - remove from `[analyzer].exclude` list
+     - `tarpaulin.toml` - remove from `exclude-files` list
+   - This ensures modernized crates build with the workspace and get the same quality checks as new code
 2. **Dropshot Rewrite**: Implement new APIs in target locations (apis/, services/)
 3. **Test Migration**: Port tests from rebalancer-legacy to new structure
 4. **Cleanup**: Remove rebalancer-legacy after rewrite is complete
