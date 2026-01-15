@@ -16,6 +16,23 @@ exclude = [
     "**/build.rs",
     "**/tests/**",
     "**/jira-stub-server/**",
+    # To be modernized:
+    "cli/manatee-echo-resolver",
+    "libs/cueball-dns-resolver",
+    "libs/cueball-manatee-primary-resolver",
+    "libs/cueball-postgres-connection",
+    "libs/cueball-static-resolver",
+    "libs/cueball-tcp-stream-connection",
+    "libs/cueball",
+    "libs/fast",
+    "libs/libmanta",
+    "libs/moray",
+    "libs/quickcheck-helpers",
+    "libs/rebalancer-legacy/agent",
+    "libs/rebalancer-legacy/manager",
+    "libs/rebalancer-legacy/rebalancer",
+    "libs/rust-utils",
+    "libs/sharkspotter",
 ]
 
 # Note: unwrap/expect is already caught by clippy (unwrap_used = "deny")
