@@ -109,11 +109,28 @@ Document which items will be deleted vs modernized before proceeding.
 
 Examples often use the same patterns and need updating too.
 
-### 1.6 Check for Tests
+### 1.6 Check for Tests (VERIFY THEY RUN)
 
 Look in:
 - `src/` files for `#[cfg(test)]` modules
 - `tests/` directory for integration tests
+- **`src/tests/` directory (WARNING: won't run without mod declaration!)**
+
+**CRITICAL**: Verify tests are actually discovered:
+```bash
+# List test binaries that will run
+make package-test PACKAGE=<name> -- --list 2>/dev/null | head -20
+
+# If tests exist in src/tests/ but don't appear, they're orphaned!
+```
+
+Common orphaned test locations:
+- `src/tests/*.rs` without `mod tests;` in `lib.rs`
+- Test files not declared as modules
+
+**Fix orphaned tests by either:**
+1. Moving to `tests/` directory (Cargo auto-discovers)
+2. Adding `#[cfg(test)] mod tests;` to `lib.rs`
 
 ### 1.7 Estimate Complexity
 
@@ -144,6 +161,31 @@ If the dependency isn't modernized yet, either:
 1. Modernize the dependency first
 2. Or note that this crate is blocked
 
+### 1.9 Identify Panic and Error Handling Issues
+
+Search for patterns that arch-lint will flag or cause runtime crashes:
+
+```bash
+# unwrap() on fallible operations (potential panics)
+rg "\.unwrap\(\)" libs/<crate>/src/ --type rust
+
+# expect() on user/external input (potential panics)
+rg "\.expect\(" libs/<crate>/src/ --type rust
+
+# Error context being discarded
+rg "map_err\(\|_\|" libs/<crate>/src/ --type rust
+```
+
+**Categorize each finding:**
+
+| Pattern | When Safe | When Dangerous |
+|---------|-----------|----------------|
+| `.unwrap()` | After `is_some()`/`is_ok()` check | On I/O, parsing, user input |
+| `.expect()` | Invariants that truly can't fail | On external data |
+| `map_err(\|_\| ...)` | Never (loses context) | Always fix |
+
+**Document findings for Phase 2 fixes.**
+
 ## Output
 
 After analysis, you should know:
@@ -153,5 +195,6 @@ After analysis, you should know:
 4. Which code patterns need fixing
 5. Estimated complexity (Low/Medium/High)
 6. Any blockers (unmodernized dependencies)
+7. **Panic/error handling issues to fix**
 
 Proceed to Phase 2 with this information.

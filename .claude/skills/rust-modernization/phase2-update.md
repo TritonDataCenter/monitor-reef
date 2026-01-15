@@ -138,11 +138,98 @@ make package-build PACKAGE=<crate-name>
 
 Repeat steps 2.4-2.6 until build succeeds with no errors.
 
+### 2.8 Fix Error Handling Issues
+
+**Replace panicking patterns with proper error handling:**
+
+**unwrap() on JSON serialization:**
+```rust
+// Before (panics on serialization failure)
+let data_str = serde_json::to_string(&msg.data).unwrap();
+
+// After (propagates error)
+let data_str = serde_json::to_string(&msg.data)
+    .map_err(|e| Error::other(format!("Failed to serialize: {}", e)))?;
+```
+
+**expect() on user input:**
+```rust
+// Before (panics on bad input - DoS vulnerability!)
+let arr = value.as_array().expect("should be array");
+
+// After (returns error)
+let arr = value.as_array()
+    .ok_or_else(|| other_error("Expected JSON array"))?;
+```
+
+**Preserve error context in map_err:**
+```rust
+// Before (loses original error)
+serde_json::from_value(data).map_err(|_| unspecified_error())
+
+// After (includes original error)
+serde_json::from_value(data).map_err(|e| {
+    Error::other(format!("Failed to parse: {}", e))
+})
+```
+
+**Use if-let instead of is_some() + expect():**
+```rust
+// Before (redundant, error-prone)
+if value.is_some() {
+    let v = value.expect("checked above");
+    use_value(v);
+}
+
+// After (idiomatic)
+if let Some(v) = value {
+    use_value(v);
+}
+```
+
+### 2.9 Apply Simplifications
+
+**Replace manual Vec capacity management:**
+```rust
+// Before (unnecessary complexity)
+if responses.len() + response.len() > responses.capacity() {
+    responses.reserve(response.len());
+}
+response.drain(..).for_each(|r| responses.push(r));
+
+// After (Vec handles this efficiently)
+responses.append(&mut response);
+```
+
+**Simplify encoder error handling:**
+```rust
+// Before (allocates two Vecs, doesn't fail fast)
+let results: Vec<Result<(), String>> = item.iter().map(|x| encode(x, buf)).collect();
+let result: Result<Vec<()>, String> = results.iter().cloned().collect();
+
+// After (fails fast, no allocations)
+for msg in &item {
+    encode(msg, buf).map_err(Error::other)?;
+}
+Ok(())
+```
+
+**Remove unnecessary clone() calls:**
+```rust
+// Before (unnecessary clone)
+barrier.clone().wait();
+
+// After (Arc methods work on &self)
+barrier.wait();
+```
+
 ## Output
 
 At the end of this phase:
 - Cargo.toml is updated
 - All source files compile
 - Examples compile (if any)
+- **Error handling issues fixed (from Phase 1 analysis)**
+- **Code simplified where applicable**
 
 Proceed to Phase 3 for validation.

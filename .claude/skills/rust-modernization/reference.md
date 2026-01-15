@@ -386,3 +386,143 @@ struct MyStruct { ... }
 ```
 
 The `serde` crate now includes the derive macros when the `derive` feature is enabled (which is the default in our workspace).
+
+---
+
+## Error Handling Modernization
+
+### Panic → Result Conversions
+
+| Old Pattern | New Pattern |
+|-------------|-------------|
+| `value.unwrap()` | `value?` or `value.ok_or(...)?` |
+| `value.expect("msg")` | `value.ok_or_else(\|\| Error::other("msg"))?` |
+| `map_err(\|_\| e)` | `map_err(\|orig\| format!("{}: {}", msg, orig))?` |
+
+### Error Construction
+
+| Old | New |
+|-----|-----|
+| `Error::new(ErrorKind::Other, msg)` | `Error::other(msg)` |
+| `panic!("error: {}", e)` | `return Err(Error::other(format!("error: {}", e)))` |
+
+### Preserving Error Context
+
+**Before (loses debugging info):**
+```rust
+serde_json::from_value(data).map_err(|_| unspecified_error())
+```
+
+**After (preserves original error):**
+```rust
+serde_json::from_value(data).map_err(|e| {
+    Error::other(format!("Failed to parse response: {}", e))
+})
+```
+
+### Converting expect() on User Input
+
+**Before (DoS vulnerability - panics on bad input):**
+```rust
+let arr = value.as_array().expect("should be array");
+```
+
+**After (returns error to caller):**
+```rust
+let arr = value.as_array()
+    .ok_or_else(|| Error::other("Expected JSON array"))?;
+```
+
+### Safe unwrap()/expect() Patterns
+
+These patterns are acceptable and don't need changing:
+
+```rust
+// System invariants that truly can't fail
+SystemTime::now().duration_since(UNIX_EPOCH)
+    .expect("system time before Unix epoch")
+
+// After explicit check (but prefer if-let)
+if opt.is_some() {
+    opt.unwrap()  // Safe, but use if-let instead
+}
+
+// In test code only
+#[cfg(test)]
+fn test_something() {
+    result.unwrap();  // OK in tests
+}
+```
+
+### Idiomatic Option Handling
+
+**Before (redundant check + expect):**
+```rust
+if value.is_some() {
+    let v = value.expect("checked above");
+    use_value(v);
+}
+```
+
+**After (if-let pattern):**
+```rust
+if let Some(v) = value {
+    use_value(v);
+}
+```
+
+---
+
+## Code Simplification Patterns
+
+### Vec Operations
+
+**Manual capacity + drain → append:**
+```rust
+// Before
+if responses.len() + response.len() > responses.capacity() {
+    responses.reserve(response.len());
+}
+response.drain(..).for_each(|r| responses.push(r));
+
+// After
+responses.append(&mut response);
+```
+
+**Manual reserve before push:**
+```rust
+// Before (unnecessary - Vec handles this)
+if msgs.len() + 1 > msgs.capacity() {
+    msgs.reserve(1);
+}
+msgs.push(item);
+
+// After
+msgs.push(item);
+```
+
+### Encoder/Iterator Patterns
+
+**Collect-then-check → early return:**
+```rust
+// Before (processes all items, then checks for errors)
+let results: Vec<Result<(), E>> = items.iter().map(process).collect();
+let _: Result<Vec<()>, E> = results.into_iter().collect();
+
+// After (fails fast on first error)
+for item in &items {
+    process(item)?;
+}
+Ok(())
+```
+
+### Unnecessary Clones
+
+**Arc clone for method call:**
+```rust
+// Before (unnecessary clone)
+arc.clone().method();
+
+// After (Arc methods take &self)
+arc.method();
+```

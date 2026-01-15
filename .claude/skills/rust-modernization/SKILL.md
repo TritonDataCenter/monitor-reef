@@ -62,15 +62,38 @@ Before starting any modernization, verify:
 
 During analysis, identify which public functions/modules are actually used by other crates in the repo. Dead code should be deleted, not modernized. This reduces maintenance burden and keeps the API surface clean.
 
-### All Crates Must Pass arch-lint
+### All Crates Must Pass arch-lint (No Exceptions)
 
-Every modernized crate must pass arch-lint with **no exclusions**. This means:
+Every modernized crate must pass arch-lint with **no exclusions**. Common violations and fixes:
 
-- **No panic in library code** - Convert `panic!()` to `Result` types
-- **No sync I/O in async context** - Use async I/O or justify sync usage
-- **Proper error handling** - No swallowed errors
+| Violation | Common Causes | Fix |
+|-----------|---------------|-----|
+| `no-panic-in-lib` | `unwrap()`, `expect()`, `panic!()` | Convert to `Result` with `?` operator |
+| `no-sync-io` | Blocking I/O in async context | Use `tokio::fs` or `spawn_blocking` |
 
-If fixing these issues requires API changes, that's acceptable during modernization.
+**Specific patterns to fix:**
+
+```rust
+// VIOLATION: unwrap() can panic
+let data = serde_json::to_string(&msg).unwrap();
+
+// FIX: Propagate error
+let data = serde_json::to_string(&msg)
+    .map_err(|e| Error::other(format!("serialize failed: {}", e)))?;
+```
+
+```rust
+// VIOLATION: expect() on user input can panic (DoS vulnerability!)
+let arr = value.as_array().expect("should be array");
+
+// FIX: Return error
+let arr = value.as_array()
+    .ok_or_else(|| Error::other("Expected JSON array"))?;
+```
+
+**Phase 1 should identify these issues. Phase 2 must fix them.**
+
+If fixing requires API changes (e.g., function returns `Result` instead of value), that's acceptable during modernization. Callers will be updated when their crates are modernized.
 
 ### Convert Panics to Results
 

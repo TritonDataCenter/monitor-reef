@@ -14,7 +14,7 @@ make format
 
 This ensures consistent formatting across the codebase.
 
-### 3.2 Run Tests
+### 3.2 Run Tests (AND VERIFY THEY EXECUTE)
 
 ```bash
 make package-test PACKAGE=<crate-name>
@@ -24,6 +24,19 @@ All tests should pass. If tests fail:
 - Check if test code needs the same modernization patterns
 - quickcheck tests especially need `Arbitrary` trait updates
 - Async tests need tokio runtime
+
+**CRITICAL: Verify tests actually ran:**
+```bash
+# Check test count - should be > 0 for crates with test files
+make package-test PACKAGE=<crate-name> 2>&1 | grep "test result"
+# Expected: "test result: ok. X passed; 0 failed"
+# If X is 0 but test files exist, tests are orphaned!
+```
+
+If you see `0 passed` but test files exist:
+1. Check if `src/tests/` files are declared in `lib.rs`
+2. Move integration tests to `tests/` directory
+3. Re-run and verify test count increases
 
 ### 3.3 Enable in arch-lint.toml
 
