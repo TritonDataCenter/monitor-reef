@@ -33,7 +33,11 @@ pub fn send(
     let msg = FastMessage::data(id, FastMessageData::new(method, args));
     let mut write_buf = BytesMut::new();
     match protocol::encode_msg(&msg, &mut write_buf) {
-        Ok(_) => stream.write(write_buf.as_ref()),
+        Ok(_) => {
+            let bytes = stream.write(write_buf.as_ref())?;
+            stream.flush()?;
+            Ok(bytes)
+        }
         Err(err_str) => Err(Error::other(err_str)),
     }
 }
@@ -113,7 +117,9 @@ where
             Ok(fm) => {
                 // msg_size is always Some for non-End status messages (see protocol.rs)
                 let msg_size = fm.msg_size.ok_or_else(|| {
-                    Error::other("Protocol error: msg_size was None for non-End message")
+                    Error::other(
+                        "Protocol error: msg_size was None for non-End message",
+                    )
                 })?;
                 offset += msg_size;
                 match fm.status {
@@ -126,16 +132,17 @@ where
                         }
                     }
                     FastMessageStatus::Error => {
-                        result = serde_json::from_value::<FastMessageServerError>(
-                            fm.data.d.clone(),
-                        )
-                        .map_err(|deser_err| {
-                            Error::other(format!(
-                                "Failed to parse server error: {}. Raw: {}",
-                                deser_err, fm.data.d
-                            ))
-                        })
-                        .and_then(|e| Err(e.into()));
+                        result =
+                            serde_json::from_value::<FastMessageServerError>(
+                                fm.data.d.clone(),
+                            )
+                            .map_err(|deser_err| {
+                                Error::other(format!(
+                                    "Failed to parse server error: {}. Raw: {}",
+                                    deser_err, fm.data.d
+                                ))
+                            })
+                            .and_then(|e| Err(e.into()));
 
                         done = true;
                     }
@@ -153,4 +160,3 @@ where
 
     result
 }
-
