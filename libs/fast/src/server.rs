@@ -7,7 +7,7 @@ use std::io::Error;
 
 use futures::{SinkExt, StreamExt};
 use serde_json::json;
-use slog::{Drain, Logger, debug, error, o};
+use slog::{Drain, Logger, debug, error, o, warn};
 use tokio::net::TcpStream;
 use tokio_util::codec::Decoder;
 
@@ -71,6 +71,7 @@ where
             }
             Err(err) => {
                 let method = msg.data.m.name.clone();
+                warn!(log, "handler error"; "method" => &method, "error" => %err);
                 let value = json!({
                     "name": "FastError",
                     "message": err.to_string()

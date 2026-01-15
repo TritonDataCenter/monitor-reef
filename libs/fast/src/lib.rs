@@ -4,7 +4,7 @@
 // Allow legacy doc formatting from upstream code
 #![allow(clippy::doc_overindented_list_items)]
 
-//! Fast: A simple RPC protcol used by Joyent products
+//! Fast: A simple RPC protocol used by Joyent products
 //!
 //! Fast is a simple RPC protocol used in
 //! Joyent's[Triton](http://github.com/joyent/triton) and
@@ -25,7 +25,7 @@
 //!
 //! <img src="../../../docs/fastpacket.svg" width="100%" height="100%">
 //!
-//! * VERSION   1-byte integer.  The only supported value is "1".
+//! * VERSION   1-byte integer.  The current supported value is "2" (0x2).
 //!
 //! * TYPE      1-byte integer.  The only supported value is TYPE_JSON (0x1),
 //!           indicating that the data payload is an encoded JSON object.

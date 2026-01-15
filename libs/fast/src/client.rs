@@ -28,8 +28,7 @@ pub fn send(
     msg_id: &mut FastMessageId,
     stream: &mut TcpStream,
 ) -> Result<usize, Error> {
-    // FastMessageId iterator always returns Some(id), so unwrap_or(0) is a
-    // defensive fallback that should never trigger.
+    // FastMessageId iterator always returns Some(id) by design (infinite iterator).
     let id = msg_id.next().unwrap_or(0) as u32;
     let msg = FastMessage::data(id, FastMessageData::new(method, args));
     let mut write_buf = BytesMut::new();
@@ -112,8 +111,11 @@ where
                 done = true;
             }
             Ok(fm) => {
-                // msg_size is always Some for non-End status messages
-                offset += fm.msg_size.unwrap_or(0);
+                // msg_size is always Some for non-End status messages (see protocol.rs)
+                let msg_size = fm.msg_size.ok_or_else(|| {
+                    Error::other("Protocol error: msg_size was None for non-End message")
+                })?;
+                offset += msg_size;
                 match fm.status {
                     FastMessageStatus::Data | FastMessageStatus::End => {
                         if let Err(e) = response_handler(&fm) {
@@ -124,13 +126,16 @@ where
                         }
                     }
                     FastMessageStatus::Error => {
-                        result =
-                            serde_json::from_value::<FastMessageServerError>(
-                                fm.data.d,
-                            )
-                            .map(|e| e.into())
-                            .map_err(|_| unspecified_error().into())
-                            .and_then(Err);
+                        result = serde_json::from_value::<FastMessageServerError>(
+                            fm.data.d.clone(),
+                        )
+                        .map_err(|deser_err| {
+                            Error::other(format!(
+                                "Failed to parse server error: {}. Raw: {}",
+                                deser_err, fm.data.d
+                            ))
+                        })
+                        .and_then(|e| Err(e.into()));
 
                         done = true;
                     }
@@ -149,9 +154,3 @@ where
     result
 }
 
-fn unspecified_error() -> FastMessageServerError {
-    FastMessageServerError::new(
-        "UnspecifiedServerError",
-        "Server reported unspecified error.",
-    )
-}

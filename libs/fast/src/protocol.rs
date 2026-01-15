@@ -296,14 +296,16 @@ impl FastMessage {
 
     fn parse_data(data_buf: &[u8]) -> Result<FastMessageData, FastParseError> {
         match str::from_utf8(data_buf) {
-            Ok(data_str) => serde_json::from_str(data_str).map_err(|_e| {
-                FastParseError::IOError(Error::other(
-                    "Failed to parse data payload as JSON",
-                ))
+            Ok(data_str) => serde_json::from_str(data_str).map_err(|e| {
+                FastParseError::IOError(Error::other(format!(
+                    "Failed to parse data payload as JSON: {}",
+                    e
+                )))
             }),
-            Err(_) => Err(FastParseError::IOError(Error::other(
-                "Failed to parse data payload as UTF-8",
-            ))),
+            Err(e) => Err(FastParseError::IOError(Error::other(format!(
+                "Failed to parse data payload as UTF-8: {}",
+                e
+            )))),
         }
     }
 
