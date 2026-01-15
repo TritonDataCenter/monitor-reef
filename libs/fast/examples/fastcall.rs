@@ -14,6 +14,10 @@ use serde_json::Value;
 use fast_rpc::client;
 use fast_rpc::protocol::{FastMessage, FastMessageId};
 
+fn parse_json(s: &str) -> Result<Value, serde_json::Error> {
+    serde_json::from_str(s)
+}
+
 #[derive(Parser, Debug)]
 #[command(
     name = "fastcall",
@@ -34,7 +38,7 @@ struct Args {
     method: String,
 
     /// JSON-encoded arguments for RPC method call
-    #[arg(long)]
+    #[arg(long, value_parser = parse_json)]
     args: Value,
 
     /// Abandon connection immediately after sending

@@ -33,7 +33,11 @@ pub fn send(
     let msg = FastMessage::data(id, FastMessageData::new(method, args));
     let mut write_buf = BytesMut::new();
     match protocol::encode_msg(&msg, &mut write_buf) {
-        Ok(_) => stream.write(write_buf.as_ref()),
+        Ok(_) => {
+            let bytes = stream.write(write_buf.as_ref())?;
+            stream.flush()?;
+            Ok(bytes)
+        }
         Err(err_str) => Err(Error::other(err_str)),
     }
 }
