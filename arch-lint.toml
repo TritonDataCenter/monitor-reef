@@ -20,7 +20,6 @@ exclude = [
     "cli/manatee-echo-resolver",
     "libs/cueball-manatee-primary-resolver",
     "libs/cueball-postgres-connection",
-    "libs/moray",
     "libs/rebalancer-legacy/agent",
     "libs/rebalancer-legacy/manager",
     "libs/rebalancer-legacy/rebalancer",

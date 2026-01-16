@@ -1,31 +1,38 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2019 Joyent, Inc.
+# Copyright 2026 Edgecast Cloud LLC.
+
 [package]
 name = "moray"
-version = "0.11.4"
+version = "0.12.0"
 authors = ["Rui Loura <rui@joyent.com>",
            "Jon Anderson <jon.andereson@joyent.com"]
-edition = "2018"
+edition.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
-cueball = { path = "../cueball" }
-cueball-static-resolver = { path = "../cueball-static-resolver" }
-cueball-tcp-stream-connection = { path = "../cueball-tcp-stream-connection" }
+async-trait = "0.1"
+qorb = { workspace = true }
 
 fast-rpc = { path = "../fast" }
 libmanta = { path = "../libmanta" }
 
-serde = { version = "1.0.89", features = ["derive"] }
-serde_json = "1.0.39"
-slog = { version = "2.4.1", features = [ "max_level_trace" ] }
-slog-bunyan = "2.2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+slog = "2.7"
+slog-bunyan = "2.5"
+tokio = { workspace = true }
 
-uuid = {version = "0.7.4", features = ["v4"] }
-trust-dns-resolver = "0.11.1"
-unicode-normalization = "=0.1.5"
+uuid = { workspace = true }
 
 [dev-dependencies]
-slog-term = "2.4.0"
-rand = "0.6.4"
-quickcheck = "0.8.0"
+slog-term = "2.9"
+quickcheck = "1.0"
 
 [features]
 default = []

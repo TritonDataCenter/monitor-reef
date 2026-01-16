@@ -1,18 +1,26 @@
-/*
- * Copyright 2019 Joyent, Inc.
- */
+// Copyright 2019 Joyent, Inc.
+// Copyright 2026 Edgecast Cloud LLC.
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-#[macro_use]
-extern crate serde_json;
+//! Example: Storing objects in Moray
+//!
+//! This example demonstrates how to store objects with different etag modes.
+//! Note: Requires a running Moray server and a bucket named 'rust_test_bucket'.
 
 use moray::buckets;
 use moray::client::MorayClient;
 use moray::objects::{self, Etag};
-use slog::{o, Drain, Logger};
-use std::io::{Error, ErrorKind};
+use serde_json::json;
+use slog::{Drain, Logger, o};
+use std::f64::consts::{PI, TAU};
+use std::io::Error;
 use std::sync::Mutex;
 
-fn main() -> Result<(), Error> {
+#[tokio::main]
+async fn main() -> Result<(), Error> {
     let ip_arr: [u8; 4] = [10, 77, 77, 9];
     let port: u16 = 2021;
 
@@ -27,38 +35,42 @@ fn main() -> Result<(), Error> {
         o!("build-id" => "0.1.0"),
     );
 
-    let mut mclient = MorayClient::from_parts(ip_arr, port, log, None)?;
+    let mclient = MorayClient::from_parts(ip_arr, port, log, None)?;
 
     println!("===confirming bucket exists===");
-    match mclient.get_bucket(bucket_name, bucket_opts, |b| {
-        dbg!(b);
-        Ok(())
-    }) {
-        Err(e) => {
-            eprintln!(
-                "You must create a bucket named '{}' first. \
-                 Run the createbucket example to do so.",
-                bucket_name
-            );
-            let e = Error::new(ErrorKind::Other, e);
-            return Err(e);
-        }
-        Ok(()) => (),
+    if let Err(e) = mclient
+        .get_bucket(bucket_name, bucket_opts, |b| {
+            dbg!(b);
+            Ok(())
+        })
+        .await
+    {
+        eprintln!(
+            "You must create a bucket named '{}' first. \
+             Run the createbucket example to do so.",
+            bucket_name
+        );
+        return Err(Error::other(e));
     }
 
     /* opts.etag defaults to undefined, and will clobber any existing value */
     println!("\n\n===undefined etag===");
-    mclient.put_object(
-        "rust_test_bucket",
-        "circle_constant",
-        json!({"aNumber": 6.28}),
-        &opts,
-        |o| {
-            println!("Put object with undefined etag returns:\n {:?}\n", &o);
-            new_etag = o.to_string();
-            Ok(())
-        },
-    )?;
+    mclient
+        .put_object(
+            "rust_test_bucket",
+            "circle_constant",
+            json!({"aNumber": TAU}),
+            &opts,
+            |o| {
+                println!(
+                    "Put object with undefined etag returns:\n {:?}\n",
+                    &o
+                );
+                new_etag = o.to_string();
+                Ok(())
+            },
+        )
+        .await?;
 
     /*
      * Specifying the etag will ensure that the value is only altered if the
@@ -66,20 +78,22 @@ fn main() -> Result<(), Error> {
      */
     println!("\n===specified etag===");
     opts.etag = Etag::Specified(new_etag);
-    mclient.put_object(
-        "rust_test_bucket",
-        "circle_constant",
-        json!({"aNumber": 6.2831}),
-        &opts,
-        |o| {
-            println!(
-                "Put object (replacement) with etag specified returns:\n \
-                 {:?}\n",
-                &o
-            );
-            Ok(())
-        },
-    )?;
+    mclient
+        .put_object(
+            "rust_test_bucket",
+            "circle_constant",
+            json!({"aNumber": TAU}),
+            &opts,
+            |o| {
+                println!(
+                    "Put object (replacement) with etag specified returns:\n \
+                     {:?}\n",
+                    &o
+                );
+                Ok(())
+            },
+        )
+        .await?;
 
     /*
      * An etag of "null: JSON" will only succeed if the object did not exist
@@ -87,39 +101,37 @@ fn main() -> Result<(), Error> {
      */
     println!("\n===null etag (should fail)===");
     opts.etag = Etag::Nulled;
-    match mclient.put_object(
-        "rust_test_bucket",
-        "circle_constant",
-        json!({"aNumber": 3.14159}),
-        &opts,
-        |o| {
-            dbg!(&o);
-            Ok(())
-        },
-    ) {
-        Ok(()) => {
-            return Err(Error::new(
-                ErrorKind::Other,
-                "replacing object with 'Nulled' etag should fail",
-            ));
-        }
-        Err(e) => {
-            println!(
-                "Attempt to replace exiting object with 'Nulled' etag failed \
-                 as expected:\n {}\n",
-                e
-            );
-        }
+    let result = mclient
+        .put_object(
+            "rust_test_bucket",
+            "circle_constant",
+            json!({"aNumber": PI}),
+            &opts,
+            |o| {
+                dbg!(&o);
+                Ok(())
+            },
+        )
+        .await;
+
+    // Expected: putting with Nulled etag should fail when object already exists
+    if result.is_ok() {
+        return Err(Error::other(
+            "replacing object with 'Nulled' etag should fail",
+        ));
     }
+    println!(
+        "Attempt to replace existing object with 'Nulled' etag failed as expected\n"
+    );
 
     /* Object doesn't exist, should pass. */
     println!("\n===null etag (should pass)===");
     opts.etag = Etag::Nulled;
-    mclient
+    if let Err(e) = mclient
         .put_object(
             "rust_test_bucket",
             "viva_la_pi",
-            json!({"aNumber": 3.14159}),
+            json!({"aNumber": PI}),
             &opts,
             |o| {
                 println!(
@@ -129,13 +141,15 @@ fn main() -> Result<(), Error> {
                 Ok(())
             },
         )
-        .unwrap_or_else(|e| {
-            println!(
-                "This should have been successful you may need to delete the \
-                 existing 'viva_la_pi' object:\n {}",
-                e
-            );
-        });
+        .await
+    {
+        // This should have succeeded - return the error
+        return Err(Error::other(format!(
+            "This should have been successful, you may need to delete the \
+             existing 'viva_la_pi' object: {}",
+            e
+        )));
+    }
 
     // TODO: Delete 'viva_la_pi' object so that this test can be run twice
 

@@ -5,8 +5,8 @@
 use fast_rpc::{client as fast_client, protocol::FastMessageId};
 use serde::ser::Serializer;
 use serde::{Deserialize, Deserializer, Serialize};
-use serde_json::{json, Value};
-use std::io::{Error, ErrorKind};
+use serde_json::{Value, json};
+use std::io::Error;
 use std::net::TcpStream;
 use uuid::Uuid;
 
@@ -27,7 +27,7 @@ pub struct MorayObject {
 /// * Undefined: Clobber any object on put
 /// * Nulled: An object with the same key must not exist
 /// * Specified(String): The object will only be added or overwritten if the
-///     etag (String) matches the existing value
+///   etag (String) matches the existing value
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub enum Etag {
     Undefined,
@@ -146,34 +146,36 @@ where
     }
 }
 
-#[allow(clippy::redundant_closure)]
 fn decode_object<F>(fm_data: &Value, mut cb: F) -> Result<(), Error>
 where
-    F: FnMut(MorayObject) -> Result<(), Error>,
+    F: FnMut(&MorayObject) -> Result<(), Error>,
 {
-    let result = Ok(());
-
     if fm_data.is_array() {
-        let resp_data: Vec<Value> =
-            serde_json::from_value(fm_data.clone()).unwrap();
+        let resp_data: Vec<Value> = serde_json::from_value(fm_data.clone())
+            .map_err(|e| {
+                Error::other(format!("Failed to parse object list: {}", e))
+            })?;
 
-        resp_data.iter().fold(result, |_r, object_data| {
-            serde_json::from_value::<MorayObject>(object_data.clone())
+        for object_data in resp_data.iter() {
+            let obj: MorayObject = serde_json::from_value(object_data.clone())
                 .map_err(|e| {
-                    // TODO: this should propagate error up
-                    eprintln!("ERROR: {}", &e);
-                    Error::new(ErrorKind::Other, e)
-                })
-                .and_then(|obj| cb(obj))
-        })
+                    Error::other(format!("Failed to parse object: {}", e))
+                })?;
+            cb(&obj)?;
+        }
+        Ok(())
+    } else if fm_data.is_object() {
+        let obj: MorayObject = serde_json::from_value(fm_data.clone())
+            .map_err(|e| {
+                Error::other(format!("Failed to parse object: {}", e))
+            })?;
+        cb(&obj)?;
+        Ok(())
     } else {
-        assert_eq!(fm_data.is_object(), true);
-
-        serde_json::from_value::<MorayObject>(fm_data.clone())
-            .map_err(|e| Error::new(ErrorKind::Other, e))
-            .and_then(cb)?;
-
-        result
+        Err(Error::other(format!(
+            "Unexpected data format: expected array or object, got {}",
+            fm_data
+        )))
     }
 }
 
@@ -194,7 +196,7 @@ where
 
     fast_client::send(obj_method, arg, &mut msg_id, stream).and_then(|_| {
         fast_client::receive(stream, |resp| {
-            decode_object(&resp.data.d, |obj| object_handler(&obj))
+            decode_object(&resp.data.d, |obj| object_handler(obj))
         })
     })?;
 
@@ -221,12 +223,10 @@ where
             let arr: Vec<PutObjectReturn> =
                 serde_json::from_value(resp.data.d.clone())?;
             if arr.len() != 1 {
-                return Err(Error::new(
-                    ErrorKind::Other,
-                    format!("Expected response to be a single element Array, got: {:?}",
-                        arr
-                    ),
-                ));
+                return Err(Error::other(format!(
+                    "Expected response to be a single element Array, got: {:?}",
+                    arr
+                )));
             }
             object_handler(arr[0].etag.as_str())
         })
@@ -235,7 +235,7 @@ where
     Ok(())
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Clone, Serialize, Deserialize, Debug)]
 // This serde macro adds the "operation" field to each variant's structure when
 // it is serialized.
 #[serde(tag = "operation")]
@@ -293,18 +293,14 @@ where
     F: FnMut(Vec<Value>) -> Result<(), Error>,
 {
     // We only support Put Operations right now
-    if requests.iter().any(|r| match r {
-        BatchRequest::Put(_) => false,
-        _ => true,
-    }) {
-        return Err(Error::new(
-            ErrorKind::InvalidInput,
-            "Only Put operations are supported",
-        ));
+    if requests.iter().any(|r| !matches!(r, BatchRequest::Put(_))) {
+        return Err(Error::other("Only Put operations are supported"));
     }
 
     let batch_requests =
-        serde_json::to_value(requests.to_owned()).expect("batch requests");
+        serde_json::to_value(requests.to_owned()).map_err(|e| {
+            Error::other(format!("Failed to serialize batch requests: {}", e))
+        })?;
     let arg = json!([batch_requests, opts]);
     let mut msg_id = FastMessageId::new();
 
@@ -360,7 +356,9 @@ mod test {
             filter: String::from("(mydelete=filter)"),
         }));
 
-        assert!(batch(&mut dummy_stream, &requests, &opts, |_| Ok(())).is_err());
+        assert!(
+            batch(&mut dummy_stream, &requests, &opts, |_| Ok(())).is_err()
+        );
 
         listen_handle.join().unwrap();
     }

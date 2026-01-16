@@ -3,7 +3,7 @@
  */
 
 use fast_rpc::{client as fast_client, protocol::FastMessageId};
-use serde_json::{self, json, Value};
+use serde_json::{self, Value, json};
 use std::io::Error;
 use std::net::TcpStream;
 
@@ -17,7 +17,7 @@ use std::net::TcpStream;
 ///     * serde_json::value::Value
 ///     * Other formats for which serde_json implements the From trait
 /// * query_handler: will be called with the response as a
-/// &serde_json::value::Value
+///   `&serde_json::value::Value`
 ///
 /// Note:  The serde_json::value::Value From trait for Strings and &str's simply
 /// encodes them as Value::String's.  For our use case opts must be a JSON
@@ -37,8 +37,12 @@ where
     let opts_tmp: Value = opts.into();
 
     let options = if opts_tmp.is_string() {
-        let s: String = serde_json::from_value(opts_tmp).unwrap();
-        let v: Value = serde_json::from_str(s.as_str()).unwrap();
+        let s: String = serde_json::from_value(opts_tmp).map_err(|e| {
+            Error::other(format!("Failed to parse options value: {}", e))
+        })?;
+        let v: Value = serde_json::from_str(s.as_str()).map_err(|e| {
+            Error::other(format!("Failed to parse options string: {}", e))
+        })?;
         v
     } else {
         opts_tmp

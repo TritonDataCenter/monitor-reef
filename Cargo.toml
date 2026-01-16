@@ -22,12 +22,12 @@ members = [
     "libs/cueball-static-resolver",
     "libs/cueball-tcp-stream-connection",
     "libs/libmanta",
+    "libs/moray",
 
     # To be modernized:
     #"cli/manatee-echo-resolver",
     #"libs/cueball-manatee-primary-resolver",
     #"libs/cueball-postgres-connection",
-    #"libs/moray",
     #"libs/rebalancer-legacy/agent",
     #"libs/rebalancer-legacy/manager",
     #"libs/rebalancer-legacy/rebalancer",
@@ -75,3 +75,5 @@ thiserror = "2"
 tokio = { version = "1.48", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+qorb = "0.4"
+uuid = { version = "1.17", features = ["v4"] }

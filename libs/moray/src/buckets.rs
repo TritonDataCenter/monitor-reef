@@ -4,8 +4,8 @@
 
 use fast_rpc::{client as fast_client, protocol::FastMessageId};
 use serde::{Deserialize, Serialize};
-use serde_json::{self, json, Value};
-use std::io::{Error, ErrorKind};
+use serde_json::{self, Value, json};
+use std::io::Error;
 use std::net::TcpStream;
 use uuid::Uuid;
 
@@ -79,27 +79,38 @@ impl Default for MethodOptions {
 
 fn decode_bucket<F>(fm_data: &Value, mut cb: F) -> Result<(), Error>
 where
-    F: FnMut(Bucket) -> Result<(), Error>,
+    F: FnMut(&Bucket) -> Result<(), Error>,
 {
-    let resp_data: Vec<Value> =
-        serde_json::from_value(fm_data.clone()).unwrap();
+    let resp_data: Vec<Value> = serde_json::from_value(fm_data.clone())
+        .map_err(|e| {
+            Error::other(format!("Failed to parse bucket list: {}", e))
+        })?;
 
-    let result = Ok(());
+    for bucket_data in resp_data.iter() {
+        let bi: BucketIntermediate =
+            serde_json::from_value(bucket_data.clone()).map_err(|e| {
+                Error::other(format!("Failed to parse bucket: {}", e))
+            })?;
 
-    resp_data.iter().fold(result, |_r, bucket_data| {
-        serde_json::from_value::<BucketIntermediate>(bucket_data.clone())
-            .map_err(|e| Error::new(ErrorKind::Other, e))
-            .and_then(|bi| {
-                cb(Bucket {
-                    name: bi.name,
-                    index: serde_json::from_str(bi.index.as_str()).unwrap(),
-                    mtime: bi.mtime,
-                    options: serde_json::from_str(bi.options.as_str()).unwrap(),
-                    post: serde_json::from_str(bi.post.as_str()).unwrap(),
-                    pre: serde_json::from_str(bi.pre.as_str()).unwrap(),
-                })
-            })
-    })
+        let bucket = Bucket {
+            name: bi.name,
+            index: serde_json::from_str(bi.index.as_str()).map_err(|e| {
+                Error::other(format!("Failed to parse index: {}", e))
+            })?,
+            mtime: bi.mtime,
+            options: serde_json::from_str(bi.options.as_str()).map_err(
+                |e| Error::other(format!("Failed to parse options: {}", e)),
+            )?,
+            post: serde_json::from_str(bi.post.as_str()).map_err(|e| {
+                Error::other(format!("Failed to parse post: {}", e))
+            })?,
+            pre: serde_json::from_str(bi.pre.as_str()).map_err(|e| {
+                Error::other(format!("Failed to parse pre: {}", e))
+            })?,
+        };
+        cb(&bucket)?;
+    }
+    Ok(())
 }
 
 pub fn create_bucket(
@@ -144,13 +155,13 @@ where
         Methods::List => {
             // Use default
         }
-        _ => return Err(Error::new(ErrorKind::Other, "Unsupported Method")),
+        _ => return Err(Error::other("Unsupported Method")),
     }
 
     fast_client::send(method.method(), arg, &mut msg_id, stream).and_then(
         |_| {
             fast_client::receive(stream, |resp| {
-                decode_bucket(&resp.data.d, |b| bucket_handler(&b))
+                decode_bucket(&resp.data.d, |b| bucket_handler(b))
             })
         },
     )?;
@@ -164,24 +175,29 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use quickcheck::{quickcheck, Arbitrary, Gen};
-    use rand::distributions::Alphanumeric;
-    use rand::Rng;
+    use quickcheck::{Arbitrary, Gen, quickcheck};
     use serde_json::Map;
-    use std::iter;
 
-    pub fn random_string<G: Gen>(g: &mut G, len: usize) -> String {
-        iter::repeat(())
-            .map(|()| g.sample(Alphanumeric))
-            .take(len)
-            .collect()
+    /// Generate a random alphanumeric string of specified length.
+    /// Uses Arbitrary to generate random bytes and filters to alphanumeric.
+    pub fn random_string(g: &mut Gen, len: usize) -> String {
+        // Generate a longer string and take what we need (since arbitrary
+        // strings may be shorter than requested)
+        let s: String = String::arbitrary(g);
+        let alphanumeric: String = s
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .chain(std::iter::repeat('a')) // Pad with 'a' if needed
+            .take(len.max(1))
+            .collect();
+        alphanumeric
     }
 
     impl Arbitrary for BucketOptions {
-        fn arbitrary<G: Gen>(g: &mut G) -> BucketOptions {
-            let version = g.gen::<u32>();
-            let guarantee_order = g.gen::<bool>();
-            let sync_updates = g.gen::<bool>();
+        fn arbitrary(g: &mut Gen) -> BucketOptions {
+            let version = u32::arbitrary(g);
+            let guarantee_order = bool::arbitrary(g);
+            let sync_updates = bool::arbitrary(g);
 
             BucketOptions {
                 version,
@@ -192,12 +208,12 @@ mod tests {
     }
 
     impl Arbitrary for Bucket {
-        fn arbitrary<G: Gen>(g: &mut G) -> Bucket {
-            let index_len = g.gen::<u8>() as usize;
-            let mtime_len = g.gen::<u8>() as usize;
-            let name_len = g.gen::<u8>() as usize;
-            let post_len = g.gen::<u8>() as usize;
-            let pre_len = g.gen::<u8>() as usize;
+        fn arbitrary(g: &mut Gen) -> Bucket {
+            let index_len = (u8::arbitrary(g) as usize) % 10 + 1;
+            let mtime_len = (u8::arbitrary(g) as usize) % 10 + 1;
+            let name_len = (u8::arbitrary(g) as usize) % 10 + 1;
+            let post_len = (u8::arbitrary(g) as usize) % 10 + 1;
+            let pre_len = (u8::arbitrary(g) as usize) % 10 + 1;
 
             // TODO: further randomize index
             let index = json!({
@@ -255,7 +271,7 @@ mod tests {
             dbg!(&input);
             match decode_bucket(&input, |b| {
                 dbg!(&b);
-                pass = b == bucket_clone;
+                pass = *b == bucket_clone;
                 Ok(())
             }) {
                 Ok(()) => pass,
