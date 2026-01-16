@@ -9,12 +9,10 @@ repository = "https://github.com/joyent/rust-cueball"
 keywords = ["pool","joyent"]
 readme = "../../README.md"
 license = "MPL-2.0"
-edition = "2018"
+edition.workspace = true
 
 [dependencies]
 cueball = { path = '../cueball' }
 
-[dev-dependencies]
-cueball-tcp-stream-connection = { path = '../cueball-tcp-stream-connection'}
-slog = "2.4.1"
-slog-term = "2.4.0"
+[lints]
+workspace = true

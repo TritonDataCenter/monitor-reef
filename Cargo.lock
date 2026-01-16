@@ -507,6 +507,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cueball-static-resolver"
+version = "0.3.1"
+dependencies = [
+ "cueball",
+]
+
+[[package]]
 name = "debug-ignore"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"

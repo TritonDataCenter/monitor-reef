@@ -19,13 +19,13 @@ members = [
     "libs/fast",
     "libs/quickcheck-helpers",
     "libs/cueball",
+    "libs/cueball-static-resolver",
 
     # To be modernized:
     #"cli/manatee-echo-resolver",
     #"libs/cueball-dns-resolver",
     #"libs/cueball-manatee-primary-resolver",
     #"libs/cueball-postgres-connection",
-    #"libs/cueball-static-resolver",
     #"libs/cueball-tcp-stream-connection",
     #"libs/libmanta",
     #"libs/moray",
