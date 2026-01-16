@@ -219,6 +219,7 @@ async fn main() {
             Ok((socket, _)) => {
                 let process_log = root_log.clone();
                 tokio::spawn(async move {
+                    // arch-lint: allow(no-error-swallowing) reason="Server example logs connection errors and continues serving"
                     if let Err(e) = server::handle_connection(
                         socket,
                         msg_handler,
@@ -230,6 +231,7 @@ async fn main() {
                     }
                 });
             }
+            // arch-lint: allow(no-error-swallowing) reason="Server example logs accept errors and continues"
             Err(e) => {
                 error!(root_log, "failed to accept socket"; "err" => %e);
             }

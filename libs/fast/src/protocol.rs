@@ -61,16 +61,12 @@ impl Iterator for FastMessageId {
 }
 
 /// An error type representing a failure to parse a buffer as a Fast message.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum FastParseError {
+    #[error("Not enough bytes to parse message: need {0} more")]
     NotEnoughBytes(usize),
-    IOError(Error),
-}
-
-impl From<io::Error> for FastParseError {
-    fn from(error: io::Error) -> Self {
-        FastParseError::IOError(error)
-    }
+    #[error(transparent)]
+    IOError(#[from] Error),
 }
 
 impl From<FastParseError> for Error {
@@ -86,7 +82,8 @@ impl From<FastParseError> for Error {
 
 /// An error type representing Fast error messages that may be returned from a
 /// Fast server.
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize, Serialize, thiserror::Error)]
+#[error("{name}: {message}")]
 pub struct FastMessageServerError {
     pub name: String,
     pub message: String,
@@ -103,7 +100,7 @@ impl FastMessageServerError {
 
 impl From<FastMessageServerError> for Error {
     fn from(err: FastMessageServerError) -> Self {
-        Error::other(format!("{}: {}", err.name, err.message))
+        Error::other(err.to_string())
     }
 }
 

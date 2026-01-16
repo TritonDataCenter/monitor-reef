@@ -35,6 +35,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 slog = "2.7"
 slog-stdlog = "4"
+thiserror = "2"
 tokio = { workspace = true }
 tokio-util = { version = "0.7", features = ["codec"] }
 

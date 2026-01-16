@@ -89,6 +89,7 @@ fn main() {
             client::receive(&mut stream, response_handler)
         });
 
+    // arch-lint: allow(no-error-swallowing) reason="Example CLI prints error and exits"
     if let Err(e) = result {
         eprintln!("Error: {}", e);
     }

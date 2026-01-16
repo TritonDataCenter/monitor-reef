@@ -754,6 +754,7 @@ dependencies = [
  "slog",
  "slog-stdlog",
  "slog-term",
+ "thiserror",
  "tokio",
  "tokio-util",
 ]
