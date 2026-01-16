@@ -1722,6 +1722,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "quickcheck_helpers"
+version = "0.2.0"
+dependencies = [
+ "quickcheck",
+]
+
+[[package]]
 name = "quinn"
 version = "0.11.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
