@@ -10,12 +10,12 @@ use std::marker::PhantomData;
 use std::ops::{Deref, DerefMut};
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering as AtomicOrdering;
-use std::sync::mpsc::{channel, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Barrier};
 use std::{thread, time};
 
 use chrono::Duration;
-use slog::{debug, error, info, o, trace, warn, Drain, Logger};
+use slog::{Drain, Logger, debug, error, info, o, trace, warn};
 use timer::Guard;
 
 use crate::backend::{Backend, BackendKey};
@@ -29,7 +29,7 @@ use crate::error::Error;
 use crate::resolver::{
     BackendAction, BackendAddedMsg, BackendMsg, BackendRemovedMsg, Resolver,
 };
-use backoff::{ExponentialBackoff, Operation};
+use backoff::{ExponentialBackoff, retry};
 
 // Default number of maximum pool connections
 const DEFAULT_MAX_CONNECTIONS: u32 = 10;
@@ -74,53 +74,22 @@ where
     F: FnMut(&Backend) -> C + Send,
 {
     fn fmt(&self, f: &mut Formatter) -> FmtResult {
-        match *self {
-            ConnectionPool {
-                ref protected_data,
-                ref resolver_thread,
-                ref resolver_rx_thread,
-                ref resolver_tx,
-                ref max_connections,
-                ref claim_timeout,
-                ref rebalance_check,
-                ref rebalance_thread,
-                ref rebalancer_stop,
-                ref decoherence_interval,
-                ref log,
-                ref state,
-                ref _resolver,
-                ref _connection_function,
-                ..
-            } => {
-                let mut debug_trait_builder = f.debug_struct("ConnectionPool");
-                let _ = debug_trait_builder
-                    .field("protected_data", &&(protected_data));
-                let _ = debug_trait_builder
-                    .field("resolver_thread", &&(resolver_thread));
-                let _ = debug_trait_builder
-                    .field("resolver_rx_thread", &&(resolver_rx_thread));
-                let _ =
-                    debug_trait_builder.field("resolver_tx", &&(resolver_tx));
-                let _ = debug_trait_builder
-                    .field("max_connections", &&(max_connections));
-                let _ = debug_trait_builder
-                    .field("claim_timeout", &&(claim_timeout));
-                let _ = debug_trait_builder
-                    .field("rebalance_check", &&(rebalance_check));
-                let _ = debug_trait_builder
-                    .field("rebalance_thread", &&(rebalance_thread));
-                let _ = debug_trait_builder
-                    .field("rebalancer_stop", &&(rebalancer_stop));
-                let _ = debug_trait_builder
-                    .field("decoherence_interval", &&(decoherence_interval));
-                let _ = debug_trait_builder.field("log", &&(log));
-                let _ = debug_trait_builder.field("state", &&(state));
-                let _ = debug_trait_builder.field("_resolver", &&(_resolver));
-                let _ = debug_trait_builder
-                    .field("_connection_function", &&(_connection_function));
-                debug_trait_builder.finish()
-            }
-        }
+        f.debug_struct("ConnectionPool")
+            .field("protected_data", &self.protected_data)
+            .field("resolver_thread", &self.resolver_thread)
+            .field("resolver_rx_thread", &self.resolver_rx_thread)
+            .field("resolver_tx", &self.resolver_tx)
+            .field("max_connections", &self.max_connections)
+            .field("claim_timeout", &self.claim_timeout)
+            .field("rebalance_check", &self.rebalance_check)
+            .field("rebalance_thread", &self.rebalance_thread)
+            .field("rebalancer_stop", &self.rebalancer_stop)
+            .field("decoherence_interval", &self.decoherence_interval)
+            .field("log", &self.log)
+            .field("state", &self.state)
+            .field("_resolver", &self._resolver)
+            .field("_connection_function", &self._connection_function)
+            .finish()
     }
 }
 
@@ -294,141 +263,140 @@ where
     /// except for the thread running the resolver have exited.
     pub fn stop(&mut self) -> Result<(), Error> {
         // Make sure this is the original ConnectionPool instance and that it is
-        // safe to unwrap all the Option types needed to stop the pool.
-        if self.resolver_thread.is_some()
-            && self.resolver_rx_thread.is_some()
-            && self.resolver_tx.is_some()
-            && self.rebalance_thread.is_some()
-        {
-            trace!(self.log, "stop called by original pool");
-
-            // Transition state to Stopping
-            self.state = ConnectionPoolState::Stopping;
-
-            // Notify the resolver, resolver_recv, and rebalancer threads to
-            // shutdown.  Join on the thread handles for the resolver receiver
-            // and rebalancer threads. If the resolver is well-behaved, dropping
-            // all clones of the receiver channel should cause the resolver to
-            // shut down. Do not join on the resolver thread because the code is
-            // not controlled by the pool and may not properly respond to the
-            // resolver receiver thread stopping. Just drop the JoinHandle for
-            // the resolver thread and move along.
-            self.rebalancer_stop.store(true, AtomicOrdering::Relaxed);
-            let resolver_tx = self.resolver_tx.take().unwrap();
-            match resolver_tx.send(BackendMsg::StopMsg) {
-                Ok(()) => {
-                    let resolver_rx_thread =
-                        self.resolver_rx_thread.take().unwrap();
-                    let _ = resolver_rx_thread.join();
-                }
-                Err(e) => {
-                    warn!(
-                        self.log,
-                        "Failed to send stop message to resolver \
-                         receiver thread: {}",
-                        e
-                    );
-                }
-            }
-            drop(resolver_tx);
-
-            let rebalance_thread = self.rebalance_thread.take().unwrap();
-            let _ = rebalance_thread.join();
-            drop(self.resolver_thread.take().unwrap());
-            trace!(self.log, "stop: joined connection pool worker threads");
-
-            // Mark all connections as unwanted and close what is in the pool
-            let mut connection_data =
-                self.protected_data.connection_data_lock();
-
-            let backends = connection_data.backends.clone();
-
-            // Iterate through the removed backends and remove their values from the
-            // connection distribution while also adding them to the
-            // unwanted_connection_counts map.
-            backends.iter().for_each(|b| {
-                connection_data
-                    .connection_distribution
-                    .remove(b.0)
-                    .and_then(|count| {
-                        connection_data
-                            .unwanted_connection_counts
-                            .entry(b.0.clone())
-                            .and_modify(|e| *e += count)
-                            .or_insert(count);
-                        Some(1)
-                    });
-            });
-
-            connection_data.backends.clear();
-
-            drop(connection_data);
-
-            if self.decoherence_timer.is_some() {
-                let _timer = self.decoherence_timer.take();
-            }
-
-            if self.connection_check_timer.is_some() {
-                let _timer = self.connection_check_timer.take();
-            }
-
-            let mut connection_data =
-                self.protected_data.connection_data_lock();
-
-            info!(
-                self.log,
-                "connections queue size: {}",
-                connection_data.connections.len()
-            );
-
-            while !connection_data.connections.is_empty() {
-                match connection_data.connections.pop_front() {
-                    Some(ConnectionKeyPair((key, Some(conn)))) => {
-                        info!(self.log, "closing connection {}", key);
-                        let close_log = self.log.clone();
-                        let close_key = key.clone();
-                        // Do not want to block the pool on external code so
-                        // spawn threads to run the connection close
-                        // function. This means the pool may move to the
-                        // Stopped state prior to all connections being
-                        // closed. If the program is exiting this should not
-                        // matter and if the program is continuing it is the
-                        // case that when this function returns a close
-                        // thread has been created for all connection pool
-                        // connections. In the future we might add an option
-                        // to wait for all threads if that was an important
-                        // use case for users.
-                        let _close_thread = thread::spawn(|| {
-                            close_connection(close_log, close_key, conn)
-                        });
-                        connection_data.stats.idle_connections -= 1.into();
-                    }
-                    Some(ConnectionKeyPair((_key, None))) => {
-                        // Should never happen
-                        let err_msg = String::from(
-                            "Found backend key with no connection",
-                        );
-                        warn!(self.log, "{}", err_msg);
-                    }
-                    None => {
-                        // This also should never happen here because we checked
-                        // if the queue was empty before entering the loop
-                        let err_msg =
-                            String::from("Unable to retrieve a connection");
-                        warn!(self.log, "{}", err_msg);
-                    }
-                }
-            }
-
-            connection_data.stats.total_connections = 0.into();
-
-            // Move state to Stopped
-            self.state = ConnectionPoolState::Stopped;
-            Ok(())
-        } else {
+        // safe to take all the Option types needed to stop the pool.
+        let Some(resolver_tx) = self.resolver_tx.take() else {
             trace!(self.log, "stop called by pool clone");
-            Err(Error::StopCalledByClone)
+            return Err(Error::StopCalledByClone);
+        };
+        let Some(resolver_rx_thread) = self.resolver_rx_thread.take() else {
+            trace!(self.log, "stop called by pool clone");
+            return Err(Error::StopCalledByClone);
+        };
+        let Some(rebalance_thread) = self.rebalance_thread.take() else {
+            trace!(self.log, "stop called by pool clone");
+            return Err(Error::StopCalledByClone);
+        };
+        let Some(resolver_thread) = self.resolver_thread.take() else {
+            trace!(self.log, "stop called by pool clone");
+            return Err(Error::StopCalledByClone);
+        };
+
+        trace!(self.log, "stop called by original pool");
+
+        // Transition state to Stopping
+        self.state = ConnectionPoolState::Stopping;
+
+        // Notify the resolver, resolver_recv, and rebalancer threads to
+        // shutdown.  Join on the thread handles for the resolver receiver
+        // and rebalancer threads. If the resolver is well-behaved, dropping
+        // all clones of the receiver channel should cause the resolver to
+        // shut down. Do not join on the resolver thread because the code is
+        // not controlled by the pool and may not properly respond to the
+        // resolver receiver thread stopping. Just drop the JoinHandle for
+        // the resolver thread and move along.
+        self.rebalancer_stop.store(true, AtomicOrdering::Relaxed);
+        match resolver_tx.send(BackendMsg::StopMsg) {
+            Ok(()) => {
+                let _ = resolver_rx_thread.join();
+            }
+            Err(e) => {
+                warn!(
+                    self.log,
+                    "Failed to send stop message to resolver \
+                     receiver thread: {}",
+                    e
+                );
+            }
         }
+        drop(resolver_tx);
+
+        let _ = rebalance_thread.join();
+        drop(resolver_thread);
+        trace!(self.log, "stop: joined connection pool worker threads");
+
+        // Mark all connections as unwanted and close what is in the pool
+        let mut connection_data = self.protected_data.connection_data_lock();
+
+        let backends = connection_data.backends.clone();
+
+        // Iterate through the removed backends and remove their values from the
+        // connection distribution while also adding them to the
+        // unwanted_connection_counts map.
+        backends.iter().for_each(|b| {
+            if let Some(count) =
+                connection_data.connection_distribution.remove(b.0)
+            {
+                connection_data
+                    .unwanted_connection_counts
+                    .entry(b.0.clone())
+                    .and_modify(|e| *e += count)
+                    .or_insert(count);
+            }
+        });
+
+        connection_data.backends.clear();
+
+        drop(connection_data);
+
+        if self.decoherence_timer.is_some() {
+            let _timer = self.decoherence_timer.take();
+        }
+
+        if self.connection_check_timer.is_some() {
+            let _timer = self.connection_check_timer.take();
+        }
+
+        let mut connection_data = self.protected_data.connection_data_lock();
+
+        info!(
+            self.log,
+            "connections queue size: {}",
+            connection_data.connections.len()
+        );
+
+        while !connection_data.connections.is_empty() {
+            match connection_data.connections.pop_front() {
+                Some(ConnectionKeyPair((key, Some(conn)))) => {
+                    info!(self.log, "closing connection {}", key);
+                    let close_log = self.log.clone();
+                    let close_key = key.clone();
+                    // Do not want to block the pool on external code so
+                    // spawn threads to run the connection close
+                    // function. This means the pool may move to the
+                    // Stopped state prior to all connections being
+                    // closed. If the program is exiting this should not
+                    // matter and if the program is continuing it is the
+                    // case that when this function returns a close
+                    // thread has been created for all connection pool
+                    // connections. In the future we might add an option
+                    // to wait for all threads if that was an important
+                    // use case for users.
+                    let _close_thread = thread::spawn(|| {
+                        close_connection(close_log, close_key, conn)
+                    });
+                    connection_data.stats.idle_connections -= 1.into();
+                }
+                Some(ConnectionKeyPair((_key, None))) => {
+                    // Should never happen
+                    let err_msg =
+                        String::from("Found backend key with no connection");
+                    warn!(self.log, "{}", err_msg);
+                }
+                None => {
+                    // This also should never happen here because we checked
+                    // if the queue was empty before entering the loop
+                    let err_msg =
+                        String::from("Unable to retrieve a connection");
+                    warn!(self.log, "{}", err_msg);
+                }
+            }
+        }
+
+        connection_data.stats.total_connections = 0.into();
+
+        // Move state to Stopped
+        self.state = ConnectionPoolState::Stopped;
+        Ok(())
     }
 
     pub fn claim(&self) -> Result<PoolConnection<C, R, F>, Error> {
@@ -527,7 +495,7 @@ where
     pub fn try_claim(&self) -> Option<PoolConnection<C, R, F>> {
         let mut connection_data_guard =
             self.protected_data.connection_data_lock();
-        let mut connection_data = connection_data_guard.deref_mut();
+        let connection_data = connection_data_guard.deref_mut();
         let mut waiting_for_connection = true;
         let mut result: Option<PoolConnection<C, R, F>> = None;
 
@@ -637,7 +605,10 @@ where
         match m_conn {
             Some(conn) => {
                 if conn.has_broken() {
-                    warn!(self.log, "Found an invalid connection, not returning to the pool");
+                    warn!(
+                        self.log,
+                        "Found an invalid connection, not returning to the pool"
+                    );
                     connection_data.stats.total_connections -= 1.into();
                 } else {
                     connection_data.connections.push_back((key, conn).into());
@@ -712,8 +683,12 @@ where
 {
     type Target = C;
 
+    /// # Panics
+    /// Panics if the connection has already been taken. This is an internal
+    /// invariant - a PoolConnection should always have a connection when in use.
+    #[allow(clippy::unwrap_used)]
     fn deref(&self) -> &C {
-        &(self.connection_pair.0).1.as_ref().unwrap()
+        (self.connection_pair.0).1.as_ref().unwrap()
     }
 }
 
@@ -723,6 +698,10 @@ where
     R: Resolver,
     F: FnMut(&Backend) -> C + Send,
 {
+    /// # Panics
+    /// Panics if the connection has already been taken. This is an internal
+    /// invariant - a PoolConnection should always have a connection when in use.
+    #[allow(clippy::unwrap_used)]
     fn deref_mut(&mut self) -> &mut C {
         (self.connection_pair.0).1.as_mut().unwrap()
     }
@@ -823,17 +802,13 @@ where
     // connection distribution while also adding them to the
     // unwanted_connection_counts map.
     removed_backends.iter().for_each(|b| {
-        connection_data
-            .connection_distribution
-            .remove(b)
-            .and_then(|count| {
-                connection_data
-                    .unwanted_connection_counts
-                    .entry(b.clone())
-                    .and_modify(|e| *e += count)
-                    .or_insert(count);
-                Some(1)
-            });
+        if let Some(count) = connection_data.connection_distribution.remove(b) {
+            connection_data
+                .unwanted_connection_counts
+                .entry(b.clone())
+                .and_modify(|e| *e += count)
+                .or_insert(count);
+        }
     });
 
     // Calculate the new connection distribution counts for the available
@@ -922,7 +897,7 @@ fn add_connections<C, F>(
     F: FnMut(&Backend) -> C,
 {
     connection_counts.iter().for_each(|(b_key, b_count)| {
-        for _ in 0..b_count.clone().into() {
+        for _ in 0..(*b_count).into() {
             let mut connection_data = protected_data.connection_data_lock();
 
             // TODO: Maybe track total unwanted connection count in stats so
@@ -955,21 +930,17 @@ fn add_connections<C, F>(
                 let m_backend = connection_data.backends.get(b_key);
                 if let Some(backend) = m_backend {
                     let mut conn = create_connection(backend);
-                    let mut backoff = ExponentialBackoff::default();
-                    let mut op = || {
+                    let backoff_config = ExponentialBackoff::default();
+                    let connect_result = retry(backoff_config, || {
                         debug!(log, "attempting to connect with retry...");
                         conn.connect().map_err(|e| {
-                            error!(
-                                log,
-                                "Retrying connection \
-                                 : {}",
-                                e
-                            );
-                        })?;
-                        Ok(())
-                    };
-                    op.retry(&mut backoff)
-                        .and_then(|_| {
+                            error!(log, "Retrying connection: {}", e);
+                            backoff::Error::transient(())
+                        })
+                    });
+
+                    match connect_result {
+                        Ok(()) => {
                             // Update connection info and stats
                             let connection_key_pair =
                                 (b_key.clone(), Some(conn)).into();
@@ -990,14 +961,14 @@ fn add_connections<C, F>(
                                 "Added connection for backend {}", b_key
                             );
                             protected_data.condvar_notify();
-                            Ok(())
-                        })
-                        .unwrap_or_else(|_| {
+                        }
+                        Err(_) => {
                             error!(
                                 log,
                                 "Giving up trying to establish connection"
                             );
-                        });
+                        }
+                    }
                 } else {
                     error!(
                         log,
@@ -1163,7 +1134,7 @@ where
     let mut i = connections.len();
     while i > 1 {
         i -= 1;
-        let new_idx = rng.gen_range(0, i);
+        let new_idx = rng.gen_range(0..i);
         debug!(
             log,
             "randomization puts item at idx {} to idx {}", i, new_idx

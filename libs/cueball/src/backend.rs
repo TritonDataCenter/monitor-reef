@@ -2,8 +2,8 @@
 
 use std::net::IpAddr;
 
-use base64;
-use sha1::Sha1;
+use base64::prelude::*;
+use sha1::{Digest, Sha1};
 
 use derive_more::{Display, From, Into};
 
@@ -50,12 +50,12 @@ fn backend_name(address: &BackendAddress, port: BackendPort) -> BackendName {
 
 /// Return a base64 encoded identifier based on the fields of the backend.
 pub fn srv_key(backend: &Backend) -> BackendKey {
-    let mut sha1 = Sha1::new();
-    sha1.update(backend.name.as_bytes());
-    sha1.update(b"||");
-    sha1.update(backend.port.to_string().as_bytes());
-    sha1.update(b"||");
-    sha1.update(backend.address.to_string().as_bytes());
+    let mut hasher = Sha1::new();
+    hasher.update(backend.name.as_bytes());
+    hasher.update(b"||");
+    hasher.update(backend.port.to_string().as_bytes());
+    hasher.update(b"||");
+    hasher.update(backend.address.to_string().as_bytes());
 
-    base64::encode(&sha1.digest().bytes()).into()
+    BASE64_STANDARD.encode(hasher.finalize()).into()
 }

@@ -102,7 +102,7 @@ where
     C: Connection,
 {
     fn partial_cmp(&self, other: &ConnectionKeyPair<C>) -> Option<Ordering> {
-        (self.0).0.partial_cmp(&(other.0).0)
+        Some(self.cmp(other))
     }
 }
 
@@ -124,12 +124,12 @@ where
     }
 }
 
-impl<C> Into<(BackendKey, Option<C>)> for ConnectionKeyPair<C>
+impl<C> From<ConnectionKeyPair<C>> for (BackendKey, Option<C>)
 where
     C: Connection,
 {
-    fn into(self) -> (BackendKey, Option<C>) {
-        ((self.0).0, (self.0).1)
+    fn from(pair: ConnectionKeyPair<C>) -> Self {
+        ((pair.0).0, (pair.0).1)
     }
 }
 
@@ -192,10 +192,16 @@ where
         ProtectedData(Arc::new((Mutex::new(connection_data), Condvar::new())))
     }
 
-    pub fn connection_data_lock(&self) -> MutexGuard<ConnectionData<C>> {
+    /// # Panics
+    /// Panics if the mutex is poisoned.
+    #[allow(clippy::unwrap_used)]
+    pub fn connection_data_lock(&self) -> MutexGuard<'_, ConnectionData<C>> {
         (self.0).0.lock().unwrap()
     }
 
+    /// # Panics
+    /// Panics if the mutex is poisoned.
+    #[allow(clippy::unwrap_used)]
     pub fn condvar_wait<'a>(
         &self,
         g: MutexGuard<'a, ConnectionData<C>>,
@@ -225,12 +231,12 @@ where
     }
 }
 
-impl<C> Into<Arc<(Mutex<ConnectionData<C>>, Condvar)>> for ProtectedData<C>
+impl<C> From<ProtectedData<C>> for Arc<(Mutex<ConnectionData<C>>, Condvar)>
 where
     C: Connection,
 {
-    fn into(self) -> Arc<(Mutex<ConnectionData<C>>, Condvar)> {
-        self.0
+    fn from(pd: ProtectedData<C>) -> Self {
+        pd.0
     }
 }
 
@@ -246,10 +252,16 @@ impl RebalanceCheck {
         RebalanceCheck(Arc::new((Mutex::new(false), Condvar::new())))
     }
 
-    pub fn get_lock(&self) -> MutexGuard<bool> {
+    /// # Panics
+    /// Panics if the mutex is poisoned.
+    #[allow(clippy::unwrap_used)]
+    pub fn get_lock(&self) -> MutexGuard<'_, bool> {
         (self.0).0.lock().unwrap()
     }
 
+    /// # Panics
+    /// Panics if the mutex is poisoned.
+    #[allow(clippy::unwrap_used)]
     pub fn condvar_wait<'a>(
         &self,
         g: MutexGuard<'a, bool>,
@@ -270,9 +282,9 @@ impl Clone for RebalanceCheck {
     }
 }
 
-impl Into<Arc<(Mutex<bool>, Condvar)>> for RebalanceCheck {
-    fn into(self) -> Arc<(Mutex<bool>, Condvar)> {
-        self.0
+impl From<RebalanceCheck> for Arc<(Mutex<bool>, Condvar)> {
+    fn from(rc: RebalanceCheck) -> Self {
+        rc.0
     }
 }
 

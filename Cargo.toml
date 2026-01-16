@@ -18,6 +18,7 @@ members = [
     # Modernized:
     "libs/fast",
     "libs/quickcheck-helpers",
+    "libs/cueball",
 
     # To be modernized:
     #"cli/manatee-echo-resolver",
@@ -26,7 +27,6 @@ members = [
     #"libs/cueball-postgres-connection",
     #"libs/cueball-static-resolver",
     #"libs/cueball-tcp-stream-connection",
-    #"libs/cueball",
     #"libs/libmanta",
     #"libs/moray",
     #"libs/rebalancer-legacy/agent",

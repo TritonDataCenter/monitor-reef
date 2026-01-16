@@ -23,7 +23,6 @@ exclude = [
     "libs/cueball-postgres-connection",
     "libs/cueball-static-resolver",
     "libs/cueball-tcp-stream-connection",
-    "libs/cueball",
     "libs/libmanta",
     "libs/moray",
     "libs/rebalancer-legacy/agent",

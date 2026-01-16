@@ -9,8 +9,7 @@ const BACKEND_NO_CONNECTION_STR: &str = "Found a backend key with no \
                                          associated connection";
 const CONNECTION_RETRIEVAL_FAILURE_STR: &str = "Unable to retrieve a \
                                                 connection";
-const STOP_CALLED_BY_CLONE_STR: &str =
-    "ConnectionPool clones may not stop the \
+const STOP_CALLED_BY_CLONE_STR: &str = "ConnectionPool clones may not stop the \
      connection pool.";
 const DUMMY_ERROR_STR: &str = "dummy error";
 

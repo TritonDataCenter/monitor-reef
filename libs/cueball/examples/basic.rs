@@ -1,18 +1,24 @@
 // Copyright 2020 Joyent, Inc.
 
+// Allow common example patterns that clippy flags
+#![allow(clippy::unwrap_used)]
+#![allow(clippy::redundant_field_names)]
+#![allow(clippy::empty_loop)]
+#![allow(dead_code)]
+
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Barrier, Mutex};
 use std::time::Duration;
 use std::{thread, time};
 
-use slog::{info, o, Drain, Logger};
+use slog::{Drain, Logger, info, o};
 
 use cueball::backend;
 use cueball::backend::{Backend, BackendAddress, BackendPort};
 use cueball::connection::Connection;
-use cueball::connection_pool::types::ConnectionPoolOptions;
 use cueball::connection_pool::ConnectionPool;
+use cueball::connection_pool::types::ConnectionPoolOptions;
 use cueball::error::Error;
 use cueball::resolver::{BackendAddedMsg, BackendMsg, Resolver};
 
