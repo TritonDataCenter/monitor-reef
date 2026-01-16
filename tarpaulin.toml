@@ -22,7 +22,6 @@ exclude-files = [
     "services/service-template/*",
     # Disabled crates
     "cli/manatee-echo-resolver/*",
-    "libs/cueball-dns-resolver/*",
     "libs/cueball-manatee-primary-resolver/*",
     "libs/cueball-postgres-connection/*",
     "libs/libmanta/*",
