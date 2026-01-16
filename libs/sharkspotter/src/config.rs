@@ -6,11 +6,12 @@
 
 /*
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2026 Edgecast Cloud LLC.
  */
 
-use clap::{value_t, App, AppSettings, Arg, ArgMatches};
+use clap::Parser;
 use slog::Level;
-use std::io::{Error, ErrorKind};
+use std::io::Error;
 use std::str::FromStr;
 
 const MAX_THREADS: usize = 100;
@@ -54,186 +55,102 @@ impl Default for Config {
     }
 }
 
-fn parse_log_level(matches: &ArgMatches) -> Result<Level, Error> {
-    let level = match value_t!(matches, "log_level", String) {
-        Ok(l) => l,
-        Err(e) => {
-            let msg = format!("Could not parse 'log_level': {}", e);
-            eprintln!("{}", msg);
-            return Err(Error::new(ErrorKind::Other, msg));
-        }
-    };
+/// A tool for finding all of the Manta objects that reside on a given set of
+/// sharks (storage zones).
+#[derive(Parser, Debug)]
+#[command(name = "sharkspotter", version)]
+struct Args {
+    /// Beginning shard number
+    #[arg(short = 'm', long, default_value_t = 1)]
+    min_shard: u32,
 
-    Level::from_str(&level).map_err(|_| {
-        let msg = format!("Could not parse '{}' as a log_level", level);
-        eprintln!("{}", msg);
-        Error::new(ErrorKind::Other, msg)
-    })
+    /// Ending shard number
+    #[arg(short = 'M', long, default_value_t = 1)]
+    max_shard: u32,
+
+    /// Domain that the moray zones are in
+    #[arg(short = 'd', long)]
+    domain: String,
+
+    /// Find objects that belong to this shark (can be specified multiple times)
+    #[arg(short = 's', long = "shark", required = true)]
+    sharks: Vec<String>,
+
+    /// Number of records to scan per call to moray
+    #[arg(short = 'c', long = "chunk-size", default_value_t = 1000)]
+    chunk_size: u64,
+
+    /// Index to begin scanning at
+    #[arg(short = 'b', long = "begin", default_value_t = 0)]
+    begin: u64,
+
+    /// Index to stop scanning at
+    #[arg(short = 'e', long = "end", default_value_t = 0)]
+    end: u64,
+
+    /// Output filename (default <shark>/shard_<shard_num>.objs)
+    #[arg(short = 'f', long = "file")]
+    output_file: Option<String>,
+
+    /// Run with multiple threads, one per shard
+    #[arg(short = 'T', long)]
+    multithreaded: bool,
+
+    /// Maximum number of threads to run with
+    #[arg(short = 't', long, requires = "multithreaded")]
+    max_threads: Option<usize>,
+
+    /// Skip shark validation. Useful if shark is in readonly mode.
+    #[arg(short = 'x')]
+    skip_validate_sharks: bool,
+
+    /// Output only the object ID
+    #[arg(short = 'O', long = "object_id_only")]
+    obj_id_only: bool,
+
+    /// Use direct DB access instead of moray
+    #[arg(short = 'D', long)]
+    direct_db: bool,
+
+    /// Set log level (trace, debug, info, warning, error, critical)
+    #[arg(short = 'l', long)]
+    log_level: Option<String>,
 }
 
-impl<'a, 'b> Config {
-    pub fn get_app() -> App<'a, 'b> {
-        let version = env!("CARGO_PKG_VERSION");
-        App::new("sharkspotter")
-            .version(version)
-            .about("A tool for finding all of the Manta objects that reside \
-            on a given set of sharks (storage zones).")
-            .setting(AppSettings::ArgRequiredElseHelp)
-            .arg(Arg::with_name("min_shard")
-                .short("m")
-                .long("min_shard")
-                .value_name("MIN_SHARD")
-                .help("Beginning shard number (default: 1)")
-                .takes_value(true))
-            .arg(Arg::with_name("max_shard")
-                .short("M")
-                .long("max_shard")
-                .value_name("MAX_SHARD")
-                .help("Ending shard number (default: 1)")
-                .takes_value(true))
-            .arg(Arg::with_name("domain")
-                .short("d")
-                .long("domain")
-                .value_name("MORAY_DOMAIN")
-                .help("Domain that the moray zones are in")
-                .required(true)
-                .takes_value(true))
-            .arg(Arg::with_name("shark")
-                .short("s")
-                .long("shark")
-                .value_name("STORAGE_ID")
-                .help("Find objects that belong to this shark")
-                .required(true)
-                .number_of_values(1) // only 1 value per occurrence
-                .multiple(true) // allow multiple occurrences
-                .takes_value(true))
-            .arg(Arg::with_name("chunk-size")
-                .short("c")
-                .long("chunk-size")
-                .value_name("NUM_RECORDS")
-                .help("number of records to scan per call to moray (default: \
-                100)")
-                .takes_value(true))
-            .arg(Arg::with_name("begin-index")
-                .short("b")
-                .long("begin")
-                .value_name("INDEX")
-                .help("index to being scanning at (default: 0)")
-                .takes_value(true))
-            .arg(Arg::with_name("end-index")
-                .short("e")
-                .long("end")
-                .value_name("INDEX")
-                .help("index to stop scanning at (default: 0)")
-                .takes_value(true))
-            .arg(Arg::with_name("output_file")
-                .short("f")
-                .long("file")
-                .value_name("FILE_NAME")
-                .help("output filename (default <shark>/shard_<shard_num>.objs")
-                .takes_value(true))
-            .arg(Arg::with_name("multithreaded")
-                .short("T")
-                .help("Run with multiple threads, one per shard")
-                .long("multithreaded")
-                .takes_value(false))
-            .arg(Arg::with_name("max_threads")
-                .short("t")
-                .help("maximum number of threads to run with")
-                .long("max_threads")
-                .requires("multithreaded")
-                .takes_value(true))
-            .arg(Arg::with_name("skip_validate_sharks")
-                .short("x")
-                .help("Skip shark validation. Useful if shark is in readonly \
-                mode.")
-                .takes_value(false))
-            .arg(Arg::with_name("obj_id_only")
-                .short("O")
-                .long("object_id_only")
-                .help("Output only the object ID")
-                .takes_value(false))
-            .arg(Arg::with_name("direct_db")
-                .short("-D")
-                .long("direct_db")
-                .help("use direct DB access instead of moray")
-                .takes_value(false))
-            .arg(Arg::with_name("log_level")
-                .short("l")
-                .long("log_level")
-                .help("Set log level")
-                .takes_value(true))
-    }
+impl Config {
+    pub fn from_args() -> Result<Config, Error> {
+        let args = Args::parse();
 
-    // TODO: This has grown over time and is now causing a clippy warning.
-    // We should consider using a yaml file to parse the matches.
-    #[allow(clippy::cognitive_complexity)]
-    fn config_from_matches(matches: ArgMatches) -> Result<Config, Error> {
-        let mut config = Config::default();
+        let log_level = if let Some(level_str) = &args.log_level {
+            Level::from_str(level_str).map_err(|_| {
+                let msg =
+                    format!("Could not parse '{}' as a log_level", level_str);
+                eprintln!("{}", msg);
+                Error::other(msg)
+            })?
+        } else {
+            Level::Debug
+        };
 
-        if let Ok(max_shard) = value_t!(matches, "max_shard", u32) {
-            config.max_shard = max_shard;
-        }
-
-        if let Ok(min_shard) = value_t!(matches, "min_shard", u32) {
-            config.min_shard = min_shard;
-        }
-
-        if let Ok(begin) = value_t!(matches, "begin-index", u64) {
-            config.begin = begin;
-        }
-
-        if let Ok(end) = value_t!(matches, "end-index", u64) {
-            config.end = end;
-        }
-
-        if let Ok(chunk_size) = value_t!(matches, "chunk-size", u64) {
-            config.chunk_size = chunk_size;
-        }
-
-        if let Ok(output_file) = value_t!(matches, "output_file", String) {
-            config.output_file = Some(output_file);
-        }
-
-        if matches.is_present("skip_validate_sharks") {
-            config.skip_validate_sharks = true;
-        }
-
-        if matches.is_present("obj_id_only") {
-            config.obj_id_only = true;
-        }
-
-        if matches.is_present("multithreaded") {
-            config.multithreaded = true;
-        }
-
-        if matches.is_present("direct_db") {
-            config.direct_db = true;
-        }
-
-        if let Ok(max_threads) = value_t!(matches, "max_threads", usize) {
-            config.max_threads = max_threads;
-        }
-
-        if matches.is_present("log_level") {
-            config.log_level = parse_log_level(&matches)?;
-        }
-
-        config.domain = matches.value_of("domain").unwrap().to_string();
-        config.sharks = matches
-            .values_of("shark")
-            .unwrap()
-            .map(String::from)
-            .collect();
+        let mut config = Config {
+            min_shard: args.min_shard,
+            max_shard: args.max_shard,
+            domain: args.domain,
+            sharks: args.sharks,
+            chunk_size: args.chunk_size,
+            begin: args.begin,
+            end: args.end,
+            skip_validate_sharks: args.skip_validate_sharks,
+            output_file: args.output_file,
+            obj_id_only: args.obj_id_only,
+            multithreaded: args.multithreaded,
+            max_threads: args.max_threads.unwrap_or(50),
+            direct_db: args.direct_db,
+            log_level,
+        };
 
         normalize_config(&mut config);
-
         Ok(config)
-    }
-
-    pub fn from_args() -> Result<Config, Error> {
-        let matches = Self::get_app().get_matches();
-        Self::config_from_matches(matches)
     }
 }
 
@@ -258,8 +175,8 @@ mod test {
 
     #[test]
     fn parse_args() {
-        let args = vec![
-            "target/debug/sharkspotter",
+        let args = Args::parse_from([
+            "sharkspotter",
             "-x",
             "--domain",
             "east.joyent.us",
@@ -279,24 +196,18 @@ mod test {
             "20",
             "-f",
             "foo.txt",
-        ];
+        ]);
 
-        let matches = Config::get_app().get_matches_from(args);
-        let config = Config::config_from_matches(matches).expect("config");
-
-        assert!(config.skip_validate_sharks);
-
-        assert_eq!(config.max_shard, 2);
-        assert_eq!(config.min_shard, 1);
-        assert_eq!(config.begin, 3);
-        assert_eq!(config.end, 10);
-        assert_eq!(config.chunk_size, 20);
-
-        assert_eq!(config.output_file, Some(String::from("foo.txt")));
-        assert_eq!(config.domain, String::from("east.joyent.us"));
-
+        assert!(args.skip_validate_sharks);
+        assert_eq!(args.max_shard, 2);
+        assert_eq!(args.min_shard, 1);
+        assert_eq!(args.begin, 3);
+        assert_eq!(args.end, 10);
+        assert_eq!(args.chunk_size, 20);
+        assert_eq!(args.output_file, Some(String::from("foo.txt")));
+        assert_eq!(args.domain, String::from("east.joyent.us"));
         assert_eq!(
-            config.sharks,
+            args.sharks,
             vec![String::from("1.stor"), String::from("2.stor")]
         );
     }

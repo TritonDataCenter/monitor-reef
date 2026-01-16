@@ -6,6 +6,7 @@
 
 /*
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2026 Edgecast Cloud LLC.
  */
 
 /// Run sharkspotter as a commandline tool.
@@ -20,12 +21,12 @@
 use crossbeam_channel::{self, Receiver, Sender};
 use serde_json::Value;
 use sharkspotter::config::Config;
-use sharkspotter::{util, SharkspotterMessage};
-use slog::{trace, Logger};
+use sharkspotter::{SharkspotterMessage, util};
+use slog::{Logger, trace};
 use std::collections::HashMap;
 use std::fs::{self, OpenOptions};
 use std::io::prelude::*;
-use std::io::{BufWriter, Error, ErrorKind};
+use std::io::{BufWriter, Error};
 use std::path::Path;
 use std::process;
 use std::thread;
@@ -38,19 +39,16 @@ fn write_mobj_to_file<W>(
 where
     W: Write,
 {
-    let out_bytes: Vec<u8>;
-    let obj_id_only = conf.obj_id_only;
-
-    if obj_id_only {
+    let out_bytes: Vec<u8> = if conf.obj_id_only {
         let obj_id = sharkspotter::object_id_from_manta_obj(&manta_obj)
             .map_err(|e| {
                 eprintln!("{}", e);
-                Error::new(ErrorKind::Other, e)
+                Error::other(e)
             })?;
-        out_bytes = obj_id.as_bytes().to_owned();
+        obj_id.as_bytes().to_owned()
     } else {
-        out_bytes = serde_json::to_vec(&manta_obj)?;
-    }
+        serde_json::to_vec(&manta_obj)?
+    };
 
     writer.write_all(&out_bytes)?;
     writer.write_all(b"\n")?;
@@ -80,7 +78,9 @@ where
     });
 
     sharkspotter::run_multithreaded(conf, log, obj_tx)?;
-    handle.join().expect("sharkspotter reader join")
+    handle
+        .join()
+        .map_err(|_| Error::other("sharkspotter reader thread panicked"))?
 }
 
 fn run_with_file_map(conf: Config, log: Logger) -> Result<(), Error> {
@@ -96,18 +96,17 @@ fn run_with_file_map(conf: Config, log: Logger) -> Result<(), Error> {
         for shard in conf.min_shard..=conf.max_shard {
             let fname = filename(shark, shard);
             let path = Path::new(fname.as_str());
-            let file = match OpenOptions::new()
+            let file = OpenOptions::new()
                 .append(true)
                 .create_new(true)
                 .open(path)
-            {
-                Err(e) => panic!(
-                    "Couldn't create output file '{}': {}",
-                    path.display(),
-                    e
-                ),
-                Ok(file) => file,
-            };
+                .map_err(|e| {
+                    Error::other(format!(
+                        "Couldn't create output file '{}': {}",
+                        path.display(),
+                        e
+                    ))
+                })?;
 
             file_map.insert(fname, BufWriter::new(file));
         }
@@ -125,24 +124,36 @@ fn run_with_file_map(conf: Config, log: Logger) -> Result<(), Error> {
             // specified that represents a programmer error.
             let file = file_map
                 .get_mut(&filename(shark.as_str(), shard))
-                .expect("unexpected shark");
+                .ok_or_else(|| {
+                    Error::other(format!("unexpected shark: {}", shark))
+                })?;
 
             write_mobj_to_file(file, msg.manta_value, &closure_conf)
         })
     } else {
-        sharkspotter::run(
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| {
+                Error::other(format!("Failed to create runtime: {}", e))
+            })?;
+
+        rt.block_on(sharkspotter::run(
             &conf,
             log.clone(),
             |manta_obj, _etag, shark, shard| {
                 let shark = shark.replace(&domain_prefix, "");
                 trace!(&log, "shark: {}, shard: {}", shark, shard);
 
-                let file =
-                    file_map.get_mut(&filename(shark.as_str(), shard)).unwrap();
+                let file = file_map
+                    .get_mut(&filename(shark.as_str(), shard))
+                    .ok_or_else(|| {
+                    Error::other(format!("unexpected shark: {}", shark))
+                })?;
 
                 write_mobj_to_file(file, manta_obj, &conf)
             },
-        )
+        ))
     }
 }
 
@@ -152,13 +163,17 @@ fn run_with_user_file(
     log: Logger,
 ) -> Result<(), Error> {
     let path = Path::new(filename.as_str());
-    let mut file = match OpenOptions::new().append(true).create(true).open(path)
-    {
-        Err(e) => {
-            panic!("Couldn't create output file '{}': {}", path.display(), e)
-        }
-        Ok(file) => file,
-    };
+    let mut file = OpenOptions::new()
+        .append(true)
+        .create(true)
+        .open(path)
+        .map_err(|e| {
+            Error::other(format!(
+                "Couldn't create output file '{}': {}",
+                path.display(),
+                e
+            ))
+        })?;
 
     if conf.multithreaded {
         let closure_conf = conf.clone();
@@ -166,9 +181,20 @@ fn run_with_user_file(
             write_mobj_to_file(&mut file, msg.manta_value, &closure_conf)
         })
     } else {
-        sharkspotter::run(&conf, log, |moray_obj, _etag, _shark, _shard| {
-            write_mobj_to_file(&mut file, moray_obj, &conf)
-        })
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| {
+                Error::other(format!("Failed to create runtime: {}", e))
+            })?;
+
+        rt.block_on(sharkspotter::run(
+            &conf,
+            log,
+            |moray_obj, _etag, _shark, _shard| {
+                write_mobj_to_file(&mut file, moray_obj, &conf)
+            },
+        ))
     }
 }
 

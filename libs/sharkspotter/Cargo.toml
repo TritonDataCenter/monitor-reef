@@ -1,39 +1,38 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2020 Joyent, Inc.
+# Copyright 2026 Edgecast Cloud LLC.
+
 [package]
 name = "sharkspotter"
-version = "0.16.6"
+version = "0.17.0"
 authors = ["Rui Loura <rui@joyent.com>", "Jon Anderson <jon.anderson@joyent.com>"]
-edition = "2018"
+edition.workspace = true
+
+[[bin]]
+name = "sharkspotter"
+path = "src/main.rs"
 
 [dependencies]
-assert_cli = "0.6.0"
-clap = "2.33.0"
-crossbeam-channel = "0.4.2"
-futures = "0.3.5"
-lazy_static = "1.4.0"
+clap = { workspace = true }
+crossbeam-channel = "0.5"
+futures = "0.3"
+hickory-resolver = "0.25"
+lazy_static = "1.4"
 libmanta = { path = "../libmanta" }
 moray = { path = "../moray" }
-num_cpus = "1.8.0"
-serde = { version = "1.0.115", features = ["derive"] }
-serde_json = "1.0.57"
-slog = "2.5.2"
-slog-bunyan = "2.2.0"
-slog-scope = "4.1.2"
-slog-term = "2.4.1"
-threadpool = "1.8.1"
-tokio = {version = "0.2.22", features = ["full"]}
-tokio-postgres = { version="0.5.5", features = ["with-serde_json-1"]}
-trust-dns-resolver = "0.11.1"
-serde_postgres = "0.2.0"
-
-# We don't use this directly, but gotham pulls it in via the rust-url crate.
-# If we don't specify the exact version here cargo will bring in a newer version
-# that is not compatible with rust 1.35.
-unicode-normalization = "=0.1.5"
-
-# This is brought in by tokio-postgres and was recently updated.  The update
-# caused some build issues, so we pin it here.
-subtle = "=2.2.3"
-
+num_cpus = "1.16"
+serde = { workspace = true }
+serde_json = { workspace = true }
+slog = "2.7"
+slog-bunyan = "2.5"
+slog-scope = "4.4"
+slog-term = "2.9"
+threadpool = "1.8"
+tokio = { workspace = true }
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1"] }
 
 [features]
 postgres = ["libmanta/postgres"]

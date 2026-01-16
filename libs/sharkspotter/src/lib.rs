@@ -6,6 +6,7 @@
 
 /*
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2026 Edgecast Cloud LLC.
  */
 
 // For reference here is a sample moray manta bucket entry.  The _value
@@ -50,26 +51,21 @@ pub mod config;
 pub mod directdb;
 pub mod util;
 
+use hickory_resolver::TokioResolver;
+use hickory_resolver::name_server::TokioConnectionProvider;
 use lazy_static::lazy_static;
 use libmanta::moray::MantaObjectShark;
 use moray::client::MorayClient;
 use moray::objects as moray_objects;
-use serde::Deserialize;
 use serde_json::{self, Value};
-use slog::{debug, error, warn, Logger};
+use slog::{Logger, debug, error, warn};
 use std::io::{Error, ErrorKind};
 use std::net::IpAddr;
 use std::sync::Mutex;
 use threadpool::ThreadPool;
-use trust_dns_resolver::Resolver;
 
 lazy_static! {
     static ref ERROR_LIST: Mutex<Vec<std::io::Error>> = Mutex::new(vec![]);
-}
-
-#[derive(Deserialize, Debug, Clone)]
-struct IdRet {
-    max: String,
 }
 
 #[derive(Debug)]
@@ -81,26 +77,24 @@ pub struct SharkspotterMessage {
 }
 
 fn _parse_max_id_value(val: Value, log: &Logger) -> Result<u64, Error> {
-    if val.is_array() {
-        let val_arr = val.as_array().unwrap();
-
-        if val_arr.len() != 1 {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!("Expected single element got {}", val_arr.len()),
-            ));
-        }
+    let val_arr = if val.is_array() {
+        val.as_array()
+            .ok_or_else(|| Error::other("Expected array but got non-array"))?
     } else {
-        return Err(Error::new(ErrorKind::Other, "Expected array"));
+        return Err(Error::other("Expected array"));
+    };
+
+    if val_arr.len() != 1 {
+        return Err(Error::other(format!(
+            "Expected single element got {}",
+            val_arr.len()
+        )));
     }
 
     let max = match val[0].get("max") {
         Some(m) => m.to_owned(),
         None => {
-            return Err(Error::new(
-                ErrorKind::Other,
-                "Query missing 'max' value",
-            ));
+            return Err(Error::other("Query missing 'max' value"));
         }
     };
 
@@ -110,10 +104,7 @@ fn _parse_max_id_value(val: Value, log: &Logger) -> Result<u64, Error> {
             match n.as_u64() {
                 Some(num_64) => num_64,
                 None => {
-                    return Err(Error::new(
-                        ErrorKind::Other,
-                        "Error converting number to u64",
-                    ));
+                    return Err(Error::other("Error converting number to u64"));
                 }
             }
         }
@@ -124,14 +115,13 @@ fn _parse_max_id_value(val: Value, log: &Logger) -> Result<u64, Error> {
                 Err(e) => {
                     let msg =
                         format!("Error parsing max value as String: {}", e);
-                    return Err(Error::new(ErrorKind::Other, msg));
+                    return Err(Error::other(msg));
                 }
             }
         }
         _ => {
             debug!(log, "largest id value is unknown variant {:#?}", max);
-            return Err(Error::new(
-                ErrorKind::Other,
+            return Err(Error::other(
                 "Error max value was not a string or a number",
             ));
         }
@@ -141,40 +131,42 @@ fn _parse_max_id_value(val: Value, log: &Logger) -> Result<u64, Error> {
 }
 
 /// Find the largest _id/_idx in the database.
-fn find_largest_id_value(
+async fn find_largest_id_value(
     log: &Logger,
     mclient: &mut MorayClient,
     id: &str,
 ) -> Result<u64, Error> {
     let mut ret: u64 = 0;
     debug!(log, "Finding largest ID value as '{}'", id);
-    mclient.sql(
-        format!("SELECT MAX({}) FROM manta;", id).as_str(),
-        vec![],
-        r#"{"limit": 1, "no_count": true}"#,
-        |resp| {
-            // The expected response is:
-            //  [{
-            //      "max": <value>
-            //  }]
-            //
-            //  Where <value> is either a String or a Number.
+    mclient
+        .sql(
+            format!("SELECT MAX({}) FROM manta;", id).as_str(),
+            vec![],
+            r#"{"limit": 1, "no_count": true}"#,
+            |resp| {
+                // The expected response is:
+                //  [{
+                //      "max": <value>
+                //  }]
+                //
+                //  Where <value> is either a String or a Number.
 
-            ret = match _parse_max_id_value(resp.to_owned(), log) {
-                Ok(max_num) => max_num,
-                Err(e) => {
-                    return Err(e);
-                }
-            };
-            Ok(())
-        },
-    )?;
+                ret = match _parse_max_id_value(resp.to_owned(), log) {
+                    Ok(max_num) => max_num,
+                    Err(e) => {
+                        return Err(e);
+                    }
+                };
+                Ok(())
+            },
+        )
+        .await?;
     Ok(ret)
 }
 
 fn _log_return_error(log: &Logger, msg: &str) -> Result<(), Error> {
     error!(log, "{}", msg);
-    Err(Error::new(ErrorKind::Other, msg))
+    Err(Error::other(msg))
 }
 
 pub fn get_sharks_from_manta_obj(
@@ -186,7 +178,7 @@ pub fn get_sharks_from_manta_obj(
             if !s.is_array() {
                 let msg = format!("Sharks are not in an array {:#?}", s);
                 error!(log, "{}", msg);
-                return Err(Error::new(ErrorKind::Other, msg));
+                return Err(Error::other(msg));
             }
 
             serde_json::from_value::<Vec<MantaObjectShark>>(s.clone()).map_err(
@@ -196,14 +188,14 @@ pub fn get_sharks_from_manta_obj(
                         s, e
                     );
                     error!(log, "{}", msg);
-                    Error::new(ErrorKind::Other, msg)
+                    Error::other(msg)
                 },
             )
         }
         None => {
             let msg = format!("Missing 'sharks' field {:#?}", value);
             error!(log, "{}", msg);
-            Err(Error::new(ErrorKind::Other, msg))
+            Err(Error::other(msg))
         }
     }
 }
@@ -250,21 +242,21 @@ pub fn object_id_from_manta_obj(manta_obj: &Value) -> Result<String, String> {
                 format!("Could not format objectId ({}) as string", obj_id_val)
             })
         })
-        .and_then(|o| Ok(o.to_string()))
+        .map(|o| o.to_string())
 }
 
 pub fn etag_from_moray_value(moray_value: &Value) -> Result<String, Error> {
     match moray_value.get("_etag") {
         Some(tag) => match serde_json::to_string(tag) {
-            Ok(t) => Ok(t.replace("\"", "")),
+            Ok(t) => Ok(t.replace('"', "")),
             Err(e) => {
                 let msg = format!("Cannot convert etag to string: {}", e);
-                Err(Error::new(ErrorKind::Other, msg))
+                Err(Error::other(msg))
             }
         },
         None => {
             let msg = format!("Missing etag: {:#?}", moray_value);
-            Err(Error::new(ErrorKind::Other, msg))
+            Err(Error::other(msg))
         }
     }
 }
@@ -337,7 +329,7 @@ where
         }
     };
 
-    let sharks = get_sharks_from_manta_obj(&manta_value, &log)?;
+    let sharks = get_sharks_from_manta_obj(&manta_value, log)?;
 
     // Filter on shark
     sharks
@@ -345,7 +337,7 @@ where
         .filter(|s| sharks_requested.contains(&s.manta_storage_id))
         .try_for_each(|s| {
             // TODO: handle error
-            let etag = etag_from_moray_value(&moray_value)?;
+            let etag = etag_from_moray_value(moray_value)?;
             handler(
                 manta_value.clone(),
                 etag.as_str(),
@@ -367,7 +359,7 @@ fn chunk_query(id_name: &str, begin: u64, end: u64, count: u64) -> String {
 
 /// Make the actual sql query and call the query_handler to handle processing
 /// every object that is returned in the chunk.
-fn read_chunk<F>(
+async fn read_chunk<F>(
     log: &Logger,
     mclient: &mut MorayClient,
     query: &str,
@@ -378,9 +370,12 @@ fn read_chunk<F>(
 where
     F: FnMut(Value, &str, &str, u32) -> Result<(), Error>,
 {
-    match mclient.sql(query, vec![], r#"{"timeout": 10000}"#, |a| {
-        query_handler(log, a, shard_num, sharks, handler)
-    }) {
+    match mclient
+        .sql(query, vec![], r#"{"timeout": 10000}"#, |a| {
+            query_handler(log, a, shard_num, sharks, handler)
+        })
+        .await
+    {
         Ok(()) => Ok(()),
         Err(e) => {
             eprintln!("Got error: {}", e);
@@ -391,7 +386,7 @@ where
 
 /// Find the maximum _id/_idx and, starting at 0 iterate over every entry up
 /// to the max.  For each chunk call read_chunk.
-fn iter_ids<F>(
+async fn iter_ids<F>(
     id_name: &str,
     moray_socket: &str,
     conf: &config::Config,
@@ -406,21 +401,26 @@ where
 
     let mut start_id = conf.begin;
     let mut end_id = conf.begin + conf.chunk_size - 1;
-    let mut largest_id = match find_largest_id_value(&log, &mut mclient, id_name) {
-        Ok(id) => id,
-        Err(e) => {
-            error!(&log, "Error finding largest ID: {}, using 0", e);
-            0
-        }
-    };
+    let mut largest_id =
+        match find_largest_id_value(&log, &mut mclient, id_name).await {
+            Ok(id) => id,
+            Err(e) => {
+                error!(&log, "Error finding largest ID: {}, using 0", e);
+                0
+            }
+        };
 
     // clamp largest_id to conf.end if it is set and less than the largest found
     if conf.end > 0 && conf.end < largest_id {
         largest_id = conf.end
     }
 
+    // Handle edge case where there are no objects
+    if largest_id < conf.begin {
+        return Ok(());
+    }
+
     let mut remaining = largest_id - conf.begin + 1;
-    assert!(largest_id + 1 >= remaining);
 
     // only clamp end value if `-e` is explicitly given
     if conf.end > 0 && end_id > conf.end {
@@ -436,7 +436,9 @@ where
             shard_num,
             &conf.sharks,
             &mut handler,
-        ) {
+        )
+        .await
+        {
             Ok(()) => (),
             Err(e) => return Err(e),
         };
@@ -468,16 +470,26 @@ where
         }
 
         remaining = largest_id - start_id + 1;
-        assert!(largest_id + 1 >= remaining);
     }
 
     Ok(())
 }
 
-fn lookup_ip_str(host: &str) -> Result<String, Error> {
-    let resolver = Resolver::from_system_conf()?;
-    let response = resolver.lookup_ip(host)?;
+async fn lookup_ip_str(host: &str) -> Result<String, Error> {
+    let resolver = TokioResolver::builder(TokioConnectionProvider::default())
+        .map_err(|e| Error::other(format!("DNS resolver error: {}", e)))?
+        .build();
+    let response = resolver.lookup_ip(host).await.map_err(|e| {
+        Error::other(format!("DNS lookup failed for {}: {}", host, e))
+    })?;
     let ip: Vec<IpAddr> = response.iter().collect();
+
+    if ip.is_empty() {
+        return Err(Error::other(format!(
+            "No IP addresses found for {}",
+            host
+        )));
+    }
 
     Ok(ip[0].to_string())
 }
@@ -488,11 +500,12 @@ fn shark_fix_common(conf: &mut config::Config, log: &Logger) {
     for shark in conf.sharks.iter() {
         if !shark.contains(conf.domain.as_str()) {
             let new_shark = format!("{}.{}", shark, conf.domain);
-            warn!(log,
-                  "Domain \"{}\" not found in storage node string:\"{}\", using \"{}\"",
-                  conf.domain,
-                  shark,
-                  new_shark
+            warn!(
+                log,
+                "Domain \"{}\" not found in storage node string:\"{}\", using \"{}\"",
+                conf.domain,
+                shark,
+                new_shark
             );
 
             new_sharks.push(new_shark);
@@ -503,7 +516,10 @@ fn shark_fix_common(conf: &mut config::Config, log: &Logger) {
     conf.sharks = new_sharks;
 }
 
-fn validate_sharks(conf: &config::Config, log: &Logger) -> Result<(), Error> {
+async fn validate_sharks(
+    conf: &config::Config,
+    log: &Logger,
+) -> Result<(), Error> {
     if conf.skip_validate_sharks {
         return Ok(());
     }
@@ -511,37 +527,34 @@ fn validate_sharks(conf: &config::Config, log: &Logger) -> Result<(), Error> {
     let sharks = &conf.sharks;
     let domain = &conf.domain;
     let shard1_moray = format!("1.moray.{}", domain);
-    let moray_ip = lookup_ip_str(shard1_moray.as_str())?;
+    let moray_ip = lookup_ip_str(shard1_moray.as_str()).await?;
     let moray_socket = format!("{}:{}", moray_ip, 2021);
     let opts = moray_objects::MethodOptions::default();
-    let mut mclient =
+    let mclient =
         MorayClient::from_str(moray_socket.as_str(), log.clone(), None)?;
 
     for shark in sharks.iter() {
         let mut count = 0;
         let filter = format!("manta_storage_id={}", shark);
-        mclient.find_objects(
-            "manta_storage",
-            filter.as_str(),
-            &opts,
-            |_| {
+        mclient
+            .find_objects("manta_storage", filter.as_str(), &opts, |_| {
                 count += 1;
                 Ok(())
-            },
-        )?;
+            })
+            .await?;
 
         if count > 1 {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!("More than one shark with name \"{}\" found", shark),
-            ));
+            return Err(Error::other(format!(
+                "More than one shark with name \"{}\" found",
+                shark
+            )));
         }
 
         if count == 0 {
-            return Err(Error::new(
-                ErrorKind::Other,
-                format!("No shark with name \"{}\" found", shark),
-            ));
+            return Err(Error::other(format!(
+                "No shark with name \"{}\" found",
+                shark
+            )));
         }
     }
 
@@ -554,7 +567,7 @@ fn validate_sharks(conf: &config::Config, log: &Logger) -> Result<(), Error> {
 /// Sharkspotter works by first getting the maximum and minimum _id and _idx
 /// for a given moray bucket (which is always "manta"), and then querying for
 /// entries in a user configurable chunk size.
-pub fn run<F>(
+pub async fn run<F>(
     config: &config::Config,
     log: Logger,
     mut handler: F,
@@ -564,11 +577,11 @@ where
 {
     let mut conf = config.clone();
     shark_fix_common(&mut conf, &log);
-    validate_sharks(&conf, &log)?;
+    validate_sharks(&conf, &log).await?;
 
     for i in conf.min_shard..=conf.max_shard {
         let moray_host = format!("{}.moray.{}", i, conf.domain);
-        let moray_ip = lookup_ip_str(moray_host.as_str())?;
+        let moray_ip = lookup_ip_str(moray_host.as_str()).await?;
         let moray_socket = format!("{}:{}", moray_ip, 2021);
 
         // TODO: MANTA-4912
@@ -578,6 +591,7 @@ where
         for id in ["_id", "_idx"].iter() {
             if let Err(e) =
                 iter_ids(id, &moray_socket, &conf, log.clone(), i, &mut handler)
+                    .await
             {
                 error!(&log, "Encountered error scanning shard {} ({})", i, e);
             }
@@ -594,12 +608,26 @@ fn start_iter_ids_thread(
     obj_tx: crossbeam_channel::Sender<SharkspotterMessage>,
     log: Logger,
     conf: config::Config,
-) -> impl Fn() -> () {
+) -> impl Fn() {
     let moray_socket = format!("{}:{}", moray_ip, 2020);
     let id_string = id_name.to_string();
 
     move || {
-        if let Err(e) = iter_ids(
+        let rt = match tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(r) => r,
+            Err(e) => {
+                error!(&log, "could not create runtime: {}", e);
+                if let Ok(mut list) = ERROR_LIST.lock() {
+                    list.push(e);
+                }
+                return;
+            }
+        };
+
+        if let Err(e) = rt.block_on(iter_ids(
             id_string.as_str(),
             &moray_socket,
             &conf,
@@ -612,11 +640,9 @@ fn start_iter_ids_thread(
                     shark: shark.to_string(),
                     shard: shard_num,
                 };
-                obj_tx
-                    .send(msg)
-                    .map_err(|e| Error::new(ErrorKind::Other, e))
+                obj_tx.send(msg).map_err(Error::other)
             },
-        ) {
+        )) {
             error!(
                 &log,
                 "Encountered error scanning shard {} ({})", shard_num, e
@@ -634,7 +660,15 @@ fn run_moray_shard_thread(
     log: &Logger,
 ) -> Result<(), Error> {
     let moray_host = format!("{}.moray.{}", shard, conf.domain);
-    let moray_ip = lookup_ip_str(moray_host.as_str())?;
+
+    // Create a runtime for DNS lookup
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| {
+            Error::other(format!("Failed to create runtime: {}", e))
+        })?;
+    let moray_ip = rt.block_on(lookup_ip_str(moray_host.as_str()))?;
 
     // TODO: MANTA-4912
     // We can have both _id and _idx, we don't have to have both, but we
@@ -673,15 +707,16 @@ fn run_direct_db_shard_thread(
         // `threaded_scheduler()` with tuned thread counts and the default
         // thread counts provided by `Runtime::new()` by 33%.  It also does not
         // create any additional LWPs.
-        let mut rt = match tokio::runtime::Builder::new()
+        let rt = match tokio::runtime::Builder::new_current_thread()
             .enable_all()
-            .basic_scheduler()
             .build()
         {
             Ok(r) => r,
             Err(e) => {
                 error!(th_log, "could not create runtime: {}", e);
-                ERROR_LIST.lock().expect("ERROR_LIST lock").push(e);
+                if let Ok(mut list) = ERROR_LIST.lock() {
+                    list.push(e);
+                }
                 return;
             }
         };
@@ -701,7 +736,9 @@ fn run_direct_db_shard_thread(
             if e.kind() != ErrorKind::BrokenPipe {
                 error!(th_log, "shard thread error: {}", e);
             }
-            ERROR_LIST.lock().expect("ERROR_LIST lock").push(e);
+            if let Ok(mut list) = ERROR_LIST.lock() {
+                list.push(e);
+            }
         }
     });
 }
@@ -720,7 +757,15 @@ pub fn run_multithreaded(
     let pool = ThreadPool::with_name("shard_scanner".into(), conf.max_threads);
 
     shark_fix_common(&mut conf, &log);
-    validate_sharks(&conf, &log)?;
+
+    // Create a runtime for shark validation
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|e| {
+            Error::other(format!("Failed to create runtime: {}", e))
+        })?;
+    rt.block_on(validate_sharks(&conf, &log))?;
 
     for shard in conf.min_shard..=conf.max_shard {
         if conf.direct_db {
@@ -733,12 +778,13 @@ pub fn run_multithreaded(
     pool.join();
 
     let mut error_strings = String::new();
-    let error_list = ERROR_LIST.lock().unwrap();
-    for error in error_list.iter() {
-        if error.kind() == ErrorKind::BrokenPipe {
-            continue;
+    if let Ok(error_list) = ERROR_LIST.lock() {
+        for error in error_list.iter() {
+            if error.kind() == ErrorKind::BrokenPipe {
+                continue;
+            }
+            error_strings = format!("{}{}\n", error_strings, error);
         }
-        error_strings = format!("{}{}\n", error_strings, error);
     }
 
     if !error_strings.is_empty() {
@@ -746,7 +792,7 @@ pub fn run_multithreaded(
             "Sharkspotter encountered the following errors:\n{}",
             error_strings
         );
-        return Err(Error::new(ErrorKind::Other, msg));
+        return Err(Error::other(msg));
     }
 
     Ok(())

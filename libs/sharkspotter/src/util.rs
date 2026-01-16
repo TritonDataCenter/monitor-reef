@@ -6,10 +6,10 @@
 
 /*
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2026 Edgecast Cloud LLC.
  */
 
-use clap::{crate_name, crate_version};
-use slog::{o, Drain, Level, LevelFilter, Logger};
+use slog::{Drain, Level, LevelFilter, Logger, o};
 use std::io;
 use std::sync::Mutex;
 
@@ -19,11 +19,11 @@ where
 {
     Logger::root(
         Mutex::new(LevelFilter::new(
-            slog_bunyan::with_name(crate_name!(), io).build(),
+            slog_bunyan::with_name(env!("CARGO_PKG_NAME"), io).build(),
             level,
         ))
         .fuse(),
-        o!("build-id" => crate_version!()),
+        o!("build-id" => env!("CARGO_PKG_VERSION")),
     )
 }
 

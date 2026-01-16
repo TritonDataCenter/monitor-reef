@@ -23,6 +23,7 @@ members = [
     "libs/cueball-tcp-stream-connection",
     "libs/libmanta",
     "libs/moray",
+    "libs/sharkspotter",
 
     # To be modernized:
     #"cli/manatee-echo-resolver",
@@ -32,7 +33,6 @@ members = [
     #"libs/rebalancer-legacy/manager",
     #"libs/rebalancer-legacy/rebalancer",
     #"libs/rust-utils",
-    #"libs/sharkspotter",
 ]
 resolver = "2"
 
