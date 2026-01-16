@@ -182,16 +182,28 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 Located in `libs/` and commented out in workspace Cargo.toml under "To be modernized":
 
-| Crate | Key Dependencies | Complexity |
-|-------|------------------|------------|
-| fast | tokio 0.1, bytes 0.4, quickcheck 0.8 | High |
-| quickcheck-helpers | quickcheck 0.8 | Low |
-| cueball | tokio 0.1, futures 0.1 | Medium |
-| cueball-* | cueball dependencies | Low-Medium |
-| libmanta | TBD | Medium |
-| moray | fast-rpc, tokio 0.1 | High |
-| sharkspotter | TBD | TBD |
-| rebalancer-legacy/* | Multiple | High |
+| Crate | Key Dependencies | Complexity | Strategy |
+|-------|------------------|------------|----------|
+| fast | tokio 0.1, bytes 0.4, quickcheck 0.8 | High | Modernize |
+| quickcheck-helpers | quickcheck 0.8 | Low | Modernize |
+| libmanta | TBD | Medium | Modernize |
+| moray | fast-rpc, cueball | High | Modernize + migrate to qorb |
+| sharkspotter | TBD | TBD | Modernize |
+| rebalancer-legacy/* | Multiple | High | Modernize |
+
+### Crates to Migrate to Qorb (Not Modernize)
+
+**IMPORTANT**: The cueball crates should NOT be modernized. Instead, migrate to qorb.
+See `conversion-plans/manta-rebalancer/cueball-to-qorb-migration.md` for details.
+
+| Crate | Qorb Replacement | Action |
+|-------|------------------|--------|
+| cueball | qorb::Pool | Delete after moray migration |
+| cueball-static-resolver | qorb::resolvers::FixedResolver | Delete after moray migration |
+| cueball-tcp-stream-connection | qorb::connectors::TcpConnector | Delete after moray migration |
+| cueball-dns-resolver | qorb::resolvers::DnsResolver | Delete (never enable) |
+| cueball-postgres-connection | qorb DieselPgConnector | Delete (never enable) |
+| cueball-manatee-primary-resolver | Port to qorb or use DNS | Port if needed, else delete |
 
 ### Crates to Inline (Not Modernize Separately)
 
@@ -202,14 +214,16 @@ Located in `libs/` and commented out in workspace Cargo.toml under "To be modern
 ## Dependency Order
 
 Some crates depend on others. Modernize in this order:
-1. `fast` (no internal deps)
-2. `quickcheck-helpers` (no internal deps)
-3. `cueball` (no internal deps)
-4. `cueball-*` resolvers/connections (depend on cueball)
-5. `libmanta` (may depend on others)
-6. `moray` (depends on fast-rpc)
-7. `sharkspotter` (depends on moray, libmanta)
-8. `rebalancer-legacy/*` (depends on many; inline rust-utils here)
+1. `fast` (no internal deps) ✅ DONE
+2. `quickcheck-helpers` (no internal deps) ✅ DONE
+3. `libmanta` (may depend on others)
+4. `moray` (depends on fast-rpc, cueball) - **migrate cueball→qorb here**
+5. `sharkspotter` (depends on moray, libmanta)
+6. `rebalancer-legacy/*` (depends on many; inline rust-utils here)
+
+**SKIP cueball modernization** - migrate to qorb instead:
+- When modernizing `moray`, replace cueball with qorb
+- Delete cueball crates after moray migration complete
 
 ## Error Handling
 

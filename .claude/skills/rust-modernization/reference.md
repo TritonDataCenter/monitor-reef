@@ -555,3 +555,120 @@ arc.clone().method();
 // After (Arc methods take &self)
 arc.method();
 ```
+
+---
+
+## Cueball → Qorb Migration
+
+**IMPORTANT**: Cueball crates are deprecated. Migrate to qorb instead of modernizing.
+See `conversion-plans/manta-rebalancer/cueball-to-qorb-migration.md` for full details.
+
+### Cargo.toml Changes
+
+**Before (cueball):**
+```toml
+[dependencies]
+cueball = { path = "../cueball" }
+cueball-static-resolver = { path = "../cueball-static-resolver" }
+cueball-tcp-stream-connection = { path = "../cueball-tcp-stream-connection" }
+```
+
+**After (qorb):**
+```toml
+[dependencies]
+qorb = { workspace = true }
+```
+
+### Pool Creation
+
+**Before (cueball - synchronous):**
+```rust
+use cueball::connection_pool::ConnectionPool;
+use cueball_static_resolver::StaticIpResolver;
+
+let resolver = StaticIpResolver::new(vec![backend1, backend2]);
+let pool = ConnectionPool::new(options, resolver, |backend| {
+    MyConnection::new(backend)
+});
+```
+
+**After (qorb - async):**
+```rust
+use qorb::pool::Pool;
+use qorb::resolvers::FixedResolver;
+use qorb::policy::Policy;
+use std::collections::HashMap;
+
+let resolver = FixedResolver::new(HashMap::from([
+    ("backend1".into(), backend1),
+    ("backend2".into(), backend2),
+]));
+let pool = Pool::new("my-pool", Box::new(resolver), connector, Policy::default())?;
+```
+
+### Connection Claiming
+
+**Before (cueball - blocking):**
+```rust
+let conn = pool.claim()?;
+conn.do_something();
+// conn returned to pool on drop
+```
+
+**After (qorb - async):**
+```rust
+let handle = pool.claim().await?;
+handle.do_something().await;
+// handle returned to pool on drop
+```
+
+### Connector Trait
+
+**Before (cueball - Connection trait on pooled object):**
+```rust
+pub trait Connection: Send + Sized + 'static {
+    type Error: error::Error;
+    fn connect(&mut self) -> Result<(), Self::Error>;
+    fn is_valid(&mut self) -> bool;
+    fn has_broken(&self) -> bool;
+    fn close(&mut self) -> Result<(), Self::Error>;
+}
+```
+
+**After (qorb - separate Connector factory):**
+```rust
+use async_trait::async_trait;
+use qorb::{backend::Backend, connectors::Connector};
+
+#[async_trait]
+impl Connector for MyConnector {
+    type Connection = MyConnection;
+
+    async fn connect(&self, backend: &Backend) -> Result<Self::Connection, qorb::Error> {
+        // Create connection to backend
+    }
+
+    async fn is_valid(&self, conn: &mut Self::Connection) -> Result<(), qorb::Error> {
+        // Health check
+        Ok(())
+    }
+}
+```
+
+### Resolver Mapping
+
+| Cueball | Qorb |
+|---------|------|
+| `StaticIpResolver::new(vec![...])` | `FixedResolver::new(HashMap::from([...]))` |
+| `DnsResolver::new(...)` | `DnsResolver::new(...)` (hickory-based) |
+| `ManateePrimaryResolver` | Port to qorb or use DNS discovery |
+
+### Key Differences
+
+| Aspect | Cueball | Qorb |
+|--------|---------|------|
+| Async model | Synchronous (blocking) | Fully async (tokio 1.x) |
+| Trait pattern | Connection on pooled object | Separate Connector factory |
+| Resolver output | Incremental add/remove messages | Full backend set via `watch::Receiver` |
+| Observability | None | 24 DTrace probes, WebSocket monitoring |
+| Dependencies | tokio 0.1, legacy DNS | tokio 1.x, hickory-resolver |

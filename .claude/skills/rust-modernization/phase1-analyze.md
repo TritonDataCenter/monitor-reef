@@ -153,13 +153,36 @@ Common orphaned test locations:
 ### 1.8 Check Dependencies on Other libs/ Crates
 
 Some crates depend on others in the monorepo:
-- `moray` depends on `fast-rpc`
-- `cueball-*` depend on `cueball`
+- `moray` depends on `fast-rpc` and `cueball`
 - `sharkspotter` depends on `moray`, `libmanta`
 
 If the dependency isn't modernized yet, either:
 1. Modernize the dependency first
 2. Or note that this crate is blocked
+
+### 1.8a Check for Cueball Usage (Qorb Migration)
+
+**IMPORTANT**: Cueball crates are being replaced with qorb, not modernized.
+
+If the crate uses cueball, identify the migration path:
+
+```bash
+# Check for cueball imports
+rg "use cueball" libs/<crate>/src/ --type rust
+rg "cueball::" libs/<crate>/src/ --type rust
+```
+
+**Cueball → Qorb mapping:**
+
+| Cueball Pattern | Qorb Equivalent |
+|-----------------|-----------------|
+| `cueball::ConnectionPool` | `qorb::Pool` |
+| `cueball_static_resolver::StaticIpResolver` | `qorb::resolvers::FixedResolver` |
+| `cueball_tcp_stream_connection` | `qorb::connectors::TcpConnector` |
+| `cueball_dns_resolver` | `qorb::resolvers::DnsResolver` |
+| `pool.claim()` (sync) | `pool.claim().await` (async) |
+
+See `conversion-plans/manta-rebalancer/cueball-to-qorb-migration.md` for full migration details.
 
 ### 1.9 Identify Panic and Error Handling Issues
 
@@ -220,5 +243,6 @@ After analysis, you should know:
 6. Any blockers (unmodernized dependencies)
 7. **Panic/error handling issues to fix**
 8. **Documentation that needs updating**
+9. **Cueball usage requiring qorb migration** (if applicable)
 
 Proceed to Phase 2 with this information.
