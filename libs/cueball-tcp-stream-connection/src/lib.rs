@@ -30,7 +30,7 @@ impl Connection for TcpStreamWrapper {
     type Error = IOError;
 
     fn connect(&mut self) -> Result<(), Self::Error> {
-        let stream = TcpStream::connect(&self.addr)?;
+        let stream = TcpStream::connect(self.addr)?;
         self.stream = Some(stream);
         self.connected = true;
         Ok(())
@@ -46,12 +46,24 @@ impl Connection for TcpStreamWrapper {
 impl Deref for TcpStreamWrapper {
     type Target = TcpStream;
 
+    /// Returns a reference to the underlying TcpStream.
+    ///
+    /// # Panics
+    /// Panics if called before `connect()` or after `close()`.
+    /// Callers must ensure the connection is established before dereferencing.
+    #[allow(clippy::unwrap_used)]
     fn deref(&self) -> &TcpStream {
-        &self.stream.as_ref().unwrap()
+        self.stream.as_ref().unwrap()
     }
 }
 
 impl DerefMut for TcpStreamWrapper {
+    /// Returns a mutable reference to the underlying TcpStream.
+    ///
+    /// # Panics
+    /// Panics if called before `connect()` or after `close()`.
+    /// Callers must ensure the connection is established before dereferencing.
+    #[allow(clippy::unwrap_used)]
     fn deref_mut(&mut self) -> &mut TcpStream {
         self.stream.as_mut().unwrap()
     }
