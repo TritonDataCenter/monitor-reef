@@ -299,6 +299,7 @@ where
             Ok(()) => {
                 let _ = resolver_rx_thread.join();
             }
+            // arch-lint: allow(no-error-swallowing) reason="Best effort during shutdown; continue cleanup even if stop message fails"
             Err(e) => {
                 warn!(
                     self.log,
@@ -712,6 +713,7 @@ where
     C: Connection,
 {
     info!(log, "Closing unwanted connection for backend {}", &key);
+    // arch-lint: allow(no-error-swallowing) reason="Best effort cleanup; connection is being discarded, log failure and continue"
     if let Err(err) = conn.close() {
         warn!(
             log,
@@ -931,10 +933,12 @@ fn add_connections<C, F>(
                 if let Some(backend) = m_backend {
                     let mut conn = create_connection(backend);
                     let backoff_config = ExponentialBackoff::default();
+                    let mut last_error: Option<String> = None;
                     let connect_result = retry(backoff_config, || {
                         debug!(log, "attempting to connect with retry...");
                         conn.connect().map_err(|e| {
                             error!(log, "Retrying connection: {}", e);
+                            last_error = Some(e.to_string());
                             backoff::Error::transient(())
                         })
                     });
@@ -963,9 +967,15 @@ fn add_connections<C, F>(
                             protected_data.condvar_notify();
                         }
                         Err(_) => {
+                            // Decrement pending_connections since this
+                            // connection will not be established
+                            connection_data.stats.pending_connections -=
+                                1.into();
                             error!(
                                 log,
-                                "Giving up trying to establish connection"
+                                "Giving up trying to establish connection. \
+                                 Last error: {}",
+                                last_error.as_deref().unwrap_or("unknown")
                             );
                         }
                     }
