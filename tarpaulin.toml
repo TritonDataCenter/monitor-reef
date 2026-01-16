@@ -24,7 +24,6 @@ exclude-files = [
     "cli/manatee-echo-resolver/*",
     "libs/cueball-manatee-primary-resolver/*",
     "libs/cueball-postgres-connection/*",
-    "libs/libmanta/*",
     "libs/moray/*",
     "libs/rebalancer-legacy/agent/*",
     "libs/rebalancer-legacy/manager/*",

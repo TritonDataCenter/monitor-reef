@@ -1,7 +1,5 @@
 // Copyright 2019 Joyent, Inc.
-
-#[macro_use]
-extern crate diesel;
+// Copyright 2026 Edgecast Cloud LLC.
 
 pub mod moray;
 mod util;

@@ -1,17 +1,13 @@
 // Copyright 2019 Joyent, Inc.
+// Copyright 2026 Edgecast Cloud LLC.
 
 use crate::util;
-use base64;
-use diesel::sql_types;
-use md5;
+use base64::prelude::*;
+use diesel::{AsExpression, FromSqlRow, sql_types};
 use quickcheck::{Arbitrary, Gen};
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use uuid::Uuid;
-
-#[cfg(any(feature = "sqlite", feature = "postgres"))]
-use std::io::Write;
 
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 use diesel::{
@@ -22,8 +18,8 @@ use diesel::{
 #[cfg(feature = "sqlite")]
 use diesel::sqlite::Sqlite;
 
-#[cfg(feature = "sqlite")]
-use diesel::backend;
+#[cfg(feature = "postgres")]
+use diesel::pg::{Pg, PgValue};
 
 #[derive(Deserialize, Serialize, PartialEq, Debug, Clone)]
 #[serde(tag = "type")]
@@ -46,7 +42,7 @@ pub enum ObjectType {
     AsExpression,
 )]
 #[serde(rename_all = "camelCase")]
-#[sql_type = "sql_types::Text"]
+#[diesel(sql_type = sql_types::Text)]
 pub struct MantaObject {
     pub headers: Value,
     pub key: String,
@@ -82,13 +78,13 @@ pub struct MantaObject {
 
 #[cfg(feature = "sqlite")]
 impl ToSql<sql_types::Text, Sqlite> for MantaObject {
-    fn to_sql<W: Write>(
-        &self,
-        out: &mut Output<W, Sqlite>,
+    fn to_sql<'b>(
+        &'b self,
+        out: &mut Output<'b, '_, Sqlite>,
     ) -> serialize::Result {
-        let manta_str = serde_json::to_string(&self).unwrap();
-        out.write_all(manta_str.as_bytes())?;
-
+        let manta_str = serde_json::to_string(&self)
+            .map_err(|e| format!("Failed to serialize MantaObject: {}", e))?;
+        out.set_value(manta_str);
         Ok(IsNull::No)
     }
 }
@@ -96,33 +92,32 @@ impl ToSql<sql_types::Text, Sqlite> for MantaObject {
 #[cfg(feature = "sqlite")]
 impl FromSql<sql_types::Text, Sqlite> for MantaObject {
     fn from_sql(
-        bytes: Option<backend::RawValue<Sqlite>>,
+        bytes: <Sqlite as diesel::backend::Backend>::RawValue<'_>,
     ) -> deserialize::Result<Self> {
-        let manta_obj: MantaObject =
-            serde_json::from_str(not_none!(bytes).read_text())?;
+        let text =
+            <String as FromSql<sql_types::Text, Sqlite>>::from_sql(bytes)?;
+        let manta_obj: MantaObject = serde_json::from_str(&text)?;
         Ok(manta_obj)
     }
 }
 
 #[cfg(feature = "postgres")]
-use diesel::pg::{Pg, PgValue};
-
-#[cfg(feature = "postgres")]
 impl ToSql<sql_types::Text, Pg> for MantaObject {
-    fn to_sql<W: Write>(&self, out: &mut Output<W, Pg>) -> serialize::Result {
-        let manta_str = serde_json::to_string(&self).unwrap();
-        out.write_all(manta_str.as_bytes())?;
-
-        Ok(IsNull::No)
+    fn to_sql<'b>(&'b self, out: &mut Output<'b, '_, Pg>) -> serialize::Result {
+        let manta_str = serde_json::to_string(&self)
+            .map_err(|e| format!("Failed to serialize MantaObject: {}", e))?;
+        <String as ToSql<sql_types::Text, Pg>>::to_sql(
+            &manta_str,
+            &mut out.reborrow(),
+        )
     }
 }
 
 #[cfg(feature = "postgres")]
 impl FromSql<sql_types::Text, Pg> for MantaObject {
-    fn from_sql(bytes: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let t: PgValue = not_none!(bytes);
-        let t_str = String::from_utf8_lossy(t.as_bytes());
-        let manta_obj: MantaObject = serde_json::from_str(&t_str)?;
+    fn from_sql(bytes: PgValue<'_>) -> deserialize::Result<Self> {
+        let text = <String as FromSql<sql_types::Text, Pg>>::from_sql(bytes)?;
+        let manta_obj: MantaObject = serde_json::from_str(&text)?;
         Ok(manta_obj)
     }
 }
@@ -150,8 +145,8 @@ pub struct MantaDirectory {
 
 // Implement Arbitrary traits for testing
 impl Arbitrary for MantaObjectShark {
-    fn arbitrary<G: Gen>(g: &mut G) -> MantaObjectShark {
-        let len = g.gen_range(1, 100) as usize;
+    fn arbitrary(g: &mut Gen) -> MantaObjectShark {
+        let len = (u8::arbitrary(g) % 99 + 1) as usize;
         let msid = format!(
             "{}.{}.{}",
             len,
@@ -166,8 +161,8 @@ impl Arbitrary for MantaObjectShark {
 }
 
 impl Arbitrary for MantaObject {
-    fn arbitrary<G: Gen>(g: &mut G) -> MantaObject {
-        let len = g.gen::<u8>() as usize;
+    fn arbitrary(g: &mut Gen) -> MantaObject {
+        let len = u8::arbitrary(g) as usize;
 
         let mut headers_map = Map::new();
         headers_map.insert(
@@ -187,10 +182,11 @@ impl Arbitrary for MantaObject {
 
         // We don't want negative numbers here, but these fields are
         // indexes and postgres bigint's the max of which is i64::MAX.
-        let mtime: i64 = g.gen_range(0, std::i64::MAX);
-        let vnode: i64 = g.gen_range(0, std::i64::MAX);
+        // Use saturating_abs to avoid overflow panic when value is i64::MIN.
+        let mtime: i64 = i64::arbitrary(g).saturating_abs();
+        let vnode: i64 = i64::arbitrary(g).saturating_abs();
 
-        let content_length: u64 = g.gen();
+        let content_length: u64 = u64::arbitrary(g);
         let headers = Value::Object(headers_map);
         let key = util::random_string(g, len);
         let creator = util::random_string(g, len);
@@ -200,7 +196,7 @@ impl Arbitrary for MantaObject {
         let roles: Vec<String> = vec![util::random_string(g, len)];
 
         let md5_sum = md5::compute(util::random_string(g, len));
-        let content_md5: String = base64::encode(&*md5_sum);
+        let content_md5: String = BASE64_STANDARD.encode(*md5_sum);
 
         let etag: String = Uuid::new_v4().to_string();
         let content_type: String = util::random_string(g, len);
@@ -237,7 +233,6 @@ mod tests {
     use super::*;
     use quickcheck::quickcheck;
     use regex::Regex;
-    use serde_json;
     use std::str::FromStr;
 
     quickcheck!(

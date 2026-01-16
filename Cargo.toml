@@ -21,12 +21,12 @@ members = [
     "libs/cueball",
     "libs/cueball-static-resolver",
     "libs/cueball-tcp-stream-connection",
+    "libs/libmanta",
 
     # To be modernized:
     #"cli/manatee-echo-resolver",
     #"libs/cueball-manatee-primary-resolver",
     #"libs/cueball-postgres-connection",
-    #"libs/libmanta",
     #"libs/moray",
     #"libs/rebalancer-legacy/agent",
     #"libs/rebalancer-legacy/manager",

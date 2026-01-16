@@ -1,13 +1,13 @@
 // Copyright 2019 Joyent, Inc.
+// Copyright 2026 Edgecast Cloud LLC.
 
-use quickcheck::Gen;
-use rand::distributions::Alphanumeric;
-use rand::Rng;
-use std::iter;
+use quickcheck::{Arbitrary, Gen};
 
-pub fn random_string<G: Gen>(g: &mut G, len: usize) -> String {
-    iter::repeat(())
-        .map(|()| g.sample(Alphanumeric))
-        .take(len)
+pub fn random_string(g: &mut Gen, len: usize) -> String {
+    (0..len)
+        .map(|_| {
+            let c = u8::arbitrary(g);
+            (b'a' + (c % 26)) as char
+        })
         .collect()
 }
