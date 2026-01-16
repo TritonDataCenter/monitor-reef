@@ -402,13 +402,7 @@ where
     let mut start_id = conf.begin;
     let mut end_id = conf.begin + conf.chunk_size - 1;
     let mut largest_id =
-        match find_largest_id_value(&log, &mut mclient, id_name).await {
-            Ok(id) => id,
-            Err(e) => {
-                error!(&log, "Error finding largest ID: {}, using 0", e);
-                0
-            }
-        };
+        find_largest_id_value(&log, &mut mclient, id_name).await?;
 
     // clamp largest_id to conf.end if it is set and less than the largest found
     if conf.end > 0 && conf.end < largest_id {
@@ -579,6 +573,8 @@ where
     shark_fix_common(&mut conf, &log);
     validate_sharks(&conf, &log).await?;
 
+    let mut errors = Vec::new();
+
     for i in conf.min_shard..=conf.max_shard {
         let moray_host = format!("{}.moray.{}", i, conf.domain);
         let moray_ip = lookup_ip_str(moray_host.as_str()).await?;
@@ -594,8 +590,16 @@ where
                     .await
             {
                 error!(&log, "Encountered error scanning shard {} ({})", i, e);
+                errors.push(format!("shard {} ({}): {}", i, id, e));
             }
         }
+    }
+
+    if !errors.is_empty() {
+        return Err(Error::other(format!(
+            "Errors encountered during scan:\n{}",
+            errors.join("\n")
+        )));
     }
 
     Ok(())
@@ -620,8 +624,9 @@ fn start_iter_ids_thread(
             Ok(r) => r,
             Err(e) => {
                 error!(&log, "could not create runtime: {}", e);
-                if let Ok(mut list) = ERROR_LIST.lock() {
-                    list.push(e);
+                match ERROR_LIST.lock() {
+                    Ok(mut list) => list.push(e),
+                    Err(poisoned) => poisoned.into_inner().push(e),
                 }
                 return;
             }
@@ -647,7 +652,10 @@ fn start_iter_ids_thread(
                 &log,
                 "Encountered error scanning shard {} ({})", shard_num, e
             );
-            // TODO: MANTA-5360
+            match ERROR_LIST.lock() {
+                Ok(mut list) => list.push(e),
+                Err(poisoned) => poisoned.into_inner().push(e),
+            }
         }
     }
 }
@@ -714,8 +722,9 @@ fn run_direct_db_shard_thread(
             Ok(r) => r,
             Err(e) => {
                 error!(th_log, "could not create runtime: {}", e);
-                if let Ok(mut list) = ERROR_LIST.lock() {
-                    list.push(e);
+                match ERROR_LIST.lock() {
+                    Ok(mut list) => list.push(e),
+                    Err(poisoned) => poisoned.into_inner().push(e),
                 }
                 return;
             }
@@ -736,8 +745,9 @@ fn run_direct_db_shard_thread(
             if e.kind() != ErrorKind::BrokenPipe {
                 error!(th_log, "shard thread error: {}", e);
             }
-            if let Ok(mut list) = ERROR_LIST.lock() {
-                list.push(e);
+            match ERROR_LIST.lock() {
+                Ok(mut list) => list.push(e),
+                Err(poisoned) => poisoned.into_inner().push(e),
             }
         }
     });
@@ -751,6 +761,12 @@ pub fn run_multithreaded(
     log: Logger,
     obj_tx: crossbeam_channel::Sender<SharkspotterMessage>,
 ) -> Result<(), Error> {
+    // Clear ERROR_LIST from any previous runs to avoid accumulating stale errors
+    match ERROR_LIST.lock() {
+        Ok(mut list) => list.clear(),
+        Err(poisoned) => poisoned.into_inner().clear(),
+    }
+
     let mut conf = config.clone();
     config::normalize_config(&mut conf);
 
@@ -778,13 +794,15 @@ pub fn run_multithreaded(
     pool.join();
 
     let mut error_strings = String::new();
-    if let Ok(error_list) = ERROR_LIST.lock() {
-        for error in error_list.iter() {
-            if error.kind() == ErrorKind::BrokenPipe {
-                continue;
-            }
-            error_strings = format!("{}{}\n", error_strings, error);
+    let error_list = match ERROR_LIST.lock() {
+        Ok(list) => list,
+        Err(poisoned) => poisoned.into_inner(),
+    };
+    for error in error_list.iter() {
+        if error.kind() == ErrorKind::BrokenPipe {
+            continue;
         }
+        error_strings = format!("{}{}\n", error_strings, error);
     }
 
     if !error_strings.is_empty() {

@@ -14,6 +14,7 @@ use futures::{TryStreamExt, pin_mut};
 use serde_json::{self, Value};
 use slog::{Logger, debug, error, trace, warn};
 use std::io::{Error, ErrorKind};
+use std::sync::{Arc, Mutex};
 use tokio_postgres::{NoTls, Row};
 
 use crate::config::Config;
@@ -72,12 +73,18 @@ pub async fn get_objects_from_shard(
     let task_host_name = shard_host_name.clone();
     let task_log = log.clone();
 
+    // Store connection errors so they can be checked at the end
+    let conn_error: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+    let conn_error_clone = conn_error.clone();
+
     tokio::spawn(async move {
         if let Err(e) = connection.await {
-            error!(
-                task_log,
-                "could not communicate with {}: {}", task_host_name, e
-            );
+            let msg =
+                format!("could not communicate with {}: {}", task_host_name, e);
+            error!(task_log, "{}", msg);
+            if let Ok(mut err) = conn_error_clone.lock() {
+                *err = Some(msg);
+            }
         }
     });
 
@@ -105,6 +112,13 @@ pub async fn get_objects_from_shard(
             &obj_tx,
             &log,
         )?;
+    }
+
+    // Check if the connection task encountered an error
+    if let Ok(err) = conn_error.lock()
+        && let Some(msg) = err.as_ref()
+    {
+        return Err(Error::other(msg.clone()));
     }
 
     Ok(())
