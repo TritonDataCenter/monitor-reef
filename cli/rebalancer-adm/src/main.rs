@@ -11,7 +11,7 @@
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use rebalancer_manager_client::{types, Client};
+use rebalancer_manager_client::{Client, types};
 
 #[derive(Parser)]
 #[command(name = "rebalancer-adm")]
@@ -81,9 +81,11 @@ async fn main() -> Result<()> {
     match cli.command {
         Commands::Job { action } => match action {
             JobAction::List => {
-                let response = client.list_jobs().send().await.map_err(|e| {
-                    anyhow::anyhow!("Failed to list jobs: {}", e)
-                })?;
+                let response = client
+                    .list_jobs()
+                    .send()
+                    .await
+                    .map_err(|e| anyhow::anyhow!("Failed to list jobs: {}", e))?;
 
                 let jobs = response.into_inner();
 
@@ -109,9 +111,7 @@ async fn main() -> Result<()> {
                     .uuid(&uuid)
                     .send()
                     .await
-                    .map_err(|e| {
-                        anyhow::anyhow!("Failed to get job '{}': {}", uuid, e)
-                    })?;
+                    .map_err(|e| anyhow::anyhow!("Failed to get job '{}': {}", uuid, e))?;
 
                 let status = response.into_inner();
 
@@ -154,9 +154,7 @@ async fn main() -> Result<()> {
                     .uuid(&uuid)
                     .send()
                     .await
-                    .map_err(|e| {
-                        anyhow::anyhow!("Failed to retry job '{}': {}", uuid, e)
-                    })?;
+                    .map_err(|e| anyhow::anyhow!("Failed to retry job '{}': {}", uuid, e))?;
 
                 let new_uuid = response.into_inner();
                 println!("Retry job created: {}", new_uuid);
@@ -164,12 +162,10 @@ async fn main() -> Result<()> {
 
             JobAction::Create { job_type } => match job_type {
                 CreateJobType::Evacuate { shark, max_objects } => {
-                    let payload = types::JobPayload::Evacuate(
-                        types::EvacuateJobPayload {
-                            from_shark: shark.clone(),
-                            max_objects,
-                        },
-                    );
+                    let payload = types::JobPayload::Evacuate(types::EvacuateJobPayload {
+                        from_shark: shark.clone(),
+                        max_objects,
+                    });
 
                     let response = client
                         .create_job()
@@ -177,11 +173,7 @@ async fn main() -> Result<()> {
                         .send()
                         .await
                         .map_err(|e| {
-                            anyhow::anyhow!(
-                                "Failed to create evacuate job for '{}': {}",
-                                shark,
-                                e
-                            )
+                            anyhow::anyhow!("Failed to create evacuate job for '{}': {}", shark, e)
                         })?;
 
                     let job_uuid = response.into_inner();
@@ -209,5 +201,75 @@ fn format_state(state: &types::JobState) -> &'static str {
         types::JobState::Stopped => "Stopped",
         types::JobState::Complete => "Complete",
         types::JobState::Failed => "Failed",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use assert_cmd::Command;
+    use escargot::CargoBuild;
+    use predicates::prelude::*;
+
+    /// Build the binary and return a Command to run it.
+    fn build_cmd() -> Command {
+        let cargo_build = CargoBuild::new()
+            .bin("rebalancer-adm")
+            .current_release()
+            .run()
+            .expect("failed to build rebalancer-adm");
+        Command::from_std(cargo_build.command())
+    }
+
+    /// Test that running with no arguments shows usage information.
+    #[test]
+    fn no_params() {
+        build_cmd()
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("Usage:"))
+            .stderr(predicate::str::contains("rebalancer-adm"));
+    }
+
+    /// Test that `job list` rejects unexpected arguments.
+    #[test]
+    fn job_list_extra_params() {
+        build_cmd()
+            .args(["job", "list", "extra"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("unexpected argument"));
+    }
+
+    /// Test that `job get` requires a UUID argument.
+    #[test]
+    fn job_get_no_params() {
+        build_cmd()
+            .args(["job", "get"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("<UUID>").or(predicate::str::contains("<uuid>")))
+            .stderr(predicate::str::contains("required"));
+    }
+
+    /// Test that `job create` shows subcommand help when no job type given.
+    #[test]
+    fn job_create_no_params() {
+        build_cmd()
+            .args(["job", "create"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("Usage:"))
+            .stderr(predicate::str::contains("evacuate"));
+    }
+
+    /// Test that `job create evacuate` requires --shark flag.
+    #[test]
+    fn job_evacuate_no_params() {
+        build_cmd()
+            .args(["job", "create", "evacuate"])
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("--shark"))
+            .stderr(predicate::str::contains("required"));
     }
 }

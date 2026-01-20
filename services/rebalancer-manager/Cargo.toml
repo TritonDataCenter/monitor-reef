@@ -14,6 +14,9 @@ description = "Rebalancer manager service - orchestrates object evacuation jobs"
 [lints]
 workspace = true
 
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "rebalancer-manager"
 path = "src/main.rs"
@@ -38,3 +41,4 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
+wiremock = { workspace = true }

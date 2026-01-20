@@ -14,6 +14,10 @@ description = "Rebalancer agent service - downloads objects to storage nodes"
 [lints]
 workspace = true
 
+[lib]
+name = "rebalancer_agent"
+path = "src/lib.rs"
+
 [[bin]]
 name = "rebalancer-agent"
 path = "src/main.rs"
@@ -40,4 +44,9 @@ tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+base64 = "0.22"
+md-5 = "0.10"
+reqwest = { workspace = true }
 tempfile = "3"
+uuid = { workspace = true, features = ["v4"] }
+wiremock = { workspace = true }

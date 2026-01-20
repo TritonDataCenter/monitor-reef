@@ -55,9 +55,10 @@ impl RebalancerManagerApi for RebalancerManagerImpl {
 
         tracing::info!(payload = ?payload, "Received job creation request");
 
-        let job_id = ctx.create_job(payload).await.map_err(|e| {
-            HttpError::for_internal_error(format!("Failed to create job: {}", e))
-        })?;
+        let job_id = ctx
+            .create_job(payload)
+            .await
+            .map_err(|e| HttpError::for_internal_error(format!("Failed to create job: {}", e)))?;
 
         Ok(HttpResponseOk(job_id))
     }
@@ -67,9 +68,10 @@ impl RebalancerManagerApi for RebalancerManagerImpl {
     ) -> Result<HttpResponseOk<Vec<JobDbEntry>>, HttpError> {
         let ctx = rqctx.context();
 
-        let jobs = ctx.list_jobs().await.map_err(|e| {
-            HttpError::for_internal_error(format!("Failed to list jobs: {}", e))
-        })?;
+        let jobs = ctx
+            .list_jobs()
+            .await
+            .map_err(|e| HttpError::for_internal_error(format!("Failed to list jobs: {}", e)))?;
 
         Ok(HttpResponseOk(jobs))
     }
@@ -140,9 +142,10 @@ impl RebalancerManagerApi for RebalancerManagerImpl {
             HttpError::for_bad_request(None, format!("Invalid UUID format: {}", uuid))
         })?;
 
-        let new_job_id = ctx.retry_job(&uuid).await.map_err(|e| {
-            HttpError::for_internal_error(format!("Failed to retry job: {}", e))
-        })?;
+        let new_job_id = ctx
+            .retry_job(&uuid)
+            .await
+            .map_err(|e| HttpError::for_internal_error(format!("Failed to retry job: {}", e)))?;
 
         tracing::info!(
             original_job_id = %uuid,
@@ -165,6 +168,7 @@ fn print_version() {
 async fn main() -> Result<()> {
     // Handle --version and --help
     let args: Vec<String> = std::env::args().collect();
+    #[allow(clippy::never_loop)] // Intentional: early return on first recognized arg
     for arg in &args[1..] {
         match arg.as_str() {
             "-V" | "--version" => {
@@ -219,9 +223,10 @@ async fn main() -> Result<()> {
         .context("Failed to create API context")?;
 
     // Get API description from the trait implementation
-    let api =
-        rebalancer_manager_api::rebalancer_manager_api_mod::api_description::<RebalancerManagerImpl>()
-            .map_err(|e| anyhow::anyhow!("Failed to create API description: {}", e))?;
+    let api = rebalancer_manager_api::rebalancer_manager_api_mod::api_description::<
+        RebalancerManagerImpl,
+    >()
+    .map_err(|e| anyhow::anyhow!("Failed to create API description: {}", e))?;
 
     // Configure the server
     let bind_address = std::env::var("BIND_ADDRESS")

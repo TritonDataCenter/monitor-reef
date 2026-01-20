@@ -14,8 +14,8 @@ use uuid::Uuid;
 
 use rebalancer_types::{AssignmentPayload, StorageNode, Task, TaskStatus};
 
-use super::types::EvacuateObject;
 use super::AssignmentId;
+use super::types::EvacuateObject;
 
 /// State of an assignment in the evacuation process
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -62,6 +62,7 @@ pub struct Assignment {
     pub state: AssignmentState,
 }
 
+#[allow(dead_code)]
 impl Assignment {
     /// Create a new assignment for a destination shark
     pub fn new(dest_shark: StorageNode) -> Self {
@@ -82,8 +83,8 @@ impl Assignment {
         // owner, md5sum, source shark, etc.
         let task = Task {
             object_id: eobj.id.clone(),
-            owner: String::new(),     // Would come from MantaObject
-            md5sum: String::new(),    // Would come from MantaObject
+            owner: String::new(),  // Would come from MantaObject
+            md5sum: String::new(), // Would come from MantaObject
             source: StorageNode {
                 // Would be extracted from MantaObject.sharks
                 manta_storage_id: String::new(),

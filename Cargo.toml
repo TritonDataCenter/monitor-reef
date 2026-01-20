@@ -62,7 +62,7 @@ anyhow = "1.0"
 camino = "1.1"
 cargo_toml = "0.22"
 chrono = "0.4"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 dropshot = { version = "0.16" }
 dropshot-api-manager = "0.3"
 dropshot-api-manager-types = "0.3"
@@ -84,3 +84,10 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 qorb = "0.4"
 uuid = { version = "1.17", features = ["v4"] }
+
+# Test dependencies
+assert_cmd = "2.0"
+escargot = "0.5"
+predicates = "3.1"
+httptest = "0.16"
+wiremock = "0.6"

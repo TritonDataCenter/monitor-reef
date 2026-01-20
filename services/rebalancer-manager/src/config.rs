@@ -56,12 +56,12 @@ impl ManagerConfig {
     /// Return a display-safe version of the database URL (password masked)
     pub fn database_url_display(&self) -> String {
         // Simple masking - replace password portion
-        if let Some(at_pos) = self.database_url.find('@') {
-            if let Some(colon_pos) = self.database_url[..at_pos].rfind(':') {
-                let prefix = &self.database_url[..colon_pos + 1];
-                let suffix = &self.database_url[at_pos..];
-                return format!("{}****{}", prefix, suffix);
-            }
+        if let Some(at_pos) = self.database_url.find('@')
+            && let Some(colon_pos) = self.database_url[..at_pos].rfind(':')
+        {
+            let prefix = &self.database_url[..colon_pos + 1];
+            let suffix = &self.database_url[at_pos..];
+            return format!("{}****{}", prefix, suffix);
         }
         self.database_url.clone()
     }

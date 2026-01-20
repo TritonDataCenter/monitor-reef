@@ -40,10 +40,10 @@ impl ApiContext {
             config.http_timeout_secs,
         )?);
 
-        // Do initial refresh of storinfo cache
-        if let Err(e) = storinfo.refresh().await {
-            tracing::warn!(error = %e, "Failed initial storinfo refresh (will retry later)");
-        }
+        // Do initial refresh of storinfo cache - non-fatal, background task will retry
+        let _ = storinfo.refresh().await.inspect_err(|e| {
+            tracing::warn!(error = %e, "Failed initial storinfo refresh, background task will retry");
+        });
 
         Ok(Self {
             db,

@@ -40,7 +40,7 @@ impl ApiContext {
 
     /// Check if an assignment exists
     pub async fn assignment_exists(&self, uuid: &str) -> bool {
-        self.storage.exists(uuid).await.unwrap_or(false)
+        self.storage.has_assignment(uuid).await.unwrap_or(false)
     }
 
     /// Create a new assignment and start processing it

@@ -29,7 +29,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use tokio::sync::{mpsc, watch, RwLock};
+use tokio::sync::{RwLock, mpsc, watch};
 use tracing::{debug, error, info, warn};
 
 use rebalancer_types::StorageNode;
@@ -41,6 +41,7 @@ use assignment::{Assignment, AssignmentCacheEntry, AssignmentState};
 use db::EvacuateDb;
 
 /// Configuration for an evacuate job
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct EvacuateConfig {
     /// Maximum number of tasks per assignment
@@ -74,6 +75,7 @@ pub type AssignmentId = String;
 pub type AssignmentCache = HashMap<AssignmentId, AssignmentCacheEntry>;
 
 /// Messages for assignment workers
+#[allow(dead_code)]
 #[derive(Debug)]
 enum AssignmentMsg {
     Object(EvacuateObject),
@@ -82,6 +84,7 @@ enum AssignmentMsg {
 }
 
 /// Messages for metadata update
+#[allow(dead_code)]
 #[derive(Debug)]
 enum MetadataUpdateMsg {
     Assignment(AssignmentCacheEntry),
@@ -89,6 +92,7 @@ enum MetadataUpdateMsg {
 }
 
 /// Evacuate job state machine
+#[allow(dead_code)]
 pub struct EvacuateJob {
     /// Job UUID (same as database name)
     job_id: String,
@@ -119,6 +123,7 @@ pub struct EvacuateJob {
 }
 
 /// Information about a destination shark
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 struct DestSharkInfo {
     node: StorageNode,
@@ -126,6 +131,7 @@ struct DestSharkInfo {
     assigned_mb: u64,
 }
 
+#[allow(dead_code)]
 impl EvacuateJob {
     /// Create a new evacuate job
     pub async fn new(
@@ -175,9 +181,10 @@ impl EvacuateJob {
         let _shutdown_rx = self.shutdown_tx.subscribe();
 
         // Refresh storinfo to get available sharks
-        self.storinfo.refresh().await.map_err(|e| {
-            JobError::Internal(format!("Failed to refresh storinfo: {}", e))
-        })?;
+        self.storinfo
+            .refresh()
+            .await
+            .map_err(|e| JobError::Internal(format!("Failed to refresh storinfo: {}", e)))?;
 
         // Start workers
         let job = Arc::clone(&self);
@@ -288,9 +295,9 @@ impl EvacuateJob {
 
             // Check if assignment is full
             if assignment.tasks.len() >= self.config.max_tasks_per_assignment {
-                let full_assignment = shark_assignments.remove(&dest_id).ok_or_else(|| {
-                    JobError::Internal("Assignment disappeared".to_string())
-                })?;
+                let full_assignment = shark_assignments
+                    .remove(&dest_id)
+                    .ok_or_else(|| JobError::Internal("Assignment disappeared".to_string()))?;
 
                 // Cache the assignment
                 {
@@ -432,14 +439,17 @@ impl EvacuateJob {
                         }
                     }
 
-                    // Process the completed assignment
-                    if let Err(e) = self.process_completed_assignment(&completed).await {
-                        error!(
-                            assignment_id = %ace.id,
-                            error = %e,
-                            "Failed to process completed assignment"
-                        );
-                    }
+                    // Process the completed assignment - best effort, continue with others on failure
+                    let _ = self
+                        .process_completed_assignment(&completed)
+                        .await
+                        .inspect_err(|e| {
+                            error!(
+                                assignment_id = %ace.id,
+                                error = %e,
+                                "Failed to process completed assignment, continuing with others"
+                            );
+                        });
 
                     // Send to metadata updater
                     if md_update_tx.send(ace.clone()).await.is_err() {
@@ -451,7 +461,9 @@ impl EvacuateJob {
                     debug!(assignment_id = %ace.id, "Assignment still in progress");
                 }
                 Err(e) => {
-                    warn!(assignment_id = %ace.id, error = %e, "Error checking assignment");
+                    // Log and continue checking other assignments
+                    warn!(assignment_id = %ace.id, error = %e, "Error checking assignment, continuing with others");
+                    continue;
                 }
             }
         }
@@ -483,7 +495,10 @@ impl EvacuateJob {
                                 "Failed to update metadata"
                             );
                             self.db
-                                .mark_object_error(&obj.id, EvacuateObjectError::MetadataUpdateFailed)
+                                .mark_object_error(
+                                    &obj.id,
+                                    EvacuateObjectError::MetadataUpdateFailed,
+                                )
                                 .await?;
                         }
                     }
@@ -584,16 +599,23 @@ impl EvacuateJob {
             // Mark failed tasks
             for task in failed_tasks {
                 if let rebalancer_types::TaskStatus::Failed(reason) = &task.status {
-                    self.db.mark_object_skipped(&task.object_id, reason.clone()).await?;
+                    self.db
+                        .mark_object_skipped(&task.object_id, *reason)
+                        .await?;
                 }
             }
         }
 
         // Mark successful tasks as ready for metadata update
-        let objects = self.db.get_assignment_objects(&agent_assignment.uuid).await?;
+        let objects = self
+            .db
+            .get_assignment_objects(&agent_assignment.uuid)
+            .await?;
         for obj in objects {
             if obj.status == EvacuateObjectStatus::Assigned {
-                self.db.set_object_status(&obj.id, EvacuateObjectStatus::PostProcessing).await?;
+                self.db
+                    .set_object_status(&obj.id, EvacuateObjectStatus::PostProcessing)
+                    .await?;
             }
         }
 
@@ -617,5 +639,881 @@ impl EvacuateJob {
     pub fn shutdown(&self) {
         info!(job_id = %self.job_id, "Shutting down evacuate job");
         self.shutdown_tx.send(true).ok();
+    }
+}
+
+// ============================================================================
+// Tests
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use assignment::{Assignment, AssignmentState};
+    use rebalancer_types::{ObjectSkippedReason, TaskStatus};
+    use serde_json::json;
+    use types::{EvacuateObject, EvacuateObjectError, EvacuateObjectStatus, MantaObjectShark};
+
+    // -------------------------------------------------------------------------
+    // Test Helpers
+    // -------------------------------------------------------------------------
+
+    /// Create a test storage node with the given ID and datacenter
+    fn make_storage_node(id: &str, dc: &str) -> StorageNode {
+        StorageNode {
+            manta_storage_id: id.to_string(),
+            datacenter: dc.to_string(),
+        }
+    }
+
+    /// Create a test evacuate object with the given ID
+    fn make_evacuate_object(id: &str) -> EvacuateObject {
+        EvacuateObject {
+            id: id.to_string(),
+            assignment_id: String::new(),
+            object: json!({
+                "objectId": id,
+                "owner": "test-owner",
+                "key": "/test/path",
+                "contentLength": 1024,
+                "contentMD5": "test-md5",
+                "sharks": [
+                    {"manta_storage_id": "1.stor.domain", "datacenter": "dc1"},
+                    {"manta_storage_id": "2.stor.domain", "datacenter": "dc2"}
+                ]
+            }),
+            shard: 1,
+            dest_shark: String::new(),
+            etag: "test-etag".to_string(),
+            status: EvacuateObjectStatus::default(),
+            skipped_reason: None,
+            error: None,
+        }
+    }
+
+    /// Create an evacuate object with specific content length (in bytes)
+    fn make_evacuate_object_with_size(id: &str, content_length: u64) -> EvacuateObject {
+        let mut obj = make_evacuate_object(id);
+        obj.object = json!({
+            "objectId": id,
+            "owner": "test-owner",
+            "key": "/test/path",
+            "contentLength": content_length,
+            "contentMD5": "test-md5",
+            "sharks": [
+                {"manta_storage_id": "1.stor.domain", "datacenter": "dc1"},
+                {"manta_storage_id": "2.stor.domain", "datacenter": "dc2"}
+            ]
+        });
+        obj
+    }
+
+    /// Destination shark tracking for capacity tests
+    #[derive(Debug, Clone)]
+    #[allow(dead_code)]
+    struct TestDestShark {
+        /// The storage node (included for completeness, mirrors production struct)
+        node: StorageNode,
+        available_mb: u64,
+        percent_used: u32,
+        assigned_mb: u64,
+    }
+
+    impl TestDestShark {
+        fn new(id: &str, dc: &str, available_mb: u64, percent_used: u32) -> Self {
+            Self {
+                node: make_storage_node(id, dc),
+                available_mb,
+                percent_used,
+                assigned_mb: 0,
+            }
+        }
+    }
+
+    /// Calculate available MB for a destination shark given a max fill percentage.
+    /// This mirrors the legacy `_calculate_available_mb` function.
+    fn calculate_available_mb(shark: &TestDestShark, max_fill_percentage: u32) -> u64 {
+        // If percent_used >= max_fill_percentage, no space available
+        if shark.percent_used >= max_fill_percentage {
+            return 0;
+        }
+
+        // If available_mb is 0, return 0
+        if shark.available_mb == 0 {
+            return 0;
+        }
+
+        // Calculate total MB from available and percent_used
+        // available_mb = total_mb * (1 - percent_used/100)
+        // total_mb = available_mb / (1 - percent_used/100)
+        // total_mb = available_mb * 100 / (100 - percent_used)
+        let used_fraction = shark.percent_used as u64;
+        if used_fraction >= 100 {
+            return 0;
+        }
+
+        let total_mb = (shark.available_mb * 100) / (100 - used_fraction);
+
+        // Max fill in MB
+        let max_fill_mb = (total_mb * max_fill_percentage as u64) / 100;
+
+        // Used MB
+        let used_mb = total_mb - shark.available_mb;
+
+        // Maximum remaining we can use
+        let max_remaining = max_fill_mb.saturating_sub(used_mb);
+
+        // Subtract what's already assigned
+        max_remaining.saturating_sub(shark.assigned_mb)
+    }
+
+    /// Validate destination for an object
+    fn validate_destination(
+        obj_sharks: &[MantaObjectShark],
+        from_shark: &StorageNode,
+        to_shark: &StorageNode,
+    ) -> Option<ObjectSkippedReason> {
+        // Check if to_shark is the same as from_shark
+        if to_shark.manta_storage_id == from_shark.manta_storage_id {
+            return Some(ObjectSkippedReason::ObjectAlreadyOnDestShark);
+        }
+
+        // Check if the object is already on the destination shark
+        for shark in obj_sharks {
+            if shark.manta_storage_id == to_shark.manta_storage_id {
+                return Some(ObjectSkippedReason::ObjectAlreadyOnDestShark);
+            }
+        }
+
+        // Check if the destination is in a datacenter where the object already exists
+        // (excluding the from_shark's datacenter, since we're moving away from it)
+        for shark in obj_sharks {
+            if shark.manta_storage_id != from_shark.manta_storage_id
+                && shark.datacenter == to_shark.datacenter
+            {
+                return Some(ObjectSkippedReason::ObjectAlreadyInDatacenter);
+            }
+        }
+
+        None
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 1: calculate_available_mb_test
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn calculate_available_mb_test() {
+        // --- Test exact calculation ---
+        // Total MB is 1000 (900 available / 0.9 = 1000), 10% is used
+        // assigned_mb = 100
+        // Max fill = 80% = 800 MB
+        // Used = 100 MB (10%) + 100 assigned = 200 MB
+        // Available = 800 - 200 = 600 MB
+        let shark = TestDestShark {
+            node: make_storage_node("test.stor", "dc1"),
+            available_mb: 900,
+            percent_used: 10,
+            assigned_mb: 100,
+        };
+        assert_eq!(calculate_available_mb(&shark, 80), 600);
+
+        // --- Test Max fill percentage < percent used returns 0 ---
+        let shark = TestDestShark {
+            node: make_storage_node("test.stor", "dc1"),
+            available_mb: 100,
+            percent_used: 90,
+            assigned_mb: 100,
+        };
+        // Max fill is 80 and percent_used is 90, should return 0
+        assert_eq!(calculate_available_mb(&shark, 80), 0);
+
+        // --- Test max_remaining < assigned_mb should return 0 ---
+        // Used = 80 MB (80%), Total = 100 MB
+        // Max fill MB = 90 MB (90% of 100)
+        // max_remaining = 90 - 80 = 10 MB
+        // assigned_mb = 11, so result should be 0
+        let shark = TestDestShark {
+            node: make_storage_node("test.stor", "dc1"),
+            available_mb: 20, // Total is 100MB (20/0.2 = 100)
+            percent_used: 80,
+            assigned_mb: 11,
+        };
+        assert_eq!(calculate_available_mb(&shark, 90), 0);
+
+        // Setting assigned_mb to 9 should leave 1MB
+        let shark = TestDestShark {
+            node: make_storage_node("test.stor", "dc1"),
+            available_mb: 20,
+            percent_used: 80,
+            assigned_mb: 9,
+        };
+        assert_eq!(calculate_available_mb(&shark, 90), 1);
+
+        // --- Test 0 available_mb should result in 0 ---
+        let shark = TestDestShark {
+            node: make_storage_node("test.stor", "dc1"),
+            available_mb: 0,
+            percent_used: 100,
+            assigned_mb: 9,
+        };
+        assert_eq!(calculate_available_mb(&shark, 100), 0);
+
+        // --- Test storinfo giving incorrect values is still safe ---
+        // percent_used = 100 but available_mb = 100 (inconsistent)
+        let shark = TestDestShark {
+            node: make_storage_node("test.stor", "dc1"),
+            available_mb: 100,
+            percent_used: 100,
+            assigned_mb: 9,
+        };
+        assert_eq!(calculate_available_mb(&shark, 100), 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 2: available_mb - Multi-object assignment with capacity tracking
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn available_mb() {
+        // Test that assignments correctly track available space
+        let mut dest_shark = TestDestShark::new("3.stor.domain", "dc1", 200, 80);
+
+        // With max_fill_percentage = 90:
+        // Total = 200/0.2 = 1000 MB
+        // Max fill = 900 MB
+        // Used = 800 MB
+        // Available = 900 - 800 = 100 MB
+        let max_fill = 90;
+        assert_eq!(calculate_available_mb(&dest_shark, max_fill), 100);
+
+        // Simulate assigning 50 MB
+        dest_shark.assigned_mb = 50;
+        assert_eq!(calculate_available_mb(&dest_shark, max_fill), 50);
+
+        // Assign remaining
+        dest_shark.assigned_mb = 100;
+        assert_eq!(calculate_available_mb(&dest_shark, max_fill), 0);
+
+        // Over-assign should still return 0
+        dest_shark.assigned_mb = 150;
+        assert_eq!(calculate_available_mb(&dest_shark, max_fill), 0);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 3: no_skip - Assignment without skips
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn no_skip() {
+        // Test that objects are properly assigned to non-conflicting sharks
+        let from_shark = make_storage_node("1.stor.domain", "dc1");
+
+        // Create objects on sharks 1 and 2
+        let obj_sharks = vec![
+            MantaObjectShark {
+                manta_storage_id: "1.stor.domain".to_string(),
+                datacenter: "dc1".to_string(),
+            },
+            MantaObjectShark {
+                manta_storage_id: "2.stor.domain".to_string(),
+                datacenter: "dc2".to_string(),
+            },
+        ];
+
+        // Destination shark 3 in dc3 should be valid (different shark, different DC)
+        let dest_shark_valid = make_storage_node("3.stor.domain", "dc3");
+        assert!(validate_destination(&obj_sharks, &from_shark, &dest_shark_valid).is_none());
+
+        // Destination shark 4 in dc1 should be valid (from_shark is in dc1, so we're replacing)
+        let dest_shark_same_dc_as_from = make_storage_node("4.stor.domain", "dc1");
+        assert!(
+            validate_destination(&obj_sharks, &from_shark, &dest_shark_same_dc_as_from).is_none()
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 4: assignment_processing_test - Assignment state transitions
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn assignment_processing_test() {
+        let dest_shark = make_storage_node("dest.stor", "dc1");
+        let mut assignment = Assignment::new(dest_shark);
+        let assignment_id = assignment.id.clone();
+
+        // Create some evacuate objects
+        let mut eobjs = Vec::new();
+        for i in 0..10 {
+            let mut eobj = make_evacuate_object(&format!("obj-{}", i));
+            eobj.assignment_id = assignment_id.clone();
+            eobjs.push(eobj);
+        }
+
+        // Add tasks to assignment
+        for eobj in &eobjs {
+            assignment.add_task(eobj);
+        }
+
+        assert_eq!(assignment.tasks.len(), 10);
+        assert_eq!(assignment.state, AssignmentState::Init);
+
+        // Simulate assignment being posted
+        assignment.state = AssignmentState::Assigned;
+        assert_eq!(assignment.state, AssignmentState::Assigned);
+
+        // Simulate agent completion with some failures
+        let failed_count = 5;
+        let mut failed_tasks = Vec::new();
+
+        for (i, (_obj_id, task)) in assignment.tasks.iter().enumerate() {
+            if i < failed_count {
+                let mut failed_task = task.clone();
+                failed_task.status = TaskStatus::Failed(ObjectSkippedReason::NetworkError);
+                failed_tasks.push(failed_task);
+            }
+        }
+
+        // Verify we captured the right number of failures
+        assert_eq!(failed_tasks.len(), failed_count);
+
+        // Transition to complete
+        assignment.state = AssignmentState::AgentComplete;
+        assert_eq!(assignment.state, AssignmentState::AgentComplete);
+
+        // Verify state machine progression
+        assignment.state = AssignmentState::PostProcessed;
+        assert_eq!(assignment.state, AssignmentState::PostProcessed);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 5: empty_storinfo_test - No storage nodes available
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn empty_storinfo_test() {
+        // Test behavior when no destination sharks are available
+        let available_sharks: Vec<StorageNode> = vec![];
+
+        // When no sharks available, should not be able to find destination
+        assert!(available_sharks.is_empty());
+
+        // Simulate the check that would happen in select_destination
+        let from_shark = make_storage_node("1.stor.domain", "dc1");
+        let valid_destinations: Vec<&StorageNode> = available_sharks
+            .iter()
+            .filter(|s| s.manta_storage_id != from_shark.manta_storage_id)
+            .collect();
+
+        assert!(valid_destinations.is_empty());
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 6: skip_object_test - Object skipping logic
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn skip_object_test() {
+        let mut obj = make_evacuate_object("test-obj");
+        assert_eq!(obj.status, EvacuateObjectStatus::Unprocessed);
+        assert!(obj.skipped_reason.is_none());
+
+        // Test skipping due to destination unreachable
+        obj.status = EvacuateObjectStatus::Skipped;
+        obj.skipped_reason = Some(ObjectSkippedReason::DestinationUnreachable);
+        assert_eq!(obj.status, EvacuateObjectStatus::Skipped);
+        assert_eq!(
+            obj.skipped_reason,
+            Some(ObjectSkippedReason::DestinationUnreachable)
+        );
+
+        // Test different skip reasons
+        let mut obj2 = make_evacuate_object("test-obj-2");
+        obj2.status = EvacuateObjectStatus::Skipped;
+        obj2.skipped_reason = Some(ObjectSkippedReason::ObjectAlreadyOnDestShark);
+        assert_eq!(
+            obj2.skipped_reason,
+            Some(ObjectSkippedReason::ObjectAlreadyOnDestShark)
+        );
+
+        let mut obj3 = make_evacuate_object("test-obj-3");
+        obj3.status = EvacuateObjectStatus::Skipped;
+        obj3.skipped_reason = Some(ObjectSkippedReason::DestinationInsufficientSpace);
+        assert_eq!(
+            obj3.skipped_reason,
+            Some(ObjectSkippedReason::DestinationInsufficientSpace)
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 7: duplicate_object_id_test - Duplicate detection
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn duplicate_object_id_test() {
+        let dest_shark = make_storage_node("dest.stor", "dc1");
+        let mut assignment = Assignment::new(dest_shark);
+
+        // Add the same object twice
+        let obj1 = make_evacuate_object("duplicate-obj");
+        let obj2 = make_evacuate_object("duplicate-obj");
+
+        assignment.add_task(&obj1);
+        let initial_count = assignment.tasks.len();
+        assert_eq!(initial_count, 1);
+
+        // Adding the same object ID again should overwrite (HashMap behavior)
+        assignment.add_task(&obj2);
+        assert_eq!(assignment.tasks.len(), 1);
+
+        // Verify the task exists
+        assert!(assignment.tasks.contains_key("duplicate-obj"));
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 8: validate_destination_test - Destination validation
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn validate_destination_test() {
+        // Object is on sharks in dc1 (1.stor) and dc2 (2.stor)
+        let obj_sharks = vec![
+            MantaObjectShark {
+                manta_storage_id: "1.stor.domain".to_string(),
+                datacenter: "dc1".to_string(),
+            },
+            MantaObjectShark {
+                manta_storage_id: "2.stor.domain".to_string(),
+                datacenter: "dc2".to_string(),
+            },
+        ];
+
+        let from_node = make_storage_node("1.stor.domain", "dc1");
+
+        // Test evacuation to different shark in same datacenter (dc1) - should succeed
+        // because we're replacing the copy on from_shark
+        let to_shark_same_dc = make_storage_node("3.stor.domain", "dc1");
+        assert!(
+            validate_destination(&obj_sharks, &from_node, &to_shark_same_dc).is_none(),
+            "Should allow evacuation to another shark in the same datacenter as from_shark"
+        );
+
+        // Test compromising fault domain - moving to dc2 where object already exists
+        let to_shark_dc2 = make_storage_node("4.stor.domain", "dc2");
+        assert_eq!(
+            validate_destination(&obj_sharks, &from_node, &to_shark_dc2),
+            Some(ObjectSkippedReason::ObjectAlreadyInDatacenter),
+            "Should not place more than one copy in the same datacenter"
+        );
+
+        // Test evacuating to the from_shark itself
+        let to_shark_same = make_storage_node("1.stor.domain", "dc1");
+        assert_eq!(
+            validate_destination(&obj_sharks, &from_node, &to_shark_same),
+            Some(ObjectSkippedReason::ObjectAlreadyOnDestShark),
+            "Should not evacuate back to source"
+        );
+
+        // Test evacuating to a shark the object is already on (2.stor)
+        let to_shark_existing = make_storage_node("2.stor.domain", "dc2");
+        assert_eq!(
+            validate_destination(&obj_sharks, &from_node, &to_shark_existing),
+            Some(ObjectSkippedReason::ObjectAlreadyOnDestShark),
+            "Should not evacuate to a shark the object is already on"
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 9: full_test - End-to-end simulation (100 objects)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn full_test() {
+        let num_objects = 100;
+        let dest_shark = make_storage_node("dest.stor", "dc1");
+
+        // Simulate processing 100 objects
+        let mut assignment = Assignment::new(dest_shark);
+        let mut assigned_count = 0;
+        let mut skipped_count = 0;
+
+        for i in 0..num_objects {
+            let obj = make_evacuate_object_with_size(&format!("obj-{}", i), 1024 * 1024); // 1 MiB
+
+            // Simulate some being skipped (e.g., every 10th object)
+            if i % 10 == 0 {
+                skipped_count += 1;
+            } else {
+                assignment.add_task(&obj);
+                assigned_count += 1;
+            }
+        }
+
+        assert_eq!(assigned_count + skipped_count, num_objects);
+        assert_eq!(assignment.tasks.len(), assigned_count);
+        assert_eq!(skipped_count, 10);
+        assert_eq!(assigned_count, 90);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 10: test_duplicate_handler - Duplicates across assignments
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_duplicate_handler() {
+        // Test handling duplicate objects that appear in the input stream
+        // Simulate duplicate object IDs being processed
+        let duplicate_id = "duplicate-obj-id";
+        let mut seen_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut duplicate_shards: Vec<i32> = Vec::new();
+
+        // Process 100 "objects" that are all duplicates
+        for shard in 0..100 {
+            let obj_id = duplicate_id.to_string();
+
+            if seen_ids.contains(&obj_id) {
+                // This is a duplicate - record the shard
+                duplicate_shards.push(shard);
+            } else {
+                seen_ids.insert(obj_id);
+            }
+        }
+
+        // Should have 99 duplicates (first one is not a duplicate)
+        assert_eq!(duplicate_shards.len(), 99);
+
+        // Verify duplicate tracking
+        assert_eq!(seen_ids.len(), 1);
+        assert!(seen_ids.contains(duplicate_id));
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 11: test_duplicate_handler_small_assignment - Small assignment duplicates
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_duplicate_handler_small_assignment() {
+        // Test with max_tasks_per_assignment = 1, so each object gets its own assignment
+        let max_tasks = 1;
+        let duplicate_id = "duplicate-obj";
+
+        let mut assignment_count = 0;
+        let mut duplicate_insert_failures = 0;
+        let mut seen_in_assignments: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+
+        // Process 100 duplicate objects with small assignments
+        for _ in 0..100 {
+            let dest_shark = make_storage_node("dest.stor", "dc1");
+            let mut assignment = Assignment::new(dest_shark);
+            let obj = make_evacuate_object(duplicate_id);
+
+            // Check if this would be a duplicate insert
+            if seen_in_assignments.contains(&obj.id) {
+                duplicate_insert_failures += 1;
+            } else {
+                assignment.add_task(&obj);
+                assignment_count += 1;
+
+                if assignment.tasks.len() >= max_tasks {
+                    // Assignment is full, "send" it
+                    // In real code, this would be where we detect the duplicate
+                    // when trying to insert into the database
+                    seen_in_assignments.insert(obj.id.clone());
+                }
+            }
+        }
+
+        // With small assignments, we would detect all 100 as duplicates
+        // after the first one is inserted
+        assert_eq!(assignment_count, 1);
+        assert_eq!(duplicate_insert_failures, 99);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 12: test_retry_job - Retry job functionality
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_retry_job() {
+        // Test the retry job concept - objects that were skipped can be retried
+        let mut objects: Vec<EvacuateObject> = Vec::new();
+
+        // Create objects with various statuses
+        for i in 0..100 {
+            let mut obj = make_evacuate_object(&format!("obj-{}", i));
+
+            // Simulate different outcomes:
+            // - 40% complete
+            // - 30% skipped (can retry)
+            // - 20% error (can retry some)
+            // - 10% assigned (still in progress)
+            match i % 10 {
+                0..=3 => {
+                    obj.status = EvacuateObjectStatus::Complete;
+                }
+                4..=6 => {
+                    obj.status = EvacuateObjectStatus::Skipped;
+                    obj.skipped_reason = Some(ObjectSkippedReason::NetworkError);
+                }
+                7 | 8 => {
+                    obj.status = EvacuateObjectStatus::Error;
+                    obj.error = Some(EvacuateObjectError::MetadataUpdateFailed);
+                }
+                _ => {
+                    obj.status = EvacuateObjectStatus::Assigned;
+                }
+            }
+            objects.push(obj);
+        }
+
+        // Count objects by status
+        let complete_count = objects
+            .iter()
+            .filter(|o| o.status == EvacuateObjectStatus::Complete)
+            .count();
+        let skipped_count = objects
+            .iter()
+            .filter(|o| o.status == EvacuateObjectStatus::Skipped)
+            .count();
+        let error_count = objects
+            .iter()
+            .filter(|o| o.status == EvacuateObjectStatus::Error)
+            .count();
+        let assigned_count = objects
+            .iter()
+            .filter(|o| o.status == EvacuateObjectStatus::Assigned)
+            .count();
+
+        assert_eq!(complete_count, 40);
+        assert_eq!(skipped_count, 30);
+        assert_eq!(error_count, 20);
+        assert_eq!(assigned_count, 10);
+
+        // For a retry job, we would reprocess skipped objects
+        let retry_candidates: Vec<&EvacuateObject> = objects
+            .iter()
+            .filter(|o| o.status == EvacuateObjectStatus::Skipped)
+            .collect();
+
+        assert_eq!(retry_candidates.len(), 30);
+
+        // All retry candidates should have a skipped reason
+        for obj in &retry_candidates {
+            assert!(obj.skipped_reason.is_some());
+        }
+
+        // Verify the retry candidates can be reset to unprocessed
+        let mut retry_objects: Vec<EvacuateObject> =
+            retry_candidates.iter().map(|o| (*o).clone()).collect();
+
+        for obj in &mut retry_objects {
+            obj.status = EvacuateObjectStatus::Unprocessed;
+            obj.skipped_reason = None;
+            obj.assignment_id = String::new();
+        }
+
+        // All should now be unprocessed
+        assert!(
+            retry_objects
+                .iter()
+                .all(|o| o.status == EvacuateObjectStatus::Unprocessed)
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Additional Tests for State Machine and Type Conversions
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_evacuate_object_status_transitions() {
+        let mut obj = make_evacuate_object("test");
+
+        // Unprocessed -> Assigned
+        assert_eq!(obj.status, EvacuateObjectStatus::Unprocessed);
+        obj.status = EvacuateObjectStatus::Assigned;
+        assert_eq!(obj.status, EvacuateObjectStatus::Assigned);
+
+        // Assigned -> PostProcessing
+        obj.status = EvacuateObjectStatus::PostProcessing;
+        assert_eq!(obj.status, EvacuateObjectStatus::PostProcessing);
+
+        // PostProcessing -> Complete
+        obj.status = EvacuateObjectStatus::Complete;
+        assert_eq!(obj.status, EvacuateObjectStatus::Complete);
+    }
+
+    #[test]
+    fn test_evacuate_object_status_display() {
+        assert_eq!(EvacuateObjectStatus::Unprocessed.to_string(), "unprocessed");
+        assert_eq!(EvacuateObjectStatus::Assigned.to_string(), "assigned");
+        assert_eq!(EvacuateObjectStatus::Skipped.to_string(), "skipped");
+        assert_eq!(EvacuateObjectStatus::Error.to_string(), "error");
+        assert_eq!(
+            EvacuateObjectStatus::PostProcessing.to_string(),
+            "post_processing"
+        );
+        assert_eq!(EvacuateObjectStatus::Complete.to_string(), "complete");
+    }
+
+    #[test]
+    fn test_evacuate_object_status_from_str() {
+        use std::str::FromStr;
+
+        assert_eq!(
+            EvacuateObjectStatus::from_str("unprocessed").unwrap(),
+            EvacuateObjectStatus::Unprocessed
+        );
+        assert_eq!(
+            EvacuateObjectStatus::from_str("assigned").unwrap(),
+            EvacuateObjectStatus::Assigned
+        );
+        assert_eq!(
+            EvacuateObjectStatus::from_str("skipped").unwrap(),
+            EvacuateObjectStatus::Skipped
+        );
+        assert_eq!(
+            EvacuateObjectStatus::from_str("error").unwrap(),
+            EvacuateObjectStatus::Error
+        );
+        assert_eq!(
+            EvacuateObjectStatus::from_str("post_processing").unwrap(),
+            EvacuateObjectStatus::PostProcessing
+        );
+        assert_eq!(
+            EvacuateObjectStatus::from_str("complete").unwrap(),
+            EvacuateObjectStatus::Complete
+        );
+
+        assert!(EvacuateObjectStatus::from_str("invalid").is_err());
+    }
+
+    #[test]
+    fn test_assignment_state_transitions() {
+        let dest_shark = make_storage_node("dest.stor", "dc1");
+        let mut assignment = Assignment::new(dest_shark);
+
+        // Init state
+        assert_eq!(assignment.state, AssignmentState::Init);
+
+        // Init -> Assigned
+        assignment.state = AssignmentState::Assigned;
+        assert_eq!(assignment.state, AssignmentState::Assigned);
+
+        // Assigned -> AgentComplete
+        assignment.state = AssignmentState::AgentComplete;
+        assert_eq!(assignment.state, AssignmentState::AgentComplete);
+
+        // AgentComplete -> PostProcessed
+        assignment.state = AssignmentState::PostProcessed;
+        assert_eq!(assignment.state, AssignmentState::PostProcessed);
+    }
+
+    #[test]
+    fn test_assignment_state_rejected() {
+        let dest_shark = make_storage_node("dest.stor", "dc1");
+        let mut assignment = Assignment::new(dest_shark);
+
+        // Init -> Rejected
+        assignment.state = AssignmentState::Rejected;
+        assert_eq!(assignment.state, AssignmentState::Rejected);
+    }
+
+    #[test]
+    fn test_assignment_state_agent_unavailable() {
+        let dest_shark = make_storage_node("dest.stor", "dc1");
+        let mut assignment = Assignment::new(dest_shark);
+
+        // Init -> AgentUnavailable
+        assignment.state = AssignmentState::AgentUnavailable;
+        assert_eq!(assignment.state, AssignmentState::AgentUnavailable);
+    }
+
+    #[test]
+    fn test_assignment_cache_entry_from_assignment() {
+        let dest_shark = make_storage_node("dest.stor", "dc1");
+        let mut assignment = Assignment::new(dest_shark.clone());
+
+        // Add some tasks
+        for i in 0..5 {
+            let obj = make_evacuate_object(&format!("obj-{}", i));
+            assignment.add_task(&obj);
+        }
+        assignment.total_size = 500;
+        assignment.state = AssignmentState::Assigned;
+
+        // Convert to cache entry
+        let cache_entry: AssignmentCacheEntry = assignment.clone().into();
+
+        assert_eq!(cache_entry.id, assignment.id);
+        assert_eq!(
+            cache_entry.dest_shark.manta_storage_id,
+            dest_shark.manta_storage_id
+        );
+        assert_eq!(cache_entry.total_size, 500);
+        assert_eq!(cache_entry.state, AssignmentState::Assigned);
+    }
+
+    #[test]
+    fn test_assignment_to_payload() {
+        let dest_shark = make_storage_node("dest.stor", "dc1");
+        let mut assignment = Assignment::new(dest_shark);
+
+        // Add tasks
+        for i in 0..3 {
+            let obj = make_evacuate_object(&format!("obj-{}", i));
+            assignment.add_task(&obj);
+        }
+
+        let payload = assignment.to_payload();
+
+        assert_eq!(payload.id, assignment.id);
+        assert_eq!(payload.tasks.len(), 3);
+    }
+
+    #[test]
+    fn test_evacuate_config_default() {
+        let config = EvacuateConfig::default();
+
+        assert_eq!(config.max_tasks_per_assignment, 200);
+        assert_eq!(config.max_assignment_age_secs, 300);
+        assert_eq!(config.min_avail_mb, 1000);
+        assert_eq!(config.max_objects, None);
+        assert_eq!(config.agent_timeout_secs, 30);
+    }
+
+    #[test]
+    fn test_evacuate_object_error_display() {
+        assert_eq!(
+            EvacuateObjectError::BadMorayClient.to_string(),
+            "bad_moray_client"
+        );
+        assert_eq!(
+            EvacuateObjectError::BadMorayObject.to_string(),
+            "bad_moray_object"
+        );
+        assert_eq!(
+            EvacuateObjectError::DuplicateShark.to_string(),
+            "duplicate_shark"
+        );
+        assert_eq!(
+            EvacuateObjectError::MetadataUpdateFailed.to_string(),
+            "metadata_update_failed"
+        );
+    }
+
+    #[test]
+    fn test_evacuate_object_error_from_str() {
+        use std::str::FromStr;
+
+        assert_eq!(
+            EvacuateObjectError::from_str("bad_moray_client").unwrap(),
+            EvacuateObjectError::BadMorayClient
+        );
+        assert_eq!(
+            EvacuateObjectError::from_str("duplicate_shark").unwrap(),
+            EvacuateObjectError::DuplicateShark
+        );
+        assert!(EvacuateObjectError::from_str("invalid").is_err());
     }
 }

@@ -86,8 +86,7 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
                 ),
                 ..ManagedApiMetadata::default()
             },
-            api_description:
-                rebalancer_agent_api::rebalancer_agent_api_mod::stub_api_description,
+            api_description: rebalancer_agent_api::rebalancer_agent_api_mod::stub_api_description,
         },
         ManagedApiConfig {
             ident: "rebalancer-manager-api",

@@ -13,13 +13,13 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use thiserror::Error;
 use tokio::sync::Mutex;
 
 use rebalancer_types::{
-    AgentAssignmentState, AgentAssignmentStats, Assignment, ObjectSkippedReason, StorageNode,
-    Task, TaskStatus,
+    AgentAssignmentState, AgentAssignmentStats, Assignment, ObjectSkippedReason, StorageNode, Task,
+    TaskStatus,
 };
 
 #[derive(Error, Debug)]
@@ -80,7 +80,7 @@ impl AssignmentStorage {
     }
 
     /// Check if an assignment exists
-    pub async fn exists(&self, uuid: &str) -> Result<bool, StorageError> {
+    pub async fn has_assignment(&self, uuid: &str) -> Result<bool, StorageError> {
         let conn = self.conn.lock().await;
         let count: i64 = conn.query_row(
             "SELECT COUNT(*) FROM assignments WHERE uuid = ?",
@@ -187,8 +187,8 @@ impl AssignmentStorage {
                     status: match failure_reason {
                         Some(reason) => {
                             // Try to parse the reason, default to NetworkError if unknown
-                            let reason: ObjectSkippedReason =
-                                serde_json::from_str(&reason).unwrap_or(ObjectSkippedReason::NetworkError);
+                            let reason: ObjectSkippedReason = serde_json::from_str(&reason)
+                                .unwrap_or(ObjectSkippedReason::NetworkError);
                             TaskStatus::Failed(reason)
                         }
                         None => TaskStatus::Failed(ObjectSkippedReason::NetworkError),
@@ -417,6 +417,6 @@ mod tests {
         storage.delete(uuid).await.unwrap();
 
         // Should not exist anymore
-        assert!(!storage.exists(uuid).await.unwrap());
+        assert!(!storage.has_assignment(uuid).await.unwrap());
     }
 }

@@ -16,6 +16,7 @@ pub mod evacuate;
 use thiserror::Error;
 
 /// Job execution errors
+#[allow(dead_code)]
 #[derive(Debug, Error)]
 pub enum JobError {
     #[error("Database error: {0}")]

@@ -52,27 +52,36 @@ impl TaskProcessor {
 
     /// Process all tasks in an assignment
     pub async fn process_assignment(&self, assignment_uuid: &str) {
-        // Mark assignment as running
-        if let Err(e) = self.storage.set_state(assignment_uuid, "running").await {
-            tracing::error!(
-                assignment_id = %assignment_uuid,
-                error = %e,
-                "Failed to set assignment state to running"
-            );
-            return;
-        }
-
-        // Get pending tasks
-        let tasks = match self.storage.get_pending_tasks(assignment_uuid).await {
-            Ok(tasks) => tasks,
-            Err(e) => {
+        // Mark assignment as running - abort if we can't update state
+        let Ok(()) = self
+            .storage
+            .set_state(assignment_uuid, "running")
+            .await
+            .inspect_err(|e| {
                 tracing::error!(
                     assignment_id = %assignment_uuid,
                     error = %e,
-                    "Failed to get pending tasks"
+                    "Failed to set assignment state to running, aborting"
                 );
-                return;
-            }
+            })
+        else {
+            return; // Cannot proceed without proper state tracking
+        };
+
+        // Get pending tasks - abort if we can't retrieve them
+        let Ok(tasks) = self
+            .storage
+            .get_pending_tasks(assignment_uuid)
+            .await
+            .inspect_err(|e| {
+                tracing::error!(
+                    assignment_id = %assignment_uuid,
+                    error = %e,
+                    "Failed to get pending tasks, aborting"
+                );
+            })
+        else {
+            return; // Cannot proceed without task list
         };
 
         tracing::info!(
@@ -95,21 +104,26 @@ impl TaskProcessor {
             handles.push(handle);
         }
 
-        // Wait for all tasks to complete
+        // Wait for all tasks to complete - continue even if some panic
         for handle in handles {
-            if let Err(e) = handle.await {
-                tracing::error!(error = %e, "Task join error");
-            }
+            // Task panics are logged but don't stop processing of other tasks
+            let _ = handle.await.inspect_err(|e| {
+                tracing::error!(error = %e, "Task panicked, continuing with remaining tasks");
+            });
         }
 
-        // Mark assignment as complete
-        if let Err(e) = self.storage.set_state(assignment_uuid, "complete").await {
-            tracing::error!(
-                assignment_id = %assignment_uuid,
-                error = %e,
-                "Failed to set assignment state to complete"
-            );
-        }
+        // Mark assignment as complete - best effort, log if it fails
+        let _ = self
+            .storage
+            .set_state(assignment_uuid, "complete")
+            .await
+            .inspect_err(|e| {
+                tracing::error!(
+                    assignment_id = %assignment_uuid,
+                    error = %e,
+                    "Failed to set assignment state to complete"
+                );
+            });
 
         tracing::info!(assignment_id = %assignment_uuid, "Assignment processing complete");
     }
@@ -155,18 +169,19 @@ impl TaskProcessorHandle {
                     object_id = %task.object_id,
                     "Task completed successfully"
                 );
-                if let Err(e) = self
+                // Best effort to record completion - task is already done regardless
+                let _ = self
                     .storage
                     .mark_task_complete(assignment_uuid, &task.object_id)
                     .await
-                {
-                    tracing::error!(
-                        assignment_id = %assignment_uuid,
-                        object_id = %task.object_id,
-                        error = %e,
-                        "Failed to mark task complete"
-                    );
-                }
+                    .inspect_err(|e| {
+                        tracing::error!(
+                            assignment_id = %assignment_uuid,
+                            object_id = %task.object_id,
+                            error = %e,
+                            "Failed to mark task complete in DB"
+                        );
+                    });
             }
             Err(reason) => {
                 tracing::warn!(
@@ -175,18 +190,19 @@ impl TaskProcessorHandle {
                     reason = ?reason,
                     "Task failed"
                 );
-                if let Err(e) = self
+                // Best effort to record failure - task outcome is already determined
+                let _ = self
                     .storage
                     .mark_task_failed(assignment_uuid, &task.object_id, &reason)
                     .await
-                {
-                    tracing::error!(
-                        assignment_id = %assignment_uuid,
-                        object_id = %task.object_id,
-                        error = %e,
-                        "Failed to mark task failed"
-                    );
-                }
+                    .inspect_err(|e| {
+                        tracing::error!(
+                            assignment_id = %assignment_uuid,
+                            object_id = %task.object_id,
+                            error = %e,
+                            "Failed to mark task failed in DB"
+                        );
+                    });
             }
         }
     }
@@ -215,15 +231,10 @@ impl TaskProcessorHandle {
         }
 
         // Download the object
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| {
-                tracing::debug!(url = %url, error = %e, "HTTP request failed");
-                ObjectSkippedReason::NetworkError
-            })?;
+        let response = self.client.get(&url).send().await.map_err(|e| {
+            tracing::debug!(url = %url, error = %e, "HTTP request failed");
+            ObjectSkippedReason::NetworkError
+        })?;
 
         // Check HTTP status
         let status = response.status();
@@ -276,9 +287,7 @@ impl TaskProcessorHandle {
         let mut stream = response.bytes_stream();
 
         while let Some(chunk_result) = stream.next().await {
-            let chunk = chunk_result.map_err(|e| {
-                std::io::Error::new(std::io::ErrorKind::Other, e.to_string())
-            })?;
+            let chunk = chunk_result.map_err(|e| std::io::Error::other(e.to_string()))?;
             hasher.update(&chunk);
             file.write_all(&chunk).await?;
         }

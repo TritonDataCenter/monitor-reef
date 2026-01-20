@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
 use std::str::FromStr;
+use thiserror::Error;
 
 use rebalancer_types::ObjectSkippedReason;
 
@@ -63,43 +64,36 @@ impl FromStr for EvacuateObjectStatus {
 }
 
 /// Errors that can occur during object evacuation
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EvacuateObjectError {
     /// Could not get Moray client for shard
+    #[error("bad_moray_client")]
     BadMorayClient,
     /// Moray object is malformed
+    #[error("bad_moray_object")]
     BadMorayObject,
     /// Manta object is malformed
+    #[error("bad_manta_object")]
     BadMantaObject,
     /// Shard number is invalid
+    #[error("bad_shard_number")]
     BadShardNumber,
     /// Object would be duplicated on a shark
+    #[error("duplicate_shark")]
     DuplicateShark,
     /// Internal error occurred
+    #[error("internal_error")]
     InternalError,
     /// Metadata update failed
+    #[error("metadata_update_failed")]
     MetadataUpdateFailed,
     /// Object has no sharks in metadata
+    #[error("missing_sharks")]
     MissingSharks,
     /// Content length is invalid
+    #[error("bad_content_length")]
     BadContentLength,
-}
-
-impl fmt::Display for EvacuateObjectError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::BadMorayClient => write!(f, "bad_moray_client"),
-            Self::BadMorayObject => write!(f, "bad_moray_object"),
-            Self::BadMantaObject => write!(f, "bad_manta_object"),
-            Self::BadShardNumber => write!(f, "bad_shard_number"),
-            Self::DuplicateShark => write!(f, "duplicate_shark"),
-            Self::InternalError => write!(f, "internal_error"),
-            Self::MetadataUpdateFailed => write!(f, "metadata_update_failed"),
-            Self::MissingSharks => write!(f, "missing_sharks"),
-            Self::BadContentLength => write!(f, "bad_content_length"),
-        }
-    }
 }
 
 impl FromStr for EvacuateObjectError {
@@ -174,6 +168,7 @@ impl Default for EvacuateObject {
 /// Essential fields extracted from a Manta object
 ///
 /// These are the minimum fields needed to rebalance an object.
+#[allow(dead_code)]
 #[derive(Debug, Clone, Deserialize)]
 pub struct MantaObjectEssential {
     pub key: String,
@@ -196,17 +191,9 @@ pub struct MantaObjectEssential {
 }
 
 /// Shark entry from a Manta object's sharks array
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[allow(dead_code)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct MantaObjectShark {
     pub manta_storage_id: String,
     pub datacenter: String,
-}
-
-impl Default for MantaObjectShark {
-    fn default() -> Self {
-        Self {
-            manta_storage_id: String::new(),
-            datacenter: String::new(),
-        }
-    }
 }

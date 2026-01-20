@@ -16,8 +16,8 @@ use tracing::{debug, warn};
 
 use rebalancer_types::ObjectSkippedReason;
 
-use super::types::{EvacuateObject, EvacuateObjectError, EvacuateObjectStatus};
 use super::JobError;
+use super::types::{EvacuateObject, EvacuateObjectError, EvacuateObjectStatus};
 
 /// Database layer for evacuate object tracking
 pub struct EvacuateDb {
@@ -26,6 +26,7 @@ pub struct EvacuateDb {
     db_name: String,
 }
 
+#[allow(dead_code)]
 impl EvacuateDb {
     /// Create a new evacuate database connection
     ///

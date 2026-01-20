@@ -39,9 +39,7 @@ pub type AssignmentId = String;
 ///
 /// This identifies where an object is physically stored. Note: This mirrors
 /// the MantaObjectShark from libmanta but adds JsonSchema support for API use.
-#[derive(
-    Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub struct StorageNode {
     /// The datacenter name where this storage node is located
     pub datacenter: String,
