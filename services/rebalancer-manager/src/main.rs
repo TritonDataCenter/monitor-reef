@@ -19,6 +19,7 @@
 mod config;
 mod context;
 mod db;
+mod jobs;
 mod storinfo;
 
 use anyhow::{Context, Result};
