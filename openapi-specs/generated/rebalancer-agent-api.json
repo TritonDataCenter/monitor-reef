@@ -1,0 +1,626 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Rebalancer Agent API",
+    "description": "API for the rebalancer agent service, which runs on storage nodes and processes object download assignments.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/assignments": {
+      "post": {
+        "tags": [
+          "assignments"
+        ],
+        "summary": "Create a new assignment",
+        "description": "Submit a batch of objects to be downloaded from source storage nodes. The agent will process the assignment asynchronously.\n\nReturns the assignment UUID on success. Returns 409 Conflict if an assignment with the same UUID already exists.",
+        "operationId": "create_assignment",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AssignmentPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "String",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/assignments/{uuid}": {
+      "get": {
+        "tags": [
+          "assignments"
+        ],
+        "summary": "Get assignment status",
+        "description": "Returns the current status and statistics for an assignment, including: - State (Scheduled, Running, Complete) - Number of tasks completed/failed - Failed tasks (if the assignment is complete)\n\nReturns 404 if the assignment is not found. Returns 400 if the UUID is malformed.",
+        "operationId": "get_assignment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "The assignment UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Assignment"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "assignments"
+        ],
+        "summary": "Delete a completed assignment",
+        "description": "Remove a completed assignment from disk. Only assignments in the \"completed\" state can be deleted; attempting to delete a scheduled or running assignment returns 403 Forbidden.\n\nReturns 404 if the assignment is not found. Returns 403 if the assignment is not yet complete. Returns 400 if the UUID is malformed.",
+        "operationId": "delete_assignment",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "The assignment UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AgentAssignmentState": {
+        "description": "Current state of an assignment being processed by an agent.",
+        "oneOf": [
+          {
+            "description": "Assignment received but not yet started",
+            "type": "string",
+            "enum": [
+              "Scheduled"
+            ]
+          },
+          {
+            "description": "Assignment is currently being processed",
+            "type": "string",
+            "enum": [
+              "Running"
+            ]
+          },
+          {
+            "description": "Assignment completed, optionally includes failed tasks",
+            "type": "object",
+            "properties": {
+              "Complete": {
+                "nullable": true,
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            },
+            "required": [
+              "Complete"
+            ],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "AgentAssignmentStats": {
+        "description": "Statistics for an assignment's progress.",
+        "type": "object",
+        "properties": {
+          "complete": {
+            "description": "Number of tasks completed (including failed)",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "failed": {
+            "description": "Number of tasks that failed",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          },
+          "state": {
+            "description": "Current state of the assignment",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AgentAssignmentState"
+              }
+            ]
+          },
+          "total": {
+            "description": "Total number of tasks in the assignment",
+            "type": "integer",
+            "format": "uint",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "complete",
+          "failed",
+          "state",
+          "total"
+        ]
+      },
+      "Assignment": {
+        "description": "Full assignment information returned when querying status.",
+        "type": "object",
+        "properties": {
+          "stats": {
+            "description": "Statistics about the assignment's progress",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AgentAssignmentStats"
+              }
+            ]
+          },
+          "uuid": {
+            "description": "Unique identifier for this assignment",
+            "type": "string"
+          }
+        },
+        "required": [
+          "stats",
+          "uuid"
+        ]
+      },
+      "AssignmentPayload": {
+        "description": "Payload for creating a new assignment on an agent.\n\nAn assignment is a batch of object download tasks sent to an agent.",
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "Unique identifier for this assignment",
+            "type": "string"
+          },
+          "tasks": {
+            "description": "List of tasks (objects to download) in this assignment",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Task"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "tasks"
+        ]
+      },
+      "Error": {
+        "description": "Error information from a response.",
+        "type": "object",
+        "properties": {
+          "error_code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "request_id"
+        ]
+      },
+      "ObjectSkippedReason": {
+        "description": "Reasons why an object may be skipped or fail during processing.",
+        "oneOf": [
+          {
+            "description": "Agent encountered a local filesystem error",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "AgentFSError"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "The specified agent does not have that assignment",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "AgentAssignmentNoEnt"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "The agent is busy and can't accept assignments at this time",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "AgentBusy"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "Internal assignment error",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "AssignmentError"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "A mismatch of assignment data between the agent and the zone",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "AssignmentMismatch"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "The assignment was rejected by the agent",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "AssignmentRejected"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "Not enough space on destination storage node",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "DestinationInsufficientSpace"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "Destination agent was not reachable",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "DestinationUnreachable"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "MD5 mismatch between the file on disk and the metadata",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "MD5Mismatch"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "Catchall for unspecified network errors",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "NetworkError"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "The object is already on the proposed destination shark",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "ObjectAlreadyOnDestShark"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "The object is already in the proposed destination datacenter",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "ObjectAlreadyInDatacenter"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "Encountered some other HTTP error while contacting the source",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SourceOtherError"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "The only source available is the shark being evacuated",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SourceIsEvacShark"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          {
+            "description": "HTTP status code error",
+            "type": "object",
+            "properties": {
+              "status_code": {
+                "type": "integer",
+                "format": "uint16",
+                "minimum": 0
+              },
+              "type": {
+                "type": "string",
+                "enum": [
+                  "HTTPStatusCode"
+                ]
+              }
+            },
+            "required": [
+              "status_code",
+              "type"
+            ]
+          }
+        ]
+      },
+      "StorageNode": {
+        "description": "A reference to a storage node (shark) in Manta.\n\nThis identifies where an object is physically stored. Note: This mirrors the MantaObjectShark from libmanta but adds JsonSchema support for API use.",
+        "type": "object",
+        "properties": {
+          "datacenter": {
+            "description": "The datacenter name where this storage node is located",
+            "type": "string"
+          },
+          "manta_storage_id": {
+            "description": "The storage node identifier (e.g., \"1.stor.domain.com\")",
+            "type": "string"
+          }
+        },
+        "required": [
+          "datacenter",
+          "manta_storage_id"
+        ]
+      },
+      "Task": {
+        "description": "A single task within an assignment.\n\nEach task represents one object that needs to be downloaded from a source storage node to the local storage node.",
+        "type": "object",
+        "properties": {
+          "md5sum": {
+            "description": "MD5 checksum of the object (base64 encoded)",
+            "type": "string"
+          },
+          "object_id": {
+            "description": "The object's unique identifier (UUID)",
+            "type": "string"
+          },
+          "owner": {
+            "description": "The owner account identifier (UUID)",
+            "type": "string"
+          },
+          "source": {
+            "description": "Source storage node to download from",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageNode"
+              }
+            ]
+          },
+          "status": {
+            "description": "Current status of this task",
+            "default": {
+              "state": "Pending"
+            },
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskStatus"
+              }
+            ]
+          }
+        },
+        "required": [
+          "md5sum",
+          "object_id",
+          "owner",
+          "source"
+        ]
+      },
+      "TaskStatus": {
+        "description": "Status of a task within an assignment.",
+        "oneOf": [
+          {
+            "description": "Task is waiting to be processed",
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "Pending"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          {
+            "description": "Task completed successfully",
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": [
+                  "Complete"
+                ]
+              }
+            },
+            "required": [
+              "state"
+            ]
+          },
+          {
+            "description": "Task failed with the given reason",
+            "type": "object",
+            "properties": {
+              "reason": {
+                "$ref": "#/components/schemas/ObjectSkippedReason"
+              },
+              "state": {
+                "type": "string",
+                "enum": [
+                  "Failed"
+                ]
+              }
+            },
+            "required": [
+              "reason",
+              "state"
+            ]
+          }
+        ]
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "assignments"
+    }
+  ]
+}

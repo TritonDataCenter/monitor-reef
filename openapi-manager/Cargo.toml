@@ -18,6 +18,8 @@ dropshot-api-manager = { workspace = true }
 dropshot-api-manager-types = { workspace = true }
 bugview-api = { path = "../apis/bugview-api" }
 jira-api = { path = "../apis/jira-api" }
+rebalancer-agent-api = { path = "../apis/rebalancer-agent-api" }
+rebalancer-manager-api = { path = "../apis/rebalancer-manager-api" }
 anyhow = { workspace = true }
 camino = { workspace = true }
 cargo_toml = { workspace = true }

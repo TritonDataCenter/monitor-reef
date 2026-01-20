@@ -74,6 +74,36 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
             },
             api_description: jira_api::jira_api_mod::stub_api_description,
         },
+        ManagedApiConfig {
+            ident: "rebalancer-agent-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/rebalancer-agent-api")?,
+            },
+            title: "Rebalancer Agent API",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "API for the rebalancer agent service, which runs on storage nodes and processes object download assignments.",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description:
+                rebalancer_agent_api::rebalancer_agent_api_mod::stub_api_description,
+        },
+        ManagedApiConfig {
+            ident: "rebalancer-manager-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/rebalancer-manager-api")?,
+            },
+            title: "Rebalancer Manager API",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "API for the rebalancer manager service, which coordinates object evacuation jobs across storage nodes.",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description:
+                rebalancer_manager_api::rebalancer_manager_api_mod::stub_api_description,
+        },
     ];
     let managed_apis = dropshot_api_manager::ManagedApis::new(apis)?;
     Ok(managed_apis)

@@ -8,6 +8,9 @@
 members = [
     "apis/bugview-api",
     "apis/jira-api",
+    "apis/rebalancer-agent-api",
+    "apis/rebalancer-manager-api",
+    "apis/rebalancer-types",
     "cli/bugview-cli",
     "clients/internal/bugview-client",
     "clients/internal/jira-client",

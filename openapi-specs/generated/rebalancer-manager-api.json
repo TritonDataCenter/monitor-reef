@@ -1,0 +1,500 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Rebalancer Manager API",
+    "description": "API for the rebalancer manager service, which coordinates object evacuation jobs across storage nodes.",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/jobs": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "List all jobs",
+        "description": "Returns a list of all jobs with their ID, action type, and current state.",
+        "operationId": "list_jobs",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_JobDbEntry",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/JobDbEntry"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Create a new job",
+        "description": "Create a new rebalancer job. The job type is specified by the \"action\" field in the payload. Currently supported actions:\n\n- `evacuate`: Move all objects off a storage node\n\nThe job runs asynchronously. Use the returned UUID to check status.\n\nReturns 500 if snaplink cleanup is required or job creation fails.",
+        "operationId": "create_job",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JobPayload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "String",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/jobs/{uuid}": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Get job status",
+        "description": "Returns detailed status for a job, including: - Configuration (e.g., which storage node is being evacuated) - Current state - Result counts by status category\n\nReturns 400 if the UUID is invalid or job not found. Returns 500 if the job is still initializing.",
+        "operationId": "get_job",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "The job UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobStatus"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Update a running job",
+        "description": "Dynamically update configuration of a running job. The update message type depends on the job action. For evacuate jobs, you can update:\n\n- `SetMetadataThreads`: Change the number of metadata update threads\n\nReturns 400 if: - The job is not found - The job is not in the Running state - The job doesn't support dynamic updates - The update message is invalid",
+        "operationId": "update_job",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "The job UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EvacuateJobUpdateMessage"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/jobs/{uuid}/retry": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Retry a failed job",
+        "description": "Create a new job that retries the work from a previously failed job. Only objects that were not successfully processed will be retried.\n\nReturns the new job's UUID.\n\nReturns 500 if the original job is not found or retry fails.",
+        "operationId": "retry_job",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "The job UUID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "String",
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "description": "Error information from a response.",
+        "type": "object",
+        "properties": {
+          "error_code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "request_id"
+        ]
+      },
+      "EvacuateJobPayload": {
+        "description": "Parameters for creating an evacuate job.",
+        "type": "object",
+        "properties": {
+          "from_shark": {
+            "description": "The storage node to evacuate (e.g., \"1.stor.domain.com\")",
+            "type": "string"
+          },
+          "max_objects": {
+            "nullable": true,
+            "description": "Optional limit on number of objects to process (for testing)",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "from_shark"
+        ]
+      },
+      "EvacuateJobUpdateMessage": {
+        "description": "Update message for dynamically configuring a running evacuate job.",
+        "oneOf": [
+          {
+            "description": "Set the number of metadata update threads",
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "SetMetadataThreads"
+                ]
+              },
+              "value": {
+                "type": "integer",
+                "format": "uint32",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "type",
+              "value"
+            ]
+          }
+        ]
+      },
+      "JobAction": {
+        "description": "Type of job action.",
+        "oneOf": [
+          {
+            "description": "Evacuate objects from a storage node",
+            "type": "string",
+            "enum": [
+              "Evacuate"
+            ]
+          },
+          {
+            "description": "No action (placeholder)",
+            "type": "string",
+            "enum": [
+              "None"
+            ]
+          }
+        ]
+      },
+      "JobDbEntry": {
+        "description": "Database entry representation of a job (for listing).",
+        "type": "object",
+        "properties": {
+          "action": {
+            "description": "Type of job action",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JobAction"
+              }
+            ]
+          },
+          "id": {
+            "description": "Unique identifier for this job (UUID)",
+            "type": "string"
+          },
+          "state": {
+            "description": "Current state of the job",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JobState"
+              }
+            ]
+          }
+        },
+        "required": [
+          "action",
+          "id",
+          "state"
+        ]
+      },
+      "JobPayload": {
+        "description": "Payload for creating a new job.\n\nJobs are created by sending a JSON object with an \"action\" field specifying the job type and a \"params\" field containing action-specific parameters.",
+        "oneOf": [
+          {
+            "description": "Evacuate all objects from a storage node",
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "evacuate"
+                ]
+              },
+              "params": {
+                "$ref": "#/components/schemas/EvacuateJobPayload"
+              }
+            },
+            "required": [
+              "action",
+              "params"
+            ]
+          }
+        ]
+      },
+      "JobState": {
+        "description": "State of a job in the manager.",
+        "oneOf": [
+          {
+            "description": "Job is being initialized",
+            "type": "string",
+            "enum": [
+              "Init"
+            ]
+          },
+          {
+            "description": "Job is setting up",
+            "type": "string",
+            "enum": [
+              "Setup"
+            ]
+          },
+          {
+            "description": "Job is actively running",
+            "type": "string",
+            "enum": [
+              "Running"
+            ]
+          },
+          {
+            "description": "Job has been stopped",
+            "type": "string",
+            "enum": [
+              "Stopped"
+            ]
+          },
+          {
+            "description": "Job completed successfully",
+            "type": "string",
+            "enum": [
+              "Complete"
+            ]
+          },
+          {
+            "description": "Job failed",
+            "type": "string",
+            "enum": [
+              "Failed"
+            ]
+          }
+        ]
+      },
+      "JobStatus": {
+        "description": "Full job status including configuration, results, and state.",
+        "type": "object",
+        "properties": {
+          "config": {
+            "description": "Job configuration",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JobStatusConfig"
+              }
+            ]
+          },
+          "results": {
+            "description": "Job results (status counts)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JobStatusResults"
+              }
+            ]
+          },
+          "state": {
+            "description": "Current state of the job",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JobState"
+              }
+            ]
+          }
+        },
+        "required": [
+          "config",
+          "results",
+          "state"
+        ]
+      },
+      "JobStatusConfig": {
+        "description": "Job status configuration, tagged by action type.",
+        "oneOf": [
+          {
+            "description": "Configuration for an evacuate job",
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "Evacuate"
+                ]
+              },
+              "from_shark": {
+                "description": "The storage node being evacuated",
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/StorageNode"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "action",
+              "from_shark"
+            ]
+          }
+        ]
+      },
+      "JobStatusResults": {
+        "description": "Job status results, tagged by action type.",
+        "anyOf": [
+          {
+            "description": "Results for an evacuate job",
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ]
+      },
+      "StorageNode": {
+        "description": "A reference to a storage node (shark) in Manta.\n\nThis identifies where an object is physically stored. Note: This mirrors the MantaObjectShark from libmanta but adds JsonSchema support for API use.",
+        "type": "object",
+        "properties": {
+          "datacenter": {
+            "description": "The datacenter name where this storage node is located",
+            "type": "string"
+          },
+          "manta_storage_id": {
+            "description": "The storage node identifier (e.g., \"1.stor.domain.com\")",
+            "type": "string"
+          }
+        },
+        "required": [
+          "datacenter",
+          "manta_storage_id"
+        ]
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "jobs"
+    }
+  ]
+}
