@@ -2578,6 +2578,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rebalancer-adm"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "rebalancer-manager-client",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "rebalancer-agent"
 version = "0.1.0"
 dependencies = [
@@ -2642,6 +2653,18 @@ dependencies = [
  "rebalancer-types",
  "schemars",
  "serde",
+]
+
+[[package]]
+name = "rebalancer-manager-client"
+version = "0.1.0"
+dependencies = [
+ "openapiv3",
+ "progenitor",
+ "progenitor-client",
+ "reqwest",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
