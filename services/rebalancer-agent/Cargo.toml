@@ -1,0 +1,43 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2020 Joyent, Inc.
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "rebalancer-agent"
+version = "0.1.0"
+edition.workspace = true
+description = "Rebalancer agent service - downloads objects to storage nodes"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "rebalancer-agent"
+path = "src/main.rs"
+
+[dependencies]
+rebalancer-agent-api = { path = "../../apis/rebalancer-agent-api" }
+rebalancer-types = { path = "../../apis/rebalancer-types" }
+
+anyhow = { workspace = true }
+base64 = "0.22"
+dropshot = { workspace = true }
+futures-util = "0.3"
+http = "1"
+md-5 = "0.10"
+reqwest = { workspace = true, features = ["stream"] }
+rusqlite = { version = "0.34", features = ["bundled"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync", "fs", "io-util"] }
+tokio-util = { version = "0.7", features = ["io"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
