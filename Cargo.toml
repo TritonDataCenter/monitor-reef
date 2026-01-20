@@ -18,6 +18,7 @@ members = [
     "services/bugview-service",
     "services/jira-stub-server",
     "services/rebalancer-agent",
+    "services/rebalancer-manager",
 
     # Modernized:
     "libs/fast",

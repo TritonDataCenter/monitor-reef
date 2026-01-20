@@ -282,6 +282,7 @@ impl AssignmentStorage {
     }
 
     /// Check if all tasks are complete
+    #[allow(dead_code)]
     pub async fn is_complete(&self, uuid: &str) -> Result<bool, StorageError> {
         let conn = self.conn.lock().await;
         let (total, completed): (i64, i64) = conn.query_row(
