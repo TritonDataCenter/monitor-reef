@@ -186,11 +186,11 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 |-------|--------|-------|
 | fast | ✅ Done | tokio 1.x, bytes 1.x, quickcheck 1.0 |
 | quickcheck-helpers | ✅ Done | quickcheck 1.0 |
-| cueball | ✅ Done | Core pool functionality (kept for now, qorb migration deferred) |
-| cueball-static-resolver | ✅ Done | Static backend resolver |
-| cueball-tcp-stream-connection | ✅ Done | TCP connector |
+| cueball | ✅ Done | Core pool functionality (qorb migration required - see below) |
+| cueball-static-resolver | ✅ Done | Static backend resolver (delete after qorb migration) |
+| cueball-tcp-stream-connection | ✅ Done | TCP connector (delete after qorb migration) |
 | libmanta | ✅ Done | Manta types and utilities |
-| moray | ✅ Done | Moray client (still uses cueball, qorb migration deferred) |
+| moray | ✅ Done | Moray client (qorb migration required - see below) |
 | sharkspotter | ✅ Done | Fully integrated (no exclusions) |
 
 ### Remaining Crates to Modernize
@@ -205,28 +205,43 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 | Crate | Reason | Action |
 |-------|--------|--------|
-| cueball-dns-resolver | Legacy tokio 0.1, use qorb DnsResolver if needed | Delete (never enable) |
-| cueball-postgres-connection | Legacy, use qorb DieselPgConnector if needed | Delete (never enable) |
-| cueball-manatee-primary-resolver | Legacy tokio 0.1 + unmaintained tokio-zookeeper | Port to qorb or delete |
+| cueball-dns-resolver | Legacy tokio 0.1, use qorb DnsResolver | Delete (never enable) |
+| cueball-postgres-connection | Legacy, use qorb DieselPgConnector | Delete (never enable) |
+| cueball-manatee-primary-resolver | Legacy tokio 0.1 + unmaintained tokio-zookeeper | Create qorb-manatee-resolver, then delete |
 | cli/manatee-echo-resolver | Debug tool for old cueball | Delete |
 | rust-utils | Only used by rebalancer-legacy | Inline `calculate_md5` if needed, then delete |
 
-### Future: Qorb Migration
+### Required: Qorb Migration
 
-The cueball crates were modernized but qorb migration was deferred. When qorb migration is needed:
-- See `conversion-plans/manta-rebalancer/cueball-to-qorb-migration.md` for details
-- Replace cueball usage in moray with qorb equivalents
-- Delete cueball crates after migration
+**Qorb migration is REQUIRED, not optional.** After migration, all cueball crates must be deleted.
+
+**Migration steps:**
+1. Create `libs/qorb-manatee-resolver` - Manatee/ZooKeeper resolver for qorb (required for production)
+2. Migrate `libs/moray` from cueball to qorb
+3. Delete modernized cueball crates:
+   - `libs/cueball`
+   - `libs/cueball-static-resolver`
+   - `libs/cueball-tcp-stream-connection`
+
+See `conversion-plans/manta-rebalancer/cueball-to-qorb-migration.md` for full details.
 
 ## Dependency Order (Historical)
 
 Modernization was completed in this order:
 1. `fast` (no internal deps) ✅ DONE
 2. `quickcheck-helpers` (no internal deps) ✅ DONE
-3. `cueball` + resolvers/connectors ✅ DONE
+3. `cueball` + resolvers/connectors ✅ DONE (temporary - will be deleted after qorb migration)
 4. `libmanta` ✅ DONE
 5. `moray` (depends on fast, cueball) ✅ DONE
 6. `sharkspotter` (depends on moray, libmanta) ✅ DONE
+
+## Remaining Work: Qorb Migration
+
+Required migration steps (in order):
+1. Create `libs/qorb-manatee-resolver` - Port Manatee/ZooKeeper resolver to qorb 🔴 TODO
+2. Migrate `libs/moray` from cueball to qorb 🔴 TODO
+3. Delete `libs/cueball`, `libs/cueball-static-resolver`, `libs/cueball-tcp-stream-connection` 🔴 TODO
+4. Delete legacy cueball crates (cueball-dns-resolver, cueball-postgres-connection, cueball-manatee-primary-resolver) 🔴 TODO
 
 ## New Dropshot Services
 

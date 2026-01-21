@@ -1,14 +1,14 @@
-# Proposal: Replace Cueball with Qorb for Connection Pooling
+# Required: Replace Cueball with Qorb for Connection Pooling
 
 **Author:** Engineering Team
 **Date:** January 2026
-**Status:** Proposal
+**Status:** REQUIRED - Migration must be completed
 
 ## Executive Summary
 
-This document proposes replacing the **cueball** connection pooling library with **qorb** as part of our ongoing Rust modernization effort. Qorb is a modern, async-native connection pooling library inspired by cueball but built for the tokio 1.x ecosystem.
+This document describes the **required** migration from the **cueball** connection pooling library to **qorb**. Qorb is a modern, async-native connection pooling library inspired by cueball but built for the tokio 1.x ecosystem.
 
-**Recommendation:** Adopt qorb for all new development and migrate existing cueball usage incrementally. The migration is low-risk for most use cases, with the Manatee/ZooKeeper resolver being the only component requiring significant development effort.
+**Status:** Migration is REQUIRED. The cueball crates were temporarily modernized to edition 2024 but must be replaced with qorb and then deleted. The Manatee/ZooKeeper resolver (`qorb-manatee-resolver`) must be created for production use.
 
 ## Background
 
@@ -25,24 +25,28 @@ Cueball is a multi-node service connection pool library originally written in No
 
 Qorb is a connection pooling library written by Oxide Computer Company, explicitly inspired by cueball. It provides similar functionality but is designed from the ground up for modern async Rust.
 
-### Why Consider Migration?
+### Why Migration is Required
 
-Our cueball crates have significant technical debt:
+Our cueball crates were temporarily modernized but have fundamental limitations:
 
 | Crate | Edition | Async Runtime | Status |
 |-------|---------|---------------|--------|
-| `cueball` | 2024 | sync (threads) | Modernized |
-| `cueball-static-resolver` | 2024 | sync | Modernized |
-| `cueball-dns-resolver` | 2018 | **tokio 0.1** | Legacy |
-| `cueball-postgres-connection` | 2018 | sync | Legacy |
-| `cueball-tcp-stream-connection` | 2018 | sync | Legacy |
-| `cueball-manatee-primary-resolver` | 2018 | **tokio 0.1** | Legacy |
+| `cueball` | 2024 | sync (threads) | Modernized (temporary) |
+| `cueball-static-resolver` | 2024 | sync | Modernized (temporary) |
+| `cueball-tcp-stream-connection` | 2024 | sync | Modernized (temporary) |
+| `cueball-dns-resolver` | 2018 | **tokio 0.1** | Legacy (delete) |
+| `cueball-postgres-connection` | 2018 | sync | Legacy (delete) |
+| `cueball-manatee-primary-resolver` | 2018 | **tokio 0.1** | Legacy (port to qorb) |
 
-The tokio 0.1 dependencies are particularly problematic:
-- Incompatible with modern async Rust ecosystem
-- `tokio-zookeeper 0.1.3` is unmaintained (last release: 2018)
-- `trust-dns 0.19` is outdated (current: hickory-resolver 0.24+)
-- Requires significant rewrite to modernize
+**Key reasons migration is required:**
+
+1. **Manatee support**: Production requires Manatee/ZooKeeper service discovery, which cueball-manatee-primary-resolver provides. That resolver uses unmaintained tokio 0.1 dependencies and cannot be modernized - it must be rewritten for qorb.
+
+2. **Fundamental architecture**: Cueball is synchronous (blocking). Even the "modernized" crates spawn threads for blocking operations. Qorb is native async.
+
+3. **No upstream development**: Cueball is legacy code with no active development.
+
+4. **Observability**: Qorb has 24 DTrace probes built-in; cueball has none.
 
 ## Technical Comparison
 
@@ -142,20 +146,26 @@ cli/manatee-echo-resolver
 
 ## Migration Path
 
-### Phase 1: New Development (Immediate)
+### Phase 1: Create qorb-manatee-resolver (REQUIRED)
 
-- Use qorb for all new services requiring connection pooling
-- Leverage existing qorb connectors:
-  - `TcpConnector` for raw TCP
-  - `DieselPgConnector` for PostgreSQL (with diesel feature)
-  - `FixedResolver` for static backends
-  - `DnsResolver` for DNS-based discovery
+Production requires Manatee/ZooKeeper service discovery. Create `libs/qorb-manatee-resolver`:
 
-### Phase 2: Moray Migration (Low Effort)
+1. Use modern ZooKeeper client (`zookeeper-client` crate, tokio 1.x compatible)
+2. Adapt the watch loop logic from cueball's implementation
+3. Reuse the JSON parsing logic (`process_value()`) nearly verbatim
+4. Implement qorb's `Resolver` trait interface
 
-The `libs/moray` crate uses:
-- Static resolver → Direct equivalent in qorb (`FixedResolver`)
-- TCP stream connection → Direct equivalent in qorb (`TcpConnector`)
+**Estimated effort:** 3-5 days
+
+**Reference:** `libs/cueball-manatee-primary-resolver/` for logic to port
+
+### Phase 2: Moray Migration (REQUIRED)
+
+The `libs/moray` crate currently uses cueball. Migrate to qorb:
+
+- Static resolver → `qorb::resolvers::FixedResolver`
+- TCP stream connection → `qorb::connectors::TcpConnector`
+- For production: Use `qorb-manatee-resolver` from Phase 1
 
 **Estimated effort:** 1-2 days
 
@@ -165,29 +175,20 @@ The `libs/moray` crate uses:
 3. Implement simple TCP connector or use `qorb::connectors::TcpConnector`
 4. Update call sites from sync `claim()` to async `claim().await`
 
-### Phase 3: Manatee Resolver (Higher Effort)
+### Phase 3: Delete Cueball Crates (REQUIRED)
 
-If Manatee/ZooKeeper support is required:
+Once migration is complete, delete all cueball crates:
 
-**Option A: Port the Manatee resolver to qorb (~500-800 lines)**
+**Modernized crates (delete after moray migration):**
+- `libs/cueball/`
+- `libs/cueball-static-resolver/`
+- `libs/cueball-tcp-stream-connection/`
 
-1. Use modern ZooKeeper client (`zookeeper-client` crate, tokio 1.x compatible)
-2. Adapt the watch loop logic from cueball's implementation
-3. Reuse the JSON parsing logic (`process_value()`) nearly verbatim
-4. Implement qorb's `Resolver` trait interface
-
-**Option B: Evaluate alternatives**
-- If services are moving away from Manatee, this may not be needed
-- Consider DNS-based discovery as an alternative
-
-**Estimated effort:** 3-5 days for Option A
-
-### Phase 4: Deprecate Cueball Crates
-
-Once migration is complete:
-1. Remove cueball crates from workspace
-2. Archive or delete the cueball code
-3. Update documentation
+**Legacy crates (delete immediately - never enabled):**
+- `libs/cueball-dns-resolver/`
+- `libs/cueball-postgres-connection/`
+- `libs/cueball-manatee-primary-resolver/`
+- `cli/manatee-echo-resolver/`
 
 ## Risk Assessment
 
@@ -214,25 +215,24 @@ Once migration is complete:
 3. **Better debugging** - USDT probes enable production debugging
 4. **Performance insights** - Built-in benchmarking, qtop monitoring tool
 
-## Recommendation
+## Required Migration
 
-**Adopt qorb as the standard connection pooling library for monitor-reef.**
+**Qorb is the required connection pooling library for monitor-reef.** All cueball usage must be migrated.
 
 ### Rationale
 
-1. **Technical superiority** - Modern async design, better observability
-2. **Maintenance burden** - Modernizing cueball's legacy crates requires similar effort to just using qorb
-3. **Future-proof** - Qorb aligns with the modern Rust ecosystem
-4. **Low migration risk** - Core concepts map directly; only Manatee resolver needs significant work
+1. **Production requirement** - Manatee/ZooKeeper service discovery is required; cueball's resolver is unmaintainable
+2. **Technical superiority** - Modern async design, better observability
+3. **Maintenance burden** - Cueball is legacy code with no upstream development
+4. **Future-proof** - Qorb aligns with the modern Rust ecosystem
 
-### Proposed Timeline
+### Required Timeline
 
-| Phase | Scope | Effort | Priority |
-|-------|-------|--------|----------|
-| 1 | New development uses qorb | Immediate | High |
-| 2 | Migrate moray | 1-2 days | Medium |
-| 3 | Port Manatee resolver (if needed) | 3-5 days | As needed |
-| 4 | Remove cueball crates | 1 day | Low |
+| Phase | Scope | Effort | Status |
+|-------|-------|--------|--------|
+| 1 | Create qorb-manatee-resolver | 3-5 days | 🔴 TODO |
+| 2 | Migrate moray to qorb | 1-2 days | 🔴 TODO |
+| 3 | Delete cueball crates | 1 day | 🔴 TODO |
 
 ## Appendix A: Example Migration
 
@@ -279,13 +279,23 @@ handle.do_something().await;
 - **Examples:** TCP echo server/client, Dropshot HTTP integration
 - **Monitoring:** qtop WebSocket server + TUI tool
 
-## Appendix C: Files to Modify
+## Appendix C: Files to Create/Modify
 
-For moray migration:
-- `libs/moray/Cargo.toml` - Update dependencies
+### New crate: qorb-manatee-resolver
+- `libs/qorb-manatee-resolver/Cargo.toml` - New crate
+- `libs/qorb-manatee-resolver/src/lib.rs` - Qorb Resolver implementation
+- Reference: `libs/cueball-manatee-primary-resolver/src/` for logic to port
+
+### Moray migration:
+- `libs/moray/Cargo.toml` - Update dependencies (cueball → qorb)
 - `libs/moray/src/*.rs` - Update pool usage (grep for `use cueball`)
 
-For full migration:
+### Deletion (after migration complete):
 - `Cargo.toml` - Remove cueball workspace members
-- `libs/cueball*` - Archive or delete
-- `cli/manatee-echo-resolver` - Update or deprecate
+- `libs/cueball/` - Delete
+- `libs/cueball-static-resolver/` - Delete
+- `libs/cueball-tcp-stream-connection/` - Delete
+- `libs/cueball-dns-resolver/` - Delete
+- `libs/cueball-postgres-connection/` - Delete
+- `libs/cueball-manatee-primary-resolver/` - Delete
+- `cli/manatee-echo-resolver/` - Delete

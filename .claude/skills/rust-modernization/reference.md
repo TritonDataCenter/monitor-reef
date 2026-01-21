@@ -558,10 +558,16 @@ arc.method();
 
 ---
 
-## Cueball → Qorb Migration
+## Cueball → Qorb Migration (REQUIRED)
 
-**IMPORTANT**: Cueball crates are deprecated. Migrate to qorb instead of modernizing.
-See `conversion-plans/manta-rebalancer/cueball-to-qorb-migration.md` for full details.
+**CRITICAL**: Cueball crates must be replaced with qorb and then deleted.
+
+The cueball crates were temporarily modernized to edition 2024, but migration to qorb is REQUIRED because:
+1. Production requires Manatee/ZooKeeper service discovery (`qorb-manatee-resolver` must be created)
+2. Cueball is fundamentally synchronous; qorb is native async (tokio 1.x)
+3. Qorb has 24 DTrace probes for observability; cueball has none
+
+See `conversion-plans/manta-rebalancer/cueball-to-qorb-migration.md` for full migration plan.
 
 ### Cargo.toml Changes
 

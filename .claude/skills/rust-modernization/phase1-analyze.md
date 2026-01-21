@@ -160,11 +160,11 @@ If the dependency isn't modernized yet, either:
 1. Modernize the dependency first
 2. Or note that this crate is blocked
 
-### 1.8a Check for Cueball Usage (Qorb Migration)
+### 1.8a Check for Cueball Usage (Qorb Migration REQUIRED)
 
-**IMPORTANT**: Cueball crates are being replaced with qorb, not modernized.
+**CRITICAL**: Cueball crates must be replaced with qorb and then deleted.
 
-If the crate uses cueball, identify the migration path:
+If the crate uses cueball, migration to qorb is REQUIRED:
 
 ```bash
 # Check for cueball imports
@@ -180,9 +180,15 @@ rg "cueball::" libs/<crate>/src/ --type rust
 | `cueball_static_resolver::StaticIpResolver` | `qorb::resolvers::FixedResolver` |
 | `cueball_tcp_stream_connection` | `qorb::connectors::TcpConnector` |
 | `cueball_dns_resolver` | `qorb::resolvers::DnsResolver` |
+| `cueball_manatee_primary_resolver` | `qorb_manatee_resolver` (must be created) |
 | `pool.claim()` (sync) | `pool.claim().await` (async) |
 
-See `conversion-plans/manta-rebalancer/cueball-to-qorb-migration.md` for full migration details.
+**Why qorb migration is required:**
+1. Production requires Manatee/ZooKeeper service discovery
+2. Cueball is fundamentally synchronous; qorb is native async
+3. Cueball has no observability; qorb has 24 DTrace probes
+
+See `conversion-plans/manta-rebalancer/cueball-to-qorb-migration.md` for full migration plan.
 
 ### 1.9 Identify Panic and Error Handling Issues
 
@@ -243,6 +249,6 @@ After analysis, you should know:
 6. Any blockers (unmodernized dependencies)
 7. **Panic/error handling issues to fix**
 8. **Documentation that needs updating**
-9. **Cueball usage requiring qorb migration** (if applicable)
+9. **Cueball usage requiring qorb migration** (REQUIRED if cueball is used)
 
 Proceed to Phase 2 with this information.

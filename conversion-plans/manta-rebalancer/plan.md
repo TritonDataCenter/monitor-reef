@@ -17,7 +17,7 @@ This document outlines the plan for merging Rust repositories into monitor-reef 
 - **Phase 3 (Cargo.toml Updates)**: ✅ COMPLETED
 - **Phase 4 (Cleanup)**: ⚠️ PARTIALLY COMPLETED - legacy crates remain
 - **Phase 5 (Crate Modernization)**: ✅ COMPLETED - all core crates modernized
-- **Phase 6 (Qorb Migration)**: 🔴 DEFERRED - cueball modernized instead, qorb migration optional
+- **Phase 6 (Qorb Migration)**: 🔴 REQUIRED - migrate moray to qorb, create qorb-manatee-resolver, delete cueball
 - **Phase 7 (Dropshot Services)**: ⚠️ IN PROGRESS - See [rebalancer-review-findings.md](../../docs/design/rebalancer-review-findings.md)
 
 ## Strategy Overview
@@ -237,9 +237,9 @@ monitor-reef/
 ├── libs/
 │   ├── fast/                          # ✅ Modernized
 │   ├── quickcheck-helpers/            # ✅ Modernized
-│   ├── cueball/                       # ✅ Modernized (qorb migration deferred)
-│   ├── cueball-static-resolver/       # ✅ Modernized
-│   ├── cueball-tcp-stream-connection/ # ✅ Modernized
+│   ├── cueball/                       # ✅ Modernized (delete after qorb migration)
+│   ├── cueball-static-resolver/       # ✅ Modernized (delete after qorb migration)
+│   ├── cueball-tcp-stream-connection/ # ✅ Modernized (delete after qorb migration)
 │   ├── cueball-dns-resolver/          # ❌ To be deleted
 │   ├── cueball-postgres-connection/   # ❌ To be deleted
 │   ├── cueball-manatee-primary-resolver/ # ❌ To be deleted
@@ -279,15 +279,16 @@ monitor-reef/
 ├── libs/
 │   ├── fast/
 │   ├── quickcheck-helpers/
-│   ├── cueball/                       # Keep until qorb migration (optional)
-│   ├── cueball-static-resolver/       # Keep until qorb migration (optional)
-│   ├── cueball-tcp-stream-connection/ # Keep until qorb migration (optional)
+│   ├── qorb-manatee-resolver/         # NEW: Manatee/ZooKeeper resolver for qorb
 │   ├── libmanta/
-│   ├── moray/
+│   ├── moray/                         # Migrated to use qorb
 │   └── sharkspotter/
 └── docs/
 
-# DELETED:
+# DELETED (after qorb migration):
+# - libs/cueball/
+# - libs/cueball-static-resolver/
+# - libs/cueball-tcp-stream-connection/
 # - libs/cueball-dns-resolver/
 # - libs/cueball-postgres-connection/
 # - libs/cueball-manatee-primary-resolver/
@@ -349,20 +350,36 @@ All core library crates have been modernized to edition 2024 with modern depende
 |-------|--------|
 | fast | ✅ tokio 1.x, bytes 1.x, quickcheck 1.0 |
 | quickcheck-helpers | ✅ quickcheck 1.0 |
-| cueball | ✅ Modernized (qorb migration deferred) |
-| cueball-static-resolver | ✅ Modernized |
-| cueball-tcp-stream-connection | ✅ Modernized |
+| cueball | ✅ Modernized (temporary - delete after qorb migration) |
+| cueball-static-resolver | ✅ Modernized (temporary - delete after qorb migration) |
+| cueball-tcp-stream-connection | ✅ Modernized (temporary - delete after qorb migration) |
 | libmanta | ✅ Modernized |
-| moray | ✅ Modernized |
+| moray | ✅ Modernized (qorb migration required) |
 | sharkspotter | ✅ Modernized (needs exclusion cleanup) |
 
 ---
 
-## Phase 6: Qorb Migration 🔴 DEFERRED
+## Phase 6: Qorb Migration 🔴 REQUIRED
 
-The cueball crates were modernized instead of migrated to qorb. This decision can be revisited later.
+**Qorb migration is REQUIRED.** The cueball crates were modernized as a stepping stone, but they must be replaced with qorb and then deleted.
 
-See [cueball-to-qorb-migration.md](cueball-to-qorb-migration.md) for migration details if needed.
+### Why Required
+
+1. **Manatee support**: Production requires Manatee/ZooKeeper-based service discovery
+2. **Modern async**: Qorb is native tokio 1.x; cueball is fundamentally synchronous
+3. **Observability**: Qorb has 24 DTrace probes built-in
+4. **Maintenance**: Cueball is legacy code with no upstream development
+
+### Migration Steps
+
+| Step | Description | Status |
+|------|-------------|--------|
+| 1 | Create `libs/qorb-manatee-resolver` | 🔴 TODO |
+| 2 | Migrate `libs/moray` from cueball to qorb | 🔴 TODO |
+| 3 | Delete `libs/cueball*` crates | 🔴 TODO |
+| 4 | Delete legacy cueball crates | 🔴 TODO |
+
+See [cueball-to-qorb-migration.md](cueball-to-qorb-migration.md) for full migration details.
 
 ---
 
@@ -408,17 +425,19 @@ See [rebalancer-review-findings.md](../../docs/design/rebalancer-review-findings
 
 ## Future Work
 
-1. **Complete Dropshot services**: Address all critical and important issues in review findings
-2. **Delete rebalancer-legacy**: After Dropshot services are production-ready
-3. **Optional qorb migration**: If better observability is needed, migrate moray from cueball to qorb
-4. **Delete cueball crates**: After qorb migration (if pursued)
+1. **Complete qorb migration** (REQUIRED):
+   - Create `libs/qorb-manatee-resolver` for Manatee/ZooKeeper service discovery
+   - Migrate `libs/moray` from cueball to qorb
+   - Delete all cueball crates after migration
+2. **Complete Dropshot services**: Address all critical and important issues in review findings
+3. **Delete rebalancer-legacy**: After Dropshot services are production-ready
 
 ---
 
 ## References
 
 - **Review findings**: [rebalancer-review-findings.md](../../docs/design/rebalancer-review-findings.md) - Gap analysis between legacy and new implementation
-- **Qorb migration**: [cueball-to-qorb-migration.md](cueball-to-qorb-migration.md) - Optional future migration
+- **Qorb migration**: [cueball-to-qorb-migration.md](cueball-to-qorb-migration.md) - Required migration plan
 - **Modernization skill**: `.claude/skills/rust-modernization/SKILL.md` - Crate modernization process
 - **Legacy code**: `libs/rebalancer-legacy/` - Reference implementation
 - **New services**: `services/rebalancer-agent/`, `services/rebalancer-manager/`
