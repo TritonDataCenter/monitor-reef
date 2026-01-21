@@ -180,50 +180,72 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 ## Target Crates
 
-Located in `libs/` and commented out in workspace Cargo.toml under "To be modernized":
+### Completed Modernizations
+
+| Crate | Status | Notes |
+|-------|--------|-------|
+| fast | ✅ Done | tokio 1.x, bytes 1.x, quickcheck 1.0 |
+| quickcheck-helpers | ✅ Done | quickcheck 1.0 |
+| cueball | ✅ Done | Core pool functionality (kept for now, qorb migration deferred) |
+| cueball-static-resolver | ✅ Done | Static backend resolver |
+| cueball-tcp-stream-connection | ✅ Done | TCP connector |
+| libmanta | ✅ Done | Manta types and utilities |
+| moray | ✅ Done | Moray client (still uses cueball, qorb migration deferred) |
+| sharkspotter | ✅ Done | In workspace, but excluded from arch-lint/tarpaulin - needs cleanup |
+
+### Remaining Crates to Modernize
 
 | Crate | Key Dependencies | Complexity | Strategy |
 |-------|------------------|------------|----------|
-| fast | tokio 0.1, bytes 0.4, quickcheck 0.8 | High | Modernize |
-| quickcheck-helpers | quickcheck 0.8 | Low | Modernize |
-| libmanta | TBD | Medium | Modernize |
-| moray | fast-rpc, cueball | High | Modernize + migrate to qorb |
-| sharkspotter | TBD | TBD | Modernize |
-| rebalancer-legacy/* | Multiple | High | Modernize |
+| sharkspotter | (cleanup only) | Low | Remove from arch-lint.toml and tarpaulin.toml exclusions |
+| rebalancer-legacy/* | Multiple | High | May not need modernization - see note below |
 
-### Crates to Migrate to Qorb (Not Modernize)
+**Note on rebalancer-legacy:** New Dropshot-based services exist in `services/rebalancer-agent/` and `services/rebalancer-manager/`. The legacy code may only be needed as reference. See `docs/design/rebalancer-review-findings.md` for gaps in the new implementation.
 
-**IMPORTANT**: The cueball crates should NOT be modernized. Instead, migrate to qorb.
-See `conversion-plans/manta-rebalancer/cueball-to-qorb-migration.md` for details.
-
-| Crate | Qorb Replacement | Action |
-|-------|------------------|--------|
-| cueball | qorb::Pool | Delete after moray migration |
-| cueball-static-resolver | qorb::resolvers::FixedResolver | Delete after moray migration |
-| cueball-tcp-stream-connection | qorb::connectors::TcpConnector | Delete after moray migration |
-| cueball-dns-resolver | qorb::resolvers::DnsResolver | Delete (never enable) |
-| cueball-postgres-connection | qorb DieselPgConnector | Delete (never enable) |
-| cueball-manatee-primary-resolver | Port to qorb or use DNS | Port if needed, else delete |
-
-### Crates to Inline (Not Modernize Separately)
+### Crates to Delete (Not Modernize)
 
 | Crate | Reason | Action |
 |-------|--------|--------|
-| rust-utils | Only used by rebalancer-legacy, tiny crate | Inline `calculate_md5` into rebalancer-legacy when modernizing that crate, delete `net` module (unused) |
+| cueball-dns-resolver | Legacy tokio 0.1, use qorb DnsResolver if needed | Delete (never enable) |
+| cueball-postgres-connection | Legacy, use qorb DieselPgConnector if needed | Delete (never enable) |
+| cueball-manatee-primary-resolver | Legacy tokio 0.1 + unmaintained tokio-zookeeper | Port to qorb or delete |
+| cli/manatee-echo-resolver | Debug tool for old cueball | Delete |
+| rust-utils | Only used by rebalancer-legacy | Inline `calculate_md5` if needed, then delete |
 
-## Dependency Order
+### Future: Qorb Migration
 
-Some crates depend on others. Modernize in this order:
+The cueball crates were modernized but qorb migration was deferred. When qorb migration is needed:
+- See `conversion-plans/manta-rebalancer/cueball-to-qorb-migration.md` for details
+- Replace cueball usage in moray with qorb equivalents
+- Delete cueball crates after migration
+
+## Dependency Order (Historical)
+
+Modernization was completed in this order:
 1. `fast` (no internal deps) ✅ DONE
 2. `quickcheck-helpers` (no internal deps) ✅ DONE
-3. `libmanta` (may depend on others)
-4. `moray` (depends on fast-rpc, cueball) - **migrate cueball→qorb here**
-5. `sharkspotter` (depends on moray, libmanta)
-6. `rebalancer-legacy/*` (depends on many; inline rust-utils here)
+3. `cueball` + resolvers/connectors ✅ DONE
+4. `libmanta` ✅ DONE
+5. `moray` (depends on fast, cueball) ✅ DONE
+6. `sharkspotter` (depends on moray, libmanta) ✅ DONE (needs exclusion cleanup)
 
-**SKIP cueball modernization** - migrate to qorb instead:
-- When modernizing `moray`, replace cueball with qorb
-- Delete cueball crates after moray migration complete
+## New Dropshot Services
+
+The new rebalancer implementation uses Dropshot instead of Gotham:
+
+| Component | Location | Status |
+|-----------|----------|--------|
+| Agent API | `apis/rebalancer-agent-api/` | Complete |
+| Manager API | `apis/rebalancer-manager-api/` | Complete |
+| Shared Types | `apis/rebalancer-types/` | Complete |
+| Agent Service | `services/rebalancer-agent/` | ~90% - needs testing |
+| Manager Service | `services/rebalancer-manager/` | ~70% - missing critical integrations |
+| Admin CLI | `cli/rebalancer-adm/` | Complete |
+
+**Critical gaps in new services:** See `docs/design/rebalancer-review-findings.md` for:
+- 8 critical issues (sharkspotter integration, moray client, error handling)
+- 12 important issues (metrics, resume on startup, test coverage)
+- Recommended priority order for fixes
 
 ## Error Handling
 

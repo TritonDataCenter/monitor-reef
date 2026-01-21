@@ -14,9 +14,11 @@ This document outlines the plan for merging Rust repositories into monitor-reef 
 
 - **Phase 1 (Directory Moves)**: ✅ COMPLETED
 - **Phase 2 (Merges)**: ✅ COMPLETED
-- **Phase 3 (Cargo.toml Updates)**: ⚠️ PARTIALLY COMPLETED
-- **Phase 4 (Cleanup)**: 🔴 NOT STARTED
-- **Phase 5 (Qorb Migration)**: 🔴 NOT STARTED - See [cueball-to-qorb-migration.md](cueball-to-qorb-migration.md)
+- **Phase 3 (Cargo.toml Updates)**: ✅ COMPLETED
+- **Phase 4 (Cleanup)**: ⚠️ PARTIALLY COMPLETED - legacy crates remain
+- **Phase 5 (Crate Modernization)**: ✅ COMPLETED - all core crates modernized
+- **Phase 6 (Qorb Migration)**: 🔴 DEFERRED - cueball modernized instead, qorb migration optional
+- **Phase 7 (Dropshot Services)**: ⚠️ IN PROGRESS - See [rebalancer-review-findings.md](../../docs/design/rebalancer-review-findings.md)
 
 ## Strategy Overview
 
@@ -150,60 +152,68 @@ manta-rebalancer was already in the branch (no merge needed).
 
 ---
 
-## Phase 3: Post-Merge Cargo.toml Updates ⚠️ IN PROGRESS
+## Phase 3: Post-Merge Cargo.toml Updates ✅ COMPLETED
 
-### 3.1 Root Workspace Cargo.toml ⚠️ PARTIALLY DONE
+### 3.1 Root Workspace Cargo.toml ✅ DONE
 
 The root `Cargo.toml` has been updated with workspace members. Current state:
 
-**Enabled members:**
-- `agent`, `manager`, `rebalancer` (manta-rebalancer at root)
+**Enabled members (modernized):**
 - `libs/fast`
+- `libs/quickcheck-helpers`
 - `libs/cueball`
 - `libs/cueball-static-resolver`
 - `libs/cueball-tcp-stream-connection`
 - `libs/libmanta`
 - `libs/moray`
-- `libs/quickcheck-helpers`
-- `libs/rust-utils`
 - `libs/sharkspotter`
 
-**Commented out (WILL BE DEPRECATED - see Qorb migration):**
-- `libs/cueball-dns-resolver` - Replace with qorb's `DnsResolver`
-- `libs/cueball-manatee-primary-resolver` - Port to qorb or use DNS-based discovery
-- `libs/cueball-postgres-connection` - Replace with qorb's `DieselPgConnector`
-- `cli/manatee-echo-resolver` - Update or deprecate after qorb migration
+**New Dropshot services:**
+- `apis/rebalancer-agent-api`
+- `apis/rebalancer-manager-api`
+- `apis/rebalancer-types`
+- `services/rebalancer-agent`
+- `services/rebalancer-manager`
+- `cli/rebalancer-adm`
+
+**Commented out (to be deleted):**
+- `libs/cueball-dns-resolver` - Legacy tokio 0.1
+- `libs/cueball-manatee-primary-resolver` - Legacy tokio 0.1 + unmaintained deps
+- `libs/cueball-postgres-connection` - Legacy
+- `cli/manatee-echo-resolver` - Debug tool for old cueball
+- `libs/rust-utils` - Inline into rebalancer-legacy if needed
+- `libs/rebalancer-legacy/*` - Legacy Gotham implementation (reference only)
 
 ### 3.2 Path Dependencies ✅ DONE
 
-Internal dependencies have been updated to use path references (commit `e22cc72`).
+Internal dependencies have been updated to use path references.
 
-### 3.3 Verification 🔴 BLOCKED
+### 3.3 Verification ✅ DONE
 
-**Current blocker:** Build fails due to `async-trait` patch pointing to unavailable git tag:
-
-```
-error: failed to load source for dependency `async-trait`
-Caused by: revision 89923af3 not found (tag 0.1.36)
-```
-
-**Remaining verification steps:**
+Workspace builds and tests pass:
 ```bash
-# After fixing dependencies:
-cargo check --workspace
-cargo build --workspace
-cargo test --workspace
+make build
+make test
 ```
 
 ---
 
-## Phase 4: Cleanup 🔴 NOT STARTED
+## Phase 4: Cleanup ⚠️ PARTIALLY COMPLETED
 
-1. **Fix dependency patches**: Update or remove `async-trait` and other patches in root `Cargo.toml`
-2. **Enable commented crates**: Investigate and enable the 4 commented-out workspace members
-3. **Move rebalancer**: Relocate `agent/`, `manager/`, `rebalancer/` to `libs/rebalancer-legacy/`
-4. **Update .gitignore**: Consolidate ignore rules from merged repos
-5. **Remove duplicate files**: LICENSE, CI configs that are now redundant
+1. ~~**Fix dependency patches**~~: ✅ Resolved - patches removed, modern deps used
+2. ~~**Enable commented crates**~~: ✅ Decision made - legacy crates to be deleted, not enabled
+3. ✅ **Move rebalancer**: Relocated to `libs/rebalancer-legacy/`
+4. ⚠️ **Update .gitignore**: Partially done
+5. ⚠️ **Remove duplicate files**: Partially done
+
+**Remaining cleanup:**
+- Remove `libs/sharkspotter` from `arch-lint.toml` and `tarpaulin.toml` exclusion lists
+- Delete legacy crates that will never be used:
+  - `libs/cueball-dns-resolver`
+  - `libs/cueball-postgres-connection`
+  - `libs/cueball-manatee-primary-resolver`
+  - `cli/manatee-echo-resolver`
+  - `libs/rust-utils`
 
 ---
 
@@ -211,60 +221,79 @@ cargo test --workspace
 
 ```
 monitor-reef/
-├── agent/                             # manta-rebalancer (to be moved)
-├── manager/                           # manta-rebalancer (to be moved)
-├── rebalancer/                        # manta-rebalancer (to be moved)
+├── apis/                              # Dropshot API traits
+│   ├── rebalancer-agent-api/          # Agent API definition
+│   ├── rebalancer-manager-api/        # Manager API definition
+│   └── rebalancer-types/              # Shared types
 ├── cli/
-│   └── manatee-echo-resolver/         # rust-cueball CLI tool
+│   ├── rebalancer-adm/                # New Dropshot-based admin CLI
+│   └── manatee-echo-resolver/         # Legacy (to be deleted)
+├── clients/
+│   └── internal/
+│       └── rebalancer-manager-client/ # Generated manager client
+├── services/
+│   ├── rebalancer-agent/              # New Dropshot agent (~90% complete)
+│   └── rebalancer-manager/            # New Dropshot manager (~70% complete)
 ├── libs/
-│   ├── fast/                          # rust-fast
-│   ├── cueball/                       # rust-cueball (core)
-│   ├── cueball-dns-resolver/          # rust-cueball (commented out)
-│   ├── cueball-static-resolver/       # rust-cueball
-│   ├── cueball-tcp-stream-connection/ # rust-cueball
-│   ├── cueball-postgres-connection/   # rust-cueball (commented out)
-│   ├── cueball-manatee-primary-resolver/ # rust-cueball (commented out)
-│   ├── libmanta/                      # rust-libmanta
-│   ├── moray/                         # rust-moray
-│   ├── rust-utils/                    # rust-utils
-│   ├── quickcheck-helpers/            # rust-quickcheck-helpers
-│   └── sharkspotter/                  # rust-sharkspotter
-├── boot/                              # manta-rebalancer boot scripts
-├── docs/                              # manta-rebalancer docs
-├── test/                              # manta-rebalancer tests
-└── conversion-plans/                  # migration planning docs
+│   ├── fast/                          # ✅ Modernized
+│   ├── quickcheck-helpers/            # ✅ Modernized
+│   ├── cueball/                       # ✅ Modernized (qorb migration deferred)
+│   ├── cueball-static-resolver/       # ✅ Modernized
+│   ├── cueball-tcp-stream-connection/ # ✅ Modernized
+│   ├── cueball-dns-resolver/          # ❌ To be deleted
+│   ├── cueball-postgres-connection/   # ❌ To be deleted
+│   ├── cueball-manatee-primary-resolver/ # ❌ To be deleted
+│   ├── libmanta/                      # ✅ Modernized
+│   ├── moray/                         # ✅ Modernized
+│   ├── sharkspotter/                  # ✅ Modernized (needs exclusion cleanup)
+│   ├── rust-utils/                    # ❌ To be deleted
+│   └── rebalancer-legacy/             # Legacy Gotham implementation (reference)
+│       ├── agent/
+│       ├── manager/
+│       └── rebalancer/
+├── docs/
+│   └── design/
+│       └── rebalancer-review-findings.md  # Migration gap analysis
+└── conversion-plans/
+    └── manta-rebalancer/
+        ├── plan.md                    # This file
+        └── cueball-to-qorb-migration.md
 ```
 
-## Directory Structure (Target - Post Qorb Migration)
+## Directory Structure (Target - After Cleanup)
 
 ```
 monitor-reef/
+├── apis/
+│   ├── rebalancer-agent-api/
+│   ├── rebalancer-manager-api/
+│   └── rebalancer-types/
 ├── cli/
-│   └── (future CLI tools)
+│   └── rebalancer-adm/
+├── clients/
+│   └── internal/
+│       └── rebalancer-manager-client/
+├── services/
+│   ├── rebalancer-agent/              # Production ready
+│   └── rebalancer-manager/            # Production ready
 ├── libs/
-│   ├── fast/                          # rust-fast (modernized)
-│   ├── libmanta/                      # rust-libmanta
-│   ├── moray/                         # rust-moray (migrated to qorb)
-│   ├── quickcheck-helpers/            # rust-quickcheck-helpers (modernized)
-│   ├── sharkspotter/                  # rust-sharkspotter
-│   ├── qorb-manatee-resolver/         # (if needed: qorb resolver for Manatee/ZK)
-│   └── rebalancer-legacy/             # manta-rebalancer (moved)
-│       ├── rebalancer/                # shared library
-│       ├── agent/                     # agent service
-│       └── manager/                   # manager service
-├── apis/                              # (future: Dropshot APIs)
-├── services/                          # (future: Dropshot services)
-└── clients/                           # (future: generated clients)
+│   ├── fast/
+│   ├── quickcheck-helpers/
+│   ├── cueball/                       # Keep until qorb migration (optional)
+│   ├── cueball-static-resolver/       # Keep until qorb migration (optional)
+│   ├── cueball-tcp-stream-connection/ # Keep until qorb migration (optional)
+│   ├── libmanta/
+│   ├── moray/
+│   └── sharkspotter/
+└── docs/
 
-# REMOVED after qorb migration:
-# - libs/cueball/                       # replaced by qorb
-# - libs/cueball-dns-resolver/          # replaced by qorb DnsResolver
-# - libs/cueball-static-resolver/       # replaced by qorb FixedResolver
-# - libs/cueball-tcp-stream-connection/ # replaced by qorb TcpConnector
-# - libs/cueball-postgres-connection/   # replaced by qorb DieselPgConnector
-# - libs/cueball-manatee-primary-resolver/ # ported to qorb-manatee-resolver or removed
-# - libs/rust-utils/                    # inlined into rebalancer-legacy
-# - cli/manatee-echo-resolver/          # removed (debug tool for old cueball)
+# DELETED:
+# - libs/cueball-dns-resolver/
+# - libs/cueball-postgres-connection/
+# - libs/cueball-manatee-primary-resolver/
+# - cli/manatee-echo-resolver/
+# - libs/rust-utils/
+# - libs/rebalancer-legacy/            # After Dropshot services are production-ready
 ```
 
 ---
@@ -293,41 +322,103 @@ cargo metadata --no-deps --format-version 1 | jq '.packages[].name'
 | Risk | Mitigation | Outcome |
 |------|------------|---------|
 | Merge conflicts | Each repo moves to unique directory | ✅ No conflicts |
-| Broken dependencies | Update Cargo.toml in dependency order | ⚠️ Some crates commented out |
+| Broken dependencies | Update Cargo.toml in dependency order | ✅ Resolved |
 | Missing files from `git mv` | Use `-k` flag, verify file counts | ✅ All files moved |
-| Old Rust editions/dependencies | Address in separate modernization phase | 🔴 Blocking build |
+| Old Rust editions/dependencies | Modernize crates to edition 2024 | ✅ Core crates modernized |
+| Dropshot service gaps | Review against legacy, document findings | ⚠️ Review complete, fixes pending |
 
 ---
 
 ## Immediate Next Steps
 
-1. **Fix build blockers**: Remove or update `async-trait` and other problematic patches
-2. **Qorb pivot decision**: Do NOT enable the commented-out cueball crates; instead:
-   - Add `qorb` as a workspace dependency
-   - Plan migration of `libs/moray` from cueball to qorb
-   - Archive/delete legacy cueball crates that won't be needed
-3. **Move rebalancer**: Execute 1.8 to relocate to `libs/rebalancer-legacy/`
-4. **Verify workspace**: Run `cargo build --workspace` and `cargo test --workspace`
+1. **Complete Dropshot services** - See [rebalancer-review-findings.md](../../docs/design/rebalancer-review-findings.md):
+   - CRIT-3: Create async Moray client
+   - CRIT-1: Implement sharkspotter integration
+   - CRIT-2: Implement metadata updates
+   - CRIT-8: Port HTTP API tests from legacy
+2. **Cleanup exclusions**: Remove `libs/sharkspotter` from arch-lint.toml and tarpaulin.toml
+3. **Delete unused crates**: cueball-dns-resolver, cueball-postgres-connection, cueball-manatee-primary-resolver, manatee-echo-resolver, rust-utils
 
-## Future Work (Post-Merge)
+---
 
-1. **Modernization**: Update Rust editions, dependency versions (separate commits)
-   - As each legacy crate is modernized, fully enable it by:
-     - `Cargo.toml` - uncomment from workspace members (if commented out)
-     - `arch-lint.toml` - remove from `[analyzer].exclude` list
-     - `tarpaulin.toml` - remove from `exclude-files` list
-   - This ensures modernized crates build with the workspace and get the same quality checks as new code
-   - **rust-utils**: Do NOT modernize separately. When modernizing rebalancer-legacy:
-     - Inline `calculate_md5()` function directly into rebalancer (it's ~10 lines)
-     - Delete the `net` module (never used by any crate)
-     - Remove rust-utils dependency and delete the crate
-2. **Qorb Migration** (RECOMMENDED over modernizing cueball):
-   - Replace cueball with qorb for connection pooling - see [cueball-to-qorb-migration.md](cueball-to-qorb-migration.md)
-   - **Phase 1**: Use qorb for all new development (immediate)
-   - **Phase 2**: Migrate `libs/moray` from cueball to qorb (low effort - direct equivalents exist)
-   - **Phase 3**: Port Manatee resolver to qorb if needed (or use DNS-based discovery)
-   - **Phase 4**: Deprecate and remove cueball crates
-   - **Rationale**: Modernizing cueball's legacy tokio 0.1 crates requires similar effort to just adopting qorb, which provides better observability (DTrace probes, WebSocket monitoring) and native async/await support
-3. **Dropshot Rewrite**: Implement new APIs in target locations (apis/, services/)
-4. **Test Migration**: Port tests from rebalancer-legacy to new structure
-5. **Cleanup**: Remove rebalancer-legacy after rewrite is complete
+## Phase 5: Crate Modernization ✅ COMPLETED
+
+All core library crates have been modernized to edition 2024 with modern dependencies:
+
+| Crate | Status |
+|-------|--------|
+| fast | ✅ tokio 1.x, bytes 1.x, quickcheck 1.0 |
+| quickcheck-helpers | ✅ quickcheck 1.0 |
+| cueball | ✅ Modernized (qorb migration deferred) |
+| cueball-static-resolver | ✅ Modernized |
+| cueball-tcp-stream-connection | ✅ Modernized |
+| libmanta | ✅ Modernized |
+| moray | ✅ Modernized |
+| sharkspotter | ✅ Modernized (needs exclusion cleanup) |
+
+---
+
+## Phase 6: Qorb Migration 🔴 DEFERRED
+
+The cueball crates were modernized instead of migrated to qorb. This decision can be revisited later.
+
+See [cueball-to-qorb-migration.md](cueball-to-qorb-migration.md) for migration details if needed.
+
+---
+
+## Phase 7: Dropshot Services ⚠️ IN PROGRESS
+
+New Dropshot-based rebalancer services replace the legacy Gotham implementation.
+
+### Components
+
+| Component | Location | Status |
+|-----------|----------|--------|
+| Agent API | `apis/rebalancer-agent-api/` | ✅ Complete |
+| Manager API | `apis/rebalancer-manager-api/` | ✅ Complete |
+| Shared Types | `apis/rebalancer-types/` | ✅ Complete |
+| Agent Service | `services/rebalancer-agent/` | ~90% - Testing/Staging |
+| Manager Service | `services/rebalancer-manager/` | ~70% - Missing critical integrations |
+| Admin CLI | `cli/rebalancer-adm/` | ✅ Complete |
+| Manager Client | `clients/internal/rebalancer-manager-client/` | ✅ Complete |
+
+### Critical Issues (Must Fix Before Production)
+
+See [rebalancer-review-findings.md](../../docs/design/rebalancer-review-findings.md) for full details.
+
+**Phase 1 - Critical (Before any testing):**
+1. CRIT-3: Create Moray client
+2. CRIT-1: Sharkspotter integration
+3. CRIT-2: Metadata updates
+4. CRIT-8: HTTP API tests
+
+**Phase 2 - Error Handling (Before staging):**
+5. CRIT-4: HTTP client fallback
+6. CRIT-5: Corrupted file removal
+7. CRIT-6: Skipped reason parse
+8. CRIT-7: Discovery error propagation
+
+**Phase 3 - Important (Before production):**
+9. IMP-1: Max fill percentage
+10. IMP-10: Configuration tests
+11. IMP-8: Worker task results
+12. IMP-2: Duplicate object tracking
+
+---
+
+## Future Work
+
+1. **Complete Dropshot services**: Address all critical and important issues in review findings
+2. **Delete rebalancer-legacy**: After Dropshot services are production-ready
+3. **Optional qorb migration**: If better observability is needed, migrate moray from cueball to qorb
+4. **Delete cueball crates**: After qorb migration (if pursued)
+
+---
+
+## References
+
+- **Review findings**: [rebalancer-review-findings.md](../../docs/design/rebalancer-review-findings.md) - Gap analysis between legacy and new implementation
+- **Qorb migration**: [cueball-to-qorb-migration.md](cueball-to-qorb-migration.md) - Optional future migration
+- **Modernization skill**: `.claude/skills/rust-modernization/SKILL.md` - Crate modernization process
+- **Legacy code**: `libs/rebalancer-legacy/` - Reference implementation
+- **New services**: `services/rebalancer-agent/`, `services/rebalancer-manager/`
