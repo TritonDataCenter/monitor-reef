@@ -23,6 +23,8 @@ mod assignment;
 mod db;
 mod types;
 
+#[allow(unused_imports)] // Will be used by metadata update code
+pub use db::DuplicateObject;
 pub use types::{EvacuateObject, EvacuateObjectError, EvacuateObjectStatus};
 
 use std::collections::HashMap;
@@ -74,6 +76,11 @@ pub struct EvacuateConfig {
     pub max_assignment_age_secs: u64,
     /// Minimum available MB for a shark to be a destination
     pub min_avail_mb: u64,
+    /// Maximum fill percentage for destination sharks (0-100)
+    ///
+    /// Sharks will not be used as destinations if assigning an object would
+    /// push their usage above this percentage. Default is 90 (90% full).
+    pub max_fill_percentage: u32,
     /// Maximum objects to process (for testing, None = unlimited)
     pub max_objects: Option<u32>,
     /// Agent HTTP request timeout
@@ -96,6 +103,7 @@ impl Default for EvacuateConfig {
             max_tasks_per_assignment: 200,
             max_assignment_age_secs: 300, // 5 minutes
             min_avail_mb: 1000,           // 1GB minimum
+            max_fill_percentage: 90,      // Don't fill sharks beyond 90%
             max_objects: None,
             agent_timeout_secs: 30,
             object_source: ObjectSource::default(),
@@ -176,6 +184,7 @@ pub struct EvacuateJob {
 struct DestSharkInfo {
     node: StorageNode,
     available_mb: u64,
+    percent_used: u32,
     assigned_mb: u64,
 }
 
@@ -743,6 +752,50 @@ impl EvacuateJob {
         Ok(())
     }
 
+    /// Calculate available MB for a destination shark respecting max_fill_percentage
+    ///
+    /// This mirrors the legacy `_calculate_available_mb` function from evacuate.rs.
+    /// It calculates how much space can actually be used on a shark given:
+    /// - The shark's current available_mb and percent_used
+    /// - The max_fill_percentage limit
+    /// - How much has already been assigned in this job
+    fn calculate_available_mb(&self, info: &DestSharkInfo) -> u64 {
+        let max_fill = self.config.max_fill_percentage;
+
+        // If percent_used >= max_fill_percentage, no space available
+        if info.percent_used >= max_fill {
+            return 0;
+        }
+
+        // If available_mb is 0, return 0
+        if info.available_mb == 0 {
+            return 0;
+        }
+
+        // Calculate total MB from available and percent_used
+        // available_mb = total_mb * (1 - percent_used/100)
+        // total_mb = available_mb / (1 - percent_used/100)
+        // total_mb = available_mb * 100 / (100 - percent_used)
+        let used_fraction = info.percent_used as u64;
+        if used_fraction >= 100 {
+            return 0;
+        }
+
+        let total_mb = (info.available_mb * 100) / (100 - used_fraction);
+
+        // Max fill in MB
+        let max_fill_mb = (total_mb * max_fill as u64) / 100;
+
+        // Used MB
+        let used_mb = total_mb - info.available_mb;
+
+        // Maximum remaining we can use
+        let max_remaining = max_fill_mb.saturating_sub(used_mb);
+
+        // Subtract what's already assigned
+        max_remaining.saturating_sub(info.assigned_mb)
+    }
+
     /// Select a destination shark for an object
     ///
     /// Selects the best destination shark based on:
@@ -750,7 +803,7 @@ impl EvacuateJob {
     /// 2. Filtering out sharks the object is already on
     /// 3. Filtering out sharks in datacenters where the object already exists
     ///    (except the from_shark's datacenter, since we're replacing that copy)
-    /// 4. Filtering out sharks without enough available capacity
+    /// 4. Filtering out sharks without enough available capacity (respecting max_fill_percentage)
     /// 5. Selecting the shark with the most available space
     async fn select_destination(
         &self,
@@ -795,8 +848,8 @@ impl EvacuateJob {
                 continue;
             }
 
-            // Calculate effective available space
-            let effective_available = info.available_mb.saturating_sub(info.assigned_mb);
+            // Calculate effective available space respecting max_fill_percentage
+            let effective_available = self.calculate_available_mb(info);
 
             // Skip if not enough space
             if effective_available < self.config.min_avail_mb {
@@ -854,11 +907,24 @@ impl EvacuateJob {
                 continue;
             }
 
+            // Skip sharks that are already at or above max_fill_percentage
+            let percent_used = node_info.percent_used.round() as u32;
+            if percent_used >= self.config.max_fill_percentage {
+                debug!(
+                    shark = %node_info.node.manta_storage_id,
+                    percent_used = percent_used,
+                    max_fill = self.config.max_fill_percentage,
+                    "Skipping shark - already at or above max fill percentage"
+                );
+                continue;
+            }
+
             dest_sharks.insert(
                 node_info.node.manta_storage_id.clone(),
                 DestSharkInfo {
                     node: node_info.node,
                     available_mb: node_info.available_mb,
+                    percent_used,
                     assigned_mb: 0,
                 },
             );
@@ -866,6 +932,7 @@ impl EvacuateJob {
 
         info!(
             count = dest_sharks.len(),
+            max_fill_percentage = self.config.max_fill_percentage,
             "Initialized destination sharks cache"
         );
 
@@ -2143,6 +2210,7 @@ mod tests {
         assert_eq!(config.max_tasks_per_assignment, 200);
         assert_eq!(config.max_assignment_age_secs, 300);
         assert_eq!(config.min_avail_mb, 1000);
+        assert_eq!(config.max_fill_percentage, 90);
         assert_eq!(config.max_objects, None);
         assert_eq!(config.agent_timeout_secs, 30);
     }

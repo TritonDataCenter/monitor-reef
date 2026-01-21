@@ -19,6 +19,20 @@ use rebalancer_types::ObjectSkippedReason;
 use super::JobError;
 use super::types::{EvacuateObject, EvacuateObjectError, EvacuateObjectStatus};
 
+/// A duplicate object that appears in multiple shards
+///
+/// Used during metadata update to ensure all shard copies are updated.
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+pub struct DuplicateObject {
+    /// The object ID
+    pub id: String,
+    /// The object's key/path
+    pub key: String,
+    /// Shard numbers where this object appears
+    pub shards: Vec<i32>,
+}
+
 /// Database layer for evacuate object tracking
 pub struct EvacuateDb {
     pool: Pool,
@@ -349,6 +363,151 @@ impl EvacuateDb {
         }
 
         Ok(objects)
+    }
+
+    // =========================================================================
+    // Duplicate Object Tracking
+    // =========================================================================
+    //
+    // Objects can appear in multiple Moray shards due to snaplinks or
+    // cross-shard directory entries. When we discover the same object ID
+    // in multiple shards, we track it in the duplicates table so that
+    // metadata updates are applied to ALL shards containing the object.
+    //
+    // =========================================================================
+
+    /// Record a duplicate object occurrence
+    ///
+    /// When inserting an object that already exists (from a different shard),
+    /// call this method to track all shards containing the object.
+    ///
+    /// This uses PostgreSQL's array concatenation to accumulate shards,
+    /// handling the case where the duplicate entry doesn't exist yet.
+    pub async fn insert_duplicate(
+        &self,
+        id: &str,
+        key: &str,
+        shards: &[i32],
+    ) -> Result<(), JobError> {
+        let client = self.pool.get().await?;
+
+        // Use ON CONFLICT to either insert new or append to existing shards array
+        // The array concatenation (||) handles merging the shard lists
+        client
+            .execute(
+                r#"
+                INSERT INTO duplicates (id, key, shards)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (id) DO UPDATE
+                SET shards = (
+                    SELECT ARRAY(
+                        SELECT DISTINCT unnest
+                        FROM unnest(duplicates.shards || $3)
+                        ORDER BY unnest
+                    )
+                )
+                "#,
+                &[&id, &key, &shards],
+            )
+            .await?;
+
+        debug!(
+            object_id = %id,
+            key = %key,
+            shards = ?shards,
+            "Recorded duplicate object"
+        );
+
+        Ok(())
+    }
+
+    /// Check if an object already exists in the evacuateobjects table
+    ///
+    /// Returns the existing shard number if found, None otherwise.
+    /// Used to detect duplicates during object discovery.
+    pub async fn check_object_exists(&self, object_id: &str) -> Result<Option<i32>, JobError> {
+        let client = self.pool.get().await?;
+
+        let row = client
+            .query_opt(
+                "SELECT shard FROM evacuateobjects WHERE id = $1",
+                &[&object_id],
+            )
+            .await?;
+
+        Ok(row.map(|r| r.get(0)))
+    }
+
+    /// Insert an object, handling duplicates automatically
+    ///
+    /// If the object already exists (from a different shard), records it
+    /// in the duplicates table and returns Ok(false) to indicate it was
+    /// a duplicate. Returns Ok(true) for new objects.
+    pub async fn insert_object_with_duplicate_check(
+        &self,
+        obj: &EvacuateObject,
+    ) -> Result<bool, JobError> {
+        // Check if object already exists
+        if let Some(existing_shard) = self.check_object_exists(&obj.id).await? {
+            // Object exists - record as duplicate
+            let key = obj
+                .object
+                .get("key")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            // Include both the existing shard and the new shard
+            let shards = vec![existing_shard, obj.shard];
+            self.insert_duplicate(&obj.id, &key, &shards).await?;
+
+            debug!(
+                object_id = %obj.id,
+                existing_shard = existing_shard,
+                new_shard = obj.shard,
+                "Detected duplicate object during insertion"
+            );
+
+            return Ok(false);
+        }
+
+        // Not a duplicate - insert normally
+        self.insert_object(obj).await?;
+        Ok(true)
+    }
+
+    /// Get all duplicate objects
+    ///
+    /// Returns all objects that appear in multiple shards.
+    /// Used during metadata update to ensure all shard copies are updated.
+    pub async fn get_duplicates(&self) -> Result<Vec<DuplicateObject>, JobError> {
+        let client = self.pool.get().await?;
+
+        let rows = client
+            .query("SELECT id, key, shards FROM duplicates", &[])
+            .await?;
+
+        let mut duplicates = Vec::with_capacity(rows.len());
+        for row in rows {
+            duplicates.push(DuplicateObject {
+                id: row.get(0),
+                key: row.get(1),
+                shards: row.get(2),
+            });
+        }
+
+        Ok(duplicates)
+    }
+
+    /// Get the count of duplicate objects
+    pub async fn get_duplicate_count(&self) -> Result<i64, JobError> {
+        let client = self.pool.get().await?;
+
+        let row = client
+            .query_one("SELECT COUNT(*) FROM duplicates", &[])
+            .await?;
+
+        Ok(row.get(0))
     }
 }
 
