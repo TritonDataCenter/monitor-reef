@@ -329,6 +329,14 @@ impl EvacuateJob {
                             rebalancer_types::ObjectSkippedReason::DestinationUnreachable,
                         )
                         .await?;
+                    // Increment skipped count
+                    if let Err(e) = self
+                        .manager_db
+                        .increment_result_count(&self.job_uuid, "skipped")
+                        .await
+                    {
+                        warn!(job_id = %self.job_id, error = %e, "Failed to increment skipped count");
+                    }
                     continue;
                 }
                 Err(e) => {
@@ -432,7 +440,7 @@ impl EvacuateJob {
                         entry.state = AssignmentState::Rejected;
                     }
 
-                    // Mark objects as skipped
+                    // Mark objects as skipped and increment counts
                     for task in assignment.tasks.values() {
                         self.db
                             .mark_object_skipped(
@@ -440,6 +448,14 @@ impl EvacuateJob {
                                 rebalancer_types::ObjectSkippedReason::AssignmentRejected,
                             )
                             .await?;
+                        // Increment skipped count
+                        if let Err(e) = self
+                            .manager_db
+                            .increment_result_count(&self.job_uuid, "skipped")
+                            .await
+                        {
+                            warn!(job_id = %self.job_id, error = %e, "Failed to increment skipped count");
+                        }
                     }
                 }
             }
@@ -551,6 +567,14 @@ impl EvacuateJob {
                     match self.update_object_metadata(&obj).await {
                         Ok(()) => {
                             self.db.mark_object_complete(&obj.id).await?;
+                            // Increment complete count
+                            if let Err(e) = self
+                                .manager_db
+                                .increment_result_count(&self.job_uuid, "complete")
+                                .await
+                            {
+                                warn!(job_id = %self.job_id, error = %e, "Failed to increment complete count");
+                            }
                         }
                         Err(e) => {
                             error!(
@@ -564,6 +588,14 @@ impl EvacuateJob {
                                     EvacuateObjectError::MetadataUpdateFailed,
                                 )
                                 .await?;
+                            // Increment failed count
+                            if let Err(e) = self
+                                .manager_db
+                                .increment_result_count(&self.job_uuid, "failed")
+                                .await
+                            {
+                                warn!(job_id = %self.job_id, error = %e, "Failed to increment failed count");
+                            }
                         }
                     }
                 }
@@ -772,12 +804,20 @@ impl EvacuateJob {
         if let rebalancer_types::AgentAssignmentState::Complete(Some(failed_tasks)) =
             &agent_assignment.stats.state
         {
-            // Mark failed tasks
+            // Mark failed tasks and increment skipped counts
             for task in failed_tasks {
                 if let rebalancer_types::TaskStatus::Failed(reason) = &task.status {
                     self.db
                         .mark_object_skipped(&task.object_id, *reason)
                         .await?;
+                    // Increment skipped count for agent-reported failures
+                    if let Err(e) = self
+                        .manager_db
+                        .increment_result_count(&self.job_uuid, "skipped")
+                        .await
+                    {
+                        warn!(job_id = %self.job_id, error = %e, "Failed to increment skipped count");
+                    }
                 }
             }
         }
@@ -822,6 +862,8 @@ impl EvacuateJob {
         let source = self.config.object_source.clone();
         let max_objects = self.config.max_objects;
         let db = Arc::clone(&self.db);
+        let manager_db = Arc::clone(&self.manager_db);
+        let job_uuid = self.job_uuid;
         let job_id = self.job_id.clone();
 
         let handle = tokio::spawn(async move {
@@ -856,6 +898,12 @@ impl EvacuateJob {
                             break;
                         }
                         sent += 1;
+
+                        // Increment total count for each object discovered
+                        if let Err(e) = manager_db.increment_result_count(&job_uuid, "total").await
+                        {
+                            warn!(job_id = %job_id, error = %e, "Failed to increment total count");
+                        }
 
                         // Check max_objects limit
                         if let Some(max) = max_objects

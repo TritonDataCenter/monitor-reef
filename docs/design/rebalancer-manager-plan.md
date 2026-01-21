@@ -71,11 +71,25 @@ Implement `select_destination()` to use storinfo data for choosing optimal desti
 
 **Commit:** da91438 - Implement destination shark selection for evacuate jobs
 
+### Phase 5: Update Result Counts
+
+Wire up real-time result count tracking as objects are processed through the evacuation pipeline.
+
+#### Implemented
+- [x] Increment "total" count when objects are discovered in `spawn_object_discovery()`
+- [x] Increment "skipped" count when objects are skipped:
+  - No suitable destination found in `assignment_manager()`
+  - Assignment rejected by agent in `assignment_poster()`
+  - Agent reports task failure in `process_completed_assignment()`
+- [x] Increment "complete" count after successful metadata update in `metadata_update_broker()`
+- [x] Increment "failed" count after metadata update failure in `metadata_update_broker()`
+
+#### Count Categories
+1. `total` - Total objects discovered for processing
+2. `skipped` - Objects skipped (no destination, rejected assignment, agent failure)
+3. `complete` - Objects successfully evacuated with metadata updated
+4. `failed` - Objects that encountered unrecoverable errors (metadata update failures)
+
 ## In Progress
 
 ## Future Work
-
-### Phase 5: Update Result Counts
-- Call `db.increment_result_count()` as objects complete
-- Track: Total, Complete, Failed, Skipped counts
-- Update counts in real-time during job execution
