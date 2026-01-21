@@ -165,7 +165,18 @@ impl TaskProcessorHandle {
     /// Process a single task
     async fn process_task(&self, assignment_uuid: &str, task: Task) {
         // Acquire semaphore permit to limit concurrency
-        let _permit = self.semaphore.acquire().await;
+        // This should only fail if the semaphore is closed, which indicates shutdown
+        let _permit = match self.semaphore.acquire().await {
+            Ok(permit) => permit,
+            Err(_) => {
+                tracing::debug!(
+                    assignment_id = %assignment_uuid,
+                    object_id = %task.object_id,
+                    "Semaphore closed, skipping task (likely shutdown)"
+                );
+                return;
+            }
+        };
 
         tracing::debug!(
             assignment_id = %assignment_uuid,

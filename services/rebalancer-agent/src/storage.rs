@@ -238,10 +238,13 @@ impl AssignmentStorage {
     /// Update assignment state
     pub async fn set_state(&self, uuid: &str, state: &str) -> Result<(), StorageError> {
         let conn = self.conn.lock().await;
-        conn.execute(
+        let rows_affected = conn.execute(
             "UPDATE assignments SET state = ? WHERE uuid = ?",
             params![state, uuid],
         )?;
+        if rows_affected == 0 {
+            return Err(StorageError::NotFound(uuid.to_string()));
+        }
         Ok(())
     }
 
@@ -299,6 +302,21 @@ impl AssignmentStorage {
             |row| Ok((row.get(0)?, row.get(1)?)),
         )?;
         Ok(completed >= total)
+    }
+
+    /// Get all incomplete assignments (scheduled or running)
+    ///
+    /// Used on startup to resume interrupted assignments.
+    pub async fn get_incomplete_assignments(&self) -> Result<Vec<String>, StorageError> {
+        let conn = self.conn.lock().await;
+        let mut stmt =
+            conn.prepare("SELECT uuid FROM assignments WHERE state IN ('scheduled', 'running')")?;
+
+        let uuids = stmt
+            .query_map([], |row| row.get(0))?
+            .collect::<Result<Vec<String>, _>>()?;
+
+        Ok(uuids)
     }
 
     /// Delete a completed assignment

@@ -343,18 +343,21 @@ impl EvacuateJob {
             }
             Ok(Err(e)) => {
                 error!("Assignment manager error: {}", e);
-                self.shutdown_tx.send(true).ok();
+                // Intentionally ignore send error - receiver may already be dropped
+                let _ = self.shutdown_tx.send(true);
                 Some(format!("Assignment manager error: {}", e))
             }
             Err(e) => {
                 error!("Assignment manager panicked: {}", e);
-                self.shutdown_tx.send(true).ok();
+                // Intentionally ignore send error - receiver may already be dropped
+                let _ = self.shutdown_tx.send(true);
                 Some(format!("Assignment manager panicked: {}", e))
             }
         };
 
         // Signal shutdown and wait for other workers
-        self.shutdown_tx.send(true).ok();
+        // Intentionally ignore send error - receivers may already be dropped during cleanup
+        let _ = self.shutdown_tx.send(true);
         drop(md_update_tx); // Close metadata channel
 
         // Wait for workers to complete and track any errors
@@ -477,7 +480,31 @@ impl EvacuateJob {
                     continue;
                 }
                 Err(e) => {
-                    warn!("Error selecting destination for {}: {}", eobj.id, e);
+                    warn!(
+                        object_id = %eobj.id,
+                        error = %e,
+                        "Error selecting destination, marking object as skipped"
+                    );
+                    // Record the error in the database so object isn't lost
+                    if let Err(db_err) = self
+                        .db
+                        .mark_object_error(&eobj.id, types::EvacuateObjectError::InternalError)
+                        .await
+                    {
+                        error!(
+                            object_id = %eobj.id,
+                            error = %db_err,
+                            "Failed to record destination selection error in database"
+                        );
+                    }
+                    // Increment error count
+                    if let Err(count_err) = self
+                        .manager_db
+                        .increment_result_count(&self.job_uuid, "error")
+                        .await
+                    {
+                        warn!(job_id = %self.job_id, error = %count_err, "Failed to increment error count");
+                    }
                     continue;
                 }
             };
@@ -1370,7 +1397,8 @@ impl EvacuateJob {
     #[allow(dead_code)]
     pub fn shutdown(&self) {
         info!(job_id = %self.job_id, "Shutting down evacuate job");
-        self.shutdown_tx.send(true).ok();
+        // Intentionally ignore send error - receivers may already be dropped
+        let _ = self.shutdown_tx.send(true);
     }
 }
 

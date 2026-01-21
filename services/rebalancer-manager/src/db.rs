@@ -90,7 +90,14 @@ fn parse_job_state(s: &str) -> JobState {
         "stopped" => JobState::Stopped,
         "complete" => JobState::Complete,
         "failed" => JobState::Failed,
-        _ => JobState::Init,
+        unknown => {
+            tracing::warn!(
+                state = %unknown,
+                "Unknown job state in database, defaulting to Init - \
+                 this may indicate database corruption or schema mismatch"
+            );
+            JobState::Init
+        }
     }
 }
 

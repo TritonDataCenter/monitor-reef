@@ -11,7 +11,7 @@ Copyright 2026 Edgecast Cloud LLC.
 **Review Date:** 2025-01-21
 **Reviewed By:** Claude Code (pr-review-toolkit agents)
 **Branch:** modernization-skill
-**Status:** Phase 1, 2, & 3 Complete - Phase 4 Pending
+**Status:** Phase 1, 2, 3, & 4 Complete (Partial) - Metrics & Advanced Features Pending
 
 This document captures findings from comparing the new Dropshot-based manta-rebalancer implementation against the legacy Gotham-based code in `libs/rebalancer-legacy/`.
 
@@ -233,16 +233,16 @@ let final_state = if critical_errors.is_empty() { "complete" } else { "failed" }
 
 ---
 
-### IMP-4: Resume Interrupted Assignments on Startup
+### IMP-4: Resume Interrupted Assignments on Startup ✅
 
-**Location:** `services/rebalancer-agent/src/`
+**Location:** `services/rebalancer-agent/src/context.rs`, `services/rebalancer-agent/src/storage.rs`
 **Legacy Reference:** `libs/rebalancer-legacy/rebalancer/src/libagent.rs:276-287`
 
-**Description:** Legacy re-discovers and processes incomplete assignments after restart. New agent does not resume interrupted assignments.
+**Description:** ~~Legacy re-discovers and processes incomplete assignments after restart. New agent does not resume interrupted assignments.~~ Fixed - agent now resumes incomplete assignments on startup via `get_incomplete_assignments()` and `resume_incomplete_assignments()`.
 
 **Action Required:**
-- [ ] On startup, scan for incomplete assignments in SQLite
-- [ ] Resume processing for any found
+- [x] On startup, scan for incomplete assignments in SQLite *(Completed: Phase 4)*
+- [x] Resume processing for any found *(Completed: Phase 4)*
 - [ ] Add test for crash recovery
 
 ---
@@ -308,15 +308,15 @@ let updater_error: Option<String> = match metadata_updater.await { ... };
 
 ---
 
-### IMP-9: Unknown Job States Default to Init
+### IMP-9: Unknown Job States Default to Init ✅
 
-**Location:** `services/rebalancer-manager/src/db.rs:85-95`
+**Location:** `services/rebalancer-manager/src/db.rs:85-101`
 
-**Description:** Unknown job states silently default to `Init`. Could mask database corruption or schema issues.
+**Description:** ~~Unknown job states silently default to `Init`. Could mask database corruption or schema issues.~~ Fixed - now logs warning with state value when unknown state encountered.
 
 **Action Required:**
-- [ ] Add logging when unknown state encountered
-- [ ] Consider `Unknown(String)` variant
+- [x] Add logging when unknown state encountered *(Completed: Phase 4)*
+- [ ] Consider `Unknown(String)` variant (deferred - logging is sufficient for now)
 
 ---
 
@@ -339,7 +339,7 @@ let updater_error: Option<String> = match metadata_updater.await { ... };
 
 ---
 
-### IMP-11: No CLI/Admin Tests
+### IMP-11: No CLI/Admin Tests ✅
 
 **Legacy Tests Missing (5 tests):**
 - `no_params`
@@ -348,68 +348,66 @@ let updater_error: Option<String> = match metadata_updater.await { ... };
 - `job_create_no_params`
 - `job_evacuate_no_params`
 
-**Location:** `libs/rebalancer-legacy/manager/src/rebalancer-adm.rs`
+**Location:** `cli/rebalancer-adm/src/main.rs`
+
+**Description:** ~~CLI tests were missing.~~ All 5 tests already exist in `cli/rebalancer-adm/src/main.rs:224-274`.
 
 **Action Required:**
-- [ ] Port CLI tests to `cli/rebalancer-adm/`
-- [ ] Add argument validation tests
+- [x] Port CLI tests to `cli/rebalancer-adm/` *(Already implemented)*
+- [x] Add argument validation tests *(Already implemented)*
 
 ---
 
-### IMP-12: Jobs Module Basic Test Missing
+### IMP-12: Jobs Module Basic Test Missing ✅
 
 **Legacy Test:** `basic` in `libs/rebalancer-legacy/manager/src/jobs/mod.rs`
 
-**Description:** Tests JobBuilder creation.
+**Description:** ~~Tests JobBuilder creation.~~ The new architecture doesn't use the JobBuilder pattern. Job creation and state management are tested through database tests (`db.rs`) and HTTP API tests (`tests/api_tests.rs`). Equivalent functionality is covered.
 
 **Action Required:**
-- [ ] Port test to new jobs module
+- [x] Port test to new jobs module *(N/A - architecture differs, equivalent coverage exists)*
 
 ---
 
 ## Minor Issues (Nice to Have)
 
-### MIN-1: Semaphore Acquisition Unchecked
+### MIN-1: Semaphore Acquisition Unchecked ✅
 
-**Location:** `services/rebalancer-agent/src/processor.rs:154`
+**Location:** `services/rebalancer-agent/src/processor.rs:168-179`
 
-```rust
-let _permit = self.semaphore.acquire().await;
-```
-
-Should use `.expect()` or handle `AcquireError`.
+**Description:** ~~Should use `.expect()` or handle `AcquireError`.~~ Fixed - now handles error case (returns early if semaphore is closed, indicating shutdown).
 
 ---
 
-### MIN-2: Assignment Update Doesn't Verify Row Affected
+### MIN-2: Assignment Update Doesn't Verify Row Affected ✅
 
-**Location:** `services/rebalancer-agent/src/storage.rs:231-238`
+**Location:** `services/rebalancer-agent/src/storage.rs:238-249`
 
-UPDATE statement doesn't verify any rows were affected.
-
----
-
-### MIN-3: Shutdown Signal Uses .ok()
-
-**Location:** `services/rebalancer-manager/src/jobs/evacuate/mod.rs:279, 283, 288, 941`
-
-Pattern makes it hard to distinguish intentional discards from accidental ones.
+**Description:** ~~UPDATE statement doesn't verify any rows were affected.~~ Fixed - `set_state()` now checks `rows_affected` and returns `StorageError::NotFound` if zero rows were updated.
 
 ---
 
-### MIN-4: Destination Selection Error Skips Without DB Update
+### MIN-3: Shutdown Signal Uses .ok() ✅
 
-**Location:** `services/rebalancer-manager/src/jobs/evacuate/mod.rs:342-346`
+**Location:** `services/rebalancer-manager/src/jobs/evacuate/mod.rs`
 
-Object is skipped but not marked as skipped in database.
+**Description:** ~~Pattern makes it hard to distinguish intentional discards from accidental ones.~~ Fixed - changed from `.ok()` to `let _ = ...` with comments explaining why the result is intentionally ignored (receivers may already be dropped during shutdown).
 
 ---
 
-### MIN-5: Temporary File Cleanup on Agent Startup
+### MIN-4: Destination Selection Error Skips Without DB Update ✅
+
+**Location:** `services/rebalancer-manager/src/jobs/evacuate/mod.rs:479-506`
+
+**Description:** ~~Object is skipped but not marked as skipped in database.~~ Fixed - now calls `mark_object_error()` and `increment_result_count()` when destination selection fails.
+
+---
+
+### MIN-5: Temporary File Cleanup on Agent Startup - N/A
 
 **Legacy Reference:** `libs/rebalancer-legacy/rebalancer/src/libagent.rs:1159-1166`
 
-Legacy removes partial downloads from temp dir at startup.
+~~Legacy removes partial downloads from temp dir at startup.~~ Not applicable - the new implementation writes directly to the final destination path (no separate temp directory), so there are no partial temp files to clean up. If a download is interrupted, the partial file would be at the final path and would be overwritten on retry.
 
 ---
 
@@ -439,7 +437,7 @@ Legacy allows runtime adjustment of metadata update threads via `EvacuateJobUpda
 | Evacuate Job Logic | 12 | 29 | 100%+ | - |
 | Manager HTTP API | 3 | 9 | 100%+ ✅ | ~~Critical~~ Done |
 | Configuration | 5 | 6 | 100%+ ✅ | ~~Important~~ Done |
-| CLI/Admin | 5 | 5 | 100% | - |
+| CLI/Admin | 5 | 5 | 100% ✅ | ~~Important~~ Done |
 | Type Serialization | 0 | 4 | NEW | - |
 
 ---
@@ -478,10 +476,26 @@ The new implementation includes several improvements over legacy:
 11. ~~IMP-8: Worker Task Results~~ (completed in Phase 2)
 12. ~~IMP-2: Duplicate Object Tracking~~
 
-### Phase 4: Polish (Post-production)
-13. Remaining important issues
-14. Minor issues
-15. Additional metrics and monitoring
+### Phase 4: Polish (Post-production) - Partial ✅
+
+**Completed:**
+- ~~IMP-4: Resume Interrupted Assignments~~ ✅
+- ~~IMP-9: Log Unknown Job States~~ ✅
+- ~~IMP-11: CLI/Admin Tests~~ ✅ (already implemented)
+- ~~IMP-12: Jobs Module Test~~ ✅ (covered by existing tests)
+- ~~MIN-1: Semaphore Acquisition~~ ✅
+- ~~MIN-2: Assignment Update Verification~~ ✅
+- ~~MIN-3: Shutdown Signal Cleanup~~ ✅
+- ~~MIN-4: Destination Selection DB Update~~ ✅
+- ~~MIN-5: Temp File Cleanup~~ N/A (design differs)
+
+**Remaining (Nice to Have):**
+- IMP-3: Agent Metrics (Prometheus)
+- IMP-5: Assignment State Timestamps
+- IMP-6: Task Completion Timestamps
+- IMP-7: Batch Counter Updates
+- MIN-6: Storinfo Blacklist Support
+- MIN-7: Dynamic Thread Tuning
 
 ---
 

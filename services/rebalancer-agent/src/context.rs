@@ -10,6 +10,7 @@
 use std::sync::Arc;
 
 use anyhow::Result;
+use tracing::{info, warn};
 
 use rebalancer_types::{Assignment, AssignmentPayload};
 
@@ -25,6 +26,8 @@ pub struct ApiContext {
 
 impl ApiContext {
     /// Create a new API context
+    ///
+    /// This also resumes any incomplete assignments from a previous run.
     pub async fn new(config: AgentConfig) -> Result<Self> {
         // Ensure objects directory exists
         tokio::fs::create_dir_all(config.objects_dir()).await?;
@@ -35,7 +38,44 @@ impl ApiContext {
         // Initialize processor
         let processor = Arc::new(TaskProcessor::new(config, Arc::clone(&storage))?);
 
-        Ok(Self { storage, processor })
+        let ctx = Self { storage, processor };
+
+        // Resume any incomplete assignments from previous run
+        ctx.resume_incomplete_assignments().await;
+
+        Ok(ctx)
+    }
+
+    /// Resume processing of any incomplete assignments
+    ///
+    /// This is called on startup to handle assignments that were interrupted
+    /// by a crash or restart.
+    async fn resume_incomplete_assignments(&self) {
+        match self.storage.get_incomplete_assignments().await {
+            Ok(uuids) if uuids.is_empty() => {
+                info!("No incomplete assignments to resume");
+            }
+            Ok(uuids) => {
+                info!(
+                    count = uuids.len(),
+                    "Resuming incomplete assignments from previous run"
+                );
+                for uuid in uuids {
+                    info!(assignment_id = %uuid, "Resuming assignment");
+                    let processor = Arc::clone(&self.processor);
+                    let uuid_clone = uuid.clone();
+                    tokio::spawn(async move {
+                        processor.process_assignment(&uuid_clone).await;
+                    });
+                }
+            }
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    "Failed to get incomplete assignments - some may not be resumed"
+                );
+            }
+        }
     }
 
     /// Check if an assignment exists
