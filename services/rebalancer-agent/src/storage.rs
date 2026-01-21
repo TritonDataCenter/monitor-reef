@@ -16,6 +16,7 @@ use std::sync::Arc;
 use rusqlite::{Connection, params};
 use thiserror::Error;
 use tokio::sync::Mutex;
+use tracing::warn;
 
 use rebalancer_types::{
     AgentAssignmentState, AgentAssignmentStats, Assignment, ObjectSkippedReason, StorageNode, Task,
@@ -185,10 +186,17 @@ impl AssignmentStorage {
                         manta_storage_id: row.get(4)?,
                     },
                     status: match failure_reason {
-                        Some(reason) => {
+                        Some(ref reason_str) => {
                             // Try to parse the reason, default to NetworkError if unknown
-                            let reason: ObjectSkippedReason = serde_json::from_str(&reason)
-                                .unwrap_or(ObjectSkippedReason::NetworkError);
+                            let reason: ObjectSkippedReason = serde_json::from_str(reason_str)
+                                .unwrap_or_else(|e| {
+                                    warn!(
+                                        raw_reason = %reason_str,
+                                        error = %e,
+                                        "Failed to parse failure reason, defaulting to NetworkError"
+                                    );
+                                    ObjectSkippedReason::NetworkError
+                                });
                             TaskStatus::Failed(reason)
                         }
                         None => TaskStatus::Failed(ObjectSkippedReason::NetworkError),

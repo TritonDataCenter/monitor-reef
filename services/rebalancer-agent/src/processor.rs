@@ -34,20 +34,34 @@ pub struct TaskProcessor {
 
 impl TaskProcessor {
     /// Create a new task processor
-    pub fn new(config: AgentConfig, storage: Arc<AssignmentStorage>) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP client cannot be created with the
+    /// configured timeout settings.
+    pub fn new(
+        config: AgentConfig,
+        storage: Arc<AssignmentStorage>,
+    ) -> Result<Self, reqwest::Error> {
         let client = Client::builder()
             .timeout(Duration::from_secs(config.download_timeout_secs))
             .build()
-            .unwrap_or_else(|_| Client::new());
+            .inspect_err(|e| {
+                tracing::error!(
+                    timeout_secs = config.download_timeout_secs,
+                    error = %e,
+                    "Failed to create HTTP client with configured timeout"
+                );
+            })?;
 
         let semaphore = Arc::new(Semaphore::new(config.concurrent_downloads));
 
-        Self {
+        Ok(Self {
             client,
             config,
             storage,
             semaphore,
-        }
+        })
     }
 
     /// Process all tasks in an assignment
@@ -266,7 +280,14 @@ impl TaskProcessorHandle {
                 "MD5 checksum mismatch"
             );
             // Remove the corrupted file
-            let _ = fs::remove_file(&dest_path).await;
+            if let Err(e) = fs::remove_file(&dest_path).await {
+                tracing::error!(
+                    object_id = %task.object_id,
+                    path = %dest_path.display(),
+                    error = %e,
+                    "Failed to remove corrupted file after MD5 mismatch"
+                );
+            }
             return Err(ObjectSkippedReason::MD5Mismatch);
         }
 

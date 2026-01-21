@@ -309,50 +309,125 @@ impl EvacuateJob {
         // end of input to the assignment manager
         let object_discovery = self.spawn_object_discovery(object_tx).await?;
 
-        // Wait for object discovery to complete first
-        // Note: Object discovery errors are logged but don't fail the job -
-        // we continue to let the assignment manager process any objects
-        // that were successfully discovered before the error.
-        let _ = object_discovery
-            .await
-            .inspect_err(|e| error!("Object discovery task panicked: {}", e))
-            .ok()
-            .and_then(|r| {
-                r.inspect_err(|e| error!("Object discovery error: {}", e))
-                    .ok()
-            });
+        // Wait for object discovery to complete first and track any errors
+        // Discovery errors are tracked so we can mark the job as failed if critical
+        let discovery_error: Option<String> = match object_discovery.await {
+            Ok(Ok(())) => {
+                debug!("Object discovery completed successfully");
+                None
+            }
+            Ok(Err(e)) => {
+                error!(job_id = %self.job_id, error = %e, "Object discovery error");
+                Some(format!("Discovery error: {}", e))
+            }
+            Err(e) => {
+                error!(job_id = %self.job_id, error = %e, "Object discovery task panicked");
+                Some(format!("Discovery task panicked: {}", e))
+            }
+        };
 
         // Wait for assignment manager to complete
-        match assignment_manager.await {
-            Ok(Ok(())) => debug!("Assignment manager completed"),
+        let assignment_error: Option<String> = match assignment_manager.await {
+            Ok(Ok(())) => {
+                debug!("Assignment manager completed");
+                None
+            }
             Ok(Err(e)) => {
                 error!("Assignment manager error: {}", e);
                 self.shutdown_tx.send(true).ok();
+                Some(format!("Assignment manager error: {}", e))
             }
             Err(e) => {
                 error!("Assignment manager panicked: {}", e);
                 self.shutdown_tx.send(true).ok();
+                Some(format!("Assignment manager panicked: {}", e))
             }
-        }
+        };
 
         // Signal shutdown and wait for other workers
         self.shutdown_tx.send(true).ok();
         drop(md_update_tx); // Close metadata channel
 
-        // Wait for workers to complete
-        let _ = assignment_poster.await;
-        let _ = assignment_checker.await;
-        let _ = metadata_updater.await;
+        // Wait for workers to complete and track any errors
+        let poster_error: Option<String> = match assignment_poster.await {
+            Ok(Ok(())) => None,
+            Ok(Err(e)) => {
+                error!("Assignment poster error: {}", e);
+                Some(format!("Assignment poster error: {}", e))
+            }
+            Err(e) => {
+                error!("Assignment poster panicked: {}", e);
+                Some(format!("Assignment poster panicked: {}", e))
+            }
+        };
 
-        // Update state to "complete"
+        let checker_error: Option<String> = match assignment_checker.await {
+            Ok(Ok(())) => None,
+            Ok(Err(e)) => {
+                error!("Assignment checker error: {}", e);
+                Some(format!("Assignment checker error: {}", e))
+            }
+            Err(e) => {
+                error!("Assignment checker panicked: {}", e);
+                Some(format!("Assignment checker panicked: {}", e))
+            }
+        };
+
+        let updater_error: Option<String> = match metadata_updater.await {
+            Ok(Ok(())) => None,
+            Ok(Err(e)) => {
+                error!("Metadata updater error: {}", e);
+                Some(format!("Metadata updater error: {}", e))
+            }
+            Err(e) => {
+                error!("Metadata updater panicked: {}", e);
+                Some(format!("Metadata updater panicked: {}", e))
+            }
+        };
+
+        // Determine final job state based on errors
+        // A discovery error is considered critical and fails the job
+        // Worker errors are also critical
+        let critical_errors: Vec<&str> = [
+            discovery_error.as_deref(),
+            assignment_error.as_deref(),
+            poster_error.as_deref(),
+            checker_error.as_deref(),
+            updater_error.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
+
+        let final_state = if critical_errors.is_empty() {
+            "complete"
+        } else {
+            warn!(
+                job_id = %self.job_id,
+                error_count = critical_errors.len(),
+                errors = ?critical_errors,
+                "Job completed with errors"
+            );
+            "failed"
+        };
+
+        // Update final job state
         self.manager_db
-            .update_job_state(&self.job_uuid, "complete")
+            .update_job_state(&self.job_uuid, final_state)
             .await
             .map_err(|e| {
-                JobError::Internal(format!("Failed to update job state to complete: {}", e))
+                JobError::Internal(format!(
+                    "Failed to update job state to {}: {}",
+                    final_state, e
+                ))
             })?;
 
-        info!(job_id = %self.job_id, "Evacuate job completed");
+        if final_state == "failed" {
+            warn!(job_id = %self.job_id, "Evacuate job completed with failures");
+        } else {
+            info!(job_id = %self.job_id, "Evacuate job completed successfully");
+        }
+
         Ok(())
     }
 

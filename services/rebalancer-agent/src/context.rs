@@ -33,7 +33,7 @@ impl ApiContext {
         let storage = Arc::new(AssignmentStorage::new(&config.db_path())?);
 
         // Initialize processor
-        let processor = Arc::new(TaskProcessor::new(config, Arc::clone(&storage)));
+        let processor = Arc::new(TaskProcessor::new(config, Arc::clone(&storage))?);
 
         Ok(Self { storage, processor })
     }
