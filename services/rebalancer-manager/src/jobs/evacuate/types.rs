@@ -165,6 +165,29 @@ impl Default for EvacuateObject {
     }
 }
 
+impl EvacuateObject {
+    /// Extract the sharks array from the embedded Manta object
+    ///
+    /// Returns the list of storage nodes where this object currently resides.
+    /// Returns an empty vec if the object JSON is malformed or missing sharks.
+    pub fn get_sharks(&self) -> Vec<MantaObjectShark> {
+        self.object
+            .get("sharks")
+            .and_then(|v| serde_json::from_value::<Vec<MantaObjectShark>>(v.clone()).ok())
+            .unwrap_or_default()
+    }
+
+    /// Get the content length of the object in bytes
+    ///
+    /// Returns 0 if the object JSON is malformed or missing contentLength.
+    pub fn get_content_length(&self) -> u64 {
+        self.object
+            .get("contentLength")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0)
+    }
+}
+
 /// Essential fields extracted from a Manta object
 ///
 /// These are the minimum fields needed to rebalance an object.

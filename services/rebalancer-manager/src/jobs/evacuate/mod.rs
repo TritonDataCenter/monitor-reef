@@ -219,6 +219,9 @@ impl EvacuateJob {
             .await
             .map_err(|e| JobError::Internal(format!("Failed to refresh storinfo: {}", e)))?;
 
+        // Initialize destination sharks cache from storinfo
+        self.init_dest_sharks().await?;
+
         // Start workers
         let job = Arc::clone(&self);
         let assignment_poster = tokio::spawn({
@@ -336,6 +339,10 @@ impl EvacuateJob {
 
             let dest_id = dest_shark.manta_storage_id.clone();
             eobj.dest_shark = dest_id.clone();
+
+            // Update assigned capacity tracking
+            let object_size_mb = (eobj.get_content_length() / (1024 * 1024)) + 1;
+            self.update_assigned_capacity(&dest_id, object_size_mb).await;
 
             // Get or create assignment for this shark
             let assignment = shark_assignments
@@ -576,18 +583,130 @@ impl EvacuateJob {
     }
 
     /// Select a destination shark for an object
+    ///
+    /// Selects the best destination shark based on:
+    /// 1. Filtering out the source shark
+    /// 2. Filtering out sharks the object is already on
+    /// 3. Filtering out sharks in datacenters where the object already exists
+    ///    (except the from_shark's datacenter, since we're replacing that copy)
+    /// 4. Filtering out sharks without enough available capacity
+    /// 5. Selecting the shark with the most available space
     async fn select_destination(
         &self,
-        _eobj: &EvacuateObject,
+        eobj: &EvacuateObject,
     ) -> Result<Option<StorageNode>, JobError> {
-        // For now, return None - full implementation would:
-        // 1. Get available sharks from storinfo
-        // 2. Filter out the source shark
-        // 3. Filter out sharks in the same datacenter (for cross-DC replication)
-        // 4. Select shark with most available space
-        //
-        // This is a placeholder for the full shark selection logic
-        Ok(None)
+        let obj_sharks = eobj.get_sharks();
+        let object_size_mb = (eobj.get_content_length() / (1024 * 1024)) + 1; // Round up
+
+        // Get datacenters where object already exists (excluding from_shark's DC)
+        let excluded_datacenters: std::collections::HashSet<&str> = obj_sharks
+            .iter()
+            .filter(|s| s.manta_storage_id != self.from_shark.manta_storage_id)
+            .map(|s| s.datacenter.as_str())
+            .collect();
+
+        // Get sharks the object is already on
+        let existing_shark_ids: std::collections::HashSet<&str> =
+            obj_sharks.iter().map(|s| s.manta_storage_id.as_str()).collect();
+
+        // Read destination sharks cache
+        let dest_sharks = self.dest_sharks.read().await;
+
+        // Find the best destination
+        let mut best: Option<(&str, u64)> = None;
+
+        for (shark_id, info) in dest_sharks.iter() {
+            // Skip the source shark
+            if shark_id == &self.from_shark.manta_storage_id {
+                continue;
+            }
+
+            // Skip sharks the object is already on
+            if existing_shark_ids.contains(shark_id.as_str()) {
+                continue;
+            }
+
+            // Skip sharks in datacenters where the object already exists
+            // (except from_shark's datacenter)
+            if excluded_datacenters.contains(info.node.datacenter.as_str()) {
+                continue;
+            }
+
+            // Calculate effective available space
+            let effective_available = info.available_mb.saturating_sub(info.assigned_mb);
+
+            // Skip if not enough space
+            if effective_available < self.config.min_avail_mb {
+                continue;
+            }
+
+            // Skip if not enough space for this object
+            if effective_available < object_size_mb {
+                continue;
+            }
+
+            // Select this shark if it has more space than current best
+            match best {
+                None => best = Some((shark_id, effective_available)),
+                Some((_, best_available)) if effective_available > best_available => {
+                    best = Some((shark_id, effective_available));
+                }
+                _ => {}
+            }
+        }
+
+        // Return the best destination, if any
+        match best {
+            Some((shark_id, _)) => Ok(dest_sharks.get(shark_id).map(|info| info.node.clone())),
+            None => Ok(None),
+        }
+    }
+
+    /// Update the assigned capacity for a destination shark
+    ///
+    /// Called when an object is assigned to a shark to track capacity usage.
+    async fn update_assigned_capacity(&self, shark_id: &str, size_mb: u64) {
+        let mut dest_sharks = self.dest_sharks.write().await;
+        if let Some(info) = dest_sharks.get_mut(shark_id) {
+            info.assigned_mb = info.assigned_mb.saturating_add(size_mb);
+        }
+    }
+
+    /// Initialize the destination sharks cache from storinfo
+    ///
+    /// Should be called after storinfo refresh to populate available destinations.
+    async fn init_dest_sharks(&self) -> Result<(), JobError> {
+        let nodes = self
+            .storinfo
+            .get_all_nodes_with_info()
+            .await
+            .map_err(|e| JobError::Internal(format!("Failed to get storinfo nodes: {}", e)))?;
+
+        let mut dest_sharks = self.dest_sharks.write().await;
+        dest_sharks.clear();
+
+        for node_info in nodes {
+            // Skip the source shark - we're evacuating from it
+            if node_info.node.manta_storage_id == self.from_shark.manta_storage_id {
+                continue;
+            }
+
+            dest_sharks.insert(
+                node_info.node.manta_storage_id.clone(),
+                DestSharkInfo {
+                    node: node_info.node,
+                    available_mb: node_info.available_mb,
+                    assigned_mb: 0,
+                },
+            );
+        }
+
+        info!(
+            count = dest_sharks.len(),
+            "Initialized destination sharks cache"
+        );
+
+        Ok(())
     }
 
     /// Post an assignment to an agent
@@ -1648,5 +1767,75 @@ mod tests {
             EvacuateObjectError::DuplicateShark
         );
         assert!(EvacuateObjectError::from_str("invalid").is_err());
+    }
+
+    // -------------------------------------------------------------------------
+    // Tests for EvacuateObject helper methods
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_evacuate_object_get_sharks() {
+        let obj = make_evacuate_object("test-obj");
+        let sharks = obj.get_sharks();
+
+        assert_eq!(sharks.len(), 2);
+        assert_eq!(sharks[0].manta_storage_id, "1.stor.domain");
+        assert_eq!(sharks[0].datacenter, "dc1");
+        assert_eq!(sharks[1].manta_storage_id, "2.stor.domain");
+        assert_eq!(sharks[1].datacenter, "dc2");
+    }
+
+    #[test]
+    fn test_evacuate_object_get_sharks_missing() {
+        let obj = EvacuateObject {
+            id: "test".to_string(),
+            object: json!({"objectId": "test"}),
+            ..Default::default()
+        };
+        let sharks = obj.get_sharks();
+        assert!(sharks.is_empty());
+    }
+
+    #[test]
+    fn test_evacuate_object_get_sharks_malformed() {
+        let obj = EvacuateObject {
+            id: "test".to_string(),
+            object: json!({"sharks": "not an array"}),
+            ..Default::default()
+        };
+        let sharks = obj.get_sharks();
+        assert!(sharks.is_empty());
+    }
+
+    #[test]
+    fn test_evacuate_object_get_content_length() {
+        let obj = make_evacuate_object("test-obj");
+        assert_eq!(obj.get_content_length(), 1024);
+    }
+
+    #[test]
+    fn test_evacuate_object_get_content_length_with_size() {
+        let obj = make_evacuate_object_with_size("test-obj", 1024 * 1024 * 10); // 10 MiB
+        assert_eq!(obj.get_content_length(), 1024 * 1024 * 10);
+    }
+
+    #[test]
+    fn test_evacuate_object_get_content_length_missing() {
+        let obj = EvacuateObject {
+            id: "test".to_string(),
+            object: json!({"objectId": "test"}),
+            ..Default::default()
+        };
+        assert_eq!(obj.get_content_length(), 0);
+    }
+
+    #[test]
+    fn test_evacuate_object_get_content_length_malformed() {
+        let obj = EvacuateObject {
+            id: "test".to_string(),
+            object: json!({"contentLength": "not a number"}),
+            ..Default::default()
+        };
+        assert_eq!(obj.get_content_length(), 0);
     }
 }

@@ -212,4 +212,26 @@ impl StorinfoClient {
             .map(|info| info.node.clone())
             .collect())
     }
+
+    /// Get all nodes with full capacity info (available_mb, percent_used)
+    ///
+    /// This is useful for destination selection where we need to track
+    /// and compare available capacity across sharks.
+    pub async fn get_all_nodes_with_info(&self) -> Result<Vec<StorageNodeInfo>, StorinfoError> {
+        // Check if cache needs refresh (older than 30 seconds)
+        let needs_refresh = {
+            let cache = self.cache.read().await;
+            match cache.last_updated {
+                None => true,
+                Some(t) => t.elapsed() > Duration::from_secs(30),
+            }
+        };
+
+        if needs_refresh {
+            self.refresh().await?;
+        }
+
+        let cache = self.cache.read().await;
+        Ok(cache.nodes.values().cloned().collect())
+    }
 }

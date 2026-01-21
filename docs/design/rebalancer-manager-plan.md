@@ -50,16 +50,30 @@ Connect object discovery to feed objects into the assignment manager.
 2. `ObjectSource::LocalDb` - Read from local evacuate database (for retry jobs)
 3. Future: Sharkspotter integration for live object discovery
 
-**Commit:** (pending)
+**Commit:** 1002973 - Integrate object discovery for evacuate jobs
+
+### Phase 4: Connect Destination Shark Selection
+
+Implement `select_destination()` to use storinfo data for choosing optimal destination sharks.
+
+#### Implemented
+- [x] Add `get_all_nodes_with_info()` to StorinfoClient for capacity data
+- [x] Add `get_sharks()` and `get_content_length()` helper methods to EvacuateObject
+- [x] Implement `select_destination()` with full filtering logic:
+  - Filter out the source shark
+  - Filter out sharks the object is already on
+  - Filter out sharks in datacenters where object already exists (fault domain)
+  - Filter out sharks without enough available capacity
+  - Select shark with most available space
+- [x] Add `init_dest_sharks()` to initialize destination cache from storinfo
+- [x] Add `update_assigned_capacity()` to track capacity as objects are assigned
+- [x] Wire up destination cache initialization in `run()` method
+
+**Commit:** da91438 - Implement destination shark selection for evacuate jobs
 
 ## In Progress
 
 ## Future Work
-
-### Phase 4: Connect Destination Shark Selection
-- Implement `select_destination()` to use storinfo data
-- Filter sharks by datacenter, available space, exclusions
-- Select optimal destination based on capacity
 
 ### Phase 5: Update Result Counts
 - Call `db.increment_result_count()` as objects complete
