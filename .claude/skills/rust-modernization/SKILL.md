@@ -191,13 +191,12 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 | cueball-tcp-stream-connection | ✅ Done | TCP connector |
 | libmanta | ✅ Done | Manta types and utilities |
 | moray | ✅ Done | Moray client (still uses cueball, qorb migration deferred) |
-| sharkspotter | ✅ Done | In workspace, but excluded from arch-lint/tarpaulin - needs cleanup |
+| sharkspotter | ✅ Done | Fully integrated (no exclusions) |
 
 ### Remaining Crates to Modernize
 
 | Crate | Key Dependencies | Complexity | Strategy |
 |-------|------------------|------------|----------|
-| sharkspotter | (cleanup only) | Low | Remove from arch-lint.toml and tarpaulin.toml exclusions |
 | rebalancer-legacy/* | Multiple | High | May not need modernization - see note below |
 
 **Note on rebalancer-legacy:** New Dropshot-based services exist in `services/rebalancer-agent/` and `services/rebalancer-manager/`. The legacy code may only be needed as reference. See `docs/design/rebalancer-review-findings.md` for gaps in the new implementation.
@@ -227,7 +226,7 @@ Modernization was completed in this order:
 3. `cueball` + resolvers/connectors ✅ DONE
 4. `libmanta` ✅ DONE
 5. `moray` (depends on fast, cueball) ✅ DONE
-6. `sharkspotter` (depends on moray, libmanta) ✅ DONE (needs exclusion cleanup)
+6. `sharkspotter` (depends on moray, libmanta) ✅ DONE
 
 ## New Dropshot Services
 
