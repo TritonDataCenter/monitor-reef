@@ -33,9 +33,12 @@ use tokio::sync::{RwLock, mpsc, watch};
 use tracing::{debug, error, info, warn};
 
 use rebalancer_types::StorageNode;
+use sharkspotter::SharkspotterMessage;
+use slog::Drain;
 
 use super::JobError;
 use crate::db::Database;
+use crate::moray::{MorayPool, MorayPoolConfig};
 use crate::storinfo::StorinfoClient;
 
 use assignment::{Assignment, AssignmentCacheEntry, AssignmentState};
@@ -50,8 +53,15 @@ pub enum ObjectSource {
     None,
     /// Read objects from local evacuate database (for retry jobs)
     LocalDb,
-    // Future: Sharkspotter integration
-    // Sharkspotter { domain: String, min_shard: u32, max_shard: u32 },
+    /// Discover objects via Sharkspotter (scanning Moray shards)
+    Sharkspotter {
+        /// Manta domain (e.g., "my-region.example.com")
+        domain: String,
+        /// Minimum shard number to scan
+        min_shard: u32,
+        /// Maximum shard number to scan
+        max_shard: u32,
+    },
 }
 
 /// Configuration for an evacuate job
@@ -70,6 +80,14 @@ pub struct EvacuateConfig {
     pub agent_timeout_secs: u64,
     /// Source for object discovery
     pub object_source: ObjectSource,
+    /// ZooKeeper connect string for Moray service discovery
+    pub zk_connect_string: Option<String>,
+    /// Manta domain for Moray shard paths
+    pub moray_domain: Option<String>,
+    /// Minimum Moray shard number
+    pub moray_min_shard: u32,
+    /// Maximum Moray shard number
+    pub moray_max_shard: u32,
 }
 
 impl Default for EvacuateConfig {
@@ -81,6 +99,10 @@ impl Default for EvacuateConfig {
             max_objects: None,
             agent_timeout_secs: 30,
             object_source: ObjectSource::default(),
+            zk_connect_string: None,
+            moray_domain: None,
+            moray_min_shard: 1,
+            moray_max_shard: 1,
         }
     }
 }
@@ -141,6 +163,9 @@ pub struct EvacuateJob {
     /// Storinfo client for shark discovery
     storinfo: Arc<StorinfoClient>,
 
+    /// Moray client pool for metadata updates
+    moray_pool: Option<Arc<MorayPool>>,
+
     /// Shutdown signal
     shutdown_tx: watch::Sender<bool>,
 }
@@ -174,6 +199,26 @@ impl EvacuateJob {
 
         let (shutdown_tx, _) = watch::channel(false);
 
+        // Create Moray pool if ZooKeeper and domain are configured
+        let moray_pool = match (&config.zk_connect_string, &config.moray_domain) {
+            (Some(zk), Some(domain)) => {
+                let pool_config = MorayPoolConfig {
+                    zk_connect_string: zk.clone(),
+                    domain: domain.clone(),
+                    min_shard: config.moray_min_shard,
+                    max_shard: config.moray_max_shard,
+                };
+                Some(Arc::new(MorayPool::new(pool_config)))
+            }
+            _ => {
+                warn!(
+                    job_id = %job_id,
+                    "Moray pool not configured - metadata updates will be no-ops"
+                );
+                None
+            }
+        };
+
         Ok(Self {
             job_id,
             job_uuid,
@@ -185,6 +230,7 @@ impl EvacuateJob {
             dest_sharks: Arc::new(RwLock::new(HashMap::new())),
             http_client,
             storinfo,
+            moray_pool,
             shutdown_tx,
         })
     }
@@ -849,14 +895,81 @@ impl EvacuateJob {
     }
 
     /// Update object metadata in Moray
-    async fn update_object_metadata(&self, _obj: &EvacuateObject) -> Result<(), JobError> {
-        // This would:
-        // 1. Connect to the appropriate Moray shard
-        // 2. Read the current object metadata
-        // 3. Update the sharks array to replace the old shark with the new one
-        // 4. Write the updated metadata back
-        //
-        // For now, this is a placeholder
+    ///
+    /// This function connects to the appropriate Moray shard and updates the
+    /// object's sharks array to replace the source shark with the destination.
+    async fn update_object_metadata(&self, obj: &EvacuateObject) -> Result<(), JobError> {
+        // Check if Moray pool is available
+        let moray_pool = match &self.moray_pool {
+            Some(pool) => pool,
+            None => {
+                // No Moray pool configured - log warning but don't fail
+                // This allows testing without a real Moray connection
+                warn!(
+                    object_id = %obj.id,
+                    "Moray pool not configured, skipping metadata update"
+                );
+                return Ok(());
+            }
+        };
+
+        // Validate shard number
+        let shard = if obj.shard < 0 {
+            return Err(JobError::Internal(format!(
+                "Invalid shard number {} for object {}",
+                obj.shard, obj.id
+            )));
+        } else {
+            obj.shard as u32
+        };
+
+        // Get the object key from the embedded Manta object
+        let key = obj
+            .object
+            .get("key")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| {
+                JobError::Internal(format!(
+                    "Missing or invalid 'key' in object metadata for {}",
+                    obj.id
+                ))
+            })?;
+
+        // Get destination shark info
+        let dest_sharks = self.dest_sharks.read().await;
+        let dest_info = dest_sharks.get(&obj.dest_shark).ok_or_else(|| {
+            JobError::Internal(format!(
+                "Destination shark {} not found in cache for object {}",
+                obj.dest_shark, obj.id
+            ))
+        })?;
+
+        // Update the object metadata in Moray
+        crate::moray::update_object_sharks(
+            moray_pool,
+            shard,
+            key,
+            &self.from_shark.manta_storage_id,
+            &obj.dest_shark,
+            &dest_info.node.datacenter,
+            &obj.etag,
+        )
+        .await
+        .map_err(|e| {
+            JobError::Internal(format!(
+                "Failed to update metadata for object {}: {}",
+                obj.id, e
+            ))
+        })?;
+
+        debug!(
+            object_id = %obj.id,
+            shard = shard,
+            from_shark = %self.from_shark.manta_storage_id,
+            dest_shark = %obj.dest_shark,
+            "Successfully updated object metadata in Moray"
+        );
+
         Ok(())
     }
 
@@ -875,6 +988,7 @@ impl EvacuateJob {
         let manager_db = Arc::clone(&self.manager_db);
         let job_uuid = self.job_uuid;
         let job_id = self.job_id.clone();
+        let from_shark_id = self.from_shark.manta_storage_id.clone();
 
         let handle = tokio::spawn(async move {
             match source {
@@ -935,8 +1049,175 @@ impl EvacuateJob {
                         "Object discovery complete"
                     );
                     Ok(())
-                } // Future: Add sharkspotter integration here
-                  // ObjectSource::Sharkspotter { domain, min_shard, max_shard } => { ... }
+                }
+                ObjectSource::Sharkspotter {
+                    domain,
+                    min_shard,
+                    max_shard,
+                } => {
+                    // Discover objects via Sharkspotter
+                    info!(
+                        job_id = %job_id,
+                        domain = %domain,
+                        min_shard = min_shard,
+                        max_shard = max_shard,
+                        from_shark = %from_shark_id,
+                        "Starting Sharkspotter object discovery"
+                    );
+
+                    // Create sharkspotter config
+                    let config = sharkspotter::config::Config {
+                        min_shard,
+                        max_shard,
+                        domain: domain.clone(),
+                        sharks: vec![from_shark_id.clone()],
+                        chunk_size: 1000,
+                        begin: 0,
+                        end: 0,
+                        skip_validate_sharks: true, // Already validated by manager
+                        output_file: None,
+                        obj_id_only: false,
+                        multithreaded: true,
+                        max_threads: 50,
+                        direct_db: false,
+                        log_level: slog::Level::Info,
+                    };
+
+                    // Create channel for sharkspotter results
+                    let (tx, rx) = crossbeam_channel::unbounded::<SharkspotterMessage>();
+
+                    // Run sharkspotter in a blocking task
+                    let sharkspotter_handle = {
+                        let config = config.clone();
+                        let job_id = job_id.clone();
+                        std::thread::spawn(move || {
+                            // Create a slog logger for sharkspotter
+                            let drain = slog_stdlog::StdLog.fuse();
+                            let log = slog::Logger::root(drain, slog::o!("job_id" => job_id));
+
+                            if let Err(e) = sharkspotter::run_multithreaded(&config, log, tx) {
+                                error!(error = %e, "Sharkspotter error");
+                                return Err(JobError::Internal(format!(
+                                    "Sharkspotter failed: {}",
+                                    e
+                                )));
+                            }
+                            Ok(())
+                        })
+                    };
+
+                    // Process results from sharkspotter
+                    let mut sent = 0;
+                    let mut errors = 0;
+
+                    loop {
+                        match rx.recv_timeout(std::time::Duration::from_secs(1)) {
+                            Ok(msg) => {
+                                // Convert SharkspotterMessage to EvacuateObject
+                                let object_id = match sharkspotter::object_id_from_manta_obj(
+                                    &msg.manta_value,
+                                ) {
+                                    Ok(id) => id,
+                                    Err(e) => {
+                                        warn!(
+                                            job_id = %job_id,
+                                            error = %e,
+                                            "Failed to extract objectId from manta object"
+                                        );
+                                        errors += 1;
+                                        continue;
+                                    }
+                                };
+
+                                let eobj = EvacuateObject {
+                                    id: object_id,
+                                    assignment_id: String::new(),
+                                    object: msg.manta_value,
+                                    shard: msg.shard as i32,
+                                    dest_shark: String::new(),
+                                    etag: msg.etag,
+                                    status: EvacuateObjectStatus::Unprocessed,
+                                    skipped_reason: None,
+                                    error: None,
+                                };
+
+                                if object_tx.send(eobj).await.is_err() {
+                                    warn!(
+                                        job_id = %job_id,
+                                        "Object channel closed, stopping discovery"
+                                    );
+                                    break;
+                                }
+                                sent += 1;
+
+                                // Increment total count
+                                if let Err(e) =
+                                    manager_db.increment_result_count(&job_uuid, "total").await
+                                {
+                                    warn!(
+                                        job_id = %job_id,
+                                        error = %e,
+                                        "Failed to increment total count"
+                                    );
+                                }
+
+                                // Check max_objects limit
+                                if let Some(max) = max_objects
+                                    && sent >= max as usize
+                                {
+                                    info!(
+                                        job_id = %job_id,
+                                        max_objects = max,
+                                        "Reached max_objects limit"
+                                    );
+                                    break;
+                                }
+                            }
+                            Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                                // Check if sharkspotter thread is done
+                                if sharkspotter_handle.is_finished() {
+                                    break;
+                                }
+                            }
+                            Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                                // Channel closed, sharkspotter is done
+                                break;
+                            }
+                        }
+                    }
+
+                    // Wait for sharkspotter thread to complete
+                    match sharkspotter_handle.join() {
+                        Ok(Ok(())) => {
+                            info!(
+                                job_id = %job_id,
+                                sent = sent,
+                                errors = errors,
+                                "Sharkspotter discovery complete"
+                            );
+                        }
+                        Ok(Err(e)) => {
+                            error!(
+                                job_id = %job_id,
+                                error = %e,
+                                sent = sent,
+                                "Sharkspotter completed with errors"
+                            );
+                            return Err(e);
+                        }
+                        Err(_) => {
+                            error!(
+                                job_id = %job_id,
+                                "Sharkspotter thread panicked"
+                            );
+                            return Err(JobError::Internal(
+                                "Sharkspotter thread panicked".to_string(),
+                            ));
+                        }
+                    }
+
+                    Ok(())
+                }
             }
         });
 

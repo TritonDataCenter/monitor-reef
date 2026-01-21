@@ -15,4 +15,5 @@ pub mod config;
 pub mod context;
 pub mod db;
 pub mod jobs;
+pub mod moray;
 pub mod storinfo;

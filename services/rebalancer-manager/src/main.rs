@@ -20,6 +20,7 @@ mod config;
 mod context;
 mod db;
 mod jobs;
+mod moray;
 mod storinfo;
 
 use anyhow::{Context, Result};

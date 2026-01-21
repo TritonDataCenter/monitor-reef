@@ -25,13 +25,21 @@ path = "src/main.rs"
 rebalancer-manager-api = { path = "../../apis/rebalancer-manager-api" }
 rebalancer-types = { path = "../../apis/rebalancer-types" }
 
+# Internal libraries
+libmanta = { path = "../../libs/libmanta" }
+moray = { path = "../../libs/moray" }
+sharkspotter = { path = "../../libs/sharkspotter" }
+
 anyhow = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
+crossbeam-channel = "0.5"
 deadpool-postgres = "0.14"
 dropshot = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+slog = "2.7"
+slog-stdlog = "4.1"
 thiserror = { workspace = true }
 tokio = { workspace = true, features = ["sync", "time"] }
 tokio-postgres = { version = "0.7", features = ["with-chrono-0_4", "with-serde_json-1", "with-uuid-1"] }
