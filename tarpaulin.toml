@@ -28,5 +28,4 @@ exclude-files = [
     "libs/rebalancer-legacy/manager/*",
     "libs/rebalancer-legacy/rebalancer/*",
     "libs/rust-utils/*",
-    "libs/sharkspotter/*",
 ]
