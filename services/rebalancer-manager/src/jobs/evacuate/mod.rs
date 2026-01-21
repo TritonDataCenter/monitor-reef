@@ -203,7 +203,9 @@ impl EvacuateJob {
         self.manager_db
             .update_job_state(&self.job_uuid, "setup")
             .await
-            .map_err(|e| JobError::Internal(format!("Failed to update job state to setup: {}", e)))?;
+            .map_err(|e| {
+                JobError::Internal(format!("Failed to update job state to setup: {}", e))
+            })?;
 
         // Create channels for worker communication
         let (object_tx, object_rx) = mpsc::channel::<EvacuateObject>(100);
@@ -252,7 +254,9 @@ impl EvacuateJob {
         self.manager_db
             .update_job_state(&self.job_uuid, "running")
             .await
-            .map_err(|e| JobError::Internal(format!("Failed to update job state to running: {}", e)))?;
+            .map_err(|e| {
+                JobError::Internal(format!("Failed to update job state to running: {}", e))
+            })?;
 
         // Spawn object discovery task
         // When this task completes, the object_tx channel is dropped, signaling
@@ -268,7 +272,8 @@ impl EvacuateJob {
             .inspect_err(|e| error!("Object discovery task panicked: {}", e))
             .ok()
             .and_then(|r| {
-                r.inspect_err(|e| error!("Object discovery error: {}", e)).ok()
+                r.inspect_err(|e| error!("Object discovery error: {}", e))
+                    .ok()
             });
 
         // Wait for assignment manager to complete
@@ -297,7 +302,9 @@ impl EvacuateJob {
         self.manager_db
             .update_job_state(&self.job_uuid, "complete")
             .await
-            .map_err(|e| JobError::Internal(format!("Failed to update job state to complete: {}", e)))?;
+            .map_err(|e| {
+                JobError::Internal(format!("Failed to update job state to complete: {}", e))
+            })?;
 
         info!(job_id = %self.job_id, "Evacuate job completed");
         Ok(())
@@ -350,7 +357,8 @@ impl EvacuateJob {
 
             // Update assigned capacity tracking
             let object_size_mb = (eobj.get_content_length() / (1024 * 1024)) + 1;
-            self.update_assigned_capacity(&dest_id, object_size_mb).await;
+            self.update_assigned_capacity(&dest_id, object_size_mb)
+                .await;
 
             // Get or create assignment for this shark
             let assignment = shark_assignments
@@ -638,8 +646,10 @@ impl EvacuateJob {
             .collect();
 
         // Get sharks the object is already on
-        let existing_shark_ids: std::collections::HashSet<&str> =
-            obj_sharks.iter().map(|s| s.manta_storage_id.as_str()).collect();
+        let existing_shark_ids: std::collections::HashSet<&str> = obj_sharks
+            .iter()
+            .map(|s| s.manta_storage_id.as_str())
+            .collect();
 
         // Read destination sharks cache
         let dest_sharks = self.dest_sharks.read().await;
@@ -925,9 +935,8 @@ impl EvacuateJob {
                         "Object discovery complete"
                     );
                     Ok(())
-                }
-                // Future: Add sharkspotter integration here
-                // ObjectSource::Sharkspotter { domain, min_shard, max_shard } => { ... }
+                } // Future: Add sharkspotter integration here
+                  // ObjectSource::Sharkspotter { domain, min_shard, max_shard } => { ... }
             }
         });
 
