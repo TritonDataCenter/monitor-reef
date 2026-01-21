@@ -95,6 +95,8 @@ pub struct EvacuateConfig {
     pub moray_min_shard: u32,
     /// Maximum Moray shard number
     pub moray_max_shard: u32,
+    /// Source job ID for retry jobs (ObjectSource::LocalDb reads from this job's database)
+    pub source_job_id: Option<String>,
 }
 
 impl Default for EvacuateConfig {
@@ -111,6 +113,7 @@ impl Default for EvacuateConfig {
             moray_domain: None,
             moray_min_shard: 1,
             moray_max_shard: 1,
+            source_job_id: None,
         }
     }
 }
@@ -156,6 +159,9 @@ pub struct EvacuateJob {
     /// Manager database for job state updates
     manager_db: Arc<Database>,
 
+    /// Database URL for creating connections
+    database_url: String,
+
     /// Database connection for evacuate objects
     db: Arc<EvacuateDb>,
 
@@ -176,6 +182,9 @@ pub struct EvacuateJob {
 
     /// Shutdown signal
     shutdown_tx: watch::Sender<bool>,
+
+    /// Channel for receiving runtime updates (e.g., SetMetadataThreads)
+    update_rx: watch::Receiver<Option<rebalancer_types::EvacuateJobUpdateMessage>>,
 }
 
 /// Information about a destination shark
@@ -191,6 +200,9 @@ struct DestSharkInfo {
 #[allow(dead_code)]
 impl EvacuateJob {
     /// Create a new evacuate job
+    ///
+    /// The `update_rx` channel is used to receive runtime configuration updates
+    /// (e.g., `SetMetadataThreads`) from the API context.
     pub async fn new(
         job_id: String,
         job_uuid: uuid::Uuid,
@@ -199,6 +211,7 @@ impl EvacuateJob {
         config: EvacuateConfig,
         manager_db: Arc<Database>,
         database_url: &str,
+        update_rx: watch::Receiver<Option<rebalancer_types::EvacuateJobUpdateMessage>>,
     ) -> Result<Self, JobError> {
         let db = EvacuateDb::new(&job_id, database_url).await?;
 
@@ -234,6 +247,7 @@ impl EvacuateJob {
             from_shark,
             config,
             manager_db,
+            database_url: database_url.to_string(),
             db: Arc::new(db),
             assignments: Arc::new(RwLock::new(HashMap::new())),
             dest_sharks: Arc::new(RwLock::new(HashMap::new())),
@@ -241,6 +255,7 @@ impl EvacuateJob {
             storinfo,
             moray_pool,
             shutdown_tx,
+            update_rx,
         })
     }
 
@@ -1147,12 +1162,19 @@ impl EvacuateJob {
     /// This method spawns a task that discovers objects to evacuate and sends
     /// them to the object channel. The source of objects depends on the
     /// configured `object_source`.
+    ///
+    /// For retry jobs (ObjectSource::LocalDb with source_job_id set), this will:
+    /// 1. Connect to the original job's database
+    /// 2. Read retryable objects from there
+    /// 3. Copy them to the new job's database before processing
     async fn spawn_object_discovery(
         &self,
         object_tx: mpsc::Sender<EvacuateObject>,
     ) -> Result<tokio::task::JoinHandle<Result<(), JobError>>, JobError> {
         let source = self.config.object_source.clone();
         let max_objects = self.config.max_objects;
+        let source_job_id = self.config.source_job_id.clone();
+        let database_url = self.database_url.clone();
         let db = Arc::clone(&self.db);
         let manager_db = Arc::clone(&self.manager_db);
         let job_uuid = self.job_uuid;
@@ -1167,10 +1189,22 @@ impl EvacuateJob {
                     Ok(())
                 }
                 ObjectSource::LocalDb => {
-                    // Read objects from the local evacuate database
-                    info!(job_id = %job_id, "Reading objects from local database");
+                    // For retry jobs, read from the source job's database
+                    // Otherwise, read from our own database
+                    let objects = if let Some(ref src_id) = source_job_id {
+                        info!(
+                            job_id = %job_id,
+                            source_job_id = %src_id,
+                            "Reading objects from source job's database for retry"
+                        );
+                        // Connect to the source job's database
+                        let source_db = EvacuateDb::new(src_id, &database_url).await?;
+                        source_db.get_retryable_objects(max_objects).await?
+                    } else {
+                        info!(job_id = %job_id, "Reading objects from local database");
+                        db.get_retryable_objects(max_objects).await?
+                    };
 
-                    let objects = db.get_retryable_objects(max_objects).await?;
                     let total = objects.len();
                     info!(job_id = %job_id, count = total, "Found objects to process");
 
@@ -1182,6 +1216,19 @@ impl EvacuateJob {
                         obj.dest_shark = String::new();
                         obj.skipped_reason = None;
                         obj.error = None;
+
+                        // For retry jobs, copy the object to the new job's database
+                        if source_job_id.is_some() {
+                            if let Err(e) = db.insert_object(&obj).await {
+                                warn!(
+                                    job_id = %job_id,
+                                    object_id = %obj.id,
+                                    error = %e,
+                                    "Failed to copy object to new job database"
+                                );
+                                continue;
+                            }
+                        }
 
                         if object_tx.send(obj).await.is_err() {
                             warn!(

@@ -36,6 +36,9 @@ pub enum DbError {
 
     #[error("Cannot retry job: {0}")]
     CannotRetry(String),
+
+    #[error("Cannot create job: {0}")]
+    CannotCreate(String),
 }
 
 impl From<tokio_postgres::Error> for DbError {

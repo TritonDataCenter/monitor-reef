@@ -24,6 +24,13 @@ pub struct ManagerConfig {
 
     /// HTTP client timeout in seconds
     pub http_timeout_secs: u64,
+
+    /// Whether snaplink cleanup is required before evacuate jobs can be created
+    ///
+    /// When true, job creation requests will be rejected with an error indicating
+    /// that snaplink cleanup must be completed first. This prevents data integrity
+    /// issues that can occur if objects are evacuated before snaplinks are cleaned up.
+    pub snaplink_cleanup_required: bool,
 }
 
 impl ManagerConfig {
@@ -45,11 +52,18 @@ impl ManagerConfig {
             .parse()
             .context("Invalid HTTP_TIMEOUT_SECS")?;
 
+        // Parse SNAPLINK_CLEANUP_REQUIRED as a boolean
+        // Accepts "true", "1", "yes" (case-insensitive) as true, anything else as false
+        let snaplink_cleanup_required = std::env::var("SNAPLINK_CLEANUP_REQUIRED")
+            .map(|v| matches!(v.to_lowercase().as_str(), "true" | "1" | "yes"))
+            .unwrap_or(false);
+
         Ok(Self {
             database_url,
             storinfo_url,
             max_concurrent_assignments,
             http_timeout_secs,
+            snaplink_cleanup_required,
         })
     }
 
@@ -116,6 +130,7 @@ mod tests {
             storinfo_url: "http://storinfo.local:8080".to_string(),
             max_concurrent_assignments: 10,
             http_timeout_secs: 30,
+            snaplink_cleanup_required: false,
         }
     }
 
