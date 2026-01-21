@@ -146,16 +146,15 @@ cli/manatee-echo-resolver
 
 ## Migration Path
 
-### Phase 1: Create qorb-manatee-resolver (REQUIRED)
+### Phase 1: Create qorb-manatee-resolver (DONE)
 
-Production requires Manatee/ZooKeeper service discovery. Create `libs/qorb-manatee-resolver`:
+✅ **Completed:** `libs/qorb-manatee-resolver` provides Manatee/ZooKeeper service discovery for qorb.
 
-1. Use modern ZooKeeper client (`zookeeper-client` crate, tokio 1.x compatible)
-2. Adapt the watch loop logic from cueball's implementation
-3. Reuse the JSON parsing logic (`process_value()`) nearly verbatim
-4. Implement qorb's `Resolver` trait interface
-
-**Estimated effort:** 3-5 days
+Implementation details:
+1. Uses `zookeeper-client` crate (tokio 1.x compatible)
+2. Watches the Manatee cluster state node for changes
+3. Parses JSON to extract primary's IP and port from `primary.ip` and `primary.pgUrl`
+4. Implements qorb's `Resolver` trait with automatic reconnection and backoff
 
 **Reference:** `libs/cueball-manatee-primary-resolver/` for logic to port
 
@@ -230,7 +229,7 @@ Once migration is complete, delete all cueball crates:
 
 | Phase | Scope | Effort | Status |
 |-------|-------|--------|--------|
-| 1 | Create qorb-manatee-resolver | 3-5 days | 🔴 TODO |
+| 1 | Create qorb-manatee-resolver | 3-5 days | ✅ DONE |
 | 2 | Migrate moray to qorb | 1-2 days | 🔴 TODO |
 | 3 | Delete cueball crates | 1 day | 🔴 TODO |
 

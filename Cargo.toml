@@ -30,6 +30,7 @@ members = [
     "libs/cueball-tcp-stream-connection",
     "libs/libmanta",
     "libs/moray",
+    "libs/qorb-manatee-resolver",
     "libs/sharkspotter",
 
     # To be modernized:

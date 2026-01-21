@@ -238,7 +238,7 @@ Modernization was completed in this order:
 ## Remaining Work: Qorb Migration
 
 Required migration steps (in order):
-1. Create `libs/qorb-manatee-resolver` - Port Manatee/ZooKeeper resolver to qorb 🔴 TODO
+1. Create `libs/qorb-manatee-resolver` - Port Manatee/ZooKeeper resolver to qorb ✅ DONE
 2. Migrate `libs/moray` from cueball to qorb 🔴 TODO
 3. Delete `libs/cueball`, `libs/cueball-static-resolver`, `libs/cueball-tcp-stream-connection` 🔴 TODO
 4. Delete legacy cueball crates (cueball-dns-resolver, cueball-postgres-connection, cueball-manatee-primary-resolver) 🔴 TODO
