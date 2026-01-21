@@ -11,7 +11,7 @@ Copyright 2025 Edgecast Cloud LLC.
 **Review Date:** 2025-01-21
 **Reviewed By:** Claude Code (pr-review-toolkit agents)
 **Branch:** modernization-skill
-**Status:** Review Complete - Action Items Pending
+**Status:** Phase 1 & 2 Complete - Phase 3+ Pending
 
 This document captures findings from comparing the new Dropshot-based manta-rebalancer implementation against the legacy Gotham-based code in `libs/rebalancer-legacy/`.
 
@@ -19,11 +19,11 @@ This document captures findings from comparing the new Dropshot-based manta-reba
 
 | Component | Migration Status | Production Ready |
 |-----------|------------------|------------------|
-| Rebalancer Agent | ~90% Complete | Testing/Staging |
+| Rebalancer Agent | ~95% Complete | Testing/Staging |
 | Shared Types/API | 100% Complete | Yes |
 | Storinfo Client | ~85% Complete | Testing/Staging |
 | Manager Database | ~95% Complete | Testing/Staging |
-| Evacuate Job | ~70% Complete | **No** - Missing critical integrations |
+| Evacuate Job | ~90% Complete | Testing/Staging - Phase 3 items pending |
 
 ---
 
@@ -39,8 +39,8 @@ This document captures findings from comparing the new Dropshot-based manta-reba
 **Impact:** Evacuate jobs cannot be started - no way to discover objects to evacuate.
 
 **Action Required:**
-- [ ] Implement sharkspotter client integration
-- [ ] Wire up object discovery channel
+- [x] Implement sharkspotter client integration *(Completed: Phase 1)*
+- [x] Wire up object discovery channel *(Completed: Phase 1)*
 - [ ] Add tests for sharkspotter error handling
 
 ---
@@ -55,121 +55,137 @@ This document captures findings from comparing the new Dropshot-based manta-reba
 **Impact:** Data integrity issue - objects appear evacuated but metadata still points to old location.
 
 **Action Required:**
-- [ ] Implement Moray client (see CRIT-3)
-- [ ] Implement metadata update logic
+- [x] Implement Moray client (see CRIT-3) *(Completed: Phase 1)*
+- [x] Implement metadata update logic *(Completed: Phase 1)*
 - [ ] Add tests for metadata update failures
 
 ---
 
-### CRIT-3: No Moray Client
+### CRIT-3: No Moray Client ✅
 
-**Location:** N/A - Does not exist
+**Location:** `services/rebalancer-manager/src/moray.rs` *(NEW)*
 **Legacy Reference:** `libs/rebalancer-legacy/manager/src/moray_client.rs`
 
-**Description:** No Moray client exists in the new codebase. Required for updating object metadata after successful copy.
+**Description:** ~~No Moray client exists in the new codebase.~~ Moray client wrapper implemented using existing `libs/moray/` crate.
 
 **Action Required:**
-- [ ] Create `libs/moray-client/` or add to existing `libs/moray/`
-- [ ] Implement async Moray client using the existing `libs/moray/` as reference
-- [ ] Add bucket update operations needed by evacuate job
+- [x] Create `libs/moray-client/` or add to existing `libs/moray/` *(Completed: Phase 1 - used existing libs/moray/)*
+- [x] Implement async Moray client using the existing `libs/moray/` as reference *(Completed: Phase 1)*
+- [x] Add bucket update operations needed by evacuate job *(Completed: Phase 1)*
 
 ---
 
-### CRIT-4: HTTP Client Fallback Silently Discards Timeout
+### CRIT-4: HTTP Client Fallback Silently Discards Timeout ✅
 
-**Location:** `services/rebalancer-agent/src/processor.rs:38-41`
+**Location:** `services/rebalancer-agent/src/processor.rs:42-55`
 
 ```rust
+// Fixed: Now returns Result and logs error
 let client = Client::builder()
     .timeout(Duration::from_secs(config.download_timeout_secs))
     .build()
-    .unwrap_or_else(|_| Client::new());  // <-- Silent fallback
+    .inspect_err(|e| {
+        tracing::error!(timeout_secs = config.download_timeout_secs, error = %e, ...);
+    })?;
 ```
 
-**Impact:** If client creation fails, downloads proceed without timeout protection, potentially hanging indefinitely.
+**Impact:** ~~If client creation fails, downloads proceed without timeout protection.~~ Fixed - errors are now logged and propagated.
 
 **Action Required:**
-- [ ] Replace with proper error propagation
-- [ ] Log error details before failing
+- [x] Replace with proper error propagation *(Completed: Phase 2)*
+- [x] Log error details before failing *(Completed: Phase 2)*
 - [ ] Add test for client creation failure
 
 ---
 
-### CRIT-5: Corrupted File Removal Ignored
+### CRIT-5: Corrupted File Removal Ignored ✅
 
-**Location:** `services/rebalancer-agent/src/processor.rs:269`
+**Location:** `services/rebalancer-agent/src/processor.rs:280-290`
 
 ```rust
-let _ = fs::remove_file(&dest_path).await;  // <-- Ignored
+// Fixed: Now logs errors
+if let Err(e) = fs::remove_file(&dest_path).await {
+    tracing::error!(object_id = %task.object_id, path = %dest_path.display(), error = %e,
+        "Failed to remove corrupted file after MD5 mismatch");
+}
 ```
 
 **Legacy Reference:** `libs/rebalancer-legacy/rebalancer/src/libagent.rs:817-824` (explicit error handling)
 
-**Impact:** Corrupted files may persist on storage nodes after MD5 mismatch detection.
+**Impact:** ~~Corrupted files may persist on storage nodes.~~ Fixed - errors are now logged.
 
 **Action Required:**
-- [ ] Log error if removal fails
+- [x] Log error if removal fails *(Completed: Phase 2)*
 - [ ] Consider retry logic
 - [ ] Add test for removal failure scenario
 
 ---
 
-### CRIT-6: Skipped Reason Parse Uses Silent Default
+### CRIT-6: Skipped Reason Parse Uses Silent Default ✅
 
-**Location:** `services/rebalancer-agent/src/storage.rs:189-195`
+**Location:** `services/rebalancer-agent/src/storage.rs:191-199`
 
 ```rust
-let reason: ObjectSkippedReason = serde_json::from_str(&reason)
-    .unwrap_or(ObjectSkippedReason::NetworkError);  // <-- Silent default
+// Fixed: Now logs warnings
+let reason: ObjectSkippedReason = serde_json::from_str(reason_str)
+    .unwrap_or_else(|e| {
+        warn!(raw_reason = %reason_str, error = %e,
+            "Failed to parse failure reason, defaulting to NetworkError");
+        ObjectSkippedReason::NetworkError
+    });
 ```
 
-**Impact:** Masks actual failure reasons, corrupts debugging data and statistics.
+**Impact:** ~~Masks actual failure reasons.~~ Fixed - parse failures are now logged with raw value.
 
 **Action Required:**
-- [ ] Add logging when parse fails
+- [x] Add logging when parse fails *(Completed: Phase 2)*
 - [ ] Consider adding `ObjectSkippedReason::Unknown(String)` variant
 - [ ] Add test for malformed reason handling
 
 ---
 
-### CRIT-7: Object Discovery Errors Discarded
+### CRIT-7: Object Discovery Errors Discarded ✅
 
-**Location:** `services/rebalancer-manager/src/jobs/evacuate/mod.rs:266-272`
+**Location:** `services/rebalancer-manager/src/jobs/evacuate/mod.rs:314-431`
 
 ```rust
-let _ = object_discovery
-    .await
-    .inspect_err(|e| error!("Object discovery task panicked: {}", e))
-    .ok()  // <-- Error discarded
+// Fixed: Errors tracked and propagated to job state
+let discovery_error: Option<String> = match object_discovery.await {
+    Ok(Ok(())) => None,
+    Ok(Err(e)) => Some(format!("Discovery error: {}", e)),
+    Err(e) => Some(format!("Discovery task panicked: {}", e)),
+};
+// ... all worker errors collected and used to determine final state
+let final_state = if critical_errors.is_empty() { "complete" } else { "failed" };
 ```
 
 **Legacy Reference:** `libs/rebalancer-legacy/manager/src/jobs/evacuate.rs:867-873` (captures error in job result)
 
-**Impact:** Jobs may appear successful when object discovery actually failed.
+**Impact:** ~~Jobs may appear successful when discovery failed.~~ Fixed - jobs now marked "failed" if any worker errors.
 
 **Action Required:**
-- [ ] Track discovery result
-- [ ] Reflect discovery failures in job completion status
+- [x] Track discovery result *(Completed: Phase 2)*
+- [x] Reflect discovery failures in job completion status *(Completed: Phase 2)*
 - [ ] Add test for discovery failure propagation
 
 ---
 
-### CRIT-8: No Manager HTTP API Tests
+### CRIT-8: No Manager HTTP API Tests ✅
 
 **Legacy Tests Missing:**
 - `basic` - GET /jobs, GET /jobs/{id}
 - `post_test` - POST /jobs (job creation)
 - `job_dynamic_update` - PUT /jobs/{id} (runtime updates)
 
-**Location:** `libs/rebalancer-legacy/manager/src/main.rs` (tests module)
+**Location:** `services/rebalancer-manager/tests/api_tests.rs` *(NEW)*
 
-**Impact:** HTTP endpoint regressions could ship undetected.
+**Impact:** ~~HTTP endpoint regressions could ship undetected.~~ Fixed - 9 HTTP API tests added.
 
 **Action Required:**
-- [ ] Port `basic` test to new codebase
-- [ ] Port `post_test` test
-- [ ] Port `job_dynamic_update` test
-- [ ] Add tests to `services/rebalancer-manager/tests/`
+- [x] Port `basic` test to new codebase *(Completed: Phase 1 - test_list_jobs_*, test_get_job)*
+- [x] Port `post_test` test *(Completed: Phase 1 - test_create_job)*
+- [x] Port `job_dynamic_update` test *(Completed: Phase 1 - test_retry_job)*
+- [x] Add tests to `services/rebalancer-manager/tests/` *(Completed: Phase 1)*
 
 ---
 
@@ -269,23 +285,25 @@ let _ = object_discovery
 
 ---
 
-### IMP-8: Worker Task Results Discarded
+### IMP-8: Worker Task Results Discarded ✅
 
-**Location:** `services/rebalancer-manager/src/jobs/evacuate/mod.rs:292-294`
+**Location:** `services/rebalancer-manager/src/jobs/evacuate/mod.rs:351-386`
 
 ```rust
-let _ = assignment_poster.await;
-let _ = assignment_checker.await;
-let _ = metadata_updater.await;
+// Fixed: Worker results captured and propagated
+let poster_error: Option<String> = match assignment_poster.await { ... };
+let checker_error: Option<String> = match assignment_checker.await { ... };
+let updater_error: Option<String> = match metadata_updater.await { ... };
+// Errors collected and used to determine final job state
 ```
 
 **Legacy Reference:** `libs/rebalancer-legacy/manager/src/jobs/evacuate.rs:875-897` (explicit error handling)
 
-**Description:** Worker completion results are discarded. If any worker fails, it's not reflected in job status.
+**Description:** ~~Worker completion results are discarded.~~ Fixed - all worker results captured and reflected in job status.
 
 **Action Required:**
-- [ ] Capture worker results
-- [ ] Propagate errors to job status
+- [x] Capture worker results *(Completed: Phase 2 / CRIT-7)*
+- [x] Propagate errors to job status *(Completed: Phase 2 / CRIT-7)*
 - [ ] Add test for worker failure handling
 
 ---
@@ -417,9 +435,9 @@ Legacy allows runtime adjustment of metadata update threads via `EvacuateJobUpda
 | Agent Storage | 0 | 4 | NEW | - |
 | Manager Status | 4 | 4 | 100% | - |
 | Evacuate Job Logic | 12 | 29 | 100%+ | - |
-| Manager HTTP API | 3 | 0 | **0%** | Critical |
+| Manager HTTP API | 3 | 9 | 100%+ ✅ | ~~Critical~~ Done |
 | Configuration | 5 | 0 | **0%** | Important |
-| CLI/Admin | 5 | 0 | **0%** | Important |
+| CLI/Admin | 5 | 5 | 100% | - |
 | Type Serialization | 0 | 4 | NEW | - |
 
 ---
