@@ -18,6 +18,7 @@ use rebalancer_types::{
 
 use crate::config::ManagerConfig;
 use crate::db::{Database, DbError};
+use crate::jobs::evacuate::{EvacuateConfig, EvacuateJob};
 use crate::storinfo::StorinfoClient;
 
 /// API context shared across all request handlers
@@ -80,15 +81,57 @@ impl ApiContext {
             .create_evacuate_job(id, &params.from_shark, &datacenter, params.max_objects)
             .await?;
 
-        // TODO: Start job processing in background
-        // For now, jobs are created but not automatically started
-        // This will be implemented when we add the job processor/state machine
-
         tracing::info!(
             job_id = %job_id,
             from_shark = %params.from_shark,
             "Created evacuate job"
         );
+
+        // Build the from_shark StorageNode
+        let from_shark = StorageNode {
+            manta_storage_id: params.from_shark.clone(),
+            datacenter,
+        };
+
+        // Create evacuate config
+        let evacuate_config = EvacuateConfig {
+            max_objects: params.max_objects,
+            ..Default::default()
+        };
+
+        // Spawn job in background
+        let storinfo = Arc::clone(&self.storinfo);
+        let db = Arc::clone(&self.db);
+        let database_url = self.config.database_url.clone();
+        let job_id_clone = job_id.clone();
+        let job_uuid = id;
+        tokio::spawn(async move {
+            match EvacuateJob::new(
+                job_id_clone.clone(),
+                from_shark,
+                storinfo,
+                evacuate_config,
+                &database_url,
+            )
+            .await
+            {
+                Ok(job) => {
+                    let job = Arc::new(job);
+                    if let Err(e) = job.run().await {
+                        tracing::error!(job_id = %job_id_clone, error = %e, "Evacuate job failed");
+                        let _ = db.update_job_state(&job_uuid, "failed").await.inspect_err(|db_err| {
+                            tracing::error!(job_id = %job_id_clone, error = %db_err, "Failed to update job state to failed");
+                        });
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(job_id = %job_id_clone, error = %e, "Failed to initialize evacuate job");
+                    let _ = db.update_job_state(&job_uuid, "failed").await.inspect_err(|db_err| {
+                        tracing::error!(job_id = %job_id_clone, error = %db_err, "Failed to update job state to failed");
+                    });
+                }
+            }
+        });
 
         Ok(job_id)
     }
