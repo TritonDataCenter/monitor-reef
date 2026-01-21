@@ -10,7 +10,12 @@
       "Bash(git commit:*)",
       "Bash(git branch:*)",
       "Bash(git status:*)",
-      "Bash(make:*)"
+      "Bash(make:*)",
+      "Bash(make build:*)",
+      "Bash(make test:*)"
+    ],
+    "deny": [
+      "Bash(cargo:*)"
     ]
   }
 }
