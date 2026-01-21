@@ -233,20 +233,49 @@ impl TaskProcessorHandle {
     }
 
     /// Download an object and verify its checksum
+    ///
+    /// This method implements several optimizations from the legacy agent:
+    /// 1. Skip download if file already exists with correct MD5 (CRIT-9)
+    /// 2. Download to temporary file first (CRIT-11)
+    /// 3. Atomically rename to final path only after MD5 verification (CRIT-11)
     async fn download_and_verify(&self, task: &Task) -> Result<(), ObjectSkippedReason> {
-        // Build the URL for the object
-        // Format: http://{storage_id}/{owner}/{object_id}
-        let url = format!(
-            "http://{}/{}/{}",
-            task.source.manta_storage_id, task.owner, task.object_id
-        );
+        // Determine paths using the Manta path structure: /manta/{owner}/{object_id}
+        let dest_path = self.config.manta_file_path(&task.owner, &task.object_id);
+        let tmp_path = self.config.manta_tmp_path(&task.owner, &task.object_id);
+        let dest_dir = dest_path.parent().unwrap();
 
-        // Determine destination path
-        let dest_dir = self.config.objects_dir().join(&task.owner);
-        let dest_path = dest_dir.join(&task.object_id);
+        // CRIT-9: Check if file already exists with correct checksum
+        // This avoids unnecessary re-downloads after agent restart or for retried assignments
+        if dest_path.exists() {
+            match self.compute_file_md5(&dest_path).await {
+                Ok(existing_md5) if existing_md5 == task.md5sum => {
+                    tracing::info!(
+                        object_id = %task.object_id,
+                        owner = %task.owner,
+                        "File already exists with correct checksum, skipping download"
+                    );
+                    return Ok(());
+                }
+                Ok(existing_md5) => {
+                    tracing::debug!(
+                        object_id = %task.object_id,
+                        expected = %task.md5sum,
+                        existing = %existing_md5,
+                        "Existing file has wrong checksum, will re-download"
+                    );
+                }
+                Err(e) => {
+                    tracing::debug!(
+                        object_id = %task.object_id,
+                        error = %e,
+                        "Could not read existing file, will re-download"
+                    );
+                }
+            }
+        }
 
         // Ensure destination directory exists
-        if let Err(e) = fs::create_dir_all(&dest_dir).await {
+        if let Err(e) = fs::create_dir_all(dest_dir).await {
             tracing::error!(
                 path = %dest_dir.display(),
                 error = %e,
@@ -254,6 +283,13 @@ impl TaskProcessorHandle {
             );
             return Err(ObjectSkippedReason::AgentFSError);
         }
+
+        // Build the URL for the object
+        // Format: http://{storage_id}/{owner}/{object_id}
+        let url = format!(
+            "http://{}/{}/{}",
+            task.source.manta_storage_id, task.owner, task.object_id
+        );
 
         // Download the object
         let response = self.client.get(&url).send().await.map_err(|e| {
@@ -268,16 +304,22 @@ impl TaskProcessorHandle {
             return Err(ObjectSkippedReason::HTTPStatusCode(status.as_u16()));
         }
 
-        // Stream the response body to disk while computing MD5
+        // CRIT-11: Stream the response body to a TEMPORARY file while computing MD5
+        // This ensures we never have a partial file at the final destination
         let computed_md5 = self
-            .stream_to_file_with_md5(response, &dest_path)
+            .stream_to_file_with_md5(response, &tmp_path)
             .await
             .map_err(|e| {
                 tracing::error!(
-                    path = %dest_path.display(),
+                    path = %tmp_path.display(),
                     error = %e,
-                    "Failed to write object to disk"
+                    "Failed to write object to temp file"
                 );
+                // Clean up the temp file on error
+                let tmp_path_clone = tmp_path.clone();
+                tokio::spawn(async move {
+                    let _ = fs::remove_file(&tmp_path_clone).await;
+                });
                 ObjectSkippedReason::AgentFSError
             })?;
 
@@ -290,19 +332,63 @@ impl TaskProcessorHandle {
                 computed = %computed_md5,
                 "MD5 checksum mismatch"
             );
-            // Remove the corrupted file
-            if let Err(e) = fs::remove_file(&dest_path).await {
+            // Remove the corrupted temp file
+            if let Err(e) = fs::remove_file(&tmp_path).await {
                 tracing::error!(
                     object_id = %task.object_id,
-                    path = %dest_path.display(),
+                    path = %tmp_path.display(),
                     error = %e,
-                    "Failed to remove corrupted file after MD5 mismatch"
+                    "Failed to remove corrupted temp file after MD5 mismatch"
                 );
             }
             return Err(ObjectSkippedReason::MD5Mismatch);
         }
 
+        // CRIT-11: Atomically rename temp file to final destination
+        // This ensures the file at dest_path is always complete and verified
+        if let Err(e) = fs::rename(&tmp_path, &dest_path).await {
+            tracing::error!(
+                object_id = %task.object_id,
+                tmp_path = %tmp_path.display(),
+                dest_path = %dest_path.display(),
+                error = %e,
+                "Failed to rename temp file to final destination"
+            );
+            // Clean up the temp file
+            let _ = fs::remove_file(&tmp_path).await;
+            return Err(ObjectSkippedReason::AgentFSError);
+        }
+
+        tracing::debug!(
+            object_id = %task.object_id,
+            path = %dest_path.display(),
+            "Object downloaded and verified successfully"
+        );
+
         Ok(())
+    }
+
+    /// Compute the MD5 checksum of an existing file
+    async fn compute_file_md5(&self, path: &PathBuf) -> std::io::Result<String> {
+        use tokio::io::AsyncReadExt;
+
+        let mut file = File::open(path).await?;
+        let mut hasher = Md5::new();
+        let mut buffer = vec![0u8; 64 * 1024]; // 64KB buffer
+
+        loop {
+            let bytes_read = file.read(&mut buffer).await?;
+            if bytes_read == 0 {
+                break;
+            }
+            hasher.update(&buffer[..bytes_read]);
+        }
+
+        let hash = hasher.finalize();
+        Ok(base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            hash,
+        ))
     }
 
     /// Stream HTTP response body to a file while computing MD5

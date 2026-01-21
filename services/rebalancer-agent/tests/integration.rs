@@ -60,16 +60,18 @@ impl TestContext {
         let mock_source = MockServer::start().await;
 
         // Create agent config pointing to temp directory
+        // Use temp_dir/manta as the manta_root for test isolation
         let config = rebalancer_agent::config::AgentConfig {
             data_dir: temp_dir.path().to_path_buf(),
+            manta_root: temp_dir.path().join("manta"),
             concurrent_downloads: 4,
             download_timeout_secs: 30,
         };
 
-        // Ensure directories exist
-        tokio::fs::create_dir_all(config.objects_dir())
+        // Ensure manta root directory exists
+        tokio::fs::create_dir_all(&config.manta_root)
             .await
-            .expect("failed to create objects dir");
+            .expect("failed to create manta root dir");
 
         // Create API context
         let api_context = rebalancer_agent::context::ApiContext::new(config)

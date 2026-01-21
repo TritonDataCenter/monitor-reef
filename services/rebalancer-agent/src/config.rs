@@ -9,8 +9,12 @@
 
 use std::path::PathBuf;
 
-/// Default data directory for agent storage
+/// Default data directory for agent storage (database, temp files)
 const DEFAULT_DATA_DIR: &str = "/var/tmp/rebalancer";
+
+/// Default root directory for Manta objects
+/// Objects are stored as {manta_root}/{owner}/{object_id}
+const DEFAULT_MANTA_ROOT: &str = "/manta";
 
 /// Default number of concurrent download tasks
 const DEFAULT_CONCURRENT_DOWNLOADS: usize = 4;
@@ -21,8 +25,10 @@ const DEFAULT_DOWNLOAD_TIMEOUT_SECS: u64 = 300;
 /// Agent configuration
 #[derive(Clone, Debug)]
 pub struct AgentConfig {
-    /// Directory for storing assignments and downloaded objects
+    /// Directory for agent state (database, temp files)
     pub data_dir: PathBuf,
+    /// Root directory for Manta objects (objects stored as {manta_root}/{owner}/{object_id})
+    pub manta_root: PathBuf,
     /// Number of concurrent download tasks
     pub concurrent_downloads: usize,
     /// HTTP timeout for downloads
@@ -33,6 +39,7 @@ impl Default for AgentConfig {
     fn default() -> Self {
         Self {
             data_dir: PathBuf::from(DEFAULT_DATA_DIR),
+            manta_root: PathBuf::from(DEFAULT_MANTA_ROOT),
             concurrent_downloads: DEFAULT_CONCURRENT_DOWNLOADS,
             download_timeout_secs: DEFAULT_DOWNLOAD_TIMEOUT_SECS,
         }
@@ -41,10 +48,20 @@ impl Default for AgentConfig {
 
 impl AgentConfig {
     /// Load configuration from environment variables
+    ///
+    /// Environment variables:
+    /// - `DATA_DIR`: Directory for agent state (default: /var/tmp/rebalancer)
+    /// - `MANTA_ROOT`: Root directory for Manta objects (default: /manta)
+    /// - `CONCURRENT_DOWNLOADS`: Number of concurrent downloads (default: 4)
+    /// - `DOWNLOAD_TIMEOUT_SECS`: HTTP timeout in seconds (default: 300)
     pub fn from_env() -> Self {
         let data_dir = std::env::var("DATA_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(DEFAULT_DATA_DIR));
+
+        let manta_root = std::env::var("MANTA_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(DEFAULT_MANTA_ROOT));
 
         let concurrent_downloads = std::env::var("CONCURRENT_DOWNLOADS")
             .ok()
@@ -58,6 +75,7 @@ impl AgentConfig {
 
         Self {
             data_dir,
+            manta_root,
             concurrent_downloads,
             download_timeout_secs,
         }
@@ -68,8 +86,33 @@ impl AgentConfig {
         self.data_dir.join("assignments.db")
     }
 
-    /// Get the path to store downloaded objects
-    pub fn objects_dir(&self) -> PathBuf {
-        self.data_dir.join("objects")
+    /// Get the Manta file path for an object
+    ///
+    /// Returns `{manta_root}/{owner}/{object_id}` which is where the
+    /// object will be stored on the storage node's filesystem.
+    pub fn manta_file_path(&self, owner: &str, object_id: &str) -> PathBuf {
+        self.manta_root.join(owner).join(object_id)
+    }
+
+    /// Get the temporary file path for downloading an object
+    ///
+    /// Returns `{manta_root}/{owner}/{object_id}.tmp` which is used during
+    /// download to ensure atomic writes. The file is renamed to the final
+    /// path only after successful MD5 verification.
+    pub fn manta_tmp_path(&self, owner: &str, object_id: &str) -> PathBuf {
+        let mut path = self.manta_file_path(owner, object_id);
+        let mut filename = path.file_name().unwrap().to_os_string();
+        filename.push(".tmp");
+        path.set_file_name(filename);
+        path
+    }
+
+    /// Get the directory for temporary downloads (for cleanup purposes)
+    ///
+    /// Note: Temp files are stored alongside final files with `.tmp` extension,
+    /// not in a separate directory. This method returns the manta_root for
+    /// scanning during cleanup.
+    pub fn temp_dir(&self) -> &PathBuf {
+        &self.manta_root
     }
 }

@@ -8,22 +8,31 @@ Copyright 2026 Edgecast Cloud LLC.
 
 # Manta-Rebalancer Migration Review Findings
 
-**Review Date:** 2025-01-21
+**Review Date:** 2025-01-21 (Updated: 2026-01-21)
 **Reviewed By:** Claude Code (pr-review-toolkit agents)
 **Branch:** modernization-skill
-**Status:** Phase 1, 2, 3, & 4 Complete (Partial) - Metrics & Advanced Features Pending
+**Status:** Phase 1-4 Complete - **3 Critical Agent Issues Found** - Metrics & Advanced Features Pending
 
 This document captures findings from comparing the new Dropshot-based manta-rebalancer implementation against the legacy Gotham-based code in `libs/rebalancer-legacy/`.
 
 ## Executive Summary
 
-| Component | Migration Status | Production Ready |
-|-----------|------------------|------------------|
-| Rebalancer Agent | ~95% Complete | Testing/Staging |
-| Shared Types/API | 100% Complete | Yes |
-| Storinfo Client | ~85% Complete | Testing/Staging |
-| Manager Database | ~95% Complete | Testing/Staging |
-| Evacuate Job | ~95% Complete | Testing/Staging |
+| Component | Migration Status | Production Ready | Blocking Issues |
+|-----------|------------------|------------------|-----------------|
+| Rebalancer Agent | ~85% Complete | **NO** | CRIT-9, CRIT-10, CRIT-11 |
+| Shared Types/API | 100% Complete | Yes | - |
+| Storinfo Client | ~85% Complete | Testing/Staging | - |
+| Manager Database | ~95% Complete | Testing/Staging | - |
+| Evacuate Job | ~90% Complete | Testing/Staging | IMP-13, IMP-14 |
+
+### Test Coverage Summary
+
+| Metric | Legacy | New |
+|--------|--------|-----|
+| Total Tests | 35 | 64 |
+| Tests Ported | - | 31/35 (89%) |
+| Test Gaps | - | 4 |
+| New Tests Added | - | 29 |
 
 ---
 
@@ -186,6 +195,107 @@ let final_state = if critical_errors.is_empty() { "complete" } else { "failed" }
 - [x] Port `post_test` test *(Completed: Phase 1 - test_create_job)*
 - [x] Port `job_dynamic_update` test *(Completed: Phase 1 - test_retry_job)*
 - [x] Add tests to `services/rebalancer-manager/tests/` *(Completed: Phase 1)*
+
+---
+
+### CRIT-9: Missing Pre-existing File Checksum Optimization
+
+**Location:** `services/rebalancer-agent/src/processor.rs:236-306`
+**Legacy Reference:** `libs/rebalancer-legacy/rebalancer/src/libagent.rs:883-898`
+
+**Description:** The legacy implementation checks if the destination file already exists with a matching MD5 checksum before downloading. If it matches, the download is skipped. The new implementation lacks this check entirely and always downloads.
+
+**Legacy Code:**
+```rust
+// If the file exists and the checksum matches, then
+// short-circuit this operation and return.
+if path.exists() && calculate_md5(&file_path) == task.md5sum {
+    task.set_status(TaskStatus::Complete);
+    info!("Checksum passed -- no need to download: {}/{}", &task.owner, &task.object_id);
+    return;
+}
+```
+
+**Impact:**
+- Wastes bandwidth by re-downloading files that already exist correctly
+- Creates unnecessary load on source storage nodes
+- Prevents efficient resumption after agent restart
+
+**Action Required:**
+- [ ] Add check at beginning of `download_and_verify()` to skip if file exists with correct MD5
+- [ ] Add test for skip-if-exists behavior
+
+---
+
+### CRIT-10: Incorrect Destination Path Structure
+
+**Location:** `services/rebalancer-agent/src/processor.rs:245-246`, `services/rebalancer-agent/src/config.rs:72-74`
+**Legacy Reference:** `libs/rebalancer-legacy/rebalancer/src/libagent.rs:795-798`
+
+**Description:** The legacy and new implementations use different destination paths for downloaded objects.
+
+| Implementation | Path |
+|----------------|------|
+| Legacy | `/manta/{owner}/{object_id}` |
+| New | `/var/tmp/rebalancer/objects/{owner}/{object_id}` |
+
+**Legacy Code:**
+```rust
+fn manta_file_path(owner: &str, object: &str) -> String {
+    format!("/manta/{}/{}", owner, object)
+}
+```
+
+**New Code:**
+```rust
+let dest_dir = self.config.objects_dir().join(&task.owner);
+let dest_path = dest_dir.join(&task.object_id);
+// Where objects_dir() returns {data_dir}/objects, defaulting to /var/tmp/rebalancer/objects
+```
+
+**Impact:** Objects are stored in completely different locations. The legacy agent puts objects directly into the Manta file system (`/manta/`), while the new agent puts them in a staging area. This is a **critical incompatibility** for production use.
+
+**Action Required:**
+- [ ] Change `objects_dir()` default to `/manta` OR
+- [ ] Add environment variable `REBALANCER_MANTA_ROOT` with default `/manta` OR
+- [ ] Document this as an intentional design change requiring configuration
+
+---
+
+### CRIT-11: Missing Temporary File Workflow (No Atomic Write)
+
+**Location:** `services/rebalancer-agent/src/processor.rs:272-282`
+**Legacy Reference:** `libs/rebalancer-legacy/rebalancer/src/libagent.rs:786-791, 859-876, 928-931`
+
+**Description:** The legacy implementation downloads to a temporary file first, then moves it to the final location only after MD5 verification succeeds. The new implementation writes directly to the final destination.
+
+**Legacy Code:**
+```rust
+// Downloads to temp path first:
+fn manta_tmp_path(owner: &str, object: &str) -> String {
+    let tid = thread_id::get();
+    format!("{}/{}.{}.{}", REBALANCER_TEMP_DIR, owner, object, tid)
+}
+
+// Then moves after success:
+let manta_path = manta_file_path(&task.owner, &task.object_id);
+file_move(&tmp_path, &manta_path);
+```
+
+**New Code:** Downloads directly to destination path, then removes if MD5 verification fails.
+
+**Impact:**
+- If download is interrupted, a partial/corrupt file remains at the final destination
+- No atomicity - a file at the final path may be incomplete
+- Race conditions possible if another process reads the file during download
+- Legacy approach ensures a file at the final path is always complete and verified
+
+**Action Required:**
+- [ ] Download to `{dest_path}.tmp` first
+- [ ] Verify MD5 checksum
+- [ ] Atomically rename `.tmp` to final path using `std::fs::rename()`
+- [ ] On startup, clean up any stale `.tmp` files
+- [ ] Add test for atomic write behavior
 
 ---
 
@@ -369,6 +479,101 @@ let updater_error: Option<String> = match metadata_updater.await { ... };
 
 ---
 
+### IMP-13: Dynamic Job Update Not Wired
+
+**Location:** `services/rebalancer-manager/src/context.rs:214-222`
+**Legacy Reference:** `libs/rebalancer-legacy/manager/src/main.rs:339-347`
+
+**Description:** The `update_job` method validates the update message but does not actually apply the update to the running job. The code contains a TODO comment and logs "not yet implemented".
+
+**Current Code:**
+```rust
+// TODO: Actually apply the update to the running job
+// This requires integration with the job processor
+tracing::info!(
+    job_id = %uuid,
+    update = ?msg,
+    "Job update requested (not yet implemented)"
+);
+```
+
+**Legacy Behavior:** Uses crossbeam channels to send update messages to the running job thread, which processes them (e.g., `EvacuateJobUpdateMessage::SetMetadataThreads`).
+
+**Impact:** Operations teams cannot dynamically adjust metadata thread count during an active evacuation job without restarting the service.
+
+**Action Required:**
+- [ ] Add tokio watch/mpsc channel from context to running EvacuateJob
+- [ ] Implement `SetMetadataThreads` handler in evacuate job loop
+- [ ] Add test for dynamic config update (legacy: `job_dynamic_update`)
+
+---
+
+### IMP-14: Retry Job Does Not Start Execution
+
+**Location:** `services/rebalancer-manager/src/context.rs:251-253`
+**Legacy Reference:** `libs/rebalancer-legacy/manager/src/jobs/mod.rs:141-186`
+
+**Description:** The `retry_job` method creates the database entry for a new job but does not spawn the actual job execution task. The code contains TODO comments.
+
+**Current Code:**
+```rust
+// TODO: Link the new job to the old one for tracking
+// TODO: Start job processing
+```
+
+**Legacy Behavior:** `JobBuilder::retry()` reads from the old job's database, creates a new job, and sends it through the worker channel for execution with `ObjectSource::LocalDb`.
+
+**Impact:** Retry jobs are created but never actually run - no objects are processed.
+
+**Action Required:**
+- [ ] Spawn `EvacuateJob` with `ObjectSource::LocalDb` pointing to original job's database
+- [ ] Ensure proper job state tracking for the new job
+- [ ] Add test for retry job execution
+
+---
+
+### IMP-15: Missing Config File Watcher (SIGUSR1)
+
+**Location:** `services/rebalancer-manager/src/config.rs`
+**Legacy Reference:** `libs/rebalancer-legacy/manager/src/config.rs:254-298`
+
+**Description:** The new implementation only reads configuration from environment variables. The legacy implementation has a SIGUSR1 signal handler that reloads configuration from a file dynamically, used by config-agent.
+
+**Legacy Behavior:** `Config::start_config_watcher()` spawns threads that listen for SIGUSR1 and reload the config file when signaled.
+
+**Impact:** Operations teams cannot update configuration without restarting the service.
+
+**Action Required:**
+- [ ] Add optional config file path support
+- [ ] Implement signal handler for SIGUSR1 (using tokio::signal)
+- [ ] Add test for config reload (legacy: `signal_handler_config_update`)
+
+---
+
+### IMP-16: Missing Snaplink Cleanup Check
+
+**Location:** `services/rebalancer-manager/src/context.rs:57-60`
+**Legacy Reference:** `libs/rebalancer-legacy/manager/src/main.rs:434-440`
+
+**Description:** The new implementation does not check `snaplink_cleanup_required` before allowing job creation.
+
+**Legacy Behavior:**
+```rust
+if config.snaplink_cleanup_required {
+    let error = invalid_server_error(&state, String::from("Snaplink Cleanup Required"));
+    return Box::new(future::ok((state, error)));
+}
+```
+
+**Impact:** Jobs may be created when snaplink cleanup is required, potentially causing data integrity issues.
+
+**Action Required:**
+- [ ] Add `snaplink_cleanup_required` field to config
+- [ ] Check before job creation and return error if true
+- [ ] Add test for snaplink check
+
+---
+
 ## Minor Issues (Nice to Have)
 
 ### MIN-1: Semaphore Acquisition Unchecked ✅
@@ -403,11 +608,16 @@ let updater_error: Option<String> = match metadata_updater.await { ... };
 
 ---
 
-### MIN-5: Temporary File Cleanup on Agent Startup - N/A
+### MIN-5: Temporary File Cleanup on Agent Startup
 
 **Legacy Reference:** `libs/rebalancer-legacy/rebalancer/src/libagent.rs:1159-1166`
 
-~~Legacy removes partial downloads from temp dir at startup.~~ Not applicable - the new implementation writes directly to the final destination path (no separate temp directory), so there are no partial temp files to clean up. If a download is interrupted, the partial file would be at the final path and would be overwritten on retry.
+**Description:** Legacy removes partial downloads from temp dir at startup.
+
+**Note:** This becomes relevant when CRIT-11 is implemented. Once the agent uses `.tmp` files for atomic writes, stale `.tmp` files from interrupted downloads need to be cleaned up on startup.
+
+**Action Required:**
+- [ ] After implementing CRIT-11, add cleanup of `*.tmp` files in data directory on agent startup
 
 ---
 
@@ -429,16 +639,53 @@ Legacy allows runtime adjustment of metadata update threads via `EvacuateJobUpda
 
 ## Test Coverage Summary
 
+### Overall Statistics
+
+| Metric | Legacy | New |
+|--------|--------|-----|
+| **Total Tests** | 35 | 64 |
+| **Tests Ported** | - | 31/35 (89%) |
+| **Test Gaps** | - | 4 |
+| **New Tests Added** | - | 29 |
+
+### Coverage by Category
+
 | Category | Legacy | New | Coverage | Priority |
 |----------|--------|-----|----------|----------|
-| Agent Integration | 6 | 6 | 100% | - |
+| Agent Integration | 6 | 6 | 100% ✅ | - |
 | Agent Storage | 0 | 4 | NEW | - |
-| Manager Status | 4 | 4 | 100% | - |
-| Evacuate Job Logic | 12 | 29 | 100%+ | - |
-| Manager HTTP API | 3 | 9 | 100%+ ✅ | ~~Critical~~ Done |
-| Configuration | 5 | 6 | 100%+ ✅ | ~~Important~~ Done |
-| CLI/Admin | 5 | 5 | 100% ✅ | ~~Important~~ Done |
+| Manager Status | 4 | 4 | 100% ✅ | - |
+| Evacuate Job Logic | 12 | 30 | 100%+ ✅ | - |
+| Manager HTTP API | 3 | 9 | 100%+ ✅ | - |
+| Configuration | 5 | 6 | Partial | See gaps |
+| CLI/Admin | 5 | 5 | 100% ✅ | - |
 | Type Serialization | 0 | 4 | NEW | - |
+| Moray Tests | 0 | 2 | NEW | - |
+| DB Tests | 0 | 8 | NEW | - |
+
+### Test Gaps (Legacy tests missing in new)
+
+| Legacy Test | File | Priority | Reason |
+|-------------|------|----------|--------|
+| `job_dynamic_update` | main.rs:835 | **Critical** | Feature not yet implemented (IMP-13) |
+| `signal_handler_config_update` | config.rs:510 | **Critical** | Feature not implemented (IMP-15) |
+| `basic` (JobBuilder) | jobs/mod.rs:625 | Important | Architecture differs, covered by other tests |
+| Config file parsing tests (4) | config.rs | Important | New uses env vars, different approach |
+
+### New Tests Added (Improvements)
+
+The new codebase adds **29 tests** not present in legacy:
+
+- **Agent Storage** (4): SQLite storage layer tests
+- **Type/State Machine** (18): Status transitions, serialization, error handling, edge cases
+- **Moray** (2): JSON parsing and mutation tests
+- **DB** (4): Row conversion, parsing, counter logic
+- **Config** (6): Password masking in logs (security improvement)
+- **API Error Handling** (5): Invalid UUIDs, 404s, malformed JSON
+
+### Improvements Over Legacy
+
+Two legacy placeholder tests (`skip_object_test`, `duplicate_object_id_test`) marked as TODO are now **fully implemented** in the new codebase.
 
 ---
 
@@ -458,44 +705,66 @@ The new implementation includes several improvements over legacy:
 
 ## Recommended Priority Order
 
-### Phase 1: Critical (Before any testing)
-1. CRIT-3: Moray Client
-2. CRIT-1: Sharkspotter Integration
-3. CRIT-2: Metadata Updates
-4. CRIT-8: HTTP API Tests
+### Phase 5: Critical Agent Fixes (BLOCKING - Must Fix Before Production)
 
-### Phase 2: Critical Error Handling (Before staging)
-5. CRIT-4: HTTP Client Fallback
-6. CRIT-5: Corrupted File Removal
-7. CRIT-6: Skipped Reason Parse
-8. CRIT-7: Discovery Error Propagation
+**These issues prevent the agent from working correctly in production:**
+
+1. **CRIT-10: Incorrect Destination Path** - Objects written to wrong location
+2. **CRIT-11: Missing Atomic Write** - Partial files at final destination
+3. **CRIT-9: Missing Skip-if-Exists** - Unnecessary re-downloads
+4. MIN-5: Temp File Cleanup (after CRIT-11)
+
+### Phase 6: Manager Completion (Before Production)
+
+**Incomplete features:**
+
+5. **IMP-14: Retry Job Execution** - Retry jobs don't actually run
+6. **IMP-13: Dynamic Job Update** - Can't adjust running jobs
+7. IMP-16: Snaplink Cleanup Check
+
+### Phase 7: Operational Features (Post-production)
+
+8. IMP-15: Config File Watcher (SIGUSR1)
+9. IMP-3: Agent Metrics (Prometheus)
+10. MIN-6: Storinfo Blacklist Support
+11. MIN-7: Dynamic Thread Tuning
+
+---
+
+### Previously Completed Phases
+
+### Phase 1: Critical (Before any testing) ✅
+- ~~CRIT-3: Moray Client~~
+- ~~CRIT-1: Sharkspotter Integration~~
+- ~~CRIT-2: Metadata Updates~~
+- ~~CRIT-8: HTTP API Tests~~
+
+### Phase 2: Critical Error Handling (Before staging) ✅
+- ~~CRIT-4: HTTP Client Fallback~~
+- ~~CRIT-5: Corrupted File Removal~~
+- ~~CRIT-6: Skipped Reason Parse~~
+- ~~CRIT-7: Discovery Error Propagation~~
 
 ### Phase 3: Important (Before production) ✅
-9. ~~IMP-1: Max Fill Percentage~~
-10. ~~IMP-10: Configuration Tests~~
-11. ~~IMP-8: Worker Task Results~~ (completed in Phase 2)
-12. ~~IMP-2: Duplicate Object Tracking~~
+- ~~IMP-1: Max Fill Percentage~~
+- ~~IMP-10: Configuration Tests~~
+- ~~IMP-8: Worker Task Results~~
+- ~~IMP-2: Duplicate Object Tracking~~
 
-### Phase 4: Polish (Post-production) - Partial ✅
+### Phase 4: Polish ✅
+- ~~IMP-4: Resume Interrupted Assignments~~
+- ~~IMP-9: Log Unknown Job States~~
+- ~~IMP-11: CLI/Admin Tests~~
+- ~~IMP-12: Jobs Module Test~~
+- ~~MIN-1: Semaphore Acquisition~~
+- ~~MIN-2: Assignment Update Verification~~
+- ~~MIN-3: Shutdown Signal Cleanup~~
+- ~~MIN-4: Destination Selection DB Update~~
 
-**Completed:**
-- ~~IMP-4: Resume Interrupted Assignments~~ ✅
-- ~~IMP-9: Log Unknown Job States~~ ✅
-- ~~IMP-11: CLI/Admin Tests~~ ✅ (already implemented)
-- ~~IMP-12: Jobs Module Test~~ ✅ (covered by existing tests)
-- ~~MIN-1: Semaphore Acquisition~~ ✅
-- ~~MIN-2: Assignment Update Verification~~ ✅
-- ~~MIN-3: Shutdown Signal Cleanup~~ ✅
-- ~~MIN-4: Destination Selection DB Update~~ ✅
-- ~~MIN-5: Temp File Cleanup~~ N/A (design differs)
-
-**Remaining (Nice to Have):**
-- IMP-3: Agent Metrics (Prometheus)
+### Deferred (Nice to Have)
 - IMP-5: Assignment State Timestamps
 - IMP-6: Task Completion Timestamps
 - IMP-7: Batch Counter Updates
-- MIN-6: Storinfo Blacklist Support
-- MIN-7: Dynamic Thread Tuning
 
 ---
 
