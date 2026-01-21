@@ -101,16 +101,18 @@ impl ApiContext {
 
         // Spawn job in background
         let storinfo = Arc::clone(&self.storinfo);
-        let db = Arc::clone(&self.db);
+        let manager_db = Arc::clone(&self.db);
         let database_url = self.config.database_url.clone();
         let job_id_clone = job_id.clone();
         let job_uuid = id;
         tokio::spawn(async move {
             match EvacuateJob::new(
                 job_id_clone.clone(),
+                job_uuid,
                 from_shark,
                 storinfo,
                 evacuate_config,
+                Arc::clone(&manager_db),
                 &database_url,
             )
             .await
@@ -119,14 +121,14 @@ impl ApiContext {
                     let job = Arc::new(job);
                     if let Err(e) = job.run().await {
                         tracing::error!(job_id = %job_id_clone, error = %e, "Evacuate job failed");
-                        let _ = db.update_job_state(&job_uuid, "failed").await.inspect_err(|db_err| {
+                        let _ = manager_db.update_job_state(&job_uuid, "failed").await.inspect_err(|db_err| {
                             tracing::error!(job_id = %job_id_clone, error = %db_err, "Failed to update job state to failed");
                         });
                     }
                 }
                 Err(e) => {
                     tracing::error!(job_id = %job_id_clone, error = %e, "Failed to initialize evacuate job");
-                    let _ = db.update_job_state(&job_uuid, "failed").await.inspect_err(|db_err| {
+                    let _ = manager_db.update_job_state(&job_uuid, "failed").await.inspect_err(|db_err| {
                         tracing::error!(job_id = %job_id_clone, error = %db_err, "Failed to update job state to failed");
                     });
                 }

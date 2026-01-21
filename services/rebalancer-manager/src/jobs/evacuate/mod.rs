@@ -35,6 +35,7 @@ use tracing::{debug, error, info, warn};
 use rebalancer_types::StorageNode;
 
 use super::JobError;
+use crate::db::Database;
 use crate::storinfo::StorinfoClient;
 
 use assignment::{Assignment, AssignmentCacheEntry, AssignmentState};
@@ -97,11 +98,17 @@ pub struct EvacuateJob {
     /// Job UUID (same as database name)
     job_id: String,
 
+    /// Job UUID for manager database updates
+    job_uuid: uuid::Uuid,
+
     /// Source storage node being evacuated
     from_shark: StorageNode,
 
     /// Configuration
     config: EvacuateConfig,
+
+    /// Manager database for job state updates
+    manager_db: Arc<Database>,
 
     /// Database connection for evacuate objects
     db: Arc<EvacuateDb>,
@@ -136,9 +143,11 @@ impl EvacuateJob {
     /// Create a new evacuate job
     pub async fn new(
         job_id: String,
+        job_uuid: uuid::Uuid,
         from_shark: StorageNode,
         storinfo: Arc<StorinfoClient>,
         config: EvacuateConfig,
+        manager_db: Arc<Database>,
         database_url: &str,
     ) -> Result<Self, JobError> {
         let db = EvacuateDb::new(&job_id, database_url).await?;
@@ -151,8 +160,10 @@ impl EvacuateJob {
 
         Ok(Self {
             job_id,
+            job_uuid,
             from_shark,
             config,
+            manager_db,
             db: Arc::new(db),
             assignments: Arc::new(RwLock::new(HashMap::new())),
             dest_sharks: Arc::new(RwLock::new(HashMap::new())),
@@ -171,6 +182,12 @@ impl EvacuateJob {
             from_shark = %self.from_shark.manta_storage_id,
             "Starting evacuate job"
         );
+
+        // Update state to "setup"
+        self.manager_db
+            .update_job_state(&self.job_uuid, "setup")
+            .await
+            .map_err(|e| JobError::Internal(format!("Failed to update job state to setup: {}", e)))?;
 
         // Create channels for worker communication
         let (object_tx, object_rx) = mpsc::channel::<EvacuateObject>(100);
@@ -212,6 +229,12 @@ impl EvacuateJob {
             async move { job.assignment_manager(object_rx, assignment_tx).await }
         });
 
+        // Update state to "running"
+        self.manager_db
+            .update_job_state(&self.job_uuid, "running")
+            .await
+            .map_err(|e| JobError::Internal(format!("Failed to update job state to running: {}", e)))?;
+
         // For now, we don't have sharkspotter integrated, so we'll read from
         // the local database for retry jobs or simulate for testing.
         // In a full implementation, this would spawn a sharkspotter task.
@@ -238,6 +261,12 @@ impl EvacuateJob {
         let _ = assignment_poster.await;
         let _ = assignment_checker.await;
         let _ = metadata_updater.await;
+
+        // Update state to "complete"
+        self.manager_db
+            .update_job_state(&self.job_uuid, "complete")
+            .await
+            .map_err(|e| JobError::Internal(format!("Failed to update job state to complete: {}", e)))?;
 
         info!(job_id = %self.job_id, "Evacuate job completed");
         Ok(())
