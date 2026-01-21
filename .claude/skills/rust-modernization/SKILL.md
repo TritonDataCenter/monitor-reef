@@ -201,15 +201,15 @@ Co-Authored-By: Claude Opus 4.5 <noreply@anthropic.com>
 
 **Note on rebalancer-legacy:** New Dropshot-based services exist in `services/rebalancer-agent/` and `services/rebalancer-manager/`. The legacy code may only be needed as reference. See `docs/design/rebalancer-review-findings.md` for gaps in the new implementation.
 
-### Crates to Delete (Not Modernize)
+### Deleted Crates
 
-| Crate | Reason | Action |
+| Crate | Reason | Status |
 |-------|--------|--------|
-| cueball-dns-resolver | Legacy tokio 0.1, use qorb DnsResolver | Delete (never enable) |
-| cueball-postgres-connection | Legacy, use qorb DieselPgConnector | Delete (never enable) |
-| cueball-manatee-primary-resolver | Legacy tokio 0.1 + unmaintained tokio-zookeeper | Create qorb-manatee-resolver, then delete |
-| cli/manatee-echo-resolver | Debug tool for old cueball | Delete |
-| rust-utils | Only used by rebalancer-legacy | Inline `calculate_md5` if needed, then delete |
+| cueball-dns-resolver | Legacy tokio 0.1, use qorb DnsResolver | ✅ Deleted |
+| cueball-postgres-connection | Legacy, use qorb DieselPgConnector | ✅ Deleted |
+| cueball-manatee-primary-resolver | Legacy tokio 0.1 + unmaintained tokio-zookeeper | ✅ Deleted (replaced by qorb-manatee-resolver) |
+| cli/manatee-echo-resolver | Debug tool for old cueball | ✅ Deleted |
+| rust-utils | Only used by rebalancer-legacy | ✅ Deleted (new services use md5 crate directly) |
 
 ### Required: Qorb Migration
 

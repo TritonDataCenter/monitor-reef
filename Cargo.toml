@@ -30,11 +30,10 @@ members = [
     "libs/qorb-manatee-resolver",
     "libs/sharkspotter",
 
-    # Legacy (not modernized - may be deleted):
+    # Legacy (not modernized - kept as reference):
     #"libs/rebalancer-legacy/agent",
     #"libs/rebalancer-legacy/manager",
     #"libs/rebalancer-legacy/rebalancer",
-    #"libs/rust-utils",
 ]
 resolver = "2"
 
