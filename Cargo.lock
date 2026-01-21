@@ -2248,6 +2248,7 @@ dependencies = [
  "fast-rpc",
  "libmanta",
  "qorb",
+ "qorb-manatee-resolver",
  "quickcheck",
  "serde",
  "serde_json",

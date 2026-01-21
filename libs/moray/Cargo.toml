@@ -22,6 +22,9 @@ qorb = { workspace = true }
 fast-rpc = { path = "../fast" }
 libmanta = { path = "../libmanta" }
 
+# Manatee/ZooKeeper resolver for production use
+qorb-manatee-resolver = { path = "../qorb-manatee-resolver" }
+
 serde = { workspace = true }
 serde_json = { workspace = true }
 slog = "2.7"

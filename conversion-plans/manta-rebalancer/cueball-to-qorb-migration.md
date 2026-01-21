@@ -158,21 +158,18 @@ Implementation details:
 
 **Reference:** `libs/cueball-manatee-primary-resolver/` for logic to port
 
-### Phase 2: Moray Migration (REQUIRED)
+### Phase 2: Moray Migration (DONE)
 
-The `libs/moray` crate currently uses cueball. Migrate to qorb:
+✅ **Completed:** `libs/moray` now uses qorb with runtime resolver selection.
 
-- Static resolver → `qorb::resolvers::FixedResolver`
-- TCP stream connection → `qorb::connectors::TcpConnector`
-- For production: Use `qorb-manatee-resolver` from Phase 1
+Implementation:
+- `MorayClient::new()` / `from_str()` - Fixed address for testing
+- `MorayClient::with_manatee()` - ZooKeeper-based discovery for production
+- `MorayClient::with_resolver()` - Any custom qorb resolver
 
-**Estimated effort:** 1-2 days
-
-**Changes required:**
-1. Replace `cueball::ConnectionPool` with `qorb::Pool`
-2. Replace `cueball_static_resolver::StaticIpResolver` with `qorb::resolvers::FixedResolver`
-3. Implement simple TCP connector or use `qorb::connectors::TcpConnector`
-4. Update call sites from sync `claim()` to async `claim().await`
+The moray crate includes `qorb-manatee-resolver` as a dependency, allowing
+runtime selection between fixed addresses (testing) and Manatee discovery
+(production) without feature flags.
 
 ### Phase 3: Delete Cueball Crates (REQUIRED)
 
@@ -230,7 +227,7 @@ Once migration is complete, delete all cueball crates:
 | Phase | Scope | Effort | Status |
 |-------|-------|--------|--------|
 | 1 | Create qorb-manatee-resolver | 3-5 days | ✅ DONE |
-| 2 | Migrate moray to qorb | 1-2 days | 🔴 TODO |
+| 2 | Migrate moray to qorb | 1-2 days | ✅ DONE |
 | 3 | Delete cueball crates | 1 day | 🔴 TODO |
 
 ## Appendix A: Example Migration
