@@ -32,15 +32,29 @@ Connect the EvacuateJob to update job state in the manager database as it progre
 - [x] Update state to "complete" at end of successful run
 - [x] State already updates to "failed" on error (from Phase 1)
 
+**Commit:** c8e8974 - Wire up job state transitions in EvacuateJob
+
+### Phase 3: Integrate Object Discovery
+
+Connect object discovery to feed objects into the assignment manager.
+
+#### Implemented
+- [x] Add `ObjectSource` enum to configure object discovery source
+- [x] Add `object_source` field to `EvacuateConfig`
+- [x] Add `get_retryable_objects()` method to EvacuateDb for retry jobs
+- [x] Add `spawn_object_discovery()` method to EvacuateJob
+- [x] Wire object discovery into `run()` replacing the placeholder drop
+
+#### Object Sources
+1. `ObjectSource::None` - No objects (default, for testing scaffolding)
+2. `ObjectSource::LocalDb` - Read from local evacuate database (for retry jobs)
+3. Future: Sharkspotter integration for live object discovery
+
 **Commit:** (pending)
 
 ## In Progress
 
 ## Future Work
-
-### Phase 3: Integrate Object Discovery
-- Connect sharkspotter or local DB for object discovery
-- Feed objects into the assignment manager via the object channel
 
 ### Phase 4: Connect Destination Shark Selection
 - Implement `select_destination()` to use storinfo data

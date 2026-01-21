@@ -311,6 +311,45 @@ impl EvacuateDb {
 
         Ok(counts)
     }
+
+    /// Get objects that can be retried (unprocessed, skipped, or error status)
+    ///
+    /// Returns objects in batches for memory efficiency. Pass limit=0 for all objects.
+    pub async fn get_retryable_objects(
+        &self,
+        limit: Option<u32>,
+    ) -> Result<Vec<EvacuateObject>, JobError> {
+        let client = self.pool.get().await?;
+
+        let query = match limit {
+            Some(n) if n > 0 => format!(
+                r#"
+                SELECT id, assignment_id, object, shard, dest_shark, etag, status, skipped_reason, error
+                FROM evacuateobjects
+                WHERE status IN ('unprocessed', 'skipped', 'error')
+                ORDER BY id
+                LIMIT {}
+                "#,
+                n
+            ),
+            _ => r#"
+                SELECT id, assignment_id, object, shard, dest_shark, etag, status, skipped_reason, error
+                FROM evacuateobjects
+                WHERE status IN ('unprocessed', 'skipped', 'error')
+                ORDER BY id
+                "#
+            .to_string(),
+        };
+
+        let rows = client.query(&query, &[]).await?;
+
+        let mut objects = Vec::with_capacity(rows.len());
+        for row in rows {
+            objects.push(row_to_evacuate_object(&row)?);
+        }
+
+        Ok(objects)
+    }
 }
 
 /// Convert a database row to an EvacuateObject

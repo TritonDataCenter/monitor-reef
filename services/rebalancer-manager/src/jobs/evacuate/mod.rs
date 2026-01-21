@@ -41,6 +41,19 @@ use crate::storinfo::StorinfoClient;
 use assignment::{Assignment, AssignmentCacheEntry, AssignmentState};
 use db::EvacuateDb;
 
+/// Source for object discovery
+#[derive(Debug, Clone, Default)]
+#[allow(dead_code)]
+pub enum ObjectSource {
+    /// No objects - job completes immediately (for testing scaffolding)
+    #[default]
+    None,
+    /// Read objects from local evacuate database (for retry jobs)
+    LocalDb,
+    // Future: Sharkspotter integration
+    // Sharkspotter { domain: String, min_shard: u32, max_shard: u32 },
+}
+
 /// Configuration for an evacuate job
 #[allow(dead_code)]
 #[derive(Clone)]
@@ -55,6 +68,8 @@ pub struct EvacuateConfig {
     pub max_objects: Option<u32>,
     /// Agent HTTP request timeout
     pub agent_timeout_secs: u64,
+    /// Source for object discovery
+    pub object_source: ObjectSource,
 }
 
 impl Default for EvacuateConfig {
@@ -65,6 +80,7 @@ impl Default for EvacuateConfig {
             min_avail_mb: 1000,           // 1GB minimum
             max_objects: None,
             agent_timeout_secs: 30,
+            object_source: ObjectSource::default(),
         }
     }
 }
@@ -235,10 +251,22 @@ impl EvacuateJob {
             .await
             .map_err(|e| JobError::Internal(format!("Failed to update job state to running: {}", e)))?;
 
-        // For now, we don't have sharkspotter integrated, so we'll read from
-        // the local database for retry jobs or simulate for testing.
-        // In a full implementation, this would spawn a sharkspotter task.
-        drop(object_tx); // Close the object channel to signal end of input
+        // Spawn object discovery task
+        // When this task completes, the object_tx channel is dropped, signaling
+        // end of input to the assignment manager
+        let object_discovery = self.spawn_object_discovery(object_tx).await?;
+
+        // Wait for object discovery to complete first
+        // Note: Object discovery errors are logged but don't fail the job -
+        // we continue to let the assignment manager process any objects
+        // that were successfully discovered before the error.
+        let _ = object_discovery
+            .await
+            .inspect_err(|e| error!("Object discovery task panicked: {}", e))
+            .ok()
+            .and_then(|r| {
+                r.inspect_err(|e| error!("Object discovery error: {}", e)).ok()
+            });
 
         // Wait for assignment manager to complete
         match assignment_manager.await {
@@ -661,6 +689,82 @@ impl EvacuateJob {
         //
         // For now, this is a placeholder
         Ok(())
+    }
+
+    /// Spawn the object discovery task based on configuration
+    ///
+    /// This method spawns a task that discovers objects to evacuate and sends
+    /// them to the object channel. The source of objects depends on the
+    /// configured `object_source`.
+    async fn spawn_object_discovery(
+        &self,
+        object_tx: mpsc::Sender<EvacuateObject>,
+    ) -> Result<tokio::task::JoinHandle<Result<(), JobError>>, JobError> {
+        let source = self.config.object_source.clone();
+        let max_objects = self.config.max_objects;
+        let db = Arc::clone(&self.db);
+        let job_id = self.job_id.clone();
+
+        let handle = tokio::spawn(async move {
+            match source {
+                ObjectSource::None => {
+                    // No objects to discover - used for testing scaffolding
+                    info!(job_id = %job_id, "Object source is None, no objects to process");
+                    Ok(())
+                }
+                ObjectSource::LocalDb => {
+                    // Read objects from the local evacuate database
+                    info!(job_id = %job_id, "Reading objects from local database");
+
+                    let objects = db.get_retryable_objects(max_objects).await?;
+                    let total = objects.len();
+                    info!(job_id = %job_id, count = total, "Found objects to process");
+
+                    let mut sent = 0;
+                    for mut obj in objects {
+                        // Reset object state for retry
+                        obj.status = EvacuateObjectStatus::Unprocessed;
+                        obj.assignment_id = String::new();
+                        obj.dest_shark = String::new();
+                        obj.skipped_reason = None;
+                        obj.error = None;
+
+                        if object_tx.send(obj).await.is_err() {
+                            warn!(
+                                job_id = %job_id,
+                                "Object channel closed, stopping discovery"
+                            );
+                            break;
+                        }
+                        sent += 1;
+
+                        // Check max_objects limit
+                        if let Some(max) = max_objects
+                            && sent >= max as usize
+                        {
+                            info!(
+                                job_id = %job_id,
+                                max_objects = max,
+                                "Reached max_objects limit"
+                            );
+                            break;
+                        }
+                    }
+
+                    info!(
+                        job_id = %job_id,
+                        sent = sent,
+                        total = total,
+                        "Object discovery complete"
+                    );
+                    Ok(())
+                }
+                // Future: Add sharkspotter integration here
+                // ObjectSource::Sharkspotter { domain, min_shard, max_shard } => { ... }
+            }
+        });
+
+        Ok(handle)
     }
 
     /// Shutdown the job gracefully
