@@ -171,20 +171,21 @@ The moray crate includes `qorb-manatee-resolver` as a dependency, allowing
 runtime selection between fixed addresses (testing) and Manatee discovery
 (production) without feature flags.
 
-### Phase 3: Delete Cueball Crates (REQUIRED)
+### Phase 3: Delete Cueball Crates (DONE)
 
-Once migration is complete, delete all cueball crates:
+✅ **Completed:** All cueball crates have been deleted.
 
-**Modernized crates (delete after moray migration):**
+**Deleted crates:**
 - `libs/cueball/`
 - `libs/cueball-static-resolver/`
 - `libs/cueball-tcp-stream-connection/`
-
-**Legacy crates (delete immediately - never enabled):**
-- `libs/cueball-dns-resolver/`
 - `libs/cueball-postgres-connection/`
 - `libs/cueball-manatee-primary-resolver/`
 - `cli/manatee-echo-resolver/`
+
+The qorb migration is now complete. All Moray connections use qorb for
+connection pooling with support for fixed addresses (testing) or
+Manatee/ZooKeeper discovery (production).
 
 ## Risk Assessment
 
@@ -228,7 +229,7 @@ Once migration is complete, delete all cueball crates:
 |-------|-------|--------|--------|
 | 1 | Create qorb-manatee-resolver | 3-5 days | ✅ DONE |
 | 2 | Migrate moray to qorb | 1-2 days | ✅ DONE |
-| 3 | Delete cueball crates | 1 day | 🔴 TODO |
+| 3 | Delete cueball crates | 1 day | ✅ DONE |
 
 ## Appendix A: Example Migration
 

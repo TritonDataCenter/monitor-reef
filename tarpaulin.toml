@@ -20,10 +20,7 @@ exclude-files = [
     "apis/api-template/*",
     "clients/internal/client-template/*",
     "services/service-template/*",
-    # Disabled crates
-    "cli/manatee-echo-resolver/*",
-    "libs/cueball-manatee-primary-resolver/*",
-    "libs/cueball-postgres-connection/*",
+    # Legacy (not modernized)
     "libs/rebalancer-legacy/agent/*",
     "libs/rebalancer-legacy/manager/*",
     "libs/rebalancer-legacy/rebalancer/*",

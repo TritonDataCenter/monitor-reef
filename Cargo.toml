@@ -22,21 +22,15 @@ members = [
     "services/rebalancer-agent",
     "services/rebalancer-manager",
 
-    # Modernized:
+    # Modernized libraries:
     "libs/fast",
     "libs/quickcheck-helpers",
-    "libs/cueball",
-    "libs/cueball-static-resolver",
-    "libs/cueball-tcp-stream-connection",
     "libs/libmanta",
     "libs/moray",
     "libs/qorb-manatee-resolver",
     "libs/sharkspotter",
 
-    # To be modernized:
-    #"cli/manatee-echo-resolver",
-    #"libs/cueball-manatee-primary-resolver",
-    #"libs/cueball-postgres-connection",
+    # Legacy (not modernized - may be deleted):
     #"libs/rebalancer-legacy/agent",
     #"libs/rebalancer-legacy/manager",
     #"libs/rebalancer-legacy/rebalancer",

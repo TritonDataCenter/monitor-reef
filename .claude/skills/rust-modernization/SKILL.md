@@ -235,13 +235,16 @@ Modernization was completed in this order:
 5. `moray` (depends on fast, cueball) ✅ DONE
 6. `sharkspotter` (depends on moray, libmanta) ✅ DONE
 
-## Remaining Work: Qorb Migration
+## Qorb Migration: COMPLETE
 
-Required migration steps (in order):
+All migration steps have been completed:
 1. Create `libs/qorb-manatee-resolver` - Port Manatee/ZooKeeper resolver to qorb ✅ DONE
 2. Migrate `libs/moray` from cueball to qorb ✅ DONE
-3. Delete `libs/cueball`, `libs/cueball-static-resolver`, `libs/cueball-tcp-stream-connection` 🔴 TODO
-4. Delete legacy cueball crates (cueball-dns-resolver, cueball-postgres-connection, cueball-manatee-primary-resolver) 🔴 TODO
+3. Delete all cueball crates ✅ DONE
+
+The cueball library has been fully replaced by qorb. Moray now supports:
+- Fixed addresses for testing (`MorayClient::new()`)
+- Manatee/ZooKeeper discovery for production (`MorayClient::with_manatee()`)
 
 ## New Dropshot Services
 
