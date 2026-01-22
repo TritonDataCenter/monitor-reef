@@ -3069,6 +3069,8 @@ dependencies = [
 name = "rebalancer-types"
 version = "0.1.0"
 dependencies = [
+ "quickcheck",
+ "quickcheck_helpers",
  "schemars",
  "serde",
  "serde_json",

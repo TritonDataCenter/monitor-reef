@@ -50,5 +50,6 @@ tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+chrono = { workspace = true }
 tempfile = "3"
 wiremock = { workspace = true }

@@ -282,6 +282,135 @@ mod tests {
         }
     }
 
+    // Helper to create StorageNodeInfo with custom percent_used
+    fn make_node_info_full(
+        id: &str,
+        datacenter: &str,
+        available_mb: u64,
+        percent_used: f64,
+    ) -> StorageNodeInfo {
+        StorageNodeInfo {
+            node: StorageNode {
+                manta_storage_id: id.to_string(),
+                datacenter: datacenter.to_string(),
+            },
+            available_mb,
+            percent_used,
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Test: SharkInfo to StorageNodeInfo conversion
+    // -------------------------------------------------------------------------
+    #[test]
+    fn test_shark_info_conversion() {
+        let shark = SharkInfo {
+            manta_storage_id: "1.stor.domain.com".to_string(),
+            datacenter: "dc1".to_string(),
+            available_mb: 1000,
+            percent_used: 25.5,
+            timestamp: "2025-01-01T00:00:00Z".to_string(),
+        };
+
+        let info: StorageNodeInfo = shark.into();
+
+        assert_eq!(info.node.manta_storage_id, "1.stor.domain.com");
+        assert_eq!(info.node.datacenter, "dc1");
+        assert_eq!(info.available_mb, 1000);
+        assert!((info.percent_used - 25.5).abs() < 0.01);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test: Capacity filtering logic
+    // -------------------------------------------------------------------------
+    #[test]
+    fn test_capacity_filtering() {
+        let nodes = vec![
+            make_node_info("shark1.dc1", "dc1", 500),   // Below threshold
+            make_node_info("shark2.dc1", "dc1", 1000),  // At threshold
+            make_node_info("shark3.dc2", "dc2", 2000),  // Above threshold
+            make_node_info("shark4.dc2", "dc2", 100),   // Well below threshold
+        ];
+
+        let min_available_mb = 1000u64;
+
+        let filtered: Vec<_> = nodes
+            .iter()
+            .filter(|info| info.available_mb >= min_available_mb)
+            .collect();
+
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(filtered[0].node.manta_storage_id, "shark2.dc1");
+        assert_eq!(filtered[1].node.manta_storage_id, "shark3.dc2");
+    }
+
+    // -------------------------------------------------------------------------
+    // Test: Datacenter filtering logic
+    // -------------------------------------------------------------------------
+    #[test]
+    fn test_datacenter_filtering() {
+        let nodes = vec![
+            make_node_info("shark1.dc1", "dc1", 1000),
+            make_node_info("shark2.dc1", "dc1", 2000),
+            make_node_info("shark3.dc2", "dc2", 3000),
+            make_node_info("shark4.dc3", "dc3", 4000),
+        ];
+
+        let datacenter = "dc2";
+
+        let filtered: Vec<_> = nodes
+            .iter()
+            .filter(|info| info.node.datacenter == datacenter)
+            .collect();
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].node.manta_storage_id, "shark3.dc2");
+    }
+
+    // -------------------------------------------------------------------------
+    // Test: Multiple datacenter blacklist
+    // -------------------------------------------------------------------------
+    #[test]
+    fn test_multiple_blacklist() {
+        let nodes = vec![
+            make_node_info("shark1.dc1", "dc1", 1000),
+            make_node_info("shark2.dc2", "dc2", 2000),
+            make_node_info("shark3.dc3", "dc3", 3000),
+            make_node_info("shark4.dc4", "dc4", 4000),
+            make_node_info("shark5.dc5", "dc5", 5000),
+        ];
+
+        let blacklist = ["dc1".to_string(), "dc3".to_string(), "dc5".to_string()];
+
+        let filtered: Vec<_> = nodes
+            .into_iter()
+            .filter(|info| !blacklist.contains(&info.node.datacenter))
+            .collect();
+
+        assert_eq!(filtered.len(), 2);
+        assert_eq!(filtered[0].node.datacenter, "dc2");
+        assert_eq!(filtered[1].node.datacenter, "dc4");
+    }
+
+    // -------------------------------------------------------------------------
+    // Test: Node info with edge case percent_used values
+    // -------------------------------------------------------------------------
+    #[test]
+    fn test_percent_used_edge_cases() {
+        // 0% used
+        let empty_node = make_node_info_full("shark1", "dc1", 10000, 0.0);
+        assert_eq!(empty_node.percent_used, 0.0);
+
+        // 100% used
+        let full_node = make_node_info_full("shark2", "dc1", 0, 100.0);
+        assert_eq!(full_node.percent_used, 100.0);
+        assert_eq!(full_node.available_mb, 0);
+
+        // High precision
+        let precise_node = make_node_info_full("shark3", "dc1", 500, 87.654321);
+        assert!((precise_node.percent_used - 87.654321).abs() < 0.000001);
+    }
+
     #[test]
     fn test_blacklist_filtering() {
         // Test the filtering logic directly without async

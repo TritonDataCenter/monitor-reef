@@ -363,6 +363,147 @@ impl EvacuateJobUpdateMessage {
 }
 
 // ============================================================================
+// Arbitrary Implementations for Property-Based Testing
+// ============================================================================
+
+#[cfg(test)]
+mod arbitrary_impls {
+    use super::*;
+    use quickcheck::{Arbitrary, Gen};
+    use quickcheck_helpers::random::string as random_string;
+
+    impl Arbitrary for StorageNode {
+        fn arbitrary(g: &mut Gen) -> Self {
+            let dc_num = u8::arbitrary(g) % 5 + 1;
+            let shark_num = u8::arbitrary(g) % 10 + 1;
+            StorageNode {
+                datacenter: format!("dc{}", dc_num),
+                manta_storage_id: format!("{}.stor.test.domain", shark_num),
+            }
+        }
+    }
+
+    impl Arbitrary for ObjectSkippedReason {
+        fn arbitrary(g: &mut Gen) -> Self {
+            let variant = u8::arbitrary(g) % 15;
+            match variant {
+                0 => ObjectSkippedReason::AgentFSError,
+                1 => ObjectSkippedReason::AgentAssignmentNoEnt,
+                2 => ObjectSkippedReason::AgentBusy,
+                3 => ObjectSkippedReason::AssignmentError,
+                4 => ObjectSkippedReason::AssignmentMismatch,
+                5 => ObjectSkippedReason::AssignmentRejected,
+                6 => ObjectSkippedReason::DestinationInsufficientSpace,
+                7 => ObjectSkippedReason::DestinationUnreachable,
+                8 => ObjectSkippedReason::MD5Mismatch,
+                9 => ObjectSkippedReason::NetworkError,
+                10 => ObjectSkippedReason::ObjectAlreadyOnDestShark,
+                11 => ObjectSkippedReason::ObjectAlreadyInDatacenter,
+                12 => ObjectSkippedReason::SourceOtherError,
+                13 => ObjectSkippedReason::SourceIsEvacShark,
+                _ => {
+                    // Generate an HTTP status code (common codes: 400, 403, 404, 500, 502, 503)
+                    let codes = [400u16, 403, 404, 500, 502, 503, 504];
+                    let idx = usize::arbitrary(g) % codes.len();
+                    ObjectSkippedReason::HTTPStatusCode(codes[idx])
+                }
+            }
+        }
+    }
+
+    impl Arbitrary for TaskStatus {
+        fn arbitrary(g: &mut Gen) -> Self {
+            let variant = u8::arbitrary(g) % 3;
+            match variant {
+                0 => TaskStatus::Pending,
+                1 => TaskStatus::Complete,
+                _ => TaskStatus::Failed(ObjectSkippedReason::arbitrary(g)),
+            }
+        }
+    }
+
+    impl Arbitrary for Task {
+        fn arbitrary(g: &mut Gen) -> Self {
+            Task {
+                object_id: format!("{}", uuid::Uuid::new_v4()),
+                owner: format!("{}", uuid::Uuid::new_v4()),
+                md5sum: random_string(g, 24), // Base64 encoded MD5 is 24 chars
+                source: StorageNode::arbitrary(g),
+                status: TaskStatus::arbitrary(g),
+            }
+        }
+    }
+
+    impl Arbitrary for AssignmentPayload {
+        fn arbitrary(g: &mut Gen) -> Self {
+            let num_tasks = usize::arbitrary(g) % 100 + 1; // 1-100 tasks
+            let tasks: Vec<Task> = (0..num_tasks).map(|_| Task::arbitrary(g)).collect();
+
+            AssignmentPayload {
+                id: format!("{}", uuid::Uuid::new_v4()),
+                tasks,
+            }
+        }
+    }
+
+    impl Arbitrary for JobState {
+        fn arbitrary(g: &mut Gen) -> Self {
+            let variant = u8::arbitrary(g) % 6;
+            match variant {
+                0 => JobState::Init,
+                1 => JobState::Setup,
+                2 => JobState::Running,
+                3 => JobState::Stopped,
+                4 => JobState::Complete,
+                _ => JobState::Failed,
+            }
+        }
+    }
+
+    impl Arbitrary for JobAction {
+        fn arbitrary(g: &mut Gen) -> Self {
+            if bool::arbitrary(g) {
+                JobAction::Evacuate
+            } else {
+                JobAction::None
+            }
+        }
+    }
+
+    impl Arbitrary for JobDbEntry {
+        fn arbitrary(g: &mut Gen) -> Self {
+            JobDbEntry {
+                id: format!("{}", uuid::Uuid::new_v4()),
+                action: JobAction::arbitrary(g),
+                state: JobState::arbitrary(g),
+            }
+        }
+    }
+
+    impl Arbitrary for EvacuateJobPayload {
+        fn arbitrary(g: &mut Gen) -> Self {
+            let shark_num = u8::arbitrary(g) % 10 + 1;
+            EvacuateJobPayload {
+                from_shark: format!("{}.stor.test.domain", shark_num),
+                max_objects: if bool::arbitrary(g) {
+                    Some(u32::arbitrary(g) % 10000 + 1)
+                } else {
+                    None
+                },
+            }
+        }
+    }
+
+    impl Arbitrary for EvacuateJobUpdateMessage {
+        fn arbitrary(g: &mut Gen) -> Self {
+            // Ensure we generate valid values (> 0)
+            let n = u32::arbitrary(g) % 100 + 1;
+            EvacuateJobUpdateMessage::SetMetadataThreads(n)
+        }
+    }
+}
+
+// ============================================================================
 // Tests
 // ============================================================================
 
@@ -414,5 +555,158 @@ mod tests {
             ObjectSkippedReason::HTTPStatusCode(404).into_string(),
             "{http_status_code:404}"
         );
+    }
+}
+
+// ============================================================================
+// Property-Based Tests (QuickCheck)
+// ============================================================================
+
+#[cfg(test)]
+mod quickcheck_tests {
+    use super::*;
+    use quickcheck::quickcheck;
+
+    // -------------------------------------------------------------------------
+    // Serialization Round-Trip Tests
+    // -------------------------------------------------------------------------
+
+    quickcheck! {
+        /// Any Task can be serialized to JSON and deserialized back
+        fn prop_task_json_roundtrip(task: Task) -> bool {
+            let json = serde_json::to_string(&task).unwrap();
+            let decoded: Task = serde_json::from_str(&json).unwrap();
+            decoded.object_id == task.object_id
+                && decoded.owner == task.owner
+                && decoded.md5sum == task.md5sum
+        }
+
+        /// Any StorageNode can be serialized and deserialized
+        fn prop_storage_node_roundtrip(node: StorageNode) -> bool {
+            let json = serde_json::to_string(&node).unwrap();
+            let decoded: StorageNode = serde_json::from_str(&json).unwrap();
+            decoded == node
+        }
+
+        /// Any TaskStatus can be serialized and deserialized
+        fn prop_task_status_roundtrip(status: TaskStatus) -> bool {
+            let json = serde_json::to_string(&status).unwrap();
+            let decoded: TaskStatus = serde_json::from_str(&json).unwrap();
+            decoded == status
+        }
+
+        /// Any JobState can be serialized and deserialized
+        fn prop_job_state_roundtrip(state: JobState) -> bool {
+            let json = serde_json::to_string(&state).unwrap();
+            let decoded: JobState = serde_json::from_str(&json).unwrap();
+            decoded == state
+        }
+
+        /// Any JobDbEntry can be serialized and deserialized
+        fn prop_job_db_entry_roundtrip(entry: JobDbEntry) -> bool {
+            let json = serde_json::to_string(&entry).unwrap();
+            let decoded: JobDbEntry = serde_json::from_str(&json).unwrap();
+            decoded == entry
+        }
+
+        /// Any AssignmentPayload can be serialized and deserialized
+        fn prop_assignment_payload_roundtrip(payload: AssignmentPayload) -> bool {
+            let json = serde_json::to_string(&payload).unwrap();
+            let decoded: AssignmentPayload = serde_json::from_str(&json).unwrap();
+            decoded.id == payload.id && decoded.tasks.len() == payload.tasks.len()
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Invariant Tests
+    // -------------------------------------------------------------------------
+
+    quickcheck! {
+        /// Assignment payload always has at least one task (from our Arbitrary impl)
+        fn prop_assignment_has_tasks(payload: AssignmentPayload) -> bool {
+            !payload.tasks.is_empty()
+        }
+
+        /// EvacuateJobUpdateMessage validation: SetMetadataThreads(0) is invalid
+        fn prop_update_message_validation(msg: EvacuateJobUpdateMessage) -> bool {
+            // Our Arbitrary impl generates valid values (1-100), so validation should pass
+            msg.validate().is_ok()
+        }
+
+        /// HTTPStatusCode variant can round-trip its status code
+        fn prop_http_status_code_preserved(code: u16) -> bool {
+            let reason = ObjectSkippedReason::HTTPStatusCode(code);
+            match reason {
+                ObjectSkippedReason::HTTPStatusCode(c) => c == code,
+                _ => false,
+            }
+        }
+
+        /// ObjectSkippedReason into_string never panics
+        fn prop_skipped_reason_into_string_safe(reason: ObjectSkippedReason) -> bool {
+            let s = reason.into_string();
+            !s.is_empty()
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Large-Scale Tests
+    // -------------------------------------------------------------------------
+
+    /// Test processing many tasks in a single assignment
+    #[test]
+    fn test_large_assignment() {
+        use quickcheck::{Gen, Arbitrary};
+
+        let mut g = Gen::new(100);
+        let mut tasks = Vec::new();
+
+        // Generate 1000 tasks
+        for _ in 0..1000 {
+            tasks.push(Task::arbitrary(&mut g));
+        }
+
+        let payload = AssignmentPayload {
+            id: uuid::Uuid::new_v4().to_string(),
+            tasks,
+        };
+
+        // Verify serialization works with large payload
+        let json = serde_json::to_string(&payload).expect("serialize large payload");
+        let decoded: AssignmentPayload =
+            serde_json::from_str(&json).expect("deserialize large payload");
+
+        assert_eq!(decoded.tasks.len(), 1000);
+    }
+
+    /// Test all ObjectSkippedReason variants can be serialized
+    #[test]
+    fn test_all_skipped_reasons_serialize() {
+        use strum::IntoEnumIterator;
+
+        for reason in ObjectSkippedReason::iter() {
+            let status = TaskStatus::Failed(reason);
+            let json = serde_json::to_string(&status).expect("serialize status");
+            let _decoded: TaskStatus = serde_json::from_str(&json).expect("deserialize status");
+        }
+    }
+
+    /// Test all JobState variants can be serialized
+    #[test]
+    fn test_all_job_states_serialize() {
+        let states = [
+            JobState::Init,
+            JobState::Setup,
+            JobState::Running,
+            JobState::Stopped,
+            JobState::Complete,
+            JobState::Failed,
+        ];
+
+        for state in states {
+            let json = serde_json::to_string(&state).expect("serialize state");
+            let decoded: JobState = serde_json::from_str(&json).expect("deserialize state");
+            assert_eq!(decoded, state);
+        }
     }
 }

@@ -20,3 +20,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { version = "0.27", features = ["derive"] }
 uuid = { workspace = true }
+
+[dev-dependencies]
+quickcheck = "1.0"
+quickcheck_helpers = { path = "../../libs/quickcheck-helpers" }

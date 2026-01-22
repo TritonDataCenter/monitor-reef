@@ -600,6 +600,214 @@ async fn test_resume_failed_false_on_clean_startup() {
     );
 }
 
+// ============================================================================
+// Phase 1: Missing Agent Tests
+// ============================================================================
+
+/// Test name: existing_file_checksum_match
+/// Description: When a file already exists locally with the correct MD5 checksum,
+///              the agent should skip the download and report success.
+///              This tests the CRIT-9 optimization from the legacy agent.
+/// Expected: TaskStatus should be Complete without actually downloading.
+#[tokio::test]
+async fn existing_file_checksum_match() {
+    let ctx = TestContext::new().await;
+
+    // Setup mock file (the mock server shouldn't actually be called)
+    let content = b"Pre-existing content with correct checksum";
+    let owner = "rebalancer";
+    let object_id = "preexisting-object";
+
+    // Pre-create the file at the expected location in the agent's manta_root
+    // First we need to access the temp_dir to write the file
+    let manta_file_path = ctx._temp_dir.path().join("manta").join(owner).join(object_id);
+    tokio::fs::create_dir_all(manta_file_path.parent().unwrap())
+        .await
+        .expect("failed to create owner dir");
+    tokio::fs::write(&manta_file_path, content)
+        .await
+        .expect("failed to write pre-existing file");
+
+    // Mock the source to return 500 if called - we shouldn't reach this
+    Mock::given(method("GET"))
+        .and(path_regex(format!(r"^/{}/{}$", owner, object_id)))
+        .respond_with(ResponseTemplate::new(500).set_body_string("Should not be called!"))
+        .mount(&ctx.mock_source)
+        .await;
+
+    // Create assignment with the same content checksum
+    let uuid = uuid::Uuid::new_v4().to_string();
+    let task = ctx.create_task(object_id, owner, content);
+    let payload = AssignmentPayload {
+        id: uuid.clone(),
+        tasks: vec![task],
+    };
+
+    // Send assignment and wait for completion
+    ctx.send_assignment(&payload).await;
+
+    // The task should complete successfully by detecting the existing file
+    // with matching checksum (CRIT-9 skip logic)
+    ctx.monitor_assignment(&uuid, TaskStatus::Complete).await;
+}
+
+/// Test name: partial_assignment_failure
+/// Description: An assignment with multiple tasks where some succeed and some fail.
+///              This tests that partial failures are properly tracked.
+/// Expected: Some tasks Complete, some Failed - assignment still completes.
+#[tokio::test]
+async fn partial_assignment_failure() {
+    let ctx = TestContext::new().await;
+
+    let owner = "rebalancer";
+
+    // Setup task 1 - will succeed
+    let content1 = b"Content for successful download";
+    let object_id1 = "success-object";
+    ctx.mock_file(owner, object_id1, content1).await;
+
+    // Setup task 2 - will fail with 404
+    let object_id2 = "not-found-object";
+    ctx.mock_not_found(owner, object_id2).await;
+
+    // Setup task 3 - will succeed
+    let content3 = b"Another successful content";
+    let object_id3 = "another-success-object";
+    ctx.mock_file(owner, object_id3, content3).await;
+
+    // Create assignment with mixed tasks
+    let uuid = uuid::Uuid::new_v4().to_string();
+    let payload = AssignmentPayload {
+        id: uuid.clone(),
+        tasks: vec![
+            ctx.create_task(object_id1, owner, content1),
+            ctx.create_task_with_md5(object_id2, owner, "fake-md5"), // Will fail
+            ctx.create_task(object_id3, owner, content3),
+        ],
+    };
+
+    ctx.send_assignment(&payload).await;
+
+    // Wait for completion
+    let assignment = ctx.wait_for_completion(&uuid).await;
+
+    // Verify assignment completed with partial failure
+    match &assignment.stats.state {
+        AgentAssignmentState::Complete(Some(failed_tasks)) => {
+            // Should have exactly one failed task
+            assert_eq!(failed_tasks.len(), 1, "Expected exactly 1 failed task");
+            let failed = &failed_tasks[0];
+            assert_eq!(failed.object_id, object_id2);
+            assert!(matches!(
+                failed.status,
+                TaskStatus::Failed(ObjectSkippedReason::HTTPStatusCode(404))
+            ));
+        }
+        AgentAssignmentState::Complete(None) => {
+            panic!("Expected partial failure, but all tasks succeeded");
+        }
+        other => {
+            panic!("Assignment not complete: {:?}", other);
+        }
+    }
+
+    // Verify stats reflect partial failure
+    assert_eq!(assignment.stats.total, 3);
+    assert_eq!(assignment.stats.complete, 3); // All processed (complete includes failed)
+    assert_eq!(assignment.stats.failed, 1); // One failed
+}
+
+/// Test name: concurrent_downloads
+/// Description: Verify that multiple downloads can be processed concurrently
+///              within an assignment, up to the semaphore limit.
+/// Expected: All tasks should complete, potentially in parallel.
+#[tokio::test]
+async fn concurrent_downloads() {
+    let ctx = TestContext::new().await;
+
+    let owner = "rebalancer";
+    let num_tasks = 8; // More than default concurrent_downloads (4)
+
+    // Setup mocks for all tasks
+    let mut tasks = Vec::with_capacity(num_tasks);
+    for i in 0..num_tasks {
+        let object_id = format!("concurrent-object-{}", i);
+        let content = format!("Content for concurrent test {}", i);
+        let content_bytes = content.as_bytes();
+
+        ctx.mock_file(owner, &object_id, content_bytes).await;
+        tasks.push(ctx.create_task(&object_id, owner, content_bytes));
+    }
+
+    // Create assignment with many tasks
+    let uuid = uuid::Uuid::new_v4().to_string();
+    let payload = AssignmentPayload {
+        id: uuid.clone(),
+        tasks,
+    };
+
+    ctx.send_assignment(&payload).await;
+
+    // All tasks should complete successfully
+    let assignment = ctx.wait_for_completion(&uuid).await;
+
+    match &assignment.stats.state {
+        AgentAssignmentState::Complete(None) => {
+            // All succeeded
+        }
+        AgentAssignmentState::Complete(Some(failed_tasks)) => {
+            panic!("Some tasks failed: {:?}", failed_tasks);
+        }
+        other => {
+            panic!("Assignment not complete: {:?}", other);
+        }
+    }
+
+    assert_eq!(assignment.stats.total, num_tasks);
+    assert_eq!(assignment.stats.complete, num_tasks);
+    assert_eq!(assignment.stats.failed, 0);
+}
+
+/// Test name: network_timeout
+/// Description: Test handling of network timeouts during download.
+///              Uses wiremock delay to simulate a slow source.
+/// Expected: Task should fail with NetworkError.
+#[tokio::test]
+async fn network_timeout() {
+    let ctx = TestContext::new().await;
+
+    let owner = "rebalancer";
+    let object_id = "timeout-object";
+
+    // Setup mock to delay longer than the agent's timeout
+    // The test context uses download_timeout_secs = 30, but we use a shorter delay
+    // and a custom mock that delays. We'll use wiremock's Delay feature.
+    Mock::given(method("GET"))
+        .and(path_regex(format!(r"^/{}/{}$", owner, object_id)))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_bytes(b"This response is delayed".to_vec())
+                .set_delay(Duration::from_secs(35)), // Longer than 30s timeout
+        )
+        .mount(&ctx.mock_source)
+        .await;
+
+    let uuid = uuid::Uuid::new_v4().to_string();
+    let task = ctx.create_task_with_md5(object_id, owner, "fake-md5");
+    let payload = AssignmentPayload {
+        id: uuid.clone(),
+        tasks: vec![task],
+    };
+
+    ctx.send_assignment(&payload).await;
+    ctx.monitor_assignment(&uuid, TaskStatus::Failed(ObjectSkippedReason::NetworkError))
+        .await;
+}
+
+// ============================================================================
+// ApiContext unit tests (continued)
+// ============================================================================
+
 /// Test that temp file cleanup handles nested directories
 #[tokio::test]
 async fn test_cleanup_temp_files_nested_directories() {
