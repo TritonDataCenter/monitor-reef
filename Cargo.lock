@@ -3022,6 +3022,7 @@ dependencies = [
  "deadpool-postgres",
  "dropshot",
  "lazy_static",
+ "libc",
  "libmanta",
  "moray",
  "prometheus",

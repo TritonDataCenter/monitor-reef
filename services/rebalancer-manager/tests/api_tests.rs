@@ -496,3 +496,430 @@ async fn test_create_job_bad_request() {
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
 }
+
+// ============================================================================
+// Job Update Tests (job_dynamic_update)
+// ============================================================================
+
+#[tokio::test]
+async fn test_update_job_not_found() {
+    let (base_url, _handle) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    // Try to update a non-existent job UUID
+    let fake_uuid = Uuid::new_v4();
+    let update_payload = json!({
+        "type": "SetMetadataThreads",
+        "value": 4
+    });
+
+    let response = client
+        .put(format!("{}/jobs/{}", base_url, fake_uuid))
+        .json(&update_payload)
+        .send()
+        .await
+        .expect("Request failed");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    // Verify the error message indicates job not found
+    let error_body: serde_json::Value = response.json().await.expect("Failed to parse error");
+    let error_message = error_body["message"].as_str().unwrap_or("");
+    assert!(
+        error_message.contains("not found"),
+        "Expected 'not found' in error message, got: {}",
+        error_message
+    );
+}
+
+#[tokio::test]
+async fn test_update_job_invalid_uuid() {
+    let (base_url, _handle) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    let update_payload = json!({
+        "type": "SetMetadataThreads",
+        "value": 4
+    });
+
+    let response = client
+        .put(format!("{}/jobs/not-a-uuid", base_url))
+        .json(&update_payload)
+        .send()
+        .await
+        .expect("Request failed");
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[tokio::test]
+async fn test_update_job_not_running() {
+    let (base_url, _handle) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    // Create a job (starts in Init state, not Running)
+    let payload = json!({
+        "action": "evacuate",
+        "params": {
+            "from_shark": "1.stor.test.domain"
+        }
+    });
+
+    let create_response = client
+        .post(format!("{}/jobs", base_url))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Create request failed");
+
+    assert_eq!(create_response.status(), StatusCode::OK);
+    let job_id: String = create_response
+        .json()
+        .await
+        .expect("Failed to parse response");
+
+    // Try to update it immediately (should be in Init state)
+    let update_payload = json!({
+        "type": "SetMetadataThreads",
+        "value": 4
+    });
+
+    let response = client
+        .put(format!("{}/jobs/{}", base_url, job_id))
+        .json(&update_payload)
+        .send()
+        .await
+        .expect("Update request failed");
+
+    // Should fail because job is not in Running state
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+
+    // Verify the error message indicates the state issue
+    let error_body: serde_json::Value = response.json().await.expect("Failed to parse error");
+    let error_message = error_body["message"].as_str().unwrap_or("");
+    assert!(
+        error_message.contains("Init") || error_message.contains("state") || error_message.contains("Cannot update"),
+        "Expected error about job state, got: {}",
+        error_message
+    );
+}
+
+#[tokio::test]
+async fn test_update_job_invalid_value() {
+    let (base_url, _handle) = start_test_server().await;
+    let client = reqwest::Client::new();
+
+    // Create a job first
+    let payload = json!({
+        "action": "evacuate",
+        "params": {
+            "from_shark": "1.stor.test.domain"
+        }
+    });
+
+    let create_response = client
+        .post(format!("{}/jobs", base_url))
+        .json(&payload)
+        .send()
+        .await
+        .expect("Create request failed");
+
+    let job_id: String = create_response
+        .json()
+        .await
+        .expect("Failed to parse response");
+
+    // Try to update with invalid value (0 threads)
+    let update_payload = json!({
+        "type": "SetMetadataThreads",
+        "value": 0
+    });
+
+    let response = client
+        .put(format!("{}/jobs/{}", base_url, job_id))
+        .json(&update_payload)
+        .send()
+        .await
+        .expect("Update request failed");
+
+    // Should fail due to validation (threads must be > 0)
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+/// Test context with support for jobs in various states
+struct TestContextWithRunningJob {
+    jobs: Arc<RwLock<Vec<TestJob>>>,
+}
+
+impl TestContextWithRunningJob {
+    fn new() -> Self {
+        Self {
+            jobs: Arc::new(RwLock::new(Vec::new())),
+        }
+    }
+
+    /// Add a job directly in Running state for testing updates
+    async fn add_running_job(&self) -> Uuid {
+        let id = Uuid::new_v4();
+        let job = TestJob {
+            id,
+            action: JobAction::Evacuate,
+            state: JobState::Running,
+            from_shark: "1.stor.test.domain".to_string(),
+            datacenter: "test-dc".to_string(),
+        };
+        self.jobs.write().await.push(job);
+        id
+    }
+}
+
+/// Test implementation that supports jobs in Running state
+enum TestRebalancerManagerWithRunningJobImpl {}
+
+impl RebalancerManagerApi for TestRebalancerManagerWithRunningJobImpl {
+    type Context = TestContextWithRunningJob;
+
+    async fn create_job(
+        rqctx: dropshot::RequestContext<Self::Context>,
+        body: dropshot::TypedBody<JobPayload>,
+    ) -> Result<HttpResponseOk<String>, dropshot::HttpError> {
+        let ctx = rqctx.context();
+        let payload = body.into_inner();
+
+        let job = match payload {
+            JobPayload::Evacuate(params) => TestJob {
+                id: Uuid::new_v4(),
+                action: JobAction::Evacuate,
+                state: JobState::Init,
+                from_shark: params.from_shark,
+                datacenter: "test-dc".to_string(),
+            },
+        };
+
+        let job_id = job.id.to_string();
+        ctx.jobs.write().await.push(job);
+
+        Ok(HttpResponseOk(job_id))
+    }
+
+    async fn list_jobs(
+        rqctx: dropshot::RequestContext<Self::Context>,
+    ) -> Result<HttpResponseOk<Vec<JobDbEntry>>, dropshot::HttpError> {
+        let ctx = rqctx.context();
+        let jobs = ctx.jobs.read().await;
+
+        let entries: Vec<JobDbEntry> = jobs
+            .iter()
+            .map(|j| JobDbEntry {
+                id: j.id.to_string(),
+                action: j.action.clone(),
+                state: j.state.clone(),
+            })
+            .collect();
+
+        Ok(HttpResponseOk(entries))
+    }
+
+    async fn get_job(
+        rqctx: dropshot::RequestContext<Self::Context>,
+        path_params: dropshot::Path<rebalancer_manager_api::JobPath>,
+    ) -> Result<HttpResponseOk<JobStatus>, dropshot::HttpError> {
+        let ctx = rqctx.context();
+        let uuid_str = path_params.into_inner().uuid;
+
+        let uuid = Uuid::parse_str(&uuid_str).map_err(|_| {
+            dropshot::HttpError::for_bad_request(None, format!("Invalid UUID format: {}", uuid_str))
+        })?;
+
+        let jobs = ctx.jobs.read().await;
+        let job = jobs.iter().find(|j| j.id == uuid).ok_or_else(|| {
+            dropshot::HttpError::for_bad_request(None, format!("Job {} not found", uuid_str))
+        })?;
+
+        let mut results_map = HashMap::new();
+        results_map.insert("total".to_string(), 0i64);
+        results_map.insert("complete".to_string(), 0i64);
+        results_map.insert("skipped".to_string(), 0i64);
+        results_map.insert("error".to_string(), 0i64);
+
+        let status = JobStatus {
+            config: rebalancer_types::JobStatusConfig::Evacuate(
+                rebalancer_types::JobConfigEvacuate {
+                    from_shark: rebalancer_types::StorageNode {
+                        manta_storage_id: job.from_shark.clone(),
+                        datacenter: job.datacenter.clone(),
+                    },
+                },
+            ),
+            results: rebalancer_types::JobStatusResults::Evacuate(results_map),
+            state: job.state.clone(),
+        };
+
+        Ok(HttpResponseOk(status))
+    }
+
+    async fn update_job(
+        rqctx: dropshot::RequestContext<Self::Context>,
+        path_params: dropshot::Path<rebalancer_manager_api::JobPath>,
+        body: dropshot::TypedBody<EvacuateJobUpdateMessage>,
+    ) -> Result<HttpResponseUpdatedNoContent, dropshot::HttpError> {
+        let ctx = rqctx.context();
+        let uuid_str = path_params.into_inner().uuid;
+        let msg = body.into_inner();
+
+        let uuid = Uuid::parse_str(&uuid_str).map_err(|_| {
+            dropshot::HttpError::for_bad_request(None, format!("Invalid UUID format: {}", uuid_str))
+        })?;
+
+        // Validate the update message
+        msg.validate().map_err(|e| {
+            dropshot::HttpError::for_bad_request(None, format!("Invalid update: {}", e))
+        })?;
+
+        let jobs = ctx.jobs.read().await;
+        let job = jobs.iter().find(|j| j.id == uuid).ok_or_else(|| {
+            dropshot::HttpError::for_bad_request(None, format!("Job {} not found", uuid_str))
+        })?;
+
+        // Only allow updates when job is running
+        if job.state != JobState::Running {
+            return Err(dropshot::HttpError::for_bad_request(
+                None,
+                format!("Cannot update job in '{}' state", job.state),
+            ));
+        }
+
+        Ok(HttpResponseUpdatedNoContent())
+    }
+
+    async fn retry_job(
+        rqctx: dropshot::RequestContext<Self::Context>,
+        path_params: dropshot::Path<rebalancer_manager_api::JobPath>,
+    ) -> Result<HttpResponseOk<String>, dropshot::HttpError> {
+        let ctx = rqctx.context();
+        let uuid_str = path_params.into_inner().uuid;
+
+        let uuid = Uuid::parse_str(&uuid_str).map_err(|_| {
+            dropshot::HttpError::for_bad_request(None, format!("Invalid UUID format: {}", uuid_str))
+        })?;
+
+        let jobs = ctx.jobs.read().await;
+        let job = jobs.iter().find(|j| j.id == uuid).ok_or_else(|| {
+            dropshot::HttpError::for_internal_error(format!("Job {} not found", uuid_str))
+        })?;
+
+        let new_job = TestJob {
+            id: Uuid::new_v4(),
+            action: job.action.clone(),
+            state: JobState::Init,
+            from_shark: job.from_shark.clone(),
+            datacenter: job.datacenter.clone(),
+        };
+        let new_job_id = new_job.id.to_string();
+
+        drop(jobs);
+        ctx.jobs.write().await.push(new_job);
+
+        Ok(HttpResponseOk(new_job_id))
+    }
+}
+
+/// Helper to start a test server with running job support
+async fn start_test_server_with_running_job() -> (String, Uuid, tokio::task::JoinHandle<()>) {
+    let port = find_available_port();
+    let bind_address: SocketAddr = format!("127.0.0.1:{}", port).parse().unwrap();
+
+    let api = rebalancer_manager_api::rebalancer_manager_api_mod::api_description::<
+        TestRebalancerManagerWithRunningJobImpl,
+    >()
+    .expect("Failed to create API description");
+
+    let ctx = TestContextWithRunningJob::new();
+
+    // Add a job that's already in Running state
+    let running_job_id = ctx.add_running_job().await;
+
+    let config_dropshot = ConfigDropshot {
+        bind_address,
+        default_request_body_max_bytes: 1024 * 1024,
+        default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
+        ..Default::default()
+    };
+
+    let config_logging = ConfigLogging::StderrTerminal {
+        level: ConfigLoggingLevel::Error,
+    };
+
+    let log = config_logging
+        .to_logger("test-server")
+        .expect("Failed to create logger");
+
+    let server = HttpServerStarter::new(&config_dropshot, api, ctx, &log)
+        .expect("Failed to create server")
+        .start();
+
+    let base_url = format!("http://127.0.0.1:{}", port);
+
+    let handle = tokio::spawn(async move {
+        server.await.ok();
+    });
+
+    // Give the server a moment to start
+    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+    (base_url, running_job_id, handle)
+}
+
+#[tokio::test]
+async fn test_update_job_success() {
+    let (base_url, running_job_id, _handle) = start_test_server_with_running_job().await;
+    let client = reqwest::Client::new();
+
+    // Send SetMetadataThreads update to the running job
+    let update_payload = json!({
+        "type": "SetMetadataThreads",
+        "value": 8
+    });
+
+    let response = client
+        .put(format!("{}/jobs/{}", base_url, running_job_id))
+        .json(&update_payload)
+        .send()
+        .await
+        .expect("Update request failed");
+
+    // Should succeed with 204 No Content
+    assert_eq!(
+        response.status(),
+        StatusCode::NO_CONTENT,
+        "Expected 204 No Content for successful update"
+    );
+}
+
+#[tokio::test]
+async fn test_update_job_success_various_thread_counts() {
+    let (base_url, running_job_id, _handle) = start_test_server_with_running_job().await;
+    let client = reqwest::Client::new();
+
+    // Test various valid thread counts
+    for thread_count in [1, 2, 4, 8, 16, 32] {
+        let update_payload = json!({
+            "type": "SetMetadataThreads",
+            "value": thread_count
+        });
+
+        let response = client
+            .put(format!("{}/jobs/{}", base_url, running_job_id))
+            .json(&update_payload)
+            .send()
+            .await
+            .expect("Update request failed");
+
+        assert_eq!(
+            response.status(),
+            StatusCode::NO_CONTENT,
+            "Expected 204 for thread_count={}",
+            thread_count
+        );
+    }
+}

@@ -195,6 +195,8 @@ async fn main() -> Result<()> {
                 println!(
                     "  CONFIG_FILE      Path to JSON config file for SIGUSR1 reloading (optional)"
                 );
+                println!("  MORAY_MIN_SHARD  Minimum Moray shard number to scan (default: 1)");
+                println!("  MORAY_MAX_SHARD  Maximum Moray shard number to scan (default: 1)");
                 println!(
                     "  RUST_LOG         Log filter (default: rebalancer_manager=info,dropshot=info)"
                 );

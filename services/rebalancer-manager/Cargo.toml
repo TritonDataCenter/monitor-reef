@@ -51,5 +51,6 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 chrono = { workspace = true }
+libc = "0.2"
 tempfile = "3"
 wiremock = { workspace = true }

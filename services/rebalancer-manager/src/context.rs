@@ -117,6 +117,8 @@ impl ApiContext {
         let evacuate_config = EvacuateConfig {
             max_objects: params.max_objects,
             blacklist_datacenters: self.config.blacklist_datacenters.clone(),
+            moray_min_shard: self.config.moray_min_shard,
+            moray_max_shard: self.config.moray_max_shard,
             ..Default::default()
         };
 
@@ -320,6 +322,8 @@ impl ApiContext {
             object_source: ObjectSource::LocalDb,
             source_job_id: Some(uuid.to_string()),
             blacklist_datacenters: self.config.blacklist_datacenters.clone(),
+            moray_min_shard: self.config.moray_min_shard,
+            moray_max_shard: self.config.moray_max_shard,
             ..Default::default()
         };
 

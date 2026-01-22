@@ -53,6 +53,16 @@ pub struct ManagerConfig {
     /// during evacuation jobs. Parsed from BLACKLIST_DATACENTERS env var
     /// (comma-separated list).
     pub blacklist_datacenters: Vec<String>,
+
+    /// Minimum Moray shard number to scan for objects during evacuation
+    ///
+    /// Defaults to 1. Can be set via MORAY_MIN_SHARD environment variable.
+    pub moray_min_shard: u32,
+
+    /// Maximum Moray shard number to scan for objects during evacuation
+    ///
+    /// Defaults to 1. Can be set via MORAY_MAX_SHARD environment variable.
+    pub moray_max_shard: u32,
 }
 
 impl Default for ManagerConfig {
@@ -64,6 +74,8 @@ impl Default for ManagerConfig {
             http_timeout_secs: 30,
             snaplink_cleanup_required: false,
             blacklist_datacenters: Vec::new(),
+            moray_min_shard: 1,
+            moray_max_shard: 1,
         }
     }
 }
@@ -104,6 +116,17 @@ impl ManagerConfig {
             })
             .unwrap_or_default();
 
+        // Parse Moray shard range
+        let moray_min_shard = std::env::var("MORAY_MIN_SHARD")
+            .unwrap_or_else(|_| "1".to_string())
+            .parse()
+            .context("Invalid MORAY_MIN_SHARD")?;
+
+        let moray_max_shard = std::env::var("MORAY_MAX_SHARD")
+            .unwrap_or_else(|_| "1".to_string())
+            .parse()
+            .context("Invalid MORAY_MAX_SHARD")?;
+
         Ok(Self {
             database_url,
             storinfo_url,
@@ -111,6 +134,8 @@ impl ManagerConfig {
             http_timeout_secs,
             snaplink_cleanup_required,
             blacklist_datacenters,
+            moray_min_shard,
+            moray_max_shard,
         })
     }
 
@@ -137,6 +162,8 @@ impl ManagerConfig {
         self.http_timeout_secs = other.http_timeout_secs;
         self.snaplink_cleanup_required = other.snaplink_cleanup_required;
         self.blacklist_datacenters = other.blacklist_datacenters.clone();
+        self.moray_min_shard = other.moray_min_shard;
+        self.moray_max_shard = other.moray_max_shard;
     }
 
     /// Start watching for SIGUSR1 to reload config from file
@@ -276,6 +303,8 @@ mod tests {
             http_timeout_secs: 30,
             snaplink_cleanup_required: false,
             blacklist_datacenters: Vec::new(),
+            moray_min_shard: 1,
+            moray_max_shard: 1,
         }
     }
 
@@ -388,6 +417,8 @@ mod tests {
             http_timeout_secs: 10,
             snaplink_cleanup_required: false,
             blacklist_datacenters: vec!["dc1".to_string()],
+            moray_min_shard: 1,
+            moray_max_shard: 10,
         };
 
         let new_config = ManagerConfig {
@@ -397,6 +428,8 @@ mod tests {
             http_timeout_secs: 60,
             snaplink_cleanup_required: true,
             blacklist_datacenters: vec!["dc2".to_string(), "dc3".to_string()],
+            moray_min_shard: 5,
+            moray_max_shard: 500,
         };
 
         original.merge_reloadable(&new_config);
@@ -413,6 +446,8 @@ mod tests {
         assert_eq!(original.http_timeout_secs, 60);
         assert!(original.snaplink_cleanup_required);
         assert_eq!(original.blacklist_datacenters, vec!["dc2", "dc3"]);
+        assert_eq!(original.moray_min_shard, 5);
+        assert_eq!(original.moray_max_shard, 500);
     }
 
     // -------------------------------------------------------------------------
@@ -454,5 +489,197 @@ mod tests {
         assert_eq!(config.http_timeout_secs, 30);
         assert!(!config.snaplink_cleanup_required);
         assert!(config.blacklist_datacenters.is_empty());
+        assert_eq!(config.moray_min_shard, 1);
+        assert_eq!(config.moray_max_shard, 1);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 10: moray_shard_range_defaults
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn moray_shard_range_defaults() {
+        let json = r#"{
+            "max_concurrent_assignments": 10,
+            "http_timeout_secs": 30,
+            "blacklist_datacenters": []
+        }"#;
+
+        let config: ManagerConfig = serde_json::from_str(json).unwrap();
+
+        // Default to shard 1 when not specified
+        assert_eq!(config.moray_min_shard, 1);
+        assert_eq!(config.moray_max_shard, 1);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 11: moray_shard_range_from_json
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn moray_shard_range_from_json() {
+        let json = r#"{
+            "moray_min_shard": 2,
+            "moray_max_shard": 1000,
+            "max_concurrent_assignments": 10,
+            "http_timeout_secs": 30,
+            "blacklist_datacenters": []
+        }"#;
+
+        let config: ManagerConfig = serde_json::from_str(json).unwrap();
+
+        assert_eq!(config.moray_min_shard, 2);
+        assert_eq!(config.moray_max_shard, 1000);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 12: snaplink_cleanup_required_defaults_to_false_when_missing
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn snaplink_cleanup_required_defaults_to_false_when_missing() {
+        // JSON config with snaplink_cleanup_required field omitted entirely
+        let json = r#"{
+            "max_concurrent_assignments": 10,
+            "http_timeout_secs": 30,
+            "blacklist_datacenters": []
+        }"#;
+
+        let config: ManagerConfig = serde_json::from_str(json).unwrap();
+
+        // When field is missing from JSON, should default to false
+        assert!(!config.snaplink_cleanup_required);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 13: snaplink_cleanup_required_parses_true_from_json
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn snaplink_cleanup_required_parses_true_from_json() {
+        let json = r#"{
+            "snaplink_cleanup_required": true,
+            "max_concurrent_assignments": 10,
+            "http_timeout_secs": 30,
+            "blacklist_datacenters": []
+        }"#;
+
+        let config: ManagerConfig = serde_json::from_str(json).unwrap();
+        assert!(config.snaplink_cleanup_required);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 14: snaplink_cleanup_required_parses_false_from_json
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn snaplink_cleanup_required_parses_false_from_json() {
+        let json = r#"{
+            "snaplink_cleanup_required": false,
+            "max_concurrent_assignments": 10,
+            "http_timeout_secs": 30,
+            "blacklist_datacenters": []
+        }"#;
+
+        let config: ManagerConfig = serde_json::from_str(json).unwrap();
+        assert!(!config.snaplink_cleanup_required);
+    }
+
+    // -------------------------------------------------------------------------
+    // Test 15: signal_handler_config_update
+    // -------------------------------------------------------------------------
+    //
+    // This test validates that SIGUSR1 triggers a config reload.
+    // Note: This test uses signals which affect the entire process.
+    // Run with `--test-threads=1` if running alongside other signal tests.
+    // -------------------------------------------------------------------------
+
+    #[cfg(unix)]
+    #[tokio::test]
+    #[ignore] // Run with: cargo test -p rebalancer-manager signal_handler_config_update -- --ignored --test-threads=1
+    async fn signal_handler_config_update() {
+        use std::fs;
+        use std::time::Duration;
+        use tempfile::NamedTempFile;
+
+        // 1. Create a temporary config file with snaplink_cleanup_required=true
+        let config_file = NamedTempFile::new().expect("create temp file");
+        let config_path = config_file.path().to_path_buf();
+
+        let initial_config = r#"{
+            "max_concurrent_assignments": 10,
+            "http_timeout_secs": 30,
+            "snaplink_cleanup_required": true,
+            "blacklist_datacenters": []
+        }"#;
+
+        fs::write(&config_path, initial_config).expect("write initial config");
+
+        // 2. Load the initial config
+        let config = ManagerConfig::from_file(&config_path)
+            .await
+            .expect("load config");
+
+        assert!(config.snaplink_cleanup_required);
+
+        // 3. Create a watch channel for config updates
+        let (config_tx, mut config_rx) = watch::channel(config.clone());
+
+        // 4. Start the config watcher in a background task
+        let watcher_handle = tokio::spawn({
+            let config_path = config_path.clone();
+            let config = config.clone();
+            async move {
+                ManagerConfig::start_config_watcher(config_path, config, config_tx).await
+            }
+        });
+
+        // 5. Give watcher time to register signal handler
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        // 6. Update the config file (change snaplink_cleanup_required to false)
+        let updated_config = r#"{
+            "max_concurrent_assignments": 10,
+            "http_timeout_secs": 30,
+            "snaplink_cleanup_required": false,
+            "blacklist_datacenters": []
+        }"#;
+
+        fs::write(&config_path, updated_config).expect("write updated config");
+
+        // 7. Send SIGUSR1 signal to trigger reload
+        // SAFETY: raise() sends a signal to the current process. This is safe
+        // because SIGUSR1 is explicitly handled by our config watcher and won't
+        // cause undefined behavior.
+        unsafe {
+            libc::raise(libc::SIGUSR1);
+        }
+
+        // 8. Wait for config update with timeout
+        let timeout = Duration::from_secs(5);
+        let result = tokio::time::timeout(timeout, async {
+            loop {
+                if config_rx.changed().await.is_ok() {
+                    let current = config_rx.borrow().clone();
+                    if !current.snaplink_cleanup_required {
+                        return true;
+                    }
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await;
+
+        assert!(result.is_ok(), "Config was not updated within timeout");
+
+        // Verify the updated config value
+        let final_config = config_rx.borrow().clone();
+        assert!(
+            !final_config.snaplink_cleanup_required,
+            "Expected snaplink_cleanup_required to be false after reload"
+        );
+
+        // 9. Cleanup
+        watcher_handle.abort();
     }
 }
