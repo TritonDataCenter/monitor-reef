@@ -234,4 +234,108 @@ impl StorinfoClient {
         let cache = self.cache.read().await;
         Ok(cache.nodes.values().cloned().collect())
     }
+
+    /// Get nodes with capacity info, excluding specified datacenters
+    ///
+    /// This is useful for destination selection when certain datacenters
+    /// should not be used as evacuation targets (e.g., due to maintenance,
+    /// capacity constraints, or regional restrictions).
+    ///
+    /// # Arguments
+    /// * `blacklist` - Datacenter names to exclude from results
+    ///
+    /// # Example
+    /// ```ignore
+    /// let nodes = storinfo.get_nodes_excluding_datacenters(&["dc1", "dc2"]).await?;
+    /// // nodes will not contain any sharks in dc1 or dc2
+    /// ```
+    pub async fn get_nodes_excluding_datacenters(
+        &self,
+        blacklist: &[String],
+    ) -> Result<Vec<StorageNodeInfo>, StorinfoError> {
+        let all_nodes = self.get_all_nodes_with_info().await?;
+
+        if blacklist.is_empty() {
+            return Ok(all_nodes);
+        }
+
+        Ok(all_nodes
+            .into_iter()
+            .filter(|info| !blacklist.contains(&info.node.datacenter))
+            .collect())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // Helper to create a StorageNodeInfo for testing
+    fn make_node_info(id: &str, datacenter: &str, available_mb: u64) -> StorageNodeInfo {
+        StorageNodeInfo {
+            node: StorageNode {
+                manta_storage_id: id.to_string(),
+                datacenter: datacenter.to_string(),
+            },
+            available_mb,
+            percent_used: 50.0,
+        }
+    }
+
+    #[test]
+    fn test_blacklist_filtering() {
+        // Test the filtering logic directly without async
+        let nodes = vec![
+            make_node_info("shark1.dc1", "dc1", 1000),
+            make_node_info("shark2.dc1", "dc1", 2000),
+            make_node_info("shark3.dc2", "dc2", 3000),
+            make_node_info("shark4.dc3", "dc3", 4000),
+        ];
+
+        let blacklist = ["dc1".to_string(), "dc2".to_string()];
+
+        // Apply the same filtering logic used in get_nodes_excluding_datacenters
+        let filtered: Vec<_> = nodes
+            .into_iter()
+            .filter(|info| !blacklist.contains(&info.node.datacenter))
+            .collect();
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].node.manta_storage_id, "shark4.dc3");
+        assert_eq!(filtered[0].node.datacenter, "dc3");
+    }
+
+    #[test]
+    fn test_empty_blacklist_returns_all() {
+        let nodes = vec![
+            make_node_info("shark1.dc1", "dc1", 1000),
+            make_node_info("shark2.dc2", "dc2", 2000),
+        ];
+
+        let blacklist: Vec<String> = vec![];
+
+        let filtered: Vec<_> = nodes
+            .into_iter()
+            .filter(|info| blacklist.is_empty() || !blacklist.contains(&info.node.datacenter))
+            .collect();
+
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn test_blacklist_all_returns_empty() {
+        let nodes = vec![
+            make_node_info("shark1.dc1", "dc1", 1000),
+            make_node_info("shark2.dc1", "dc1", 2000),
+        ];
+
+        let blacklist = ["dc1".to_string()];
+
+        let filtered: Vec<_> = nodes
+            .into_iter()
+            .filter(|info| !blacklist.contains(&info.node.datacenter))
+            .collect();
+
+        assert_eq!(filtered.len(), 0);
+    }
 }

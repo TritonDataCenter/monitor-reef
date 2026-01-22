@@ -93,7 +93,7 @@ impl ApiContext {
         let manta_root = config.temp_dir();
 
         // If the manta root doesn't exist yet, nothing to clean up
-        if !manta_root.exists() {
+        if !tokio::fs::try_exists(manta_root).await.unwrap_or(false) {
             info!(path = %manta_root.display(), "Manta root does not exist, skipping temp file cleanup");
             return;
         }
@@ -138,6 +138,7 @@ impl ApiContext {
             let path = entry.path();
             let file_type = entry.file_type().await?;
 
+            // arch-lint: allow(no-sync-io) reason="is_dir() on FileType is in-memory, not I/O"
             if file_type.is_dir() {
                 // Recursively process subdirectories
                 // Ignore errors in subdirectories - continue with others
@@ -147,17 +148,18 @@ impl ApiContext {
                     warn!(path = %path.display(), error = %e, "Error scanning subdirectory");
                     *errors += 1;
                 }
+            // arch-lint: allow(no-sync-io) reason="is_file() on FileType is in-memory, not I/O"
             } else if file_type.is_file() {
                 // Check if this is a .tmp file
-                if let Some(ext) = path.extension() {
-                    if ext == "tmp" {
-                        info!(path = %path.display(), "Removing stale temp file");
-                        if let Err(e) = tokio::fs::remove_file(&path).await {
-                            warn!(path = %path.display(), error = %e, "Failed to remove temp file");
-                            *errors += 1;
-                        } else {
-                            *cleaned += 1;
-                        }
+                if let Some(ext) = path.extension()
+                    && ext == "tmp"
+                {
+                    info!(path = %path.display(), "Removing stale temp file");
+                    if let Err(e) = tokio::fs::remove_file(&path).await {
+                        warn!(path = %path.display(), error = %e, "Failed to remove temp file");
+                        *errors += 1;
+                    } else {
+                        *cleaned += 1;
                     }
                 }
             }

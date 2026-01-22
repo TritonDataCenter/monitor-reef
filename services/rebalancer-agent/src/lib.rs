@@ -15,11 +15,13 @@
 //!
 //! - [`config`] - Agent configuration (data directory, concurrency settings)
 //! - [`context`] - API context for request handlers
+//! - [`metrics`] - Prometheus metrics for monitoring
 //! - [`processor`] - Task processing logic (downloads and checksum verification)
 //! - [`storage`] - SQLite-based assignment persistence
 
 pub mod config;
 pub mod context;
+pub mod metrics;
 pub mod processor;
 pub mod storage;
 

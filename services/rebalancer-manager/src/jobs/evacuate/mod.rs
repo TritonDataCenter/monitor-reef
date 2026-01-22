@@ -97,6 +97,8 @@ pub struct EvacuateConfig {
     pub moray_max_shard: u32,
     /// Source job ID for retry jobs (ObjectSource::LocalDb reads from this job's database)
     pub source_job_id: Option<String>,
+    /// Datacenter names to exclude from destination selection
+    pub blacklist_datacenters: Vec<String>,
 }
 
 impl Default for EvacuateConfig {
@@ -114,6 +116,7 @@ impl Default for EvacuateConfig {
             moray_min_shard: 1,
             moray_max_shard: 1,
             source_job_id: None,
+            blacklist_datacenters: Vec::new(),
         }
     }
 }
@@ -203,6 +206,7 @@ impl EvacuateJob {
     ///
     /// The `update_rx` channel is used to receive runtime configuration updates
     /// (e.g., `SetMetadataThreads`) from the API context.
+    #[allow(clippy::too_many_arguments)]
     pub async fn new(
         job_id: String,
         job_uuid: uuid::Uuid,
@@ -311,7 +315,8 @@ impl EvacuateJob {
         let job = Arc::clone(&self);
         let metadata_updater = tokio::spawn({
             let job = Arc::clone(&job);
-            async move { job.metadata_update_broker(md_update_rx).await }
+            let update_rx = self.update_rx.clone();
+            async move { job.metadata_update_broker(md_update_rx, update_rx).await }
         });
 
         let job = Arc::clone(&self);
@@ -732,60 +737,99 @@ impl EvacuateJob {
     /// Metadata update broker worker
     ///
     /// Updates object metadata in Moray after successful transfers.
+    /// Also listens for runtime configuration updates (e.g., SetMetadataThreads).
     async fn metadata_update_broker(
         &self,
         mut md_rx: mpsc::Receiver<AssignmentCacheEntry>,
+        mut update_rx: watch::Receiver<Option<rebalancer_types::EvacuateJobUpdateMessage>>,
     ) -> Result<(), JobError> {
+        use rebalancer_types::EvacuateJobUpdateMessage;
+
         info!("Metadata update broker started");
 
-        while let Some(ace) = md_rx.recv().await {
-            // Get objects from this assignment that need metadata updates
-            let objects = self.db.get_assignment_objects(&ace.id).await?;
+        // Current metadata thread count (for logging purposes)
+        // Note: Actual concurrent processing would require additional infrastructure
+        // (semaphores, task spawning). This logs the update for observability.
+        let mut _metadata_threads = 10u32; // Default value
 
-            for obj in objects {
-                if obj.status == EvacuateObjectStatus::PostProcessing {
-                    match self.update_object_metadata(&obj).await {
-                        Ok(()) => {
-                            self.db.mark_object_complete(&obj.id).await?;
-                            // Increment complete count
-                            if let Err(e) = self
-                                .manager_db
-                                .increment_result_count(&self.job_uuid, "complete")
-                                .await
-                            {
-                                warn!(job_id = %self.job_id, error = %e, "Failed to increment complete count");
-                            }
-                        }
-                        Err(e) => {
-                            error!(
-                                object_id = %obj.id,
-                                error = %e,
-                                "Failed to update metadata"
-                            );
-                            self.db
-                                .mark_object_error(
-                                    &obj.id,
-                                    EvacuateObjectError::MetadataUpdateFailed,
-                                )
-                                .await?;
-                            // Increment failed count
-                            if let Err(e) = self
-                                .manager_db
-                                .increment_result_count(&self.job_uuid, "failed")
-                                .await
-                            {
-                                warn!(job_id = %self.job_id, error = %e, "Failed to increment failed count");
+        loop {
+            tokio::select! {
+                // Handle runtime configuration updates
+                result = update_rx.changed() => {
+                    if result.is_err() {
+                        // Channel closed, continue processing remaining work
+                        debug!(job_id = %self.job_id, "Update channel closed");
+                        continue;
+                    }
+                    if let Some(msg) = update_rx.borrow_and_update().clone() {
+                        match msg {
+                            EvacuateJobUpdateMessage::SetMetadataThreads(n) => {
+                                info!(
+                                    job_id = %self.job_id,
+                                    old_threads = _metadata_threads,
+                                    new_threads = n,
+                                    "Adjusting metadata threads"
+                                );
+                                _metadata_threads = n;
                             }
                         }
                     }
                 }
-            }
+                // Handle metadata update requests
+                ace_opt = md_rx.recv() => {
+                    let Some(ace) = ace_opt else {
+                        // Channel closed, we're done
+                        break;
+                    };
+                    // Get objects from this assignment that need metadata updates
+                    let objects = self.db.get_assignment_objects(&ace.id).await?;
 
-            // Mark assignment as fully processed
-            {
-                let mut cache = self.assignments.write().await;
-                if let Some(entry) = cache.get_mut(&ace.id) {
-                    entry.state = AssignmentState::PostProcessed;
+                    for obj in objects {
+                        if obj.status == EvacuateObjectStatus::PostProcessing {
+                            match self.update_object_metadata(&obj).await {
+                                Ok(()) => {
+                                    self.db.mark_object_complete(&obj.id).await?;
+                                    // Increment complete count
+                                    if let Err(e) = self
+                                        .manager_db
+                                        .increment_result_count(&self.job_uuid, "complete")
+                                        .await
+                                    {
+                                        warn!(job_id = %self.job_id, error = %e, "Failed to increment complete count");
+                                    }
+                                }
+                                Err(e) => {
+                                    error!(
+                                        object_id = %obj.id,
+                                        error = %e,
+                                        "Failed to update metadata"
+                                    );
+                                    self.db
+                                        .mark_object_error(
+                                            &obj.id,
+                                            EvacuateObjectError::MetadataUpdateFailed,
+                                        )
+                                        .await?;
+                                    // Increment failed count
+                                    if let Err(e) = self
+                                        .manager_db
+                                        .increment_result_count(&self.job_uuid, "failed")
+                                        .await
+                                    {
+                                        warn!(job_id = %self.job_id, error = %e, "Failed to increment failed count");
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Mark assignment as fully processed
+                    {
+                        let mut cache = self.assignments.write().await;
+                        if let Some(entry) = cache.get_mut(&ace.id) {
+                            entry.state = AssignmentState::PostProcessed;
+                        }
+                    }
                 }
             }
         }
@@ -933,12 +977,21 @@ impl EvacuateJob {
     /// Initialize the destination sharks cache from storinfo
     ///
     /// Should be called after storinfo refresh to populate available destinations.
+    /// Nodes in blacklisted datacenters are excluded from consideration.
     async fn init_dest_sharks(&self) -> Result<(), JobError> {
         let nodes = self
             .storinfo
-            .get_all_nodes_with_info()
+            .get_nodes_excluding_datacenters(&self.config.blacklist_datacenters)
             .await
             .map_err(|e| JobError::Internal(format!("Failed to get storinfo nodes: {}", e)))?;
+
+        // Log blacklisted datacenters if any
+        if !self.config.blacklist_datacenters.is_empty() {
+            info!(
+                blacklist = ?self.config.blacklist_datacenters,
+                "Excluding datacenters from destination selection"
+            );
+        }
 
         let mut dest_sharks = self.dest_sharks.write().await;
         dest_sharks.clear();
@@ -1218,16 +1271,16 @@ impl EvacuateJob {
                         obj.error = None;
 
                         // For retry jobs, copy the object to the new job's database
-                        if source_job_id.is_some() {
-                            if let Err(e) = db.insert_object(&obj).await {
-                                warn!(
-                                    job_id = %job_id,
-                                    object_id = %obj.id,
-                                    error = %e,
-                                    "Failed to copy object to new job database"
-                                );
-                                continue;
-                            }
+                        if source_job_id.is_some()
+                            && let Err(e) = db.insert_object(&obj).await
+                        {
+                            warn!(
+                                job_id = %job_id,
+                                object_id = %obj.id,
+                                error = %e,
+                                "Failed to copy object to new job database"
+                            );
+                            continue;
                         }
 
                         if object_tx.send(obj).await.is_err() {

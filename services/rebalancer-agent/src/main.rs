@@ -16,6 +16,8 @@
 //! - Verifies MD5 checksums
 //! - Reports assignment status back to the manager
 
+use std::net::SocketAddr;
+
 use anyhow::{Context, Result};
 use dropshot::{ConfigDropshot, ConfigLogging, ConfigLoggingLevel, HttpServerStarter};
 use tracing::info;
@@ -23,9 +25,13 @@ use tracing::info;
 use rebalancer_agent::RebalancerAgentImpl;
 use rebalancer_agent::config::AgentConfig;
 use rebalancer_agent::context::ApiContext;
+use rebalancer_agent::metrics;
 
 /// Default bind address for the HTTP server.
 const DEFAULT_BIND_ADDRESS: &str = "0.0.0.0:7878";
+
+/// Default bind address for the metrics server.
+const DEFAULT_METRICS_ADDRESS: &str = "0.0.0.0:8878";
 
 /// Default maximum request body size (bytes).
 const DEFAULT_BODY_MAX_BYTES: usize = 100 * 1024 * 1024; // 100MB for large assignments
@@ -60,6 +66,10 @@ async fn main() -> Result<()> {
                 println!(
                     "  BIND_ADDRESS     Server bind address (default: {})",
                     DEFAULT_BIND_ADDRESS
+                );
+                println!(
+                    "  METRICS_ADDRESS  Metrics server bind address (default: {})",
+                    DEFAULT_METRICS_ADDRESS
                 );
                 println!(
                     "  DATA_DIR         Data directory for SQLite and objects (default: /var/tmp/rebalancer)"
@@ -99,6 +109,22 @@ async fn main() -> Result<()> {
                 config.data_dir.display()
             )
         })?;
+
+    // Register Prometheus metrics
+    metrics::register_metrics();
+    info!("Prometheus metrics registered");
+
+    // Start metrics server in background
+    let metrics_address: SocketAddr = std::env::var("METRICS_ADDRESS")
+        .unwrap_or_else(|_| DEFAULT_METRICS_ADDRESS.to_string())
+        .parse()
+        .context("Invalid METRICS_ADDRESS")?;
+
+    tokio::spawn(start_metrics_server(metrics_address));
+    info!(
+        "Metrics server running on http://{}/metrics",
+        metrics_address
+    );
 
     // Create API context
     let api_context = ApiContext::new(config.clone())
@@ -141,4 +167,53 @@ async fn main() -> Result<()> {
     server
         .await
         .map_err(|error| anyhow::anyhow!("server failed: {}", error))
+}
+
+/// Start a simple HTTP server for Prometheus metrics
+async fn start_metrics_server(addr: SocketAddr) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    let listener = match TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::error!(error = %e, addr = %addr, "Failed to bind metrics server");
+            return;
+        }
+    };
+
+    loop {
+        let (mut socket, _) = match listener.accept().await {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!(error = %e, "Failed to accept metrics connection");
+                continue;
+            }
+        };
+
+        tokio::spawn(async move {
+            let mut buf = vec![0u8; 1024];
+            // Read request (we ignore the actual request content for simplicity)
+            let _ = socket.read(&mut buf).await;
+
+            // Check if it's a metrics request (simple check)
+            let request = String::from_utf8_lossy(&buf);
+            if request.contains("GET /metrics") || request.contains("GET / ") {
+                let body = metrics::gather_metrics();
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\n\
+                     Content-Type: text/plain; version=0.0.4; charset=utf-8\r\n\
+                     Content-Length: {}\r\n\
+                     \r\n\
+                     {}",
+                    body.len(),
+                    body
+                );
+                let _ = socket.write_all(response.as_bytes()).await;
+            } else {
+                let response = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+                let _ = socket.write_all(response.as_bytes()).await;
+            }
+        });
+    }
 }

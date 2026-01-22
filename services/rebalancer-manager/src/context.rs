@@ -116,6 +116,7 @@ impl ApiContext {
         // Create evacuate config
         let evacuate_config = EvacuateConfig {
             max_objects: params.max_objects,
+            blacklist_datacenters: self.config.blacklist_datacenters.clone(),
             ..Default::default()
         };
 
@@ -318,6 +319,7 @@ impl ApiContext {
             max_objects,
             object_source: ObjectSource::LocalDb,
             source_job_id: Some(uuid.to_string()),
+            blacklist_datacenters: self.config.blacklist_datacenters.clone(),
             ..Default::default()
         };
 

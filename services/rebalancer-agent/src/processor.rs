@@ -66,6 +66,9 @@ impl TaskProcessor {
 
     /// Process all tasks in an assignment
     pub async fn process_assignment(&self, assignment_uuid: &str) {
+        use crate::metrics;
+        let start_time = std::time::Instant::now();
+
         // Mark assignment as running - abort if we can't update state
         let Ok(()) = self
             .storage
@@ -139,7 +142,15 @@ impl TaskProcessor {
                 );
             });
 
-        tracing::info!(assignment_id = %assignment_uuid, "Assignment processing complete");
+        // Record assignment duration
+        let duration = start_time.elapsed().as_secs_f64();
+        metrics::record_assignment_duration(duration);
+
+        tracing::info!(
+            assignment_id = %assignment_uuid,
+            duration_secs = duration,
+            "Assignment processing complete"
+        );
     }
 
     /// Clone the processor for use in a spawned task
@@ -188,12 +199,16 @@ impl TaskProcessorHandle {
         let result = self.download_and_verify(&task).await;
 
         match result {
-            Ok(()) => {
+            Ok(bytes_downloaded) => {
                 tracing::debug!(
                     assignment_id = %assignment_uuid,
                     object_id = %task.object_id,
+                    bytes = bytes_downloaded,
                     "Task completed successfully"
                 );
+                // Record metrics for successful transfer
+                crate::metrics::record_object_completed(bytes_downloaded);
+
                 // Best effort to record completion - task is already done regardless
                 let _ = self
                     .storage
@@ -215,6 +230,26 @@ impl TaskProcessorHandle {
                     reason = ?reason,
                     "Task failed"
                 );
+                // Record metrics for failed transfer
+                let error_type = match &reason {
+                    ObjectSkippedReason::NetworkError => "network",
+                    ObjectSkippedReason::MD5Mismatch => "md5_mismatch",
+                    ObjectSkippedReason::HTTPStatusCode(_) => "http_error",
+                    ObjectSkippedReason::AgentFSError => "fs_error",
+                    ObjectSkippedReason::AgentAssignmentNoEnt => "assignment_not_found",
+                    ObjectSkippedReason::AgentBusy => "agent_busy",
+                    ObjectSkippedReason::AssignmentError => "assignment_error",
+                    ObjectSkippedReason::AssignmentMismatch => "assignment_mismatch",
+                    ObjectSkippedReason::AssignmentRejected => "assignment_rejected",
+                    ObjectSkippedReason::DestinationInsufficientSpace => "insufficient_space",
+                    ObjectSkippedReason::DestinationUnreachable => "destination_unreachable",
+                    ObjectSkippedReason::ObjectAlreadyOnDestShark => "already_on_dest",
+                    ObjectSkippedReason::ObjectAlreadyInDatacenter => "already_in_dc",
+                    ObjectSkippedReason::SourceOtherError => "source_error",
+                    ObjectSkippedReason::SourceIsEvacShark => "source_is_evac",
+                };
+                crate::metrics::record_object_failed(error_type);
+
                 // Best effort to record failure - task outcome is already determined
                 let _ = self
                     .storage
@@ -238,7 +273,11 @@ impl TaskProcessorHandle {
     /// 1. Skip download if file already exists with correct MD5 (CRIT-9)
     /// 2. Download to temporary file first (CRIT-11)
     /// 3. Atomically rename to final path only after MD5 verification (CRIT-11)
-    async fn download_and_verify(&self, task: &Task) -> Result<(), ObjectSkippedReason> {
+    ///
+    /// Returns the number of bytes downloaded on success. Returns 0 if file
+    /// was skipped because it already exists with the correct checksum.
+    #[allow(clippy::unwrap_used)] // dest_path always has a parent directory
+    async fn download_and_verify(&self, task: &Task) -> Result<u64, ObjectSkippedReason> {
         // Determine paths using the Manta path structure: /manta/{owner}/{object_id}
         let dest_path = self.config.manta_file_path(&task.owner, &task.object_id);
         let tmp_path = self.config.manta_tmp_path(&task.owner, &task.object_id);
@@ -246,7 +285,7 @@ impl TaskProcessorHandle {
 
         // CRIT-9: Check if file already exists with correct checksum
         // This avoids unnecessary re-downloads after agent restart or for retried assignments
-        if dest_path.exists() {
+        if tokio::fs::try_exists(&dest_path).await.unwrap_or(false) {
             match self.compute_file_md5(&dest_path).await {
                 Ok(existing_md5) if existing_md5 == task.md5sum => {
                     tracing::info!(
@@ -254,7 +293,9 @@ impl TaskProcessorHandle {
                         owner = %task.owner,
                         "File already exists with correct checksum, skipping download"
                     );
-                    return Ok(());
+                    // Record as skipped for metrics
+                    crate::metrics::record_object_skipped();
+                    return Ok(0); // No bytes downloaded, file was already there
                 }
                 Ok(existing_md5) => {
                     tracing::debug!(
@@ -306,7 +347,7 @@ impl TaskProcessorHandle {
 
         // CRIT-11: Stream the response body to a TEMPORARY file while computing MD5
         // This ensures we never have a partial file at the final destination
-        let computed_md5 = self
+        let (computed_md5, bytes_downloaded) = self
             .stream_to_file_with_md5(response, &tmp_path)
             .await
             .map_err(|e| {
@@ -362,10 +403,11 @@ impl TaskProcessorHandle {
         tracing::debug!(
             object_id = %task.object_id,
             path = %dest_path.display(),
+            bytes = bytes_downloaded,
             "Object downloaded and verified successfully"
         );
 
-        Ok(())
+        Ok(bytes_downloaded)
     }
 
     /// Compute the MD5 checksum of an existing file
@@ -392,20 +434,24 @@ impl TaskProcessorHandle {
     }
 
     /// Stream HTTP response body to a file while computing MD5
+    ///
+    /// Returns (md5_hash, bytes_written) on success.
     async fn stream_to_file_with_md5(
         &self,
         response: reqwest::Response,
         dest_path: &PathBuf,
-    ) -> std::io::Result<String> {
+    ) -> std::io::Result<(String, u64)> {
         use futures_util::StreamExt;
 
         let mut file = File::create(dest_path).await?;
         let mut hasher = Md5::new();
+        let mut total_bytes: u64 = 0;
 
         let mut stream = response.bytes_stream();
 
         while let Some(chunk_result) = stream.next().await {
             let chunk = chunk_result.map_err(|e| std::io::Error::other(e.to_string()))?;
+            total_bytes += chunk.len() as u64;
             hasher.update(&chunk);
             file.write_all(&chunk).await?;
         }
@@ -413,9 +459,7 @@ impl TaskProcessorHandle {
         file.flush().await?;
 
         let hash = hasher.finalize();
-        Ok(base64::Engine::encode(
-            &base64::engine::general_purpose::STANDARD,
-            hash,
-        ))
+        let md5_string = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, hash);
+        Ok((md5_string, total_bytes))
     }
 }

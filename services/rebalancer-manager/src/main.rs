@@ -192,6 +192,9 @@ async fn main() -> Result<()> {
                 println!("  DATABASE_URL     PostgreSQL connection URL (required)");
                 println!("  STORINFO_URL     Storinfo service URL (required)");
                 println!(
+                    "  CONFIG_FILE      Path to JSON config file for SIGUSR1 reloading (optional)"
+                );
+                println!(
                     "  RUST_LOG         Log filter (default: rebalancer_manager=info,dropshot=info)"
                 );
                 return Ok(());
@@ -217,6 +220,32 @@ async fn main() -> Result<()> {
     let config = ManagerConfig::from_env().context("Failed to load configuration")?;
     info!("Database URL: {}", config.database_url_display());
     info!("Storinfo URL: {}", config.storinfo_url);
+
+    // Start config file watcher if CONFIG_FILE is set (Unix only)
+    #[cfg(unix)]
+    if let Ok(config_file) = std::env::var("CONFIG_FILE") {
+        use std::path::PathBuf;
+        use tokio::sync::watch;
+
+        let config_path = PathBuf::from(&config_file);
+        if tokio::fs::try_exists(&config_path).await.unwrap_or(false) {
+            let (config_tx, _config_rx) = watch::channel(config.clone());
+            tokio::spawn(ManagerConfig::start_config_watcher(
+                config_path,
+                config.clone(),
+                config_tx,
+            ));
+            info!(
+                config_file = %config_file,
+                "Config watcher started - send SIGUSR1 to reload"
+            );
+        } else {
+            tracing::warn!(
+                config_file = %config_file,
+                "CONFIG_FILE specified but file does not exist, config reloading disabled"
+            );
+        }
+    }
 
     // Create API context
     let api_context = ApiContext::new(config.clone())

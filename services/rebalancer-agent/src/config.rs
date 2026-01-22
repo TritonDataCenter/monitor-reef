@@ -99,6 +99,7 @@ impl AgentConfig {
     /// Returns `{manta_root}/{owner}/{object_id}.tmp` which is used during
     /// download to ensure atomic writes. The file is renamed to the final
     /// path only after successful MD5 verification.
+    #[allow(clippy::unwrap_used)] // Path always has a filename component here
     pub fn manta_tmp_path(&self, owner: &str, object_id: &str) -> PathBuf {
         let mut path = self.manta_file_path(owner, object_id);
         let mut filename = path.file_name().unwrap().to_os_string();

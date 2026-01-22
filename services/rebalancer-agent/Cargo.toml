@@ -31,7 +31,9 @@ base64 = "0.22"
 dropshot = { workspace = true }
 futures-util = "0.3"
 http = "1"
+lazy_static = "1"
 md-5 = "0.10"
+prometheus = "0.13"
 reqwest = { workspace = true, features = ["stream"] }
 rusqlite = { version = "0.34", features = ["bundled"] }
 serde = { workspace = true }
