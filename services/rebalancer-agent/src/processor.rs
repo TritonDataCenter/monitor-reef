@@ -179,7 +179,7 @@ impl TaskProcessorHandle {
         // This should only fail if the semaphore is closed, which indicates shutdown
         let _permit = match self.semaphore.acquire().await {
             Ok(permit) => permit,
-            // arch-lint: allow(no-error-swallowing) reason="Semaphore closed means shutdown; graceful exit"
+            // arch-lint: allow(no-error-swallowing) reason="AcquireError indicates semaphore closed (shutdown); not an error but expected signal"
             Err(_) => {
                 tracing::debug!(
                     assignment_id = %assignment_uuid,
@@ -376,7 +376,7 @@ impl TaskProcessorHandle {
                 "MD5 checksum mismatch"
             );
             // Remove the corrupted temp file
-            // arch-lint: allow(no-error-swallowing) reason="Best-effort cleanup; error already being returned"
+            // arch-lint: allow(no-error-swallowing) reason="Best-effort cleanup; failure tracked via metric"
             if let Err(e) = fs::remove_file(&tmp_path).await {
                 tracing::error!(
                     object_id = %task.object_id,
@@ -384,6 +384,7 @@ impl TaskProcessorHandle {
                     error = %e,
                     "Failed to remove corrupted temp file after MD5 mismatch"
                 );
+                crate::metrics::record_cleanup_failure();
             }
             return Err(ObjectSkippedReason::MD5Mismatch);
         }

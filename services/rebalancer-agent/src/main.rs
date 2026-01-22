@@ -115,16 +115,51 @@ async fn main() -> Result<()> {
     info!("Prometheus metrics registered");
 
     // Start metrics server in background
-    let metrics_address: SocketAddr = std::env::var("METRICS_ADDRESS")
-        .unwrap_or_else(|_| DEFAULT_METRICS_ADDRESS.to_string())
-        .parse()
-        .context("Invalid METRICS_ADDRESS")?;
+    // If METRICS_ADDRESS is explicitly set and binding fails, we should fail fast.
+    // If using the default address, binding failure is tolerable (warn and continue).
+    let (metrics_address, metrics_explicit) = match std::env::var("METRICS_ADDRESS") {
+        Ok(addr) => (addr, true),
+        Err(_) => (DEFAULT_METRICS_ADDRESS.to_string(), false),
+    };
+    let metrics_address: SocketAddr = metrics_address.parse().context("Invalid METRICS_ADDRESS")?;
 
-    tokio::spawn(start_metrics_server(metrics_address));
-    info!(
-        "Metrics server running on http://{}/metrics",
-        metrics_address
-    );
+    // Use a oneshot channel to communicate binding result back to main
+    let (metrics_tx, metrics_rx) = tokio::sync::oneshot::channel();
+    tokio::spawn(start_metrics_server(metrics_address, metrics_tx));
+
+    // Wait for the metrics server to report binding success/failure
+    match metrics_rx.await {
+        Ok(Ok(())) => {
+            info!(
+                "Metrics server running on http://{}/metrics",
+                metrics_address
+            );
+        }
+        Ok(Err(e)) => {
+            if metrics_explicit {
+                // User explicitly configured this address - fail fast
+                return Err(anyhow::anyhow!(
+                    "Failed to bind metrics server to explicitly configured address {}: {}. \
+                     Either fix the address or unset METRICS_ADDRESS to use defaults.",
+                    metrics_address,
+                    e
+                ));
+            } else {
+                // Using default - warn and continue
+                tracing::warn!(
+                    error = %e,
+                    addr = %metrics_address,
+                    "Failed to bind metrics server on default address. \
+                     Agent will continue without metrics endpoint."
+                );
+            }
+        }
+        // arch-lint: allow(no-error-swallowing) reason="RecvError indicates task ended; non-fatal degradation"
+        Err(_) => {
+            // Channel closed without sending - unexpected but non-fatal
+            tracing::warn!("Metrics server task ended unexpectedly during startup");
+        }
+    }
 
     // Create API context
     let api_context = ApiContext::new(config.clone())
@@ -170,15 +205,26 @@ async fn main() -> Result<()> {
 }
 
 /// Start a simple HTTP server for Prometheus metrics
-async fn start_metrics_server(addr: SocketAddr) {
+///
+/// The `bind_result_tx` channel is used to report whether binding succeeded.
+/// This allows the caller to decide whether to fail fast or continue.
+async fn start_metrics_server(
+    addr: SocketAddr,
+    bind_result_tx: tokio::sync::oneshot::Sender<Result<(), std::io::Error>>,
+) {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::TcpListener;
 
     let listener = match TcpListener::bind(addr).await {
-        Ok(l) => l,
-        // arch-lint: allow(no-error-swallowing) reason="Metrics server is optional; agent can run without it"
+        Ok(l) => {
+            // Report success (ignore if receiver dropped)
+            let _ = bind_result_tx.send(Ok(()));
+            l
+        }
         Err(e) => {
             tracing::error!(error = %e, addr = %addr, "Failed to bind metrics server");
+            // Report failure (ignore if receiver dropped)
+            let _ = bind_result_tx.send(Err(e));
             return;
         }
     };

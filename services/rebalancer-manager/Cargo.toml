@@ -35,6 +35,8 @@ chrono = { workspace = true, features = ["serde"] }
 crossbeam-channel = "0.5"
 deadpool-postgres = "0.14"
 dropshot = { workspace = true }
+lazy_static = "1"
+prometheus = "0.13"
 reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

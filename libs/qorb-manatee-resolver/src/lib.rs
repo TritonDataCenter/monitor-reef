@@ -37,7 +37,8 @@ use std::collections::BTreeMap;
 use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use qorb::backend::{Backend, Name};
@@ -132,6 +133,56 @@ struct ManateePeer {
     pg_url: Option<String>,
 }
 
+/// Tracks parse staleness for ZooKeeper data.
+///
+/// This is used to detect when ZooKeeper data has been unparseable for an
+/// extended period, which could indicate a configuration or data format issue.
+struct ParseStalenessTracker {
+    /// Monotonic timestamp (in seconds since tracker creation) of last successful parse.
+    /// Uses u64 for atomic operations. 0 means never successfully parsed.
+    last_successful_parse_secs: AtomicU64,
+    /// When the tracker was created (for calculating relative timestamps)
+    start_instant: Instant,
+    /// Threshold after which to warn about staleness (in seconds)
+    staleness_threshold_secs: u64,
+}
+
+impl ParseStalenessTracker {
+    fn new(staleness_threshold_secs: u64) -> Self {
+        Self {
+            last_successful_parse_secs: AtomicU64::new(0),
+            start_instant: Instant::now(),
+            staleness_threshold_secs,
+        }
+    }
+
+    fn record_successful_parse(&self) {
+        let now_secs = self.start_instant.elapsed().as_secs();
+        self.last_successful_parse_secs
+            .store(now_secs, Ordering::Relaxed);
+    }
+
+    /// Check if data has been unparseable for longer than the threshold.
+    /// Returns Some(duration_secs) if stale, None if not.
+    fn check_staleness(&self) -> Option<u64> {
+        let last_success = self.last_successful_parse_secs.load(Ordering::Relaxed);
+        let now_secs = self.start_instant.elapsed().as_secs();
+
+        // If we've never had a successful parse, check against start time
+        let stale_duration = if last_success == 0 {
+            now_secs
+        } else {
+            now_secs.saturating_sub(last_success)
+        };
+
+        if stale_duration >= self.staleness_threshold_secs {
+            Some(stale_duration)
+        } else {
+            None
+        }
+    }
+}
+
 /// A qorb Resolver that watches a Manatee/ZooKeeper cluster for the primary.
 ///
 /// This resolver watches the ZooKeeper node at `<shard_path>/state` and
@@ -215,12 +266,17 @@ impl Drop for ManateeResolver {
     }
 }
 
+/// Default staleness threshold in seconds (5 minutes).
+/// If ZooKeeper data has been unparseable for this long, log a warning.
+const DEFAULT_STALENESS_THRESHOLD_SECS: u64 = 300;
+
 /// The main watcher loop that runs in the background.
 ///
 /// This function handles:
 /// - Connecting to ZooKeeper with exponential backoff on failure
 /// - Watching the state node for changes
 /// - Parsing the JSON data and publishing backend updates
+/// - Tracking and warning about parse staleness
 async fn watcher_loop(
     zk_addrs: ZkConnectString,
     state_path: String,
@@ -229,6 +285,7 @@ async fn watcher_loop(
 ) {
     let connect_string = zk_addrs.to_connect_string();
     let mut backoff = ExponentialBackoff::new();
+    let staleness_tracker = Arc::new(ParseStalenessTracker::new(DEFAULT_STALENESS_THRESHOLD_SECS));
 
     loop {
         // Check for shutdown signal
@@ -259,7 +316,15 @@ async fn watcher_loop(
         };
 
         // Watch loop: repeatedly watch and process changes
-        if let Err(e) = watch_state_node(&client, &state_path, &tx, &mut shutdown_rx).await {
+        if let Err(e) = watch_state_node(
+            &client,
+            &state_path,
+            &tx,
+            &mut shutdown_rx,
+            &staleness_tracker,
+        )
+        .await
+        {
             error!(error = %e, "Watch loop error, will reconnect");
             let delay = backoff.next_backoff();
             tokio::select! {
@@ -281,6 +346,7 @@ async fn watch_state_node(
     state_path: &str,
     tx: &watch::Sender<AllBackends>,
     shutdown_rx: &mut tokio::sync::oneshot::Receiver<()>,
+    staleness_tracker: &ParseStalenessTracker,
 ) -> Result<(), ManateeResolverError> {
     loop {
         // Check for shutdown
@@ -295,9 +361,22 @@ async fn watch_state_node(
         match result {
             Ok((data, _stat, watcher)) => {
                 // Process the data
-                // arch-lint: allow(no-error-swallowing) reason="Continue watching; data may become valid"
-                if let Err(e) = process_zk_data(&data, tx) {
-                    warn!(error = %e, "Failed to process ZooKeeper data");
+                // arch-lint: allow(no-error-swallowing) reason="Continue watching; data may become valid; staleness tracked"
+                match process_zk_data(&data, tx) {
+                    Ok(()) => {
+                        staleness_tracker.record_successful_parse();
+                    }
+                    Err(e) => {
+                        warn!(error = %e, "Failed to process ZooKeeper data");
+                        // Check if we've been unable to parse for too long
+                        if let Some(stale_secs) = staleness_tracker.check_staleness() {
+                            warn!(
+                                stale_duration_secs = stale_secs,
+                                "ZooKeeper data has been unparseable for an extended period. \
+                                 This may indicate a configuration or data format issue."
+                            );
+                        }
+                    }
                 }
 
                 // Wait for change

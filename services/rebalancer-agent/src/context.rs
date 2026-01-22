@@ -8,9 +8,10 @@
 //! API context for the rebalancer agent
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::Result;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use rebalancer_types::{Assignment, AssignmentPayload};
 
@@ -22,6 +23,10 @@ use crate::storage::{AssignmentStorage, StorageError};
 pub struct ApiContext {
     storage: Arc<AssignmentStorage>,
     processor: Arc<TaskProcessor>,
+    /// Tracks whether resuming incomplete assignments failed on startup.
+    /// This is an important operational indicator - if true, some assignments
+    /// from a previous run may not have been resumed.
+    resume_failed: AtomicBool,
 }
 
 impl ApiContext {
@@ -44,12 +49,24 @@ impl ApiContext {
         // Initialize processor
         let processor = Arc::new(TaskProcessor::new(config, Arc::clone(&storage))?);
 
-        let ctx = Self { storage, processor };
+        let ctx = Self {
+            storage,
+            processor,
+            resume_failed: AtomicBool::new(false),
+        };
 
         // Resume any incomplete assignments from previous run
         ctx.resume_incomplete_assignments().await;
 
         Ok(ctx)
+    }
+
+    /// Returns true if resuming incomplete assignments failed on startup.
+    ///
+    /// This is an important operational indicator - if true, some assignments
+    /// from a previous run may not have been resumed and could be stuck.
+    pub fn resume_failed(&self) -> bool {
+        self.resume_failed.load(Ordering::Relaxed)
     }
 
     /// Resume processing of any incomplete assignments
@@ -75,12 +92,14 @@ impl ApiContext {
                     });
                 }
             }
-            // arch-lint: allow(no-error-swallowing) reason="Best-effort resume; agent can still accept new work"
+            // arch-lint: allow(no-error-swallowing) reason="Best-effort resume; failure tracked via resume_failed flag"
             Err(e) => {
-                warn!(
+                error!(
                     error = %e,
-                    "Failed to get incomplete assignments - some may not be resumed"
+                    "Failed to get incomplete assignments - some may not be resumed. \
+                     This is an operational issue that should be investigated."
                 );
+                self.resume_failed.store(true, Ordering::Relaxed);
             }
         }
     }

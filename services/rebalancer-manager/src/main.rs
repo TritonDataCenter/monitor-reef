@@ -20,6 +20,7 @@ mod config;
 mod context;
 mod db;
 mod jobs;
+mod metrics;
 mod moray;
 mod storinfo;
 

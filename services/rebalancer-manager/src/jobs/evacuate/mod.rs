@@ -40,6 +40,7 @@ use slog::Drain;
 
 use super::JobError;
 use crate::db::Database;
+use crate::metrics;
 use crate::moray::{MorayPool, MorayPoolConfig};
 use crate::storinfo::StorinfoClient;
 
@@ -490,13 +491,14 @@ impl EvacuateJob {
                         )
                         .await?;
                     // Increment skipped count
-                    // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; core operation completed"
+                    // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; failure tracked via metric"
                     if let Err(e) = self
                         .manager_db
                         .increment_result_count(&self.job_uuid, "skipped")
                         .await
                     {
                         warn!(job_id = %self.job_id, error = %e, "Failed to increment skipped count");
+                        metrics::record_db_operation_failure();
                     }
                     continue;
                 }
@@ -520,13 +522,14 @@ impl EvacuateJob {
                         );
                     }
                     // Increment error count
-                    // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; core operation completed"
+                    // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; failure tracked via metric"
                     if let Err(count_err) = self
                         .manager_db
                         .increment_result_count(&self.job_uuid, "error")
                         .await
                     {
                         warn!(job_id = %self.job_id, error = %count_err, "Failed to increment error count");
+                        metrics::record_db_operation_failure();
                     }
                     continue;
                 }
@@ -637,13 +640,14 @@ impl EvacuateJob {
                             )
                             .await?;
                         // Increment skipped count
-                        // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; core operation completed"
+                        // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; failure tracked via metric"
                         if let Err(e) = self
                             .manager_db
                             .increment_result_count(&self.job_uuid, "skipped")
                             .await
                         {
                             warn!(job_id = %self.job_id, error = %e, "Failed to increment skipped count");
+                            metrics::record_db_operation_failure();
                         }
                     }
                 }
@@ -794,12 +798,14 @@ impl EvacuateJob {
                                 Ok(()) => {
                                     self.db.mark_object_complete(&obj.id).await?;
                                     // Increment complete count
+                                    // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; failure tracked via metric"
                                     if let Err(e) = self
                                         .manager_db
                                         .increment_result_count(&self.job_uuid, "complete")
                                         .await
                                     {
                                         warn!(job_id = %self.job_id, error = %e, "Failed to increment complete count");
+                                        metrics::record_db_operation_failure();
                                     }
                                 }
                                 Err(e) => {
@@ -815,12 +821,14 @@ impl EvacuateJob {
                                         )
                                         .await?;
                                     // Increment failed count
+                                    // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; failure tracked via metric"
                                     if let Err(e) = self
                                         .manager_db
                                         .increment_result_count(&self.job_uuid, "failed")
                                         .await
                                     {
                                         warn!(job_id = %self.job_id, error = %e, "Failed to increment failed count");
+                                        metrics::record_db_operation_failure();
                                     }
                                 }
                             }
@@ -1108,13 +1116,14 @@ impl EvacuateJob {
                         .mark_object_skipped(&task.object_id, *reason)
                         .await?;
                     // Increment skipped count for agent-reported failures
-                    // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; core operation completed"
+                    // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; failure tracked via metric"
                     if let Err(e) = self
                         .manager_db
                         .increment_result_count(&self.job_uuid, "skipped")
                         .await
                     {
                         warn!(job_id = %self.job_id, error = %e, "Failed to increment skipped count");
+                        metrics::record_db_operation_failure();
                     }
                 }
             }
@@ -1298,10 +1307,11 @@ impl EvacuateJob {
                         sent += 1;
 
                         // Increment total count for each object discovered
-                        // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; discovery continues"
+                        // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; failure tracked via metric"
                         if let Err(e) = manager_db.increment_result_count(&job_uuid, "total").await
                         {
                             warn!(job_id = %job_id, error = %e, "Failed to increment total count");
+                            metrics::record_db_operation_failure();
                         }
 
                         // Check max_objects limit
@@ -1426,7 +1436,7 @@ impl EvacuateJob {
                                 sent += 1;
 
                                 // Increment total count
-                                // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; discovery continues"
+                                // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; failure tracked via metric"
                                 if let Err(e) =
                                     manager_db.increment_result_count(&job_uuid, "total").await
                                 {
@@ -1435,6 +1445,7 @@ impl EvacuateJob {
                                         error = %e,
                                         "Failed to increment total count"
                                     );
+                                    metrics::record_db_operation_failure();
                                 }
 
                                 // Check max_objects limit

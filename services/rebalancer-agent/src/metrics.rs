@@ -54,10 +54,24 @@ mod metrics_impl {
             // Buckets: 1s, 5s, 10s, 30s, 1m, 2m, 5m, 10m, 30m, 1h
             .buckets(vec![1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1800.0, 3600.0])
         ).expect("valid histogram opts");
+
+        /// Counter for cleanup failures (e.g., failed to remove temp files)
+        ///
+        /// These failures indicate that temporary file cleanup could not be completed.
+        /// The primary operation (object download/verification) still completed or
+        /// failed as expected, but cleanup was degraded.
+        pub static ref CLEANUP_FAILURES: Counter = Counter::with_opts(
+            Opts::new(
+                "rebalancer_agent_cleanup_failures_total",
+                "Total cleanup failures (e.g., failed to remove temp files)"
+            )
+        ).expect("valid metric name");
     }
 }
 
-pub use metrics_impl::{ASSIGNMENT_DURATION, BYTES_TOTAL, ERRORS_TOTAL, OBJECTS_TOTAL, REGISTRY};
+pub use metrics_impl::{
+    ASSIGNMENT_DURATION, BYTES_TOTAL, CLEANUP_FAILURES, ERRORS_TOTAL, OBJECTS_TOTAL, REGISTRY,
+};
 
 /// Register all metrics with the registry
 ///
@@ -77,6 +91,9 @@ pub fn register_metrics() {
     REGISTRY
         .register(Box::new(ASSIGNMENT_DURATION.clone()))
         .expect("Failed to register ASSIGNMENT_DURATION");
+    REGISTRY
+        .register(Box::new(CLEANUP_FAILURES.clone()))
+        .expect("Failed to register CLEANUP_FAILURES");
 }
 
 /// Get metrics in Prometheus text format
@@ -108,6 +125,15 @@ pub fn record_object_skipped() {
 /// Record assignment completion time
 pub fn record_assignment_duration(duration_secs: f64) {
     ASSIGNMENT_DURATION.observe(duration_secs);
+}
+
+/// Record a cleanup failure
+///
+/// Call this when cleanup operations like temp file removal fail.
+/// This provides observability into cleanup issues without affecting
+/// the primary operation's outcome.
+pub fn record_cleanup_failure() {
+    CLEANUP_FAILURES.inc();
 }
 
 #[cfg(test)]
