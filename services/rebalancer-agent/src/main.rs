@@ -176,6 +176,7 @@ async fn start_metrics_server(addr: SocketAddr) {
 
     let listener = match TcpListener::bind(addr).await {
         Ok(l) => l,
+        // arch-lint: allow(no-error-swallowing) reason="Metrics server is optional; agent can run without it"
         Err(e) => {
             tracing::error!(error = %e, addr = %addr, "Failed to bind metrics server");
             return;

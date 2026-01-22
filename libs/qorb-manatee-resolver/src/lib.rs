@@ -295,9 +295,9 @@ async fn watch_state_node(
         match result {
             Ok((data, _stat, watcher)) => {
                 // Process the data
+                // arch-lint: allow(no-error-swallowing) reason="Continue watching; data may become valid"
                 if let Err(e) = process_zk_data(&data, tx) {
                     warn!(error = %e, "Failed to process ZooKeeper data");
-                    // Continue watching - the data might become valid
                 }
 
                 // Wait for change

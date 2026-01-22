@@ -168,6 +168,7 @@ impl ManagerConfig {
 
         let mut sigusr1 = match signal(SignalKind::user_defined1()) {
             Ok(s) => s,
+            // arch-lint: allow(no-error-swallowing) reason="Config watcher is optional; manager can run without it"
             Err(e) => {
                 tracing::error!(error = %e, "Failed to register SIGUSR1 handler");
                 return;
@@ -198,6 +199,7 @@ impl ManagerConfig {
                         );
                     }
                 }
+                // arch-lint: allow(no-error-swallowing) reason="Keep current config and continue watching for next reload"
                 Err(e) => {
                     tracing::error!(
                         error = %e,

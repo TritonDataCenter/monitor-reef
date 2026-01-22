@@ -490,6 +490,7 @@ impl EvacuateJob {
                         )
                         .await?;
                     // Increment skipped count
+                    // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; core operation completed"
                     if let Err(e) = self
                         .manager_db
                         .increment_result_count(&self.job_uuid, "skipped")
@@ -506,6 +507,7 @@ impl EvacuateJob {
                         "Error selecting destination, marking object as skipped"
                     );
                     // Record the error in the database so object isn't lost
+                    // arch-lint: allow(no-error-swallowing) reason="Best-effort error recording; continue processing"
                     if let Err(db_err) = self
                         .db
                         .mark_object_error(&eobj.id, types::EvacuateObjectError::InternalError)
@@ -518,6 +520,7 @@ impl EvacuateJob {
                         );
                     }
                     // Increment error count
+                    // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; core operation completed"
                     if let Err(count_err) = self
                         .manager_db
                         .increment_result_count(&self.job_uuid, "error")
@@ -634,6 +637,7 @@ impl EvacuateJob {
                             )
                             .await?;
                         // Increment skipped count
+                        // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; core operation completed"
                         if let Err(e) = self
                             .manager_db
                             .increment_result_count(&self.job_uuid, "skipped")
@@ -1104,6 +1108,7 @@ impl EvacuateJob {
                         .mark_object_skipped(&task.object_id, *reason)
                         .await?;
                     // Increment skipped count for agent-reported failures
+                    // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; core operation completed"
                     if let Err(e) = self
                         .manager_db
                         .increment_result_count(&self.job_uuid, "skipped")
@@ -1293,6 +1298,7 @@ impl EvacuateJob {
                         sent += 1;
 
                         // Increment total count for each object discovered
+                        // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; discovery continues"
                         if let Err(e) = manager_db.increment_result_count(&job_uuid, "total").await
                         {
                             warn!(job_id = %job_id, error = %e, "Failed to increment total count");
@@ -1420,6 +1426,7 @@ impl EvacuateJob {
                                 sent += 1;
 
                                 // Increment total count
+                                // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; discovery continues"
                                 if let Err(e) =
                                     manager_db.increment_result_count(&job_uuid, "total").await
                                 {

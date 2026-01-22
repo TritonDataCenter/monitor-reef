@@ -179,6 +179,7 @@ impl TaskProcessorHandle {
         // This should only fail if the semaphore is closed, which indicates shutdown
         let _permit = match self.semaphore.acquire().await {
             Ok(permit) => permit,
+            // arch-lint: allow(no-error-swallowing) reason="Semaphore closed means shutdown; graceful exit"
             Err(_) => {
                 tracing::debug!(
                     assignment_id = %assignment_uuid,
@@ -305,6 +306,7 @@ impl TaskProcessorHandle {
                         "Existing file has wrong checksum, will re-download"
                     );
                 }
+                // arch-lint: allow(no-error-swallowing) reason="File unreadable; will re-download anyway"
                 Err(e) => {
                     tracing::debug!(
                         object_id = %task.object_id,
@@ -374,6 +376,7 @@ impl TaskProcessorHandle {
                 "MD5 checksum mismatch"
             );
             // Remove the corrupted temp file
+            // arch-lint: allow(no-error-swallowing) reason="Best-effort cleanup; error already being returned"
             if let Err(e) = fs::remove_file(&tmp_path).await {
                 tracing::error!(
                     object_id = %task.object_id,

@@ -75,6 +75,7 @@ impl ApiContext {
                     });
                 }
             }
+            // arch-lint: allow(no-error-swallowing) reason="Best-effort resume; agent can still accept new work"
             Err(e) => {
                 warn!(
                     error = %e,
@@ -116,6 +117,7 @@ impl ApiContext {
                     info!("No stale .tmp files found");
                 }
             }
+            // arch-lint: allow(no-error-swallowing) reason="Best-effort cleanup; agent can still start"
             Err(e) => {
                 warn!(
                     error = %e,
