@@ -445,4 +445,207 @@ mod tests {
         // Should not exist anymore
         assert!(!storage.has_assignment(uuid).await.unwrap());
     }
+
+    #[tokio::test]
+    async fn test_get_nonexistent_assignment() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let storage = AssignmentStorage::new(&db_path).unwrap();
+
+        let result = storage.get("nonexistent-uuid").await;
+        assert!(matches!(result, Err(StorageError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_set_state_nonexistent() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let storage = AssignmentStorage::new(&db_path).unwrap();
+
+        let result = storage.set_state("nonexistent-uuid", "running").await;
+        assert!(matches!(result, Err(StorageError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_delete_nonexistent() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let storage = AssignmentStorage::new(&db_path).unwrap();
+
+        let result = storage.delete("nonexistent-uuid").await;
+        assert!(matches!(result, Err(StorageError::NotFound(_))));
+    }
+
+    #[tokio::test]
+    async fn test_is_complete() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let storage = AssignmentStorage::new(&db_path).unwrap();
+
+        let uuid = "test-uuid-complete";
+        let tasks = vec![create_test_task("obj1"), create_test_task("obj2")];
+
+        storage.create(uuid, &tasks).await.unwrap();
+
+        // Not complete initially
+        assert!(!storage.is_complete(uuid).await.unwrap());
+
+        // Complete one task
+        storage.mark_task_complete(uuid, "obj1").await.unwrap();
+        assert!(!storage.is_complete(uuid).await.unwrap());
+
+        // Complete second task
+        storage.mark_task_complete(uuid, "obj2").await.unwrap();
+        assert!(storage.is_complete(uuid).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_get_incomplete_assignments() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let storage = AssignmentStorage::new(&db_path).unwrap();
+
+        // Create two assignments
+        storage
+            .create("uuid1", &[create_test_task("obj1")])
+            .await
+            .unwrap();
+        storage
+            .create("uuid2", &[create_test_task("obj2")])
+            .await
+            .unwrap();
+        storage
+            .create("uuid3", &[create_test_task("obj3")])
+            .await
+            .unwrap();
+
+        // Mark one as running
+        storage.set_state("uuid2", "running").await.unwrap();
+
+        // Mark one as complete
+        storage.mark_task_complete("uuid3", "obj3").await.unwrap();
+        storage.set_state("uuid3", "complete").await.unwrap();
+
+        // Get incomplete - should only return scheduled and running
+        let incomplete = storage.get_incomplete_assignments().await.unwrap();
+        assert_eq!(incomplete.len(), 2);
+        assert!(incomplete.contains(&"uuid1".to_string())); // scheduled
+        assert!(incomplete.contains(&"uuid2".to_string())); // running
+        assert!(!incomplete.contains(&"uuid3".to_string())); // complete
+    }
+
+    #[tokio::test]
+    async fn test_get_pending_tasks() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let storage = AssignmentStorage::new(&db_path).unwrap();
+
+        let uuid = "test-uuid-pending";
+        let tasks = vec![
+            create_test_task("obj1"),
+            create_test_task("obj2"),
+            create_test_task("obj3"),
+        ];
+
+        storage.create(uuid, &tasks).await.unwrap();
+
+        // All should be pending initially
+        let pending = storage.get_pending_tasks(uuid).await.unwrap();
+        assert_eq!(pending.len(), 3);
+
+        // Complete one
+        storage.mark_task_complete(uuid, "obj1").await.unwrap();
+        let pending = storage.get_pending_tasks(uuid).await.unwrap();
+        assert_eq!(pending.len(), 2);
+
+        // Fail one
+        storage
+            .mark_task_failed(uuid, "obj2", &ObjectSkippedReason::NetworkError)
+            .await
+            .unwrap();
+        let pending = storage.get_pending_tasks(uuid).await.unwrap();
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].object_id, "obj3");
+    }
+
+    #[tokio::test]
+    async fn test_get_failed_tasks_with_reason() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let storage = AssignmentStorage::new(&db_path).unwrap();
+
+        let uuid = "test-uuid-failed-reason";
+        let tasks = vec![create_test_task("obj1"), create_test_task("obj2")];
+
+        storage.create(uuid, &tasks).await.unwrap();
+
+        // Fail with different reasons
+        storage
+            .mark_task_failed(uuid, "obj1", &ObjectSkippedReason::MD5Mismatch)
+            .await
+            .unwrap();
+        storage
+            .mark_task_failed(uuid, "obj2", &ObjectSkippedReason::HTTPStatusCode(404))
+            .await
+            .unwrap();
+
+        // Set complete state
+        storage.set_state(uuid, "complete").await.unwrap();
+
+        // Get assignment - should have failed tasks with reasons
+        let assignment = storage.get(uuid).await.unwrap();
+        if let AgentAssignmentState::Complete(Some(failed_tasks)) = assignment.stats.state {
+            assert_eq!(failed_tasks.len(), 2);
+
+            let obj1_task = failed_tasks.iter().find(|t| t.object_id == "obj1").unwrap();
+            assert!(matches!(
+                obj1_task.status,
+                TaskStatus::Failed(ObjectSkippedReason::MD5Mismatch)
+            ));
+
+            let obj2_task = failed_tasks.iter().find(|t| t.object_id == "obj2").unwrap();
+            assert!(matches!(
+                obj2_task.status,
+                TaskStatus::Failed(ObjectSkippedReason::HTTPStatusCode(404))
+            ));
+        } else {
+            panic!("Expected Complete state with failed tasks");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_assignment_state_transitions() {
+        let dir = tempdir().unwrap();
+        let db_path = dir.path().join("test.db");
+        let storage = AssignmentStorage::new(&db_path).unwrap();
+
+        let uuid = "test-uuid-states";
+        let tasks = vec![create_test_task("obj1")];
+
+        storage.create(uuid, &tasks).await.unwrap();
+
+        // Initial state is scheduled
+        let assignment = storage.get(uuid).await.unwrap();
+        assert!(matches!(
+            assignment.stats.state,
+            AgentAssignmentState::Scheduled
+        ));
+
+        // Transition to running
+        storage.set_state(uuid, "running").await.unwrap();
+        let assignment = storage.get(uuid).await.unwrap();
+        assert!(matches!(
+            assignment.stats.state,
+            AgentAssignmentState::Running
+        ));
+
+        // Complete the task
+        storage.mark_task_complete(uuid, "obj1").await.unwrap();
+        storage.set_state(uuid, "complete").await.unwrap();
+        let assignment = storage.get(uuid).await.unwrap();
+        assert!(matches!(
+            assignment.stats.state,
+            AgentAssignmentState::Complete(None)
+        ));
+    }
 }

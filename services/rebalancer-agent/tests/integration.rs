@@ -517,3 +517,139 @@ async fn delete_assignment() {
         "Expected 404 after deletion"
     );
 }
+
+// ============================================================================
+// ApiContext unit tests
+// ============================================================================
+
+/// Test that ApiContext cleanup_temp_files removes .tmp files from manta root
+#[tokio::test]
+async fn test_cleanup_temp_files_on_startup() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+
+    // Create manta_root directory structure with some .tmp files
+    let manta_root = temp_dir.path().join("manta");
+    let owner_dir = manta_root.join("test-owner");
+    tokio::fs::create_dir_all(&owner_dir)
+        .await
+        .expect("failed to create owner dir");
+
+    // Create a .tmp file (should be cleaned up)
+    let tmp_file = owner_dir.join("partial-download.tmp");
+    tokio::fs::write(&tmp_file, b"partial content")
+        .await
+        .expect("failed to write tmp file");
+
+    // Create a real file (should NOT be cleaned up)
+    let real_file = owner_dir.join("real-object");
+    tokio::fs::write(&real_file, b"real content")
+        .await
+        .expect("failed to write real file");
+
+    // Verify tmp file exists before context creation
+    assert!(
+        tokio::fs::try_exists(&tmp_file).await.unwrap_or(false),
+        ".tmp file should exist before context creation"
+    );
+
+    // Create API context - this should clean up .tmp files
+    let config = rebalancer_agent::config::AgentConfig {
+        data_dir: temp_dir.path().to_path_buf(),
+        manta_root: manta_root.clone(),
+        concurrent_downloads: 4,
+        download_timeout_secs: 30,
+    };
+
+    let _api_context = rebalancer_agent::context::ApiContext::new(config)
+        .await
+        .expect("failed to create API context");
+
+    // Verify tmp file was cleaned up
+    assert!(
+        !tokio::fs::try_exists(&tmp_file).await.unwrap_or(true),
+        ".tmp file should be cleaned up on startup"
+    );
+
+    // Verify real file was NOT cleaned up
+    assert!(
+        tokio::fs::try_exists(&real_file).await.unwrap_or(false),
+        "real file should NOT be cleaned up"
+    );
+}
+
+/// Test that resume_failed() returns false on clean startup
+#[tokio::test]
+async fn test_resume_failed_false_on_clean_startup() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+
+    let config = rebalancer_agent::config::AgentConfig {
+        data_dir: temp_dir.path().to_path_buf(),
+        manta_root: temp_dir.path().join("manta"),
+        concurrent_downloads: 4,
+        download_timeout_secs: 30,
+    };
+
+    let api_context = rebalancer_agent::context::ApiContext::new(config)
+        .await
+        .expect("failed to create API context");
+
+    // On a clean startup with no prior assignments, resume_failed should be false
+    assert!(
+        !api_context.resume_failed(),
+        "resume_failed should be false on clean startup"
+    );
+}
+
+/// Test that temp file cleanup handles nested directories
+#[tokio::test]
+async fn test_cleanup_temp_files_nested_directories() {
+    let temp_dir = TempDir::new().expect("failed to create temp dir");
+
+    // Create manta_root with nested directory structure
+    let manta_root = temp_dir.path().join("manta");
+    let nested_dir = manta_root.join("owner1").join("subdir").join("deep");
+    tokio::fs::create_dir_all(&nested_dir)
+        .await
+        .expect("failed to create nested dir");
+
+    // Create .tmp files at various levels
+    let tmp_file1 = manta_root.join("level1.tmp");
+    let tmp_file2 = manta_root.join("owner1").join("level2.tmp");
+    let tmp_file3 = nested_dir.join("level4.tmp");
+
+    tokio::fs::write(&tmp_file1, b"tmp1")
+        .await
+        .expect("failed to write tmp file 1");
+    tokio::fs::write(&tmp_file2, b"tmp2")
+        .await
+        .expect("failed to write tmp file 2");
+    tokio::fs::write(&tmp_file3, b"tmp3")
+        .await
+        .expect("failed to write tmp file 3");
+
+    // Create API context
+    let config = rebalancer_agent::config::AgentConfig {
+        data_dir: temp_dir.path().to_path_buf(),
+        manta_root,
+        concurrent_downloads: 4,
+        download_timeout_secs: 30,
+    };
+
+    let _api_context = rebalancer_agent::context::ApiContext::new(config)
+        .await
+        .expect("failed to create API context");
+
+    // Verify all .tmp files were cleaned up
+    assert!(
+        !tokio::fs::try_exists(&tmp_file1).await.unwrap_or(true),
+        "level 1 .tmp file should be cleaned up"
+    );
+    assert!(
+        !tokio::fs::try_exists(&tmp_file2).await.unwrap_or(true),
+        "level 2 .tmp file should be cleaned up"
+    );
+    assert!(
+        !tokio::fs::try_exists(&tmp_file3).await.unwrap_or(true),
+        "level 4 .tmp file should be cleaned up"
+    );
+}

@@ -117,3 +117,68 @@ impl AgentConfig {
         &self.manta_root
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_default_config() {
+        let config = AgentConfig::default();
+
+        assert_eq!(config.data_dir, PathBuf::from("/var/tmp/rebalancer"));
+        assert_eq!(config.manta_root, PathBuf::from("/manta"));
+        assert_eq!(config.concurrent_downloads, 4);
+        assert_eq!(config.download_timeout_secs, 300);
+    }
+
+    #[test]
+    fn test_db_path() {
+        let config = AgentConfig {
+            data_dir: PathBuf::from("/test/data"),
+            manta_root: PathBuf::from("/test/manta"),
+            concurrent_downloads: 4,
+            download_timeout_secs: 300,
+        };
+
+        assert_eq!(config.db_path(), PathBuf::from("/test/data/assignments.db"));
+    }
+
+    #[test]
+    fn test_manta_file_path() {
+        let config = AgentConfig {
+            data_dir: PathBuf::from("/test/data"),
+            manta_root: PathBuf::from("/manta"),
+            concurrent_downloads: 4,
+            download_timeout_secs: 300,
+        };
+
+        let path = config.manta_file_path("owner123", "object456");
+        assert_eq!(path, PathBuf::from("/manta/owner123/object456"));
+    }
+
+    #[test]
+    fn test_manta_tmp_path() {
+        let config = AgentConfig {
+            data_dir: PathBuf::from("/test/data"),
+            manta_root: PathBuf::from("/manta"),
+            concurrent_downloads: 4,
+            download_timeout_secs: 300,
+        };
+
+        let path = config.manta_tmp_path("owner123", "object456");
+        assert_eq!(path, PathBuf::from("/manta/owner123/object456.tmp"));
+    }
+
+    #[test]
+    fn test_temp_dir() {
+        let config = AgentConfig {
+            data_dir: PathBuf::from("/test/data"),
+            manta_root: PathBuf::from("/manta"),
+            concurrent_downloads: 4,
+            download_timeout_secs: 300,
+        };
+
+        assert_eq!(config.temp_dir(), &PathBuf::from("/manta"));
+    }
+}

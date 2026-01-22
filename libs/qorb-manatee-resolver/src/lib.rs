@@ -670,4 +670,81 @@ mod tests {
         let d3 = backoff.next_backoff();
         assert_eq!(d3, Duration::from_secs(60));
     }
+
+    #[test]
+    fn test_parse_staleness_tracker_initial_state() {
+        // With a threshold of 0 seconds, it should immediately be stale
+        // since we've never had a successful parse
+        let tracker = ParseStalenessTracker::new(0);
+        assert!(tracker.check_staleness().is_some());
+    }
+
+    #[test]
+    fn test_parse_staleness_tracker_after_success() {
+        // With a 10 second threshold, immediately after a successful parse
+        // we should not be stale
+        let tracker = ParseStalenessTracker::new(10);
+        tracker.record_successful_parse();
+        assert!(tracker.check_staleness().is_none());
+    }
+
+    #[test]
+    fn test_parse_staleness_tracker_not_stale_within_threshold() {
+        // With a 60 second threshold and recent success, should not be stale
+        let tracker = ParseStalenessTracker::new(60);
+        tracker.record_successful_parse();
+
+        // Immediately after, should not be stale
+        let result = tracker.check_staleness();
+        assert!(
+            result.is_none(),
+            "Should not be stale immediately after success"
+        );
+    }
+
+    #[test]
+    fn test_parse_staleness_tracker_never_parsed() {
+        // If we never parse successfully, check_staleness should return
+        // the time since creation once we exceed the threshold
+        let tracker = ParseStalenessTracker::new(0);
+
+        // With threshold of 0, should be stale immediately
+        let result = tracker.check_staleness();
+        assert!(result.is_some());
+    }
+
+    #[test]
+    fn test_parse_staleness_tracker_multiple_parses() {
+        // Multiple successful parses should update the timestamp
+        let tracker = ParseStalenessTracker::new(60);
+
+        tracker.record_successful_parse();
+        let first_check = tracker.check_staleness();
+        assert!(first_check.is_none());
+
+        // Record another parse
+        tracker.record_successful_parse();
+        let second_check = tracker.check_staleness();
+        assert!(second_check.is_none());
+    }
+
+    #[test]
+    fn test_zk_connect_string_to_string() {
+        let cs = ZkConnectString::parse("10.0.0.1:2181,10.0.0.2:2181").unwrap();
+        let connect_string = cs.to_connect_string();
+        assert_eq!(connect_string, "10.0.0.1:2181,10.0.0.2:2181");
+    }
+
+    #[test]
+    fn test_zk_connect_string_from_str() {
+        let cs: ZkConnectString = "127.0.0.1:2181".parse().unwrap();
+        assert_eq!(cs.0.len(), 1);
+    }
+
+    #[test]
+    fn test_zk_connect_string_with_whitespace() {
+        // Should handle whitespace around addresses
+        let cs = ZkConnectString::parse("10.0.0.1:2181, 10.0.0.2:2181").unwrap();
+        assert_eq!(cs.0.len(), 2);
+    }
 }

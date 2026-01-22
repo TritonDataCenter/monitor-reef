@@ -167,4 +167,99 @@ mod tests {
         assert_eq!(objects.with_label_values(&["completed"]).get(), 2.0);
         assert_eq!(objects.with_label_values(&["failed"]).get(), 1.0);
     }
+
+    #[test]
+    fn test_record_object_completed() {
+        let before_bytes = BYTES_TOTAL.get();
+        let before_completed = OBJECTS_TOTAL.with_label_values(&["completed"]).get();
+
+        record_object_completed(1024);
+
+        let after_bytes = BYTES_TOTAL.get();
+        let after_completed = OBJECTS_TOTAL.with_label_values(&["completed"]).get();
+
+        // Due to parallel test execution, other tests may increment counters.
+        // We verify that at least our increment was applied.
+        assert!(
+            after_bytes - before_bytes >= 1024.0,
+            "BYTES_TOTAL should increase by at least 1024, got {}",
+            after_bytes - before_bytes
+        );
+        assert!(
+            after_completed - before_completed >= 1.0,
+            "OBJECTS_TOTAL[completed] should increase by at least 1, got {}",
+            after_completed - before_completed
+        );
+    }
+
+    #[test]
+    fn test_record_object_failed() {
+        let before_failed = OBJECTS_TOTAL.with_label_values(&["failed"]).get();
+        let before_network_errors = ERRORS_TOTAL.with_label_values(&["network"]).get();
+
+        record_object_failed("network");
+
+        let after_failed = OBJECTS_TOTAL.with_label_values(&["failed"]).get();
+        let after_network_errors = ERRORS_TOTAL.with_label_values(&["network"]).get();
+
+        assert!(
+            after_failed - before_failed >= 1.0,
+            "OBJECTS_TOTAL[failed] should increase by at least 1"
+        );
+        assert!(
+            after_network_errors - before_network_errors >= 1.0,
+            "ERRORS_TOTAL[network] should increase by at least 1"
+        );
+    }
+
+    #[test]
+    fn test_record_object_skipped() {
+        let before_skipped = OBJECTS_TOTAL.with_label_values(&["skipped"]).get();
+
+        record_object_skipped();
+
+        let after_skipped = OBJECTS_TOTAL.with_label_values(&["skipped"]).get();
+
+        assert!(
+            after_skipped - before_skipped >= 1.0,
+            "OBJECTS_TOTAL[skipped] should increase by at least 1"
+        );
+    }
+
+    #[test]
+    fn test_record_assignment_duration() {
+        // The histogram doesn't have a simple "get" method, so we verify
+        // it doesn't panic and the sample count increases
+        let before_count = ASSIGNMENT_DURATION.get_sample_count();
+
+        record_assignment_duration(5.0);
+
+        assert_eq!(ASSIGNMENT_DURATION.get_sample_count() - before_count, 1);
+    }
+
+    #[test]
+    fn test_record_cleanup_failure() {
+        let before = CLEANUP_FAILURES.get();
+
+        record_cleanup_failure();
+        record_cleanup_failure();
+
+        assert_eq!(CLEANUP_FAILURES.get() - before, 2.0);
+    }
+
+    #[test]
+    fn test_gather_metrics_produces_output() {
+        // Register metrics first (idempotent if already registered)
+        // Note: In production, register_metrics is called once at startup
+        // In tests, it may fail on re-registration, but that's okay for this test
+        let _ = std::panic::catch_unwind(register_metrics);
+
+        // Record something to ensure there's data
+        record_object_completed(100);
+
+        let output = gather_metrics();
+
+        // Should contain prometheus-formatted metrics
+        assert!(output.contains("rebalancer_agent"));
+    }
 }
