@@ -598,7 +598,9 @@ async fn test_update_job_not_running() {
     let error_body: serde_json::Value = response.json().await.expect("Failed to parse error");
     let error_message = error_body["message"].as_str().unwrap_or("");
     assert!(
-        error_message.contains("Init") || error_message.contains("state") || error_message.contains("Cannot update"),
+        error_message.contains("Init")
+            || error_message.contains("state")
+            || error_message.contains("Cannot update"),
         "Expected error about job state, got: {}",
         error_message
     );

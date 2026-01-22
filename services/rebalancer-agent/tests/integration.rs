@@ -620,7 +620,12 @@ async fn existing_file_checksum_match() {
 
     // Pre-create the file at the expected location in the agent's manta_root
     // First we need to access the temp_dir to write the file
-    let manta_file_path = ctx._temp_dir.path().join("manta").join(owner).join(object_id);
+    let manta_file_path = ctx
+        ._temp_dir
+        .path()
+        .join("manta")
+        .join(owner)
+        .join(object_id);
     tokio::fs::create_dir_all(manta_file_path.parent().unwrap())
         .await
         .expect("failed to create owner dir");

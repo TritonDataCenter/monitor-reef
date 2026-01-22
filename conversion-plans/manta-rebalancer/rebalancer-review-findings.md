@@ -528,13 +528,223 @@ tracing::info!(
 ### IMP-15: Missing Config File Watcher (SIGUSR1)
 
 **Location:** `services/rebalancer-manager/src/config.rs`
-**Legacy Reference:** `libs/rebalancer-legacy/manager/src/config.rs:254-298`
+**Legacy Reference:** `libs/rebalancer-legacy/manager/src/config.rs:254-330`
 
 **Description:** The new implementation only reads configuration from environment variables. The legacy implementation has a SIGUSR1 signal handler that reloads configuration from a file dynamically, used by config-agent.
 
 **Legacy Behavior:** `Config::start_config_watcher()` spawns threads that listen for SIGUSR1 and reload the config file when signaled.
 
 **Impact:** Operations teams cannot update configuration without restarting the service.
+
+#### Legacy Implementation
+
+The legacy code uses a multi-threaded architecture with `signal_hook` and `crossbeam_channel`:
+
+**Imports and Dependencies:**
+```rust
+use std::sync::{Arc, Barrier, Mutex};
+use crossbeam_channel::TrySendError;
+use signal_hook::{self, iterator::Signals};
+use std::thread;
+use std::thread::JoinHandle;
+```
+
+**Main Entry Point - `start_config_watcher()`:**
+
+Spawns a supervisor thread that coordinates two worker threads: one for signal handling and one for config updates.
+
+```rust
+// libs/rebalancer-legacy/manager/src/config.rs:270-297
+// This thread spawns two other threads.  One of them handles the SIGUSR1
+// signal and in turn notifies the other that the config file needs to be
+// re-parsed.  This function returns a JoinHandle that will only join
+// after both of the other threads have completed.
+pub fn start_config_watcher(
+    config: Arc<Mutex<Config>>,
+    config_file: Option<String>,
+) -> JoinHandle<()> {
+    thread::Builder::new()
+        .name("config watcher".to_string())
+        .spawn(move || {
+            let (update_tx, update_rx) = crossbeam_channel::bounded(1);
+            let barrier = Arc::new(Barrier::new(2));
+            let update_barrier = Arc::clone(&barrier);
+            let sig_handler_handle = Config::config_update_signal_handler(
+                update_tx,
+                update_barrier,
+            );
+            barrier.wait();
+
+            let update_config = Arc::clone(&config);
+            let config_updater_handle = Config::config_updater(
+                update_rx,
+                update_config,
+                config_file,
+            );
+
+            config_updater_handle.join().expect("join config updater");
+            sig_handler_handle.join().expect("join signal handler");
+        })
+        .expect("start config watcher")
+}
+```
+
+**Signal Handler Thread - `config_update_signal_handler()` and `_config_update_signal_handler()`:**
+
+Listens for SIGUSR1 and sends a notification through the channel when received.
+
+```rust
+// libs/rebalancer-legacy/manager/src/config.rs:249-264, 300-330
+// Run a thread that listens for the SIGUSR1 signal which config-agent
+// should be sending us via SMF when the config file is updated.  When a
+// signal is trapped it simply sends an empty message to the updater thread
+// which handles updating the configuration state in memory.  We don't want
+// to block or take any locks here because the signal is asynchronous.
+fn config_update_signal_handler(
+    config_update_tx: crossbeam_channel::Sender<()>,
+    update_barrier: Arc<Barrier>,
+) -> JoinHandle<()> {
+    thread::Builder::new()
+        .name(String::from("config update signal handler"))
+        .spawn(move || {
+            _config_update_signal_handler(config_update_tx, update_barrier)
+        })
+        .expect("Start Config Update Signal Handler")
+}
+
+fn _config_update_signal_handler(
+    config_update_tx: crossbeam_channel::Sender<()>,
+    update_barrier: Arc<Barrier>,
+) {
+    let signals =
+        Signals::new(&[signal_hook::SIGUSR1]).expect("register signals");
+
+    update_barrier.wait();
+
+    for signal in signals.forever() {
+        trace!("Signal Received: {}", signal);
+        match signal {
+            signal_hook::SIGUSR1 => {
+                // If there is already a message in the buffer
+                // (i.e. TrySendError::Full), then the updater
+                // thread will be doing an update anyway so no
+                // sense in clogging things up further.
+                match config_update_tx.try_send(()) {
+                    Err(TrySendError::Disconnected(_)) => {
+                        warn!("config_update listener is closed");
+                        break;
+                    }
+                    Ok(()) | Err(TrySendError::Full(_)) => {
+                        continue;
+                    }
+                }
+            }
+            _ => unreachable!(), // Ignore other signals
+        }
+    }
+}
+```
+
+**Config Updater Thread - `config_updater()`:**
+
+Waits for notifications and reloads the config file when triggered.
+
+```rust
+// libs/rebalancer-legacy/manager/src/config.rs:205-247
+fn config_updater(
+    config_update_rx: crossbeam_channel::Receiver<()>,
+    update_config: Arc<Mutex<Config>>,
+    config_file: Option<String>,
+) -> JoinHandle<()> {
+    thread::Builder::new()
+        .name(String::from("config updater"))
+        .spawn(move || loop {
+            match config_update_rx.recv() {
+                Ok(()) => {
+                    let new_config =
+                        match Config::parse_config(&config_file) {
+                            Ok(c) => c,
+                            Err(e) => {
+                                error!(
+                                    "Error parsing config after signal \
+                                     received. Not updating: {}",
+                                    e
+                                );
+                                continue;
+                            }
+                        };
+                    let mut config_lock =
+                        update_config.lock().expect("Lock update_config");
+
+                    *config_lock = new_config;
+                    debug!(
+                        "Configuration has been updated: {:#?}",
+                        *config_lock
+                    );
+                }
+                Err(e) => {
+                    warn!(
+                        "Channel has been disconnected, exiting \
+                         thread: {}",
+                        e
+                    );
+                    return;
+                }
+            }
+        })
+        .expect("Start config updater")
+}
+```
+
+#### How It Works
+
+1. **Thread Coordination**: Uses a `Barrier(2)` to ensure the signal handler is registered before the supervisor thread continues
+2. **Bounded Channel**: Uses `crossbeam_channel::bounded(1)` to communicate between signal handler and config updater
+3. **Debouncing**: Uses `try_send()` with a bounded(1) channel - if a message is already pending (`TrySendError::Full`), the signal is ignored (coalesces rapid signals)
+4. **No Locks in Signal Handler**: The signal handler only sends a notification, never blocks on locks or I/O
+5. **Graceful Shutdown**: If the channel is disconnected, both threads exit cleanly
+
+#### Implementation Notes for Modern Codebase
+
+The modern implementation uses environment variables instead of JSON config files, so this feature would need adaptation:
+
+**Option A: Environment Variable Reload (Simple)**
+```rust
+// Using tokio::signal for async signal handling
+use tokio::signal::unix::{signal, SignalKind};
+
+async fn start_config_watcher(config: Arc<RwLock<Config>>) {
+    let mut sigusr1 = signal(SignalKind::user_defined1())
+        .expect("register SIGUSR1");
+
+    loop {
+        sigusr1.recv().await;
+        tracing::info!("SIGUSR1 received, reloading configuration");
+        match Config::from_env() {
+            Ok(new_config) => {
+                let mut config_lock = config.write().await;
+                *config_lock = new_config;
+                tracing::info!("Configuration reloaded successfully");
+            }
+            Err(e) => {
+                tracing::error!(error = %e, "Failed to reload config, keeping current");
+            }
+        }
+    }
+}
+```
+
+**Option B: Config File Support (Full Parity)**
+- Add optional `--config-file` CLI argument
+- Support both env vars (primary) and JSON file (optional override)
+- When file specified, watch for SIGUSR1 and reload from file
+- This maintains compatibility with `config-agent` SMF integration
+
+**Key Differences from Legacy:**
+- Use `tokio::signal` instead of `signal_hook` threads
+- Use `tokio::sync::RwLock` instead of `std::sync::Mutex` for async-friendly locking
+- No need for barrier - tokio tasks coordinate naturally
+- Consider using `watch` channel for broadcasting config changes to multiple consumers
 
 **Action Required:**
 - [ ] Add optional config file path support
@@ -638,13 +848,285 @@ async fn cleanup_temp_files(config: &AgentConfig) {
 
 New storinfo lacks blacklist feature for excluding problematic sharks.
 
+#### Legacy Implementation
+
+The legacy code provides a `ChooseAlgorithm` enum with a `DefaultChooseAlgorithm` that filters sharks by datacenter blacklist and minimum available storage:
+
+```rust
+/// The algorithms available for choosing sharks.
+///
+///  * Default:
+///     Provide a list of storage nodes that have at least a <minimum
+///     available capacity> and are not in a <blacklist of datacenters>
+pub enum ChooseAlgorithm<'a> {
+    Default(&'a DefaultChooseAlgorithm),
+}
+
+#[derive(Default)]
+pub struct DefaultChooseAlgorithm {
+    pub blacklist: Vec<String>,      // Datacenter names to exclude
+    pub min_avail_mb: Option<u64>,   // Minimum available space required
+}
+
+impl<'a> ChooseAlgorithm<'a> {
+    fn choose(&self, sharks: &[StorageNode]) -> Vec<StorageNode> {
+        match self {
+            ChooseAlgorithm::Default(algo) => algo.method(sharks),
+        }
+    }
+}
+
+impl DefaultChooseAlgorithm {
+    fn method(&self, sharks: &[StorageNode]) -> Vec<StorageNode> {
+        let mut ret: Vec<StorageNode> = vec![];
+
+        // If the min_avail_mb is specified and the sharks available space is less
+        // than min_avail_mb skip it.
+        for s in sharks.iter() {
+            if let Some(min_avail_mb) = self.min_avail_mb {
+                if self.blacklist.contains(&s.datacenter)
+                    || s.available_mb < min_avail_mb
+                {
+                    continue;
+                }
+            }
+            ret.push(s.to_owned())
+        }
+
+        ret
+    }
+}
+```
+
+The `SharkSource` trait and `Storinfo` implementation apply the algorithm when selecting sharks:
+
+```rust
+pub trait SharkSource: Sync + Send {
+    fn choose(&self, algo: &ChooseAlgorithm) -> Option<Vec<StorageNode>>;
+}
+
+impl SharkSource for Storinfo {
+    fn choose(&self, algo: &ChooseAlgorithm) -> Option<Vec<StorageNode>> {
+        match self.get_sharks() {
+            Some(s) => Some(algo.choose(&s)),
+            None => None,
+        }
+    }
+}
+```
+
+#### How It Works
+
+1. **Datacenter Blacklist**: Operations can specify a list of datacenter names to exclude (e.g., datacenters with known issues or undergoing maintenance)
+2. **Minimum Available Space**: Only sharks with at least `min_avail_mb` of free space are selected
+3. **Both filters are AND'd**: A shark must pass both checks to be included in the result
+
+#### Implementation Notes for Modern Codebase
+
+To implement in `libs/storinfo-client/` or the manager's storinfo integration:
+
+1. Add `blacklist: Vec<String>` and `min_avail_mb: Option<u64>` fields to the storinfo client configuration
+2. Implement a `filter_sharks()` method that applies these criteria
+3. The blacklist should be configurable via environment variable (e.g., `STORINFO_BLACKLIST=dc1,dc2`) or job-level config
+4. Consider making this part of `EvacuateConfig` so different jobs can have different blacklists
+5. The enum pattern allows for future algorithm variants (e.g., rack-aware placement)
+
 ---
 
 ### MIN-7: Dynamic Thread Tuning
 
-**Legacy Reference:** `libs/rebalancer-legacy/manager/src/jobs/evacuate.rs:545-577`
+**Legacy Reference:** `libs/rebalancer-legacy/manager/src/jobs/evacuate.rs:545-577, 3843-3878, 3912-3999`
 
 Legacy allows runtime adjustment of metadata update threads via `EvacuateJobUpdateMessage::SetMetadataThreads`.
+
+#### Legacy Implementation
+
+**Message Types:**
+
+```rust
+// libs/rebalancer-legacy/manager/src/jobs/mod.rs:62-64
+#[derive(Debug)]
+pub enum JobUpdateMessage {
+    Evacuate(EvacuateJobUpdateMessage),
+}
+
+// libs/rebalancer-legacy/manager/src/jobs/evacuate.rs:545-549
+/// Example JSON payload:
+/// ```json
+/// {"action": "set_metadata_threads", "params": 30}
+/// ```
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "action", content = "params", rename_all = "snake_case")]
+pub enum EvacuateJobUpdateMessage {
+    SetMetadataThreads(usize),
+}
+```
+
+**Validation (with safety limits):**
+
+```rust
+// libs/rebalancer-legacy/manager/src/jobs/evacuate.rs:551-577
+// libs/rebalancer-legacy/manager/src/config.rs:63
+pub const MAX_TUNABLE_MD_UPDATE_THREADS: usize = 250;
+
+impl EvacuateJobUpdateMessage {
+    pub fn validate(&self) -> Result<(), String> {
+        #[allow(clippy::single_match)]
+        match self {
+            EvacuateJobUpdateMessage::SetMetadataThreads(num_threads) => {
+                if *num_threads < 1 {
+                    return Err(String::from(
+                        "Cannot set metadata update threads below 1",
+                    ));
+                }
+
+                // This is completely arbitrary, but intended to prevent the
+                // rebalancer from hammering the metadata tier due to a fat
+                // finger.  It is still possible to set this number higher
+                // but only at the start of a job. See MANTA-5284.
+                if *num_threads > MAX_TUNABLE_MD_UPDATE_THREADS {
+                    return Err(format!(
+                        "Cannot set metadata update threads above {}",
+                        MAX_TUNABLE_MD_UPDATE_THREADS
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+```
+
+**Thread Update Handler:**
+
+```rust
+// libs/rebalancer-legacy/manager/src/jobs/evacuate.rs:579-582
+// Internal message for worker thread control
+enum DyanmicWorkerMsg {
+    Data(AssignmentCacheEntry),
+    Stop,  // Signals worker to exit gracefully
+}
+
+// libs/rebalancer-legacy/manager/src/jobs/evacuate.rs:3843-3878
+fn update_dynamic_metadata_threads(
+    pool: &mut ThreadPool,
+    queue_back: &Arc<Injector<DyanmicWorkerMsg>>,
+    max_thread_count: &mut usize,
+    msg: JobUpdateMessage,
+) {
+    let JobUpdateMessage::Evacuate(eum) = msg;
+    let EvacuateJobUpdateMessage::SetMetadataThreads(new_worker_count) = eum;
+    let difference: i32 = new_worker_count as i32 - *max_thread_count as i32;
+
+    info!(
+        "Updating metadata update thread count from {} to {}.",
+        *max_thread_count, new_worker_count
+    );
+
+    // If the difference is negative then we need to
+    // reduce our running thread count, so inject
+    // the appropriate number of Stop messages to
+    // tell active threads to exit.
+    // Otherwise the logic below will handle spinning up
+    // more worker threads if they are needed.
+    for _ in difference..0 {
+        queue_back.push(DyanmicWorkerMsg::Stop);
+    }
+    *max_thread_count = new_worker_count;
+    pool.set_num_threads(*max_thread_count);
+
+    info!(
+        "Max number of metadata update threads set to: {}",
+        max_thread_count
+    );
+}
+```
+
+**Broker Main Loop (listens for updates):**
+
+```rust
+// libs/rebalancer-legacy/manager/src/jobs/evacuate.rs:3912-3999
+fn metadata_update_broker_dynamic(
+    job_action: Arc<EvacuateJob>,
+    md_update_rx: crossbeam::Receiver<AssignmentCacheEntry>,
+) -> Result<thread::JoinHandle<Result<(), Error>>, Error> {
+    let mut max_thread_count =
+        job_action.config.options.max_metadata_update_threads;
+    let mut pool = ThreadPool::with_name(
+        "Dyn_MD_Update".into(),
+        job_action.config.options.max_metadata_update_threads,
+    );
+    let queue = Arc::new(Injector::<DyanmicWorkerMsg>::new());
+    let update_rx = match &job_action.update_rx {
+        Some(urx) => urx.clone(),
+        None => panic!(
+            "Missing update_rx channel for job with dynamic update threads"
+        ),
+    };
+
+    thread::Builder::new()
+        .name(String::from("Metadata Update broker"))
+        .spawn(move || {
+            loop {
+                // Check for dynamic thread count updates (non-blocking)
+                if let Ok(msg) = update_rx.try_recv() {
+                    debug!("Received metadata update message: {:#?}", msg);
+                    update_dynamic_metadata_threads(
+                        &mut pool,
+                        &queue,
+                        &mut max_thread_count,
+                        msg,
+                    );
+                }
+                // ... rest of broker logic processes assignments ...
+            }
+            pool.join();
+            Ok(())
+        })
+}
+```
+
+#### How It Works
+
+1. **API Endpoint**: PUT `/jobs/{job_id}` accepts JSON like `{"action": "set_metadata_threads", "params": 30}`
+2. **Validation**: `validate()` ensures thread count is between 1 and 250 (safety limit for fat-finger protection)
+3. **Channel Delivery**: The message is sent through a `crossbeam_channel::Sender<JobUpdateMessage>` stored in `UPDATE_CHANS` hashmap keyed by job UUID
+4. **Broker Receives**: The `metadata_update_broker_dynamic` thread's main loop calls `update_rx.try_recv()` to check for updates non-blockingly
+5. **Thread Pool Adjustment**:
+   - If decreasing threads: Inject `DyanmicWorkerMsg::Stop` messages into the work queue for excess workers to pick up and exit
+   - Call `pool.set_num_threads(new_count)` to update the pool's max thread count
+   - If increasing threads: The broker loop will spawn new workers automatically as work comes in (up to the new max)
+
+#### Implementation Notes for Modern Codebase
+
+The watch channel infrastructure is already wired via IMP-13:
+- `JobUpdateRegistry` in context holds `HashMap<Uuid, watch::Sender<Option<EvacuateJobUpdateMessage>>>`
+- `update_job()` sends updates to running jobs
+- `EvacuateJob` receives updates via `watch::Receiver`
+
+**To complete this feature:**
+
+1. Add the `EvacuateJobUpdateMessage` enum with serde attributes to `apis/rebalancer-types/`
+2. Add `MAX_TUNABLE_MD_UPDATE_THREADS` constant (250) to config
+3. Add `validate()` method with the same bounds checking
+4. In the metadata update worker task, check the watch channel for updates:
+   ```rust
+   // In the metadata update task's main loop
+   tokio::select! {
+       result = update_rx.changed() => {
+           if let Some(msg) = update_rx.borrow().clone() {
+               match msg {
+                   EvacuateJobUpdateMessage::SetMetadataThreads(n) => {
+                       // Adjust semaphore permits or worker count
+                   }
+               }
+           }
+       }
+       // ... other branches for processing work ...
+   }
+   ```
+5. Use a `tokio::sync::Semaphore` instead of ThreadPool - adjust permits for dynamic sizing
+6. For graceful reduction, let excess permits drain naturally (don't forcibly cancel workers)
 
 ---
 

@@ -629,9 +629,7 @@ mod tests {
         let watcher_handle = tokio::spawn({
             let config_path = config_path.clone();
             let config = config.clone();
-            async move {
-                ManagerConfig::start_config_watcher(config_path, config, config_tx).await
-            }
+            async move { ManagerConfig::start_config_watcher(config_path, config, config_tx).await }
         });
 
         // 5. Give watcher time to register signal handler

@@ -36,10 +36,21 @@ mod metrics_impl {
                 "Total DB operation failures (e.g., failed to increment result counters)"
             )
         ).expect("valid metric name");
+
+        /// Counter for spawned task panics
+        ///
+        /// These failures indicate a bug in the code - spawned tasks should not panic.
+        /// Each panic means an object may not have been processed correctly.
+        pub static ref TASK_PANICS: Counter = Counter::with_opts(
+            Opts::new(
+                "rebalancer_manager_task_panics_total",
+                "Total spawned task panics (indicates bugs in task code)"
+            )
+        ).expect("valid metric name");
     }
 }
 
-pub use metrics_impl::{DB_OPERATION_FAILURES, REGISTRY};
+pub use metrics_impl::{DB_OPERATION_FAILURES, REGISTRY, TASK_PANICS};
 
 /// Register all metrics with the registry
 ///
@@ -51,6 +62,9 @@ pub fn register_metrics() {
     REGISTRY
         .register(Box::new(DB_OPERATION_FAILURES.clone()))
         .expect("Failed to register DB_OPERATION_FAILURES");
+    REGISTRY
+        .register(Box::new(TASK_PANICS.clone()))
+        .expect("Failed to register TASK_PANICS");
 }
 
 /// Get metrics in Prometheus text format
@@ -70,6 +84,14 @@ pub fn gather_metrics() -> String {
 /// the core operation.
 pub fn record_db_operation_failure() {
     DB_OPERATION_FAILURES.inc();
+}
+
+/// Record a spawned task panic
+///
+/// Call this when a spawned task panics (JoinError). This indicates a bug
+/// in the task code that should be investigated.
+pub fn record_task_panic() {
+    TASK_PANICS.inc();
 }
 
 #[cfg(test)]

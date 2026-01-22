@@ -326,10 +326,10 @@ mod tests {
     #[test]
     fn test_capacity_filtering() {
         let nodes = vec![
-            make_node_info("shark1.dc1", "dc1", 500),   // Below threshold
-            make_node_info("shark2.dc1", "dc1", 1000),  // At threshold
-            make_node_info("shark3.dc2", "dc2", 2000),  // Above threshold
-            make_node_info("shark4.dc2", "dc2", 100),   // Well below threshold
+            make_node_info("shark1.dc1", "dc1", 500),  // Below threshold
+            make_node_info("shark2.dc1", "dc1", 1000), // At threshold
+            make_node_info("shark3.dc2", "dc2", 2000), // Above threshold
+            make_node_info("shark4.dc2", "dc2", 100),  // Well below threshold
         ];
 
         let min_available_mb = 1000u64;

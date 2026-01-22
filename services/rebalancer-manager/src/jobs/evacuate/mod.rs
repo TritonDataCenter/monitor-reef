@@ -28,8 +28,8 @@ pub use db::DuplicateObject;
 pub use types::{EvacuateObject, EvacuateObjectError, EvacuateObjectStatus};
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
 use tokio::sync::{RwLock, Semaphore, mpsc, watch};
@@ -892,7 +892,10 @@ impl EvacuateJob {
                         tasks.spawn(async move {
                             // Acquire permit before processing
                             // This limits concurrent metadata updates
-                            let _permit = sem.acquire().await.expect("semaphore closed unexpectedly");
+                            let Ok(_permit) = sem.acquire().await else {
+                                error!("Semaphore closed unexpectedly, skipping object");
+                                return;
+                            };
 
                             // Perform the metadata update
                             let result = Self::update_object_metadata_static(
@@ -969,8 +972,8 @@ impl EvacuateJob {
                     // The actual PostProcessed state will be set when all tasks complete
                     // For now, we track it via the spawned tasks
                     {
-                        let mut cache = self.assignments.write().await;
-                        if let Some(entry) = cache.get_mut(&ace.id) {
+                        let cache = self.assignments.read().await;
+                        if cache.contains_key(&ace.id) {
                             // Keep it in current state - tasks will update when done
                             // The assignment checker will handle final cleanup
                             debug!(
@@ -991,10 +994,25 @@ impl EvacuateJob {
             "Waiting for remaining metadata update tasks to complete"
         );
 
+        let mut panic_count = 0u64;
         while let Some(result) = tasks.join_next().await {
             if let Err(e) = result {
+                panic_count += 1;
+                metrics::record_task_panic();
                 error!(job_id = %self.job_id, error = %e, "Metadata update task panicked");
             }
+        }
+
+        if panic_count > 0 {
+            error!(
+                job_id = %self.job_id,
+                panic_count,
+                "Metadata update broker completed with task panics"
+            );
+            return Err(JobError::Internal(format!(
+                "{} metadata update task(s) panicked",
+                panic_count
+            )));
         }
 
         info!("Metadata update broker completed");

@@ -656,7 +656,7 @@ mod quickcheck_tests {
     /// Test processing many tasks in a single assignment
     #[test]
     fn test_large_assignment() {
-        use quickcheck::{Gen, Arbitrary};
+        use quickcheck::{Arbitrary, Gen};
 
         let mut g = Gen::new(100);
         let mut tasks = Vec::new();

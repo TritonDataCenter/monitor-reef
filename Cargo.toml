@@ -22,18 +22,12 @@ members = [
     "services/rebalancer-agent",
     "services/rebalancer-manager",
 
-    # Modernized libraries:
     "libs/fast",
     "libs/quickcheck-helpers",
     "libs/libmanta",
     "libs/moray",
     "libs/qorb-manatee-resolver",
     "libs/sharkspotter",
-
-    # Legacy (not modernized - kept as reference):
-    #"libs/rebalancer-legacy/agent",
-    #"libs/rebalancer-legacy/manager",
-    #"libs/rebalancer-legacy/rebalancer",
 ]
 resolver = "2"
 

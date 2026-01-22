@@ -170,12 +170,14 @@ mod job_state_tests {
         assert_eq!(job.state, "setup");
 
         // Transition to 'running'
-        db.update_job_state(&job_id, "running").expect("update state");
+        db.update_job_state(&job_id, "running")
+            .expect("update state");
         let job = db.get_job(&job_id).expect("get job");
         assert_eq!(job.state, "running");
 
         // Transition to 'complete'
-        db.update_job_state(&job_id, "complete").expect("update state");
+        db.update_job_state(&job_id, "complete")
+            .expect("update state");
         let job = db.get_job(&job_id).expect("get job");
         assert_eq!(job.state, "complete");
     }
@@ -191,10 +193,12 @@ mod job_state_tests {
             .expect("create job");
 
         // Transition to 'running'
-        db.update_job_state(&job_id, "running").expect("update state");
+        db.update_job_state(&job_id, "running")
+            .expect("update state");
 
         // Transition to 'failed'
-        db.update_job_state(&job_id, "failed").expect("update state");
+        db.update_job_state(&job_id, "failed")
+            .expect("update state");
         let job = db.get_job(&job_id).expect("get job");
         assert_eq!(job.state, "failed");
     }
@@ -208,8 +212,10 @@ mod job_state_tests {
         db.create_evacuate_job(job_id, "1.stor.test.domain", "dc1", None)
             .expect("create job");
 
-        db.update_job_state(&job_id, "running").expect("update state");
-        db.update_job_state(&job_id, "stopped").expect("update state");
+        db.update_job_state(&job_id, "running")
+            .expect("update state");
+        db.update_job_state(&job_id, "stopped")
+            .expect("update state");
 
         let job = db.get_job(&job_id).expect("get job");
         assert_eq!(job.state, "stopped");
@@ -245,7 +251,8 @@ mod job_state_tests {
 
         // Update states independently
         db.update_job_state(&job_ids[0], "running").expect("update");
-        db.update_job_state(&job_ids[1], "complete").expect("update");
+        db.update_job_state(&job_ids[1], "complete")
+            .expect("update");
         db.update_job_state(&job_ids[2], "failed").expect("update");
 
         // Verify independent states
@@ -401,7 +408,8 @@ mod retry_job_tests {
         let original_id = Uuid::new_v4();
         db.create_evacuate_job(original_id, "1.stor.test.domain", "dc1", Some(100))
             .expect("create");
-        db.update_job_state(&original_id, "complete").expect("update");
+        db.update_job_state(&original_id, "complete")
+            .expect("update");
 
         let mut original_results = HashMap::new();
         original_results.insert("total".to_string(), 100);
@@ -430,7 +438,7 @@ mod retry_job_tests {
 
         let retry_results = db.get_job_results(&retry_id).expect("get results");
         assert_eq!(*retry_results.get("complete").unwrap(), 20);
-        assert!(retry_results.get("skipped").is_none());
+        assert!(!retry_results.contains_key("skipped"));
     }
 }
 
