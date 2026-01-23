@@ -551,7 +551,32 @@ impl EvacuateJob {
                 .or_insert_with(|| Assignment::new(dest_shark.clone()));
 
             // Add object to assignment
-            assignment.add_task(&eobj);
+            // This extracts fields from the MantaObject JSON and finds a valid source shark
+            if let Err(skip_reason) = assignment.add_task(&eobj, &self.from_shark.manta_storage_id)
+            {
+                // Could not add task (e.g., no valid source shark)
+                // Mark as skipped and continue with next object
+                eobj.status = EvacuateObjectStatus::Skipped;
+                eobj.skipped_reason = Some(skip_reason);
+                self.db.insert_object(&eobj).await?;
+                // Increment skipped count in manager database
+                // arch-lint: allow(no-error-swallowing) reason="Counter is best-effort; failure tracked via metric"
+                if let Err(e) = self
+                    .manager_db
+                    .increment_result_count(&self.job_uuid, "skipped")
+                    .await
+                {
+                    warn!(
+                        job_id = %self.job_id,
+                        object_id = %eobj.id,
+                        skip_reason = ?skip_reason,
+                        error = %e,
+                        "Failed to increment skipped count"
+                    );
+                    metrics::record_db_operation_failure();
+                }
+                continue;
+            }
             eobj.assignment_id = assignment.id.clone();
             eobj.status = EvacuateObjectStatus::Assigned;
 
@@ -2003,8 +2028,11 @@ mod tests {
         }
 
         // Add tasks to assignment
+        // Using "1.stor.domain" as from_shark so "2.stor.domain" can be the source
         for eobj in &eobjs {
-            assignment.add_task(eobj);
+            assignment
+                .add_task(eobj, "1.stor.domain")
+                .expect("Should add task successfully");
         }
 
         assert_eq!(assignment.tasks.len(), 10);
@@ -2110,12 +2138,16 @@ mod tests {
         let obj1 = make_evacuate_object("duplicate-obj");
         let obj2 = make_evacuate_object("duplicate-obj");
 
-        assignment.add_task(&obj1);
+        assignment
+            .add_task(&obj1, "1.stor.domain")
+            .expect("Should add task successfully");
         let initial_count = assignment.tasks.len();
         assert_eq!(initial_count, 1);
 
         // Adding the same object ID again should overwrite (HashMap behavior)
-        assignment.add_task(&obj2);
+        assignment
+            .add_task(&obj2, "1.stor.domain")
+            .expect("Should add task successfully");
         assert_eq!(assignment.tasks.len(), 1);
 
         // Verify the task exists
@@ -2176,6 +2208,65 @@ mod tests {
     }
 
     // -------------------------------------------------------------------------
+    // Test 8b: add_task source shark selection
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn add_task_extracts_fields_correctly() {
+        let dest_shark = make_storage_node("dest.stor", "dc3");
+        let mut assignment = Assignment::new(dest_shark);
+
+        let obj = make_evacuate_object("test-obj");
+
+        // Using "1.stor.domain" as from_shark, so "2.stor.domain" should be selected as source
+        let result = assignment.add_task(&obj, "1.stor.domain");
+        assert!(result.is_ok(), "Should successfully add task");
+
+        let task = assignment.tasks.get("test-obj").expect("Task should exist");
+        assert_eq!(task.object_id, "test-obj");
+        assert_eq!(task.owner, "test-owner");
+        assert_eq!(task.md5sum, "test-md5");
+        assert_eq!(task.source.manta_storage_id, "2.stor.domain");
+        assert_eq!(task.source.datacenter, "dc2");
+    }
+
+    #[test]
+    fn add_task_source_is_evac_shark() {
+        let dest_shark = make_storage_node("dest.stor", "dc3");
+        let mut assignment = Assignment::new(dest_shark);
+
+        // Create an object that only exists on one shark
+        let mut obj = make_evacuate_object("single-copy-obj");
+        obj.object = json!({
+            "objectId": "single-copy-obj",
+            "owner": "test-owner",
+            "key": "/test/path",
+            "contentLength": 1024,
+            "contentMD5": "test-md5",
+            "sharks": [
+                {"manta_storage_id": "1.stor.domain", "datacenter": "dc1"}
+            ]
+        });
+
+        // Try to add task with from_shark = "1.stor.domain" (the only shark)
+        let result = assignment.add_task(&obj, "1.stor.domain");
+
+        assert!(
+            result.is_err(),
+            "Should fail when only copy is on evacuation shark"
+        );
+        assert_eq!(
+            result.unwrap_err(),
+            ObjectSkippedReason::SourceIsEvacShark,
+            "Should return SourceIsEvacShark error"
+        );
+        assert!(
+            assignment.tasks.is_empty(),
+            "No task should be added when source is evac shark"
+        );
+    }
+
+    // -------------------------------------------------------------------------
     // Test 9: full_test - End-to-end simulation (100 objects)
     // -------------------------------------------------------------------------
 
@@ -2196,7 +2287,9 @@ mod tests {
             if i % 10 == 0 {
                 skipped_count += 1;
             } else {
-                assignment.add_task(&obj);
+                assignment
+                    .add_task(&obj, "1.stor.domain")
+                    .expect("Should add task successfully");
                 assigned_count += 1;
             }
         }
@@ -2264,7 +2357,9 @@ mod tests {
             if seen_in_assignments.contains(&obj.id) {
                 duplicate_insert_failures += 1;
             } else {
-                assignment.add_task(&obj);
+                assignment
+                    .add_task(&obj, "1.stor.domain")
+                    .expect("Should add task successfully");
                 assignment_count += 1;
 
                 if assignment.tasks.len() >= max_tasks {
@@ -2489,7 +2584,9 @@ mod tests {
         // Add some tasks
         for i in 0..5 {
             let obj = make_evacuate_object(&format!("obj-{}", i));
-            assignment.add_task(&obj);
+            assignment
+                .add_task(&obj, "1.stor.domain")
+                .expect("Should add task successfully");
         }
         assignment.total_size = 500;
         assignment.state = AssignmentState::Assigned;
@@ -2514,7 +2611,9 @@ mod tests {
         // Add tasks
         for i in 0..3 {
             let obj = make_evacuate_object(&format!("obj-{}", i));
-            assignment.add_task(&obj);
+            assignment
+                .add_task(&obj, "1.stor.domain")
+                .expect("Should add task successfully");
         }
 
         let payload = assignment.to_payload();

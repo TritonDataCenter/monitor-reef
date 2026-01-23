@@ -12,10 +12,10 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use rebalancer_types::{AssignmentPayload, StorageNode, Task, TaskStatus};
+use rebalancer_types::{AssignmentPayload, ObjectSkippedReason, StorageNode, Task, TaskStatus};
 
 use super::AssignmentId;
-use super::types::EvacuateObject;
+use super::types::{EvacuateObject, MantaObjectEssential};
 
 /// State of an assignment in the evacuation process
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -77,23 +77,63 @@ impl Assignment {
     }
 
     /// Add a task for an evacuate object
-    pub fn add_task(&mut self, eobj: &EvacuateObject) {
-        // Extract essential info from the Manta object
-        // In a full implementation, we'd parse the object JSON to get
-        // owner, md5sum, source shark, etc.
+    ///
+    /// Extracts essential fields from the MantaObject JSON (owner, contentMD5, sharks)
+    /// and finds a valid source shark to download from (not the shark being evacuated).
+    ///
+    /// # Arguments
+    /// * `eobj` - The evacuate object containing the MantaObject JSON
+    /// * `from_shark_id` - The storage ID of the shark being evacuated (to exclude as source)
+    ///
+    /// # Returns
+    /// * `Ok(())` - Task was successfully added
+    /// * `Err(ObjectSkippedReason)` - Task could not be added (e.g., no valid source shark)
+    pub fn add_task(
+        &mut self,
+        eobj: &EvacuateObject,
+        from_shark_id: &str,
+    ) -> Result<(), ObjectSkippedReason> {
+        // Parse the MantaObject JSON to extract essential fields
+        let manta_object: MantaObjectEssential = serde_json::from_value(eobj.object.clone())
+            .map_err(|e| {
+                tracing::warn!(
+                    object_id = %eobj.id,
+                    error = %e,
+                    "Failed to parse MantaObject, skipping"
+                );
+                ObjectSkippedReason::SourceOtherError
+            })?;
+
+        // Find a source shark that is NOT the shark being evacuated.
+        // We need to download the object from a replica on another shark.
+        let source = manta_object
+            .sharks
+            .iter()
+            .find(|s| s.manta_storage_id != from_shark_id)
+            .ok_or_else(|| {
+                // The only shark available is the one being evacuated.
+                // This object cannot be safely evacuated as there's no other copy to download from.
+                tracing::debug!(
+                    object_id = %eobj.id,
+                    from_shark = %from_shark_id,
+                    "No source shark available (only copy is on evacuation shark)"
+                );
+                ObjectSkippedReason::SourceIsEvacShark
+            })?;
+
         let task = Task {
-            object_id: eobj.id.clone(),
-            owner: String::new(),  // Would come from MantaObject
-            md5sum: String::new(), // Would come from MantaObject
+            object_id: manta_object.object_id.clone(),
+            owner: manta_object.owner.clone(),
+            md5sum: manta_object.content_md5.clone(),
             source: StorageNode {
-                // Would be extracted from MantaObject.sharks
-                manta_storage_id: String::new(),
-                datacenter: String::new(),
+                manta_storage_id: source.manta_storage_id.clone(),
+                datacenter: source.datacenter.clone(),
             },
             status: TaskStatus::Pending,
         };
 
         self.tasks.insert(eobj.id.clone(), task);
+        Ok(())
     }
 
     /// Convert to assignment payload for posting to agent
