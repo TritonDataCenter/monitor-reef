@@ -237,27 +237,27 @@
         ]
       },
       "EvacuateJobUpdateMessage": {
-        "description": "Update message for dynamically configuring a running evacuate job.",
+        "description": "Update message for dynamically configuring a running evacuate job.\n\nThe JSON format matches the legacy API: ```json {\"action\": \"set_metadata_threads\", \"params\": 30} ```",
         "oneOf": [
           {
-            "description": "Set the number of metadata update threads",
+            "description": "Set the number of metadata update threads (1-250)",
             "type": "object",
             "properties": {
-              "type": {
+              "action": {
                 "type": "string",
                 "enum": [
-                  "SetMetadataThreads"
+                  "set_metadata_threads"
                 ]
               },
-              "value": {
+              "params": {
                 "type": "integer",
                 "format": "uint32",
                 "minimum": 0
               }
             },
             "required": [
-              "type",
-              "value"
+              "action",
+              "params"
             ]
           }
         ]

@@ -334,6 +334,9 @@ impl TaskProcessorHandle {
             task.source.manta_storage_id, task.owner, task.object_id
         );
 
+        // Time the download operation (includes HTTP request, streaming, and file write)
+        let download_start = std::time::Instant::now();
+
         // Download the object
         let response = self.client.get(&url).send().await.map_err(|e| {
             tracing::debug!(url = %url, error = %e, "HTTP request failed");
@@ -365,6 +368,10 @@ impl TaskProcessorHandle {
                 });
                 ObjectSkippedReason::AgentFSError
             })?;
+
+        // Record download duration (even before MD5 verification completes)
+        let download_duration = download_start.elapsed().as_secs_f64();
+        crate::metrics::record_download_duration(download_duration);
 
         // Verify MD5 checksum
         let expected_md5 = &task.md5sum;

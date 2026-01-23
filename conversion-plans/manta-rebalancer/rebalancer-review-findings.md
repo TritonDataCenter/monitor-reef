@@ -8,10 +8,10 @@ Copyright 2026 Edgecast Cloud LLC.
 
 # Manta-Rebalancer Migration Review Findings
 
-**Review Date:** 2025-01-21 (Updated: 2026-01-21)
+**Review Date:** 2025-01-21 (Updated: 2026-01-22)
 **Reviewed By:** Claude Code (pr-review-toolkit agents)
 **Branch:** modernization-skill
-**Status:** Phase 1-6 Complete - Operational Features Pending
+**Status:** All Phases Complete (1-7)
 
 This document captures findings from comparing the new Dropshot-based manta-rebalancer implementation against the legacy Gotham-based code in `libs/rebalancer-legacy/`.
 
@@ -21,7 +21,7 @@ This document captures findings from comparing the new Dropshot-based manta-reba
 |-----------|------------------|------------------|-----------------|
 | Rebalancer Agent | 100% Complete | Yes | - |
 | Shared Types/API | 100% Complete | Yes | - |
-| Storinfo Client | ~85% Complete | Testing/Staging | - |
+| Storinfo Client | 100% Complete | Yes | - |
 | Manager Database | ~95% Complete | Testing/Staging | - |
 | Evacuate Job | 100% Complete | Yes | - |
 
@@ -29,10 +29,10 @@ This document captures findings from comparing the new Dropshot-based manta-reba
 
 | Metric | Legacy | New |
 |--------|--------|-----|
-| Total Tests | 35 | 64 |
-| Tests Ported | - | 31/35 (89%) |
-| Test Gaps | - | 4 |
-| New Tests Added | - | 29 |
+| Total Tests | 35 | 64+ |
+| Tests Ported | - | 33/35 (94%) |
+| Test Gaps | - | 2 |
+| New Tests Added | - | 29+ |
 
 ---
 
@@ -318,17 +318,33 @@ fs::rename(&tmp_path, &dest_path).await?;
 
 ---
 
-### IMP-3: Agent Metrics Collection Missing
+### IMP-3: Agent Metrics Collection ✅
 
-**Location:** `services/rebalancer-agent/src/`
+**Location:** `services/rebalancer-agent/src/metrics.rs`, `services/rebalancer-agent/src/main.rs`
 **Legacy Reference:** `libs/rebalancer-legacy/rebalancer/src/metrics.rs`
 
-**Description:** Legacy tracks BYTES_COUNT, OBJECT_COUNT, ERROR_COUNT, ASSIGNMENT_TIME. New agent has no metrics.
+**Description:** ~~Legacy tracks BYTES_COUNT, OBJECT_COUNT, ERROR_COUNT, ASSIGNMENT_TIME. New agent has no metrics.~~ Fixed - comprehensive Prometheus metrics implemented.
+
+**Implementation:**
+- Metrics server runs on port 8878 (configurable via `METRICS_ADDRESS` env var)
+- GET `/metrics` returns Prometheus text format
+
+**Metrics exported:**
+| Metric | Type | Description |
+|--------|------|-------------|
+| `rebalancer_agent_bytes_transferred_total` | Counter | Total bytes downloaded |
+| `rebalancer_agent_objects_processed_total` | CounterVec | Objects by status (completed, failed, skipped) |
+| `rebalancer_agent_objects_failed_total` | Counter | Total failed object transfers |
+| `rebalancer_agent_errors_total` | CounterVec | Errors by type (network, md5_mismatch, etc.) |
+| `rebalancer_agent_assignments_completed_total` | Counter | Total completed assignments |
+| `rebalancer_agent_assignment_duration_seconds` | Histogram | Assignment completion time |
+| `rebalancer_agent_download_duration_seconds` | Histogram | Per-object download time |
+| `rebalancer_agent_cleanup_failures_total` | Counter | Temp file cleanup failures |
 
 **Action Required:**
-- [ ] Add metrics collection (consider Prometheus integration)
-- [ ] Track bytes transferred, objects processed, errors
-- [ ] Expose metrics endpoint
+- [x] Add metrics collection (Prometheus integration) *(Completed)*
+- [x] Track bytes transferred, objects processed, errors *(Completed)*
+- [x] Expose metrics endpoint *(Completed)*
 
 ---
 
@@ -525,16 +541,24 @@ tracing::info!(
 
 ---
 
-### IMP-15: Missing Config File Watcher (SIGUSR1)
+### IMP-15: Missing Config File Watcher (SIGUSR1) ✅
 
 **Location:** `services/rebalancer-manager/src/config.rs`
 **Legacy Reference:** `libs/rebalancer-legacy/manager/src/config.rs:254-330`
 
-**Description:** The new implementation only reads configuration from environment variables. The legacy implementation has a SIGUSR1 signal handler that reloads configuration from a file dynamically, used by config-agent.
+**Description:** ~~The new implementation only reads configuration from environment variables.~~ Fixed - The manager now supports SIGUSR1 signal handling for dynamic config reload from a JSON file.
+
+**Implementation:**
+- `ManagerConfig::start_config_watcher()` uses `tokio::signal::unix` for async signal handling
+- Listens for SIGUSR1 and reloads config from the JSON file specified by `CONFIG_FILE` environment variable
+- Uses `merge_reloadable()` to only update hot-reloadable fields (not database_url or storinfo_url)
+- Sends updated config to subscribers via `watch::channel`
+- `main.rs` spawns the watcher when `CONFIG_FILE` is set and the file exists
+- Test `signal_handler_config_update` verifies signal handling works
 
 **Legacy Behavior:** `Config::start_config_watcher()` spawns threads that listen for SIGUSR1 and reload the config file when signaled.
 
-**Impact:** Operations teams cannot update configuration without restarting the service.
+~~**Impact:** Operations teams cannot update configuration without restarting the service.~~ Fixed - operations teams can now send SIGUSR1 to reload configuration dynamically.
 
 #### Legacy Implementation
 
@@ -747,9 +771,9 @@ async fn start_config_watcher(config: Arc<RwLock<Config>>) {
 - Consider using `watch` channel for broadcasting config changes to multiple consumers
 
 **Action Required:**
-- [ ] Add optional config file path support
-- [ ] Implement signal handler for SIGUSR1 (using tokio::signal)
-- [ ] Add test for config reload (legacy: `signal_handler_config_update`)
+- [x] Add optional config file path support *(Completed: Phase 7 - `CONFIG_FILE` env var)*
+- [x] Implement signal handler for SIGUSR1 (using tokio::signal) *(Completed: Phase 7)*
+- [x] Add test for config reload (legacy: `signal_handler_config_update`) *(Completed: Phase 7)*
 
 ---
 
@@ -842,102 +866,65 @@ async fn cleanup_temp_files(config: &AgentConfig) {
 
 ---
 
-### MIN-6: Blacklist Support in Storinfo
+### MIN-6: Blacklist Support in Storinfo ✅
 
 **Legacy Reference:** `libs/rebalancer-legacy/manager/src/storinfo.rs` (ChooseAlgorithm trait)
 
-New storinfo lacks blacklist feature for excluding problematic sharks.
+**Description:** ~~New storinfo lacks blacklist feature for excluding problematic sharks.~~ Fixed - datacenter blacklist filtering is fully implemented.
 
-#### Legacy Implementation
+**Implementation:**
 
-The legacy code provides a `ChooseAlgorithm` enum with a `DefaultChooseAlgorithm` that filters sharks by datacenter blacklist and minimum available storage:
+1. **Configuration** (`services/rebalancer-manager/src/config.rs`):
+   - `blacklist_datacenters: Vec<String>` field in `ManagerConfig`
+   - Parsed from `BLACKLIST_DATACENTERS` environment variable (comma-separated)
+   - Included in `merge_reloadable()` for SIGUSR1-based runtime reloading
+   - Example: `BLACKLIST_DATACENTERS=dc1,dc2,dc3`
 
-```rust
-/// The algorithms available for choosing sharks.
-///
-///  * Default:
-///     Provide a list of storage nodes that have at least a <minimum
-///     available capacity> and are not in a <blacklist of datacenters>
-pub enum ChooseAlgorithm<'a> {
-    Default(&'a DefaultChooseAlgorithm),
-}
+2. **Storinfo Client** (`services/rebalancer-manager/src/storinfo.rs`):
+   - `get_nodes_excluding_datacenters(&[String])` method filters out blacklisted datacenters
+   - Returns `Vec<StorageNodeInfo>` with capacity info for destination selection
 
-#[derive(Default)]
-pub struct DefaultChooseAlgorithm {
-    pub blacklist: Vec<String>,      // Datacenter names to exclude
-    pub min_avail_mb: Option<u64>,   // Minimum available space required
-}
+3. **Evacuate Job** (`services/rebalancer-manager/src/jobs/evacuate/mod.rs`):
+   - `EvacuateConfig` has `blacklist_datacenters: Vec<String>`
+   - `init_dest_sharks()` calls `get_nodes_excluding_datacenters()` with the blacklist
+   - Logs when blacklisting is active: `info!(blacklist = ?..., "Excluding datacenters from destination selection")`
 
-impl<'a> ChooseAlgorithm<'a> {
-    fn choose(&self, sharks: &[StorageNode]) -> Vec<StorageNode> {
-        match self {
-            ChooseAlgorithm::Default(algo) => algo.method(sharks),
-        }
-    }
-}
+4. **Context** (`services/rebalancer-manager/src/context.rs`):
+   - Both `create_job()` and `retry_job()` pass `blacklist_datacenters` from manager config to `EvacuateConfig`
 
-impl DefaultChooseAlgorithm {
-    fn method(&self, sharks: &[StorageNode]) -> Vec<StorageNode> {
-        let mut ret: Vec<StorageNode> = vec![];
+**Tests (4 unit tests in `storinfo.rs`):**
+- `test_multiple_blacklist` - Multiple datacenters excluded
+- `test_blacklist_filtering` - Basic filtering logic
+- `test_empty_blacklist_returns_all` - Empty blacklist returns all nodes
+- `test_blacklist_all_returns_empty` - Blacklisting all DCs returns empty
 
-        // If the min_avail_mb is specified and the sharks available space is less
-        // than min_avail_mb skip it.
-        for s in sharks.iter() {
-            if let Some(min_avail_mb) = self.min_avail_mb {
-                if self.blacklist.contains(&s.datacenter)
-                    || s.available_mb < min_avail_mb
-                {
-                    continue;
-                }
-            }
-            ret.push(s.to_owned())
-        }
-
-        ret
-    }
-}
-```
-
-The `SharkSource` trait and `Storinfo` implementation apply the algorithm when selecting sharks:
-
-```rust
-pub trait SharkSource: Sync + Send {
-    fn choose(&self, algo: &ChooseAlgorithm) -> Option<Vec<StorageNode>>;
-}
-
-impl SharkSource for Storinfo {
-    fn choose(&self, algo: &ChooseAlgorithm) -> Option<Vec<StorageNode>> {
-        match self.get_sharks() {
-            Some(s) => Some(algo.choose(&s)),
-            None => None,
-        }
-    }
-}
-```
-
-#### How It Works
-
-1. **Datacenter Blacklist**: Operations can specify a list of datacenter names to exclude (e.g., datacenters with known issues or undergoing maintenance)
-2. **Minimum Available Space**: Only sharks with at least `min_avail_mb` of free space are selected
-3. **Both filters are AND'd**: A shark must pass both checks to be included in the result
-
-#### Implementation Notes for Modern Codebase
-
-To implement in `libs/storinfo-client/` or the manager's storinfo integration:
-
-1. Add `blacklist: Vec<String>` and `min_avail_mb: Option<u64>` fields to the storinfo client configuration
-2. Implement a `filter_sharks()` method that applies these criteria
-3. The blacklist should be configurable via environment variable (e.g., `STORINFO_BLACKLIST=dc1,dc2`) or job-level config
-4. Consider making this part of `EvacuateConfig` so different jobs can have different blacklists
-5. The enum pattern allows for future algorithm variants (e.g., rack-aware placement)
+**Action Required:**
+- [x] Add `blacklist_datacenters` to config *(Completed)*
+- [x] Add `get_nodes_excluding_datacenters()` to storinfo client *(Completed)*
+- [x] Wire blacklist from config through to evacuate job *(Completed)*
+- [x] Add unit tests for blacklist filtering *(Completed)*
 
 ---
 
-### MIN-7: Dynamic Thread Tuning
+### MIN-7: Dynamic Thread Tuning ✅
 
 **Legacy Reference:** `libs/rebalancer-legacy/manager/src/jobs/evacuate.rs:545-577, 3843-3878, 3912-3999`
 
+**Status:** Implemented
+
 Legacy allows runtime adjustment of metadata update threads via `EvacuateJobUpdateMessage::SetMetadataThreads`.
+
+**Implementation:**
+- `EvacuateJobUpdateMessage` enum in `apis/rebalancer-types/src/lib.rs` with `#[serde(tag = "action", content = "params", rename_all = "snake_case")]`
+- `MAX_TUNABLE_MD_UPDATE_THREADS = 250` constant for validation
+- `validate()` method enforces 1-250 range
+- `metadata_update_broker()` in `services/rebalancer-manager/src/jobs/evacuate/mod.rs` uses `tokio::select!` to handle updates
+- Semaphore-based concurrency control with dynamic permit adjustment
+- PUT `/jobs/{uuid}` endpoint accepts `{"action": "set_metadata_threads", "params": N}`
+
+**Tests:**
+- Unit tests in `apis/rebalancer-types/src/lib.rs`: serialization, validation bounds
+- API tests in `services/rebalancer-manager/tests/api_tests.rs`: HTTP endpoint validation
 
 #### Legacy Implementation
 
@@ -1104,29 +1091,14 @@ The watch channel infrastructure is already wired via IMP-13:
 - `update_job()` sends updates to running jobs
 - `EvacuateJob` receives updates via `watch::Receiver`
 
-**To complete this feature:**
+**Action Required:** *(Completed)*
 
-1. Add the `EvacuateJobUpdateMessage` enum with serde attributes to `apis/rebalancer-types/`
-2. Add `MAX_TUNABLE_MD_UPDATE_THREADS` constant (250) to config
-3. Add `validate()` method with the same bounds checking
-4. In the metadata update worker task, check the watch channel for updates:
-   ```rust
-   // In the metadata update task's main loop
-   tokio::select! {
-       result = update_rx.changed() => {
-           if let Some(msg) = update_rx.borrow().clone() {
-               match msg {
-                   EvacuateJobUpdateMessage::SetMetadataThreads(n) => {
-                       // Adjust semaphore permits or worker count
-                   }
-               }
-           }
-       }
-       // ... other branches for processing work ...
-   }
-   ```
-5. Use a `tokio::sync::Semaphore` instead of ThreadPool - adjust permits for dynamic sizing
-6. For graceful reduction, let excess permits drain naturally (don't forcibly cancel workers)
+- [x] Add the `EvacuateJobUpdateMessage` enum with serde attributes to `apis/rebalancer-types/`
+- [x] Add `MAX_TUNABLE_MD_UPDATE_THREADS` constant (250) to config
+- [x] Add `validate()` method with the same bounds checking (1-250 range)
+- [x] In the metadata update worker task, check the watch channel for updates using `tokio::select!`
+- [x] Use a `tokio::sync::Semaphore` instead of ThreadPool - adjust permits for dynamic sizing
+- [x] For graceful reduction, let excess permits drain naturally (don't forcibly cancel workers)
 
 ---
 
@@ -1160,8 +1132,8 @@ The watch channel infrastructure is already wired via IMP-13:
 
 | Legacy Test | File | Priority | Reason |
 |-------------|------|----------|--------|
-| `job_dynamic_update` | main.rs:835 | **Critical** | Feature not yet implemented (IMP-13) |
-| `signal_handler_config_update` | config.rs:510 | **Critical** | Feature not implemented (IMP-15) |
+| ~~`job_dynamic_update`~~ | ~~main.rs:835~~ | ~~**Critical**~~ | ~~Feature not yet implemented (IMP-13)~~ ✅ Implemented (MIN-7) |
+| ~~`signal_handler_config_update`~~ | ~~config.rs:510~~ | ~~**Critical**~~ | ~~Feature not implemented (IMP-15)~~ ✅ Implemented |
 | `basic` (JobBuilder) | jobs/mod.rs:625 | Important | Architecture differs, covered by other tests |
 | Config file parsing tests (4) | config.rs | Important | New uses env vars, different approach |
 
@@ -1219,12 +1191,12 @@ All Phase 6 issues have been resolved. The manager is now feature-complete:
 6. ~~**IMP-13: Dynamic Job Update**~~ ✅ - Watch channel wired from context to jobs
 7. ~~IMP-16: Snaplink Cleanup Check~~ ✅ - Config flag blocks job creation when set
 
-### Phase 7: Operational Features (Post-production)
+### Phase 7: Operational Features (Post-production) ✅
 
-8. IMP-15: Config File Watcher (SIGUSR1)
-9. IMP-3: Agent Metrics (Prometheus)
-10. MIN-6: Storinfo Blacklist Support
-11. MIN-7: Dynamic Thread Tuning
+8. ~~IMP-15: Config File Watcher (SIGUSR1)~~ ✅
+9. ~~IMP-3: Agent Metrics (Prometheus)~~ ✅
+10. ~~MIN-6: Storinfo Blacklist Support~~ ✅
+11. ~~MIN-7: Dynamic Thread Tuning~~ ✅
 
 ---
 

@@ -30,20 +30,30 @@ mod metrics_impl {
 
         /// Total bytes transferred (downloaded) by this agent
         pub static ref BYTES_TOTAL: Counter = Counter::with_opts(
-            Opts::new("rebalancer_agent_bytes_total", "Total bytes transferred")
+            Opts::new("rebalancer_agent_bytes_transferred_total", "Total bytes transferred")
         ).expect("valid metric name");
 
         /// Objects processed by status (completed, failed, skipped)
         pub static ref OBJECTS_TOTAL: CounterVec = CounterVec::new(
-            Opts::new("rebalancer_agent_objects_total", "Objects processed by status"),
+            Opts::new("rebalancer_agent_objects_processed_total", "Objects processed by status"),
             &["status"]
         ).expect("valid metric name and labels");
+
+        /// Total failed objects (convenience counter, also tracked via OBJECTS_TOTAL{status="failed"})
+        pub static ref OBJECTS_FAILED_TOTAL: Counter = Counter::with_opts(
+            Opts::new("rebalancer_agent_objects_failed_total", "Total failed object transfers")
+        ).expect("valid metric name");
 
         /// Errors by type
         pub static ref ERRORS_TOTAL: CounterVec = CounterVec::new(
             Opts::new("rebalancer_agent_errors_total", "Errors by type"),
             &["error_type"]
         ).expect("valid metric name and labels");
+
+        /// Total completed assignments
+        pub static ref ASSIGNMENTS_COMPLETED_TOTAL: Counter = Counter::with_opts(
+            Opts::new("rebalancer_agent_assignments_completed_total", "Total completed assignments")
+        ).expect("valid metric name");
 
         /// Assignment completion time histogram
         pub static ref ASSIGNMENT_DURATION: Histogram = Histogram::with_opts(
@@ -53,6 +63,16 @@ mod metrics_impl {
             )
             // Buckets: 1s, 5s, 10s, 30s, 1m, 2m, 5m, 10m, 30m, 1h
             .buckets(vec![1.0, 5.0, 10.0, 30.0, 60.0, 120.0, 300.0, 600.0, 1800.0, 3600.0])
+        ).expect("valid histogram opts");
+
+        /// Per-download duration histogram
+        pub static ref DOWNLOAD_DURATION: Histogram = Histogram::with_opts(
+            HistogramOpts::new(
+                "rebalancer_agent_download_duration_seconds",
+                "Time to download individual objects in seconds"
+            )
+            // Buckets: 10ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s, 30s, 60s
+            .buckets(vec![0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0])
         ).expect("valid histogram opts");
 
         /// Counter for cleanup failures (e.g., failed to remove temp files)
@@ -70,7 +90,8 @@ mod metrics_impl {
 }
 
 pub use metrics_impl::{
-    ASSIGNMENT_DURATION, BYTES_TOTAL, CLEANUP_FAILURES, ERRORS_TOTAL, OBJECTS_TOTAL, REGISTRY,
+    ASSIGNMENT_DURATION, ASSIGNMENTS_COMPLETED_TOTAL, BYTES_TOTAL, CLEANUP_FAILURES,
+    DOWNLOAD_DURATION, ERRORS_TOTAL, OBJECTS_FAILED_TOTAL, OBJECTS_TOTAL, REGISTRY,
 };
 
 /// Register all metrics with the registry
@@ -86,11 +107,20 @@ pub fn register_metrics() {
         .register(Box::new(OBJECTS_TOTAL.clone()))
         .expect("Failed to register OBJECTS_TOTAL");
     REGISTRY
+        .register(Box::new(OBJECTS_FAILED_TOTAL.clone()))
+        .expect("Failed to register OBJECTS_FAILED_TOTAL");
+    REGISTRY
         .register(Box::new(ERRORS_TOTAL.clone()))
         .expect("Failed to register ERRORS_TOTAL");
     REGISTRY
+        .register(Box::new(ASSIGNMENTS_COMPLETED_TOTAL.clone()))
+        .expect("Failed to register ASSIGNMENTS_COMPLETED_TOTAL");
+    REGISTRY
         .register(Box::new(ASSIGNMENT_DURATION.clone()))
         .expect("Failed to register ASSIGNMENT_DURATION");
+    REGISTRY
+        .register(Box::new(DOWNLOAD_DURATION.clone()))
+        .expect("Failed to register DOWNLOAD_DURATION");
     REGISTRY
         .register(Box::new(CLEANUP_FAILURES.clone()))
         .expect("Failed to register CLEANUP_FAILURES");
@@ -114,6 +144,7 @@ pub fn record_object_completed(bytes: u64) {
 /// Record a failed object transfer
 pub fn record_object_failed(error_type: &str) {
     OBJECTS_TOTAL.with_label_values(&["failed"]).inc();
+    OBJECTS_FAILED_TOTAL.inc();
     ERRORS_TOTAL.with_label_values(&[error_type]).inc();
 }
 
@@ -125,6 +156,12 @@ pub fn record_object_skipped() {
 /// Record assignment completion time
 pub fn record_assignment_duration(duration_secs: f64) {
     ASSIGNMENT_DURATION.observe(duration_secs);
+    ASSIGNMENTS_COMPLETED_TOTAL.inc();
+}
+
+/// Record download duration for a single object
+pub fn record_download_duration(duration_secs: f64) {
+    DOWNLOAD_DURATION.observe(duration_secs);
 }
 
 /// Record a cleanup failure
@@ -195,16 +232,22 @@ mod tests {
     #[test]
     fn test_record_object_failed() {
         let before_failed = OBJECTS_TOTAL.with_label_values(&["failed"]).get();
+        let before_failed_total = OBJECTS_FAILED_TOTAL.get();
         let before_network_errors = ERRORS_TOTAL.with_label_values(&["network"]).get();
 
         record_object_failed("network");
 
         let after_failed = OBJECTS_TOTAL.with_label_values(&["failed"]).get();
+        let after_failed_total = OBJECTS_FAILED_TOTAL.get();
         let after_network_errors = ERRORS_TOTAL.with_label_values(&["network"]).get();
 
         assert!(
             after_failed - before_failed >= 1.0,
             "OBJECTS_TOTAL[failed] should increase by at least 1"
+        );
+        assert!(
+            after_failed_total - before_failed_total >= 1.0,
+            "OBJECTS_FAILED_TOTAL should increase by at least 1"
         );
         assert!(
             after_network_errors - before_network_errors >= 1.0,
@@ -231,10 +274,25 @@ mod tests {
         // The histogram doesn't have a simple "get" method, so we verify
         // it doesn't panic and the sample count increases
         let before_count = ASSIGNMENT_DURATION.get_sample_count();
+        let before_completed = ASSIGNMENTS_COMPLETED_TOTAL.get();
 
         record_assignment_duration(5.0);
 
         assert_eq!(ASSIGNMENT_DURATION.get_sample_count() - before_count, 1);
+        assert!(
+            ASSIGNMENTS_COMPLETED_TOTAL.get() - before_completed >= 1.0,
+            "ASSIGNMENTS_COMPLETED_TOTAL should increase by at least 1"
+        );
+    }
+
+    #[test]
+    fn test_record_download_duration() {
+        // Verify histogram sample count increases
+        let before_count = DOWNLOAD_DURATION.get_sample_count();
+
+        record_download_duration(0.5);
+
+        assert_eq!(DOWNLOAD_DURATION.get_sample_count() - before_count, 1);
     }
 
     #[test]

@@ -757,11 +757,12 @@ impl EvacuateJob {
         mut md_rx: mpsc::Receiver<AssignmentCacheEntry>,
         mut update_rx: watch::Receiver<Option<rebalancer_types::EvacuateJobUpdateMessage>>,
     ) -> Result<(), JobError> {
-        use rebalancer_types::EvacuateJobUpdateMessage;
+        use rebalancer_types::{EvacuateJobUpdateMessage, MAX_TUNABLE_MD_UPDATE_THREADS};
 
         const DEFAULT_METADATA_THREADS: u32 = 10;
-        // Maximum permits we'll ever allow (prevents unbounded growth)
-        const MAX_PERMITS: u32 = 1000;
+        // Maximum permits we'll ever allow - use the same constant as API validation
+        // to ensure consistency between what the API accepts and what the broker allows.
+        const MAX_PERMITS: u32 = MAX_TUNABLE_MD_UPDATE_THREADS;
 
         info!(
             job_id = %self.job_id,
@@ -776,14 +777,11 @@ impl EvacuateJob {
         // Track the current configured limit and "forget" excess permits to enforce it
         let current_limit = Arc::new(AtomicU32::new(DEFAULT_METADATA_THREADS));
 
-        // Remove permits to get to our default limit
-        // (MAX_PERMITS - DEFAULT_METADATA_THREADS) permits are "forgotten"
+        // Remove permits to get to our default limit.
+        // We use forget_permits() to permanently remove the excess permits from the semaphore.
+        // This is the correct approach - do NOT use acquire_many() first, as that would
+        // double-count the reduction (acquire takes permits, then forget removes more).
         let excess_permits = MAX_PERMITS - DEFAULT_METADATA_THREADS;
-        let _ = semaphore.acquire_many(excess_permits).await;
-        // Note: we intentionally don't drop the permit - this effectively reduces available permits
-
-        // Actually, let's use a cleaner approach: acquire and forget
-        // This is cleaner - we acquire the excess and then forget them
         semaphore.forget_permits(excess_permits as usize);
 
         // JoinSet to track in-flight metadata update tasks

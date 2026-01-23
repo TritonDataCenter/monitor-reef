@@ -509,8 +509,8 @@ async fn test_update_job_not_found() {
     // Try to update a non-existent job UUID
     let fake_uuid = Uuid::new_v4();
     let update_payload = json!({
-        "type": "SetMetadataThreads",
-        "value": 4
+        "action": "set_metadata_threads",
+        "params": 4
     });
 
     let response = client
@@ -538,8 +538,8 @@ async fn test_update_job_invalid_uuid() {
     let client = reqwest::Client::new();
 
     let update_payload = json!({
-        "type": "SetMetadataThreads",
-        "value": 4
+        "action": "set_metadata_threads",
+        "params": 4
     });
 
     let response = client
@@ -580,8 +580,8 @@ async fn test_update_job_not_running() {
 
     // Try to update it immediately (should be in Init state)
     let update_payload = json!({
-        "type": "SetMetadataThreads",
-        "value": 4
+        "action": "set_metadata_threads",
+        "params": 4
     });
 
     let response = client
@@ -633,8 +633,8 @@ async fn test_update_job_invalid_value() {
 
     // Try to update with invalid value (0 threads)
     let update_payload = json!({
-        "type": "SetMetadataThreads",
-        "value": 0
+        "action": "set_metadata_threads",
+        "params": 0
     });
 
     let response = client
@@ -879,8 +879,8 @@ async fn test_update_job_success() {
 
     // Send SetMetadataThreads update to the running job
     let update_payload = json!({
-        "type": "SetMetadataThreads",
-        "value": 8
+        "action": "set_metadata_threads",
+        "params": 8
     });
 
     let response = client
@@ -906,8 +906,8 @@ async fn test_update_job_success_various_thread_counts() {
     // Test various valid thread counts
     for thread_count in [1, 2, 4, 8, 16, 32] {
         let update_payload = json!({
-            "type": "SetMetadataThreads",
-            "value": thread_count
+            "action": "set_metadata_threads",
+            "params": thread_count
         });
 
         let response = client
@@ -924,4 +924,83 @@ async fn test_update_job_success_various_thread_counts() {
             thread_count
         );
     }
+}
+
+#[tokio::test]
+async fn test_update_job_boundary_thread_counts() {
+    let (base_url, running_job_id, _handle) = start_test_server_with_running_job().await;
+    let client = reqwest::Client::new();
+
+    // Test minimum valid value (1)
+    let update_payload = json!({
+        "action": "set_metadata_threads",
+        "params": 1
+    });
+
+    let response = client
+        .put(format!("{}/jobs/{}", base_url, running_job_id))
+        .json(&update_payload)
+        .send()
+        .await
+        .expect("Update request failed");
+
+    assert_eq!(
+        response.status(),
+        StatusCode::NO_CONTENT,
+        "Expected 204 for thread_count=1 (minimum)"
+    );
+
+    // Test maximum valid value (250 = MAX_TUNABLE_MD_UPDATE_THREADS)
+    let update_payload = json!({
+        "action": "set_metadata_threads",
+        "params": 250
+    });
+
+    let response = client
+        .put(format!("{}/jobs/{}", base_url, running_job_id))
+        .json(&update_payload)
+        .send()
+        .await
+        .expect("Update request failed");
+
+    assert_eq!(
+        response.status(),
+        StatusCode::NO_CONTENT,
+        "Expected 204 for thread_count=250 (maximum)"
+    );
+}
+
+#[tokio::test]
+async fn test_update_job_thread_count_above_max() {
+    let (base_url, running_job_id, _handle) = start_test_server_with_running_job().await;
+    let client = reqwest::Client::new();
+
+    // Test value above MAX_TUNABLE_MD_UPDATE_THREADS (251)
+    let update_payload = json!({
+        "action": "set_metadata_threads",
+        "params": 251
+    });
+
+    let response = client
+        .put(format!("{}/jobs/{}", base_url, running_job_id))
+        .json(&update_payload)
+        .send()
+        .await
+        .expect("Update request failed");
+
+    // Should fail validation
+    assert_eq!(
+        response.status(),
+        StatusCode::BAD_REQUEST,
+        "Expected 400 for thread_count=251 (above max)"
+    );
+
+    // Verify error message mentions the limit
+    let error_body: serde_json::Value = response.json().await.expect("Failed to parse error");
+    let error_message = error_body["message"].as_str().unwrap_or("");
+    assert!(
+        error_message.contains("250") || error_message.contains("above"),
+        "Expected error message about max limit, got: {}",
+        error_message
+    );
 }

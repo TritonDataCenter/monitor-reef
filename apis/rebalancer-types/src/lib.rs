@@ -340,21 +340,42 @@ pub struct JobStatus {
     pub state: JobState,
 }
 
+/// Maximum number of metadata update threads that can be set dynamically.
+///
+/// This is a safety limit to prevent the rebalancer from hammering the metadata
+/// tier due to a fat finger. It is still possible to set this number higher
+/// but only at the start of a job. See MANTA-5284 for context.
+pub const MAX_TUNABLE_MD_UPDATE_THREADS: u32 = 250;
+
 /// Update message for dynamically configuring a running evacuate job.
+///
+/// The JSON format matches the legacy API:
+/// ```json
+/// {"action": "set_metadata_threads", "params": 30}
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(tag = "type", content = "value")]
+#[serde(tag = "action", content = "params", rename_all = "snake_case")]
 pub enum EvacuateJobUpdateMessage {
-    /// Set the number of metadata update threads
+    /// Set the number of metadata update threads (1-250)
     SetMetadataThreads(u32),
 }
 
 impl EvacuateJobUpdateMessage {
     /// Validate the update message parameters.
+    ///
+    /// For `SetMetadataThreads`, ensures the thread count is between 1 and
+    /// `MAX_TUNABLE_MD_UPDATE_THREADS` (250).
     pub fn validate(&self) -> Result<(), String> {
         match self {
             EvacuateJobUpdateMessage::SetMetadataThreads(n) => {
-                if *n == 0 {
-                    return Err("Metadata threads must be > 0".to_string());
+                if *n < 1 {
+                    return Err("Cannot set metadata update threads below 1".to_string());
+                }
+                if *n > MAX_TUNABLE_MD_UPDATE_THREADS {
+                    return Err(format!(
+                        "Cannot set metadata update threads above {}",
+                        MAX_TUNABLE_MD_UPDATE_THREADS
+                    ));
                 }
                 Ok(())
             }
@@ -555,6 +576,80 @@ mod tests {
             ObjectSkippedReason::HTTPStatusCode(404).into_string(),
             "{http_status_code:404}"
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // EvacuateJobUpdateMessage Tests (MIN-7: Dynamic Thread Tuning)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn test_evacuate_job_update_message_serialization() {
+        // Test that the JSON format matches legacy API: {"action": "set_metadata_threads", "params": N}
+        let msg = EvacuateJobUpdateMessage::SetMetadataThreads(30);
+        let json = serde_json::to_string(&msg).expect("serialize message");
+        assert_eq!(json, r#"{"action":"set_metadata_threads","params":30}"#);
+
+        // Test deserialization
+        let parsed: EvacuateJobUpdateMessage =
+            serde_json::from_str(r#"{"action":"set_metadata_threads","params":50}"#)
+                .expect("deserialize message");
+        assert!(matches!(
+            parsed,
+            EvacuateJobUpdateMessage::SetMetadataThreads(50)
+        ));
+    }
+
+    #[test]
+    fn test_evacuate_job_update_message_validation_valid() {
+        // Minimum valid value
+        assert!(
+            EvacuateJobUpdateMessage::SetMetadataThreads(1)
+                .validate()
+                .is_ok()
+        );
+
+        // Typical value
+        assert!(
+            EvacuateJobUpdateMessage::SetMetadataThreads(30)
+                .validate()
+                .is_ok()
+        );
+
+        // Maximum valid value (250)
+        assert!(
+            EvacuateJobUpdateMessage::SetMetadataThreads(MAX_TUNABLE_MD_UPDATE_THREADS)
+                .validate()
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn test_evacuate_job_update_message_validation_zero() {
+        // Zero is invalid (must be >= 1)
+        let result = EvacuateJobUpdateMessage::SetMetadataThreads(0).validate();
+        assert!(result.is_err());
+        assert_eq!(
+            result.unwrap_err(),
+            "Cannot set metadata update threads below 1"
+        );
+    }
+
+    #[test]
+    fn test_evacuate_job_update_message_validation_too_high() {
+        // Above MAX_TUNABLE_MD_UPDATE_THREADS (250) is invalid
+        let result = EvacuateJobUpdateMessage::SetMetadataThreads(251).validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("above 250"));
+
+        // Way too high
+        let result = EvacuateJobUpdateMessage::SetMetadataThreads(1000).validate();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_max_tunable_md_update_threads_constant() {
+        // Verify the constant matches legacy value
+        assert_eq!(MAX_TUNABLE_MD_UPDATE_THREADS, 250);
     }
 }
 
