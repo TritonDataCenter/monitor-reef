@@ -31,6 +31,7 @@ use crate::jobs::{
 };
 use crate::mdapi_client;
 use crate::moray_client;
+use crate::mpu_utils::{self, MpuEvacuationTracker};
 use crate::pg_db;
 use crate::storinfo::{self as mod_storinfo, SharkSource, StorageNode};
 
@@ -81,6 +82,122 @@ type MorayClientHash = HashMap<u32, MorayClient>;
 /// * `false` if object is traditional Manta (no bucket_id)
 fn is_bucket_object(object: &Value) -> bool {
     object.get("bucket_id").is_some()
+}
+
+/// Finalize MPU upload record updates after batch evacuation.
+///
+/// This function is called after successfully evacuating and updating a batch
+/// of objects via mdapi. It scans the updated objects for MPU parts, tracks
+/// their uploadIds, and updates the corresponding upload records with new
+/// shark locations.
+///
+/// # Arguments
+/// * `client` - The mdapi client instance
+/// * `objects` - Slice of (MantaObject, bucket_id, etag) tuples that were updated
+///
+/// # Returns
+/// * `Ok(())` - Upload records successfully updated (or no MPU parts found)
+/// * `Err(Error)` - Upload record update failed (logged but not fatal)
+///
+/// # Error Handling
+/// This function implements graceful error handling:
+/// - Logs errors but does not fail the evacuation
+/// - Missing upload records (404) are logged as warnings
+/// - Parse/RPC errors are logged as errors
+/// - Evacuation completes successfully even if upload record updates fail
+///
+/// # Performance
+/// Cost: O(n) where n = number of unique uploadIds in the batch
+/// Typical case: <10 uploadIds per 1000 objects (~1% overhead)
+fn finalize_mpu_updates(
+    client: &MdapiClient,
+    objects: &[(MantaObject, Uuid, Option<&str>)],
+) -> Result<(), Error> {
+    let mut tracker = MpuEvacuationTracker::new();
+
+    // Track all MPU parts in this batch
+    for (object, _bucket_id, _etag) in objects {
+        if let Some(upload_id) = mpu_utils::parse_mpu_part_key(&object.key) {
+            debug!(
+                "Detected MPU part: {}, uploadId: {}",
+                object.key, upload_id
+            );
+
+            // Record this evacuation
+            tracker.record_evacuation(upload_id, object.sharks.clone());
+        }
+    }
+
+    // If no MPU parts found, return early
+    if tracker.count() == 0 {
+        return Ok(());
+    }
+
+    info!(
+        "Finalizing MPU updates for {} unique upload IDs",
+        tracker.count()
+    );
+
+    // Update upload records for all affected uploadIds
+    for (upload_id, new_sharks) in tracker.get_affected_uploads() {
+        // Extract owner and bucket_id from first object with this uploadId
+        // In practice, all parts of the same uploadId will have the same owner/bucket
+        let (owner, bucket_id) = match objects
+            .iter()
+            .find(|(obj, _, _)| {
+                mpu_utils::parse_mpu_part_key(&obj.key)
+                    .map(|id| &id == upload_id)
+                    .unwrap_or(false)
+            })
+            .map(|(obj, bid, _)| {
+                (
+                    Uuid::parse_str(&obj.owner),
+                    *bid,
+                )
+            }) {
+            Some((Ok(owner), bucket_id)) => (owner, bucket_id),
+            Some((Err(e), _)) => {
+                error!(
+                    "Invalid owner UUID for uploadId {}: {}",
+                    upload_id, e
+                );
+                continue;
+            }
+            None => {
+                warn!(
+                    "Could not find object for uploadId: {} (unexpected)",
+                    upload_id
+                );
+                continue;
+            }
+        };
+
+        // Update the upload record
+        match mpu_utils::update_upload_record(
+            client,
+            owner,
+            bucket_id,
+            upload_id,
+            new_sharks,
+        ) {
+            Ok(()) => {
+                debug!(
+                    "Successfully updated upload record for uploadId: {}",
+                    upload_id
+                );
+            }
+            Err(e) => {
+                // Log error but don't fail the evacuation
+                error!(
+                    "Failed to update upload record for uploadId {}: {:?}",
+                    upload_id, e
+                );
+                // Continue with other upload records
+            }
+        }
+    }
+
+    Ok(())
 }
 
 /// Abstraction over metadata backends (Moray, Mdapi, or Hybrid)
@@ -282,6 +399,9 @@ impl MetadataBackend {
                     .into());
                 }
 
+                // NEW: Finalize MPU upload records after successful batch update
+                finalize_mpu_updates(client, &manta_objects)?;
+
                 // Call callback with values
                 callback(values_for_callback)?;
                 Ok(())
@@ -396,6 +516,9 @@ impl MetadataBackend {
                         )
                         .into());
                     }
+
+                    // NEW: Finalize MPU upload records after successful batch update
+                    finalize_mpu_updates(mdapi, &mdapi_objects)?;
                 }
 
                 // Call callback with all values

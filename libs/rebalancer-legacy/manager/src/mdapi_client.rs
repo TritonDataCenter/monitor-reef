@@ -687,6 +687,201 @@ pub fn list_buckets(
     }
 }
 
+/// Get a single object by name with its full content.
+///
+/// This function retrieves an object's metadata and content, which is useful
+/// for reading JSON-based metadata objects like MPU upload records. For regular
+/// data objects, this would fetch the entire content which may be large.
+///
+/// # Arguments
+/// * `mclient` - The mdapi client instance
+/// * `owner` - The owner UUID
+/// * `bucket_id` - The bucket UUID containing the object
+/// * `object_name` - The object key/name to retrieve
+///
+/// # Returns
+/// * `Result<(MantaObject, String), Error>` - Tuple of (object metadata, content)
+///
+/// # Errors
+/// * Returns Error::Mdapi if the object doesn't exist or RPC fails
+/// * Returns Error::Internal if object data is malformed
+///
+/// # Example
+/// ```rust,ignore
+/// let (object, content) = get_object_with_content(
+///     &client,
+///     owner,
+///     bucket_id,
+///     ".mpu-uploads/abc-123"
+/// )?;
+/// let upload_record: serde_json::Value = serde_json::from_str(&content)?;
+/// ```
+///
+/// # Performance
+/// Cost: O(1) single RPC call to mdapi. For large objects, consider streaming.
+pub fn get_object_with_content(
+    mclient: &MdapiClient,
+    owner: Uuid,
+    bucket_id: Uuid,
+    object_name: &str,
+) -> Result<(MantaObject, String), Error> {
+    trace!(
+        "Getting object with content: owner={}, bucket_id={}, name={}",
+        owner,
+        bucket_id,
+        object_name
+    );
+
+    // Calculate vnode for this object
+    let vnode = calculate_vnode(&owner.to_string(), &bucket_id.to_string(), object_name);
+
+    // Get object from mdapi
+    // Note: rust-libmanta's get_object returns ObjectPayload which includes
+    // content for small objects. For MPU upload records (JSON metadata),
+    // the content will be included.
+    let value = mclient.get_object(owner, bucket_id, object_name, vnode)?;
+
+    // Deserialize to ObjectPayload
+    let payload: ObjectPayload = serde_json::from_value(value).map_err(|e| {
+        Error::Internal(InternalError::new(
+            Some(InternalErrorCode::BadMdapiClient),
+            format!("Failed to deserialize object payload: {}", e),
+        ))
+    })?;
+
+    // Extract content if present
+    // For metadata objects like upload records, content is stored in the payload
+    let content = if let Some(content_value) = payload.properties.get("content") {
+        // Content may be stored as a string or bytes
+        if let Some(s) = content_value.as_str() {
+            s.to_string()
+        } else {
+            // If it's not a string, serialize it as JSON
+            serde_json::to_string(content_value).map_err(|e| {
+                Error::Internal(InternalError::new(
+                    Some(InternalErrorCode::BadMdapiClient),
+                    format!("Failed to serialize content: {}", e),
+                ))
+            })?
+        }
+    } else {
+        // No content field - return empty string
+        String::new()
+    };
+
+    // Convert payload to MantaObject
+    let manta_obj = payload_to_manta_object(&payload)?;
+
+    debug!("Retrieved object {} with {} bytes of content", object_name, content.len());
+    Ok((manta_obj, content))
+}
+
+/// Update an object's content while preserving its metadata.
+///
+/// This function is specifically designed for updating JSON-based metadata
+/// objects like MPU upload records. It updates the content field while
+/// preserving all other object metadata (sharks, etag, headers, etc.).
+///
+/// # Arguments
+/// * `mclient` - The mdapi client instance
+/// * `owner` - The owner UUID
+/// * `bucket_id` - The bucket UUID containing the object
+/// * `object_name` - The object key/name to update
+/// * `new_content` - The new content to store (typically JSON string)
+///
+/// # Returns
+/// * `Result<(), Error>` - Success or error
+///
+/// # Errors
+/// * Returns Error::Mdapi if the object doesn't exist or RPC fails
+/// * Returns Error::Internal if object data is malformed
+///
+/// # Example
+/// ```rust,ignore
+/// // Update MPU upload record with new shark locations
+/// let (object, content) = get_object_with_content(
+///     &client, owner, bucket_id, ".mpu-uploads/abc-123"
+/// )?;
+/// let mut record: serde_json::Value = serde_json::from_str(&content)?;
+/// record["preAllocatedSharks"] = serde_json::to_value(&new_sharks)?;
+/// let updated_content = serde_json::to_string(&record)?;
+///
+/// update_object_content(
+///     &client, owner, bucket_id, ".mpu-uploads/abc-123", &updated_content
+/// )?;
+/// ```
+///
+/// # Invariants
+/// - Object metadata (sharks, headers, etag) is preserved
+/// - Only the content field is updated
+/// - Content must be valid UTF-8 string
+///
+/// # Performance
+/// Cost: O(1) single RPC call to mdapi. Updates are atomic.
+pub fn update_object_content(
+    mclient: &MdapiClient,
+    owner: Uuid,
+    bucket_id: Uuid,
+    object_name: &str,
+    new_content: &str,
+) -> Result<(), Error> {
+    trace!(
+        "Updating object content: owner={}, bucket_id={}, name={}, content_len={}",
+        owner,
+        bucket_id,
+        object_name,
+        new_content.len()
+    );
+
+    // Calculate vnode for this object
+    let vnode = calculate_vnode(&owner.to_string(), &bucket_id.to_string(), object_name);
+
+    // First, get the current object to preserve its metadata
+    let (current_object, _old_content) = get_object_with_content(
+        mclient,
+        owner,
+        bucket_id,
+        object_name,
+    )?;
+
+    // Create update payload that only changes content
+    // We need to convert the MantaObject back to a payload format
+    let request_id = Uuid::new_v4();
+    let mut payload = manta_object_to_payload(&current_object, bucket_id, Some(request_id))?;
+
+    // Update the content in properties
+    payload.properties.insert("content".to_string(), json!(new_content));
+
+    // Update content_length to match new content
+    payload.content_length = new_content.len() as u64;
+
+    // Create ObjectUpdate for mdapi
+    let update = ObjectUpdate {
+        name: object_name.to_string(),
+        id: payload.id,
+        vnode,
+        owner,
+        bucket_id,
+        content_length: payload.content_length,
+        content_md5: payload.content_md5.clone(),
+        content_type: payload.content_type.clone(),
+        headers: payload.headers.clone(),
+        sharks: payload.sharks.clone(),
+        properties: payload.properties.clone(),
+        request_id,
+        conditions: None, // No conditional update for content updates
+    };
+
+    // Perform the update
+    mclient.update_object(update).map_err(|e| {
+        error!("Failed to update object content for {}: {}", object_name, e);
+        Error::from(e)
+    })?;
+
+    debug!("Successfully updated content for object: {}", object_name);
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
