@@ -24,11 +24,162 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
-use std::net::ToSocketAddrs;
+use std::io::{Read, Write};
+use std::net::{TcpStream, ToSocketAddrs};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 use fast_rpc::client as fast_client;
 use fast_rpc::protocol::{FastMessage, FastMessageId};
+
+/// Default maximum connections in the pool
+const DEFAULT_POOL_SIZE: usize = 4;
+
+/// Connection idle timeout (connections older than this are discarded)
+const CONNECTION_IDLE_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// A pooled TCP connection with timestamp for idle tracking
+struct PooledConnection {
+    stream: TcpStream,
+    created_at: Instant,
+}
+
+impl PooledConnection {
+    fn new(stream: TcpStream) -> Self {
+        Self {
+            stream,
+            created_at: Instant::now(),
+        }
+    }
+
+    fn is_expired(&self) -> bool {
+        self.created_at.elapsed() > CONNECTION_IDLE_TIMEOUT
+    }
+}
+
+/// Simple connection pool for TCP connections
+///
+/// This pool maintains a set of reusable TCP connections to avoid
+/// the overhead of creating new connections for each RPC call.
+struct ConnectionPool {
+    endpoint: String,
+    connections: Mutex<Vec<PooledConnection>>,
+    max_size: usize,
+}
+
+impl ConnectionPool {
+    /// Create a new connection pool for the given endpoint
+    fn new(endpoint: String, max_size: usize) -> Self {
+        Self {
+            endpoint,
+            connections: Mutex::new(Vec::with_capacity(max_size)),
+            max_size,
+        }
+    }
+
+    /// Get a connection from the pool or create a new one
+    fn get(&self) -> Result<TcpStream, MdapiError> {
+        // Try to get an existing connection from the pool
+        {
+            let mut pool = self.connections.lock().map_err(|_| {
+                MdapiError::IoError("Connection pool lock poisoned".to_string())
+            })?;
+
+            // Find a non-expired connection
+            while let Some(conn) = pool.pop() {
+                if !conn.is_expired() {
+                    // Test if connection is still valid by checking if it's readable
+                    // (a closed connection will return an error or 0 bytes)
+                    if Self::is_connection_alive(&conn.stream) {
+                        return Ok(conn.stream);
+                    }
+                    // Connection is dead, drop it and try next
+                }
+                // Connection expired or dead, drop it and try next
+            }
+        }
+
+        // No pooled connection available, create a new one
+        self.create_connection()
+    }
+
+    /// Return a connection to the pool for reuse
+    fn put(&self, stream: TcpStream) {
+        let mut pool = match self.connections.lock() {
+            Ok(p) => p,
+            Err(_) => return, // Pool poisoned, just drop the connection
+        };
+
+        // Only add back if pool isn't full
+        if pool.len() < self.max_size {
+            pool.push(PooledConnection::new(stream));
+        }
+        // Otherwise, connection is dropped
+    }
+
+    /// Create a new TCP connection to the endpoint
+    fn create_connection(&self) -> Result<TcpStream, MdapiError> {
+        let addr = self
+            .endpoint
+            .to_socket_addrs()
+            .map_err(|e| {
+                MdapiError::IoError(format!(
+                    "Failed to resolve endpoint {}: {}",
+                    self.endpoint, e
+                ))
+            })?
+            .next()
+            .ok_or_else(|| {
+                MdapiError::IoError(format!(
+                    "No address found for endpoint {}",
+                    self.endpoint
+                ))
+            })?;
+
+        let stream = TcpStream::connect(addr).map_err(|e| {
+            MdapiError::IoError(format!(
+                "Failed to connect to {}: {}",
+                self.endpoint, e
+            ))
+        })?;
+
+        // Set TCP keepalive and timeouts
+        stream
+            .set_read_timeout(Some(Duration::from_secs(30)))
+            .ok();
+        stream
+            .set_write_timeout(Some(Duration::from_secs(30)))
+            .ok();
+        stream.set_nodelay(true).ok();
+
+        Ok(stream)
+    }
+
+    /// Check if a connection is still alive using peek
+    fn is_connection_alive(stream: &TcpStream) -> bool {
+        // Set non-blocking temporarily to check connection state
+        if stream.set_nonblocking(true).is_err() {
+            return false;
+        }
+
+        // Try to peek at the stream - a closed connection will error
+        let mut buf = [0u8; 1];
+        let result = match stream.peek(&mut buf) {
+            Ok(0) => false, // Connection closed by peer
+            Ok(_) => true,  // Data available (shouldn't happen, but connection is alive)
+            Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                true // No data but connection is alive
+            }
+            Err(_) => false, // Connection error
+        };
+
+        // Restore blocking mode
+        stream.set_nonblocking(false).ok();
+
+        result
+    }
+}
 
 /// Errors that can occur during mdapi client operations
 #[derive(Debug)]
@@ -331,8 +482,14 @@ struct DeleteGCBatchPayload {
 /// Client for manta-buckets-mdapi Fast RPC service
 ///
 /// This client provides methods for bucket and object metadata operations.
-/// It maintains a connection to the mdapi service and handles Fast RPC
+/// It maintains a connection pool to the mdapi service and handles Fast RPC
 /// protocol communication.
+///
+/// # Connection Pooling
+///
+/// The client maintains a pool of TCP connections to avoid the overhead of
+/// creating new connections for each RPC call. Connections are automatically
+/// reused and recycled when they become stale.
 ///
 /// # Example
 ///
@@ -341,10 +498,20 @@ struct DeleteGCBatchPayload {
 ///
 /// let client = MdapiClient::new("mdapi.example.com:2030")?;
 /// ```
-#[derive(Clone)]
 pub struct MdapiClient {
     /// Connection endpoint address
     endpoint: String,
+    /// Connection pool for reusing TCP connections
+    pool: Arc<ConnectionPool>,
+}
+
+impl Clone for MdapiClient {
+    fn clone(&self) -> Self {
+        Self {
+            endpoint: self.endpoint.clone(),
+            pool: Arc::clone(&self.pool),
+        }
+    }
 }
 
 impl MdapiClient {
@@ -367,8 +534,29 @@ impl MdapiClient {
     /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     pub fn new(endpoint: &str) -> Result<Self, MdapiError> {
+        Self::with_pool_size(endpoint, DEFAULT_POOL_SIZE)
+    }
+
+    /// Create a new mdapi client with a custom connection pool size
+    ///
+    /// # Arguments
+    ///
+    /// * `endpoint` - Server address in "host:port" format
+    /// * `pool_size` - Maximum number of connections to keep in the pool
+    ///
+    /// # Returns
+    ///
+    /// A Result containing the client or an error if connection fails
+    pub fn with_pool_size(
+        endpoint: &str,
+        pool_size: usize,
+    ) -> Result<Self, MdapiError> {
         Ok(MdapiClient {
             endpoint: endpoint.to_string(),
+            pool: Arc::new(ConnectionPool::new(
+                endpoint.to_string(),
+                pool_size,
+            )),
         })
     }
 
@@ -414,37 +602,22 @@ impl MdapiClient {
             ))
         })?;
 
-        // Create TCP connection to mdapi service
-        let addr = self
-            .endpoint
-            .to_socket_addrs()
-            .map_err(|e| {
-                MdapiError::IoError(format!(
-                    "Failed to resolve endpoint {}: {}",
-                    self.endpoint, e
-                ))
-            })?
-            .next()
-            .ok_or_else(|| {
-                MdapiError::IoError(format!(
-                    "No address found for endpoint {}",
-                    self.endpoint
-                ))
-            })?;
-
-        let mut stream = std::net::TcpStream::connect(addr).map_err(|e| {
-            MdapiError::IoError(format!(
-                "Failed to connect to {}: {}",
-                self.endpoint, e
-            ))
-        })?;
+        // Get a connection from the pool
+        let mut stream = self.pool.get()?;
+        let mut rpc_succeeded = false;
 
         // Send Fast RPC request
         let mut msg_id = FastMessageId::new();
-        fast_client::send(method.to_string(), args, &mut msg_id, &mut stream)
-            .map_err(|e| {
-            MdapiError::RpcError(format!("Failed to send RPC request: {}", e))
-        })?;
+        let send_result =
+            fast_client::send(method.to_string(), args, &mut msg_id, &mut stream);
+
+        if let Err(e) = send_result {
+            // Connection failed, don't return it to pool
+            return Err(MdapiError::RpcError(format!(
+                "Failed to send RPC request: {}",
+                e
+            )));
+        }
 
         // Receive Fast RPC response
         let mut response_data: Option<Value> = None;
@@ -481,12 +654,23 @@ impl MdapiClient {
             Ok(())
         };
 
-        fast_client::receive(&mut stream, recv_cb).map_err(|e| {
-            MdapiError::RpcError(format!(
+        let recv_result = fast_client::receive(&mut stream, recv_cb);
+
+        if let Err(e) = recv_result {
+            // Connection failed during receive, don't return it to pool
+            return Err(MdapiError::RpcError(format!(
                 "Failed to receive RPC response: {}",
                 e
-            ))
-        })?;
+            )));
+        }
+
+        // RPC completed successfully (even if it returned an error response)
+        rpc_succeeded = true;
+
+        // Return connection to pool if RPC succeeded
+        if rpc_succeeded {
+            self.pool.put(stream);
+        }
 
         // Return error if one was received
         if let Some(err) = response_error {
@@ -1007,6 +1191,19 @@ mod tests {
 
         let client = client.unwrap();
         assert_eq!(client.endpoint(), "localhost:2030");
+    }
+
+    #[test]
+    fn test_mdapi_client_with_custom_pool_size() {
+        let client = MdapiClient::with_pool_size("localhost:2030", 8);
+        assert!(client.is_ok());
+
+        let client = client.unwrap();
+        assert_eq!(client.endpoint(), "localhost:2030");
+
+        // Verify clone shares the same pool (Arc)
+        let client2 = client.clone();
+        assert_eq!(client2.endpoint(), "localhost:2030");
     }
 
     #[test]
