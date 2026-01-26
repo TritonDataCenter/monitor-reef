@@ -1022,6 +1022,367 @@ mod tests {
     }
 
     #[test]
+    fn test_object_payload_with_conditions() {
+        let owner =
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let bucket_id =
+            Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001").unwrap();
+        let object_id =
+            Uuid::parse_str("770e8400-e29b-41d4-a716-446655440002").unwrap();
+
+        let conditions = Conditions {
+            if_match: Some(vec!["etag-abc123".to_string()]),
+            if_none_match: None,
+            if_modified_since: None,
+            if_unmodified_since: None,
+        };
+
+        let payload = ObjectPayload {
+            owner,
+            bucket_id,
+            name: "test.txt".to_string(),
+            id: object_id,
+            vnode: 42,
+            content_length: 1024,
+            content_md5: "rL0Y20zC+Fzt72VPzMSk2A==".to_string(),
+            content_type: "text/plain".to_string(),
+            headers: HashMap::new(),
+            sharks: vec![],
+            properties: None,
+            request_id: Uuid::new_v4(),
+            conditions: Some(conditions),
+        };
+
+        let json = serde_json::to_value(&payload).unwrap();
+
+        // Verify conditions are serialized with hyphenated field names
+        let cond = json.get("conditions").unwrap();
+        assert!(cond.get("if-match").is_some());
+        assert_eq!(cond["if-match"][0], "etag-abc123");
+    }
+
+    #[test]
+    fn test_object_payload_with_properties() {
+        let owner =
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let bucket_id =
+            Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001").unwrap();
+        let object_id =
+            Uuid::parse_str("770e8400-e29b-41d4-a716-446655440002").unwrap();
+
+        // Properties can contain arbitrary JSON including bucket_id for bucket objects
+        let properties = serde_json::json!({
+            "bucket_id": "880e8400-e29b-41d4-a716-446655440003",
+            "custom_field": "custom_value"
+        });
+
+        let payload = ObjectPayload {
+            owner,
+            bucket_id,
+            name: "bucket-object.txt".to_string(),
+            id: object_id,
+            vnode: 42,
+            content_length: 2048,
+            content_md5: "xyz123==".to_string(),
+            content_type: "application/octet-stream".to_string(),
+            headers: HashMap::new(),
+            sharks: vec![],
+            properties: Some(properties),
+            request_id: Uuid::new_v4(),
+            conditions: None,
+        };
+
+        let json = serde_json::to_value(&payload).unwrap();
+
+        // Verify properties are preserved
+        let props = json.get("properties").unwrap();
+        assert_eq!(
+            props["bucket_id"],
+            "880e8400-e29b-41d4-a716-446655440003"
+        );
+        assert_eq!(props["custom_field"], "custom_value");
+    }
+
+    #[test]
+    fn test_object_payload_multiple_sharks() {
+        let owner =
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let bucket_id =
+            Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001").unwrap();
+        let object_id =
+            Uuid::parse_str("770e8400-e29b-41d4-a716-446655440002").unwrap();
+
+        // Multiple sharks for replication
+        let sharks = vec![
+            StorageNodeIdentifier {
+                datacenter: "us-east-1".to_string(),
+                manta_storage_id: "1.stor.us-east.example.com".to_string(),
+            },
+            StorageNodeIdentifier {
+                datacenter: "us-west-2".to_string(),
+                manta_storage_id: "2.stor.us-west.example.com".to_string(),
+            },
+            StorageNodeIdentifier {
+                datacenter: "eu-central-1".to_string(),
+                manta_storage_id: "3.stor.eu.example.com".to_string(),
+            },
+        ];
+
+        let payload = ObjectPayload {
+            owner,
+            bucket_id,
+            name: "replicated-object.txt".to_string(),
+            id: object_id,
+            vnode: 100,
+            content_length: 4096,
+            content_md5: "abc123==".to_string(),
+            content_type: "text/plain".to_string(),
+            headers: HashMap::new(),
+            sharks: sharks.clone(),
+            properties: None,
+            request_id: Uuid::new_v4(),
+            conditions: None,
+        };
+
+        let json = serde_json::to_value(&payload).unwrap();
+
+        // Verify all sharks are serialized
+        let sharks_json = json.get("sharks").unwrap().as_array().unwrap();
+        assert_eq!(sharks_json.len(), 3);
+        assert_eq!(sharks_json[0]["datacenter"], "us-east-1");
+        assert_eq!(sharks_json[1]["datacenter"], "us-west-2");
+        assert_eq!(sharks_json[2]["datacenter"], "eu-central-1");
+    }
+
+    #[test]
+    fn test_object_update_serialization() {
+        let owner =
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let bucket_id =
+            Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001").unwrap();
+
+        let update = ObjectUpdate {
+            owner,
+            bucket_id,
+            name: "test-object.txt".to_string(),
+            vnode: 42,
+            request_id: Uuid::new_v4(),
+            sharks: None,
+            headers: None,
+            conditions: None,
+        };
+
+        let json = serde_json::to_value(&update).unwrap();
+
+        // Verify required fields are present
+        assert_eq!(json["owner"], owner.to_string());
+        assert_eq!(json["bucket_id"], bucket_id.to_string());
+        assert_eq!(json["name"], "test-object.txt");
+        assert_eq!(json["vnode"], 42);
+
+        // Verify optional fields are omitted when None
+        assert!(json.get("sharks").is_none());
+        assert!(json.get("headers").is_none());
+        assert!(json.get("conditions").is_none());
+    }
+
+    #[test]
+    fn test_object_update_with_sharks() {
+        let owner =
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let bucket_id =
+            Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001").unwrap();
+
+        // Update sharks after evacuation
+        let new_sharks = vec![
+            StorageNodeIdentifier {
+                datacenter: "us-east-1".to_string(),
+                manta_storage_id: "new-1.stor.example.com".to_string(),
+            },
+            StorageNodeIdentifier {
+                datacenter: "us-west-2".to_string(),
+                manta_storage_id: "new-2.stor.example.com".to_string(),
+            },
+        ];
+
+        let update = ObjectUpdate {
+            owner,
+            bucket_id,
+            name: "evacuated-object.txt".to_string(),
+            vnode: 100,
+            request_id: Uuid::new_v4(),
+            sharks: Some(new_sharks),
+            headers: None,
+            conditions: None,
+        };
+
+        let json = serde_json::to_value(&update).unwrap();
+
+        // Verify sharks are included
+        let sharks_json = json.get("sharks").unwrap().as_array().unwrap();
+        assert_eq!(sharks_json.len(), 2);
+        assert_eq!(
+            sharks_json[0]["manta_storage_id"],
+            "new-1.stor.example.com"
+        );
+        assert_eq!(
+            sharks_json[1]["manta_storage_id"],
+            "new-2.stor.example.com"
+        );
+    }
+
+    #[test]
+    fn test_object_update_with_conditions() {
+        let owner =
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let bucket_id =
+            Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001").unwrap();
+
+        // Conditional update with etag matching
+        let conditions = Conditions {
+            if_match: Some(vec!["original-etag".to_string()]),
+            if_none_match: None,
+            if_modified_since: None,
+            if_unmodified_since: None,
+        };
+
+        let update = ObjectUpdate {
+            owner,
+            bucket_id,
+            name: "conditional-update.txt".to_string(),
+            vnode: 50,
+            request_id: Uuid::new_v4(),
+            sharks: None,
+            headers: None,
+            conditions: Some(conditions),
+        };
+
+        let json = serde_json::to_value(&update).unwrap();
+
+        // Verify conditions are included with hyphenated names
+        let cond = json.get("conditions").unwrap();
+        assert!(cond.get("if-match").is_some());
+        assert_eq!(cond["if-match"][0], "original-etag");
+    }
+
+    #[test]
+    fn test_object_update_roundtrip() {
+        let owner =
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let bucket_id =
+            Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001").unwrap();
+        let request_id =
+            Uuid::parse_str("990e8400-e29b-41d4-a716-446655440009").unwrap();
+
+        let sharks = vec![StorageNodeIdentifier {
+            datacenter: "us-east-1".to_string(),
+            manta_storage_id: "1.stor.example.com".to_string(),
+        }];
+
+        let mut headers = HashMap::new();
+        headers.insert("x-custom-header".to_string(), "value".to_string());
+
+        let update = ObjectUpdate {
+            owner,
+            bucket_id,
+            name: "roundtrip-test.txt".to_string(),
+            vnode: 75,
+            request_id,
+            sharks: Some(sharks),
+            headers: Some(headers),
+            conditions: None,
+        };
+
+        // Serialize and deserialize
+        let json_str = serde_json::to_string(&update).unwrap();
+        let deserialized: ObjectUpdate =
+            serde_json::from_str(&json_str).unwrap();
+
+        // Verify all fields match
+        assert_eq!(deserialized.owner, owner);
+        assert_eq!(deserialized.bucket_id, bucket_id);
+        assert_eq!(deserialized.name, "roundtrip-test.txt");
+        assert_eq!(deserialized.vnode, 75);
+        assert_eq!(deserialized.request_id, request_id);
+        assert!(deserialized.sharks.is_some());
+        assert_eq!(deserialized.sharks.unwrap().len(), 1);
+        assert!(deserialized.headers.is_some());
+        assert_eq!(
+            deserialized.headers.unwrap().get("x-custom-header"),
+            Some(&"value".to_string())
+        );
+    }
+
+    #[test]
+    fn test_object_payload_roundtrip() {
+        let owner =
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let bucket_id =
+            Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001").unwrap();
+        let object_id =
+            Uuid::parse_str("770e8400-e29b-41d4-a716-446655440002").unwrap();
+        let request_id =
+            Uuid::parse_str("880e8400-e29b-41d4-a716-446655440008").unwrap();
+
+        let sharks = vec![
+            StorageNodeIdentifier {
+                datacenter: "us-east-1".to_string(),
+                manta_storage_id: "1.stor.example.com".to_string(),
+            },
+            StorageNodeIdentifier {
+                datacenter: "us-west-2".to_string(),
+                manta_storage_id: "2.stor.example.com".to_string(),
+            },
+        ];
+
+        let mut headers = HashMap::new();
+        headers.insert("content-type".to_string(), "text/plain".to_string());
+        headers.insert(
+            "x-custom-header".to_string(),
+            "custom-value".to_string(),
+        );
+
+        let properties = serde_json::json!({
+            "bucket_id": "990e8400-e29b-41d4-a716-446655440009"
+        });
+
+        let payload = ObjectPayload {
+            owner,
+            bucket_id,
+            name: "roundtrip-payload.txt".to_string(),
+            id: object_id,
+            vnode: 123,
+            content_length: 8192,
+            content_md5: "roundtripMD5==".to_string(),
+            content_type: "text/plain".to_string(),
+            headers,
+            sharks,
+            properties: Some(properties),
+            request_id,
+            conditions: None,
+        };
+
+        // Serialize and deserialize
+        let json_str = serde_json::to_string(&payload).unwrap();
+        let deserialized: ObjectPayload =
+            serde_json::from_str(&json_str).unwrap();
+
+        // Verify all fields match
+        assert_eq!(deserialized.owner, owner);
+        assert_eq!(deserialized.bucket_id, bucket_id);
+        assert_eq!(deserialized.id, object_id);
+        assert_eq!(deserialized.name, "roundtrip-payload.txt");
+        assert_eq!(deserialized.vnode, 123);
+        assert_eq!(deserialized.content_length, 8192);
+        assert_eq!(deserialized.content_md5, "roundtripMD5==");
+        assert_eq!(deserialized.content_type, "text/plain");
+        assert_eq!(deserialized.sharks.len(), 2);
+        assert_eq!(deserialized.headers.len(), 2);
+        assert!(deserialized.properties.is_some());
+        assert_eq!(deserialized.request_id, request_id);
+    }
+
+    #[test]
     fn test_list_buckets_payload_serialization() {
         let owner =
             Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
