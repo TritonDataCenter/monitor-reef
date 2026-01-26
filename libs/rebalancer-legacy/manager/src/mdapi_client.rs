@@ -1438,4 +1438,253 @@ mod tests {
         // Default config should prefer moray (enabled = false)
         assert_eq!(should_use_mdapi(&config), false);
     }
+
+    // =========================================================================
+    // Additional tests for batch_update and vnode grouping logic
+    // =========================================================================
+
+    #[test]
+    fn test_batch_update_result_all_success() {
+        let result = BatchUpdateResult {
+            successful: 10,
+            failed: 0,
+            errors: vec![],
+        };
+
+        assert_eq!(result.successful, 10);
+        assert_eq!(result.failed, 0);
+        assert!(result.errors.is_empty());
+    }
+
+    #[test]
+    fn test_batch_update_result_all_failed() {
+        let result = BatchUpdateResult {
+            successful: 0,
+            failed: 5,
+            errors: vec![
+                (
+                    "obj1".to_string(),
+                    Error::Internal(InternalError::new(
+                        Some(InternalErrorCode::Other),
+                        "error 1".to_string(),
+                    )),
+                ),
+                (
+                    "obj2".to_string(),
+                    Error::Internal(InternalError::new(
+                        Some(InternalErrorCode::Other),
+                        "error 2".to_string(),
+                    )),
+                ),
+            ],
+        };
+
+        assert_eq!(result.successful, 0);
+        assert_eq!(result.failed, 5);
+        assert_eq!(result.errors.len(), 2);
+    }
+
+    #[test]
+    fn test_batch_update_result_partial_failure() {
+        let result = BatchUpdateResult {
+            successful: 8,
+            failed: 2,
+            errors: vec![(
+                "failed_obj".to_string(),
+                Error::Internal(InternalError::new(
+                    Some(InternalErrorCode::MetadataUpdateFailure),
+                    "update failed".to_string(),
+                )),
+            )],
+        };
+
+        assert_eq!(result.successful, 8);
+        assert_eq!(result.failed, 2);
+        assert_eq!(result.errors.len(), 1);
+        assert!(result.errors[0].0.contains("failed_obj"));
+    }
+
+    #[test]
+    fn test_vnode_calculation_consistency() {
+        // Same input should always produce same vnode
+        let owner = "550e8400-e29b-41d4-a716-446655440000";
+        let bucket = "660e8400-e29b-41d4-a716-446655440001";
+        let key = "/user/stor/test.txt";
+
+        let vnode1 = calculate_vnode(owner, bucket, key);
+        let vnode2 = calculate_vnode(owner, bucket, key);
+
+        assert_eq!(vnode1, vnode2);
+    }
+
+    #[test]
+    fn test_vnode_calculation_different_keys() {
+        let owner = "550e8400-e29b-41d4-a716-446655440000";
+        let bucket = "660e8400-e29b-41d4-a716-446655440001";
+
+        let vnode1 = calculate_vnode(owner, bucket, "file1.txt");
+        let vnode2 = calculate_vnode(owner, bucket, "file2.txt");
+
+        // Different keys should produce different vnodes (with high probability)
+        // Note: There's a small chance of collision, but very unlikely
+        assert_ne!(vnode1, vnode2);
+    }
+
+    #[test]
+    fn test_vnode_calculation_different_owners() {
+        let bucket = "660e8400-e29b-41d4-a716-446655440001";
+        let key = "test.txt";
+
+        let vnode1 = calculate_vnode("owner1", bucket, key);
+        let vnode2 = calculate_vnode("owner2", bucket, key);
+
+        assert_ne!(vnode1, vnode2);
+    }
+
+    #[test]
+    fn test_vnode_calculation_different_buckets() {
+        let owner = "550e8400-e29b-41d4-a716-446655440000";
+        let key = "test.txt";
+
+        let vnode1 = calculate_vnode(owner, "bucket1", key);
+        let vnode2 = calculate_vnode(owner, "bucket2", key);
+
+        assert_ne!(vnode1, vnode2);
+    }
+
+    #[test]
+    fn test_vnode_calculation_empty_strings() {
+        // Edge case: empty strings should still produce valid vnode
+        let vnode = calculate_vnode("", "", "");
+        // Should not panic and should return some value
+        // Vnode range is 0 to 2^32 (MD5 128bit / 2^96 hash interval)
+        assert!(vnode <= u32::MAX as u64);
+    }
+
+    #[test]
+    fn test_vnode_calculation_special_characters() {
+        let owner = "550e8400-e29b-41d4-a716-446655440000";
+        let bucket = "660e8400-e29b-41d4-a716-446655440001";
+
+        // Keys with special characters
+        let vnode1 = calculate_vnode(owner, bucket, "/user/uploads/.mpu-parts/abc-123/0");
+        let vnode2 = calculate_vnode(owner, bucket, "file with spaces.txt");
+        let vnode3 = calculate_vnode(owner, bucket, "日本語ファイル.txt");
+
+        // All should produce valid vnodes (within u32 range due to hash interval)
+        assert!(vnode1 <= u32::MAX as u64);
+        assert!(vnode2 <= u32::MAX as u64);
+        assert!(vnode3 <= u32::MAX as u64);
+    }
+
+    #[test]
+    fn test_verify_vnode_matching() {
+        let manta_obj = create_test_manta_object();
+        let bucket_id = Uuid::new_v4();
+        let bucket_str = bucket_id.to_string();
+
+        // Calculate expected vnode using the key field (not name)
+        let expected_vnode = calculate_vnode(
+            &manta_obj.owner,
+            &bucket_str,
+            &manta_obj.key,
+        );
+
+        // Create object with correct vnode
+        let mut correct_obj = manta_obj.clone();
+        correct_obj.vnode = expected_vnode as i64;
+
+        let result = verify_vnode(&correct_obj, &bucket_str);
+        assert!(result.is_ok());
+        assert!(result.unwrap());
+    }
+
+    #[test]
+    fn test_verify_vnode_mismatched() {
+        let mut manta_obj = create_test_manta_object();
+        let bucket_id = Uuid::new_v4();
+        let bucket_str = bucket_id.to_string();
+
+        // Set a definitely wrong vnode
+        manta_obj.vnode = 9999;
+
+        let result = verify_vnode(&manta_obj, &bucket_str);
+        assert!(result.is_ok());
+        // The function returns false for mismatched vnodes
+        assert!(!result.unwrap());
+    }
+
+    #[test]
+    fn test_manta_object_to_payload_preserves_fields() {
+        let manta_obj = create_test_manta_object();
+        let bucket_id = Uuid::new_v4();
+
+        let result = manta_object_to_payload(&manta_obj, bucket_id, None);
+        assert!(result.is_ok());
+
+        let payload = result.unwrap();
+        assert_eq!(payload.name, manta_obj.name);
+        assert_eq!(payload.content_length, manta_obj.content_length as u64);
+        assert_eq!(payload.content_md5, manta_obj.content_md5);
+        assert_eq!(payload.content_type, manta_obj.content_type);
+        assert_eq!(payload.bucket_id, bucket_id);
+        assert_eq!(payload.sharks.len(), manta_obj.sharks.len());
+    }
+
+    #[test]
+    fn test_manta_object_with_multiple_sharks() {
+        let mut manta_obj = create_test_manta_object();
+        manta_obj.sharks = vec![
+            libmanta::moray::MantaObjectShark {
+                datacenter: "us-east-1".to_string(),
+                manta_storage_id: "1.stor.domain".to_string(),
+            },
+            libmanta::moray::MantaObjectShark {
+                datacenter: "us-west-2".to_string(),
+                manta_storage_id: "2.stor.domain".to_string(),
+            },
+            libmanta::moray::MantaObjectShark {
+                datacenter: "eu-central-1".to_string(),
+                manta_storage_id: "3.stor.domain".to_string(),
+            },
+        ];
+
+        let bucket_id = Uuid::new_v4();
+        let result = manta_object_to_payload(&manta_obj, bucket_id, None);
+        assert!(result.is_ok());
+
+        let payload = result.unwrap();
+        assert_eq!(payload.sharks.len(), 3);
+        assert_eq!(payload.sharks[0].datacenter, "us-east-1");
+        assert_eq!(payload.sharks[1].datacenter, "us-west-2");
+        assert_eq!(payload.sharks[2].datacenter, "eu-central-1");
+    }
+
+    #[test]
+    fn test_manta_object_with_request_id() {
+        let manta_obj = create_test_manta_object();
+        let bucket_id = Uuid::new_v4();
+        let request_id = Uuid::new_v4();
+
+        // With request_id provided
+        let result = manta_object_to_payload(&manta_obj, bucket_id, Some(request_id));
+        assert!(result.is_ok());
+
+        let payload = result.unwrap();
+        assert_eq!(payload.request_id, request_id);
+    }
+
+    #[test]
+    fn test_manta_object_without_request_id() {
+        let manta_obj = create_test_manta_object();
+        let bucket_id = Uuid::new_v4();
+
+        // Without request_id (generates one internally)
+        let result = manta_object_to_payload(&manta_obj, bucket_id, None);
+        assert!(result.is_ok());
+
+        let payload = result.unwrap();
+        // Should have a request_id even when not provided
+        assert!(!payload.request_id.is_nil());
+    }
 }

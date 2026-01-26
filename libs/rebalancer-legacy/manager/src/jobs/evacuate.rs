@@ -6180,4 +6180,289 @@ mod tests {
         assert_eq!(use_mdapi, false);
         // This confirms error would be returned
     }
+
+    // =========================================================================
+    // Tests for is_bucket_object()
+    // =========================================================================
+
+    #[test]
+    fn test_is_bucket_object_with_bucket_id() {
+        use serde_json::json;
+
+        // Object with bucket_id field - should return true
+        let obj = json!({
+            "name": "test-object.txt",
+            "owner": "550e8400-e29b-41d4-a716-446655440000",
+            "bucket_id": "660e8400-e29b-41d4-a716-446655440001",
+            "key": "/user/stor/test.txt",
+            "sharks": []
+        });
+
+        assert!(super::is_bucket_object(&obj));
+    }
+
+    #[test]
+    fn test_is_bucket_object_without_bucket_id() {
+        use serde_json::json;
+
+        // Traditional Manta object without bucket_id - should return false
+        let obj = json!({
+            "name": "test-object.txt",
+            "owner": "550e8400-e29b-41d4-a716-446655440000",
+            "key": "/user/stor/test.txt",
+            "sharks": [],
+            "dirname": "/user/stor",
+            "vnode": 42
+        });
+
+        assert!(!super::is_bucket_object(&obj));
+    }
+
+    #[test]
+    fn test_is_bucket_object_with_null_bucket_id() {
+        use serde_json::json;
+
+        // Object with null bucket_id - field exists, so returns true
+        // (even though value is null, the field is present)
+        let obj = json!({
+            "name": "test-object.txt",
+            "owner": "550e8400-e29b-41d4-a716-446655440000",
+            "bucket_id": null,
+            "key": "/user/stor/test.txt"
+        });
+
+        assert!(super::is_bucket_object(&obj));
+    }
+
+    #[test]
+    fn test_is_bucket_object_with_empty_bucket_id() {
+        use serde_json::json;
+
+        // Object with empty string bucket_id - field exists
+        let obj = json!({
+            "name": "test-object.txt",
+            "bucket_id": "",
+            "key": "/user/stor/test.txt"
+        });
+
+        assert!(super::is_bucket_object(&obj));
+    }
+
+    #[test]
+    fn test_is_bucket_object_empty_object() {
+        use serde_json::json;
+
+        // Empty object - no bucket_id
+        let obj = json!({});
+
+        assert!(!super::is_bucket_object(&obj));
+    }
+
+    #[test]
+    fn test_is_bucket_object_array_value() {
+        use serde_json::json;
+
+        // JSON array (not an object) - get() returns None
+        let obj = json!([1, 2, 3]);
+
+        assert!(!super::is_bucket_object(&obj));
+    }
+
+    // =========================================================================
+    // Tests for MpuEvacuationTracker integration with finalize_mpu_updates
+    // =========================================================================
+
+    #[test]
+    fn test_mpu_tracker_deduplication() {
+        use crate::mpu_utils::MpuEvacuationTracker;
+        use crate::storinfo::StorageNode;
+
+        let mut tracker = MpuEvacuationTracker::new();
+
+        let sharks1 = vec![StorageNode {
+            datacenter: "dc1".to_string(),
+            manta_storage_id: "1.stor.domain".to_string(),
+            available_mb: 0,
+            percent_used: 0,
+            filesystem: String::new(),
+            timestamp: 0,
+        }];
+
+        let sharks2 = vec![StorageNode {
+            datacenter: "dc2".to_string(),
+            manta_storage_id: "2.stor.domain".to_string(),
+            available_mb: 0,
+            percent_used: 0,
+            filesystem: String::new(),
+            timestamp: 0,
+        }];
+
+        // Record same uploadId twice with different sharks
+        tracker.record_evacuation("upload-123".to_string(), sharks1);
+        tracker.record_evacuation("upload-123".to_string(), sharks2.clone());
+
+        // Should only have 1 entry (deduplicated by uploadId)
+        assert_eq!(tracker.count(), 1);
+
+        // Should have the second (most recent) sharks
+        let affected: Vec<_> = tracker.get_affected_uploads().collect();
+        assert_eq!(affected.len(), 1);
+        assert_eq!(affected[0].0, "upload-123");
+        assert_eq!(affected[0].1[0].manta_storage_id, "2.stor.domain");
+    }
+
+    #[test]
+    fn test_mpu_tracker_multiple_uploads() {
+        use crate::mpu_utils::MpuEvacuationTracker;
+        use crate::storinfo::StorageNode;
+
+        let mut tracker = MpuEvacuationTracker::new();
+
+        let sharks = vec![StorageNode {
+            datacenter: "dc1".to_string(),
+            manta_storage_id: "1.stor.domain".to_string(),
+            available_mb: 0,
+            percent_used: 0,
+            filesystem: String::new(),
+            timestamp: 0,
+        }];
+
+        // Record different uploadIds
+        tracker.record_evacuation("upload-111".to_string(), sharks.clone());
+        tracker.record_evacuation("upload-222".to_string(), sharks.clone());
+        tracker.record_evacuation("upload-333".to_string(), sharks.clone());
+
+        assert_eq!(tracker.count(), 3);
+
+        let affected: Vec<_> = tracker.get_affected_uploads().collect();
+        assert_eq!(affected.len(), 3);
+    }
+
+    #[test]
+    fn test_mpu_tracker_clear() {
+        use crate::mpu_utils::MpuEvacuationTracker;
+        use crate::storinfo::StorageNode;
+
+        let mut tracker = MpuEvacuationTracker::new();
+
+        let sharks = vec![StorageNode {
+            datacenter: "dc1".to_string(),
+            manta_storage_id: "1.stor.domain".to_string(),
+            available_mb: 0,
+            percent_used: 0,
+            filesystem: String::new(),
+            timestamp: 0,
+        }];
+
+        tracker.record_evacuation("upload-123".to_string(), sharks);
+        assert_eq!(tracker.count(), 1);
+
+        tracker.clear();
+        assert_eq!(tracker.count(), 0);
+    }
+
+    // =========================================================================
+    // Tests for MPU part key parsing (integration tests)
+    // =========================================================================
+
+    #[test]
+    fn test_mpu_part_detection_in_object_key() {
+        use crate::mpu_utils;
+
+        // Valid MPU part key format
+        let part_key = "/user/uploads/bucket/.mpu-parts/abc-123-def/0";
+        assert!(mpu_utils::is_mpu_part(part_key));
+
+        let upload_id = mpu_utils::parse_mpu_part_key(part_key);
+        assert!(upload_id.is_some());
+        assert_eq!(upload_id.unwrap(), "abc-123-def");
+
+        // Non-MPU key
+        let regular_key = "/user/stor/myfile.txt";
+        assert!(!mpu_utils::is_mpu_part(regular_key));
+        assert!(mpu_utils::parse_mpu_part_key(regular_key).is_none());
+    }
+
+    #[test]
+    fn test_mpu_upload_record_detection() {
+        use crate::mpu_utils;
+
+        // Valid MPU upload record key (pattern starts with .mpu-uploads/)
+        let upload_key = ".mpu-uploads/abc-123-def";
+        assert!(mpu_utils::is_mpu_upload_record(upload_key));
+
+        let upload_id = mpu_utils::parse_mpu_upload_key(upload_key);
+        assert!(upload_id.is_some());
+        assert_eq!(upload_id.unwrap(), "abc-123-def");
+
+        // MPU part is NOT an upload record
+        let part_key = ".mpu-parts/abc-123-def/0";
+        assert!(!mpu_utils::is_mpu_upload_record(part_key));
+
+        // Full path with prefix is NOT an upload record
+        // (regex requires key to start with .mpu-uploads/)
+        let full_path_key = "/user/uploads/bucket/.mpu-uploads/abc-123-def";
+        assert!(!mpu_utils::is_mpu_upload_record(full_path_key));
+    }
+
+    // =========================================================================
+    // Tests for MantaObjectShark to StorageNode conversion
+    // =========================================================================
+
+    #[test]
+    fn test_shark_to_storage_node_conversion() {
+        use crate::storinfo::StorageNode;
+        use libmanta::moray::MantaObjectShark;
+
+        let shark = MantaObjectShark {
+            datacenter: "us-east-1".to_string(),
+            manta_storage_id: "42.stor.us-east.joyent.us".to_string(),
+        };
+
+        // Simulate the conversion done in finalize_mpu_updates
+        let storage_node = StorageNode {
+            datacenter: shark.datacenter.clone(),
+            manta_storage_id: shark.manta_storage_id.clone(),
+            available_mb: 0,
+            percent_used: 0,
+            filesystem: String::new(),
+            timestamp: 0,
+        };
+
+        assert_eq!(storage_node.datacenter, "us-east-1");
+        assert_eq!(storage_node.manta_storage_id, "42.stor.us-east.joyent.us");
+    }
+
+    #[test]
+    fn test_multiple_sharks_conversion() {
+        use crate::storinfo::StorageNode;
+        use libmanta::moray::MantaObjectShark;
+
+        let sharks = vec![
+            MantaObjectShark {
+                datacenter: "us-east-1".to_string(),
+                manta_storage_id: "1.stor.domain".to_string(),
+            },
+            MantaObjectShark {
+                datacenter: "us-west-2".to_string(),
+                manta_storage_id: "2.stor.domain".to_string(),
+            },
+        ];
+
+        let storage_nodes: Vec<StorageNode> = sharks
+            .iter()
+            .map(|s| StorageNode {
+                datacenter: s.datacenter.clone(),
+                manta_storage_id: s.manta_storage_id.clone(),
+                available_mb: 0,
+                percent_used: 0,
+                filesystem: String::new(),
+                timestamp: 0,
+            })
+            .collect();
+
+        assert_eq!(storage_nodes.len(), 2);
+        assert_eq!(storage_nodes[0].manta_storage_id, "1.stor.domain");
+        assert_eq!(storage_nodes[1].manta_storage_id, "2.stor.domain");
+    }
 }

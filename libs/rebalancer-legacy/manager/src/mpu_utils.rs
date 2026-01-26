@@ -715,8 +715,8 @@ mod tests {
         let affected: HashMap<_, _> =
             tracker.get_affected_uploads().collect();
         assert_eq!(affected.len(), 2);
-        assert!(affected.contains_key("upload-1"));
-        assert!(affected.contains_key("upload-2"));
+        assert!(affected.contains_key(&"upload-1".to_string()));
+        assert!(affected.contains_key(&"upload-2".to_string()));
     }
 
     #[test]
@@ -804,5 +804,176 @@ mod tests {
         assert!(seen_ids.contains("upload-1"));
         assert!(seen_ids.contains("upload-2"));
         assert!(seen_ids.contains("upload-3"));
+    }
+
+    // =========================================================================
+    // Tests for update_upload_record JSON manipulation logic
+    // These tests verify the JSON parsing and serialization without RPC calls
+    // =========================================================================
+
+    #[test]
+    fn test_upload_record_json_update() {
+        use serde_json::json;
+
+        // Simulate the JSON manipulation that update_upload_record does
+        let original_content = r#"{
+            "uploadId": "abc-123-def",
+            "state": "created",
+            "objectPath": "/user/stor/myfile.txt",
+            "preAllocatedSharks": [
+                {"datacenter": "dc1", "manta_storage_id": "old.stor.domain"}
+            ]
+        }"#;
+
+        let mut upload_record: serde_json::Value =
+            serde_json::from_str(original_content).unwrap();
+
+        // Create new sharks array (simulating evacuation)
+        let new_sharks = vec![
+            StorageNode {
+                datacenter: "dc2".to_string(),
+                manta_storage_id: "new1.stor.domain".to_string(),
+                available_mb: 1000,
+                percent_used: 50,
+                filesystem: "zfs".to_string(),
+                timestamp: 12345,
+            },
+            StorageNode {
+                datacenter: "dc3".to_string(),
+                manta_storage_id: "new2.stor.domain".to_string(),
+                available_mb: 2000,
+                percent_used: 60,
+                filesystem: "zfs".to_string(),
+                timestamp: 12346,
+            },
+        ];
+
+        // Serialize and update (same as in update_upload_record)
+        let sharks_value = serde_json::to_value(&new_sharks).unwrap();
+        upload_record["preAllocatedSharks"] = sharks_value;
+
+        // Verify the update
+        let updated_sharks = upload_record["preAllocatedSharks"].as_array().unwrap();
+        assert_eq!(updated_sharks.len(), 2);
+        assert_eq!(
+            updated_sharks[0]["manta_storage_id"].as_str().unwrap(),
+            "new1.stor.domain"
+        );
+        assert_eq!(
+            updated_sharks[1]["manta_storage_id"].as_str().unwrap(),
+            "new2.stor.domain"
+        );
+
+        // Verify other fields preserved
+        assert_eq!(upload_record["uploadId"].as_str().unwrap(), "abc-123-def");
+        assert_eq!(upload_record["state"].as_str().unwrap(), "created");
+    }
+
+    #[test]
+    fn test_upload_record_without_existing_sharks() {
+        use serde_json::json;
+
+        // Upload record that doesn't have preAllocatedSharks yet
+        let original_content = r#"{
+            "uploadId": "xyz-789",
+            "state": "created",
+            "objectPath": "/user/stor/newfile.txt"
+        }"#;
+
+        let mut upload_record: serde_json::Value =
+            serde_json::from_str(original_content).unwrap();
+
+        let new_sharks = vec![StorageNode {
+            datacenter: "dc1".to_string(),
+            manta_storage_id: "1.stor.domain".to_string(),
+            available_mb: 1000,
+            percent_used: 50,
+            filesystem: "zfs".to_string(),
+            timestamp: 12345,
+        }];
+
+        let sharks_value = serde_json::to_value(&new_sharks).unwrap();
+        upload_record["preAllocatedSharks"] = sharks_value;
+
+        // Field should be added
+        assert!(upload_record.get("preAllocatedSharks").is_some());
+        let sharks = upload_record["preAllocatedSharks"].as_array().unwrap();
+        assert_eq!(sharks.len(), 1);
+    }
+
+    #[test]
+    fn test_upload_record_roundtrip_serialization() {
+        // Test that the record can be serialized back to string correctly
+        let original_content = r#"{"uploadId":"test-123","state":"created"}"#;
+
+        let mut upload_record: serde_json::Value =
+            serde_json::from_str(original_content).unwrap();
+
+        let new_sharks = vec![StorageNode {
+            datacenter: "dc1".to_string(),
+            manta_storage_id: "1.stor.domain".to_string(),
+            available_mb: 1000,
+            percent_used: 50,
+            filesystem: "zfs".to_string(),
+            timestamp: 12345,
+        }];
+
+        let sharks_value = serde_json::to_value(&new_sharks).unwrap();
+        upload_record["preAllocatedSharks"] = sharks_value;
+
+        // Serialize to string (as update_upload_record does)
+        let updated_content = serde_json::to_string(&upload_record).unwrap();
+
+        // Parse again to verify valid JSON
+        let parsed: serde_json::Value = serde_json::from_str(&updated_content).unwrap();
+        assert_eq!(parsed["uploadId"].as_str().unwrap(), "test-123");
+        assert!(parsed["preAllocatedSharks"].is_array());
+    }
+
+    #[test]
+    fn test_upload_record_empty_sharks_list() {
+        // Edge case: empty sharks list
+        let original_content = r#"{"uploadId":"empty-test"}"#;
+
+        let mut upload_record: serde_json::Value =
+            serde_json::from_str(original_content).unwrap();
+
+        let empty_sharks: Vec<StorageNode> = vec![];
+        let sharks_value = serde_json::to_value(&empty_sharks).unwrap();
+        upload_record["preAllocatedSharks"] = sharks_value;
+
+        // Should have empty array
+        let sharks = upload_record["preAllocatedSharks"].as_array().unwrap();
+        assert_eq!(sharks.len(), 0);
+    }
+
+    #[test]
+    fn test_upload_key_format() {
+        // Test the upload key format used in update_upload_record
+        let upload_id = "abc-123-def-456";
+        let upload_key = format!(".mpu-uploads/{}", upload_id);
+        assert_eq!(upload_key, ".mpu-uploads/abc-123-def-456");
+    }
+
+    #[test]
+    fn test_storage_node_serialization() {
+        // Ensure StorageNode serializes correctly for JSON storage
+        let node = StorageNode {
+            datacenter: "us-east-1".to_string(),
+            manta_storage_id: "42.stor.us-east.joyent.us".to_string(),
+            available_mb: 500000,
+            percent_used: 75,
+            filesystem: "zfs".to_string(),
+            timestamp: 1700000000,
+        };
+
+        let json_value = serde_json::to_value(&node).unwrap();
+
+        // Verify key fields are serialized
+        assert_eq!(json_value["datacenter"].as_str().unwrap(), "us-east-1");
+        assert_eq!(
+            json_value["manta_storage_id"].as_str().unwrap(),
+            "42.stor.us-east.joyent.us"
+        );
     }
 }
