@@ -6369,8 +6369,8 @@ mod tests {
     fn test_mpu_part_detection_in_object_key() {
         use crate::mpu_utils;
 
-        // Valid MPU part key format
-        let part_key = "/user/uploads/bucket/.mpu-parts/abc-123-def/0";
+        // Valid MPU part key format (key portion only, not full Manta path)
+        let part_key = ".mpu-parts/abc-123-def/0";
         assert!(mpu_utils::is_mpu_part(part_key));
 
         let upload_id = mpu_utils::parse_mpu_part_key(part_key);
@@ -6378,9 +6378,13 @@ mod tests {
         assert_eq!(upload_id.unwrap(), "abc-123-def");
 
         // Non-MPU key
-        let regular_key = "/user/stor/myfile.txt";
+        let regular_key = "myfile.txt";
         assert!(!mpu_utils::is_mpu_part(regular_key));
         assert!(mpu_utils::parse_mpu_part_key(regular_key).is_none());
+
+        // Full Manta path is NOT a valid MPU key (regex expects key to start with .mpu-parts/)
+        let full_path = "/user/uploads/bucket/.mpu-parts/abc-123-def/0";
+        assert!(!mpu_utils::is_mpu_part(full_path));
     }
 
     #[test]
