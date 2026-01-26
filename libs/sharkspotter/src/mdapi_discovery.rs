@@ -15,7 +15,7 @@
 //! must enumerate owners, their buckets, and then objects within those buckets.
 
 use crate::SharkspotterMessage;
-use libmanta::mdapi::MdapiClient;
+use libmanta::mdapi::{ListParams, MdapiClient};
 use libmanta::moray::MantaObject;
 use serde_json::{json, Value};
 use slog::{debug, error, info, Logger};
@@ -58,6 +58,20 @@ pub fn object_on_target_shark(
             .iter()
             .any(|filter| &obj_shark.manta_storage_id == filter)
     })
+}
+
+/// Check if an object value's sharks array contains any of the filter sharks
+fn value_on_target_shark(obj_value: &Value, filter_sharks: &[String]) -> bool {
+    if let Some(sharks) = obj_value.get("sharks").and_then(|s| s.as_array()) {
+        for shark in sharks {
+            if let Some(storage_id) = shark.get("manta_storage_id").and_then(|s| s.as_str()) {
+                if filter_sharks.iter().any(|f| f == storage_id) {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 /// Discover bucket objects for a specific shard from mdapi
@@ -111,7 +125,7 @@ pub fn discover_mdapi_objects_for_shard(
                     log,
                     "Failed to list buckets for owner {}: {}", owner, e
                 );
-                Error::new(ErrorKind::Other, e)
+                Error::new(ErrorKind::Other, e.to_string())
             })?;
 
         debug!(
@@ -133,14 +147,14 @@ pub fn discover_mdapi_objects_for_shard(
             let mut bucket_object_count = 0;
 
             loop {
+                let params = ListParams {
+                    limit: 1000,
+                    prefix: None,
+                    marker: marker.clone(),
+                };
+
                 let objects = mdapi_client
-                    .list_objects(
-                        *owner,
-                        bucket.id,
-                        shard as u64,
-                        marker.clone(),
-                        1000,
-                    )
+                    .list_objects(*owner, bucket.id, params)
                     .map_err(|e| {
                         error!(
                             log,
@@ -148,7 +162,7 @@ pub fn discover_mdapi_objects_for_shard(
                             bucket.id,
                             e
                         );
-                        Error::new(ErrorKind::Other, e)
+                        Error::new(ErrorKind::Other, e.to_string())
                     })?;
 
                 let object_count = objects.len();
@@ -160,29 +174,29 @@ pub fn discover_mdapi_objects_for_shard(
                     marker
                 );
 
-                for obj_payload in &objects {
-                    // Convert ObjectPayload to MantaObject
-                    let manta_obj =
-                        libmanta::mdapi::payload_to_manta_object(obj_payload)
-                            .map_err(|e| {
-                            error!(
-                                log,
-                                "Failed to convert object payload: {}", e
-                            );
-                            Error::new(ErrorKind::Other, e)
-                        })?;
+                for obj_value in &objects {
+                    // Check if object is on target shark using the raw Value
+                    if value_on_target_shark(obj_value, filter_sharks) {
+                        // Get etag from the value
+                        let etag = obj_value
+                            .get("etag")
+                            .and_then(|e| e.as_str())
+                            .unwrap_or("")
+                            .to_string();
 
-                    // Check if object is on target shark
-                    if object_on_target_shark(&manta_obj.sharks, filter_sharks)
-                    {
-                        // Convert to Value
-                        let manta_value =
-                            manta_object_to_value(&manta_obj, bucket.id);
+                        // Add bucket_id to the value
+                        let mut manta_value = obj_value.clone();
+                        if let Some(obj) = manta_value.as_object_mut() {
+                            obj.insert(
+                                "bucket_id".to_string(),
+                                Value::String(bucket.id.to_string()),
+                            );
+                        }
 
                         // Create SharkspotterMessage
                         let ss_msg = SharkspotterMessage {
                             manta_value,
-                            etag: manta_obj.etag.clone(),
+                            etag,
                             shark: filter_sharks[0].clone(),
                             shard,
                         };
@@ -193,7 +207,7 @@ pub fn discover_mdapi_objects_for_shard(
                                 log,
                                 "Failed to send object to channel: {}", e
                             );
-                            Error::new(ErrorKind::Other, e)
+                            Error::new(ErrorKind::Other, e.to_string())
                         })?;
 
                         bucket_object_count += 1;
@@ -206,8 +220,12 @@ pub fn discover_mdapi_objects_for_shard(
                     break;
                 }
 
-                // Update marker for next page
-                marker = objects.last().map(|o| o.name.clone());
+                // Update marker for next page - get name from the last object
+                marker = objects
+                    .last()
+                    .and_then(|o| o.get("name"))
+                    .and_then(|n| n.as_str())
+                    .map(|s| s.to_string());
             }
 
             debug!(
@@ -283,5 +301,21 @@ mod tests {
             value.get("bucket_id").unwrap().as_str().unwrap(),
             bucket_id.to_string()
         );
+    }
+
+    #[test]
+    fn test_value_on_target_shark() {
+        let obj = json!({
+            "sharks": [
+                {"manta_storage_id": "1.stor.domain", "datacenter": "dc1"},
+                {"manta_storage_id": "2.stor.domain", "datacenter": "dc1"}
+            ]
+        });
+
+        let filter_sharks = vec!["1.stor.domain".to_string()];
+        assert!(value_on_target_shark(&obj, &filter_sharks));
+
+        let filter_sharks = vec!["3.stor.domain".to_string()];
+        assert!(!value_on_target_shark(&obj, &filter_sharks));
     }
 }

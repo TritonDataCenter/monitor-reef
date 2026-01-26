@@ -123,8 +123,18 @@ fn finalize_mpu_updates(
                 object.key, upload_id
             );
 
-            // Record this evacuation
-            tracker.record_evacuation(upload_id, object.sharks.clone());
+            // Record this evacuation - convert MantaObjectShark to StorageNode
+            let storage_nodes: Vec<crate::storinfo::StorageNode> = object.sharks.iter().map(|s| {
+                crate::storinfo::StorageNode {
+                    datacenter: s.datacenter.clone(),
+                    manta_storage_id: s.manta_storage_id.clone(),
+                    available_mb: 0,
+                    percent_used: 0,
+                    filesystem: String::new(),
+                    timestamp: 0,
+                }
+            }).collect();
+            tracker.record_evacuation(upload_id, storage_nodes);
         }
     }
 
@@ -641,7 +651,7 @@ impl MetadataBackend {
 const EVACUATE_OBJECTS_DB: &str = "evacuateobjects";
 
 use diesel::deserialize::{self, FromSql};
-use diesel::pg::{Pg, PgConnection, PgValue};
+use diesel::pg::{Pg, PgConnection};
 use diesel::prelude::*;
 use diesel::result::Error::DatabaseError;
 use diesel::result::{DatabaseErrorInformation, DatabaseErrorKind};
@@ -771,9 +781,9 @@ impl ToSql<sql_types::Text, Pg> for EvacuateObjectStatus {
 }
 
 impl FromSql<sql_types::Text, Pg> for EvacuateObjectStatus {
-    fn from_sql(bytes: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let t: PgValue = not_none!(bytes);
-        let t_str = String::from_utf8_lossy(t.as_bytes());
+    fn from_sql(bytes: Option<&[u8]>) -> deserialize::Result<Self> {
+        let t = not_none!(bytes);
+        let t_str = String::from_utf8_lossy(t);
         Self::from_str(&t_str).map_err(std::convert::Into::into)
     }
 }
@@ -850,9 +860,9 @@ impl ToSql<sql_types::Text, Pg> for EvacuateObjectError {
 }
 
 impl FromSql<sql_types::Text, Pg> for EvacuateObjectError {
-    fn from_sql(bytes: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let t: PgValue = not_none!(bytes);
-        let t_str = String::from_utf8_lossy(t.as_bytes());
+    fn from_sql(bytes: Option<&[u8]>) -> deserialize::Result<Self> {
+        let t = not_none!(bytes);
+        let t_str = String::from_utf8_lossy(t);
         Self::from_str(&t_str).map_err(std::convert::Into::into)
     }
 }

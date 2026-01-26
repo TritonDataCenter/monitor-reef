@@ -25,7 +25,7 @@ use std::str::FromStr;
 
 use crate::jobs::status::JobStatusConfig;
 use diesel::deserialize::{self, FromSql};
-use diesel::pg::{Pg, PgValue};
+use diesel::pg::Pg;
 use diesel::prelude::*;
 use diesel::serialize::{self, IsNull, Output, ToSql};
 use diesel::sql_types;
@@ -296,9 +296,9 @@ impl ToSql<sql_types::Text, Pg> for JobState {
 }
 
 impl FromSql<sql_types::Text, Pg> for JobState {
-    fn from_sql(bytes: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let t: PgValue = not_none!(bytes);
-        let t_str = String::from_utf8_lossy(t.as_bytes());
+    fn from_sql(bytes: Option<&[u8]>) -> deserialize::Result<Self> {
+        let t = not_none!(bytes);
+        let t_str = String::from_utf8_lossy(t);
         Self::from_str(&t_str).map_err(std::convert::Into::into)
     }
 }
@@ -344,9 +344,9 @@ impl ToSql<sql_types::Text, Pg> for JobActionDbEntry {
 }
 
 impl FromSql<sql_types::Text, Pg> for JobActionDbEntry {
-    fn from_sql(bytes: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let t: PgValue = not_none!(bytes);
-        let t_str = String::from_utf8_lossy(t.as_bytes());
+    fn from_sql(bytes: Option<&[u8]>) -> deserialize::Result<Self> {
+        let t = not_none!(bytes);
+        let t_str = String::from_utf8_lossy(t);
         Self::from_str(&t_str).map_err(std::convert::Into::into)
     }
 }

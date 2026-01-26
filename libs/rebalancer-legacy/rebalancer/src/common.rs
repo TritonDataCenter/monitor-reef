@@ -27,7 +27,7 @@ use uuid::Uuid;
 use diesel::deserialize::{self, FromSql};
 
 #[cfg(feature = "postgres")]
-use diesel::pg::{Pg, PgValue};
+use diesel::pg::Pg;
 
 #[cfg(feature = "postgres")]
 use diesel::serialize::{self, IsNull, Output, ToSql};
@@ -250,9 +250,9 @@ impl ToSql<sql_types::Text, Pg> for ObjectSkippedReason {
 
 #[cfg(feature = "postgres")]
 impl FromSql<sql_types::Text, Pg> for ObjectSkippedReason {
-    fn from_sql(bytes: Option<PgValue<'_>>) -> deserialize::Result<Self> {
-        let t: PgValue = not_none!(bytes);
-        let t_str = String::from_utf8_lossy(t.as_bytes());
+    fn from_sql(bytes: Option<&[u8]>) -> deserialize::Result<Self> {
+        let t = not_none!(bytes);
+        let t_str = String::from_utf8_lossy(t);
         let ts: String = t_str.to_string();
         _osr_from_sql(ts)
     }

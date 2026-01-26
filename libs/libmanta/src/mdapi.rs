@@ -327,6 +327,7 @@ struct DeleteGCBatchPayload {
 ///
 /// let client = MdapiClient::new("mdapi.example.com:2030")?;
 /// ```
+#[derive(Clone)]
 pub struct MdapiClient {
     /// Connection endpoint address
     endpoint: String,
