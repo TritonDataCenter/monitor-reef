@@ -42,7 +42,7 @@ use uuid::Uuid;
 
 use crate::mdapi_client;
 use crate::storinfo::StorageNode;
-use libmanta::mdapi::MdapiClient;
+use libmanta::mdapi::{MdapiClient, MdapiError};
 use rebalancer::error::Error;
 
 /// Regex pattern for MPU part keys: `.mpu-parts/{uploadId}/{partNumber}`
@@ -447,9 +447,10 @@ pub fn update_upload_record(
     ) {
         Ok(result) => result,
         Err(e) => {
-            // Check if error is 404 (upload record not found)
-            let error_msg = format!("{:?}", e);
-            if error_msg.contains("404") || error_msg.contains("NotFound") {
+            // Check if error is ObjectNotFound (upload record not found)
+            // Use proper enum matching instead of string matching
+            let is_not_found = matches!(&e, Error::Mdapi(MdapiError::ObjectNotFound(_)));
+            if is_not_found {
                 warn!(
                     "Upload record not found: {} (likely already cleaned up)",
                     upload_key

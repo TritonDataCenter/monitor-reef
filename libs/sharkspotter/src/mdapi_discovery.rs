@@ -61,17 +61,18 @@ pub fn object_on_target_shark(
 }
 
 /// Check if an object value's sharks array contains any of the filter sharks
-fn value_on_target_shark(obj_value: &Value, filter_sharks: &[String]) -> bool {
+/// Returns the matching shark storage_id if found, None otherwise
+fn value_on_target_shark(obj_value: &Value, filter_sharks: &[String]) -> Option<String> {
     if let Some(sharks) = obj_value.get("sharks").and_then(|s| s.as_array()) {
         for shark in sharks {
             if let Some(storage_id) = shark.get("manta_storage_id").and_then(|s| s.as_str()) {
                 if filter_sharks.iter().any(|f| f == storage_id) {
-                    return true;
+                    return Some(storage_id.to_string());
                 }
             }
         }
     }
-    false
+    None
 }
 
 /// Discover bucket objects for a specific shard from mdapi
@@ -176,7 +177,7 @@ pub fn discover_mdapi_objects_for_shard(
 
                 for obj_value in &objects {
                     // Check if object is on target shark using the raw Value
-                    if value_on_target_shark(obj_value, filter_sharks) {
+                    if let Some(matching_shark) = value_on_target_shark(obj_value, filter_sharks) {
                         // Get etag from the value
                         let etag = obj_value
                             .get("etag")
@@ -193,11 +194,11 @@ pub fn discover_mdapi_objects_for_shard(
                             );
                         }
 
-                        // Create SharkspotterMessage
+                        // Create SharkspotterMessage with the actual matching shark
                         let ss_msg = SharkspotterMessage {
                             manta_value,
                             etag,
-                            shark: filter_sharks[0].clone(),
+                            shark: matching_shark,
                             shard,
                         };
 
@@ -312,10 +313,20 @@ mod tests {
             ]
         });
 
+        // Should return the matching shark
         let filter_sharks = vec!["1.stor.domain".to_string()];
-        assert!(value_on_target_shark(&obj, &filter_sharks));
+        let result = value_on_target_shark(&obj, &filter_sharks);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "1.stor.domain");
 
+        // Should return the second shark when that's the filter
+        let filter_sharks = vec!["2.stor.domain".to_string()];
+        let result = value_on_target_shark(&obj, &filter_sharks);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "2.stor.domain");
+
+        // Should return None when no match
         let filter_sharks = vec!["3.stor.domain".to_string()];
-        assert!(!value_on_target_shark(&obj, &filter_sharks));
+        assert!(value_on_target_shark(&obj, &filter_sharks).is_none());
     }
 }
