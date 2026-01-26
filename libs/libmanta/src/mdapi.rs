@@ -298,6 +298,20 @@ struct DeleteObjectPayload {
     conditions: Option<Conditions>,
 }
 
+/// Request payload for ListObjects operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ListObjectsPayload {
+    owner: Uuid,
+    bucket_id: Uuid,
+    vnode: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prefix: Option<String>,
+    limit: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    marker: Option<String>,
+    request_id: Uuid,
+}
+
 /// Request payload for GetGCBatch operation
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct GetGCBatchPayload {
@@ -513,14 +527,23 @@ impl MdapiClient {
         name: &str,
         vnode: u64,
     ) -> Result<Bucket, MdapiError> {
-        let _payload = GetBucketPayload {
+        let payload = GetBucketPayload {
             owner,
             name: name.to_string(),
             vnode,
             request_id: Self::generate_request_id(),
         };
-        // TODO: Implement Fast RPC call
-        Err(MdapiError::Other("Not implemented".to_string()))
+
+        let response = self.call("getBucket", &payload)?;
+
+        let bucket: Bucket = serde_json::from_value(response).map_err(|e| {
+            MdapiError::SerializationError(format!(
+                "Failed to parse bucket response: {}",
+                e
+            ))
+        })?;
+
+        Ok(bucket)
     }
 
     /// Create a new bucket
@@ -544,14 +567,23 @@ impl MdapiClient {
         name: &str,
         vnode: u64,
     ) -> Result<Bucket, MdapiError> {
-        let _payload = CreateBucketPayload {
+        let payload = CreateBucketPayload {
             owner,
             name: name.to_string(),
             vnode,
             request_id: Self::generate_request_id(),
         };
-        // TODO: Implement Fast RPC call
-        Err(MdapiError::Other("Not implemented".to_string()))
+
+        let response = self.call("createBucket", &payload)?;
+
+        let bucket: Bucket = serde_json::from_value(response).map_err(|e| {
+            MdapiError::SerializationError(format!(
+                "Failed to parse bucket response: {}",
+                e
+            ))
+        })?;
+
+        Ok(bucket)
     }
 
     /// Delete a bucket
@@ -575,14 +607,16 @@ impl MdapiClient {
         name: &str,
         vnode: u64,
     ) -> Result<(), MdapiError> {
-        let _payload = DeleteBucketPayload {
+        let payload = DeleteBucketPayload {
             owner,
             name: name.to_string(),
             vnode,
             request_id: Self::generate_request_id(),
         };
-        // TODO: Implement Fast RPC call
-        Err(MdapiError::Other("Not implemented".to_string()))
+
+        // deleteBucket returns empty response on success
+        self.call("deleteBucket", &payload)?;
+        Ok(())
     }
 
     /// List buckets for an owner
@@ -668,15 +702,15 @@ impl MdapiClient {
         name: &str,
         vnode: u64,
     ) -> Result<Value, MdapiError> {
-        let _payload = GetObjectPayload {
+        let payload = GetObjectPayload {
             owner,
             bucket_id,
             name: name.to_string(),
             vnode,
             request_id: Self::generate_request_id(),
         };
-        // TODO: Implement Fast RPC call
-        Err(MdapiError::Other("Not implemented".to_string()))
+
+        self.call("getObject", &payload)
     }
 
     /// Create a new object
@@ -697,9 +731,7 @@ impl MdapiClient {
         &self,
         payload: ObjectPayload,
     ) -> Result<Value, MdapiError> {
-        let _payload = payload;
-        // TODO: Implement Fast RPC call
-        Err(MdapiError::Other("Not implemented".to_string()))
+        self.call("createObject", &payload)
     }
 
     /// Update an existing object
@@ -720,9 +752,7 @@ impl MdapiClient {
         &self,
         update: ObjectUpdate,
     ) -> Result<Value, MdapiError> {
-        let _payload = update;
-        // TODO: Implement Fast RPC call
-        Err(MdapiError::Other("Not implemented".to_string()))
+        self.call("updateObject", &update)
     }
 
     /// Delete an object
@@ -751,7 +781,7 @@ impl MdapiClient {
         vnode: u64,
         conditions: Option<Conditions>,
     ) -> Result<(), MdapiError> {
-        let _payload = DeleteObjectPayload {
+        let payload = DeleteObjectPayload {
             owner,
             bucket_id,
             name: name.to_string(),
@@ -759,8 +789,10 @@ impl MdapiClient {
             request_id: Self::generate_request_id(),
             conditions,
         };
-        // TODO: Implement Fast RPC call
-        Err(MdapiError::Other("Not implemented".to_string()))
+
+        // deleteObject returns empty response on success
+        self.call("deleteObject", &payload)?;
+        Ok(())
     }
 
     /// List objects in a bucket
@@ -786,11 +818,31 @@ impl MdapiClient {
         params: ListParams,
     ) -> Result<Vec<Value>, MdapiError> {
         Self::validate_limit(params.limit)?;
-        let _owner = owner;
-        let _bucket_id = bucket_id;
-        let _params = params;
-        // TODO: Implement Fast RPC call
-        Err(MdapiError::Other("Not implemented".to_string()))
+
+        // Note: vnode is derived from bucket_id by mdapi service
+        // Objects inherit their bucket's vnode
+        let payload = ListObjectsPayload {
+            owner,
+            bucket_id,
+            vnode: 0, // Placeholder - mdapi service uses bucket's vnode
+            prefix: params.prefix,
+            limit: params.limit as u64,
+            marker: params.marker,
+            request_id: Self::generate_request_id(),
+        };
+
+        let response = self.call("listObjects", &payload)?;
+
+        // Parse response as array of object Values
+        let objects: Vec<Value> =
+            serde_json::from_value(response).map_err(|e| {
+                MdapiError::SerializationError(format!(
+                    "Failed to parse objects response: {}",
+                    e
+                ))
+            })?;
+
+        Ok(objects)
     }
 
     /// Get a batch of deleted objects for garbage collection
@@ -814,13 +866,24 @@ impl MdapiClient {
     ) -> Result<Vec<DeletedObject>, MdapiError> {
         Self::validate_limit(limit)?;
 
-        let _payload = GetGCBatchPayload {
+        let payload = GetGCBatchPayload {
             shard,
             limit,
             request_id: Self::generate_request_id(),
         };
-        // TODO: Implement Fast RPC call
-        Err(MdapiError::Other("Not implemented".to_string()))
+
+        let response = self.call("getGCBatch", &payload)?;
+
+        // Parse response as array of deleted objects
+        let deleted_objects: Vec<DeletedObject> =
+            serde_json::from_value(response).map_err(|e| {
+                MdapiError::SerializationError(format!(
+                    "Failed to parse GC batch response: {}",
+                    e
+                ))
+            })?;
+
+        Ok(deleted_objects)
     }
 
     /// Mark a garbage collection batch as processed
@@ -838,13 +901,15 @@ impl MdapiClient {
         shard: u32,
         batch_id: Uuid,
     ) -> Result<(), MdapiError> {
-        let _payload = DeleteGCBatchPayload {
+        let payload = DeleteGCBatchPayload {
             shard,
             batch_id,
             request_id: Self::generate_request_id(),
         };
-        // TODO: Implement Fast RPC call
-        Err(MdapiError::Other("Not implemented".to_string()))
+
+        // deleteGCBatch returns empty response on success
+        self.call("deleteGCBatch", &payload)?;
+        Ok(())
     }
 }
 

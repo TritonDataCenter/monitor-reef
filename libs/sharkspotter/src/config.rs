@@ -170,6 +170,18 @@ impl<'a, 'b> Config {
                 .long("log_level")
                 .help("Set log level")
                 .takes_value(true))
+            .arg(Arg::with_name("mdapi_endpoint")
+                .long("mdapi-endpoint")
+                .value_name("ENDPOINT")
+                .help("Mdapi endpoint for bucket object discovery (e.g., mdapi.domain:2030)")
+                .takes_value(true))
+            .arg(Arg::with_name("owners")
+                .long("owners")
+                .value_name("UUID")
+                .help("Owner UUIDs to query for bucket objects (comma-separated or multiple flags)")
+                .number_of_values(1)
+                .multiple(true)
+                .takes_value(true))
     }
 
     // TODO: This has grown over time and is now causing a clippy warning.
@@ -232,6 +244,32 @@ impl<'a, 'b> Config {
             .unwrap()
             .map(String::from)
             .collect();
+
+        // Parse mdapi endpoint
+        if let Some(endpoint) = matches.value_of("mdapi_endpoint") {
+            config.mdapi_endpoint = Some(endpoint.to_string());
+        }
+
+        // Parse owner UUIDs
+        if let Some(owners) = matches.values_of("owners") {
+            let mut parsed_owners = Vec::new();
+            for owner_str in owners {
+                match Uuid::parse_str(owner_str) {
+                    Ok(uuid) => parsed_owners.push(uuid),
+                    Err(e) => {
+                        let msg = format!(
+                            "Invalid owner UUID '{}': {}",
+                            owner_str, e
+                        );
+                        eprintln!("{}", msg);
+                        return Err(Error::new(ErrorKind::Other, msg));
+                    }
+                }
+            }
+            if !parsed_owners.is_empty() {
+                config.owners = Some(parsed_owners);
+            }
+        }
 
         normalize_config(&mut config);
 
@@ -306,5 +344,58 @@ mod test {
             config.sharks,
             vec![String::from("1.stor"), String::from("2.stor")]
         );
+    }
+
+    #[test]
+    fn parse_mdapi_args() {
+        let args = vec![
+            "target/debug/sharkspotter",
+            "--domain",
+            "east.joyent.us",
+            "--shark",
+            "1.stor",
+            "--mdapi-endpoint",
+            "mdapi.east.joyent.us:2030",
+            "--owners",
+            "550e8400-e29b-41d4-a716-446655440000",
+            "--owners",
+            "660e8400-e29b-41d4-a716-446655440001",
+        ];
+
+        let matches = Config::get_app().get_matches_from(args);
+        let config = Config::config_from_matches(matches).expect("config");
+
+        assert_eq!(
+            config.mdapi_endpoint,
+            Some(String::from("mdapi.east.joyent.us:2030"))
+        );
+
+        let owners = config.owners.expect("owners should be set");
+        assert_eq!(owners.len(), 2);
+        assert_eq!(
+            owners[0],
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap()
+        );
+        assert_eq!(
+            owners[1],
+            Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001").unwrap()
+        );
+    }
+
+    #[test]
+    fn parse_invalid_owner_uuid() {
+        let args = vec![
+            "target/debug/sharkspotter",
+            "--domain",
+            "east.joyent.us",
+            "--shark",
+            "1.stor",
+            "--owners",
+            "not-a-valid-uuid",
+        ];
+
+        let matches = Config::get_app().get_matches_from(args);
+        let result = Config::config_from_matches(matches);
+        assert!(result.is_err());
     }
 }
