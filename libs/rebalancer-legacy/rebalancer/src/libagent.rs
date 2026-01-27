@@ -45,7 +45,7 @@ type Assignments = HashMap<String, Arc<RwLock<Assignment>>>;
 
 static REBALANCER_SCHEDULED_DIR: &str = "/var/tmp/rebalancer/scheduled";
 static REBALANCER_FINISHED_DIR: &str = "/var/tmp/rebalancer/completed";
-static REBALANCER_TEMP_DIR: &str = "/manta/rebalancer";
+static REBALANCER_TEMP_DIR: &str = "/var/tmp/rebalancer/temp";
 
 #[derive(Clone, Default, Deserialize)]
 pub struct AgentConfig {
