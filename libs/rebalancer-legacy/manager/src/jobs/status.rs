@@ -108,15 +108,42 @@ fn get_job_db_conn_common(uuid: &Uuid) -> Result<PgConnection, StatusError> {
     })
 }
 
+/// Build the status results HashMap from raw status counts and a
+/// duplicate count.  This is the pure aggregation logic extracted
+/// from `get_evacaute_job_status` so it can be tested without a
+/// database connection.
+fn aggregate_status_counts(
+    status_counts: &[StatusCount],
+    duplicate_count: i64,
+) -> JobStatusResultsEvacuate {
+    let mut ret = HashMap::new();
+    let mut total_count: i64 = 0;
+
+    for status_count in status_counts.iter() {
+        total_count += status_count.count;
+        ret.insert(to_title_case(&status_count.status), status_count.count);
+    }
+
+    // Statuses with 0 records won't appear in the query results,
+    // so fill them in here.
+    for status_value in EvacuateObjectStatus::iter() {
+        ret.entry(to_title_case(&status_value.to_string()))
+            .or_insert(0);
+    }
+
+    total_count += duplicate_count;
+    ret.insert("Duplicates".into(), duplicate_count);
+    ret.insert("Total".into(), total_count);
+
+    ret
+}
+
 fn get_evacaute_job_status(
     uuid: &Uuid,
 ) -> Result<JobStatusResultsEvacuate, StatusError> {
     use crate::jobs::evacuate::duplicates::dsl::duplicates;
     use diesel::dsl::count_star;
 
-    let mut ret = HashMap::new();
-    let mut total_count: i64 = 0;
-    let duplicate_count;
     let conn = get_job_db_conn_common(&uuid)?;
 
     // Unfortunately diesel doesn't have GROUP BY support yet, so we do a raw
@@ -131,24 +158,10 @@ fn get_evacaute_job_status(
             }
         };
 
-    for status_count in status_counts.iter() {
-        total_count += status_count.count;
-        ret.insert(to_title_case(&status_count.status), status_count.count);
-    }
+    let duplicate_count =
+        duplicates.select(count_star()).first(&conn).unwrap_or(0);
 
-    // The query won't return statuses with 0 counts, so add them here.
-    for status_value in EvacuateObjectStatus::iter() {
-        ret.entry(to_title_case(&status_value.to_string()))
-            .or_insert(0);
-    }
-
-    duplicate_count = duplicates.select(count_star()).first(&conn).unwrap_or(0);
-    total_count += duplicate_count;
-
-    ret.insert("Duplicates".into(), duplicate_count);
-    ret.insert("Total".into(), total_count);
-
-    Ok(ret)
+    Ok(aggregate_status_counts(&status_counts, duplicate_count))
 }
 
 fn get_evacuate_job_config(
@@ -231,20 +244,7 @@ pub fn list_jobs() -> Result<Vec<JobDbEntry>, StatusError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::Config;
-    use crate::jobs::evacuate::EvacuateObject;
-    use crate::jobs::JobBuilder;
-    use crate::pg_db;
-    use quickcheck::{Arbitrary, StdThreadGen};
     use rebalancer::util;
-
-    static NUM_OBJS: i64 = 200;
-
-    #[test]
-    #[ignore] // Requires PostgreSQL
-    fn list_job_test() {
-        assert!(list_jobs().is_ok());
-    }
 
     #[test]
     fn bad_job_id() {
@@ -253,84 +253,117 @@ mod tests {
         assert!(get_job(uuid).is_err());
     }
 
+    // Mock tests for status aggregation logic (no PostgreSQL needed).
+
     #[test]
-    #[ignore] // Requires PostgreSQL
-    fn get_status_test() {
-        use crate::jobs::evacuate::evacuateobjects::dsl::*;
+    fn aggregate_status_total() {
+        // Simulate query results: 50 unprocessed, 30 assigned,
+        // 20 complete, 100 error.
+        let status_counts = vec![
+            StatusCount {
+                status: "unprocessed".into(),
+                count: 50,
+            },
+            StatusCount {
+                status: "assigned".into(),
+                count: 30,
+            },
+            StatusCount {
+                status: "complete".into(),
+                count: 20,
+            },
+            StatusCount {
+                status: "error".into(),
+                count: 100,
+            },
+        ];
+        let duplicate_count = 0;
 
-        let _guard = util::init_global_logger(None);
-        let mut g = StdThreadGen::new(10);
-        let mut obj_vec = vec![];
-        let config = Config::default();
-        let job_builder = JobBuilder::new(config);
+        let results = aggregate_status_counts(&status_counts, duplicate_count);
+        let total = *results.get("Total").expect("Total count");
 
-        let job = job_builder
-            .evacuate("fake_shark".to_string(), Some(NUM_OBJS as u32))
-            .commit()
-            .expect("job builder");
-
-        let job_id = job.get_id();
-
-        let conn = pg_db::connect_or_create_db(&job_id.to_string())
-            .expect("db connect");
-
-        for _ in 0..NUM_OBJS {
-            obj_vec.push(EvacuateObject::arbitrary(&mut g));
-        }
-
-        diesel::insert_into(evacuateobjects)
-            .values(obj_vec.clone())
-            .execute(&conn)
-            .expect("diesel insert");
-
-        let job_status = get_job(job_id).expect("get job status");
-        let JobStatusResults::Evacuate(evac_job_results) = job_status.results;
-        let count = *evac_job_results.get("Total").expect("Total count");
-
-        assert_eq!(count, NUM_OBJS);
-        println!("Get Status Test: {:#?}", count);
+        assert_eq!(total, 200);
+        assert_eq!(*results.get("Unprocessed").unwrap(), 50);
+        assert_eq!(*results.get("Assigned").unwrap(), 30);
+        assert_eq!(*results.get("Complete").unwrap(), 20);
+        assert_eq!(*results.get("Error").unwrap(), 100);
+        assert_eq!(*results.get("Duplicates").unwrap(), 0);
     }
 
     #[test]
-    #[ignore] // Requires PostgreSQL
-    fn get_status_zero_value_test() {
-        use crate::jobs::evacuate::evacuateobjects::dsl::*;
+    fn aggregate_status_with_duplicates() {
+        let status_counts = vec![
+            StatusCount {
+                status: "complete".into(),
+                count: 80,
+            },
+            StatusCount {
+                status: "error".into(),
+                count: 10,
+            },
+        ];
+        let duplicate_count = 5;
 
-        let _guard = util::init_global_logger(None);
-        let mut g = StdThreadGen::new(10);
-        let mut obj_vec = vec![];
+        let results = aggregate_status_counts(&status_counts, duplicate_count);
+        let total = *results.get("Total").expect("Total count");
 
-        let config = Config::default();
-        let job_builder = JobBuilder::new(config);
-        let job = job_builder
-            .evacuate("fake_shark".to_string(), Some(NUM_OBJS as u32))
-            .commit()
-            .expect("job builder");
+        // Total = 80 + 10 + 5 (duplicates)
+        assert_eq!(total, 95);
+        assert_eq!(*results.get("Duplicates").unwrap(), 5);
+    }
 
-        let job_id = job.get_id();
-        let conn = pg_db::connect_db(&job_id.to_string()).expect("db connect");
+    #[test]
+    fn aggregate_status_zero_values() {
+        // Simulate results where PostProcessing never appears in
+        // the query (0 records with that status).
+        let status_counts = vec![
+            StatusCount {
+                status: "unprocessed".into(),
+                count: 100,
+            },
+            StatusCount {
+                status: "assigned".into(),
+                count: 50,
+            },
+            StatusCount {
+                status: "complete".into(),
+                count: 30,
+            },
+            StatusCount {
+                status: "error".into(),
+                count: 20,
+            },
+        ];
+        let duplicate_count = 0;
 
-        for _ in 0..NUM_OBJS {
-            let mut obj = EvacuateObject::arbitrary(&mut g);
-            if obj.status == EvacuateObjectStatus::PostProcessing {
-                obj.status = EvacuateObjectStatus::Assigned;
-            }
-            obj_vec.push(obj);
+        let results = aggregate_status_counts(&status_counts, duplicate_count);
+        let total = *results.get("Total").expect("Total count");
+
+        assert_eq!(total, 200);
+        // PostProcessing and Skipped were not in query results,
+        // so they must be filled in with 0.
+        assert_eq!(*results.get("Post Processing").unwrap(), 0);
+        assert_eq!(*results.get("Skipped").unwrap(), 0);
+    }
+
+    #[test]
+    fn aggregate_status_empty_input() {
+        // No records at all — every status should be 0.
+        let results = aggregate_status_counts(&[], 0);
+        let total = *results.get("Total").expect("Total count");
+
+        assert_eq!(total, 0);
+        assert_eq!(*results.get("Duplicates").unwrap(), 0);
+
+        // All EvacuateObjectStatus variants must be present with 0.
+        for status_value in EvacuateObjectStatus::iter() {
+            let key = to_title_case(&status_value.to_string());
+            assert_eq!(
+                *results.get(&key).unwrap_or(&-1),
+                0,
+                "Expected 0 for status '{}'",
+                key
+            );
         }
-
-        diesel::insert_into(evacuateobjects)
-            .values(obj_vec.clone())
-            .execute(&conn)
-            .expect("diesel insert");
-
-        let job_status = get_job(job_id).expect("get job status");
-        let JobStatusResults::Evacuate(evac_job_results) = job_status.results;
-        let total_count = *evac_job_results.get("Total").expect("Total count");
-        let post_processing_count = *evac_job_results
-            .get("Post Processing")
-            .expect("Post Processing count");
-
-        assert_eq!(total_count, NUM_OBJS);
-        assert_eq!(post_processing_count, 0);
     }
 }
