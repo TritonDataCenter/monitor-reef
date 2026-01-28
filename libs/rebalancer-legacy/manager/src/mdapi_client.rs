@@ -886,7 +886,24 @@ pub fn update_object_content(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lazy_static::lazy_static;
+    use rebalancer::util;
     use serde_json::json;
+    use std::sync::Mutex;
+
+    lazy_static! {
+        // Ensure logger is initialized for tests that use logging macros
+        static ref TEST_LOGGER_GUARD: Mutex<Option<slog_scope::GlobalLoggerGuard>> = {
+            let guard = util::init_global_logger(None);
+            Mutex::new(Some(guard))
+        };
+    }
+
+    // Call this to ensure the logger is initialized before tests that log
+    fn ensure_logger_initialized() {
+        // Just access the lazy_static to trigger initialization
+        let _guard = TEST_LOGGER_GUARD.lock();
+    }
 
     // Helper to create a test MantaObject
     fn create_test_manta_object() -> MantaObject {
@@ -1077,6 +1094,7 @@ mod tests {
 
     #[test]
     fn test_calculate_vnode_consistency() {
+        ensure_logger_initialized();
         let owner = "550e8400-e29b-41d4-a716-446655440000";
         let bucket = "test-bucket";
         let key = "test-object.txt";
@@ -1092,6 +1110,7 @@ mod tests {
 
     #[test]
     fn test_calculate_vnode_different_keys() {
+        ensure_logger_initialized();
         let owner = "550e8400-e29b-41d4-a716-446655440000";
         let bucket = "test-bucket";
 
@@ -1105,6 +1124,7 @@ mod tests {
 
     #[test]
     fn test_verify_vnode_matches() {
+        ensure_logger_initialized();
         let owner = "550e8400-e29b-41d4-a716-446655440000";
         let bucket = "test-bucket";
         let key = "test.txt";
@@ -1123,6 +1143,7 @@ mod tests {
 
     #[test]
     fn test_verify_vnode_mismatch() {
+        ensure_logger_initialized();
         let bucket = "test-bucket";
 
         let mut test_obj = create_test_manta_object();
@@ -1137,6 +1158,7 @@ mod tests {
 
     #[test]
     fn test_create_client_valid_endpoint() {
+        ensure_logger_initialized();
         let result = create_client("localhost:2030");
         // Should succeed in creating client (even though RPC won't work)
         assert!(result.is_ok());
@@ -1144,6 +1166,7 @@ mod tests {
 
     #[test]
     fn test_create_client_invalid_endpoint_no_port() {
+        ensure_logger_initialized();
         let result = create_client("localhost");
         // Should fail - missing port
         assert!(result.is_err());
@@ -1159,6 +1182,7 @@ mod tests {
 
     #[test]
     fn test_create_client_with_domain() {
+        ensure_logger_initialized();
         let result = create_client("mdapi.example.com:2030");
         assert!(result.is_ok());
     }
@@ -1186,6 +1210,7 @@ mod tests {
 
     #[test]
     fn test_batch_update_empty_list() {
+        ensure_logger_initialized();
         let client = create_client("localhost:2030").unwrap();
         let objects: Vec<(&MantaObject, Uuid, Option<&str>)> = vec![];
 
@@ -1375,6 +1400,7 @@ mod tests {
 
     #[test]
     fn test_calculate_vnode_deterministic() {
+        ensure_logger_initialized();
         // Same inputs should always produce same vnode
         for _ in 0..10 {
             let vnode = calculate_vnode(
@@ -1506,6 +1532,7 @@ mod tests {
 
     #[test]
     fn test_vnode_calculation_consistency() {
+        ensure_logger_initialized();
         // Same input should always produce same vnode
         let owner = "550e8400-e29b-41d4-a716-446655440000";
         let bucket = "660e8400-e29b-41d4-a716-446655440001";
@@ -1519,6 +1546,7 @@ mod tests {
 
     #[test]
     fn test_vnode_calculation_different_keys() {
+        ensure_logger_initialized();
         let owner = "550e8400-e29b-41d4-a716-446655440000";
         let bucket = "660e8400-e29b-41d4-a716-446655440001";
 
@@ -1532,6 +1560,7 @@ mod tests {
 
     #[test]
     fn test_vnode_calculation_different_owners() {
+        ensure_logger_initialized();
         let bucket = "660e8400-e29b-41d4-a716-446655440001";
         let key = "test.txt";
 
@@ -1543,6 +1572,7 @@ mod tests {
 
     #[test]
     fn test_vnode_calculation_different_buckets() {
+        ensure_logger_initialized();
         let owner = "550e8400-e29b-41d4-a716-446655440000";
         let key = "test.txt";
 
@@ -1554,6 +1584,7 @@ mod tests {
 
     #[test]
     fn test_vnode_calculation_empty_strings() {
+        ensure_logger_initialized();
         // Edge case: empty strings should still produce valid vnode
         let vnode = calculate_vnode("", "", "");
         // Should not panic and should return some value
@@ -1563,6 +1594,7 @@ mod tests {
 
     #[test]
     fn test_vnode_calculation_special_characters() {
+        ensure_logger_initialized();
         let owner = "550e8400-e29b-41d4-a716-446655440000";
         let bucket = "660e8400-e29b-41d4-a716-446655440001";
 
@@ -1579,6 +1611,7 @@ mod tests {
 
     #[test]
     fn test_verify_vnode_matching() {
+        ensure_logger_initialized();
         let manta_obj = create_test_manta_object();
         let bucket_id = Uuid::new_v4();
         let bucket_str = bucket_id.to_string();
@@ -1601,6 +1634,7 @@ mod tests {
 
     #[test]
     fn test_verify_vnode_mismatched() {
+        ensure_logger_initialized();
         let mut manta_obj = create_test_manta_object();
         let bucket_id = Uuid::new_v4();
         let bucket_str = bucket_id.to_string();

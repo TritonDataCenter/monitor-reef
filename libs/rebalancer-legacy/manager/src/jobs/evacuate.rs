@@ -5978,6 +5978,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn test_duplicate_handler_small_assignment() {
         unit_test_init();
 
@@ -6006,6 +6007,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn test_retry_job() {
         use crate::jobs::status::{get_job_status, JobStatusResults};
         use crate::jobs::JobActionDbEntry;

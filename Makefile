@@ -47,7 +47,7 @@ build: | $(CARGO_EXEC) ## Build all APIs, services and clients
 	$(CARGO) build
 
 test: | $(CARGO_EXEC) ## Run all tests
-	$(CARGO) test
+	$(CARGO) test -- --test-threads=1
 
 clean:: | $(CARGO_EXEC) ## Clean build artifacts
 	$(CARGO) clean
@@ -59,7 +59,7 @@ format: | $(CARGO_EXEC) ## Format all code
 	$(CARGO) fmt
 
 workspace-test: | $(CARGO_EXEC) ## Run all workspace tests
-	$(CARGO) test --workspace
+	$(CARGO) test --workspace -- --test-threads=1
 
 # API development commands
 api-new: ## Create new API trait (usage: make api-new API=my-service-api)
@@ -99,7 +99,7 @@ service-build: | $(CARGO_EXEC) ## Build specific service (usage: make service-bu
 
 service-test: | $(CARGO_EXEC) ## Test specific service (usage: make service-test SERVICE=my-service)
 	@if [ -z "$(SERVICE)" ]; then echo "Usage: make service-test SERVICE=my-service"; exit 1; fi
-	$(CARGO) test -p $(SERVICE)
+	$(CARGO) test -p $(SERVICE) -- --test-threads=1
 
 service-run: | $(CARGO_EXEC) ## Run specific service (usage: make service-run SERVICE=my-service)
 	@if [ -z "$(SERVICE)" ]; then echo "Usage: make service-run SERVICE=my-service"; exit 1; fi
@@ -129,7 +129,7 @@ client-build: | $(CARGO_EXEC) ## Build specific client (usage: make client-build
 
 client-test: | $(CARGO_EXEC) ## Test specific client (usage: make client-test CLIENT=my-service-client)
 	@if [ -z "$(CLIENT)" ]; then echo "Usage: make client-test CLIENT=my-service-client"; exit 1; fi
-	$(CARGO) test -p $(CLIENT)
+	$(CARGO) test -p $(CLIENT) -- --test-threads=1
 
 # Generic package commands (for any crate in the workspace)
 package-build: | $(CARGO_EXEC) ## Build specific package (usage: make package-build PACKAGE=my-package)
@@ -138,7 +138,7 @@ package-build: | $(CARGO_EXEC) ## Build specific package (usage: make package-bu
 
 package-test: | $(CARGO_EXEC) ## Test specific package (usage: make package-test PACKAGE=my-package)
 	@if [ -z "$(PACKAGE)" ]; then echo "Usage: make package-test PACKAGE=my-package"; exit 1; fi
-	$(CARGO) test -p $(PACKAGE)
+	$(CARGO) test -p $(PACKAGE) -- --test-threads=1
 
 # OpenAPI management commands (using dropshot-api-manager)
 openapi-generate: | $(CARGO_EXEC) ## Generate OpenAPI specs from API traits
@@ -160,7 +160,7 @@ openapi-debug: | $(CARGO_EXEC) ## Debug OpenAPI manager configuration
 	$(CARGO) run -p openapi-manager -- debug
 
 integration-test: | $(CARGO_EXEC) ## Run integration tests across all services
-	$(CARGO) test --workspace integration
+	$(CARGO) test --workspace integration -- --test-threads=1
 
 # Development setup
 dev-setup: | $(CARGO_EXEC) ## Set up development environment
@@ -172,7 +172,7 @@ dev-setup: | $(CARGO_EXEC) ## Set up development environment
 	@echo "Generating OpenAPI specs..."
 	$(MAKE) openapi-generate
 	@echo "Running tests to ensure everything works..."
-	$(CARGO) test
+	$(CARGO) test -- --test-threads=1
 	@echo ""
 	@echo "Development environment ready!"
 	@echo ""
@@ -224,7 +224,7 @@ list: ## List all APIs, services and clients
 # Validation and CI commands
 check:: | $(CARGO_EXEC) ## Run all validation checks (CI-ready)
 	@echo "Running all validation checks..."
-	$(CARGO) test --workspace
+	$(CARGO) test --workspace -- --test-threads=1
 	$(MAKE) openapi-check
 	$(MAKE) arch-lint
 	@echo ""

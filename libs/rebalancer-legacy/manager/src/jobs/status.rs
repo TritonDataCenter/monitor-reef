@@ -241,6 +241,7 @@ mod tests {
     static NUM_OBJS: i64 = 200;
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn list_job_test() {
         assert!(list_jobs().is_ok());
     }
@@ -253,6 +254,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn get_status_test() {
         use crate::jobs::evacuate::evacuateobjects::dsl::*;
 
@@ -290,6 +292,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn get_status_zero_value_test() {
         use crate::jobs::evacuate::evacuateobjects::dsl::*;
 

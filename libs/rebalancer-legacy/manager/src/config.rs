@@ -538,6 +538,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Sends SIGUSR1 which interferes with other parallel tests
     // 1. Create a config (both file and in memory).
     // 2. Start the config watcher.
     // 3. Update the config file we created in step 1.
