@@ -339,13 +339,16 @@ mod test {
             "number": 4
         });
 
-        // Spawn a thread keep up the dummy_stream's ruse
-        let listen_handle = std::thread::spawn(|| {
-            let listener = TcpListener::bind("localhost:8000").unwrap();
+        // Spawn a thread keep up the dummy_stream's ruse.
+        // Bind to port 0 to let the OS assign a free port, avoiding
+        // conflicts when tests run in parallel or port 8000 is in use.
+        let listener = TcpListener::bind("localhost:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let listen_handle = std::thread::spawn(move || {
             listener.accept().unwrap();
         });
 
-        let mut dummy_stream = TcpStream::connect("localhost:8000").unwrap();
+        let mut dummy_stream = TcpStream::connect(addr).unwrap();
 
         requests.push(BatchRequest::Put(BatchPutOp {
             bucket: String::from("foo bucket"),
