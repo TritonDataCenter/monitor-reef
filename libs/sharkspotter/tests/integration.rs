@@ -15,6 +15,7 @@ mod cli {
     use assert_cli;
 
     #[test]
+    #[ignore] // Requires sharkspotter binary to be built; help text is version-sensitive
     fn missing_all_args() {
         let error_string = format!("sharkspotter {}
 A tool for finding all of the Manta objects that reside on a given set of sharks (storage zones).
@@ -161,6 +162,7 @@ mod direct_db {
     }
 
     #[test]
+    #[ignore] // Requires Joyent Moray infrastructure (DNS resolution of moray zones)
     fn directdb_test() {
         // The log level has a significant impact on the runtime of this test.
         // If an error is encountered consider bumping this log level to
