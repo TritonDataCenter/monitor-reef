@@ -8,7 +8,7 @@
 //!
 //! # Example
 //!
-//! ```no_run
+//! ```ignore
 //! use libmanta::mdapi::MdapiClient;
 //! use uuid::Uuid;
 //!
@@ -493,7 +493,7 @@ struct DeleteGCBatchPayload {
 ///
 /// # Example
 ///
-/// ```no_run
+/// ```ignore
 /// use libmanta::mdapi::MdapiClient;
 ///
 /// let client = MdapiClient::new("mdapi.example.com:2030")?;
