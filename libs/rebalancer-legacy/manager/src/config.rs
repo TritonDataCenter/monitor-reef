@@ -380,7 +380,6 @@ mod tests {
     use super::*;
     use crate::test_util::TestConfig;
     use lazy_static::lazy_static;
-    use libc;
     use mustache::MapBuilder;
     use std::fs::File;
     use std::io::Read;
@@ -537,17 +536,21 @@ mod tests {
         // TestConfig automatically cleans up the temp file when dropped
     }
 
-    #[test]
-    #[ignore] // Sends SIGUSR1 which interferes with other parallel tests
+    // Verify that config_updater re-parses the config file and updates
+    // the in-memory Config when notified via channel.  This exercises
+    // the same code path as the production SIGUSR1 handler without
+    // sending a process-wide signal.
+    //
     // 1. Create a config (both file and in memory).
-    // 2. Start the config watcher.
-    // 3. Update the config file we created in step 1.
-    // 4. Send a signal to the config watcher (what config-agent would do in
-    //    production).
-    // 5. Confirm that our in memory config reflects that changes from step 3.
-    fn signal_handler_config_update() {
+    // 2. Start config_updater directly with a test-controlled channel.
+    // 3. Update the config file created in step 1.
+    // 4. Send a notification on the channel (what the signal handler
+    //    would do in production).
+    // 5. Confirm that our in-memory config reflects the changes from
+    //    step 3.
+    #[test]
+    fn channel_config_update() {
         unit_test_init();
-        println!("{}", env!("CARGO_MANIFEST_DIR"));
 
         // Generate a config with snaplink_cleanup_required=true.
         let mut test_config = TestConfig::new();
@@ -560,15 +563,16 @@ mod tests {
                 .snaplink_cleanup_required
         );
 
-        let update_config = Arc::clone(&config);
-
-        // Start the config watcher with the unique temp file path.
-        let _watcher_handle = Config::start_config_watcher(
-            update_config,
+        // Create a channel to drive config_updater directly,
+        // bypassing the SIGUSR1 signal handler.
+        let (update_tx, update_rx) = crossbeam_channel::bounded(1);
+        let updater_handle = Config::config_updater(
+            update_rx,
+            Arc::clone(&config),
             Some(test_config.path_string()),
         );
 
-        // Change SNAPLINK_CLEANUP_REQUIRED to false
+        // Change SNAPLINK_CLEANUP_REQUIRED to false in the file.
         let vars = MapBuilder::new()
             .insert_str("DOMAIN_NAME", "fake.joyent.us")
             .insert_bool("SNAPLINK_CLEANUP_REQUIRED", false)
@@ -581,15 +585,21 @@ mod tests {
             .build();
         test_config.update_with_vars(&vars);
 
-        // Send a signal letting the watcher know that we've updated the
-        // config file and it needs to re-parse and update our in memory state.
-        unsafe { libc::raise(signal_hook::SIGUSR1) };
-        thread::sleep(std::time::Duration::from_secs(2));
+        // Notify config_updater that the file changed.
+        update_tx.send(()).expect("send config update notification");
 
-        // Assert that our in memory config's snaplink_cleanup_required field
-        // has changed to false.
+        // Give the updater thread time to re-parse and apply.
+        thread::sleep(std::time::Duration::from_millis(500));
+
+        // Assert that our in-memory config's snaplink_cleanup_required
+        // field has changed to false.
         let check_config = config.lock().expect("config lock");
         assert_eq!(check_config.snaplink_cleanup_required, false);
+
+        // Drop the sender so the updater thread exits cleanly.
+        drop(update_tx);
+        drop(check_config);
+        updater_handle.join().expect("join config updater");
         // TestConfig automatically cleans up the temp file when dropped
     }
 }
