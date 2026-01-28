@@ -785,6 +785,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn basic() {
         unit_test_init();
         let (config, test_server) = test_server_init();
@@ -820,6 +821,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn post_test() {
         unit_test_init();
         let (_, test_server) = test_server_init();
@@ -833,6 +835,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn job_dynamic_update() {
         unit_test_init();
         let update_msg = EvacuateJobUpdateMessage::SetMetadataThreads(1);
