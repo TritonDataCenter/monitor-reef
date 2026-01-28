@@ -378,10 +378,7 @@ fn _config_update_signal_handler(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_util::{
-        self, config_fini, update_test_config_with_vars, write_config_file,
-        TEST_CONFIG_FILE,
-    };
+    use crate::test_util::TestConfig;
     use lazy_static::lazy_static;
     use libc;
     use mustache::MapBuilder;
@@ -409,17 +406,9 @@ mod tests {
         });
     }
 
-    // Initialize a test configuration file by parsing and rendering the
-    // same configuration template used in production.
-    fn config_init() -> Config {
-        assert!(*INITIALIZED.lock().unwrap());
-        test_util::config_init()
-    }
-
     #[test]
     fn min_max_shards() {
         unit_test_init();
-        std::fs::remove_file(TEST_CONFIG_FILE).unwrap_or(());
 
         let vars = MapBuilder::new()
             .insert_str("DOMAIN_NAME", "fake.joyent.us")
@@ -431,10 +420,10 @@ mod tests {
                 })
             })
             .build();
-        let config = update_test_config_with_vars(&vars);
+        let mut test_config = TestConfig::with_vars(&vars);
 
-        assert_eq!(config.min_shard_num(), 3);
-        assert_eq!(config.max_shard_num(), 3);
+        assert_eq!(test_config.config.min_shard_num(), 3);
+        assert_eq!(test_config.config.max_shard_num(), 3);
 
         let vars = MapBuilder::new()
             .insert_str("DOMAIN_NAME", "fake.joyent.us")
@@ -456,24 +445,23 @@ mod tests {
             })
             .build();
 
-        let config = update_test_config_with_vars(&vars);
+        test_config.update_with_vars(&vars);
 
-        assert_eq!(config.min_shard_num(), 2);
-        assert_eq!(config.max_shard_num(), 1000);
-
-        config_fini();
+        assert_eq!(test_config.config.min_shard_num(), 2);
+        assert_eq!(test_config.config.max_shard_num(), 1000);
+        // TestConfig automatically cleans up the temp file when dropped
     }
 
     #[test]
     fn config_basic_test() {
         unit_test_init();
-        let config = config_init();
+        let test_config = TestConfig::new();
 
         // The template does not have a listen_port entry, so it should
         // default to 80.
-        assert_eq!(config.listen_port, 80);
+        assert_eq!(test_config.config.listen_port, 80);
 
-        File::open(TEST_CONFIG_FILE)
+        File::open(&test_config.config_path)
             .and_then(|mut f| {
                 let mut config_file = String::new();
 
@@ -490,8 +478,7 @@ mod tests {
                 Ok(())
             })
             .expect("config_basic_test");
-
-        config_fini();
+        // TestConfig automatically cleans up the temp file when dropped
     }
 
     #[test]
@@ -513,29 +500,26 @@ mod tests {
             }
         "#;
 
-        std::fs::remove_file(TEST_CONFIG_FILE).unwrap_or(());
-        let config = write_config_file(file_contents.as_bytes());
+        let test_config = TestConfig::from_contents(file_contents.as_bytes());
 
-        assert_eq!(config.options.max_tasks_per_assignment, 1111);
-        assert_eq!(config.options.max_metadata_update_threads, 2222);
-        assert_eq!(config.options.max_sharks, 3333);
-        assert_eq!(config.options.use_static_md_update_threads, false);
+        assert_eq!(test_config.config.options.max_tasks_per_assignment, 1111);
+        assert_eq!(test_config.config.options.max_metadata_update_threads, 2222);
+        assert_eq!(test_config.config.options.max_sharks, 3333);
+        assert_eq!(test_config.config.options.use_static_md_update_threads, false);
         assert_eq!(
-            config.options.static_queue_depth,
+            test_config.config.options.static_queue_depth,
             DEFAULT_STATIC_QUEUE_DEPTH
         );
         assert_eq!(
-            config.options.max_assignment_age,
+            test_config.config.options.max_assignment_age,
             DEFAULT_MAX_ASSIGNMENT_AGE
         );
-
-        config_fini();
+        // TestConfig automatically cleans up the temp file when dropped
     }
 
     #[test]
     fn missing_snaplink_cleanup_required() {
         unit_test_init();
-        std::fs::remove_file(TEST_CONFIG_FILE).unwrap_or(());
 
         let vars = MapBuilder::new()
             .insert_str("DOMAIN_NAME", "fake.joyent.us")
@@ -547,10 +531,10 @@ mod tests {
             })
             .build();
 
-        let config = update_test_config_with_vars(&vars);
+        let test_config = TestConfig::with_vars(&vars);
 
-        assert_eq!(config.snaplink_cleanup_required, false);
-        config_fini();
+        assert_eq!(test_config.config.snaplink_cleanup_required, false);
+        // TestConfig automatically cleans up the temp file when dropped
     }
 
     #[test]
@@ -565,7 +549,8 @@ mod tests {
         println!("{}", env!("CARGO_MANIFEST_DIR"));
 
         // Generate a config with snaplink_cleanup_required=true.
-        let config = Arc::new(Mutex::new(config_init()));
+        let mut test_config = TestConfig::new();
+        let config = Arc::new(Mutex::new(test_config.config.clone()));
 
         assert!(
             config
@@ -576,10 +561,10 @@ mod tests {
 
         let update_config = Arc::clone(&config);
 
-        // Start the config watcher.
+        // Start the config watcher with the unique temp file path.
         let _watcher_handle = Config::start_config_watcher(
             update_config,
-            Some(TEST_CONFIG_FILE.to_string()),
+            Some(test_config.path_string()),
         );
 
         // Change SNAPLINK_CLEANUP_REQUIRED to false
@@ -593,7 +578,7 @@ mod tests {
                 })
             })
             .build();
-        let _ = update_test_config_with_vars(&vars);
+        test_config.update_with_vars(&vars);
 
         // Send a signal letting the watcher know that we've updated the
         // config file and it needs to re-parse and update our in memory state.
@@ -604,7 +589,6 @@ mod tests {
         // has changed to false.
         let check_config = config.lock().expect("config lock");
         assert_eq!(check_config.snaplink_cleanup_required, false);
-
-        config_fini();
+        // TestConfig automatically cleans up the temp file when dropped
     }
 }

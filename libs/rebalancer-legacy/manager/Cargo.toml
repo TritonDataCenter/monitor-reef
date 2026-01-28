@@ -52,6 +52,7 @@ pg = {version = "0.17.5", package = "postgres"}
 # https://github.com/nickel-org/rust-mustache/issues/60
 mustache = {git = "https://github.com/rjloura/rust-mustache", branch = "issue-60" }
 libc = "0.2.67"
+tempfile = "3"
 
 [[bin]]
 name = "rebalancer-manager"

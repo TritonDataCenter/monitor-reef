@@ -1659,6 +1659,7 @@ dependencies = [
  "slog-scope",
  "strum",
  "strum_macros",
+ "tempfile",
  "threadpool",
  "uuid 0.7.4",
 ]
