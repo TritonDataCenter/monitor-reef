@@ -5026,6 +5026,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn available_mb() {
         unit_test_init();
 
@@ -5301,6 +5302,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn no_skip() {
         use super::*;
         use rand::Rng;
@@ -5500,6 +5502,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn assignment_processing_test() {
         unit_test_init();
 
@@ -5622,6 +5625,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn empty_storinfo_test() {
         unit_test_init();
         let storinfo = Arc::new(EmptyStorinfo {});
@@ -5876,6 +5880,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn full_test() {
         unit_test_init();
 
@@ -5944,6 +5949,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore] // Requires PostgreSQL
     fn test_duplicate_handler() {
         unit_test_init();
 

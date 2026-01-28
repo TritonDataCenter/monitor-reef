@@ -1207,6 +1207,134 @@ mod tests {
     }
 
     #[test]
+    fn test_connection_pool_creation() {
+        let pool = ConnectionPool::new("localhost:2030".to_string(), 4);
+        assert_eq!(pool.endpoint, "localhost:2030");
+        assert_eq!(pool.max_size, 4);
+
+        // Pool should start empty
+        let connections = pool.connections.lock().unwrap();
+        assert_eq!(connections.len(), 0);
+    }
+
+    #[test]
+    fn test_connection_pool_put_and_size_limit() {
+        use std::net::TcpListener;
+
+        // Create a local TCP listener to accept connections
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let endpoint = format!("127.0.0.1:{}", addr.port());
+
+        let pool = ConnectionPool::new(endpoint.clone(), 2);
+
+        // Create connections and put them in the pool
+        let conn1 = TcpStream::connect(&addr).unwrap();
+        let conn2 = TcpStream::connect(&addr).unwrap();
+        let conn3 = TcpStream::connect(&addr).unwrap();
+
+        pool.put(conn1);
+        pool.put(conn2);
+
+        // Pool should have 2 connections
+        {
+            let connections = pool.connections.lock().unwrap();
+            assert_eq!(connections.len(), 2);
+        }
+
+        // Adding a third should be dropped (pool full)
+        pool.put(conn3);
+
+        // Pool should still have 2 connections
+        {
+            let connections = pool.connections.lock().unwrap();
+            assert_eq!(connections.len(), 2);
+        }
+    }
+
+    #[test]
+    fn test_connection_pool_get_reuses_connection() {
+        use std::net::TcpListener;
+
+        // Create a local TCP listener
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let endpoint = format!("127.0.0.1:{}", addr.port());
+
+        let pool = ConnectionPool::new(endpoint.clone(), 4);
+
+        // Create a connection and put it in the pool
+        let conn = TcpStream::connect(&addr).unwrap();
+        let original_local_addr = conn.local_addr().unwrap();
+        pool.put(conn);
+
+        // Accept the connection on the listener side to keep it alive
+        let _server_conn = listener.accept().unwrap();
+
+        // Get should return the pooled connection
+        let retrieved = pool.get().unwrap();
+        let retrieved_local_addr = retrieved.local_addr().unwrap();
+
+        // Should be the same connection (same local port)
+        assert_eq!(original_local_addr, retrieved_local_addr);
+
+        // Pool should now be empty
+        let connections = pool.connections.lock().unwrap();
+        assert_eq!(connections.len(), 0);
+    }
+
+    #[test]
+    fn test_connection_pool_creates_new_when_empty() {
+        use std::net::TcpListener;
+
+        // Create a local TCP listener
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let endpoint = format!("127.0.0.1:{}", addr.port());
+
+        let pool = ConnectionPool::new(endpoint.clone(), 4);
+
+        // Pool is empty, get should create a new connection
+        let conn = pool.get().unwrap();
+        assert!(conn.local_addr().is_ok());
+    }
+
+    #[test]
+    fn test_pooled_connection_expiry() {
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+
+        let stream = TcpStream::connect(&addr).unwrap();
+        let conn = PooledConnection::new(stream);
+
+        // Newly created connection should not be expired
+        assert!(!conn.is_expired());
+
+        // Note: We can't easily test expiration without waiting 60 seconds
+        // In production, CONNECTION_IDLE_TIMEOUT is 60 seconds
+    }
+
+    #[test]
+    fn test_connection_pool_invalid_endpoint() {
+        let pool =
+            ConnectionPool::new("invalid-host-that-does-not-exist:9999".to_string(), 4);
+
+        // Should fail to create connection
+        let result = pool.get();
+        assert!(result.is_err());
+
+        if let Err(MdapiError::IoError(msg)) = result {
+            assert!(
+                msg.contains("Failed to resolve") || msg.contains("Failed to connect")
+            );
+        } else {
+            panic!("Expected IoError");
+        }
+    }
+
+    #[test]
     fn test_validate_limit_success() {
         assert!(MdapiClient::validate_limit(1).is_ok());
         assert!(MdapiClient::validate_limit(100).is_ok());
