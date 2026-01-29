@@ -602,4 +602,212 @@ mod tests {
         updater_handle.join().expect("join config updater");
         // TestConfig automatically cleans up the temp file when dropped
     }
+
+    // =========================================================================
+    // Tests for MdapiConfig defaults and deserialization
+    // =========================================================================
+
+    #[test]
+    fn mdapi_config_defaults() {
+        let config = MdapiConfig::default();
+        assert_eq!(config.enabled, false);
+        assert_eq!(config.endpoint, "localhost:2030");
+        assert!(config.default_bucket_id.is_none());
+        assert_eq!(config.connection_timeout_ms, 5000);
+        assert_eq!(config.single_bucket_mode, false);
+    }
+
+    #[test]
+    fn mdapi_config_deserialization() {
+        let json = r#"{
+            "enabled": true,
+            "endpoint": "mdapi.us-east.joyent.us:2030",
+            "connection_timeout_ms": 10000,
+            "single_bucket_mode": true
+        }"#;
+        let config: MdapiConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.enabled, true);
+        assert_eq!(config.endpoint, "mdapi.us-east.joyent.us:2030");
+        assert_eq!(config.connection_timeout_ms, 10000);
+        assert_eq!(config.single_bucket_mode, true);
+        assert!(config.default_bucket_id.is_none());
+    }
+
+    #[test]
+    fn mdapi_config_with_bucket_id() {
+        let json = r#"{
+            "enabled": true,
+            "endpoint": "mdapi.host:2030",
+            "default_bucket_id": "550e8400-e29b-41d4-a716-446655440000"
+        }"#;
+        let config: MdapiConfig = serde_json::from_str(json).unwrap();
+        assert!(config.default_bucket_id.is_some());
+        assert_eq!(
+            config.default_bucket_id.unwrap().to_string(),
+            "550e8400-e29b-41d4-a716-446655440000"
+        );
+    }
+
+    #[test]
+    fn mdapi_config_empty_json_uses_defaults() {
+        let json = "{}";
+        let config: MdapiConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.enabled, false);
+        assert_eq!(config.endpoint, "localhost:2030");
+    }
+
+    // =========================================================================
+    // Tests for ConfigOptions defaults
+    // =========================================================================
+
+    #[test]
+    fn config_options_defaults() {
+        let opts = ConfigOptions::default();
+        assert_eq!(opts.max_tasks_per_assignment, DEFAULT_MAX_TASKS_PER_ASSIGNMENT);
+        assert_eq!(opts.max_metadata_update_threads, DEFAULT_MAX_METADATA_UPDATE_THREADS);
+        assert_eq!(opts.max_sharks, DEFAULT_MAX_SHARKS);
+        assert_eq!(opts.use_static_md_update_threads, false);
+        assert_eq!(opts.static_queue_depth, DEFAULT_STATIC_QUEUE_DEPTH);
+        assert_eq!(opts.max_assignment_age, DEFAULT_MAX_ASSIGNMENT_AGE);
+        assert_eq!(opts.use_batched_updates, true);
+        assert_eq!(opts.md_read_chunk_size, DEFAULT_METADATA_READ_CHUNK_SIZE);
+        assert_eq!(opts.max_md_read_threads, DEFAULT_MAX_METADATA_READ_THREADS);
+    }
+
+    #[test]
+    fn config_options_partial_override() {
+        let json = r#"{"max_sharks": 99, "max_assignment_age": 300}"#;
+        let opts: ConfigOptions = serde_json::from_str(json).unwrap();
+        assert_eq!(opts.max_sharks, 99);
+        assert_eq!(opts.max_assignment_age, 300);
+        // Non-overridden fields should keep defaults
+        assert_eq!(opts.max_tasks_per_assignment, DEFAULT_MAX_TASKS_PER_ASSIGNMENT);
+        assert_eq!(opts.use_batched_updates, true);
+    }
+
+    // =========================================================================
+    // Tests for log_level_deserialize
+    // =========================================================================
+
+    #[test]
+    fn log_level_deserialize_all_variants() {
+        let cases = vec![
+            (r#""critical""#, Level::Critical),
+            (r#""crit""#, Level::Critical),
+            (r#""error""#, Level::Error),
+            (r#""warning""#, Level::Warning),
+            (r#""warn""#, Level::Warning),
+            (r#""info""#, Level::Info),
+            (r#""debug""#, Level::Debug),
+            (r#""trace""#, Level::Trace),
+        ];
+
+        for (input, expected) in cases {
+            // Wrap in a struct since log_level_deserialize is a custom fn
+            let json = format!(r#"{{"log_level": {}}}"#, input);
+            #[derive(Deserialize)]
+            struct TestLogLevel {
+                #[serde(deserialize_with = "log_level_deserialize")]
+                log_level: Level,
+            }
+            let parsed: TestLogLevel =
+                serde_json::from_str(&json).unwrap();
+            assert_eq!(parsed.log_level, expected, "input: {}", input);
+        }
+    }
+
+    #[test]
+    fn log_level_deserialize_case_insensitive() {
+        let json = r#"{"log_level": "INFO"}"#;
+        #[derive(Deserialize)]
+        struct TestLogLevel {
+            #[serde(deserialize_with = "log_level_deserialize")]
+            log_level: Level,
+        }
+        let parsed: TestLogLevel = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.log_level, Level::Info);
+    }
+
+    #[test]
+    fn log_level_deserialize_invalid_rejects() {
+        let json = r#"{"log_level": "nonsense"}"#;
+        #[derive(Deserialize)]
+        struct TestLogLevel {
+            #[serde(deserialize_with = "log_level_deserialize")]
+            log_level: Level,
+        }
+        let result: Result<TestLogLevel, _> = serde_json::from_str(json);
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // Tests for Config defaults
+    // =========================================================================
+
+    #[test]
+    fn config_defaults() {
+        let config = Config::default();
+        assert_eq!(config.domain_name, "");
+        assert_eq!(config.listen_port, 80);
+        assert_eq!(config.max_fill_percentage, 100);
+        assert_eq!(config.log_level, Level::Debug);
+        assert_eq!(config.snaplink_cleanup_required, false);
+        assert_eq!(config.mdapi.enabled, false);
+    }
+
+    #[test]
+    fn config_full_json_deserialization() {
+        unit_test_init();
+
+        let json = r#"{
+            "domain_name": "us-east.joyent.us",
+            "shards": [
+                {"host": "1.moray.us-east.joyent.us"},
+                {"host": "2.moray.us-east.joyent.us"}
+            ],
+            "snaplink_cleanup_required": true,
+            "listen_port": 8080,
+            "max_fill_percentage": 90,
+            "log_level": "info",
+            "mdapi": {
+                "enabled": true,
+                "endpoint": "mdapi.us-east:2030"
+            },
+            "options": {
+                "max_sharks": 10,
+                "max_tasks_per_assignment": 100
+            }
+        }"#;
+
+        let test_config = TestConfig::from_contents(json.as_bytes());
+        assert_eq!(test_config.config.domain_name, "us-east.joyent.us");
+        assert_eq!(test_config.config.listen_port, 8080);
+        assert_eq!(test_config.config.max_fill_percentage, 90);
+        assert_eq!(test_config.config.log_level, Level::Info);
+        assert_eq!(test_config.config.snaplink_cleanup_required, true);
+        assert_eq!(test_config.config.mdapi.enabled, true);
+        assert_eq!(test_config.config.mdapi.endpoint, "mdapi.us-east:2030");
+        assert_eq!(test_config.config.options.max_sharks, 10);
+        assert_eq!(test_config.config.options.max_tasks_per_assignment, 100);
+    }
+
+    #[test]
+    fn config_shard_sorting() {
+        unit_test_init();
+
+        let json = r#"{
+            "domain_name": "test.domain",
+            "shards": [
+                {"host": "10.moray.test.domain"},
+                {"host": "2.moray.test.domain"},
+                {"host": "100.moray.test.domain"},
+                {"host": "1.moray.test.domain"}
+            ]
+        }"#;
+
+        let test_config = TestConfig::from_contents(json.as_bytes());
+        // parse_config sorts shards by shard number
+        assert_eq!(test_config.config.min_shard_num(), 1);
+        assert_eq!(test_config.config.max_shard_num(), 100);
+    }
 }

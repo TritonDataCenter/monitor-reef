@@ -6477,4 +6477,649 @@ mod tests {
         assert_eq!(storage_nodes[0].manta_storage_id, "1.stor.domain");
         assert_eq!(storage_nodes[1].manta_storage_id, "2.stor.domain");
     }
+
+    // =========================================================================
+    // Tests for _calculate_available_mb() - critical capacity logic
+    // =========================================================================
+
+    fn make_dest_shark(
+        avail_mb: u64,
+        percent_used: u8,
+        assigned_mb: u64,
+    ) -> EvacuateDestShark {
+        EvacuateDestShark {
+            shark: StorageNode {
+                available_mb: avail_mb,
+                percent_used,
+                filesystem: "/manta".to_string(),
+                datacenter: "dc1".to_string(),
+                manta_storage_id: "1.stor.domain".to_string(),
+                timestamp: 0,
+            },
+            status: DestSharkStatus::Ready,
+            assigned_mb,
+        }
+    }
+
+    #[test]
+    fn test_calculate_available_mb_documented_example() {
+        // From the code comment:
+        // available_mb=900, assigned_mb=300, percent_used=10, max_fill=80
+        // total_mb = 1000, used_mb = 100, max_fill_mb = 800
+        // remaining = 800 - 100 - 300 = 400
+        let dest = make_dest_shark(900, 10, 300);
+        assert_eq!(_calculate_available_mb(&dest, 80), 400);
+    }
+
+    #[test]
+    fn test_calculate_available_mb_zero_assigned() {
+        // available_mb=900, assigned_mb=0, percent_used=10, max_fill=80
+        // total_mb = 1000, used_mb = 100, max_fill_mb = 800
+        // remaining = 800 - 100 - 0 = 700
+        let dest = make_dest_shark(900, 10, 0);
+        assert_eq!(_calculate_available_mb(&dest, 80), 700);
+    }
+
+    #[test]
+    fn test_calculate_available_mb_100_percent_fill() {
+        // max_fill_percentage = 100 means use all capacity
+        // available_mb=900, percent_used=10, max_fill=100
+        // total_mb = 1000, used_mb = 100, max_fill_mb = 1000
+        // remaining = 1000 - 100 - 0 = 900
+        let dest = make_dest_shark(900, 10, 0);
+        assert_eq!(_calculate_available_mb(&dest, 100), 900);
+    }
+
+    #[test]
+    fn test_calculate_available_mb_assigned_exceeds_remaining() {
+        // When assigned_mb exceeds remaining capacity, returns 0
+        // available_mb=900, assigned_mb=800, percent_used=10, max_fill=80
+        // total_mb=1000, used_mb=100, max_fill_mb=800
+        // remaining = 800 - 100 = 700, but 700 - 800 would underflow => 0
+        let dest = make_dest_shark(900, 10, 800);
+        assert_eq!(_calculate_available_mb(&dest, 80), 0);
+    }
+
+    #[test]
+    fn test_calculate_available_mb_percent_used_exceeds_max_fill() {
+        // When percent_used > max_fill_percentage, returns 0
+        // percent_used=90 > max_fill=80
+        let dest = make_dest_shark(100, 90, 0);
+        assert_eq!(_calculate_available_mb(&dest, 80), 0);
+    }
+
+    #[test]
+    fn test_calculate_available_mb_50_percent_used() {
+        // available_mb=5000, percent_used=50, assigned_mb=0, max_fill=80
+        // total_mb = 5000 / 0.5 = 10000
+        // used_mb = 5000
+        // max_fill_mb = 8000
+        // remaining = 8000 - 5000 - 0 = 3000
+        let dest = make_dest_shark(5000, 50, 0);
+        assert_eq!(_calculate_available_mb(&dest, 80), 3000);
+    }
+
+    #[test]
+    fn test_calculate_available_mb_zero_used() {
+        // Fresh shark: 0% used
+        // available_mb=10000, percent_used=0 would cause division by zero
+        // (10000 / (1-0) = 10000)
+        // max_fill_mb = 10000 * 0.8 = 8000
+        // remaining = 8000 - 0 - 0 = 8000
+        let dest = make_dest_shark(10000, 0, 0);
+        assert_eq!(_calculate_available_mb(&dest, 80), 8000);
+    }
+
+    #[test]
+    fn test_calculate_available_mb_with_partial_assignment() {
+        // available_mb=4000, percent_used=20, assigned_mb=1000, max_fill=90
+        // total_mb = 4000 / 0.8 = 5000
+        // used_mb = 1000
+        // max_fill_mb = 4500
+        // remaining = 4500 - 1000 - 1000 = 2500
+        let dest = make_dest_shark(4000, 20, 1000);
+        assert_eq!(_calculate_available_mb(&dest, 90), 2500);
+    }
+
+    // =========================================================================
+    // Tests for validate_destination() - critical shark assignment safety
+    // =========================================================================
+
+    fn make_evac_shark(dc: &str, storage_id: &str) -> MantaObjectShark {
+        MantaObjectShark {
+            datacenter: dc.to_string(),
+            manta_storage_id: storage_id.to_string(),
+        }
+    }
+
+    fn make_storage_node(dc: &str, storage_id: &str) -> StorageNode {
+        StorageNode {
+            available_mb: 5000,
+            percent_used: 50,
+            filesystem: "/manta".to_string(),
+            datacenter: dc.to_string(),
+            manta_storage_id: storage_id.to_string(),
+            timestamp: 0,
+        }
+    }
+
+    fn make_mobj_value(sharks: &[(&str, &str)]) -> Value {
+        let shark_values: Vec<Value> = sharks
+            .iter()
+            .map(|(dc, sid)| {
+                serde_json::json!({
+                    "datacenter": dc,
+                    "manta_storage_id": sid,
+                })
+            })
+            .collect();
+        serde_json::json!({
+            "sharks": shark_values,
+            "name": "test-object",
+            "key": "/user/stor/test",
+            "owner": "test-owner",
+            "objectId": "obj-123",
+        })
+    }
+
+    #[test]
+    fn test_validate_destination_ok() {
+        // Object on sharks in dc1, evacuating from dc1,
+        // destination is a NEW shark in dc1 → allowed
+        let mobj = make_mobj_value(&[
+            ("dc1", "1.stor.domain"),
+            ("dc2", "2.stor.domain"),
+        ]);
+        let evac_shark = make_evac_shark("dc1", "1.stor.domain");
+        let dest_shark = make_storage_node("dc1", "3.stor.domain");
+
+        assert!(validate_destination(&mobj, &evac_shark, &dest_shark).is_none());
+    }
+
+    #[test]
+    fn test_validate_destination_object_already_on_dest() {
+        // Object is already on the destination shark → skip
+        let mobj = make_mobj_value(&[
+            ("dc1", "1.stor.domain"),
+            ("dc1", "3.stor.domain"),
+        ]);
+        let evac_shark = make_evac_shark("dc1", "1.stor.domain");
+        let dest_shark = make_storage_node("dc1", "3.stor.domain");
+
+        let reason = validate_destination(&mobj, &evac_shark, &dest_shark);
+        assert_eq!(reason, Some(ObjectSkippedReason::ObjectAlreadyOnDestShark));
+    }
+
+    #[test]
+    fn test_validate_destination_datacenter_fault_domain() {
+        // Object is on dc1 and dc2. Evacuating dc1 shark.
+        // Destination is in dc2 (different from evac shark's dc).
+        // Object already has a copy in dc2 → skip to preserve fault domain.
+        let mobj = make_mobj_value(&[
+            ("dc1", "1.stor.domain"),
+            ("dc2", "2.stor.domain"),
+        ]);
+        let evac_shark = make_evac_shark("dc1", "1.stor.domain");
+        let dest_shark = make_storage_node("dc2", "4.stor.domain");
+
+        let reason = validate_destination(&mobj, &evac_shark, &dest_shark);
+        assert_eq!(
+            reason,
+            Some(ObjectSkippedReason::ObjectAlreadyInDatacenter)
+        );
+    }
+
+    #[test]
+    fn test_validate_destination_same_dc_as_evac_allowed() {
+        // Object on dc1 and dc2. Evacuating from dc1.
+        // Destination is ALSO in dc1 (same as evac shark's dc).
+        // This is OK because we're replacing a dc1 copy with
+        // another dc1 copy — no change to fault domain.
+        let mobj = make_mobj_value(&[
+            ("dc1", "1.stor.domain"),
+            ("dc2", "2.stor.domain"),
+        ]);
+        let evac_shark = make_evac_shark("dc1", "1.stor.domain");
+        let dest_shark = make_storage_node("dc1", "5.stor.domain");
+
+        assert!(validate_destination(&mobj, &evac_shark, &dest_shark).is_none());
+    }
+
+    #[test]
+    fn test_validate_destination_new_dc_no_copies() {
+        // Object on dc1 only. Evacuating from dc1.
+        // Destination is in dc3 (a new DC with no copies) → allowed
+        let mobj = make_mobj_value(&[
+            ("dc1", "1.stor.domain"),
+            ("dc1", "10.stor.domain"),
+        ]);
+        let evac_shark = make_evac_shark("dc1", "1.stor.domain");
+        let dest_shark = make_storage_node("dc3", "7.stor.domain");
+
+        assert!(validate_destination(&mobj, &evac_shark, &dest_shark).is_none());
+    }
+
+    #[test]
+    fn test_validate_destination_three_copies_cross_dc() {
+        // Object on dc1(x2) and dc2(x1). Evacuating dc1/1.stor.
+        // Destination dc3 (new DC) → allowed
+        let mobj = make_mobj_value(&[
+            ("dc1", "1.stor.domain"),
+            ("dc1", "10.stor.domain"),
+            ("dc2", "2.stor.domain"),
+        ]);
+        let evac_shark = make_evac_shark("dc1", "1.stor.domain");
+        let dest_shark = make_storage_node("dc3", "8.stor.domain");
+
+        assert!(validate_destination(&mobj, &evac_shark, &dest_shark).is_none());
+    }
+
+    // =========================================================================
+    // Tests for EvacuateObjectError From<Error> conversion
+    // =========================================================================
+
+    #[test]
+    fn test_evac_error_from_bad_manta_object() {
+        let err = Error::Internal(InternalError::new(
+            Some(InternalErrorCode::BadMantaObject),
+            "test".to_string(),
+        ));
+        let evac_err: EvacuateObjectError = err.into();
+        assert_eq!(evac_err, EvacuateObjectError::BadMantaObject);
+    }
+
+    #[test]
+    fn test_evac_error_from_duplicate_shark() {
+        let err = Error::Internal(InternalError::new(
+            Some(InternalErrorCode::DuplicateShark),
+            "test".to_string(),
+        ));
+        let evac_err: EvacuateObjectError = err.into();
+        assert_eq!(evac_err, EvacuateObjectError::DuplicateShark);
+    }
+
+    #[test]
+    fn test_evac_error_from_bad_moray_client() {
+        let err = Error::Internal(InternalError::new(
+            Some(InternalErrorCode::BadMorayClient),
+            "test".to_string(),
+        ));
+        let evac_err: EvacuateObjectError = err.into();
+        assert_eq!(evac_err, EvacuateObjectError::BadMorayClient);
+    }
+
+    #[test]
+    fn test_evac_error_from_metadata_update_failure() {
+        let err = Error::Internal(InternalError::new(
+            Some(InternalErrorCode::MetadataUpdateFailure),
+            "test".to_string(),
+        ));
+        let evac_err: EvacuateObjectError = err.into();
+        assert_eq!(evac_err, EvacuateObjectError::MetadataUpdateFailed);
+    }
+
+    #[test]
+    fn test_evac_error_from_other_internal_code() {
+        // Any other InternalErrorCode should map to InternalError
+        let err = Error::Internal(InternalError::new(
+            Some(InternalErrorCode::DbQuery),
+            "test".to_string(),
+        ));
+        let evac_err: EvacuateObjectError = err.into();
+        assert_eq!(evac_err, EvacuateObjectError::InternalError);
+    }
+
+    #[test]
+    fn test_evac_error_from_non_internal_error() {
+        // Non-Internal error variants map to InternalError
+        let err = Error::from(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "io error",
+        ));
+        let evac_err: EvacuateObjectError = err.into();
+        assert_eq!(evac_err, EvacuateObjectError::InternalError);
+    }
+
+    // =========================================================================
+    // Tests for EvacuateJobUpdateMessage validation
+    // =========================================================================
+
+    #[test]
+    fn test_update_msg_valid_thread_count() {
+        let msg = EvacuateJobUpdateMessage::SetMetadataThreads(10);
+        assert!(msg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_update_msg_min_thread_count() {
+        let msg = EvacuateJobUpdateMessage::SetMetadataThreads(1);
+        assert!(msg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_update_msg_max_thread_count() {
+        let msg =
+            EvacuateJobUpdateMessage::SetMetadataThreads(MAX_TUNABLE_MD_UPDATE_THREADS);
+        assert!(msg.validate().is_ok());
+    }
+
+    #[test]
+    fn test_update_msg_zero_threads_rejected() {
+        let msg = EvacuateJobUpdateMessage::SetMetadataThreads(0);
+        let result = msg.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("below 1"));
+    }
+
+    #[test]
+    fn test_update_msg_over_max_threads_rejected() {
+        let msg = EvacuateJobUpdateMessage::SetMetadataThreads(
+            MAX_TUNABLE_MD_UPDATE_THREADS + 1,
+        );
+        let result = msg.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("above"));
+    }
+
+    #[test]
+    fn test_update_msg_deserialization() {
+        let payload = serde_json::json!({
+            "action": "set_metadata_threads",
+            "params": 30
+        });
+        let msg: EvacuateJobUpdateMessage =
+            serde_json::from_value(payload).unwrap();
+        let EvacuateJobUpdateMessage::SetMetadataThreads(count) = msg;
+        assert_eq!(count, 30);
+    }
+
+    #[test]
+    fn test_update_msg_bad_action_rejected() {
+        let payload = serde_json::json!({
+            "action": "nonexistent_action",
+            "params": 30
+        });
+        let result: Result<EvacuateJobUpdateMessage, _> =
+            serde_json::from_value(payload);
+        assert!(result.is_err());
+    }
+
+    // =========================================================================
+    // Tests for EvacuateObjectStatus and EvacuateObjectError enums
+    // =========================================================================
+
+    #[test]
+    fn test_evacuate_status_default_is_unprocessed() {
+        assert_eq!(
+            EvacuateObjectStatus::default(),
+            EvacuateObjectStatus::Unprocessed
+        );
+    }
+
+    #[test]
+    fn test_evacuate_status_display_roundtrip() {
+        // Verify all status variants can be converted to string and back
+        for status in EvacuateObjectStatus::iter() {
+            let s = status.to_string();
+            let parsed = EvacuateObjectStatus::from_str(&s).unwrap();
+            assert_eq!(parsed, status);
+        }
+    }
+
+    #[test]
+    fn test_evacuate_error_display_roundtrip() {
+        // Verify all error variants can be converted to string and back
+        for error in EvacuateObjectError::iter() {
+            let s = error.to_string();
+            let parsed = EvacuateObjectError::from_str(&s).unwrap();
+            assert_eq!(parsed, error);
+        }
+    }
+
+    #[test]
+    fn test_evacuate_status_snake_case() {
+        assert_eq!(
+            EvacuateObjectStatus::Unprocessed.to_string(),
+            "unprocessed"
+        );
+        assert_eq!(
+            EvacuateObjectStatus::PostProcessing.to_string(),
+            "post_processing"
+        );
+        assert_eq!(
+            EvacuateObjectStatus::Complete.to_string(),
+            "complete"
+        );
+    }
+
+    #[test]
+    fn test_evacuate_error_snake_case() {
+        assert_eq!(
+            EvacuateObjectError::BadMorayClient.to_string(),
+            "bad_moray_client"
+        );
+        assert_eq!(
+            EvacuateObjectError::MetadataUpdateFailed.to_string(),
+            "metadata_update_failed"
+        );
+        assert_eq!(
+            EvacuateObjectError::DuplicateShark.to_string(),
+            "duplicate_shark"
+        );
+    }
+
+    // =========================================================================
+    // Tests for MantaObjectEssential deserialization
+    // =========================================================================
+
+    #[test]
+    fn test_manta_object_essential_full_fields() {
+        let json = serde_json::json!({
+            "key": "/user/stor/myfile.txt",
+            "owner": "550e8400-e29b-41d4-a716-446655440000",
+            "contentLength": 1048576,
+            "contentMD5": "abc123def456",
+            "objectId": "obj-uuid-123",
+            "etag": "etag-value",
+            "sharks": [
+                {"datacenter": "dc1", "manta_storage_id": "1.stor.domain"},
+                {"datacenter": "dc2", "manta_storage_id": "2.stor.domain"}
+            ]
+        });
+
+        let essential: MantaObjectEssential =
+            serde_json::from_value(json).unwrap();
+        assert_eq!(essential.key, "/user/stor/myfile.txt");
+        assert_eq!(essential.owner, "550e8400-e29b-41d4-a716-446655440000");
+        assert_eq!(essential.content_length, 1048576);
+        assert_eq!(essential.content_md5, "abc123def456");
+        assert_eq!(essential.object_id, "obj-uuid-123");
+        assert_eq!(essential.etag, "etag-value");
+        assert_eq!(essential.sharks.len(), 2);
+        assert_eq!(essential.sharks[0].manta_storage_id, "1.stor.domain");
+    }
+
+    #[test]
+    fn test_manta_object_essential_minimal_fields() {
+        // Only key and owner are required; rest has defaults
+        let json = serde_json::json!({
+            "key": "/user/stor/myfile.txt",
+            "owner": "test-owner"
+        });
+
+        let essential: MantaObjectEssential =
+            serde_json::from_value(json).unwrap();
+        assert_eq!(essential.key, "/user/stor/myfile.txt");
+        assert_eq!(essential.owner, "test-owner");
+        assert_eq!(essential.content_length, 0);
+        assert_eq!(essential.content_md5, "");
+        assert_eq!(essential.object_id, "");
+        assert_eq!(essential.etag, "");
+        assert_eq!(essential.sharks.len(), 0);
+    }
+
+    #[test]
+    fn test_manta_object_essential_missing_key_fails() {
+        // key is required, so missing it should fail
+        let json = serde_json::json!({
+            "owner": "test-owner"
+        });
+        let result: Result<MantaObjectEssential, _> =
+            serde_json::from_value(json);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_manta_object_essential_camel_case_aliases() {
+        // Verify that camelCase serde aliases work
+        let json = serde_json::json!({
+            "key": "/key",
+            "owner": "own",
+            "contentLength": 999,
+            "contentMD5": "md5hash",
+            "objectId": "oid"
+        });
+
+        let essential: MantaObjectEssential =
+            serde_json::from_value(json).unwrap();
+        assert_eq!(essential.content_length, 999);
+        assert_eq!(essential.content_md5, "md5hash");
+        assert_eq!(essential.object_id, "oid");
+    }
+
+    // =========================================================================
+    // Tests for build_skipped_strings()
+    // =========================================================================
+
+    #[test]
+    fn test_build_skipped_strings_contains_all_reasons() {
+        let strings = build_skipped_strings();
+        // Should contain entries for all non-HTTPStatusCode variants
+        // plus entries for the HTTP status code range
+        assert!(!strings.is_empty());
+
+        // Should contain standard skip reasons
+        assert!(strings
+            .iter()
+            .any(|s| s == &ObjectSkippedReason::ObjectAlreadyOnDestShark.to_string()));
+        assert!(strings
+            .iter()
+            .any(|s| s == &ObjectSkippedReason::NetworkError.to_string()));
+        assert!(strings
+            .iter()
+            .any(|s| s == &ObjectSkippedReason::ObjectAlreadyInDatacenter.to_string()));
+    }
+
+    #[test]
+    fn test_build_skipped_strings_http_codes() {
+        let strings = build_skipped_strings();
+        // HTTP entries use snake_case format from Strum:
+        // "{http_status_code:100}", "{http_status_code:101}", etc.
+        let http_variant =
+            ObjectSkippedReason::HTTPStatusCode(0).to_string();
+        let http_count = strings
+            .iter()
+            .filter(|s| s.contains(&http_variant))
+            .count();
+        let expected =
+            (MAX_HTTP_STATUS_CODE - MIN_HTTP_STATUS_CODE) as usize;
+        assert_eq!(http_count, expected);
+    }
+
+    #[test]
+    fn test_build_skipped_strings_http_entries_wrapped() {
+        let strings = build_skipped_strings();
+        let http_variant =
+            ObjectSkippedReason::HTTPStatusCode(0).to_string();
+        for s in &strings {
+            // Each HTTP string should be wrapped in braces
+            if s.contains(&http_variant) {
+                assert!(s.starts_with('{'), "HTTP entry should be wrapped: {}", s);
+                assert!(s.ends_with('}'), "HTTP entry should be wrapped: {}", s);
+            }
+        }
+    }
+
+    // =========================================================================
+    // Tests for EvacuateObject TryFrom<SharkspotterMessage>
+    // =========================================================================
+
+    #[test]
+    fn test_try_from_sharkspotter_msg_ok() {
+        let manta_value = serde_json::json!({
+            "objectId": "test-obj-id-123",
+            "key": "/user/stor/test",
+            "owner": "test-owner",
+            "sharks": [],
+        });
+        let msg = SharkspotterMessage {
+            manta_value,
+            etag: "etag-abc".to_string(),
+            shark: "1.stor.domain".to_string(),
+            shard: 42,
+        };
+
+        let result = EvacuateObject::try_from(msg);
+        assert!(result.is_ok());
+        let eobj = result.unwrap();
+        assert_eq!(eobj.id, "test-obj-id-123");
+        assert_eq!(eobj.etag, "etag-abc");
+        assert_eq!(eobj.shard, 42);
+        assert_eq!(eobj.status, EvacuateObjectStatus::Unprocessed);
+    }
+
+    #[test]
+    fn test_try_from_sharkspotter_msg_shard_overflow() {
+        let manta_value = serde_json::json!({
+            "objectId": "overflow-obj",
+            "key": "/user/stor/test",
+            "owner": "test-owner",
+            "sharks": [],
+        });
+        let msg = SharkspotterMessage {
+            manta_value,
+            etag: "etag".to_string(),
+            shark: "1.stor.domain".to_string(),
+            shard: (std::i32::MAX as u32) + 1,
+        };
+
+        let result = EvacuateObject::try_from(msg);
+        assert!(result.is_err());
+        let eobj = result.unwrap_err();
+        assert_eq!(eobj.status, EvacuateObjectStatus::Error);
+        assert_eq!(eobj.error, Some(EvacuateObjectError::BadShardNumber));
+    }
+
+    #[test]
+    fn test_try_from_sharkspotter_msg_max_valid_shard() {
+        let manta_value = serde_json::json!({
+            "objectId": "max-shard-obj",
+            "key": "/user/stor/test",
+            "owner": "test-owner",
+            "sharks": [],
+        });
+        let msg = SharkspotterMessage {
+            manta_value,
+            etag: "etag".to_string(),
+            shark: "1.stor.domain".to_string(),
+            shard: std::i32::MAX as u32,
+        };
+
+        let result = EvacuateObject::try_from(msg);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().shard, std::i32::MAX);
+    }
+
+    // =========================================================================
+    // Tests for DestSharkStatus
+    // =========================================================================
+
+    #[test]
+    fn test_dest_shark_status_clone_eq() {
+        let status = DestSharkStatus::Init;
+        assert_eq!(status.clone(), DestSharkStatus::Init);
+        assert_ne!(status, DestSharkStatus::Assigned);
+        assert_ne!(status, DestSharkStatus::Ready);
+        assert_ne!(status, DestSharkStatus::Unavailable);
+    }
 }
