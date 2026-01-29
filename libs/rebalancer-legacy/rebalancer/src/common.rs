@@ -336,3 +336,144 @@ pub fn get_key_from_object_value(object: &Value) -> Result<String, Error> {
 
     Ok(key)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::error::{InternalError, InternalErrorCode};
+    use serde_json::json;
+
+    #[test]
+    fn get_sharks_from_value_valid() {
+        let obj = json!({
+            "sharks": [
+                {"datacenter": "dc1", "manta_storage_id": "1.stor.domain"},
+                {"datacenter": "dc2", "manta_storage_id": "2.stor.domain"}
+            ]
+        });
+        let sharks = get_sharks_from_value(&obj).unwrap();
+        assert_eq!(sharks.len(), 2);
+        assert_eq!(sharks[0].manta_storage_id, "1.stor.domain");
+        assert_eq!(sharks[1].datacenter, "dc2");
+    }
+
+    #[test]
+    fn get_sharks_from_value_missing() {
+        let obj = json!({"objectId": "abc"});
+        assert!(get_sharks_from_value(&obj).is_err());
+    }
+
+    #[test]
+    fn get_sharks_from_value_empty() {
+        let obj = json!({"sharks": []});
+        let sharks = get_sharks_from_value(&obj).unwrap();
+        assert!(sharks.is_empty());
+    }
+
+    #[test]
+    fn get_object_id_from_value_valid() {
+        let obj = json!({"objectId": "test-uuid-123"});
+        let id = get_objectId_from_value(&obj).unwrap();
+        assert_eq!(id, "test-uuid-123");
+    }
+
+    #[test]
+    fn get_object_id_from_value_missing() {
+        let obj = json!({"key": "/test/file"});
+        assert!(get_objectId_from_value(&obj).is_err());
+    }
+
+    #[test]
+    fn get_key_from_object_value_valid() {
+        let obj = json!({"key": "/user/stor/file.txt"});
+        let key = get_key_from_object_value(&obj).unwrap();
+        assert_eq!(key, "/user/stor/file.txt");
+    }
+
+    #[test]
+    fn get_key_from_object_value_missing() {
+        let obj = json!({"objectId": "abc"});
+        assert!(get_key_from_object_value(&obj).is_err());
+    }
+
+    #[test]
+    fn object_skipped_reason_into_string_simple() {
+        let reason = ObjectSkippedReason::AgentFSError;
+        assert_eq!(reason.into_string(), "agent_fs_error");
+    }
+
+    #[test]
+    fn object_skipped_reason_into_string_http_status() {
+        let reason = ObjectSkippedReason::HTTPStatusCode(404);
+        let s = reason.into_string();
+        assert!(s.contains("404"));
+        assert!(s.starts_with('{'));
+        assert!(s.ends_with('}'));
+    }
+
+    #[test]
+    fn object_skipped_reason_into_string_variants() {
+        assert_eq!(
+            ObjectSkippedReason::NetworkError.into_string(),
+            "network_error"
+        );
+        assert_eq!(
+            ObjectSkippedReason::MD5Mismatch.into_string(),
+            "md5_mismatch"
+        );
+        assert_eq!(
+            ObjectSkippedReason::SourceIsEvacShark.into_string(),
+            "source_is_evac_shark"
+        );
+    }
+
+    #[test]
+    fn assignment_payload_from_trait() {
+        let payload = AssignmentPayload {
+            id: "test-id".to_string(),
+            tasks: vec![Task::default()],
+        };
+        let (id, tasks): (String, Vec<Task>) = payload.into();
+        assert_eq!(id, "test-id");
+        assert_eq!(tasks.len(), 1);
+    }
+
+    #[test]
+    fn task_status_default_is_pending() {
+        let status = TaskStatus::default();
+        assert_eq!(status, TaskStatus::Pending);
+    }
+
+    #[test]
+    fn task_set_status() {
+        let mut task = Task::default();
+        assert_eq!(task.status, TaskStatus::Pending);
+        task.set_status(TaskStatus::Complete);
+        assert_eq!(task.status, TaskStatus::Complete);
+    }
+
+    #[test]
+    fn internal_error_new_with_code() {
+        let err = InternalError::new(
+            Some(InternalErrorCode::BadMantaObject),
+            "test error",
+        );
+        assert_eq!(err.code, InternalErrorCode::BadMantaObject);
+    }
+
+    #[test]
+    fn internal_error_new_without_code() {
+        let err = InternalError::new(None, "test error");
+        assert_eq!(err.code, InternalErrorCode::Other);
+    }
+
+    #[test]
+    fn internal_error_display() {
+        let err = InternalError::new(
+            Some(InternalErrorCode::SharkNotFound),
+            "shark missing",
+        );
+        let display = format!("{}", err);
+        assert!(display.contains("shark missing"));
+    }
+}

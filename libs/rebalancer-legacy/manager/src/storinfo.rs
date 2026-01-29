@@ -238,3 +238,150 @@ fn fetch_sharks(client: &Client, host: &str) -> Vec<StorageNode> {
     debug!("storinfo updated with {} new sharks", new_sharks.len());
     new_sharks
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_shark(dc: &str, storage_id: &str, avail_mb: u64) -> StorageNode {
+        StorageNode {
+            available_mb: avail_mb,
+            percent_used: 50,
+            filesystem: "/manta".to_string(),
+            datacenter: dc.to_string(),
+            manta_storage_id: storage_id.to_string(),
+            timestamp: 0,
+        }
+    }
+
+    #[test]
+    fn default_choose_no_filter() {
+        let algo = DefaultChooseAlgorithm {
+            blacklist: vec![],
+            min_avail_mb: None,
+        };
+        let sharks = vec![
+            make_shark("dc1", "1.stor", 1000),
+            make_shark("dc2", "2.stor", 2000),
+        ];
+        let result = algo.method(&sharks);
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn default_choose_blacklist_filters_dc() {
+        let algo = DefaultChooseAlgorithm {
+            blacklist: vec!["dc1".to_string()],
+            min_avail_mb: Some(0),
+        };
+        let sharks = vec![
+            make_shark("dc1", "1.stor", 1000),
+            make_shark("dc2", "2.stor", 2000),
+        ];
+        let result = algo.method(&sharks);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].datacenter, "dc2");
+    }
+
+    #[test]
+    fn default_choose_min_avail_filters() {
+        let algo = DefaultChooseAlgorithm {
+            blacklist: vec![],
+            min_avail_mb: Some(1500),
+        };
+        let sharks = vec![
+            make_shark("dc1", "1.stor", 1000),
+            make_shark("dc2", "2.stor", 2000),
+            make_shark("dc3", "3.stor", 500),
+        ];
+        let result = algo.method(&sharks);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].manta_storage_id, "2.stor");
+    }
+
+    #[test]
+    fn default_choose_combined_filter() {
+        let algo = DefaultChooseAlgorithm {
+            blacklist: vec!["dc2".to_string()],
+            min_avail_mb: Some(500),
+        };
+        let sharks = vec![
+            make_shark("dc1", "1.stor", 1000),
+            make_shark("dc2", "2.stor", 2000),
+            make_shark("dc3", "3.stor", 100),
+        ];
+        let result = algo.method(&sharks);
+        // dc2 is blacklisted, dc3 has < 500MB
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].manta_storage_id, "1.stor");
+    }
+
+    #[test]
+    fn default_choose_empty_input() {
+        let algo = DefaultChooseAlgorithm {
+            blacklist: vec![],
+            min_avail_mb: Some(100),
+        };
+        let sharks: Vec<StorageNode> = vec![];
+        let result = algo.method(&sharks);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn default_choose_all_blacklisted() {
+        let algo = DefaultChooseAlgorithm {
+            blacklist: vec!["dc1".to_string(), "dc2".to_string()],
+            min_avail_mb: Some(0),
+        };
+        let sharks = vec![
+            make_shark("dc1", "1.stor", 1000),
+            make_shark("dc2", "2.stor", 2000),
+        ];
+        let result = algo.method(&sharks);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn default_choose_no_min_avail_skips_filter() {
+        // When min_avail_mb is None, NO filtering happens at all
+        // (not even blacklist filtering, due to the if let Some pattern)
+        let algo = DefaultChooseAlgorithm {
+            blacklist: vec!["dc1".to_string()],
+            min_avail_mb: None,
+        };
+        let sharks = vec![
+            make_shark("dc1", "1.stor", 1000),
+            make_shark("dc2", "2.stor", 2000),
+        ];
+        let result = algo.method(&sharks);
+        // Note: When min_avail_mb is None, the entire if-let block is skipped,
+        // so ALL sharks pass through regardless of blacklist
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn storage_node_serialization_roundtrip() {
+        let shark = make_shark("dc1", "1.stor.domain", 5000);
+        let json = serde_json::to_string(&shark).unwrap();
+        let deserialized: StorageNode = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.datacenter, "dc1");
+        assert_eq!(deserialized.manta_storage_id, "1.stor.domain");
+        assert_eq!(deserialized.available_mb, 5000);
+    }
+
+    #[test]
+    fn storage_node_deserialization_camel_case() {
+        // Storinfo API returns camelCase field names
+        let json = r#"{
+            "availableMB": 3000,
+            "percentUsed": 42,
+            "filesystem": "/manta",
+            "datacenter": "us-east",
+            "manta_storage_id": "1.stor.east",
+            "timestamp": 1234567890
+        }"#;
+        let shark: StorageNode = serde_json::from_str(json).unwrap();
+        assert_eq!(shark.available_mb, 3000);
+        assert_eq!(shark.percent_used, 42);
+    }
+}

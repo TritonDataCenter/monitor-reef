@@ -114,3 +114,36 @@ pub fn shard_host2num(shard_host: &str) -> u32 {
     let shard_split: Vec<&str> = shard_host.split('.').collect();
     shard_split[0].parse().unwrap()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shard_host2num_simple() {
+        assert_eq!(shard_host2num("1.moray.domain"), 1);
+    }
+
+    #[test]
+    fn shard_host2num_larger_number() {
+        assert_eq!(shard_host2num("99.moray.domain"), 99);
+    }
+
+    #[test]
+    fn shard_host2num_single_digit() {
+        assert_eq!(shard_host2num("5.stor.east.joyent.us"), 5);
+    }
+
+    #[test]
+    fn get_thread_name_contains_thread_id() {
+        let name = get_thread_name();
+        assert!(name.contains("ThreadId"));
+    }
+
+    #[test]
+    fn get_thread_name_has_brackets() {
+        let name = get_thread_name();
+        assert!(name.contains('['));
+        assert!(name.contains(']'));
+    }
+}

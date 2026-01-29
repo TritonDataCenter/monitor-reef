@@ -398,4 +398,64 @@ mod test {
         let result = Config::config_from_matches(matches);
         assert!(result.is_err());
     }
+
+    #[test]
+    fn normalize_config_clamps_max_threads() {
+        let mut config = Config::default();
+        config.max_threads = 200;
+        normalize_config(&mut config);
+        assert_eq!(config.max_threads, MAX_THREADS);
+    }
+
+    #[test]
+    fn normalize_config_keeps_valid_threads() {
+        let mut config = Config::default();
+        config.max_threads = 50;
+        normalize_config(&mut config);
+        assert_eq!(config.max_threads, 50);
+    }
+
+    #[test]
+    fn normalize_config_resets_end_less_than_begin() {
+        let mut config = Config::default();
+        config.begin = 100;
+        config.end = 50;
+        normalize_config(&mut config);
+        assert_eq!(config.end, 0);
+    }
+
+    #[test]
+    fn normalize_config_preserves_valid_end() {
+        let mut config = Config::default();
+        config.begin = 50;
+        config.end = 100;
+        normalize_config(&mut config);
+        assert_eq!(config.end, 100);
+    }
+
+    #[test]
+    fn normalize_config_zero_begin_end_unchanged() {
+        let mut config = Config::default();
+        config.begin = 0;
+        config.end = 0;
+        normalize_config(&mut config);
+        assert_eq!(config.begin, 0);
+        assert_eq!(config.end, 0);
+    }
+
+    #[test]
+    fn config_default_values() {
+        let config = Config::default();
+        assert_eq!(config.min_shard, 1);
+        assert_eq!(config.max_shard, 1);
+        assert_eq!(config.chunk_size, 1000);
+        assert_eq!(config.begin, 0);
+        assert_eq!(config.end, 0);
+        assert!(!config.skip_validate_sharks);
+        assert!(!config.multithreaded);
+        assert_eq!(config.max_threads, 50);
+        assert!(!config.direct_db);
+        assert!(config.mdapi_endpoint.is_none());
+        assert!(config.owners.is_none());
+    }
 }

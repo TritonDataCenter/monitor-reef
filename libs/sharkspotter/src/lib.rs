@@ -864,4 +864,138 @@ mod tests {
         }]);
         assert!(_parse_max_id_value(num_value_num, &log).is_ok());
     }
+
+    #[test]
+    fn get_sharks_from_manta_obj_valid() {
+        let log = slog::Logger::root(slog::Discard, slog::o!());
+        let value = json!({
+            "sharks": [
+                {"datacenter": "dc1", "manta_storage_id": "1.stor.domain"},
+                {"datacenter": "dc2", "manta_storage_id": "2.stor.domain"}
+            ]
+        });
+        let sharks = get_sharks_from_manta_obj(&value, &log).unwrap();
+        assert_eq!(sharks.len(), 2);
+        assert_eq!(sharks[0].manta_storage_id, "1.stor.domain");
+        assert_eq!(sharks[1].datacenter, "dc2");
+    }
+
+    #[test]
+    fn get_sharks_from_manta_obj_missing_field() {
+        let log = slog::Logger::root(slog::Discard, slog::o!());
+        let value = json!({"objectId": "abc"});
+        assert!(get_sharks_from_manta_obj(&value, &log).is_err());
+    }
+
+    #[test]
+    fn get_sharks_from_manta_obj_not_array() {
+        let log = slog::Logger::root(slog::Discard, slog::o!());
+        let value = json!({"sharks": "not-an-array"});
+        assert!(get_sharks_from_manta_obj(&value, &log).is_err());
+    }
+
+    #[test]
+    fn get_sharks_from_manta_obj_empty_array() {
+        let log = slog::Logger::root(slog::Discard, slog::o!());
+        let value = json!({"sharks": []});
+        let sharks = get_sharks_from_manta_obj(&value, &log).unwrap();
+        assert!(sharks.is_empty());
+    }
+
+    #[test]
+    fn manta_obj_from_moray_obj_valid() {
+        let inner = json!({"objectId": "abc", "sharks": []});
+        let moray_obj = json!({"_value": serde_json::to_string(&inner).unwrap()});
+        let result = manta_obj_from_moray_obj(&moray_obj).unwrap();
+        assert_eq!(result["objectId"], "abc");
+    }
+
+    #[test]
+    fn manta_obj_from_moray_obj_missing_value() {
+        let moray_obj = json!({"_etag": "123"});
+        assert!(manta_obj_from_moray_obj(&moray_obj).is_err());
+    }
+
+    #[test]
+    fn manta_obj_from_moray_obj_not_string() {
+        let moray_obj = json!({"_value": 12345});
+        assert!(manta_obj_from_moray_obj(&moray_obj).is_err());
+    }
+
+    #[test]
+    fn object_id_from_manta_obj_valid() {
+        let obj = json!({"objectId": "test-uuid-123"});
+        let id = object_id_from_manta_obj(&obj).unwrap();
+        assert_eq!(id, "test-uuid-123");
+    }
+
+    #[test]
+    fn object_id_from_manta_obj_missing() {
+        let obj = json!({"key": "/test/file"});
+        assert!(object_id_from_manta_obj(&obj).is_err());
+    }
+
+    #[test]
+    fn etag_from_moray_value_valid() {
+        let val = json!({"_etag": "7712D647"});
+        let etag = etag_from_moray_value(&val).unwrap();
+        assert_eq!(etag, "7712D647");
+    }
+
+    #[test]
+    fn etag_from_moray_value_missing() {
+        let val = json!({"_id": 12345});
+        assert!(etag_from_moray_value(&val).is_err());
+    }
+
+    #[test]
+    fn chunk_query_formats_correctly() {
+        let q = chunk_query("_id", 0, 999, 1000);
+        assert_eq!(
+            q,
+            "SELECT * FROM manta WHERE _id >= 0 AND _id <= 999 AND type = 'object' limit 1000;"
+        );
+    }
+
+    #[test]
+    fn chunk_query_with_idx() {
+        let q = chunk_query("_idx", 500, 1500, 200);
+        assert_eq!(
+            q,
+            "SELECT * FROM manta WHERE _idx >= 500 AND _idx <= 1500 AND type = 'object' limit 200;"
+        );
+    }
+
+    #[test]
+    fn _parse_max_id_value_empty_array() {
+        let log = slog::Logger::root(slog::Discard, slog::o!());
+        let val = json!([]);
+        // Empty array has len 0, not 1
+        assert!(_parse_max_id_value(val, &log).is_err());
+    }
+
+    #[test]
+    fn _parse_max_id_value_multiple_elements() {
+        let log = slog::Logger::root(slog::Discard, slog::o!());
+        let val = json!([{"max": 1}, {"max": 2}]);
+        assert!(_parse_max_id_value(val, &log).is_err());
+    }
+
+    #[test]
+    fn _parse_max_id_value_missing_max() {
+        let log = slog::Logger::root(slog::Discard, slog::o!());
+        let val = json!([{"min": 42}]);
+        assert!(_parse_max_id_value(val, &log).is_err());
+    }
+
+    #[test]
+    fn _parse_max_id_value_returns_correct_number() {
+        let log = slog::Logger::root(slog::Discard, slog::o!());
+
+        let val = json!([{"max": 99999}]);
+        assert_eq!(_parse_max_id_value(val, &log).unwrap(), 99999);
+
+        let val = json!([{"max": "54321"}]);
+        assert_eq!(_parse_max_id_value(val, &log).unwrap(), 54321);
+    }
 }
