@@ -623,9 +623,13 @@ mod test {
     use rebalancer::util;
 
     #[test]
-    #[ignore] // Requires config.json file
+    #[ignore] // Requires PostgreSQL and config.json file
     fn basic() {
         let _guard = util::init_global_logger(None);
+
+        // Ensure the jobs table exists in the rebalancer database
+        create_job_database().expect("create job database");
+
         let config = Config::parse_config(&Some("src/config.json".to_string()))
             .expect("parse config");
 

@@ -4119,8 +4119,23 @@ fn get_client_from_hash<'a>(
                 "Metadata client for shard {} does not exist, creating.",
                 shard
             );
-            let client =
-                MetadataBackend::from_config(&job_action.config, shard)?;
+            let client = match MetadataBackend::from_config(
+                &job_action.config,
+                shard,
+            ) {
+                Ok(client) => client,
+                Err(e) => {
+                    let msg = format!(
+                        "Failed to get metadata client for shard {}: {}",
+                        shard, e
+                    );
+                    return Err(InternalError::new(
+                        Some(InternalErrorCode::BadMorayClient),
+                        msg,
+                    )
+                    .into());
+                }
+            };
             Ok(entry.insert(client))
         }
     }
