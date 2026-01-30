@@ -36,6 +36,7 @@
 //! ```
 
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -43,6 +44,32 @@ use uuid::Uuid;
 use crate::mdapi_client;
 use libmanta::mdapi::{MdapiClient, MdapiError};
 use rebalancer::error::{Error, InternalError, InternalErrorCode};
+
+/// A shark entry within an MPU upload record's `preAllocatedSharks` array.
+///
+/// Unknown fields are preserved via `#[serde(flatten)]` so that
+/// round-tripping through serialization does not lose data.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreAllocatedShark {
+    pub manta_storage_id: String,
+    #[serde(flatten)]
+    pub extra: HashMap<String, Value>,
+}
+
+/// Partial schema for MPU upload records.
+///
+/// Only the `preAllocatedSharks` field is typed; all other fields are
+/// preserved as opaque JSON via `#[serde(flatten)]`.  This gives
+/// compile-time visibility into the field we mutate during evacuation
+/// while tolerating schema evolution in the rest of the record.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MpuUploadRecord {
+    #[serde(default)]
+    pub pre_allocated_sharks: Option<Vec<PreAllocatedShark>>,
+    #[serde(flatten)]
+    pub other: HashMap<String, Value>,
+}
 
 /// Regex pattern for MPU part keys: `.mpu-parts/{uploadId}/{partNumber}`
 ///
@@ -367,33 +394,25 @@ pub fn update_upload_record(
         }
     };
 
-    // Parse JSON content
-    let mut upload_record: Value = match serde_json::from_str(&content) {
-        Ok(json) => json,
-        Err(e) => {
-            error!(
-                "Failed to parse upload record JSON for {}: {}",
-                upload_key, e
-            );
-            return Err(Error::from(e));
-        }
-    };
+    // Parse JSON content into typed struct
+    let mut upload_record: MpuUploadRecord =
+        match serde_json::from_str(&content) {
+            Ok(record) => record,
+            Err(e) => {
+                error!(
+                    "Failed to parse upload record JSON for {}: {}",
+                    upload_key, e
+                );
+                return Err(Error::from(e));
+            }
+        };
 
     // Selectively replace from_shark with dest_shark in preAllocatedSharks
     let mut replaced = false;
-    if let Some(sharks) = upload_record
-        .get_mut("preAllocatedSharks")
-        .and_then(|v| v.as_array_mut())
-    {
+    if let Some(ref mut sharks) = upload_record.pre_allocated_sharks {
         for shark in sharks.iter_mut() {
-            let matches = shark
-                .get("manta_storage_id")
-                .and_then(|v| v.as_str())
-                .map(|id| id == from_shark)
-                .unwrap_or(false);
-            if matches {
-                shark["manta_storage_id"] =
-                    Value::String(dest_shark.to_string());
+            if shark.manta_storage_id == from_shark {
+                shark.manta_storage_id = dest_shark.to_string();
                 replaced = true;
             }
         }
@@ -673,26 +692,17 @@ mod tests {
     // =========================================================================
 
     /// Helper: apply selective shark replacement (same logic as
-    /// update_upload_record) on an in-memory JSON Value.
+    /// update_upload_record) on a typed MpuUploadRecord.
     fn apply_shark_replacement(
-        upload_record: &mut serde_json::Value,
+        record: &mut MpuUploadRecord,
         from_shark: &str,
         dest_shark: &str,
     ) -> bool {
         let mut replaced = false;
-        if let Some(sharks) = upload_record
-            .get_mut("preAllocatedSharks")
-            .and_then(|v| v.as_array_mut())
-        {
+        if let Some(ref mut sharks) = record.pre_allocated_sharks {
             for shark in sharks.iter_mut() {
-                let matches = shark
-                    .get("manta_storage_id")
-                    .and_then(|v| v.as_str())
-                    .map(|id| id == from_shark)
-                    .unwrap_or(false);
-                if matches {
-                    shark["manta_storage_id"] =
-                        Value::String(dest_shark.to_string());
+                if shark.manta_storage_id == from_shark {
+                    shark.manta_storage_id = dest_shark.to_string();
                     replaced = true;
                 }
             }
@@ -711,23 +721,30 @@ mod tests {
             ]
         }"#;
 
-        let mut record: serde_json::Value =
+        let mut record: MpuUploadRecord =
             serde_json::from_str(original).unwrap();
 
         let replaced =
             apply_shark_replacement(&mut record, "old.stor.domain", "new.stor.domain");
         assert!(replaced);
 
-        let sharks = record["preAllocatedSharks"].as_array().unwrap();
+        let sharks = record.pre_allocated_sharks.as_ref().unwrap();
         assert_eq!(sharks.len(), 1);
+        assert_eq!(sharks[0].manta_storage_id, "new.stor.domain");
+        // Extra fields preserved via #[serde(flatten)]
         assert_eq!(
-            sharks[0]["manta_storage_id"].as_str().unwrap(),
-            "new.stor.domain"
+            sharks[0].extra.get("datacenter").and_then(|v| v.as_str()),
+            Some("dc1")
         );
-        // Other fields preserved
-        assert_eq!(sharks[0]["datacenter"].as_str().unwrap(), "dc1");
-        assert_eq!(record["uploadId"].as_str().unwrap(), "abc-123-def");
-        assert_eq!(record["state"].as_str().unwrap(), "created");
+        // Other record fields preserved
+        assert_eq!(
+            record.other.get("uploadId").and_then(|v| v.as_str()),
+            Some("abc-123-def")
+        );
+        assert_eq!(
+            record.other.get("state").and_then(|v| v.as_str()),
+            Some("created")
+        );
     }
 
     #[test]
@@ -741,24 +758,18 @@ mod tests {
             ]
         }"#;
 
-        let mut record: serde_json::Value =
+        let mut record: MpuUploadRecord =
             serde_json::from_str(original).unwrap();
 
         let replaced =
             apply_shark_replacement(&mut record, "old.stor.domain", "new.stor.domain");
         assert!(replaced);
 
-        let sharks = record["preAllocatedSharks"].as_array().unwrap();
+        let sharks = record.pre_allocated_sharks.as_ref().unwrap();
         assert_eq!(sharks.len(), 2);
-        assert_eq!(
-            sharks[0]["manta_storage_id"].as_str().unwrap(),
-            "new.stor.domain"
-        );
+        assert_eq!(sharks[0].manta_storage_id, "new.stor.domain");
         // Second shark is untouched
-        assert_eq!(
-            sharks[1]["manta_storage_id"].as_str().unwrap(),
-            "other.stor.domain"
-        );
+        assert_eq!(sharks[1].manta_storage_id, "other.stor.domain");
     }
 
     #[test]
@@ -771,7 +782,7 @@ mod tests {
             ]
         }"#;
 
-        let mut record: serde_json::Value =
+        let mut record: MpuUploadRecord =
             serde_json::from_str(original).unwrap();
 
         let replaced =
@@ -779,11 +790,8 @@ mod tests {
         assert!(!replaced);
 
         // Array unchanged
-        let sharks = record["preAllocatedSharks"].as_array().unwrap();
-        assert_eq!(
-            sharks[0]["manta_storage_id"].as_str().unwrap(),
-            "unrelated.stor.domain"
-        );
+        let sharks = record.pre_allocated_sharks.as_ref().unwrap();
+        assert_eq!(sharks[0].manta_storage_id, "unrelated.stor.domain");
     }
 
     #[test]
@@ -794,7 +802,7 @@ mod tests {
             "state": "created"
         }"#;
 
-        let mut record: serde_json::Value =
+        let mut record: MpuUploadRecord =
             serde_json::from_str(original).unwrap();
 
         let replaced =
@@ -806,23 +814,22 @@ mod tests {
     fn test_selective_replacement_roundtrip_serialization() {
         let original = r#"{"uploadId":"test-123","preAllocatedSharks":[{"manta_storage_id":"old.stor"}]}"#;
 
-        let mut record: serde_json::Value =
+        let mut record: MpuUploadRecord =
             serde_json::from_str(original).unwrap();
 
         apply_shark_replacement(&mut record, "old.stor", "new.stor");
 
         // Serialize back and re-parse
         let serialized = serde_json::to_string(&record).unwrap();
-        let parsed: serde_json::Value =
+        let parsed: MpuUploadRecord =
             serde_json::from_str(&serialized).unwrap();
 
-        assert_eq!(parsed["uploadId"].as_str().unwrap(), "test-123");
         assert_eq!(
-            parsed["preAllocatedSharks"][0]["manta_storage_id"]
-                .as_str()
-                .unwrap(),
-            "new.stor"
+            parsed.other.get("uploadId").and_then(|v| v.as_str()),
+            Some("test-123")
         );
+        let sharks = parsed.pre_allocated_sharks.as_ref().unwrap();
+        assert_eq!(sharks[0].manta_storage_id, "new.stor");
     }
 
     #[test]
