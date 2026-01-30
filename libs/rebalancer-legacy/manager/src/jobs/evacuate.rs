@@ -490,22 +490,21 @@ impl MetadataBackend {
                     mdapi_requests.len()
                 );
 
-                // Process moray requests if any
-                if !moray_requests.is_empty() {
-                    moray
-                        .batch(&moray_requests, options, |_values| Ok(()))
-                        .map_err(|e| {
-                            InternalError::new(
-                                Some(InternalErrorCode::MetadataUpdateFailure),
-                                format!(
-                                    "Hybrid moray batch failed: {}",
-                                    e.description()
-                                ),
-                            )
-                        })?;
-                }
-
-                // Process mdapi requests if any
+                // Process mdapi requests FIRST. Mdapi updates are
+                // non-transactional (individual put_object calls), so they
+                // are more likely to partially fail. By running mdapi before
+                // moray, we avoid the inconsistency where moray commits
+                // atomically but a subsequent mdapi failure leaves the two
+                // backends out of sync with no rollback path.
+                //
+                // If mdapi fails here, moray has not been touched yet, so
+                // there is no cross-backend inconsistency.
+                //
+                // If mdapi succeeds but moray fails below, moray's batch is
+                // atomic (all-or-nothing), so nothing was committed to moray.
+                // The mdapi updates will be idempotent on the next
+                // evacuation retry since they use etag-based conditional
+                // updates.
                 if !mdapi_objects.is_empty() {
                     let mdapi_refs: Vec<(&MantaObject, Uuid, Option<&str>)> =
                         mdapi_objects
@@ -516,6 +515,18 @@ impl MetadataBackend {
                     let result = mdapi_client::batch_update(mdapi, mdapi_refs)?;
 
                     if result.failed > 0 {
+                        error!(
+                            "Hybrid mdapi batch failed before moray: \
+                             {} of {} mdapi updates failed (moray not yet \
+                             touched, no inconsistency). Failed objects: {:?}",
+                            result.failed,
+                            result.failed + result.successful,
+                            result
+                                .errors
+                                .iter()
+                                .map(|(name, _)| name.as_str())
+                                .collect::<Vec<_>>()
+                        );
                         let error_msg = format!(
                             "Hybrid mdapi batch had {} failures",
                             result.failed
@@ -527,8 +538,32 @@ impl MetadataBackend {
                         .into());
                     }
 
-                    // NEW: Finalize MPU upload records after successful batch update
+                    // Finalize MPU upload records after successful batch update
                     finalize_mpu_updates(mdapi, &mdapi_objects)?;
+                }
+
+                // Process moray requests SECOND (atomic, all-or-nothing).
+                if !moray_requests.is_empty() {
+                    moray
+                        .batch(&moray_requests, options, |_values| Ok(()))
+                        .map_err(|e| {
+                            error!(
+                                "Hybrid moray batch failed after mdapi \
+                                 succeeded ({} mdapi objects already updated). \
+                                 Moray is atomic so no moray changes were \
+                                 committed. Mdapi updates will be reconciled \
+                                 on retry. Error: {}",
+                                mdapi_objects.len(),
+                                e.description()
+                            );
+                            InternalError::new(
+                                Some(InternalErrorCode::MetadataUpdateFailure),
+                                format!(
+                                    "Hybrid moray batch failed: {}",
+                                    e.description()
+                                ),
+                            )
+                        })?;
                 }
 
                 // Call callback with all values

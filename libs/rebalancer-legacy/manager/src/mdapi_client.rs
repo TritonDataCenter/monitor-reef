@@ -398,6 +398,7 @@ pub fn put_object(
         request_id: Uuid::new_v4(),
         sharks: Some(sharks),
         headers: Some(headers),
+        properties: None,
         conditions,
     };
 
@@ -848,15 +849,22 @@ pub fn update_object_content(
         object_name,
     )?;
 
-    // Create update payload
-    // Note: The current mdapi ObjectUpdate only supports updating sharks and headers.
-    // Content updates are not directly supported by the current API.
-    // For now, we preserve the sharks and headers from the current object.
+    // Build properties value containing the new content
+    let properties = match serde_json::from_str::<Value>(new_content) {
+        Ok(v) => v,
+        Err(e) => {
+            error!(
+                "Failed to parse new_content as JSON for {}: {}",
+                object_name, e
+            );
+            return Err(Error::from(e));
+        }
+    };
+
     let request_id = Uuid::new_v4();
     let payload = manta_object_to_payload(&current_object, bucket_id, Some(request_id))?;
 
-    // Create ObjectUpdate for mdapi
-    // Note: mdapi ObjectUpdate only supports updating sharks and headers, not content
+    // Create ObjectUpdate with properties carrying the content update
     let update = ObjectUpdate {
         name: object_name.to_string(),
         vnode,
@@ -865,13 +873,9 @@ pub fn update_object_content(
         request_id,
         sharks: Some(payload.sharks.clone()),
         headers: Some(payload.headers.clone()),
-        conditions: None, // No conditional update for content updates
+        properties: Some(properties),
+        conditions: None,
     };
-
-    // TODO: Content updates are not currently supported by the mdapi ObjectUpdate API.
-    // The mdapi update_object only allows changing sharks and headers.
-    // Content updates would require a full put_object operation.
-    let _ = new_content; // Silence unused warning
 
     // Perform the update
     mclient.update_object(update).map_err(|e| {

@@ -331,6 +331,9 @@ pub struct ObjectUpdate {
     /// Updated headers (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub headers: Option<HashMap<String, String>>,
+    /// Updated properties (optional, for content metadata updates)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub properties: Option<Value>,
     /// Conditional request parameters
     #[serde(skip_serializing_if = "Option::is_none")]
     pub conditions: Option<Conditions>,
@@ -1559,6 +1562,7 @@ mod tests {
             request_id: Uuid::new_v4(),
             sharks: None,
             headers: None,
+            properties: None,
             conditions: None,
         };
 
@@ -1573,6 +1577,7 @@ mod tests {
         // Verify optional fields are omitted when None
         assert!(json.get("sharks").is_none());
         assert!(json.get("headers").is_none());
+        assert!(json.get("properties").is_none());
         assert!(json.get("conditions").is_none());
     }
 
@@ -1603,6 +1608,7 @@ mod tests {
             request_id: Uuid::new_v4(),
             sharks: Some(new_sharks),
             headers: None,
+            properties: None,
             conditions: None,
         };
 
@@ -1644,6 +1650,7 @@ mod tests {
             request_id: Uuid::new_v4(),
             sharks: None,
             headers: None,
+            properties: None,
             conditions: Some(conditions),
         };
 
@@ -1653,6 +1660,57 @@ mod tests {
         let cond = json.get("conditions").unwrap();
         assert!(cond.get("if-match").is_some());
         assert_eq!(cond["if-match"][0], "original-etag");
+    }
+
+    #[test]
+    fn test_object_update_with_properties() {
+        let owner =
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
+        let bucket_id =
+            Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001").unwrap();
+
+        // Content update via properties (e.g., MPU upload record)
+        let properties = serde_json::json!({
+            "uploadId": "abc-123",
+            "state": "created",
+            "preAllocatedSharks": [
+                {
+                    "datacenter": "us-east-1",
+                    "manta_storage_id": "new-1.stor.example.com"
+                }
+            ]
+        });
+
+        let update = ObjectUpdate {
+            owner,
+            bucket_id,
+            name: ".mpu-uploads/abc-123".to_string(),
+            vnode: 42,
+            request_id: Uuid::new_v4(),
+            sharks: None,
+            headers: None,
+            properties: Some(properties.clone()),
+            conditions: None,
+        };
+
+        let json = serde_json::to_value(&update).unwrap();
+
+        // Verify properties are included in serialized output
+        let props = json.get("properties").unwrap();
+        assert_eq!(props["uploadId"], "abc-123");
+        assert_eq!(props["state"], "created");
+        let sharks = props["preAllocatedSharks"].as_array().unwrap();
+        assert_eq!(sharks.len(), 1);
+        assert_eq!(
+            sharks[0]["manta_storage_id"],
+            "new-1.stor.example.com"
+        );
+
+        // Verify roundtrip preserves properties
+        let json_str = serde_json::to_string(&update).unwrap();
+        let deserialized: ObjectUpdate =
+            serde_json::from_str(&json_str).unwrap();
+        assert_eq!(deserialized.properties, Some(properties));
     }
 
     #[test]
@@ -1680,6 +1738,7 @@ mod tests {
             request_id,
             sharks: Some(sharks),
             headers: Some(headers),
+            properties: None,
             conditions: None,
         };
 
