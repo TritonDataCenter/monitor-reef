@@ -112,6 +112,8 @@ fn is_bucket_object(object: &Value) -> bool {
 fn finalize_mpu_updates(
     client: &MdapiClient,
     objects: &[(MantaObject, Uuid, Option<&str>)],
+    from_shark: &str,
+    dest_shark: &str,
 ) -> Result<(), Error> {
     let mut tracker = MpuEvacuationTracker::new();
 
@@ -122,19 +124,7 @@ fn finalize_mpu_updates(
                 "Detected MPU part: {}, uploadId: {}",
                 object.key, upload_id
             );
-
-            // Record this evacuation - convert MantaObjectShark to StorageNode
-            let storage_nodes: Vec<crate::storinfo::StorageNode> = object.sharks.iter().map(|s| {
-                crate::storinfo::StorageNode {
-                    datacenter: s.datacenter.clone(),
-                    manta_storage_id: s.manta_storage_id.clone(),
-                    available_mb: 0,
-                    percent_used: 0,
-                    filesystem: String::new(),
-                    timestamp: 0,
-                }
-            }).collect();
-            tracker.record_evacuation(upload_id, storage_nodes);
+            tracker.record_upload_id(upload_id);
         }
     }
 
@@ -144,14 +134,16 @@ fn finalize_mpu_updates(
     }
 
     info!(
-        "Finalizing MPU updates for {} unique upload IDs",
-        tracker.count()
+        "Finalizing MPU updates for {} unique upload IDs \
+         (replacing shark {} -> {})",
+        tracker.count(),
+        from_shark,
+        dest_shark
     );
 
     // Update upload records for all affected uploadIds
-    for (upload_id, new_sharks) in tracker.get_affected_uploads() {
+    for upload_id in tracker.get_affected_uploads() {
         // Extract owner and bucket_id from first object with this uploadId
-        // In practice, all parts of the same uploadId will have the same owner/bucket
         let (owner, bucket_id) = match objects
             .iter()
             .find(|(obj, _, _)| {
@@ -159,12 +151,8 @@ fn finalize_mpu_updates(
                     .map(|id| &id == upload_id)
                     .unwrap_or(false)
             })
-            .map(|(obj, bid, _)| {
-                (
-                    Uuid::parse_str(&obj.owner),
-                    *bid,
-                )
-            }) {
+            .map(|(obj, bid, _)| (Uuid::parse_str(&obj.owner), *bid))
+        {
             Some((Ok(owner), bucket_id)) => (owner, bucket_id),
             Some((Err(e), _)) => {
                 error!(
@@ -182,13 +170,14 @@ fn finalize_mpu_updates(
             }
         };
 
-        // Update the upload record
+        // Selectively replace from_shark with dest_shark in the upload record
         match mpu_utils::update_upload_record(
             client,
             owner,
             bucket_id,
             upload_id,
-            new_sharks,
+            from_shark,
+            dest_shark,
         ) {
             Ok(()) => {
                 debug!(
@@ -202,7 +191,6 @@ fn finalize_mpu_updates(
                     "Failed to update upload record for uploadId {}: {:?}",
                     upload_id, e
                 );
-                // Continue with other upload records
             }
         }
     }
@@ -293,6 +281,8 @@ impl MetadataBackend {
         &mut self,
         requests: &[BatchRequest],
         options: &ObjectMethodOptions,
+        from_shark: &str,
+        dest_shark: &str,
         mut callback: F,
     ) -> Result<(), Error>
     where
@@ -409,8 +399,13 @@ impl MetadataBackend {
                     .into());
                 }
 
-                // NEW: Finalize MPU upload records after successful batch update
-                finalize_mpu_updates(client, &manta_objects)?;
+                // Finalize MPU upload records after successful batch update
+                finalize_mpu_updates(
+                    client,
+                    &manta_objects,
+                    from_shark,
+                    dest_shark,
+                )?;
 
                 // Call callback with values
                 callback(values_for_callback)?;
@@ -539,7 +534,12 @@ impl MetadataBackend {
                     }
 
                     // Finalize MPU upload records after successful batch update
-                    finalize_mpu_updates(mdapi, &mdapi_objects)?;
+                    finalize_mpu_updates(
+                        mdapi,
+                        &mdapi_objects,
+                        from_shark,
+                        dest_shark,
+                    )?;
                     result.successful
                 } else {
                     0
@@ -4259,6 +4259,8 @@ fn metadata_update_batch(
     job_action: &Arc<EvacuateJob>,
     client_hash: &mut HashMap<u32, MetadataBackend>,
     batched_reqs: HashMap<u32, Vec<BatchRequest>>,
+    from_shark: &str,
+    dest_shark: &str,
 ) -> Vec<ObjectId> {
     let mut marked_error = vec![];
     for (shard, requests) in batched_reqs.into_iter() {
@@ -4304,6 +4306,8 @@ fn metadata_update_batch(
         if let Err(e) = mclient.batch_update(
             &requests,
             &ObjectMethodOptions::default(),
+            from_shark,
+            dest_shark,
             |_values| {
                 // elapsed() gives us a u128, but unfortunately AtomicU128 is
                 // nightly only.
@@ -4489,8 +4493,13 @@ fn metadata_update_assignment(
     }
 
     if job_action.config.options.use_batched_updates {
-        let marked_error =
-            metadata_update_batch(job_action, client_hash, batched_reqs);
+        let marked_error = metadata_update_batch(
+            job_action,
+            client_hash,
+            batched_reqs,
+            &job_action.from_shark.manta_storage_id,
+            &dest_shark.manta_storage_id,
+        );
 
         // Remove any of the objects that we had to mark as "Error" from the list
         // of updated objects.
@@ -6381,62 +6390,31 @@ mod tests {
     #[test]
     fn test_mpu_tracker_deduplication() {
         use crate::mpu_utils::MpuEvacuationTracker;
-        use crate::storinfo::StorageNode;
 
         let mut tracker = MpuEvacuationTracker::new();
 
-        let sharks1 = vec![StorageNode {
-            datacenter: "dc1".to_string(),
-            manta_storage_id: "1.stor.domain".to_string(),
-            available_mb: 0,
-            percent_used: 0,
-            filesystem: String::new(),
-            timestamp: 0,
-        }];
-
-        let sharks2 = vec![StorageNode {
-            datacenter: "dc2".to_string(),
-            manta_storage_id: "2.stor.domain".to_string(),
-            available_mb: 0,
-            percent_used: 0,
-            filesystem: String::new(),
-            timestamp: 0,
-        }];
-
-        // Record same uploadId twice with different sharks
-        tracker.record_evacuation("upload-123".to_string(), sharks1);
-        tracker.record_evacuation("upload-123".to_string(), sharks2.clone());
+        // Record same uploadId twice (e.g., two parts from same MPU)
+        tracker.record_upload_id("upload-123".to_string());
+        tracker.record_upload_id("upload-123".to_string());
 
         // Should only have 1 entry (deduplicated by uploadId)
         assert_eq!(tracker.count(), 1);
 
-        // Should have the second (most recent) sharks
         let affected: Vec<_> = tracker.get_affected_uploads().collect();
         assert_eq!(affected.len(), 1);
-        assert_eq!(affected[0].0, "upload-123");
-        assert_eq!(affected[0].1[0].manta_storage_id, "2.stor.domain");
+        assert_eq!(affected[0], "upload-123");
     }
 
     #[test]
     fn test_mpu_tracker_multiple_uploads() {
         use crate::mpu_utils::MpuEvacuationTracker;
-        use crate::storinfo::StorageNode;
 
         let mut tracker = MpuEvacuationTracker::new();
 
-        let sharks = vec![StorageNode {
-            datacenter: "dc1".to_string(),
-            manta_storage_id: "1.stor.domain".to_string(),
-            available_mb: 0,
-            percent_used: 0,
-            filesystem: String::new(),
-            timestamp: 0,
-        }];
-
         // Record different uploadIds
-        tracker.record_evacuation("upload-111".to_string(), sharks.clone());
-        tracker.record_evacuation("upload-222".to_string(), sharks.clone());
-        tracker.record_evacuation("upload-333".to_string(), sharks.clone());
+        tracker.record_upload_id("upload-111".to_string());
+        tracker.record_upload_id("upload-222".to_string());
+        tracker.record_upload_id("upload-333".to_string());
 
         assert_eq!(tracker.count(), 3);
 
@@ -6447,20 +6425,10 @@ mod tests {
     #[test]
     fn test_mpu_tracker_clear() {
         use crate::mpu_utils::MpuEvacuationTracker;
-        use crate::storinfo::StorageNode;
 
         let mut tracker = MpuEvacuationTracker::new();
 
-        let sharks = vec![StorageNode {
-            datacenter: "dc1".to_string(),
-            manta_storage_id: "1.stor.domain".to_string(),
-            available_mb: 0,
-            percent_used: 0,
-            filesystem: String::new(),
-            timestamp: 0,
-        }];
-
-        tracker.record_evacuation("upload-123".to_string(), sharks);
+        tracker.record_upload_id("upload-123".to_string());
         assert_eq!(tracker.count(), 1);
 
         tracker.clear();

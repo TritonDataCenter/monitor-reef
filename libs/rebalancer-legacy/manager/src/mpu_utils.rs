@@ -31,7 +31,7 @@
 //!
 //! if let Some(upload_id) = parse_mpu_part_key(&object.key) {
 //!     // Track this uploadId for upload record update
-//!     tracker.record_evacuation(upload_id, new_sharks);
+//!     tracker.record_upload_id(upload_id);
 //! }
 //! ```
 
@@ -41,7 +41,6 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::mdapi_client;
-use crate::storinfo::StorageNode;
 use libmanta::mdapi::{MdapiClient, MdapiError};
 use rebalancer::error::{Error, InternalError, InternalErrorCode};
 
@@ -218,7 +217,13 @@ pub fn is_mpu_upload_record(key: &str) -> bool {
 ///
 /// Tracks evacuated MPU parts during batch processing to efficiently update
 /// upload records. When multiple parts from the same uploadId are evacuated,
-/// this tracker deduplicates and merges shark information.
+/// this tracker deduplicates so that each upload record is updated once per
+/// batch.
+///
+/// The tracker records **which upload IDs were affected** rather than shark
+/// lists, because the correct update is a selective shark replacement in the
+/// upload record's `preAllocatedSharks` array (from_shark → dest_shark),
+/// not a bulk overwrite.
 ///
 /// # Usage
 ///
@@ -227,212 +232,96 @@ pub fn is_mpu_upload_record(key: &str) -> bool {
 ///
 /// // During evacuation loop
 /// if let Some(upload_id) = parse_mpu_part_key(&object.key) {
-///     tracker.record_evacuation(upload_id, new_sharks.clone());
+///     tracker.record_upload_id(upload_id);
 /// }
 ///
 /// // After batch completes
-/// for (upload_id, sharks) in tracker.get_affected_uploads() {
-///     update_upload_record(upload_id, sharks)?;
+/// for upload_id in tracker.get_affected_uploads() {
+///     replace_shark_in_upload_record(upload_id, from_shark, dest_shark)?;
 /// }
 /// ```
 ///
 /// # Performance
 ///
-/// - Uses HashMap for O(1) uploadId lookups
-/// - Deduplicates automatically (same uploadId recorded multiple times)
+/// - Uses HashMap for O(1) uploadId deduplication
 /// - Minimal memory overhead (one entry per unique uploadId)
 #[derive(Debug, Default)]
 pub struct MpuEvacuationTracker {
-    /// Maps uploadId to the new shark locations for evacuated parts
-    upload_records: HashMap<String, Vec<StorageNode>>,
+    /// Set of uploadIds with evacuated parts (deduplication via HashMap)
+    upload_ids: HashMap<String, ()>,
 }
 
 impl MpuEvacuationTracker {
     /// Create a new empty evacuation tracker.
-    ///
-    /// # Returns
-    ///
-    /// A new `MpuEvacuationTracker` with no recorded evacuations.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// let tracker = MpuEvacuationTracker::new();
-    /// assert_eq!(tracker.count(), 0);
-    /// ```
     pub fn new() -> Self {
         MpuEvacuationTracker {
-            upload_records: HashMap::new(),
+            upload_ids: HashMap::new(),
         }
     }
 
-    /// Record an evacuation for an MPU part.
+    /// Record that an MPU part with the given uploadId was evacuated.
     ///
-    /// If this uploadId has already been recorded, the shark list is updated
-    /// with the new sharks. For the same uploadId, the most recent shark list
-    /// is used (last-write-wins).
-    ///
-    /// # Arguments
-    ///
-    /// * `upload_id` - The uploadId extracted from the MPU part key
-    /// * `sharks` - The new shark locations where the part was evacuated to
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// let mut tracker = MpuEvacuationTracker::new();
-    /// tracker.record_evacuation("upload-123".to_string(), sharks);
-    /// assert_eq!(tracker.count(), 1);
-    /// ```
-    ///
-    /// # Invariants
-    ///
-    /// - Each uploadId maps to exactly one shark list (the most recent)
-    /// - Recording the same uploadId multiple times overwrites the previous
-    ///   sharks
-    pub fn record_evacuation(
-        &mut self,
-        upload_id: String,
-        sharks: Vec<StorageNode>,
-    ) {
-        self.upload_records.insert(upload_id, sharks);
+    /// Duplicate uploadIds are deduplicated automatically.
+    pub fn record_upload_id(&mut self, upload_id: String) {
+        self.upload_ids.insert(upload_id, ());
     }
 
-    /// Get all affected uploadIds and their new shark locations.
+    /// Get all affected uploadIds.
     ///
-    /// Returns an iterator over (uploadId, sharks) pairs for all recorded
-    /// evacuations. This is typically called after a batch of evacuations
-    /// completes to update all affected upload records.
-    ///
-    /// # Returns
-    ///
-    /// An iterator over references to (String, Vec<StorageNode>) pairs.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// for (upload_id, sharks) in tracker.get_affected_uploads() {
-    ///     update_upload_record(upload_id, sharks)?;
-    /// }
-    /// ```
-    ///
-    /// # Performance
-    ///
-    /// Cost: O(1) to create the iterator, O(n) to iterate over n uploadIds.
-    pub fn get_affected_uploads(
-        &self,
-    ) -> impl Iterator<Item = (&String, &Vec<StorageNode>)> {
-        self.upload_records.iter()
+    /// Returns an iterator over uploadId strings for all recorded
+    /// evacuations. The caller is responsible for applying the correct
+    /// from→dest shark replacement to each upload record.
+    pub fn get_affected_uploads(&self) -> impl Iterator<Item = &String> {
+        self.upload_ids.keys()
     }
 
     /// Get the count of unique uploadIds tracked.
-    ///
-    /// # Returns
-    ///
-    /// The number of unique uploadIds that have been recorded.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// let mut tracker = MpuEvacuationTracker::new();
-    /// assert_eq!(tracker.count(), 0);
-    /// tracker.record_evacuation("upload-1".to_string(), sharks);
-    /// assert_eq!(tracker.count(), 1);
-    /// ```
     pub fn count(&self) -> usize {
-        self.upload_records.len()
+        self.upload_ids.len()
     }
 
     /// Clear all recorded evacuations.
-    ///
-    /// This is typically called after successfully updating all upload records
-    /// to prepare for the next evacuation batch.
-    ///
-    /// # Examples
-    ///
-    /// ```rust,ignore
-    /// tracker.record_evacuation("upload-1".to_string(), sharks);
-    /// assert_eq!(tracker.count(), 1);
-    /// tracker.clear();
-    /// assert_eq!(tracker.count(), 0);
-    /// ```
     pub fn clear(&mut self) {
-        self.upload_records.clear();
+        self.upload_ids.clear();
     }
 }
 
-/// Update an MPU upload record's preAllocatedSharks with new shark locations.
+/// Update an MPU upload record by replacing the evacuated shark in
+/// `preAllocatedSharks`.
 ///
-/// This function is called after evacuating MPU parts to update the upload
-/// record's cached shark information. It fetches the upload record, parses its
-/// JSON content, updates the preAllocatedSharks array, and writes it back.
+/// During shark evacuation, parts are moved from `from_shark` to
+/// `dest_shark`.  The upload record's `preAllocatedSharks` array caches
+/// which sharks hold parts for this MPU.  We must selectively replace
+/// `from_shark` entries with `dest_shark` — a bulk overwrite would lose
+/// sharks unrelated to the evacuation.
 ///
 /// # Arguments
 ///
-/// * `mclient` - The mdapi client instance
-/// * `owner` - The owner UUID
-/// * `bucket_id` - The bucket UUID containing the upload record
-/// * `upload_id` - The uploadId extracted from MPU part keys
-/// * `new_sharks` - The new shark locations to set
-///
-/// # Returns
-///
-/// * `Ok(())` - Upload record successfully updated
-/// * `Err(Error)` - Update failed (see error handling below)
+/// * `mclient`    - The mdapi client instance
+/// * `owner`      - The owner UUID
+/// * `bucket_id`  - The bucket UUID containing the upload record
+/// * `upload_id`  - The uploadId extracted from MPU part keys
+/// * `from_shark` - The manta_storage_id being evacuated **from**
+/// * `dest_shark` - The manta_storage_id being evacuated **to**
 ///
 /// # Error Handling
 ///
-/// This function implements graceful error handling to avoid failing the
-/// entire evacuation if an upload record update fails:
-///
-/// - **Upload record not found (404)**: Log warning and return Ok.
-///   Reason: Upload record may have been cleaned up if MPU completed/aborted.
-///   Impact: MPU completion may fail, but object data is preserved.
-///   Recovery: User can re-upload parts via S3 client retry.
-///
-/// - **JSON parse failure**: Log error and return Err.
-///   Reason: Upload record corrupted or schema mismatch.
-///   Impact: MPU completion will likely fail.
-///   Recovery: Manual investigation needed.
-///
-/// - **Update RPC failure**: Log error and return Err.
-///   Reason: Network or mdapi service issue.
-///   Impact: MPU completion will fail.
-///   Recovery: Retry evacuation or manual upload record update.
-///
-/// # Examples
-///
-/// ```rust,ignore
-/// // After evacuating parts for uploadId "abc-123"
-/// update_upload_record(
-///     &client,
-///     owner,
-///     bucket_id,
-///     "abc-123",
-///     &new_sharks
-/// )?;
-/// ```
-///
-/// # Invariants
-///
-/// - Upload record JSON structure is preserved except `preAllocatedSharks`
-/// - All sharks in `new_sharks` are written to the upload record
-/// - Update is atomic (single mdapi RPC)
+/// - **Upload record not found**: Returns Ok (record may have been
+///   cleaned up after MPU completion/abort).
+/// - **JSON parse failure / Update RPC failure**: Returns Err.
 ///
 /// # Performance
 ///
-/// Cost: O(1) - 2 RPC calls (get + update)
-/// Typical latency: ~10-50ms depending on network
+/// Cost: 2 RPC calls (get + update)
 pub fn update_upload_record(
     mclient: &MdapiClient,
     owner: Uuid,
     bucket_id: Uuid,
     upload_id: &str,
-    new_sharks: &[StorageNode],
+    from_shark: &str,
+    dest_shark: &str,
 ) -> Result<(), Error> {
-    // Validate upload_id to prevent path traversal.  Upstream regex
-    // parsing already rejects '/', but defend in depth here since
-    // this function is pub and takes an arbitrary &str.
+    // Validate upload_id to prevent path traversal.
     if upload_id.is_empty()
         || upload_id.contains('/')
         || upload_id.contains('\0')
@@ -447,9 +336,8 @@ pub fn update_upload_record(
     let upload_key = format!(".mpu-uploads/{}", upload_id);
 
     debug!(
-        "Updating upload record: {}, new_sharks count: {}",
-        upload_key,
-        new_sharks.len()
+        "Updating upload record: {}, replacing shark {} -> {}",
+        upload_key, from_shark, dest_shark
     );
 
     // Fetch the upload record
@@ -461,18 +349,19 @@ pub fn update_upload_record(
     ) {
         Ok(result) => result,
         Err(e) => {
-            // Check if error is ObjectNotFound (upload record not found)
-            // Use proper enum matching instead of string matching
-            let is_not_found = matches!(&e, Error::Mdapi(MdapiError::ObjectNotFound(_)));
+            let is_not_found =
+                matches!(&e, Error::Mdapi(MdapiError::ObjectNotFound(_)));
             if is_not_found {
                 warn!(
                     "Upload record not found: {} (likely already cleaned up)",
                     upload_key
                 );
-                // Return Ok - upload record cleanup is expected behavior
                 return Ok(());
             } else {
-                error!("Failed to fetch upload record {}: {:?}", upload_key, e);
+                error!(
+                    "Failed to fetch upload record {}: {:?}",
+                    upload_key, e
+                );
                 return Err(e);
             }
         }
@@ -490,17 +379,34 @@ pub fn update_upload_record(
         }
     };
 
-    // Serialize new sharks to JSON
-    let sharks_value = match serde_json::to_value(new_sharks) {
-        Ok(v) => v,
-        Err(e) => {
-            error!("Failed to serialize new sharks: {}", e);
-            return Err(Error::from(e));
+    // Selectively replace from_shark with dest_shark in preAllocatedSharks
+    let mut replaced = false;
+    if let Some(sharks) = upload_record
+        .get_mut("preAllocatedSharks")
+        .and_then(|v| v.as_array_mut())
+    {
+        for shark in sharks.iter_mut() {
+            let matches = shark
+                .get("manta_storage_id")
+                .and_then(|v| v.as_str())
+                .map(|id| id == from_shark)
+                .unwrap_or(false);
+            if matches {
+                shark["manta_storage_id"] =
+                    Value::String(dest_shark.to_string());
+                replaced = true;
+            }
         }
-    };
+    }
 
-    // Update preAllocatedSharks field
-    upload_record["preAllocatedSharks"] = sharks_value;
+    if !replaced {
+        debug!(
+            "Upload record {} had no preAllocatedSharks entry for {}; \
+             skipping update",
+            upload_key, from_shark
+        );
+        return Ok(());
+    }
 
     // Serialize back to string
     let updated_content = match serde_json::to_string(&upload_record) {
@@ -524,9 +430,8 @@ pub fn update_upload_record(
     )?;
 
     info!(
-        "Successfully updated upload record: {} with {} sharks",
-        upload_key,
-        new_sharks.len()
+        "Successfully updated upload record: {} (replaced {} -> {})",
+        upload_key, from_shark, dest_shark
     );
 
     Ok(())
@@ -683,104 +588,52 @@ mod tests {
     #[test]
     fn test_tracker_record_single() {
         let mut tracker = MpuEvacuationTracker::new();
-        let sharks = vec![StorageNode {
-            available_mb: 1000,
-            percent_used: 50,
-            filesystem: "zfs".to_string(),
-            datacenter: "dc1".to_string(),
-            manta_storage_id: "1.stor.example.com".to_string(),
-            timestamp: 12345,
-        }];
 
-        tracker.record_evacuation("upload-123".to_string(), sharks.clone());
+        tracker.record_upload_id("upload-123".to_string());
         assert_eq!(tracker.count(), 1);
 
         let affected: Vec<_> = tracker.get_affected_uploads().collect();
         assert_eq!(affected.len(), 1);
-        assert_eq!(affected[0].0, "upload-123");
-        assert_eq!(affected[0].1.len(), 1);
-        assert_eq!(affected[0].1[0].manta_storage_id, "1.stor.example.com");
+        assert_eq!(affected[0], "upload-123");
     }
 
     #[test]
     fn test_tracker_record_multiple_different_uploads() {
         let mut tracker = MpuEvacuationTracker::new();
-        let sharks1 = vec![StorageNode {
-            available_mb: 1000,
-            percent_used: 50,
-            filesystem: "zfs".to_string(),
-            datacenter: "dc1".to_string(),
-            manta_storage_id: "1.stor.example.com".to_string(),
-            timestamp: 12345,
-        }];
-        let sharks2 = vec![StorageNode {
-            available_mb: 2000,
-            percent_used: 30,
-            filesystem: "zfs".to_string(),
-            datacenter: "dc2".to_string(),
-            manta_storage_id: "2.stor.example.com".to_string(),
-            timestamp: 12346,
-        }];
 
-        tracker.record_evacuation("upload-1".to_string(), sharks1);
-        tracker.record_evacuation("upload-2".to_string(), sharks2);
+        tracker.record_upload_id("upload-1".to_string());
+        tracker.record_upload_id("upload-2".to_string());
 
         assert_eq!(tracker.count(), 2);
 
-        let affected: HashMap<_, _> =
+        let affected: std::collections::HashSet<_> =
             tracker.get_affected_uploads().collect();
         assert_eq!(affected.len(), 2);
-        assert!(affected.contains_key(&"upload-1".to_string()));
-        assert!(affected.contains_key(&"upload-2".to_string()));
+        assert!(affected.contains(&"upload-1".to_string()));
+        assert!(affected.contains(&"upload-2".to_string()));
     }
 
     #[test]
-    fn test_tracker_record_same_upload_twice_last_wins() {
+    fn test_tracker_record_same_upload_twice_deduplicates() {
         let mut tracker = MpuEvacuationTracker::new();
-        let sharks1 = vec![StorageNode {
-            available_mb: 1000,
-            percent_used: 50,
-            filesystem: "zfs".to_string(),
-            datacenter: "dc1".to_string(),
-            manta_storage_id: "1.stor.example.com".to_string(),
-            timestamp: 12345,
-        }];
-        let sharks2 = vec![StorageNode {
-            available_mb: 2000,
-            percent_used: 30,
-            filesystem: "zfs".to_string(),
-            datacenter: "dc2".to_string(),
-            manta_storage_id: "2.stor.example.com".to_string(),
-            timestamp: 12346,
-        }];
 
-        tracker.record_evacuation("upload-123".to_string(), sharks1);
-        tracker.record_evacuation("upload-123".to_string(), sharks2.clone());
+        tracker.record_upload_id("upload-123".to_string());
+        tracker.record_upload_id("upload-123".to_string());
 
         // Should still have only 1 uploadId (deduplicated)
         assert_eq!(tracker.count(), 1);
 
-        // Should have the second (last) shark list
         let affected: Vec<_> = tracker.get_affected_uploads().collect();
         assert_eq!(affected.len(), 1);
-        assert_eq!(affected[0].1.len(), 1);
-        assert_eq!(affected[0].1[0].manta_storage_id, "2.stor.example.com");
+        assert_eq!(affected[0], "upload-123");
     }
 
     #[test]
     fn test_tracker_clear() {
         let mut tracker = MpuEvacuationTracker::new();
-        let sharks = vec![StorageNode {
-            available_mb: 1000,
-            percent_used: 50,
-            filesystem: "zfs".to_string(),
-            datacenter: "dc1".to_string(),
-            manta_storage_id: "1.stor.example.com".to_string(),
-            timestamp: 12345,
-        }];
 
-        tracker.record_evacuation("upload-1".to_string(), sharks.clone());
-        tracker.record_evacuation("upload-2".to_string(), sharks);
+        tracker.record_upload_id("upload-1".to_string());
+        tracker.record_upload_id("upload-2".to_string());
         assert_eq!(tracker.count(), 2);
 
         tracker.clear();
@@ -793,23 +646,15 @@ mod tests {
     #[test]
     fn test_tracker_get_affected_uploads_iteration() {
         let mut tracker = MpuEvacuationTracker::new();
-        let sharks = vec![StorageNode {
-            available_mb: 1000,
-            percent_used: 50,
-            filesystem: "zfs".to_string(),
-            datacenter: "dc1".to_string(),
-            manta_storage_id: "1.stor.example.com".to_string(),
-            timestamp: 12345,
-        }];
 
-        tracker.record_evacuation("upload-1".to_string(), sharks.clone());
-        tracker.record_evacuation("upload-2".to_string(), sharks.clone());
-        tracker.record_evacuation("upload-3".to_string(), sharks);
+        tracker.record_upload_id("upload-1".to_string());
+        tracker.record_upload_id("upload-2".to_string());
+        tracker.record_upload_id("upload-3".to_string());
 
         let mut count = 0;
         let mut seen_ids = std::collections::HashSet::new();
 
-        for (upload_id, _sharks) in tracker.get_affected_uploads() {
+        for upload_id in tracker.get_affected_uploads() {
             count += 1;
             seen_ids.insert(upload_id.clone());
         }
@@ -822,173 +667,168 @@ mod tests {
     }
 
     // =========================================================================
-    // Tests for update_upload_record JSON manipulation logic
-    // These tests verify the JSON parsing and serialization without RPC calls
+    // Tests for selective shark replacement JSON manipulation logic
+    // These tests verify the from→dest shark replacement that
+    // update_upload_record performs, without requiring RPC calls.
     // =========================================================================
 
-    #[test]
-    fn test_upload_record_json_update() {
-        use serde_json::json;
+    /// Helper: apply selective shark replacement (same logic as
+    /// update_upload_record) on an in-memory JSON Value.
+    fn apply_shark_replacement(
+        upload_record: &mut serde_json::Value,
+        from_shark: &str,
+        dest_shark: &str,
+    ) -> bool {
+        let mut replaced = false;
+        if let Some(sharks) = upload_record
+            .get_mut("preAllocatedSharks")
+            .and_then(|v| v.as_array_mut())
+        {
+            for shark in sharks.iter_mut() {
+                let matches = shark
+                    .get("manta_storage_id")
+                    .and_then(|v| v.as_str())
+                    .map(|id| id == from_shark)
+                    .unwrap_or(false);
+                if matches {
+                    shark["manta_storage_id"] =
+                        Value::String(dest_shark.to_string());
+                    replaced = true;
+                }
+            }
+        }
+        replaced
+    }
 
-        // Simulate the JSON manipulation that update_upload_record does
-        let original_content = r#"{
+    #[test]
+    fn test_selective_replacement_single_shark() {
+        // One shark in the array matches from_shark
+        let original = r#"{
             "uploadId": "abc-123-def",
             "state": "created",
-            "objectPath": "/user/stor/myfile.txt",
             "preAllocatedSharks": [
                 {"datacenter": "dc1", "manta_storage_id": "old.stor.domain"}
             ]
         }"#;
 
-        let mut upload_record: serde_json::Value =
-            serde_json::from_str(original_content).unwrap();
+        let mut record: serde_json::Value =
+            serde_json::from_str(original).unwrap();
 
-        // Create new sharks array (simulating evacuation)
-        let new_sharks = vec![
-            StorageNode {
-                datacenter: "dc2".to_string(),
-                manta_storage_id: "new1.stor.domain".to_string(),
-                available_mb: 1000,
-                percent_used: 50,
-                filesystem: "zfs".to_string(),
-                timestamp: 12345,
-            },
-            StorageNode {
-                datacenter: "dc3".to_string(),
-                manta_storage_id: "new2.stor.domain".to_string(),
-                available_mb: 2000,
-                percent_used: 60,
-                filesystem: "zfs".to_string(),
-                timestamp: 12346,
-            },
-        ];
+        let replaced =
+            apply_shark_replacement(&mut record, "old.stor.domain", "new.stor.domain");
+        assert!(replaced);
 
-        // Serialize and update (same as in update_upload_record)
-        let sharks_value = serde_json::to_value(&new_sharks).unwrap();
-        upload_record["preAllocatedSharks"] = sharks_value;
-
-        // Verify the update
-        let updated_sharks = upload_record["preAllocatedSharks"].as_array().unwrap();
-        assert_eq!(updated_sharks.len(), 2);
+        let sharks = record["preAllocatedSharks"].as_array().unwrap();
+        assert_eq!(sharks.len(), 1);
         assert_eq!(
-            updated_sharks[0]["manta_storage_id"].as_str().unwrap(),
-            "new1.stor.domain"
+            sharks[0]["manta_storage_id"].as_str().unwrap(),
+            "new.stor.domain"
         );
-        assert_eq!(
-            updated_sharks[1]["manta_storage_id"].as_str().unwrap(),
-            "new2.stor.domain"
-        );
-
-        // Verify other fields preserved
-        assert_eq!(upload_record["uploadId"].as_str().unwrap(), "abc-123-def");
-        assert_eq!(upload_record["state"].as_str().unwrap(), "created");
+        // Other fields preserved
+        assert_eq!(sharks[0]["datacenter"].as_str().unwrap(), "dc1");
+        assert_eq!(record["uploadId"].as_str().unwrap(), "abc-123-def");
+        assert_eq!(record["state"].as_str().unwrap(), "created");
     }
 
     #[test]
-    fn test_upload_record_without_existing_sharks() {
-        use serde_json::json;
-
-        // Upload record that doesn't have preAllocatedSharks yet
-        let original_content = r#"{
-            "uploadId": "xyz-789",
-            "state": "created",
-            "objectPath": "/user/stor/newfile.txt"
+    fn test_selective_replacement_preserves_unrelated_sharks() {
+        // Two sharks: only the matching one is replaced
+        let original = r#"{
+            "uploadId": "multi-shark",
+            "preAllocatedSharks": [
+                {"datacenter": "dc1", "manta_storage_id": "old.stor.domain"},
+                {"datacenter": "dc2", "manta_storage_id": "other.stor.domain"}
+            ]
         }"#;
 
-        let mut upload_record: serde_json::Value =
-            serde_json::from_str(original_content).unwrap();
+        let mut record: serde_json::Value =
+            serde_json::from_str(original).unwrap();
 
-        let new_sharks = vec![StorageNode {
-            datacenter: "dc1".to_string(),
-            manta_storage_id: "1.stor.domain".to_string(),
-            available_mb: 1000,
-            percent_used: 50,
-            filesystem: "zfs".to_string(),
-            timestamp: 12345,
-        }];
+        let replaced =
+            apply_shark_replacement(&mut record, "old.stor.domain", "new.stor.domain");
+        assert!(replaced);
 
-        let sharks_value = serde_json::to_value(&new_sharks).unwrap();
-        upload_record["preAllocatedSharks"] = sharks_value;
-
-        // Field should be added
-        assert!(upload_record.get("preAllocatedSharks").is_some());
-        let sharks = upload_record["preAllocatedSharks"].as_array().unwrap();
-        assert_eq!(sharks.len(), 1);
+        let sharks = record["preAllocatedSharks"].as_array().unwrap();
+        assert_eq!(sharks.len(), 2);
+        assert_eq!(
+            sharks[0]["manta_storage_id"].as_str().unwrap(),
+            "new.stor.domain"
+        );
+        // Second shark is untouched
+        assert_eq!(
+            sharks[1]["manta_storage_id"].as_str().unwrap(),
+            "other.stor.domain"
+        );
     }
 
     #[test]
-    fn test_upload_record_roundtrip_serialization() {
-        // Test that the record can be serialized back to string correctly
-        let original_content = r#"{"uploadId":"test-123","state":"created"}"#;
+    fn test_selective_replacement_no_match() {
+        // from_shark not present → no replacement, returns false
+        let original = r#"{
+            "uploadId": "no-match",
+            "preAllocatedSharks": [
+                {"datacenter": "dc1", "manta_storage_id": "unrelated.stor.domain"}
+            ]
+        }"#;
 
-        let mut upload_record: serde_json::Value =
-            serde_json::from_str(original_content).unwrap();
+        let mut record: serde_json::Value =
+            serde_json::from_str(original).unwrap();
 
-        let new_sharks = vec![StorageNode {
-            datacenter: "dc1".to_string(),
-            manta_storage_id: "1.stor.domain".to_string(),
-            available_mb: 1000,
-            percent_used: 50,
-            filesystem: "zfs".to_string(),
-            timestamp: 12345,
-        }];
+        let replaced =
+            apply_shark_replacement(&mut record, "old.stor.domain", "new.stor.domain");
+        assert!(!replaced);
 
-        let sharks_value = serde_json::to_value(&new_sharks).unwrap();
-        upload_record["preAllocatedSharks"] = sharks_value;
+        // Array unchanged
+        let sharks = record["preAllocatedSharks"].as_array().unwrap();
+        assert_eq!(
+            sharks[0]["manta_storage_id"].as_str().unwrap(),
+            "unrelated.stor.domain"
+        );
+    }
 
-        // Serialize to string (as update_upload_record does)
-        let updated_content = serde_json::to_string(&upload_record).unwrap();
+    #[test]
+    fn test_selective_replacement_missing_pre_allocated_sharks() {
+        // No preAllocatedSharks field at all → no replacement
+        let original = r#"{
+            "uploadId": "xyz-789",
+            "state": "created"
+        }"#;
 
-        // Parse again to verify valid JSON
-        let parsed: serde_json::Value = serde_json::from_str(&updated_content).unwrap();
+        let mut record: serde_json::Value =
+            serde_json::from_str(original).unwrap();
+
+        let replaced =
+            apply_shark_replacement(&mut record, "old.stor.domain", "new.stor.domain");
+        assert!(!replaced);
+    }
+
+    #[test]
+    fn test_selective_replacement_roundtrip_serialization() {
+        let original = r#"{"uploadId":"test-123","preAllocatedSharks":[{"manta_storage_id":"old.stor"}]}"#;
+
+        let mut record: serde_json::Value =
+            serde_json::from_str(original).unwrap();
+
+        apply_shark_replacement(&mut record, "old.stor", "new.stor");
+
+        // Serialize back and re-parse
+        let serialized = serde_json::to_string(&record).unwrap();
+        let parsed: serde_json::Value =
+            serde_json::from_str(&serialized).unwrap();
+
         assert_eq!(parsed["uploadId"].as_str().unwrap(), "test-123");
-        assert!(parsed["preAllocatedSharks"].is_array());
-    }
-
-    #[test]
-    fn test_upload_record_empty_sharks_list() {
-        // Edge case: empty sharks list
-        let original_content = r#"{"uploadId":"empty-test"}"#;
-
-        let mut upload_record: serde_json::Value =
-            serde_json::from_str(original_content).unwrap();
-
-        let empty_sharks: Vec<StorageNode> = vec![];
-        let sharks_value = serde_json::to_value(&empty_sharks).unwrap();
-        upload_record["preAllocatedSharks"] = sharks_value;
-
-        // Should have empty array
-        let sharks = upload_record["preAllocatedSharks"].as_array().unwrap();
-        assert_eq!(sharks.len(), 0);
+        assert_eq!(
+            parsed["preAllocatedSharks"][0]["manta_storage_id"]
+                .as_str()
+                .unwrap(),
+            "new.stor"
+        );
     }
 
     #[test]
     fn test_upload_key_format() {
-        // Test the upload key format used in update_upload_record
         let upload_id = "abc-123-def-456";
         let upload_key = format!(".mpu-uploads/{}", upload_id);
         assert_eq!(upload_key, ".mpu-uploads/abc-123-def-456");
-    }
-
-    #[test]
-    fn test_storage_node_serialization() {
-        // Ensure StorageNode serializes correctly for JSON storage
-        let node = StorageNode {
-            datacenter: "us-east-1".to_string(),
-            manta_storage_id: "42.stor.us-east.joyent.us".to_string(),
-            available_mb: 500000,
-            percent_used: 75,
-            filesystem: "zfs".to_string(),
-            timestamp: 1700000000,
-        };
-
-        let json_value = serde_json::to_value(&node).unwrap();
-
-        // Verify key fields are serialized
-        assert_eq!(json_value["datacenter"].as_str().unwrap(), "us-east-1");
-        assert_eq!(
-            json_value["manta_storage_id"].as_str().unwrap(),
-            "42.stor.us-east.joyent.us"
-        );
     }
 }
