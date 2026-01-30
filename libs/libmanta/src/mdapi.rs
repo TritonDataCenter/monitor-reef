@@ -313,6 +313,13 @@ pub struct StorageNodeIdentifier {
 }
 
 /// Object metadata update request
+///
+/// Field layout matches the server-side `UpdateObjectPayload` in
+/// `manta-buckets-mdapi` so that `serde_json` serialization produces a
+/// payload the RPC handler can deserialize without error.  The `id` and
+/// `content_type` fields are required by the server even though the SQL
+/// UPDATE only uses `content_type` in its SET clause — the server's
+/// `Deserialize` impl rejects payloads missing either field.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ObjectUpdate {
     /// Owner account UUID
@@ -321,26 +328,28 @@ pub struct ObjectUpdate {
     pub bucket_id: Uuid,
     /// Object name/key
     pub name: String,
+    /// Object UUID (required by mdapi server deserialization)
+    pub id: Uuid,
     /// Virtual node (shard) identifier
     pub vnode: u64,
+    /// MIME content type (required by mdapi — used in SQL SET clause)
+    pub content_type: String,
+    /// HTTP headers
+    pub headers: HashMap<String, String>,
+    /// Additional properties (nullable)
+    pub properties: Option<Value>,
     /// Request identifier
     pub request_id: Uuid,
     /// Updated sharks (optional)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sharks: Option<Vec<StorageNodeIdentifier>>,
-    /// Updated headers (optional)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub headers: Option<HashMap<String, String>>,
-    /// Updated properties (optional, for content metadata updates)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub properties: Option<Value>,
     /// Conditional request parameters
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub conditions: Option<Conditions>,
+    #[serde(default)]
+    pub conditions: Conditions,
 }
 
 /// HTTP-like conditional request parameters
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Conditions {
     /// Match if object ETag is in this list
     #[serde(rename = "if-match", skip_serializing_if = "Option::is_none")]
@@ -1558,12 +1567,15 @@ mod tests {
             owner,
             bucket_id,
             name: "test-object.txt".to_string(),
+            id: Uuid::parse_str("770e8400-e29b-41d4-a716-446655440002")
+                .unwrap(),
             vnode: 42,
+            content_type: "application/octet-stream".to_string(),
+            headers: HashMap::new(),
+            properties: None,
             request_id: Uuid::new_v4(),
             sharks: None,
-            headers: None,
-            properties: None,
-            conditions: None,
+            conditions: Conditions::default(),
         };
 
         let json = serde_json::to_value(&update).unwrap();
@@ -1573,12 +1585,12 @@ mod tests {
         assert_eq!(json["bucket_id"], bucket_id.to_string());
         assert_eq!(json["name"], "test-object.txt");
         assert_eq!(json["vnode"], 42);
+        assert_eq!(json["content_type"], "application/octet-stream");
+        assert!(json.get("id").is_some());
 
-        // Verify optional fields are omitted when None
+        // Verify sharks omitted when None, properties present as null
         assert!(json.get("sharks").is_none());
-        assert!(json.get("headers").is_none());
-        assert!(json.get("properties").is_none());
-        assert!(json.get("conditions").is_none());
+        assert!(json.get("properties").unwrap().is_null());
     }
 
     #[test]
@@ -1604,12 +1616,14 @@ mod tests {
             owner,
             bucket_id,
             name: "evacuated-object.txt".to_string(),
+            id: Uuid::new_v4(),
             vnode: 100,
+            content_type: "application/octet-stream".to_string(),
+            headers: HashMap::new(),
+            properties: None,
             request_id: Uuid::new_v4(),
             sharks: Some(new_sharks),
-            headers: None,
-            properties: None,
-            conditions: None,
+            conditions: Conditions::default(),
         };
 
         let json = serde_json::to_value(&update).unwrap();
@@ -1646,12 +1660,14 @@ mod tests {
             owner,
             bucket_id,
             name: "conditional-update.txt".to_string(),
+            id: Uuid::new_v4(),
             vnode: 50,
+            content_type: "text/plain".to_string(),
+            headers: HashMap::new(),
+            properties: None,
             request_id: Uuid::new_v4(),
             sharks: None,
-            headers: None,
-            properties: None,
-            conditions: Some(conditions),
+            conditions,
         };
 
         let json = serde_json::to_value(&update).unwrap();
@@ -1685,12 +1701,14 @@ mod tests {
             owner,
             bucket_id,
             name: ".mpu-uploads/abc-123".to_string(),
+            id: Uuid::new_v4(),
             vnode: 42,
+            content_type: "application/json".to_string(),
+            headers: HashMap::new(),
+            properties: Some(properties.clone()),
             request_id: Uuid::new_v4(),
             sharks: None,
-            headers: None,
-            properties: Some(properties.clone()),
-            conditions: None,
+            conditions: Conditions::default(),
         };
 
         let json = serde_json::to_value(&update).unwrap();
@@ -1730,16 +1748,21 @@ mod tests {
         let mut headers = HashMap::new();
         headers.insert("x-custom-header".to_string(), "value".to_string());
 
+        let object_id =
+            Uuid::parse_str("770e8400-e29b-41d4-a716-446655440002").unwrap();
+
         let update = ObjectUpdate {
             owner,
             bucket_id,
             name: "roundtrip-test.txt".to_string(),
+            id: object_id,
             vnode: 75,
+            content_type: "text/plain".to_string(),
+            headers,
+            properties: None,
             request_id,
             sharks: Some(sharks),
-            headers: Some(headers),
-            properties: None,
-            conditions: None,
+            conditions: Conditions::default(),
         };
 
         // Serialize and deserialize
@@ -1751,13 +1774,14 @@ mod tests {
         assert_eq!(deserialized.owner, owner);
         assert_eq!(deserialized.bucket_id, bucket_id);
         assert_eq!(deserialized.name, "roundtrip-test.txt");
+        assert_eq!(deserialized.id, object_id);
         assert_eq!(deserialized.vnode, 75);
+        assert_eq!(deserialized.content_type, "text/plain");
         assert_eq!(deserialized.request_id, request_id);
         assert!(deserialized.sharks.is_some());
         assert_eq!(deserialized.sharks.unwrap().len(), 1);
-        assert!(deserialized.headers.is_some());
         assert_eq!(
-            deserialized.headers.unwrap().get("x-custom-header"),
+            deserialized.headers.get("x-custom-header"),
             Some(&"value".to_string())
         );
     }

@@ -403,24 +403,37 @@ pub fn put_object(
         _ => HashMap::new(),
     };
 
+    // Parse object UUID
+    let id = Uuid::parse_str(&object.object_id).map_err(|e| {
+        Error::Internal(InternalError::new(
+            Some(InternalErrorCode::BadMantaObject),
+            format!("Invalid object_id UUID: {}", e),
+        ))
+    })?;
+
     // Build conditions from etag if provided
-    let conditions = etag.map(|e| Conditions {
-        if_match: Some(vec![e.to_string()]),
-        if_none_match: None,
-        if_modified_since: None,
-        if_unmodified_since: None,
-    });
+    let conditions = match etag {
+        Some(e) => Conditions {
+            if_match: Some(vec![e.to_string()]),
+            if_none_match: None,
+            if_modified_since: None,
+            if_unmodified_since: None,
+        },
+        None => Conditions::default(),
+    };
 
     // Build ObjectUpdate payload
     let update = ObjectUpdate {
         owner,
         bucket_id,
         name: object.name.clone(),
+        id,
         vnode,
+        content_type: object.content_type.clone(),
+        headers,
+        properties: None,
         request_id: Uuid::new_v4(),
         sharks: Some(sharks),
-        headers: Some(headers),
-        properties: None,
         conditions,
     };
 
@@ -903,20 +916,22 @@ pub fn update_object_content(
     // Create ObjectUpdate with properties carrying the content update.
     // Use an etag condition to prevent lost updates from concurrent writes.
     let update = ObjectUpdate {
-        name: object_name.to_string(),
-        vnode,
         owner,
         bucket_id,
+        name: object_name.to_string(),
+        id: payload.id,
+        vnode,
+        content_type: payload.content_type.clone(),
+        headers: payload.headers.clone(),
+        properties: Some(properties),
         request_id,
         sharks: Some(payload.sharks.clone()),
-        headers: Some(payload.headers.clone()),
-        properties: Some(properties),
-        conditions: Some(Conditions {
+        conditions: Conditions {
             if_match: Some(vec![current_object.etag.clone()]),
             if_none_match: None,
             if_modified_since: None,
             if_unmodified_since: None,
-        }),
+        },
     };
 
     // Perform the update
