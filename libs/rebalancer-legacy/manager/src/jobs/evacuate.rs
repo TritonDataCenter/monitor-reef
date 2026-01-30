@@ -1808,6 +1808,13 @@ impl EvacuateJob {
     }
 
     // TODO: Consider doing batched inserts: MANTA-4464.
+    //
+    // NOTE: The duplicate-handling path spans two database connections
+    // (Diesel PgConnection for the query, raw pg::Client for the upsert
+    // into the duplicates table).  These cannot be wrapped in a single
+    // transaction.  If the Diesel query succeeds but the pg::Client
+    // upsert fails, the duplicate will not be tracked.  A future
+    // refactor should unify on a single connection type.
     fn insert_into_db(&self, obj: &EvacuateObject) -> usize {
         use self::evacuateobjects::dsl::*;
 
@@ -1932,6 +1939,10 @@ impl EvacuateJob {
         self.insert_duplicate_with_existing(&eobj, conn);
     }
 
+    // NOTE: Same cross-connection limitation as insert_into_db — the
+    // duplicate handler uses a separate pg::Client connection for the
+    // duplicates table, so the insert + duplicate-tracking sequence
+    // cannot be wrapped in a single transaction.
     #[allow(clippy::ptr_arg)]
     fn insert_assignment_into_db(
         &self,
@@ -2148,6 +2159,10 @@ impl EvacuateJob {
     // 2. For each "reason" do a bulk update of the associated objects.
     // The assumption here is that all Objects should be skipped and are not
     // errors.
+    //
+    // All updates are wrapped in a single transaction so that a partial
+    // failure (e.g. one reason-group updates but the next fails) does not
+    // leave the evacuateobjects table in an inconsistent state.
     fn mark_many_task_objects_skipped(&self, task_vec: Vec<Task>) {
         use self::evacuateobjects::dsl::{
             evacuateobjects, id, skipped_reason, status,
@@ -2168,33 +2183,125 @@ impl EvacuateJob {
 
         let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
-        for (reason, vec_obj_ids) in updates {
-            // Since we are bulk updating objects in the database by the same
-            // reason, we can just as easily do the same thing with our metrics.
-            // This is because all tasks in the vector are being skipped for
-            // the same reason.
-            let vec_len = vec_obj_ids.len();
-            metrics_skip_inc_by(Some(&reason.to_string()), vec_len);
+        // Collect metrics updates to apply only after the transaction
+        // succeeds, avoiding inflated counters on rollback.
+        let mut metrics_updates: Vec<(String, usize)> = Vec::new();
 
-            let rows_updated = diesel::update(evacuateobjects)
-                .filter(id.eq_any(vec_obj_ids))
-                .set((
-                    status.eq(EvacuateObjectStatus::Skipped),
-                    skipped_reason.eq(reason),
-                ))
-                .execute(&*locked_conn)
-                .unwrap_or_else(|e| {
-                    error!("LocalDB: Error updating {}", e);
-                    0
-                });
+        let txn_result = locked_conn.transaction::<_, diesel::result::Error, _>(|| {
+            for (reason, vec_obj_ids) in &updates {
+                let vec_len = vec_obj_ids.len();
 
-            // Ensure that the number of rows affected by the update is in fact
-            // equal to the number of entries in the vector.
-            assert_eq!(
-                rows_updated, vec_len,
-                "Attempted to update {} rows, but only updated {}",
-                vec_len, rows_updated
-            );
+                let rows_updated = diesel::update(evacuateobjects)
+                    .filter(id.eq_any(vec_obj_ids))
+                    .set((
+                        status.eq(EvacuateObjectStatus::Skipped),
+                        skipped_reason.eq(reason),
+                    ))
+                    .execute(&*locked_conn)?;
+
+                // Ensure that the number of rows affected by the update is
+                // in fact equal to the number of entries in the vector.
+                assert_eq!(
+                    rows_updated, vec_len,
+                    "Attempted to update {} rows, but only updated {}",
+                    vec_len, rows_updated
+                );
+
+                metrics_updates.push((reason.to_string(), vec_len));
+            }
+            Ok(())
+        });
+
+        match txn_result {
+            Ok(()) => {
+                for (reason, count) in &metrics_updates {
+                    metrics_skip_inc_by(Some(reason), *count);
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Transaction failed in mark_many_task_objects_skipped: {}",
+                    e
+                );
+            }
+        }
+    }
+
+    // Atomically mark failed tasks as skipped and successful tasks as
+    // PostProcessing within a single DB transaction.  Without this, a
+    // crash between the two updates could leave some objects with stale
+    // Assigned status while others are already Skipped.
+    fn mark_assignment_completion(
+        &self,
+        failed_tasks: Vec<Task>,
+        successful_ids: Vec<ObjectId>,
+    ) {
+        use self::evacuateobjects::dsl::{
+            evacuateobjects, id, skipped_reason, status,
+        };
+
+        let mut skip_updates: HashMap<ObjectSkippedReason, Vec<String>> =
+            HashMap::new();
+
+        for t in failed_tasks {
+            if let TaskStatus::Failed(reason) = t.status {
+                let entry =
+                    skip_updates.entry(reason).or_insert_with(|| vec![]);
+                entry.push(t.object_id);
+            } else {
+                warn!("Attempt to skip object with status {:?}", t.status);
+            }
+        }
+
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let mut metrics_updates: Vec<(String, usize)> = Vec::new();
+
+        let txn_result =
+            locked_conn.transaction::<_, diesel::result::Error, _>(|| {
+                // Mark failed objects as skipped, grouped by reason
+                for (reason, vec_obj_ids) in &skip_updates {
+                    let vec_len = vec_obj_ids.len();
+
+                    let rows_updated = diesel::update(evacuateobjects)
+                        .filter(id.eq_any(vec_obj_ids))
+                        .set((
+                            status.eq(EvacuateObjectStatus::Skipped),
+                            skipped_reason.eq(reason),
+                        ))
+                        .execute(&*locked_conn)?;
+
+                    assert_eq!(
+                        rows_updated, vec_len,
+                        "Attempted to update {} rows, but only updated {}",
+                        vec_len, rows_updated
+                    );
+
+                    metrics_updates.push((reason.to_string(), vec_len));
+                }
+
+                // Mark successful objects as PostProcessing
+                if !successful_ids.is_empty() {
+                    diesel::update(evacuateobjects)
+                        .filter(id.eq_any(&successful_ids))
+                        .set(status.eq(EvacuateObjectStatus::PostProcessing))
+                        .execute(&*locked_conn)?;
+                }
+
+                Ok(())
+            });
+
+        match txn_result {
+            Ok(()) => {
+                for (reason, count) in &metrics_updates {
+                    metrics_skip_inc_by(Some(reason), *count);
+                }
+            }
+            Err(e) => {
+                error!(
+                    "Transaction failed in mark_assignment_completion: {}",
+                    e
+                );
+            }
         }
     }
 
@@ -2681,10 +2788,9 @@ impl ProcessAssignment for EvacuateJob {
                     })
                     .collect();
 
-                self.mark_many_task_objects_skipped(failed_tasks);
-                self.mark_many_objects(
+                self.mark_assignment_completion(
+                    failed_tasks,
                     successful_tasks,
-                    EvacuateObjectStatus::PostProcessing,
                 );
 
                 ace.state = AssignmentState::AgentComplete;

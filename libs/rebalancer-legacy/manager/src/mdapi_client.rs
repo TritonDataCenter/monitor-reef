@@ -149,7 +149,16 @@ pub fn manta_object_to_payload(
             }
             header_map
         }
-        _ => HashMap::new(),
+        Value::Null => HashMap::new(),
+        other => {
+            warn!(
+                "Object {} has malformed headers (expected JSON object, \
+                 got {}); treating as empty",
+                obj.object_id,
+                other
+            );
+            HashMap::new()
+        }
     };
 
     // Convert sharks from MantaObjectShark to StorageNodeIdentifier
@@ -400,7 +409,16 @@ pub fn put_object(
             }
             header_map
         }
-        _ => HashMap::new(),
+        Value::Null => HashMap::new(),
+        other => {
+            warn!(
+                "Object {} has malformed headers (expected JSON object, \
+                 got {}); treating as empty",
+                object.key,
+                other
+            );
+            HashMap::new()
+        }
     };
 
     // Parse object UUID
