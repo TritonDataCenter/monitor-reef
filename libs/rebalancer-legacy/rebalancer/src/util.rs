@@ -62,8 +62,7 @@ pub fn get_thread_name() -> String {
 #[macro_export]
 macro_rules! log_impl(
     ($lvl:expr, $($args:tt)+) => {
-        let m = format!($($args)+);
-        let stmt = format!("{}: {}", $crate::util::get_thread_name(), m);
+        let stmt = format!("{}: {}", $crate::util::get_thread_name(), format_args!($($args)+));
         slog::slog_log!(slog_scope::logger(), $lvl, "", "{}", stmt)
     };
 );

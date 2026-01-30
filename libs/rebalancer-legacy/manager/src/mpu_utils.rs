@@ -91,6 +91,13 @@ const MPU_PART_KEY_PATTERN: &str = r"^\.mpu-parts/([^/]+)/\d+$";
 /// - `$` - End of string (no trailing parts)
 const MPU_UPLOAD_KEY_PATTERN: &str = r"^\.mpu-uploads/([^/]+)$";
 
+lazy_static::lazy_static! {
+    static ref MPU_PART_RE: Regex =
+        Regex::new(MPU_PART_KEY_PATTERN).expect("Invalid MPU part regex");
+    static ref MPU_UPLOAD_RE: Regex =
+        Regex::new(MPU_UPLOAD_KEY_PATTERN).expect("Invalid MPU upload regex");
+}
+
 /// Parse an MPU part key to extract the uploadId.
 ///
 /// # Arguments
@@ -116,14 +123,8 @@ const MPU_UPLOAD_KEY_PATTERN: &str = r"^\.mpu-uploads/([^/]+)$";
 ///
 /// # Performance
 ///
-/// This function compiles the regex on first call and caches it. Subsequent
-/// calls reuse the compiled regex. Cost: O(n) where n is key length.
+/// Uses a module-level compiled regex. Cost: O(n) where n is key length.
 pub fn parse_mpu_part_key(key: &str) -> Option<String> {
-    lazy_static::lazy_static! {
-        static ref MPU_PART_RE: Regex =
-            Regex::new(MPU_PART_KEY_PATTERN).expect("Invalid MPU part regex");
-    }
-
     MPU_PART_RE
         .captures(key)
         .and_then(|caps| caps.get(1))
@@ -155,14 +156,8 @@ pub fn parse_mpu_part_key(key: &str) -> Option<String> {
 ///
 /// # Performance
 ///
-/// This function compiles the regex on first call and caches it. Subsequent
-/// calls reuse the compiled regex. Cost: O(n) where n is key length.
+/// Uses a module-level compiled regex. Cost: O(n) where n is key length.
 pub fn parse_mpu_upload_key(key: &str) -> Option<String> {
-    lazy_static::lazy_static! {
-        static ref MPU_UPLOAD_RE: Regex =
-            Regex::new(MPU_UPLOAD_KEY_PATTERN).expect("Invalid MPU upload regex");
-    }
-
     MPU_UPLOAD_RE
         .captures(key)
         .and_then(|caps| caps.get(1))
@@ -194,15 +189,8 @@ pub fn parse_mpu_upload_key(key: &str) -> Option<String> {
 ///
 /// # Performance
 ///
-/// Cost: O(n) where n is key length. Slightly more efficient than calling
-/// `parse_mpu_part_key()` and checking for Some when the uploadId is not
-/// needed.
+/// Uses a module-level compiled regex. Cost: O(n) where n is key length.
 pub fn is_mpu_part(key: &str) -> bool {
-    lazy_static::lazy_static! {
-        static ref MPU_PART_RE: Regex =
-            Regex::new(MPU_PART_KEY_PATTERN).expect("Invalid MPU part regex");
-    }
-
     MPU_PART_RE.is_match(key)
 }
 
@@ -230,13 +218,8 @@ pub fn is_mpu_part(key: &str) -> bool {
 ///
 /// # Performance
 ///
-/// Cost: O(n) where n is key length.
+/// Uses a module-level compiled regex. Cost: O(n) where n is key length.
 pub fn is_mpu_upload_record(key: &str) -> bool {
-    lazy_static::lazy_static! {
-        static ref MPU_UPLOAD_RE: Regex =
-            Regex::new(MPU_UPLOAD_KEY_PATTERN).expect("Invalid MPU upload regex");
-    }
-
     MPU_UPLOAD_RE.is_match(key)
 }
 

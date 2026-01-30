@@ -268,6 +268,7 @@ table! {
 #[derive(
     AsExpression,
     Clone,
+    Copy,
     Debug,
     Deserialize,
     Display,
