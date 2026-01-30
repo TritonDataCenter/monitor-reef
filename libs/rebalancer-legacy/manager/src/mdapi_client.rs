@@ -94,6 +94,47 @@ pub fn create_client(endpoint: &str) -> Result<MdapiClient, Error> {
     })
 }
 
+/// Convert a JSON Value representing HTTP headers into a HashMap.
+///
+/// Returns an empty map for `null` (legitimate: object has no headers).
+/// Logs a warning and returns an empty map for non-object types (data
+/// corruption).
+fn convert_headers(headers: &Value, object_label: &str) -> HashMap<String, String> {
+    match headers {
+        Value::Object(map) => {
+            let mut header_map = HashMap::new();
+            for (key, value) in map {
+                let value_str = match value {
+                    Value::String(s) => s.clone(),
+                    _ => value.to_string(),
+                };
+                header_map.insert(key.clone(), value_str);
+            }
+            header_map
+        }
+        Value::Null => HashMap::new(),
+        other => {
+            warn!(
+                "Object {} has malformed headers (expected JSON object, \
+                 got {}); treating as empty",
+                object_label, other
+            );
+            HashMap::new()
+        }
+    }
+}
+
+/// Convert a slice of MantaObjectShark into StorageNodeIdentifier vec.
+fn convert_sharks(sharks: &[MantaObjectShark]) -> Vec<StorageNodeIdentifier> {
+    sharks
+        .iter()
+        .map(|shark| StorageNodeIdentifier {
+            datacenter: shark.datacenter.clone(),
+            manta_storage_id: shark.manta_storage_id.clone(),
+        })
+        .collect()
+}
+
 /// Converts a MantaObject (moray format) to ObjectPayload (mdapi format).
 ///
 /// This function handles schema translation between moray's flexible JSON
@@ -135,41 +176,8 @@ pub fn manta_object_to_payload(
         ))
     })?;
 
-    // Convert headers from JSON Value to HashMap
-    let headers = match &obj.headers {
-        Value::Object(map) => {
-            let mut header_map = HashMap::new();
-            for (key, value) in map {
-                // Convert each header value to string
-                let value_str = match value {
-                    Value::String(s) => s.clone(),
-                    _ => value.to_string(),
-                };
-                header_map.insert(key.clone(), value_str);
-            }
-            header_map
-        }
-        Value::Null => HashMap::new(),
-        other => {
-            warn!(
-                "Object {} has malformed headers (expected JSON object, \
-                 got {}); treating as empty",
-                obj.object_id,
-                other
-            );
-            HashMap::new()
-        }
-    };
-
-    // Convert sharks from MantaObjectShark to StorageNodeIdentifier
-    let sharks: Vec<StorageNodeIdentifier> = obj
-        .sharks
-        .iter()
-        .map(|shark| StorageNodeIdentifier {
-            datacenter: shark.datacenter.clone(),
-            manta_storage_id: shark.manta_storage_id.clone(),
-        })
-        .collect();
+    let headers = convert_headers(&obj.headers, &obj.object_id);
+    let sharks = convert_sharks(&obj.sharks);
 
     // Use provided request_id or generate a new one
     let req_id = request_id.unwrap_or_else(Uuid::new_v4);
@@ -386,40 +394,8 @@ pub fn put_object(
         ))
     })?;
 
-    // Convert sharks from MantaObjectShark to StorageNodeIdentifier
-    let sharks: Vec<StorageNodeIdentifier> = object
-        .sharks
-        .iter()
-        .map(|shark| StorageNodeIdentifier {
-            datacenter: shark.datacenter.clone(),
-            manta_storage_id: shark.manta_storage_id.clone(),
-        })
-        .collect();
-
-    // Convert headers from JSON Value to HashMap
-    let headers = match &object.headers {
-        Value::Object(map) => {
-            let mut header_map = HashMap::new();
-            for (key, value) in map {
-                let value_str = match value {
-                    Value::String(s) => s.clone(),
-                    _ => value.to_string(),
-                };
-                header_map.insert(key.clone(), value_str);
-            }
-            header_map
-        }
-        Value::Null => HashMap::new(),
-        other => {
-            warn!(
-                "Object {} has malformed headers (expected JSON object, \
-                 got {}); treating as empty",
-                object.key,
-                other
-            );
-            HashMap::new()
-        }
-    };
+    let sharks = convert_sharks(&object.sharks);
+    let headers = convert_headers(&object.headers, &object.key);
 
     // Parse object UUID
     let id = Uuid::parse_str(&object.object_id).map_err(|e| {
