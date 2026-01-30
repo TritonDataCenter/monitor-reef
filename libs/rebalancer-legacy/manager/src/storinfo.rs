@@ -137,7 +137,7 @@ impl Storinfo {
     }
 
     pub fn fini(&self) {
-        self.running.swap(false, Ordering::Relaxed);
+        self.running.swap(false, Ordering::Release);
 
         if let Some(handle) = self.handle.lock().unwrap_or_else(|e| e.into_inner()).take() {
             handle.join().expect("failed to stop updater thread");
@@ -162,7 +162,7 @@ impl Storinfo {
         thread::spawn(move || {
             let sleep_time = time::Duration::from_secs(10);
             let client = Client::new();
-            while keep_running.load(Ordering::Relaxed) {
+            while keep_running.load(Ordering::Acquire) {
                 thread::sleep(sleep_time);
 
                 let mut new_sharks = fetch_sharks(&client, &host);

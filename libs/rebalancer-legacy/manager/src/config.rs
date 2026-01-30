@@ -238,6 +238,14 @@ impl Config {
         let reader = BufReader::new(file);
         let mut config: Config = serde_json::from_reader(reader)?;
 
+        if config.shards.is_empty() {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                "Configuration must contain at least one shard",
+            )
+            .into());
+        }
+
         // Both min_shard_num() and max_shard_num() depend on this vector
         // being sorted.  Do not change or remove this line without making a
         // complementary change to those two functions.
@@ -370,7 +378,7 @@ fn _config_update_signal_handler(
                     }
                 }
             }
-            _ => unreachable!(), // Ignore other signals
+            _ => continue, // Only SIGUSR1 registered; defensive guard
         }
     }
 }
