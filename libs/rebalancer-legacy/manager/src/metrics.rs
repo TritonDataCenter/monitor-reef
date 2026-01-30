@@ -64,7 +64,7 @@ pub fn metrics_get() -> &'static Mutex<Option<MetricsMap>> {
 }
 
 pub fn metrics_init(cfg: metrics::ConfigMetrics) {
-    let mut metrics_init = METRICS_INIT.lock().expect("metrics init lock");
+    let mut metrics_init = METRICS_INIT.lock().unwrap_or_else(|e| e.into_inner());
 
     if metrics_init.init {
         return;
@@ -75,7 +75,7 @@ pub fn metrics_init(cfg: metrics::ConfigMetrics) {
 
     let labels: HashMap<String, String> = metrics::get_const_labels()
         .lock()
-        .expect("metrics const labels")
+        .unwrap_or_else(|e| e.into_inner())
         .clone()
         .unwrap_or_else(HashMap::new);
 
@@ -99,7 +99,7 @@ pub fn metrics_init(cfg: metrics::ConfigMetrics) {
     metrics.insert(MD_THREAD_GAUGE, Metrics::MetricsGauge(md_thread_gauge));
 
     // Take the fully formed set of metrics and store it globally.
-    let mut global_metrics = METRICS.lock().unwrap();
+    let mut global_metrics = METRICS.lock().unwrap_or_else(|e| e.into_inner());
     *global_metrics = Some(metrics);
 
     // Spawn a thread which runs our metrics server.
@@ -153,21 +153,21 @@ pub fn metrics_object_inc_by(action: Option<&str>, val: usize) {
 
 // Private method that directly accesses the metrics structure.
 fn metrics_vec_inc_by(key: &str, bucket: Option<&str>, val: usize) {
-    let metrics = METRICS.lock().unwrap().clone();
+    let metrics = METRICS.lock().unwrap_or_else(|e| e.into_inner()).clone();
     counter_vec_inc_by(&metrics.expect("metrics"), key, bucket, val);
 }
 
 pub fn metrics_gauge_dec(key: &str) {
-    let metrics = METRICS.lock().unwrap().clone();
+    let metrics = METRICS.lock().unwrap_or_else(|e| e.into_inner()).clone();
     gauge_dec(&metrics.expect("metrics"), key);
 }
 
 pub fn metrics_gauge_inc(key: &str) {
-    let metrics = METRICS.lock().unwrap().clone();
+    let metrics = METRICS.lock().unwrap_or_else(|e| e.into_inner()).clone();
     gauge_inc(&metrics.expect("metrics"), key);
 }
 
 pub fn metrics_gauge_set(key: &str, val: usize) {
-    let metrics = METRICS.lock().unwrap().clone();
+    let metrics = METRICS.lock().unwrap_or_else(|e| e.into_inner()).clone();
     gauge_set(&metrics.expect("metrics"), key, val);
 }

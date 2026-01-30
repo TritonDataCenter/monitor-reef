@@ -43,13 +43,14 @@
 //!    ```
 
 use libmanta::mdapi::{
-    Conditions, ListParams, MdapiClient, ObjectPayload, ObjectUpdate,
-    StorageNodeIdentifier,
+    Conditions, ListParams, MdapiClient, MdapiError, ObjectPayload,
+    ObjectUpdate, StorageNodeIdentifier,
 };
 use libmanta::moray::{MantaObject, MantaObjectShark};
 use rebalancer::error::{Error, InternalError, InternalErrorCode};
 use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::convert::TryFrom;
 use uuid::Uuid;
 
 use crate::config::MdapiConfig;
@@ -126,8 +127,13 @@ pub fn manta_object_to_payload(
         ))
     })?;
 
-    // Convert vnode from i64 to u64
-    let vnode = obj.vnode as u64;
+    // Convert vnode from i64 to u64 (negative vnodes are invalid)
+    let vnode = u64::try_from(obj.vnode).map_err(|_| {
+        Error::Internal(InternalError::new(
+            Some(InternalErrorCode::BadMantaObject),
+            format!("Negative vnode {} in object {}", obj.vnode, obj.object_id),
+        ))
+    })?;
 
     // Convert headers from JSON Value to HashMap
     let headers = match &obj.headers {
@@ -205,8 +211,16 @@ pub fn payload_to_manta_object(
     let owner = payload.owner.to_string();
     let object_id = payload.id.to_string();
 
-    // Convert vnode from u64 to i64
-    let vnode = payload.vnode as i64;
+    // Convert vnode from u64 to i64 (overflow would be data corruption)
+    let vnode = i64::try_from(payload.vnode).map_err(|_| {
+        Error::Internal(InternalError::new(
+            Some(InternalErrorCode::BadMantaObject),
+            format!(
+                "Vnode {} exceeds i64::MAX for object {}",
+                payload.vnode, payload.id
+            ),
+        ))
+    })?;
 
     // Convert headers from HashMap to JSON Value
     let headers_map: serde_json::Map<String, Value> = payload
@@ -352,8 +366,16 @@ pub fn put_object(
         ))
     })?;
 
-    // Convert vnode from i64 to u64
-    let vnode = object.vnode as u64;
+    // Convert vnode from i64 to u64 safely
+    let vnode = u64::try_from(object.vnode).map_err(|_| {
+        Error::Internal(InternalError::new(
+            Some(InternalErrorCode::BadMantaObject),
+            format!(
+                "Negative vnode {} in object {}",
+                object.vnode, object.key
+            ),
+        ))
+    })?;
 
     // Convert sharks from MantaObjectShark to StorageNodeIdentifier
     let sharks: Vec<StorageNodeIdentifier> = object
@@ -537,8 +559,11 @@ pub fn calculate_vnode(owner: &str, bucket: &str, object_key: &str) -> u64 {
         hash_value |= (*byte as u128) << (i * 8);
     }
 
-    // Divide by vnode hash interval to get vnode
-    let vnode = (hash_value / DEFAULT_VNODE_HASH_INTERVAL) as u64;
+    // Divide by vnode hash interval to get vnode.
+    // Result is at most 2^128 / 2^96 = 2^32, which fits in u64,
+    // but use try_from for defense-in-depth.
+    let vnode = u64::try_from(hash_value / DEFAULT_VNODE_HASH_INTERVAL)
+        .expect("vnode exceeds u64::MAX; hash interval invariant violated");
 
     trace!("Calculated vnode {} for key {}", vnode, tkey);
 
@@ -557,7 +582,15 @@ pub fn calculate_vnode(owner: &str, bucket: &str, object_key: &str) -> u64 {
 /// * `Result<bool, Error>` - true if vnode matches, false otherwise
 pub fn verify_vnode(object: &MantaObject, bucket: &str) -> Result<bool, Error> {
     let calculated = calculate_vnode(&object.owner, bucket, &object.key);
-    let stored = object.vnode as u64;
+    let stored = u64::try_from(object.vnode).map_err(|_| {
+        Error::Internal(InternalError::new(
+            Some(InternalErrorCode::BadMantaObject),
+            format!(
+                "Negative vnode {} in object {}",
+                object.vnode, object.key
+            ),
+        ))
+    })?;
 
     if calculated != stored {
         warn!(
@@ -671,19 +704,19 @@ pub fn list_buckets(
                 .collect();
             Ok(bucket_infos)
         }
+        Err(MdapiError::RpcError(ref msg))
+            if msg.contains("Not implemented")
+                || msg.contains("not implemented") =>
+        {
+            debug!(
+                "Mdapi list_buckets not yet implemented, returning empty list"
+            );
+            // Return empty list for now - evacuation will use default_bucket_id
+            Ok(Vec::new())
+        }
         Err(e) => {
-            // Check if it's the "Not implemented" error
-            let error_msg = format!("{}", e);
-            if error_msg.contains("Not implemented") {
-                debug!(
-                    "Mdapi list_buckets not yet implemented, returning empty list"
-                );
-                // Return empty list for now - evacuation will use default_bucket_id
-                Ok(Vec::new())
-            } else {
-                error!("Failed to list buckets: {}", e);
-                Err(Error::from(e))
-            }
+            error!("Failed to list buckets: {}", e);
+            Err(Error::from(e))
         }
     }
 }

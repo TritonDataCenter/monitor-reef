@@ -99,7 +99,7 @@ fn add_update_channel(
     update_tx: crossbeam_channel::Sender<JobUpdateMessage>,
 ) {
     let mut update_chans =
-        UPDATE_CHANS.lock().expect("lock update chans hashmap");
+        UPDATE_CHANS.lock().unwrap_or_else(|e| e.into_inner());
 
     // This should only happen if we have duplicate UUIDs.
     if update_chans.insert(uuid, update_tx).is_some() {
@@ -109,7 +109,7 @@ fn add_update_channel(
 
 fn remove_update_channel(uuid: Uuid) {
     let mut update_chans =
-        UPDATE_CHANS.lock().expect("lock update chans hashmap");
+        UPDATE_CHANS.lock().unwrap_or_else(|e| e.into_inner());
 
     if update_chans.remove(&uuid).is_none() {
         warn!(
@@ -122,7 +122,7 @@ fn remove_update_channel(uuid: Uuid) {
 fn get_update_channel(
     uuid: Uuid,
 ) -> Result<crossbeam_channel::Sender<JobUpdateMessage>, String> {
-    let update_chans = UPDATE_CHANS.lock().expect("lock update chans hashmap");
+    let update_chans = UPDATE_CHANS.lock().unwrap_or_else(|e| e.into_inner());
     let chan = update_chans.get(&uuid).ok_or_else(|| {
         format!(
             "Job ({}) does not support dynamic configuration updates",
@@ -265,8 +265,14 @@ fn update_job(mut state: State) -> (State, Response<Body>) {
 
     let db_conn = DBConnMiddlewareData::take_from(&mut state).db_conn;
     let update_job_params = UpdateJobParams::take_from(&mut state);
-    let uuid =
-        Uuid::from_str(update_job_params.uuid.as_str()).expect("uuid from str");
+    let uuid = match Uuid::from_str(update_job_params.uuid.as_str()) {
+        Ok(u) => u,
+        Err(e) => {
+            let msg = format!("Invalid UUID {:?}: {}", update_job_params.uuid, e);
+            let res = bad_request(&state, msg);
+            return (state, res);
+        }
+    };
     let tx: crossbeam_channel::Sender<JobUpdateMessage>;
 
     let job_db_entry: JobDbEntry = match jobs_db
@@ -370,7 +376,7 @@ impl Handler for JobRetryHandler {
 
         info!("Retry Job {} Request", retry_uuid);
 
-        let config = self.config.lock().expect("config lock").clone();
+        let config = self.config.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let job_builder = match JobBuilder::new(config).retry(&retry_uuid) {
             Ok(jb) => jb,
             Err(e) => {
@@ -429,7 +435,7 @@ impl Handler for JobCreateHandler {
     fn handle(self, mut state: State) -> Box<HandlerFuture> {
         info!("Post Job Request");
 
-        let config = self.config.lock().expect("config lock").clone();
+        let config = self.config.lock().unwrap_or_else(|e| e.into_inner()).clone();
 
         // If snaplinks are still in play then we immediately return failure.
         if config.snaplink_cleanup_required {
@@ -526,8 +532,9 @@ impl Middleware for BaseMiddleware {
             };
             let headers = response.headers_mut();
             let version_str = get_version();
-            let value = HeaderValue::from_str(&version_str).unwrap();
-            headers.insert("Server", value);
+            if let Ok(value) = HeaderValue::from_str(&version_str) {
+                headers.insert("Server", value);
+            }
 
             future::ok((state, response))
         });
@@ -677,7 +684,7 @@ fn main() {
 
     let addr = format!(
         "0.0.0.0:{}",
-        config.lock().expect("lock config").listen_port
+        config.lock().unwrap_or_else(|e| e.into_inner()).listen_port
     );
 
     let config_watcher_handle =
@@ -703,7 +710,7 @@ mod tests {
     }
 
     fn unit_test_init() {
-        let mut init = INITIALIZED.lock().unwrap();
+        let mut init = INITIALIZED.lock().unwrap_or_else(|e| e.into_inner());
         if *init {
             return;
         }
@@ -797,7 +804,7 @@ mod tests {
         // Create a Job manually so that we know one exists regardless of the
         // ability of this API to create one, or the order in which tests are
         // run.
-        let config = config.lock().expect("lock config").clone();
+        let config = config.lock().unwrap_or_else(|e| e.into_inner()).clone();
         let job_builder = JobBuilder::new(config);
         let job = job_builder
             .evacuate(String::from("fake_storage_id"), None)
@@ -847,7 +854,7 @@ mod tests {
         let uuid = Uuid::new_v4();
         let (config, test_server) = test_server_init();
 
-        let config = { config.lock().unwrap().clone() };
+        let config = { config.lock().unwrap_or_else(|e| e.into_inner()).clone() };
         assert!(!config.options.use_static_md_update_threads);
 
         add_update_channel(uuid, tx);

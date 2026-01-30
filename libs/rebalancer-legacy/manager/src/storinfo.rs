@@ -122,7 +122,7 @@ impl Storinfo {
     /// Populate the storinfo's sharks field, and start the storinfo updater thread.
     pub fn start(&mut self) -> Result<(), Error> {
         let client = Client::new();
-        let mut locked_sharks = self.sharks.lock().unwrap();
+        let mut locked_sharks = self.sharks.lock().unwrap_or_else(|e| e.into_inner());
         // TODO: MANTA-4961, don't start job if picker cannot be reached.
         *locked_sharks = Some(fetch_sharks(&client, &self.host));
 
@@ -131,7 +131,7 @@ impl Storinfo {
             Arc::clone(&self.sharks),
             Arc::clone(&self.running),
         );
-        let mut locked_handle = self.handle.lock().unwrap();
+        let mut locked_handle = self.handle.lock().unwrap_or_else(|e| e.into_inner());
         *locked_handle = Some(handle);
         Ok(())
     }
@@ -139,7 +139,7 @@ impl Storinfo {
     pub fn fini(&self) {
         self.running.swap(false, Ordering::Relaxed);
 
-        if let Some(handle) = self.handle.lock().unwrap().take() {
+        if let Some(handle) = self.handle.lock().unwrap_or_else(|e| e.into_inner()).take() {
             handle.join().expect("failed to stop updater thread");
         } else {
             warn!("Updater thread not started");
@@ -148,7 +148,7 @@ impl Storinfo {
 
     /// Get the the Vec<sharks> from the storinfo service.
     pub fn get_sharks(&self) -> Option<Vec<StorageNode>> {
-        self.sharks.lock().unwrap().clone()
+        self.sharks.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     fn updater(
@@ -168,7 +168,7 @@ impl Storinfo {
                 let mut new_sharks = fetch_sharks(&client, &host);
                 new_sharks.sort_by(|a, b| a.available_mb.cmp(&b.available_mb));
 
-                let mut old_sharks = updater_sharks.lock().unwrap();
+                let mut old_sharks = updater_sharks.lock().unwrap_or_else(|e| e.into_inner());
                 *old_sharks = Some(new_sharks);
                 info!("Sharks updated, sleeping for {:?}", sleep_time);
             }
@@ -222,8 +222,17 @@ fn fetch_sharks(client: &Client, host: &str) -> Vec<StorageNode> {
             return vec![];
         }
 
-        let result: Vec<StorageNode> =
-            response.json().expect("picker response format");
+        let result: Vec<StorageNode> = match response.json() {
+            Ok(r) => r,
+            Err(e) => {
+                error!(
+                    "Failed to parse storinfo response as \
+                     Vec<StorageNode>: {}",
+                    e
+                );
+                return vec![];
+            }
+        };
 
         // .last() returns None on an empty Vec, so we can just break out of the
         // loop if that is the case.

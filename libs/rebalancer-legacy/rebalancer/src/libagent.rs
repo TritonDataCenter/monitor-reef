@@ -176,7 +176,7 @@ impl Agent {
             return true;
         }
 
-        let q = &mut self.quiescing.lock().unwrap();
+        let q = &mut self.quiescing.lock().unwrap_or_else(|e| e.into_inner());
         match q.get(uuid) {
             // An assignment by this uuid is currently in the process of being
             // saved to disk.  Return.
@@ -240,7 +240,7 @@ impl AssignmentOpErr {
 // from the receiving end of the channel and will then attempt to load it from
 // disk in to memory for processing.
 fn assignment_signal(agent: &Agent, uuid: &str) {
-    let tx = agent.tx.lock().unwrap();
+    let tx = agent.tx.lock().unwrap_or_else(|e| e.into_inner());
     tx.send(uuid.to_string()).unwrap();
 }
 
@@ -254,7 +254,7 @@ fn load_saved_assignment(
 ) -> Result<(), String> {
     match assignment_recall(format!("{}/{}", REBALANCER_SCHEDULED_DIR, &uuid)) {
         Ok(a) => {
-            let mut work = assignments.lock().unwrap();
+            let mut work = assignments.lock().unwrap_or_else(|e| e.into_inner());
             work.insert(uuid.to_string(), a);
             Ok(())
         }
@@ -305,7 +305,7 @@ fn assignment_save(
             }
         };
 
-    let assn = assignment.read().unwrap();
+    let assn = assignment.read().unwrap_or_else(|e| e.into_inner());
     let tasklist = &assn.tasks;
     let stats = &assn.stats;
 
@@ -502,7 +502,7 @@ fn assignment_complete(assignments: Arc<Mutex<Assignments>>, uuid: String) {
     }
 
     // Remove it from our HashMap of assignments.
-    let mut hm = assignments.lock().unwrap();
+    let mut hm = assignments.lock().unwrap_or_else(|e| e.into_inner());
     hm.remove(&uuid);
 }
 
@@ -616,7 +616,7 @@ fn post_assignment_handler(
                             StatusCode::BAD_REQUEST,
                         );
 
-                        if let Some(m) = agent.metrics.lock().unwrap().clone() {
+                        if let Some(m) = agent.metrics.lock().unwrap_or_else(|e| e.into_inner()).clone() {
                             counter_vec_inc(&m, ERROR_COUNT, Some(&e));
                         }
                         return future::ok((state, res));
@@ -630,7 +630,7 @@ fn post_assignment_handler(
                     let res =
                         create_empty_response(&state, StatusCode::CONFLICT);
 
-                    if let Some(m) = agent.metrics.lock().unwrap().clone() {
+                    if let Some(m) = agent.metrics.lock().unwrap_or_else(|e| e.into_inner()).clone() {
                         counter_vec_inc(&m, ERROR_COUNT, Some("conflict"));
                     }
 
@@ -659,7 +659,7 @@ fn post_assignment_handler(
                 }
 
                 // Assignment has been saved.  Remove its id from the the table.
-                agent.quiescing.lock().unwrap().remove(&uuid);
+                agent.quiescing.lock().unwrap_or_else(|e| e.into_inner()).remove(&uuid);
 
                 // Create a response containing our newly initialized stats.
                 // This serves as confirmation to the client that we recieved
@@ -679,7 +679,7 @@ fn post_assignment_handler(
             }
 
             Err(e) => {
-                if let Some(m) = agent.metrics.lock().unwrap().clone() {
+                if let Some(m) = agent.metrics.lock().unwrap_or_else(|e| e.into_inner()).clone() {
                     counter_vec_inc(&m, ERROR_COUNT, Some(&e.to_string()));
                 }
 
@@ -749,7 +749,7 @@ fn get_assignment_handler(
 
     let res = match get_assignment_impl(&agent, &uuid) {
         Some(a) => {
-            let assignment = a.read().unwrap();
+            let assignment = a.read().unwrap_or_else(|e| e.into_inner());
             create_response(
                 &state,
                 StatusCode::OK,
@@ -788,7 +788,7 @@ impl Handler for Agent {
     fn handle(self, state: State) -> Box<HandlerFuture> {
         let method = Method::borrow_from(&state);
 
-        if let Some(m) = self.metrics.lock().unwrap().clone() {
+        if let Some(m) = self.metrics.lock().unwrap_or_else(|e| e.into_inner()).clone() {
             counter_vec_inc(&m, REQUEST_COUNT, Some(method.as_str()));
         }
 
@@ -991,7 +991,7 @@ fn assignment_get(
     assignments: &Arc<Mutex<Assignments>>,
     uuid: &str,
 ) -> Option<Arc<RwLock<Assignment>>> {
-    let work = assignments.lock().unwrap();
+    let work = assignments.lock().unwrap_or_else(|e| e.into_inner());
     match work.get(uuid) {
         Some(assignment) => Some(Arc::clone(&assignment)),
         None => None,
@@ -1007,7 +1007,7 @@ fn process_assignment_impl(
     client: &Client,
     next: Arc<Mutex<usize>>,
 ) {
-    let len = assignment.read().unwrap().tasks.len();
+    let len = assignment.read().unwrap_or_else(|e| e.into_inner()).tasks.len();
 
     loop {
         // Obtain the index of the next unprocessed task in the vector.  This
@@ -1016,7 +1016,7 @@ fn process_assignment_impl(
         // but tedious operation(s) of checking the status of a few before
         // finally arriving at one that has not yet been processed.
         let index: usize = {
-            let mut guard = next.lock().unwrap();
+            let mut guard = next.lock().unwrap_or_else(|e| e.into_inner());
             if *guard == len {
                 break;
             }
@@ -1026,7 +1026,7 @@ fn process_assignment_impl(
             i
         };
 
-        let mut t = assignment.read().unwrap().tasks[index].clone();
+        let mut t = assignment.read().unwrap_or_else(|e| e.into_inner()).tasks[index].clone();
 
         trace!(
             "Processing task: assignment: {}, owner: {}, object: {}",
@@ -1048,7 +1048,7 @@ fn process_assignment_impl(
             counter_vec_inc(&m, OBJECT_COUNT, None);
         }
 
-        let tmp = &mut assignment.write().unwrap();
+        let tmp = &mut assignment.write().unwrap_or_else(|e| e.into_inner());
 
         // Update our stats.
         tmp.stats.complete += 1;
@@ -1058,7 +1058,7 @@ fn process_assignment_impl(
                 counter_vec_inc(&m, ERROR_COUNT, Some(&e.to_string()));
             }
             tmp.stats.failed += 1;
-            failures.lock().unwrap().push(t.clone());
+            failures.lock().unwrap_or_else(|e| e.into_inner()).push(t.clone());
         }
 
         // Update the task in the assignment.
@@ -1100,11 +1100,11 @@ fn process_assignment(
     }
 
     let assignment = assignment_get(&assignments, &uuid).unwrap();
-    let len = assignment.read().unwrap().tasks.len();
+    let len = assignment.read().unwrap_or_else(|e| e.into_inner()).tasks.len();
     let failures = Arc::new(Mutex::new(Vec::new()));
     let next = Arc::new(Mutex::new(0));
 
-    assignment.write().unwrap().stats.state = AgentAssignmentState::Running;
+    assignment.write().unwrap_or_else(|e| e.into_inner()).stats.state = AgentAssignmentState::Running;
 
     info!("Begin processing assignment {}.", &uuid);
 
@@ -1131,13 +1131,13 @@ fn process_assignment(
         histogram_observe(&m, ASSIGNMENT_TIME, done);
     }
 
-    let failed = if failures.lock().unwrap().is_empty() {
+    let failed = if failures.lock().unwrap_or_else(|e| e.into_inner()).is_empty() {
         None
     } else {
-        Some(failures.lock().unwrap().clone())
+        Some(failures.lock().unwrap_or_else(|e| e.into_inner()).clone())
     };
 
-    assignment.write().unwrap().stats.state =
+    assignment.write().unwrap_or_else(|e| e.into_inner()).stats.state =
         AgentAssignmentState::Complete(failed);
 
     info!(
@@ -1213,7 +1213,7 @@ pub fn router(
             let worker_pool = ThreadPool::new(workers_per_assignment);
 
             pool.execute(move || loop {
-                let uuid = match rx.lock().unwrap().recv() {
+                let uuid = match rx.lock().unwrap_or_else(|e| e.into_inner()).recv() {
                     Ok(r) => r,
                     Err(e) => {
                         debug!("Channel read error: {}", e);

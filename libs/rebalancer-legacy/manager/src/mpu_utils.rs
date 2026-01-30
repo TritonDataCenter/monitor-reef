@@ -43,7 +43,7 @@ use uuid::Uuid;
 use crate::mdapi_client;
 use crate::storinfo::StorageNode;
 use libmanta::mdapi::{MdapiClient, MdapiError};
-use rebalancer::error::Error;
+use rebalancer::error::{Error, InternalError, InternalErrorCode};
 
 /// Regex pattern for MPU part keys: `.mpu-parts/{uploadId}/{partNumber}`
 ///
@@ -430,6 +430,20 @@ pub fn update_upload_record(
     upload_id: &str,
     new_sharks: &[StorageNode],
 ) -> Result<(), Error> {
+    // Validate upload_id to prevent path traversal.  Upstream regex
+    // parsing already rejects '/', but defend in depth here since
+    // this function is pub and takes an arbitrary &str.
+    if upload_id.is_empty()
+        || upload_id.contains('/')
+        || upload_id.contains('\0')
+        || upload_id.contains("..")
+    {
+        return Err(Error::Internal(InternalError::new(
+            Some(InternalErrorCode::BadMantaObject),
+            format!("Invalid upload_id: {:?}", upload_id),
+        )));
+    }
+
     let upload_key = format!(".mpu-uploads/{}", upload_id);
 
     debug!(

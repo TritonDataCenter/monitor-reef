@@ -111,8 +111,17 @@ macro_rules! crit(
 );
 
 pub fn shard_host2num(shard_host: &str) -> u32 {
-    let shard_split: Vec<&str> = shard_host.split('.').collect();
-    shard_split[0].parse().unwrap()
+    let first = shard_host.split('.').next().unwrap_or("");
+    match first.parse() {
+        Ok(n) => n,
+        Err(e) => {
+            error!(
+                "Failed to parse shard number from host {:?}: {}",
+                shard_host, e
+            );
+            0
+        }
+    }
 }
 
 #[cfg(test)]

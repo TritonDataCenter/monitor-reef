@@ -1348,7 +1348,7 @@ impl EvacuateJob {
     }
 
     pub fn create_tables(&self) -> Result<usize, Error> {
-        let conn = self.conn.lock().expect("DB conn lock");
+        let conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         create_evacuateobjects_table(&*conn)?;
         create_config_table(&*conn)
     }
@@ -1367,7 +1367,7 @@ impl EvacuateJob {
     }
 
     fn update_evacuate_config(&self) -> Result<usize, Error> {
-        let locked_conn = self.conn.lock().expect("DB conn lock");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         update_evacuate_config_impl(&locked_conn, &self.from_shark)
     }
@@ -1566,7 +1566,7 @@ impl EvacuateJob {
         match self
             .assignments
             .write()
-            .expect("assignment write lock")
+            .unwrap_or_else(|e| e.into_inner())
             .get_mut(assignment_id)
         {
             Some(a) => {
@@ -1614,7 +1614,7 @@ impl EvacuateJob {
     // implicitly dropped when the function returns.
     fn remove_assignment_from_cache(&self, assignment_id: &str) {
         let mut assignments =
-            self.assignments.write().expect("assignments write");
+            self.assignments.write().unwrap_or_else(|e| e.into_inner());
 
         trace!(
             "Assignment Cache size: {} bytes",
@@ -1673,7 +1673,7 @@ impl EvacuateJob {
         let dest_shark_hash = self
             .dest_shark_hash
             .read()
-            .expect("get_shark_available_mb read lock");
+            .unwrap_or_else(|e| e.into_inner());
 
         dest_shark_hash
             .get(shark)
@@ -1697,7 +1697,7 @@ impl EvacuateJob {
         let mut dest_shark_hash = self
             .dest_shark_hash
             .write()
-            .expect("update dest_shark_hash write lock");
+            .unwrap_or_else(|e| e.into_inner());
 
         for sn in new_sharks.iter() {
             if let Some(dest_shark) =
@@ -1773,7 +1773,7 @@ impl EvacuateJob {
             shark_list = self
                 .dest_shark_hash
                 .read()
-                .expect("dest_shark_hash read lock")
+                .unwrap_or_else(|e| e.into_inner())
                 .values()
                 .filter(|v| v.status != DestSharkStatus::Unavailable)
                 .map(|v| v.to_owned())
@@ -1811,7 +1811,7 @@ impl EvacuateJob {
     fn insert_into_db(&self, obj: &EvacuateObject) -> usize {
         use self::evacuateobjects::dsl::*;
 
-        let locked_conn = self.conn.lock().expect("DB conn lock");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         match diesel::insert_into(evacuateobjects)
             .values(obj)
@@ -1949,11 +1949,14 @@ impl EvacuateJob {
             assign_id
         );
 
-        let locked_conn = self.conn.lock().expect("DB conn lock");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         let mut ret = diesel::insert_into(evacuateobjects)
             .values(obj_list.clone())
             .execute(&*locked_conn);
+
+        const MAX_UNIQUE_RETRIES: u32 = 50;
+        let mut retry_count: u32 = 0;
 
         while ret.is_err() {
             match ret {
@@ -1961,13 +1964,28 @@ impl EvacuateJob {
                     DatabaseErrorKind::UniqueViolation,
                     info,
                 )) => {
+                    retry_count += 1;
+                    if retry_count > MAX_UNIQUE_RETRIES {
+                        error!(
+                            "Exceeded {} UniqueViolation retries for \
+                             assignment {}; aborting insert",
+                            MAX_UNIQUE_RETRIES, assign_id
+                        );
+                        return Err(Error::from(DatabaseError(
+                            DatabaseErrorKind::UniqueViolation,
+                            info,
+                        )));
+                    }
                     info!(
                         "Encountered duplicate object in {}, \
-                         assignment_count {}, obj_list_count: {}: {:#?}",
+                         assignment_count {}, obj_list_count: {}: {:#?} \
+                         (retry {}/{})",
                         assign_id,
                         assignment.tasks.len(),
                         obj_list.len(),
-                        info.details()
+                        info.details(),
+                        retry_count,
+                        MAX_UNIQUE_RETRIES
                     );
                     self.handle_duplicate_assignment(
                         assignment,
@@ -2017,7 +2035,7 @@ impl EvacuateJob {
     ) -> usize {
         use self::evacuateobjects::dsl::*;
 
-        let locked_conn = self.conn.lock().expect("db conn lock");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
         let len = vec_obj_ids.len();
 
         debug!("Marking {} objects as {:?}", len, to_status);
@@ -2050,7 +2068,7 @@ impl EvacuateJob {
         use self::evacuateobjects::dsl::{
             assignment_id, error, evacuateobjects, skipped_reason, status,
         };
-        let locked_conn = self.conn.lock().expect("DB conn lock");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         debug!(
             "Marking objects in assignment ({}) as skipped: {:?}",
@@ -2091,7 +2109,7 @@ impl EvacuateJob {
             assignment_id, error, evacuateobjects, skipped_reason, status,
         };
 
-        let locked_conn = self.conn.lock().expect("DB conn lock");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         debug!(
             "Marking objects in assignment ({}) as error:{:?}",
@@ -2148,7 +2166,7 @@ impl EvacuateJob {
             }
         }
 
-        let locked_conn = self.conn.lock().expect("db conn lock");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         for (reason, vec_obj_ids) in updates {
             // Since we are bulk updating objects in the database by the same
@@ -2191,7 +2209,7 @@ impl EvacuateJob {
 
         metrics_error_inc(Some(&err.to_string()));
 
-        let locked_conn = self.conn.lock().expect("db conn lock");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         debug!("Updating object {} as error: {:?}", object_id, err);
 
@@ -2227,7 +2245,7 @@ impl EvacuateJob {
         assert_ne!(to_status, EvacuateObjectStatus::Skipped);
         assert_ne!(to_status, EvacuateObjectStatus::Error);
 
-        let locked_conn = self.conn.lock().expect("DB conn lock");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         debug!("Marking objects in assignment ({}) as {:?}", id, to_status);
         let ret = diesel::update(evacuateobjects)
@@ -2263,7 +2281,7 @@ impl EvacuateJob {
         if let Some(shark) = self
             .dest_shark_hash
             .write()
-            .expect("dest_shark_hash write")
+            .unwrap_or_else(|e| e.into_inner())
             .get_mut(dest_shark)
         {
             debug!("Updating shark '{}' to {:?} state", dest_shark, status,);
@@ -2322,7 +2340,7 @@ impl EvacuateJob {
             assignment_id, evacuateobjects, status,
         };
 
-        let locked_conn = self.conn.lock().expect("DB conn");
+        let locked_conn = self.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         evacuateobjects
             .filter(assignment_id.eq(id))
@@ -2350,7 +2368,7 @@ fn assignment_post_success(
     let mut assignments = job_action
         .assignments
         .write()
-        .expect("Assignments hash write lock");
+        .unwrap_or_else(|e| e.into_inner());
 
     // '.into()' converts the Assignment to its cache entry type and insert
     // that into the cache.  Since this function takes ownership of the
@@ -2561,7 +2579,7 @@ impl ProcessAssignment for EvacuateJob {
     fn process(&self, agent_assignment: AgentAssignment) -> Result<(), Error> {
         let uuid = &agent_assignment.uuid;
         let mut assignments =
-            self.assignments.write().expect("assignments read lock");
+            self.assignments.write().unwrap_or_else(|e| e.into_inner());
 
         // std::option::NoneError is still nightly-only experimental
         let ace = match assignments.get_mut(uuid) {
@@ -3367,7 +3385,7 @@ fn _channel_send_assignment(
         job_action
             .assignments
             .write()
-            .expect("assignments write lock")
+            .unwrap_or_else(|e| e.into_inner())
             .insert(assignment_uuid.clone(), assignment.clone().into());
 
         info!(
@@ -3934,7 +3952,7 @@ fn start_assignment_checker(
                 let assignments = job_action
                     .assignments
                     .read()
-                    .expect("assignments read lock")
+                    .unwrap_or_else(|e| e.into_inner())
                     .clone();
 
                 debug!("Checking Assignments");
@@ -4794,7 +4812,7 @@ mod tests {
     }
 
     fn unit_test_init() {
-        let mut init = INITIALIZED.lock().unwrap();
+        let mut init = INITIALIZED.lock().unwrap_or_else(|e| e.into_inner());
         if *init {
             return;
         }
@@ -5515,7 +5533,7 @@ mod tests {
                     evacuateobjects, skipped_reason, status,
                 };
                 let locked_conn =
-                    verif_job_action.conn.lock().expect("DB conn");
+                    verif_job_action.conn.lock().unwrap_or_else(|e| e.into_inner());
 
                 let skipped: Vec<EvacuateObject> = evacuateobjects
                     .filter(status.eq(EvacuateObjectStatus::Skipped))
@@ -5565,7 +5583,7 @@ mod tests {
         // mark all assignments as post processed so that the checker thread
         // can exit.
         let mut locked_assignments =
-            job_action.assignments.write().expect("lock assignments");
+            job_action.assignments.write().unwrap_or_else(|e| e.into_inner());
         locked_assignments.iter_mut().for_each(|(_, a)| {
             a.state = AssignmentState::PostProcessed;
         });
@@ -5657,7 +5675,7 @@ mod tests {
         assignment.state = AssignmentState::Assigned;
 
         let mut assignments =
-            job_action.assignments.write().expect("write lock");
+            job_action.assignments.write().unwrap_or_else(|e| e.into_inner());
         assignments.insert(uuid.clone(), assignment.clone().into());
 
         drop(assignments);
@@ -5680,7 +5698,7 @@ mod tests {
             assignment_id, evacuateobjects, skipped_reason, status,
         };
 
-        let locked_conn = job_action.conn.lock().expect("DB conn");
+        let locked_conn = job_action.conn.lock().unwrap_or_else(|e| e.into_inner());
 
         let records: Vec<EvacuateObject> = evacuateobjects
             .filter(assignment_id.eq(&uuid))

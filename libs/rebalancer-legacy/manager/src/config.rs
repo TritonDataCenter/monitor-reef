@@ -271,7 +271,7 @@ impl Config {
                                 }
                             };
                         let mut config_lock =
-                            update_config.lock().expect("Lock update_config");
+                            update_config.lock().unwrap_or_else(|e| e.into_inner());
 
                         *config_lock = new_config;
                         debug!(
@@ -389,7 +389,7 @@ mod tests {
     }
 
     fn unit_test_init() {
-        let mut init = INITIALIZED.lock().unwrap();
+        let mut init = INITIALIZED.lock().unwrap_or_else(|e| e.into_inner());
         if *init {
             return;
         }
@@ -559,7 +559,7 @@ mod tests {
         assert!(
             config
                 .lock()
-                .expect("config lock")
+                .unwrap_or_else(|e| e.into_inner())
                 .snaplink_cleanup_required
         );
 
@@ -593,7 +593,7 @@ mod tests {
 
         // Assert that our in-memory config's snaplink_cleanup_required
         // field has changed to false.
-        let check_config = config.lock().expect("config lock");
+        let check_config = config.lock().unwrap_or_else(|e| e.into_inner());
         assert_eq!(check_config.snaplink_cleanup_required, false);
 
         // Drop the sender so the updater thread exits cleanly.
