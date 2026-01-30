@@ -849,8 +849,10 @@ pub fn update_object_content(
         object_name,
     )?;
 
-    // Build properties value containing the new content
-    let properties = match serde_json::from_str::<Value>(new_content) {
+    // Build properties value containing the new content.
+    // The read path (get_object_with_content) expects
+    // properties = {"content": <value>}, so wrap accordingly.
+    let content_value = match serde_json::from_str::<Value>(new_content) {
         Ok(v) => v,
         Err(e) => {
             error!(
@@ -860,11 +862,13 @@ pub fn update_object_content(
             return Err(Error::from(e));
         }
     };
+    let properties = json!({ "content": content_value });
 
     let request_id = Uuid::new_v4();
     let payload = manta_object_to_payload(&current_object, bucket_id, Some(request_id))?;
 
-    // Create ObjectUpdate with properties carrying the content update
+    // Create ObjectUpdate with properties carrying the content update.
+    // Use an etag condition to prevent lost updates from concurrent writes.
     let update = ObjectUpdate {
         name: object_name.to_string(),
         vnode,
@@ -874,7 +878,12 @@ pub fn update_object_content(
         sharks: Some(payload.sharks.clone()),
         headers: Some(payload.headers.clone()),
         properties: Some(properties),
-        conditions: None,
+        conditions: Some(Conditions {
+            if_match: Some(vec![current_object.etag.clone()]),
+            if_none_match: None,
+            if_modified_since: None,
+            if_unmodified_since: None,
+        }),
     };
 
     // Perform the update

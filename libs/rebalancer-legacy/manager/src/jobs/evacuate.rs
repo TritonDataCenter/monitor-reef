@@ -505,7 +505,7 @@ impl MetadataBackend {
                 // The mdapi updates will be idempotent on the next
                 // evacuation retry since they use etag-based conditional
                 // updates.
-                if !mdapi_objects.is_empty() {
+                let mdapi_success_count = if !mdapi_objects.is_empty() {
                     let mdapi_refs: Vec<(&MantaObject, Uuid, Option<&str>)> =
                         mdapi_objects
                             .iter()
@@ -540,7 +540,10 @@ impl MetadataBackend {
 
                     // Finalize MPU upload records after successful batch update
                     finalize_mpu_updates(mdapi, &mdapi_objects)?;
-                }
+                    result.successful
+                } else {
+                    0
+                };
 
                 // Process moray requests SECOND (atomic, all-or-nothing).
                 if !moray_requests.is_empty() {
@@ -553,7 +556,7 @@ impl MetadataBackend {
                                  Moray is atomic so no moray changes were \
                                  committed. Mdapi updates will be reconciled \
                                  on retry. Error: {}",
-                                mdapi_objects.len(),
+                                mdapi_success_count,
                                 e.description()
                             );
                             InternalError::new(
@@ -2739,18 +2742,21 @@ fn _calculate_available_mb(
     let max_percent = max_fill_percentage as f64 / 100.0;
     let percent_used = dest_shark.shark.percent_used as f64 / 100.0;
 
-    let total_mb = available_mb as f64 / (1.0 - percent_used);
-    let max_fill_mb = (total_mb * max_percent).floor() as u64;
-    let used_mb = total_mb - available_mb as f64;
-
-    if percent_used > max_percent {
+    // Guard against percent_used >= max_percent BEFORE division.
+    // When percent_used == 1.0, (1.0 - percent_used) == 0.0 which
+    // causes division by zero producing infinity.
+    if percent_used >= max_percent {
         warn!(
-            "percent used {} exceeds maximum utilization percentage {}, \
-             reporting shark available MB as 0",
+            "percent used {} meets or exceeds maximum utilization \
+             percentage {}, reporting shark available MB as 0",
             percent_used, max_percent
         );
         return 0;
     }
+
+    let total_mb = available_mb as f64 / (1.0 - percent_used);
+    let max_fill_mb = (total_mb * max_percent).floor() as u64;
+    let used_mb = total_mb - available_mb as f64;
 
     assert!(percent_used <= 1.0);
     assert!(percent_used >= 0.0);

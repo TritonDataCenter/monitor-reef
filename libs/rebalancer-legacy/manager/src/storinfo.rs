@@ -87,16 +87,20 @@ impl DefaultChooseAlgorithm {
     fn method(&self, sharks: &[StorageNode]) -> Vec<StorageNode> {
         let mut ret: Vec<StorageNode> = vec![];
 
-        // If the min_avail_mb is specified and the sharks available space is less
-        // than min_avail_mb skip it.
         for s in sharks.iter() {
+            // Always filter blacklisted datacenters
+            if self.blacklist.contains(&s.datacenter) {
+                continue;
+            }
+
+            // If min_avail_mb is specified, skip sharks with
+            // insufficient available space
             if let Some(min_avail_mb) = self.min_avail_mb {
-                if self.blacklist.contains(&s.datacenter)
-                    || s.available_mb < min_avail_mb
-                {
+                if s.available_mb < min_avail_mb {
                     continue;
                 }
             }
+
             ret.push(s.to_owned())
         }
 
@@ -342,9 +346,8 @@ mod tests {
     }
 
     #[test]
-    fn default_choose_no_min_avail_skips_filter() {
-        // When min_avail_mb is None, NO filtering happens at all
-        // (not even blacklist filtering, due to the if let Some pattern)
+    fn default_choose_no_min_avail_still_filters_blacklist() {
+        // When min_avail_mb is None, blacklisted sharks are still filtered
         let algo = DefaultChooseAlgorithm {
             blacklist: vec!["dc1".to_string()],
             min_avail_mb: None,
@@ -354,9 +357,9 @@ mod tests {
             make_shark("dc2", "2.stor", 2000),
         ];
         let result = algo.method(&sharks);
-        // Note: When min_avail_mb is None, the entire if-let block is skipped,
-        // so ALL sharks pass through regardless of blacklist
-        assert_eq!(result.len(), 2);
+        // dc1 is blacklisted, only dc2 should pass
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].datacenter, "dc2");
     }
 
     #[test]
