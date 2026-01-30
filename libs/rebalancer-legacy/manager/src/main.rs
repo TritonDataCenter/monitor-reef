@@ -101,12 +101,9 @@ fn add_update_channel(
     let mut update_chans =
         UPDATE_CHANS.lock().expect("lock update chans hashmap");
 
-    // This should only happen if we have duplicate UUIDs, so panic is
-    // appropriate.
+    // This should only happen if we have duplicate UUIDs.
     if update_chans.insert(uuid, update_tx).is_some() {
-        let msg = format!("update_tx for {} already exists", uuid.to_string());
-        error!("{}", msg);
-        panic!(msg);
+        error!("update_tx for {} already exists", uuid.to_string());
     }
 }
 
@@ -396,7 +393,11 @@ impl Handler for JobRetryHandler {
         let uuid_response = format!("{}\n", &job_uuid);
 
         if let Err(e) = self.tx.send(job) {
-            panic!("Tx error: {}", e);
+            let res = invalid_server_error(
+                &state,
+                format!("Tx error: {}", e),
+            );
+            return Box::new(future::ok((state, res)));
         }
 
         let res = create_response(
@@ -487,15 +488,18 @@ impl Handler for JobCreateHandler {
                 }
 
                 if let Err(e) = self.tx.send(job) {
-                    panic!("Tx error: {}", e);
+                    invalid_server_error(
+                        &state,
+                        format!("Tx error: {}", e),
+                    )
+                } else {
+                    create_response(
+                        &state,
+                        StatusCode::OK,
+                        mime::APPLICATION_JSON,
+                        uuid_response,
+                    )
                 }
-
-                create_response(
-                    &state,
-                    StatusCode::OK,
-                    mime::APPLICATION_JSON,
-                    uuid_response,
-                )
             }
         };
 

@@ -136,24 +136,27 @@ impl Agent {
         }
     }
 
-    fn read_config<F: AsRef<OsStr> + ?Sized>(f: &F) -> AgentConfig {
-        let s = match fs::read(Path::new(&f)) {
-            Ok(s) => s,
-            Err(e) => {
-                eprintln!("Failed to read config file: {}", e);
-                std::process::exit(1);
-            }
-        };
+    fn read_config<F: AsRef<OsStr> + ?Sized>(
+        f: &F,
+    ) -> Result<AgentConfig, String> {
+        let s = fs::read(Path::new(&f)).map_err(|e| {
+            format!("Failed to read config file: {}", e)
+        })?;
 
-        toml::from_slice(&s).unwrap_or_else(|e| {
-            eprintln!("Failed to parse config file: {}", e);
-            std::process::exit(1);
+        toml::from_slice(&s).map_err(|e| {
+            format!("Failed to parse config file: {}", e)
         })
     }
 
     pub fn run(cfg_path: Option<&str>) {
         let config = match cfg_path {
-            Some(c) => Agent::read_config(c),
+            Some(c) => match Agent::read_config(c) {
+                Ok(cfg) => cfg,
+                Err(e) => {
+                    eprintln!("{}", e);
+                    return;
+                }
+            },
             None => AgentConfig::default(),
         };
         let addr = format!("{}:{}", config.server.host, config.server.port);
@@ -290,11 +293,16 @@ fn assignment_save(
     uuid: &str,
     path: &str,
     assignment: Arc<RwLock<Assignment>>,
-) {
+) -> Result<(), String> {
     let mut conn =
         match rusqlite::Connection::open(format!("{}/{}", path, uuid)) {
             Ok(conn) => conn,
-            Err(e) => panic!("DB error opening {}/{}: {}", path, uuid, e),
+            Err(e) => {
+                return Err(format!(
+                    "DB error opening {}/{}: {}",
+                    path, uuid, e
+                ));
+            }
         };
 
     let assn = assignment.read().unwrap();
@@ -304,11 +312,14 @@ fn assignment_save(
     // Create a transaction.  All database operations within this function
     // will be part of this transaction.  This includes the creation of both
     // the `tasks' and the `stats' table and the insertion of data in to each.
-    let transaction = conn.transaction().unwrap();
+    let transaction = conn.transaction().map_err(|e| {
+        format!("Transaction start error on uuid {}: {}", uuid, e)
+    })?;
 
     // Create the table for our tasks.
-    match transaction.execute(
-        "create table if not exists tasks (
+    transaction
+        .execute(
+            "create table if not exists tasks (
         object_id text primary key not null unique,
         owner text not null,
         md5sum text not null,
@@ -316,59 +327,61 @@ fn assignment_save(
         manta_storage_id text not null,
         status text not null
 	)",
-        rusqlite::params![],
-    ) {
-        Ok(_) => (),
-        Err(e) => panic!("Database creation error: {}", e),
-    }
+            rusqlite::params![],
+        )
+        .map_err(|e| format!("Database creation error: {}", e))?;
 
     // Create the table for our stats.
-    match transaction.execute(
-        "create table if not exists stats (stats text not null)",
-        rusqlite::params![],
-    ) {
-        Ok(_) => (),
-        Err(e) => panic!("Database creation error: {}", e),
-    }
+    transaction
+        .execute(
+            "create table if not exists stats (stats text not null)",
+            rusqlite::params![],
+        )
+        .map_err(|e| format!("Database creation error: {}", e))?;
 
     // Populate the task table with the tasks in this assignment.
     for task in tasklist.iter() {
-        match transaction.execute(
-            "INSERT INTO tasks
+        transaction
+            .execute(
+                "INSERT INTO tasks
             (object_id, owner, md5sum, datacenter, manta_storage_id, status)
             values (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![
-                task.object_id,
-                task.owner,
-                task.md5sum,
-                task.source.datacenter,
-                task.source.manta_storage_id,
-                serde_json::to_vec(&task.status).unwrap()
-            ],
-        ) {
-            Ok(_) => (),
-            Err(e) => {
-                panic!("Task insertion error on assignment {}: {}", &uuid, e)
-            }
-        };
+                rusqlite::params![
+                    task.object_id,
+                    task.owner,
+                    task.md5sum,
+                    task.source.datacenter,
+                    task.source.manta_storage_id,
+                    serde_json::to_vec(&task.status).unwrap()
+                ],
+            )
+            .map_err(|e| {
+                format!(
+                    "Task insertion error on assignment {}: {}",
+                    &uuid, e
+                )
+            })?;
     }
 
     // Populate the stats table with our stats
-    match transaction.execute(
-        "INSERT INTO stats values (?1)",
-        rusqlite::params![serde_json::to_vec(&stats).unwrap()],
-    ) {
-        Ok(_) => (),
-        Err(e) => panic!("Task insertion error on assignment {}: {}", &uuid, e),
-    };
+    transaction
+        .execute(
+            "INSERT INTO stats values (?1)",
+            rusqlite::params![serde_json::to_vec(&stats).unwrap()],
+        )
+        .map_err(|e| {
+            format!("Task insertion error on assignment {}: {}", &uuid, e)
+        })?;
 
     // Finally, kick off the transaction as a whole.  Up until this point,
     // nothing has been committed to the database.  If this does not complete
     // successfully, we likely have a systemic problem that retrying or
     // "handling" will not mitigate.
-    if let Err(e) = transaction.commit() {
-        panic!("Transaction error on uuid: {}: {}", uuid, e);
-    }
+    transaction.commit().map_err(|e| {
+        format!("Transaction error on uuid: {}: {}", uuid, e)
+    })?;
+
+    Ok(())
 }
 
 // Given the path of a particular assignment, extract its contents from
@@ -476,13 +489,17 @@ fn assignment_recall<S: Into<String>>(
 fn assignment_complete(assignments: Arc<Mutex<Assignments>>, uuid: String) {
     let assn = assignment_get(&assignments, &uuid).unwrap();
 
-    assignment_save(&uuid, REBALANCER_FINISHED_DIR, assn);
+    if let Err(e) = assignment_save(&uuid, REBALANCER_FINISHED_DIR, assn) {
+        error!(
+            "Failed to save completed assignment {}: {}",
+            uuid, e
+        );
+    }
     let src = format!("{}/{}", REBALANCER_SCHEDULED_DIR, uuid);
 
-    match fs::remove_file(&src) {
-        Ok(_) => (),
-        Err(e) => panic!(format!("Error removing file: {}", e)),
-    };
+    if let Err(e) = fs::remove_file(&src) {
+        error!("Error removing file {}: {}", src, e);
+    }
 
     // Remove it from our HashMap of assignments.
     let mut hm = assignments.lock().unwrap();
@@ -628,7 +645,18 @@ fn post_assignment_handler(
 
                 // Before we even process the assignment, save it to persistent
                 // storage.
-                assignment_save(&uuid, REBALANCER_SCHEDULED_DIR, assignment);
+                if let Err(e) = assignment_save(
+                    &uuid,
+                    REBALANCER_SCHEDULED_DIR,
+                    assignment,
+                ) {
+                    error!("Failed to save assignment {}: {}", uuid, e);
+                    let res = create_empty_response(
+                        &state,
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                    );
+                    return future::ok((state, res));
+                }
 
                 // Assignment has been saved.  Remove its id from the the table.
                 agent.quiescing.lock().unwrap().remove(&uuid);
@@ -797,21 +825,24 @@ fn manta_file_path(owner: &str, object: &str) -> String {
     path
 }
 
-fn file_move(src: &str, dst: &str) {
+fn file_move(src: &str, dst: &str) -> Result<(), String> {
     let parent = match Path::new(dst).parent() {
         Some(p) => p,
-        None => panic!("Invalid destination path supplied."),
+        None => {
+            return Err("Invalid destination path supplied.".to_string());
+        }
     };
 
     // Check to see if the destination directory exists.  If it does not, then
     // create it now.
     if !parent.exists() {
-        create_dir(parent.to_str().unwrap());
+        fs::create_dir_all(parent).map_err(|e| {
+            format!("Error creating directory {:?}: {}", parent, e)
+        })?;
     }
 
-    if let Err(e) = fs::rename(src, dst) {
-        panic!("Error renaming file {}: {}", src, e);
-    }
+    fs::rename(src, dst)
+        .map_err(|e| format!("Error renaming file {}: {}", src, e))
 }
 
 fn file_remove(file_path: &str) {
@@ -820,15 +851,13 @@ fn file_remove(file_path: &str) {
     }
 
     if let Err(e) = fs::remove_file(&file_path) {
-        panic!("Error removing file {}: {}", &file_path, e);
+        error!("Error removing file {}: {}", &file_path, e);
     }
 }
 
-fn file_create(file_path: &str) -> File {
-    match File::create(&file_path) {
-        Err(e) => panic!("Error creating file {}", e),
-        Ok(file) => file,
-    }
+fn file_create(file_path: &str) -> Result<File, String> {
+    File::create(&file_path)
+        .map_err(|e| format!("Error creating file {}: {}", file_path, e))
 }
 
 // TODO: Make this return an actual result.
@@ -857,7 +886,13 @@ fn download(
     trace!("{}", msg);
 
     let tmp_path = manta_tmp_path(owner, object);
-    let mut file = file_create(&tmp_path);
+    let mut file = match file_create(&tmp_path) {
+        Ok(f) => f,
+        Err(e) => {
+            error!("{}", e);
+            return Err(ObjectSkippedReason::AgentFSError);
+        }
+    };
 
     let bytes = match std::io::copy(&mut response, &mut file) {
         Ok(b) => b,
@@ -927,8 +962,13 @@ pub fn process_task(
             // Upon successful download, move the temprorary object to its
             // rightful location (i.e. /manta/account/object).
             let manta_path = manta_file_path(&task.owner, &task.object_id);
-            file_move(&tmp_path, &manta_path);
-            TaskStatus::Complete
+            match file_move(&tmp_path, &manta_path) {
+                Ok(()) => TaskStatus::Complete,
+                Err(e) => {
+                    error!("{}", e);
+                    TaskStatus::Failed(ObjectSkippedReason::AgentFSError)
+                }
+            }
         }
         Err(e) => {
             // If we failed to complete the download, remove the temporary

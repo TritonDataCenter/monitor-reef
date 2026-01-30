@@ -1313,8 +1313,11 @@ impl EvacuateJob {
         let conn = match pg_db::create_and_connect_db(db_name) {
             Ok(c) => c,
             Err(e) => {
-                println!("Error creating Evacuate Job: {}", e);
-                std::process::exit(1);
+                return Err(InternalError::new(
+                    Some(InternalErrorCode::Other),
+                    format!("Error creating Evacuate Job: {}", e),
+                )
+                .into());
             }
         };
 
@@ -1472,10 +1475,14 @@ impl EvacuateJob {
                         );
                         set_run_error(&mut ret, err);
                     } else {
-                        panic!("Error {}", err);
+                        set_run_error(&mut ret, err);
                     }
                 } else {
-                    panic!("Error {}", e);
+                    let err = InternalError::new(
+                        Some(InternalErrorCode::Other),
+                        format!("{}", e),
+                    );
+                    set_run_error(&mut ret, err);
                 }
             }
         }
@@ -1592,11 +1599,13 @@ impl EvacuateJob {
     ) {
         self.mark_assignment_skipped(assign_id, skip_reason);
 
-        self.set_assignment_state(assign_id, assignment_state)
-            .unwrap_or_else(|e| {
-                // TODO: should we panic? if so just replace with expect()
-                panic!("{}", e);
-            });
+        if let Err(e) = self.set_assignment_state(assign_id, assignment_state)
+        {
+            error!(
+                "Failed to set assignment state for {}: {}",
+                assign_id, e
+            );
+        }
 
         self.remove_assignment_from_cache(assign_id);
     }
@@ -1814,9 +1823,8 @@ impl EvacuateJob {
                 1
             }
             Err(e) => {
-                let msg = format!("Error inserting object into DB: {}", e);
-                error!("{}", msg);
-                panic!(msg);
+                error!("Error inserting object into DB: {}", e);
+                0
             }
         }
     }
@@ -1970,9 +1978,8 @@ impl EvacuateJob {
                 }
                 Ok(_) => (), // unreachable?
                 Err(e) => {
-                    let msg = format!("Error inserting object into DB: {}", e);
-                    error!("{}", msg);
-                    panic!(msg);
+                    error!("Error inserting object into DB: {}", e);
+                    return Err(e.into());
                 }
             }
 
@@ -2021,9 +2028,8 @@ impl EvacuateJob {
             .set(status.eq(to_status))
             .execute(&*locked_conn)
             .unwrap_or_else(|e| {
-                let msg = format!("LocalDB: Error updating {}", e);
-                error!("{}", msg);
-                panic!(msg);
+                error!("LocalDB: Error updating {}", e);
+                0
             });
 
         debug!(
@@ -2060,12 +2066,11 @@ impl EvacuateJob {
             ))
             .execute(&*locked_conn)
             .unwrap_or_else(|e| {
-                let msg = format!(
+                error!(
                     "Error updating assignment: {} ({})",
                     assignment_uuid, e
                 );
-                error!("{}", msg);
-                panic!(msg);
+                0
             });
 
         debug!(
@@ -2102,12 +2107,11 @@ impl EvacuateJob {
             ))
             .execute(&*locked_conn)
             .unwrap_or_else(|e| {
-                let msg = format!(
+                error!(
                     "Error updating assignment: {} ({})",
                     assignment_uuid, e
                 );
-                error!("{}", msg);
-                panic!(msg);
+                0
             });
 
         debug!(
@@ -2162,9 +2166,8 @@ impl EvacuateJob {
                 ))
                 .execute(&*locked_conn)
                 .unwrap_or_else(|e| {
-                    let msg = format!("LocalDB: Error updating {}", e);
-                    error!("{}", msg);
-                    panic!(msg);
+                    error!("LocalDB: Error updating {}", e);
+                    0
                 });
 
             // Ensure that the number of rows affected by the update is in fact
@@ -2201,10 +2204,8 @@ impl EvacuateJob {
             ))
             .execute(&*locked_conn)
             .unwrap_or_else(|e| {
-                let msg =
-                    format!("Error updating assignment: {} ({})", object_id, e);
-                error!("{}", msg);
-                panic!(msg);
+                error!("Error updating assignment: {} ({})", object_id, e);
+                0
             });
 
         assert_eq!(update_cnt, 1);
@@ -2238,9 +2239,8 @@ impl EvacuateJob {
             ))
             .execute(&*locked_conn)
             .unwrap_or_else(|e| {
-                let msg = format!("Error updating assignment: {} ({})", id, e);
-                error!("{}", msg);
-                panic!(msg);
+                error!("Error updating assignment: {} ({})", id, e);
+                0
             });
 
         debug!(
@@ -2599,14 +2599,16 @@ impl ProcessAssignment for EvacuateJob {
         match ace.state {
             AssignmentState::Assigned => (),
             _ => {
-                warn!(
-                    "Assignment in unexpected state '{:?}', skipping",
-                    ace.state
+                let msg = format!(
+                    "Assignment {} in unexpected state '{:?}'",
+                    uuid, ace.state
                 );
-                // TODO: this should never happen but should we panic?
-                // If we create more threads to check for assignments or
-                // process them this may be possible.
-                panic!("Assignment in wrong state {:?}", ace);
+                error!("{}", msg);
+                return Err(InternalError::new(
+                    Some(InternalErrorCode::Other),
+                    msg,
+                )
+                .into());
             }
         }
 
@@ -2763,15 +2765,18 @@ fn _calculate_available_mb(
     assert!(max_percent <= 1.0);
     assert!(max_percent >= 0.0);
 
-    let max_remaining = max_fill_mb
-        .checked_sub(used_mb.floor() as u64)
-        .unwrap_or_else(|| {
-            let msg = format!(
-                "used_mb({}) > max_fill_mb({}) for max_fill({}): {:#?}",
-                used_mb, max_fill_mb, max_percent, dest_shark
-            );
-            panic!(msg);
-        });
+    let used_mb_u64 = used_mb.floor() as u64;
+    let max_remaining = if used_mb_u64 > max_fill_mb {
+        warn!(
+            "used_mb({}) > max_fill_mb({}) for max_fill({}), \
+             returning 0 available_mb for {}",
+            used_mb, max_fill_mb, max_percent,
+            dest_shark.shark.manta_storage_id
+        );
+        return 0;
+    } else {
+        max_fill_mb - used_mb_u64
+    };
 
     // If (max_remaining - assigned_mb) < 0 (i.e. assigned_mb > max_remaining),
     // we've already exceeded our max fill quota, return 0.
@@ -2810,8 +2815,11 @@ fn local_db_generator(
     let conn = match pg_db::connect_db(retry_uuid) {
         Ok(c) => c,
         Err(e) => {
-            println!("Error creating Evacuate Job: {}", e);
-            std::process::exit(1);
+            return Err(InternalError::new(
+                Some(InternalErrorCode::Other),
+                format!("Error connecting to Evacuate Job DB: {}", e),
+            )
+            .into());
         }
     };
 
@@ -4253,7 +4261,11 @@ fn metadata_update_batch(
                 for r in requests.iter() {
                     let br = match r {
                         BatchRequest::Put(br) => br,
-                        _ => panic!("Unexpected Batch Request"),
+                        _ => {
+                            error!("Unexpected BatchRequest variant in \
+                                    error-marking loop, skipping");
+                            continue;
+                        }
                     };
 
                     let id = common::get_objectId_from_value(&br.value)
@@ -4309,7 +4321,11 @@ fn retry_batch_update(
     for r in requests.into_iter() {
         let br: BatchPutOp = match r {
             BatchRequest::Put(br) => br,
-            _ => panic!("Unexpected Batch Request"),
+            _ => {
+                error!("Unexpected BatchRequest variant in retry loop, \
+                        skipping");
+                continue;
+            }
         };
 
         let etag = br
@@ -4394,14 +4410,16 @@ fn metadata_update_assignment(
         // we don't have more than 2.1 billion shards.
         // We do check this value coming in from sharkspotter as well.
         if eobj.shard < 0 {
+            error!(
+                "Cannot have a negative shard for object {}, marking \
+                 as error and continuing",
+                eobj.id
+            );
             job_action.mark_object_error(
                 &eobj.id,
                 EvacuateObjectError::BadShardNumber,
             );
-
-            // TODO: panic for now, but for release we should
-            // continue to next object.
-            panic!("Cannot have a negative shard {:#?}", eobj);
+            continue;
         }
 
         let shard = eobj.shard as u32;
@@ -4550,9 +4568,15 @@ fn metadata_update_broker_dynamic(
     let queue = Arc::new(Injector::<DyanmicWorkerMsg>::new());
     let update_rx = match &job_action.update_rx {
         Some(urx) => urx.clone(),
-        None => panic!(
-            "Missing update_rx channel for job with dynamic update threads"
-        ),
+        None => {
+            return Err(InternalError::new(
+                Some(InternalErrorCode::Other),
+                "Missing update_rx channel for job with dynamic \
+                 update threads"
+                    .to_string(),
+            )
+            .into());
+        }
     };
 
     thread::Builder::new()

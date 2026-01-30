@@ -202,7 +202,7 @@ fn _osr_from_sql(ts: String) -> deserialize::Result<ObjectSkippedReason> {
                 Ok(ObjectSkippedReason::HTTPStatusCode(sr_sc[1].parse()?))
             }
             _ => {
-                panic!("variant with value not found");
+                Err("variant with value not found".into())
             }
         }
     } else {

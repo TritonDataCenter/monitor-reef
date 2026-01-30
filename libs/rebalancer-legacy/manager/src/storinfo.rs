@@ -148,7 +148,7 @@ impl Storinfo {
 
     /// Get the the Vec<sharks> from the storinfo service.
     pub fn get_sharks(&self) -> Option<Vec<StorageNode>> {
-        self.sharks.lock().unwrap().take()
+        self.sharks.lock().unwrap().clone()
     }
 
     fn updater(
