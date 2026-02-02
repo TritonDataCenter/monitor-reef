@@ -723,7 +723,7 @@ impl MdapiClient {
             request_id: Self::generate_request_id(),
         };
 
-        let response = self.call("getBucket", &payload)?;
+        let response = self.call("getbucket", &payload)?;
 
         let bucket: Bucket = serde_json::from_value(response).map_err(|e| {
             MdapiError::SerializationError(format!(
@@ -763,7 +763,7 @@ impl MdapiClient {
             request_id: Self::generate_request_id(),
         };
 
-        let response = self.call("createBucket", &payload)?;
+        let response = self.call("createbucket", &payload)?;
 
         let bucket: Bucket = serde_json::from_value(response).map_err(|e| {
             MdapiError::SerializationError(format!(
@@ -803,8 +803,8 @@ impl MdapiClient {
             request_id: Self::generate_request_id(),
         };
 
-        // deleteBucket returns empty response on success
-        self.call("deleteBucket", &payload)?;
+        // deletebucket returns empty response on success
+        self.call("deletebucket", &payload)?;
         Ok(())
     }
 
@@ -899,7 +899,7 @@ impl MdapiClient {
             request_id: Self::generate_request_id(),
         };
 
-        self.call("getObject", &payload)
+        self.call("getobject", &payload)
     }
 
     /// Create a new object
@@ -920,7 +920,7 @@ impl MdapiClient {
         &self,
         payload: ObjectPayload,
     ) -> Result<Value, MdapiError> {
-        self.call("createObject", &payload)
+        self.call("createobject", &payload)
     }
 
     /// Update an existing object
@@ -941,7 +941,7 @@ impl MdapiClient {
         &self,
         update: ObjectUpdate,
     ) -> Result<Value, MdapiError> {
-        self.call("updateObject", &update)
+        self.call("updateobject", &update)
     }
 
     /// Delete an object
@@ -979,8 +979,8 @@ impl MdapiClient {
             conditions,
         };
 
-        // deleteObject returns empty response on success
-        self.call("deleteObject", &payload)?;
+        // deleteobject returns empty response on success
+        self.call("deleteobject", &payload)?;
         Ok(())
     }
 
@@ -1020,7 +1020,7 @@ impl MdapiClient {
             request_id: Self::generate_request_id(),
         };
 
-        let response = self.call("listObjects", &payload)?;
+        let response = self.call("listobjects", &payload)?;
 
         // Parse response as array of object Values
         let objects: Vec<Value> =
@@ -1061,7 +1061,7 @@ impl MdapiClient {
             request_id: Self::generate_request_id(),
         };
 
-        let response = self.call("getGCBatch", &payload)?;
+        let response = self.call("getgcbatch", &payload)?;
 
         // Parse response as array of deleted objects
         let deleted_objects: Vec<DeletedObject> =
@@ -1096,8 +1096,8 @@ impl MdapiClient {
             request_id: Self::generate_request_id(),
         };
 
-        // deleteGCBatch returns empty response on success
-        self.call("deleteGCBatch", &payload)?;
+        // deletegcbatch returns empty response on success
+        self.call("deletegcbatch", &payload)?;
         Ok(())
     }
 }
