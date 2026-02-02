@@ -24,7 +24,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fmt;
-use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -616,8 +615,6 @@ impl MdapiClient {
 
         // Get a connection from the pool
         let mut stream = self.pool.get()?;
-        let mut rpc_succeeded = false;
-
         // Send Fast RPC request
         let mut msg_id = FastMessageId::new();
         let send_result =
@@ -676,13 +673,9 @@ impl MdapiClient {
             )));
         }
 
-        // RPC completed successfully (even if it returned an error response)
-        rpc_succeeded = true;
-
-        // Return connection to pool if RPC succeeded
-        if rpc_succeeded {
-            self.pool.put(stream);
-        }
+        // RPC completed successfully (even if it returned an error response),
+        // return connection to pool.
+        self.pool.put(stream);
 
         // Return error if one was received
         if let Some(err) = response_error {
