@@ -464,10 +464,14 @@ pub fn put_object(
 /// # Notes
 /// Unlike moray's batch API, mdapi currently processes updates individually.
 /// This function provides the same interface with optimized error handling.
+/// The result includes both successful and failed object names to enable
+/// proper partial failure handling - callers can mark successful objects
+/// as complete and only retry/error the failed ones.
 pub struct BatchUpdateResult {
     pub successful: usize,
     pub failed: usize,
-    pub errors: Vec<(String, Error)>, // (object_name, error)
+    pub successful_objects: Vec<String>, // object names that succeeded
+    pub errors: Vec<(String, Error)>,    // (object_name, error) for failures
 }
 
 pub fn batch_update(
@@ -478,6 +482,7 @@ pub fn batch_update(
 
     let mut successful = 0;
     let mut failed = 0;
+    let mut successful_objects = Vec::new();
     let mut errors = Vec::new();
 
     // Group objects by vnode for better cache locality
@@ -510,6 +515,7 @@ pub fn batch_update(
             match put_object(mclient, object, bucket_id, etag) {
                 Ok(_) => {
                     successful += 1;
+                    successful_objects.push(object.name.clone());
                     trace!("Successfully updated object: {}", object.name);
                 }
                 Err(e) => {
@@ -529,6 +535,7 @@ pub fn batch_update(
     Ok(BatchUpdateResult {
         successful,
         failed,
+        successful_objects,
         errors,
     })
 }
@@ -1250,6 +1257,10 @@ mod tests {
         let result = BatchUpdateResult {
             successful: 5,
             failed: 2,
+            successful_objects: vec![
+                "obj2".to_string(),
+                "obj3".to_string(),
+            ],
             errors: vec![(
                 "obj1".to_string(),
                 Error::Internal(InternalError::new(
@@ -1261,6 +1272,7 @@ mod tests {
 
         assert_eq!(result.successful, 5);
         assert_eq!(result.failed, 2);
+        assert_eq!(result.successful_objects.len(), 2);
         assert_eq!(result.errors.len(), 1);
         assert_eq!(result.errors[0].0, "obj1");
     }
@@ -1277,6 +1289,7 @@ mod tests {
         let batch_result = result.unwrap();
         assert_eq!(batch_result.successful, 0);
         assert_eq!(batch_result.failed, 0);
+        assert_eq!(batch_result.successful_objects.len(), 0);
         assert_eq!(batch_result.errors.len(), 0);
     }
 
@@ -1531,12 +1544,14 @@ mod tests {
         let result = BatchUpdateResult {
             successful: 10,
             failed: 0,
+            successful_objects: vec!["obj1".to_string(), "obj2".to_string()],
             errors: vec![],
         };
 
         assert_eq!(result.successful, 10);
         assert_eq!(result.failed, 0);
         assert!(result.errors.is_empty());
+        assert_eq!(result.successful_objects.len(), 2);
     }
 
     #[test]
@@ -1544,6 +1559,7 @@ mod tests {
         let result = BatchUpdateResult {
             successful: 0,
             failed: 5,
+            successful_objects: vec![],
             errors: vec![
                 (
                     "obj1".to_string(),
@@ -1565,6 +1581,7 @@ mod tests {
         assert_eq!(result.successful, 0);
         assert_eq!(result.failed, 5);
         assert_eq!(result.errors.len(), 2);
+        assert!(result.successful_objects.is_empty());
     }
 
     #[test]
@@ -1572,6 +1589,10 @@ mod tests {
         let result = BatchUpdateResult {
             successful: 8,
             failed: 2,
+            successful_objects: vec![
+                "success1".to_string(),
+                "success2".to_string(),
+            ],
             errors: vec![(
                 "failed_obj".to_string(),
                 Error::Internal(InternalError::new(
@@ -1585,6 +1606,9 @@ mod tests {
         assert_eq!(result.failed, 2);
         assert_eq!(result.errors.len(), 1);
         assert!(result.errors[0].0.contains("failed_obj"));
+        // Verify we can identify which objects succeeded
+        assert_eq!(result.successful_objects.len(), 2);
+        assert!(result.successful_objects.contains(&"success1".to_string()));
     }
 
     #[test]

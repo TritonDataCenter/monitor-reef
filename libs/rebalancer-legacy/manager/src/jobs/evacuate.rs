@@ -380,11 +380,54 @@ impl MetadataBackend {
                     result.successful, result.failed
                 );
 
-                // If any failed, return error
+                // Handle partial success: mark successful objects as complete
+                // even if some failed. This ensures we don't retry already-
+                // updated objects, which is critical because mdapi updates are
+                // non-transactional (individual put_object calls).
+                if result.successful > 0 {
+                    // Build successful_objects set for efficient lookup
+                    let successful_set: std::collections::HashSet<&str> = result
+                        .successful_objects
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect();
+
+                    // Collect (objects, values) for successful updates only
+                    let (successful_manta_objects, successful_values): (
+                        Vec<_>,
+                        Vec<_>,
+                    ) = manta_objects
+                        .iter()
+                        .zip(values_for_callback.iter())
+                        .filter(|((obj, _, _), _)| {
+                            successful_set.contains(obj.name.as_str())
+                        })
+                        .map(|(obj, val)| (obj.clone(), val.clone()))
+                        .unzip();
+
+                    // Finalize MPU upload records for successful objects only
+                    if !successful_manta_objects.is_empty() {
+                        finalize_mpu_updates(
+                            client,
+                            &successful_manta_objects,
+                            from_shark,
+                            dest_shark,
+                        )?;
+                    }
+
+                    // Call callback with successful values - marks them complete
+                    if !successful_values.is_empty() {
+                        callback(successful_values)?;
+                    }
+                }
+
+                // After marking successes, return error if any failed
                 if result.failed > 0 {
                     let error_msg = format!(
-                        "Mdapi batch update had {} failures: {:?}",
+                        "Mdapi batch update had {} failures (but {} succeeded \
+                         and were marked complete): {:?}",
                         result.failed,
+                        result.successful,
                         result
                             .errors
                             .iter()
@@ -398,16 +441,6 @@ impl MetadataBackend {
                     .into());
                 }
 
-                // Finalize MPU upload records after successful batch update
-                finalize_mpu_updates(
-                    client,
-                    &manta_objects,
-                    from_shark,
-                    dest_shark,
-                )?;
-
-                // Call callback with values
-                callback(values_for_callback)?;
                 Ok(())
             }
             MetadataBackend::Hybrid { moray, mdapi } => {
@@ -508,13 +541,62 @@ impl MetadataBackend {
 
                     let result = mdapi_client::batch_update(mdapi, mdapi_refs)?;
 
+                    // Handle partial success: mark successful mdapi objects as
+                    // complete even if some failed. This prevents re-updating
+                    // already-updated objects on retry.
+                    if result.successful > 0 {
+                        // Build successful_objects set for efficient lookup
+                        let successful_set: std::collections::HashSet<&str> =
+                            result
+                                .successful_objects
+                                .iter()
+                                .map(|s| s.as_str())
+                                .collect();
+
+                        // Collect successful objects for MPU finalization
+                        let successful_mdapi_objects: Vec<_> = mdapi_objects
+                            .iter()
+                            .filter(|(obj, _, _)| {
+                                successful_set.contains(obj.name.as_str())
+                            })
+                            .cloned()
+                            .collect();
+
+                        // Collect successful values for callback
+                        let successful_mdapi_values: Vec<_> = mdapi_objects
+                            .iter()
+                            .zip(mdapi_requests.iter())
+                            .filter(|((obj, _, _), _)| {
+                                successful_set.contains(obj.name.as_str())
+                            })
+                            .map(|(_, br)| br.value.clone())
+                            .collect();
+
+                        // Finalize MPU for successful objects
+                        if !successful_mdapi_objects.is_empty() {
+                            finalize_mpu_updates(
+                                mdapi,
+                                &successful_mdapi_objects,
+                                from_shark,
+                                dest_shark,
+                            )?;
+                        }
+
+                        // Mark successful mdapi objects as complete via callback
+                        if !successful_mdapi_values.is_empty() {
+                            callback(successful_mdapi_values)?;
+                        }
+                    }
+
                     if result.failed > 0 {
                         error!(
                             "Hybrid mdapi batch failed before moray: \
-                             {} of {} mdapi updates failed (moray not yet \
-                             touched, no inconsistency). Failed objects: {:?}",
+                             {} of {} mdapi updates failed ({} succeeded and \
+                             were marked complete, moray not yet touched). \
+                             Failed objects: {:?}",
                             result.failed,
                             result.failed + result.successful,
+                            result.successful,
                             result
                                 .errors
                                 .iter()
@@ -522,8 +604,10 @@ impl MetadataBackend {
                                 .collect::<Vec<_>>()
                         );
                         let error_msg = format!(
-                            "Hybrid mdapi batch had {} failures",
-                            result.failed
+                            "Hybrid mdapi batch had {} failures \
+                             ({} succeeded and marked complete)",
+                            result.failed,
+                            result.successful
                         );
                         return Err(InternalError::new(
                             Some(InternalErrorCode::MetadataUpdateFailure),
@@ -532,19 +616,22 @@ impl MetadataBackend {
                         .into());
                     }
 
-                    // Finalize MPU upload records after successful batch update
-                    finalize_mpu_updates(
-                        mdapi,
-                        &mdapi_objects,
-                        from_shark,
-                        dest_shark,
-                    )?;
                     result.successful
                 } else {
                     0
                 };
 
                 // Process moray requests SECOND (atomic, all-or-nothing).
+                // Collect moray values for callback since mdapi values were
+                // already processed above.
+                let moray_values: Vec<Value> = moray_requests
+                    .iter()
+                    .filter_map(|req| match req {
+                        BatchRequest::Put(br) => Some(br.value.clone()),
+                        _ => None,
+                    })
+                    .collect();
+
                 if !moray_requests.is_empty() {
                     moray
                         .batch(&moray_requests, options, |_values| Ok(()))
@@ -565,8 +652,11 @@ impl MetadataBackend {
                         })?;
                 }
 
-                // Call callback with all values
-                callback(all_values)?;
+                // Call callback with moray values only (mdapi values were
+                // already called back after their successful updates above)
+                if !moray_values.is_empty() {
+                    callback(moray_values)?;
+                }
                 Ok(())
             }
         }
