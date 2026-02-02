@@ -1743,7 +1743,6 @@ impl EvacuateJob {
     // Note that receiving back `None` from `storinfo.choose()` simply means
     // there is no update from the last time we asked so we should use the
     // existing value.
-    // TODO: make retry delay configurable
     fn get_shark_list<S>(
         &self,
         storinfo: Arc<S>,
@@ -1755,7 +1754,9 @@ impl EvacuateJob {
     {
         let mut shark_list: Vec<EvacuateDestShark> = vec![];
         let mut tries = 0;
-        let shark_list_retry_delay = std::time::Duration::from_millis(500);
+        let shark_list_retry_delay = std::time::Duration::from_millis(
+            self.config.options.shark_list_retry_delay_ms,
+        );
 
         trace!("Getting new shark list");
         while tries < retries {

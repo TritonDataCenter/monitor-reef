@@ -60,6 +60,9 @@ static DEFAULT_METADATA_READ_CHUNK_SIZE: usize = 10000;
 // metadata tier.
 static DEFAULT_MAX_METADATA_READ_THREADS: usize = 10;
 
+// Default delay in milliseconds between retries when getting the shark list.
+static DEFAULT_SHARK_LIST_RETRY_DELAY_MS: u64 = 500;
+
 pub const MAX_TUNABLE_MD_UPDATE_THREADS: usize = 250;
 
 #[derive(Deserialize, Default, Debug, Clone)]
@@ -81,6 +84,7 @@ pub struct ConfigOptions {
     pub use_batched_updates: bool,
     pub md_read_chunk_size: usize,
     pub max_md_read_threads: usize,
+    pub shark_list_retry_delay_ms: u64,
 }
 
 impl Default for ConfigOptions {
@@ -95,6 +99,7 @@ impl Default for ConfigOptions {
             use_batched_updates: true,
             md_read_chunk_size: DEFAULT_METADATA_READ_CHUNK_SIZE,
             max_md_read_threads: DEFAULT_MAX_METADATA_READ_THREADS,
+            shark_list_retry_delay_ms: DEFAULT_SHARK_LIST_RETRY_DELAY_MS,
         }
     }
 }
