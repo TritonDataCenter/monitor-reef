@@ -144,6 +144,22 @@ pub struct MdapiConfig {
     /// If an update takes longer than this, it will be marked as failed.
     /// Default: 30000 (30 seconds).
     pub operation_timeout_ms: u64,
+    /// Maximum number of retries for failed operations.
+    ///
+    /// When an operation fails, it will be retried up to this many times
+    /// with exponential backoff between attempts. Set to 0 to disable retries.
+    /// Default: 3.
+    pub max_retries: u32,
+    /// Initial backoff delay in milliseconds between retry attempts.
+    ///
+    /// The delay doubles after each retry (exponential backoff) up to
+    /// max_backoff_ms. Default: 100ms.
+    pub initial_backoff_ms: u64,
+    /// Maximum backoff delay in milliseconds.
+    ///
+    /// The exponential backoff will not exceed this value.
+    /// Default: 5000ms (5 seconds).
+    pub max_backoff_ms: u64,
 }
 
 /// Default maximum batch size for mdapi updates
@@ -151,6 +167,15 @@ pub const DEFAULT_MDAPI_MAX_BATCH_SIZE: usize = 100;
 
 /// Default operation timeout in milliseconds (30 seconds)
 pub const DEFAULT_MDAPI_OPERATION_TIMEOUT_MS: u64 = 30000;
+
+/// Default maximum number of retries
+pub const DEFAULT_MDAPI_MAX_RETRIES: u32 = 3;
+
+/// Default initial backoff delay in milliseconds
+pub const DEFAULT_MDAPI_INITIAL_BACKOFF_MS: u64 = 100;
+
+/// Default maximum backoff delay in milliseconds (5 seconds)
+pub const DEFAULT_MDAPI_MAX_BACKOFF_MS: u64 = 5000;
 
 impl Default for MdapiConfig {
     fn default() -> Self {
@@ -162,6 +187,9 @@ impl Default for MdapiConfig {
             single_bucket_mode: false, // Default to multi-bucket discovery
             max_batch_size: DEFAULT_MDAPI_MAX_BATCH_SIZE,
             operation_timeout_ms: DEFAULT_MDAPI_OPERATION_TIMEOUT_MS,
+            max_retries: DEFAULT_MDAPI_MAX_RETRIES,
+            initial_backoff_ms: DEFAULT_MDAPI_INITIAL_BACKOFF_MS,
+            max_backoff_ms: DEFAULT_MDAPI_MAX_BACKOFF_MS,
         }
     }
 }
@@ -650,6 +678,9 @@ mod tests {
         assert_eq!(config.single_bucket_mode, false);
         assert_eq!(config.max_batch_size, DEFAULT_MDAPI_MAX_BATCH_SIZE);
         assert_eq!(config.operation_timeout_ms, DEFAULT_MDAPI_OPERATION_TIMEOUT_MS);
+        assert_eq!(config.max_retries, DEFAULT_MDAPI_MAX_RETRIES);
+        assert_eq!(config.initial_backoff_ms, DEFAULT_MDAPI_INITIAL_BACKOFF_MS);
+        assert_eq!(config.max_backoff_ms, DEFAULT_MDAPI_MAX_BACKOFF_MS);
     }
 
     #[test]
@@ -691,6 +722,9 @@ mod tests {
         assert_eq!(config.endpoint, "localhost:2030");
         assert_eq!(config.max_batch_size, DEFAULT_MDAPI_MAX_BATCH_SIZE);
         assert_eq!(config.operation_timeout_ms, DEFAULT_MDAPI_OPERATION_TIMEOUT_MS);
+        assert_eq!(config.max_retries, DEFAULT_MDAPI_MAX_RETRIES);
+        assert_eq!(config.initial_backoff_ms, DEFAULT_MDAPI_INITIAL_BACKOFF_MS);
+        assert_eq!(config.max_backoff_ms, DEFAULT_MDAPI_MAX_BACKOFF_MS);
     }
 
     #[test]
@@ -704,6 +738,32 @@ mod tests {
         let config: MdapiConfig = serde_json::from_str(json).unwrap();
         assert_eq!(config.max_batch_size, 50);
         assert_eq!(config.operation_timeout_ms, 60000);
+    }
+
+    #[test]
+    fn mdapi_config_retry_override() {
+        let json = r#"{
+            "enabled": true,
+            "endpoint": "mdapi.host:2030",
+            "max_retries": 5,
+            "initial_backoff_ms": 200,
+            "max_backoff_ms": 10000
+        }"#;
+        let config: MdapiConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.max_retries, 5);
+        assert_eq!(config.initial_backoff_ms, 200);
+        assert_eq!(config.max_backoff_ms, 10000);
+    }
+
+    #[test]
+    fn mdapi_config_disable_retries() {
+        let json = r#"{
+            "enabled": true,
+            "endpoint": "mdapi.host:2030",
+            "max_retries": 0
+        }"#;
+        let config: MdapiConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.max_retries, 0);
     }
 
     // =========================================================================

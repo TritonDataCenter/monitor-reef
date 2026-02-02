@@ -51,6 +51,8 @@ use rebalancer::error::{Error, InternalError, InternalErrorCode};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::thread;
+use std::time::Duration;
 use uuid::Uuid;
 
 use crate::config::MdapiConfig;
@@ -476,6 +478,183 @@ pub struct BatchUpdateResult {
 
 /// Default maximum batch size if not configured
 pub const DEFAULT_MAX_BATCH_SIZE: usize = 100;
+
+/// Configuration for retry behavior with exponential backoff
+#[derive(Debug, Clone)]
+pub struct RetryConfig {
+    /// Maximum number of retry attempts (0 = no retries)
+    pub max_retries: u32,
+    /// Initial delay between retries in milliseconds
+    pub initial_backoff_ms: u64,
+    /// Maximum delay between retries in milliseconds
+    pub max_backoff_ms: u64,
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        RetryConfig {
+            max_retries: 3,
+            initial_backoff_ms: 100,
+            max_backoff_ms: 5000,
+        }
+    }
+}
+
+impl From<&MdapiConfig> for RetryConfig {
+    fn from(config: &MdapiConfig) -> Self {
+        RetryConfig {
+            max_retries: config.max_retries,
+            initial_backoff_ms: config.initial_backoff_ms,
+            max_backoff_ms: config.max_backoff_ms,
+        }
+    }
+}
+
+/// Calculate the next backoff delay using exponential backoff.
+///
+/// The delay doubles with each attempt, capped at max_backoff_ms.
+/// Formula: min(initial_backoff_ms * 2^attempt, max_backoff_ms)
+pub fn calculate_backoff(
+    attempt: u32,
+    initial_backoff_ms: u64,
+    max_backoff_ms: u64,
+) -> Duration {
+    // Prevent overflow by capping the exponent
+    let exponent = attempt.min(30);
+    let backoff_ms = initial_backoff_ms.saturating_mul(1u64 << exponent);
+    Duration::from_millis(backoff_ms.min(max_backoff_ms))
+}
+
+/// Execute a fallible operation with exponential backoff retry.
+///
+/// This function will retry the operation up to `max_retries` times
+/// with exponentially increasing delays between attempts.
+///
+/// # Arguments
+/// * `retry_config` - Configuration for retry behavior
+/// * `operation` - A closure that returns `Result<T, Error>`
+///
+/// # Returns
+/// * `Result<T, Error>` - Success on first successful attempt, or last error if all retries fail
+///
+/// # Example
+/// ```ignore
+/// let config = RetryConfig::default();
+/// let result = with_retry(&config, || {
+///     put_object(&client, &obj, bucket_id, Some(&etag))
+/// });
+/// ```
+pub fn with_retry<T, F>(retry_config: &RetryConfig, mut operation: F) -> Result<T, Error>
+where
+    F: FnMut() -> Result<T, Error>,
+{
+    let mut last_error = None;
+
+    for attempt in 0..=retry_config.max_retries {
+        match operation() {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                if attempt < retry_config.max_retries {
+                    let backoff = calculate_backoff(
+                        attempt,
+                        retry_config.initial_backoff_ms,
+                        retry_config.max_backoff_ms,
+                    );
+                    warn!(
+                        "Operation failed (attempt {}/{}), retrying in {:?}: {}",
+                        attempt + 1,
+                        retry_config.max_retries + 1,
+                        backoff,
+                        e
+                    );
+                    thread::sleep(backoff);
+                }
+                last_error = Some(e);
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| {
+        Error::Internal(InternalError::new(
+            Some(InternalErrorCode::Other),
+            "Retry exhausted with no error captured".to_string(),
+        ))
+    }))
+}
+
+/// Check if an error is retryable.
+///
+/// Transient errors (network issues, timeouts, server overload) are retryable.
+/// Permanent errors (invalid data, not found, permission denied) are not.
+pub fn is_retryable_error(error: &Error) -> bool {
+    match error {
+        Error::Internal(internal) => {
+            // Client errors and generic errors may be transient
+            matches!(
+                internal.code,
+                InternalErrorCode::BadMorayClient
+                    | InternalErrorCode::BadMdapiClient
+                    | InternalErrorCode::Other
+            )
+        }
+        Error::Reqwest(_) => true, // Network errors are retryable
+        Error::Hyper(_) => true,   // HTTP errors may be transient
+        Error::IoError(_) => true, // I/O errors may be transient
+        Error::Mdapi(_) => false,  // Mdapi errors are generally not retryable
+        Error::SerdeJson(_) => false, // Serialization errors are not retryable
+        _ => false,
+    }
+}
+
+/// Execute an operation with retry only for retryable errors.
+///
+/// Unlike `with_retry`, this version checks if the error is retryable
+/// before attempting another retry.
+pub fn with_retry_if_retryable<T, F>(
+    retry_config: &RetryConfig,
+    mut operation: F,
+) -> Result<T, Error>
+where
+    F: FnMut() -> Result<T, Error>,
+{
+    let mut last_error = None;
+
+    for attempt in 0..=retry_config.max_retries {
+        match operation() {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                if !is_retryable_error(&e) {
+                    // Non-retryable error, fail immediately
+                    return Err(e);
+                }
+
+                if attempt < retry_config.max_retries {
+                    let backoff = calculate_backoff(
+                        attempt,
+                        retry_config.initial_backoff_ms,
+                        retry_config.max_backoff_ms,
+                    );
+                    warn!(
+                        "Retryable error (attempt {}/{}), retrying in {:?}: {}",
+                        attempt + 1,
+                        retry_config.max_retries + 1,
+                        backoff,
+                        e
+                    );
+                    thread::sleep(backoff);
+                }
+                last_error = Some(e);
+            }
+        }
+    }
+
+    Err(last_error.unwrap_or_else(|| {
+        Error::Internal(InternalError::new(
+            Some(InternalErrorCode::Other),
+            "Retry exhausted with no error captured".to_string(),
+        ))
+    }))
+}
 
 /// Batch update multiple objects with automatic chunking for large batches.
 ///
@@ -1610,6 +1789,9 @@ mod tests {
             single_bucket_mode: false,
             max_batch_size: 100,
             operation_timeout_ms: 30000,
+            max_retries: 3,
+            initial_backoff_ms: 100,
+            max_backoff_ms: 5000,
         };
 
         assert_eq!(should_use_mdapi(&config), true);
@@ -1625,6 +1807,9 @@ mod tests {
             single_bucket_mode: false,
             max_batch_size: 100,
             operation_timeout_ms: 30000,
+            max_retries: 3,
+            initial_backoff_ms: 100,
+            max_backoff_ms: 5000,
         };
 
         assert_eq!(should_use_mdapi(&config), false);
@@ -1640,6 +1825,9 @@ mod tests {
             single_bucket_mode: false,
             max_batch_size: 100,
             operation_timeout_ms: 30000,
+            max_retries: 3,
+            initial_backoff_ms: 100,
+            max_backoff_ms: 5000,
         };
 
         assert_eq!(should_use_mdapi(&config), false);
@@ -2011,5 +2199,193 @@ mod tests {
         // Original batch_update should still work
         let result = batch_update(&client, objects);
         assert!(result.is_ok());
+    }
+
+    // =========================================================================
+    // Tests for retry configuration and exponential backoff
+    // =========================================================================
+
+    #[test]
+    fn test_retry_config_default() {
+        let config = RetryConfig::default();
+        assert_eq!(config.max_retries, 3);
+        assert_eq!(config.initial_backoff_ms, 100);
+        assert_eq!(config.max_backoff_ms, 5000);
+    }
+
+    #[test]
+    fn test_retry_config_from_mdapi_config() {
+        let mdapi_config = MdapiConfig {
+            enabled: true,
+            endpoint: "localhost:2030".to_string(),
+            default_bucket_id: None,
+            connection_timeout_ms: 5000,
+            single_bucket_mode: false,
+            max_batch_size: 100,
+            operation_timeout_ms: 30000,
+            max_retries: 5,
+            initial_backoff_ms: 200,
+            max_backoff_ms: 10000,
+        };
+
+        let retry_config = RetryConfig::from(&mdapi_config);
+        assert_eq!(retry_config.max_retries, 5);
+        assert_eq!(retry_config.initial_backoff_ms, 200);
+        assert_eq!(retry_config.max_backoff_ms, 10000);
+    }
+
+    #[test]
+    fn test_calculate_backoff_exponential() {
+        let initial = 100;
+        let max = 5000;
+
+        // First attempt: 100ms
+        assert_eq!(calculate_backoff(0, initial, max), Duration::from_millis(100));
+        // Second attempt: 200ms (100 * 2^1)
+        assert_eq!(calculate_backoff(1, initial, max), Duration::from_millis(200));
+        // Third attempt: 400ms (100 * 2^2)
+        assert_eq!(calculate_backoff(2, initial, max), Duration::from_millis(400));
+        // Fourth attempt: 800ms (100 * 2^3)
+        assert_eq!(calculate_backoff(3, initial, max), Duration::from_millis(800));
+    }
+
+    #[test]
+    fn test_calculate_backoff_capped_at_max() {
+        let initial = 100;
+        let max = 500;
+
+        // Large attempt number should cap at max
+        assert_eq!(calculate_backoff(10, initial, max), Duration::from_millis(500));
+        assert_eq!(calculate_backoff(20, initial, max), Duration::from_millis(500));
+    }
+
+    #[test]
+    fn test_calculate_backoff_overflow_protection() {
+        let initial = 100;
+        let max = 10000;
+
+        // Very large attempt numbers should not overflow
+        let result = calculate_backoff(50, initial, max);
+        assert_eq!(result, Duration::from_millis(max));
+    }
+
+    #[test]
+    fn test_with_retry_succeeds_first_try() {
+        let config = RetryConfig {
+            max_retries: 3,
+            initial_backoff_ms: 10,
+            max_backoff_ms: 100,
+        };
+
+        let mut call_count = 0;
+        let result: Result<i32, Error> = with_retry(&config, || {
+            call_count += 1;
+            Ok(42)
+        });
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(call_count, 1);
+    }
+
+    #[test]
+    fn test_with_retry_succeeds_after_failures() {
+        ensure_logger_initialized();
+        let config = RetryConfig {
+            max_retries: 3,
+            initial_backoff_ms: 1, // Very short for testing
+            max_backoff_ms: 10,
+        };
+
+        let mut call_count = 0;
+        let result: Result<i32, Error> = with_retry(&config, || {
+            call_count += 1;
+            if call_count < 3 {
+                Err(Error::Internal(InternalError::new(
+                    Some(InternalErrorCode::Other),
+                    format!("Failure {}", call_count),
+                )))
+            } else {
+                Ok(42)
+            }
+        });
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(call_count, 3);
+    }
+
+    #[test]
+    fn test_with_retry_all_failures() {
+        ensure_logger_initialized();
+        let config = RetryConfig {
+            max_retries: 2,
+            initial_backoff_ms: 1,
+            max_backoff_ms: 10,
+        };
+
+        let mut call_count = 0;
+        let result: Result<i32, Error> = with_retry(&config, || {
+            call_count += 1;
+            Err(Error::Internal(InternalError::new(
+                Some(InternalErrorCode::Other),
+                format!("Failure {}", call_count),
+            )))
+        });
+
+        assert!(result.is_err());
+        assert_eq!(call_count, 3); // initial + 2 retries
+    }
+
+    #[test]
+    fn test_with_retry_zero_retries() {
+        let config = RetryConfig {
+            max_retries: 0,
+            initial_backoff_ms: 1,
+            max_backoff_ms: 10,
+        };
+
+        let mut call_count = 0;
+        let result: Result<i32, Error> = with_retry(&config, || {
+            call_count += 1;
+            Err(Error::Internal(InternalError::new(
+                Some(InternalErrorCode::Other),
+                "Failure".to_string(),
+            )))
+        });
+
+        assert!(result.is_err());
+        assert_eq!(call_count, 1); // No retries, just the initial attempt
+    }
+
+    #[test]
+    fn test_is_retryable_error() {
+        // Client errors are retryable
+        let client_error = Error::Internal(InternalError::new(
+            Some(InternalErrorCode::BadMdapiClient),
+            "Client error".to_string(),
+        ));
+        assert!(is_retryable_error(&client_error));
+
+        // Other internal errors are retryable (may be transient)
+        let other_error = Error::Internal(InternalError::new(
+            Some(InternalErrorCode::Other),
+            "Unknown error".to_string(),
+        ));
+        assert!(is_retryable_error(&other_error));
+
+        // Metadata update failure is not retryable
+        let metadata_error = Error::Internal(InternalError::new(
+            Some(InternalErrorCode::MetadataUpdateFailure),
+            "Update failed".to_string(),
+        ));
+        assert!(!is_retryable_error(&metadata_error));
+
+        // Bucket/object not found is not retryable
+        let not_found_error = Error::Internal(InternalError::new(
+            Some(InternalErrorCode::MdapiBucketNotFound),
+            "Bucket not found".to_string(),
+        ));
+        assert!(!is_retryable_error(&not_found_error));
     }
 }

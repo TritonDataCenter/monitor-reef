@@ -6459,6 +6459,9 @@ mod tests {
             single_bucket_mode: false,
             max_batch_size: 100,
             operation_timeout_ms: 30000,
+            max_retries: 3,
+            initial_backoff_ms: 100,
+            max_backoff_ms: 5000,
         };
 
         // Note: This will fail without a real moray/mdapi service
@@ -6504,6 +6507,9 @@ mod tests {
             single_bucket_mode: false,
             max_batch_size: 100,
             operation_timeout_ms: 30000,
+            max_retries: 3,
+            initial_backoff_ms: 100,
+            max_backoff_ms: 5000,
         };
 
         let use_mdapi = mdapi_client::should_use_mdapi(&config.mdapi);
