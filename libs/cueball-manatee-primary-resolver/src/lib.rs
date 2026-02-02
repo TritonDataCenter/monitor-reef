@@ -182,11 +182,7 @@ impl ZkConnectString {
 
 impl ToString for ZkConnectString {
     fn to_string(&self) -> String {
-        self.0
-            .iter()
-            .map(|x| x.to_string())
-            .intersperse(String::from(","))
-            .collect()
+        self.0.iter().map(|x| x.to_string()).join(",")
     }
 }
 
