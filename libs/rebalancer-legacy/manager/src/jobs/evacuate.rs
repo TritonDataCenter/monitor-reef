@@ -1840,7 +1840,9 @@ impl EvacuateJob {
         }
     }
 
-    // TODO: Consider doing batched inserts: MANTA-4464.
+    // NOTE: Batched inserts (MANTA-4464) are implemented in insert_assignment_into_db()
+    // which handles the bulk of objects. This single-object insert is only used for
+    // error cases and skipped objects, which are relatively rare.
     //
     // NOTE: The duplicate-handling path spans two database connections
     // (Diesel PgConnection for the query, raw pg::Client for the upsert
