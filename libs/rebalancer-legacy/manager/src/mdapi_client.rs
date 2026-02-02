@@ -675,9 +675,10 @@ pub struct BucketInfo {
 /// * Returns Error::Internal for malformed responses
 ///
 /// # Notes
-/// The underlying rust-libmanta list_buckets is not yet fully implemented.
-/// Currently returns an empty list with a debug log. When the mdapi Fast RPC
-/// is completed, this will return actual bucket data.
+/// The underlying rust-libmanta list_buckets is fully implemented.
+/// Returns bucket data from the mdapi service. Older servers that don't
+/// support listBuckets RPC will return empty list as fallback, in which
+/// case evacuation will use the configured default_bucket_id.
 ///
 /// # Example
 /// ```rust,ignore
@@ -713,12 +714,13 @@ pub fn list_buckets(
         }
         Err(MdapiError::RpcError(ref msg))
             if msg.contains("Not implemented")
-                || msg.contains("not implemented") =>
+                || msg.contains("not implemented")
+                || msg.contains("Unsupported") =>
         {
             debug!(
-                "Mdapi list_buckets not yet implemented, returning empty list"
+                "Mdapi listBuckets RPC not supported by server, returning empty list"
             );
-            // Return empty list for now - evacuation will use default_bucket_id
+            // Return empty list - evacuation will use default_bucket_id
             Ok(Vec::new())
         }
         Err(e) => {

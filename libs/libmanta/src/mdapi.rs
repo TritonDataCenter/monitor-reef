@@ -854,7 +854,7 @@ impl MdapiClient {
             request_id: Self::generate_request_id(),
         };
 
-        let response = self.call("listBuckets", &payload)?;
+        let response = self.call("listbuckets", &payload)?;
 
         // Parse response as array of buckets
         let buckets: Vec<Bucket> =
