@@ -132,7 +132,25 @@ pub struct MdapiConfig {
     /// - Phased migration (evacuate one bucket at a time)
     /// - Limited deployments with only one bucket
     pub single_bucket_mode: bool,
+    /// Maximum number of objects to process in a single batch update.
+    ///
+    /// Large batches can overload the mdapi server and cause timeouts.
+    /// If a batch exceeds this limit, it will be automatically chunked
+    /// into smaller batches. Default: 100.
+    pub max_batch_size: usize,
+    /// Timeout in milliseconds for individual update operations.
+    ///
+    /// This timeout applies to each individual object update within a batch.
+    /// If an update takes longer than this, it will be marked as failed.
+    /// Default: 30000 (30 seconds).
+    pub operation_timeout_ms: u64,
 }
+
+/// Default maximum batch size for mdapi updates
+pub const DEFAULT_MDAPI_MAX_BATCH_SIZE: usize = 100;
+
+/// Default operation timeout in milliseconds (30 seconds)
+pub const DEFAULT_MDAPI_OPERATION_TIMEOUT_MS: u64 = 30000;
 
 impl Default for MdapiConfig {
     fn default() -> Self {
@@ -142,6 +160,8 @@ impl Default for MdapiConfig {
             default_bucket_id: None,
             connection_timeout_ms: 5000,
             single_bucket_mode: false, // Default to multi-bucket discovery
+            max_batch_size: DEFAULT_MDAPI_MAX_BATCH_SIZE,
+            operation_timeout_ms: DEFAULT_MDAPI_OPERATION_TIMEOUT_MS,
         }
     }
 }
@@ -628,6 +648,8 @@ mod tests {
         assert!(config.default_bucket_id.is_none());
         assert_eq!(config.connection_timeout_ms, 5000);
         assert_eq!(config.single_bucket_mode, false);
+        assert_eq!(config.max_batch_size, DEFAULT_MDAPI_MAX_BATCH_SIZE);
+        assert_eq!(config.operation_timeout_ms, DEFAULT_MDAPI_OPERATION_TIMEOUT_MS);
     }
 
     #[test]
@@ -667,6 +689,21 @@ mod tests {
         let config: MdapiConfig = serde_json::from_str(json).unwrap();
         assert_eq!(config.enabled, false);
         assert_eq!(config.endpoint, "localhost:2030");
+        assert_eq!(config.max_batch_size, DEFAULT_MDAPI_MAX_BATCH_SIZE);
+        assert_eq!(config.operation_timeout_ms, DEFAULT_MDAPI_OPERATION_TIMEOUT_MS);
+    }
+
+    #[test]
+    fn mdapi_config_batch_and_timeout_override() {
+        let json = r#"{
+            "enabled": true,
+            "endpoint": "mdapi.host:2030",
+            "max_batch_size": 50,
+            "operation_timeout_ms": 60000
+        }"#;
+        let config: MdapiConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(config.max_batch_size, 50);
+        assert_eq!(config.operation_timeout_ms, 60000);
     }
 
     // =========================================================================

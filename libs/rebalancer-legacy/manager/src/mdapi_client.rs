@@ -474,11 +474,122 @@ pub struct BatchUpdateResult {
     pub errors: Vec<(String, Error)>,    // (object_name, error) for failures
 }
 
+/// Default maximum batch size if not configured
+pub const DEFAULT_MAX_BATCH_SIZE: usize = 100;
+
+/// Batch update multiple objects with automatic chunking for large batches.
+///
+/// If the batch exceeds `max_batch_size`, it is automatically split into
+/// smaller chunks to prevent overloading the mdapi server.
+///
+/// # Arguments
+/// * `mclient` - The mdapi client instance
+/// * `objects` - Vector of (MantaObject, bucket_id, etag) tuples to update
+/// * `max_batch_size` - Maximum objects per batch (uses DEFAULT_MAX_BATCH_SIZE if None)
+///
+/// # Returns
+/// * `Result<BatchUpdateResult, Error>` - Summary of successful and failed updates
+pub fn batch_update_with_config(
+    mclient: &MdapiClient,
+    objects: Vec<(&MantaObject, Uuid, Option<&str>)>,
+    max_batch_size: Option<usize>,
+) -> Result<BatchUpdateResult, Error> {
+    let max_size = max_batch_size.unwrap_or(DEFAULT_MAX_BATCH_SIZE);
+    let total_objects = objects.len();
+
+    if total_objects == 0 {
+        return Ok(BatchUpdateResult {
+            successful: 0,
+            failed: 0,
+            successful_objects: Vec::new(),
+            errors: Vec::new(),
+        });
+    }
+
+    // If batch is within limits, process directly
+    if total_objects <= max_size {
+        return batch_update_internal(mclient, objects);
+    }
+
+    // Chunk large batches
+    info!(
+        "Batch of {} objects exceeds max_batch_size ({}), chunking into {} batches",
+        total_objects,
+        max_size,
+        (total_objects + max_size - 1) / max_size
+    );
+
+    let mut total_successful = 0;
+    let mut total_failed = 0;
+    let mut all_successful_objects = Vec::new();
+    let mut all_errors = Vec::new();
+
+    for (chunk_idx, chunk) in objects.chunks(max_size).enumerate() {
+        debug!(
+            "Processing chunk {}/{} with {} objects",
+            chunk_idx + 1,
+            (total_objects + max_size - 1) / max_size,
+            chunk.len()
+        );
+
+        // Convert chunk slice to owned Vec for processing
+        let chunk_vec: Vec<(&MantaObject, Uuid, Option<&str>)> =
+            chunk.iter().cloned().collect();
+
+        match batch_update_internal(mclient, chunk_vec) {
+            Ok(result) => {
+                total_successful += result.successful;
+                total_failed += result.failed;
+                all_successful_objects.extend(result.successful_objects);
+                all_errors.extend(result.errors);
+            }
+            Err(e) => {
+                // If the entire chunk fails, mark all objects as failed
+                error!("Chunk {} failed entirely: {}", chunk_idx + 1, e);
+                total_failed += chunk.len();
+                for (obj, _, _) in chunk {
+                    all_errors.push((
+                        obj.name.clone(),
+                        Error::Internal(InternalError::new(
+                            Some(InternalErrorCode::MetadataUpdateFailure),
+                            format!("Chunk failed: {}", e),
+                        )),
+                    ));
+                }
+            }
+        }
+    }
+
+    info!(
+        "Chunked batch update complete: {} successful, {} failed across {} chunks",
+        total_successful,
+        total_failed,
+        (total_objects + max_size - 1) / max_size
+    );
+
+    Ok(BatchUpdateResult {
+        successful: total_successful,
+        failed: total_failed,
+        successful_objects: all_successful_objects,
+        errors: all_errors,
+    })
+}
+
+/// Original batch_update function for backward compatibility.
+/// Uses DEFAULT_MAX_BATCH_SIZE for chunking.
 pub fn batch_update(
     mclient: &MdapiClient,
     objects: Vec<(&MantaObject, Uuid, Option<&str>)>,
 ) -> Result<BatchUpdateResult, Error> {
-    info!("Starting batch update of {} objects", objects.len());
+    batch_update_with_config(mclient, objects, Some(DEFAULT_MAX_BATCH_SIZE))
+}
+
+/// Internal batch update implementation that processes a single batch.
+fn batch_update_internal(
+    mclient: &MdapiClient,
+    objects: Vec<(&MantaObject, Uuid, Option<&str>)>,
+) -> Result<BatchUpdateResult, Error> {
+    debug!("Processing batch of {} objects", objects.len());
 
     let mut successful = 0;
     let mut failed = 0;
@@ -497,7 +608,7 @@ pub fn batch_update(
             .push(obj_tuple);
     }
 
-    debug!(
+    trace!(
         "Grouped {} objects into {} vnodes",
         grouped.values().map(|v| v.len()).sum::<usize>(),
         grouped.len()
@@ -527,8 +638,8 @@ pub fn batch_update(
         }
     }
 
-    info!(
-        "Batch update complete: {} successful, {} failed",
+    debug!(
+        "Batch complete: {} successful, {} failed",
         successful, failed
     );
 
@@ -1497,6 +1608,8 @@ mod tests {
             default_bucket_id: Some(Uuid::new_v4()),
             connection_timeout_ms: 5000,
             single_bucket_mode: false,
+            max_batch_size: 100,
+            operation_timeout_ms: 30000,
         };
 
         assert_eq!(should_use_mdapi(&config), true);
@@ -1510,6 +1623,8 @@ mod tests {
             default_bucket_id: Some(Uuid::new_v4()),
             connection_timeout_ms: 5000,
             single_bucket_mode: false,
+            max_batch_size: 100,
+            operation_timeout_ms: 30000,
         };
 
         assert_eq!(should_use_mdapi(&config), false);
@@ -1523,6 +1638,8 @@ mod tests {
             default_bucket_id: Some(Uuid::new_v4()),
             connection_timeout_ms: 5000,
             single_bucket_mode: false,
+            max_batch_size: 100,
+            operation_timeout_ms: 30000,
         };
 
         assert_eq!(should_use_mdapi(&config), false);
@@ -1801,5 +1918,98 @@ mod tests {
         let payload = result.unwrap();
         // Should have a request_id even when not provided
         assert!(!payload.request_id.is_nil());
+    }
+
+    // =========================================================================
+    // Tests for batch chunking functionality
+    // =========================================================================
+
+    #[test]
+    fn test_batch_update_with_config_empty_list() {
+        ensure_logger_initialized();
+        let client = create_client("localhost:2030").unwrap();
+        let objects: Vec<(&MantaObject, Uuid, Option<&str>)> = vec![];
+
+        let result = batch_update_with_config(&client, objects, Some(10));
+        assert!(result.is_ok());
+
+        let batch_result = result.unwrap();
+        assert_eq!(batch_result.successful, 0);
+        assert_eq!(batch_result.failed, 0);
+    }
+
+    #[test]
+    fn test_batch_update_with_config_within_limit() {
+        ensure_logger_initialized();
+        let client = create_client("localhost:2030").unwrap();
+        let objects: Vec<(&MantaObject, Uuid, Option<&str>)> = vec![];
+
+        // Empty list with max_batch_size of 100
+        let result = batch_update_with_config(&client, objects, Some(100));
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_default_max_batch_size_constant() {
+        // Verify the default is a reasonable value
+        assert_eq!(DEFAULT_MAX_BATCH_SIZE, 100);
+        assert!(DEFAULT_MAX_BATCH_SIZE > 0);
+        assert!(DEFAULT_MAX_BATCH_SIZE <= 1000); // Sanity check
+    }
+
+    #[test]
+    fn test_batch_update_result_chunked_aggregation() {
+        // Test that BatchUpdateResult can properly aggregate chunked results
+        let mut total = BatchUpdateResult {
+            successful: 0,
+            failed: 0,
+            successful_objects: Vec::new(),
+            errors: Vec::new(),
+        };
+
+        // Simulate aggregating 3 chunk results
+        let chunk1 = BatchUpdateResult {
+            successful: 10,
+            failed: 2,
+            successful_objects: vec!["obj1".to_string(), "obj2".to_string()],
+            errors: vec![(
+                "err1".to_string(),
+                Error::Internal(InternalError::new(
+                    Some(InternalErrorCode::Other),
+                    "test".to_string(),
+                )),
+            )],
+        };
+
+        let chunk2 = BatchUpdateResult {
+            successful: 8,
+            failed: 1,
+            successful_objects: vec!["obj3".to_string()],
+            errors: vec![],
+        };
+
+        // Aggregate manually (simulating what batch_update_with_config does)
+        total.successful += chunk1.successful + chunk2.successful;
+        total.failed += chunk1.failed + chunk2.failed;
+        total.successful_objects.extend(chunk1.successful_objects);
+        total.successful_objects.extend(chunk2.successful_objects);
+        total.errors.extend(chunk1.errors);
+        total.errors.extend(chunk2.errors);
+
+        assert_eq!(total.successful, 18);
+        assert_eq!(total.failed, 3);
+        assert_eq!(total.successful_objects.len(), 3);
+        assert_eq!(total.errors.len(), 1);
+    }
+
+    #[test]
+    fn test_batch_update_backward_compatibility() {
+        ensure_logger_initialized();
+        let client = create_client("localhost:2030").unwrap();
+        let objects: Vec<(&MantaObject, Uuid, Option<&str>)> = vec![];
+
+        // Original batch_update should still work
+        let result = batch_update(&client, objects);
+        assert!(result.is_ok());
     }
 }
