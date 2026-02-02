@@ -30,7 +30,6 @@ use manager::pg_db::{connect_db, REBALANCER_DB};
 use rebalancer::util;
 
 use std::collections::HashMap;
-use std::error::Error;
 use std::str::FromStr;
 use std::sync::{Arc, Mutex};
 
@@ -381,7 +380,7 @@ impl Handler for JobRetryHandler {
             Ok(jb) => jb,
             Err(e) => {
                 let error =
-                    invalid_server_error(&state, String::from(e.description()));
+                    invalid_server_error(&state, e.to_string());
                 return Box::new(future::ok((state, error)));
             }
         };
@@ -390,7 +389,7 @@ impl Handler for JobRetryHandler {
             Ok(j) => j,
             Err(e) => {
                 let error =
-                    invalid_server_error(&state, String::from(e.description()));
+                    invalid_server_error(&state, e.to_string());
                 return Box::new(future::ok((state, error)));
             }
         };
@@ -480,7 +479,7 @@ impl Handler for JobCreateHandler {
                     Err(e) => {
                         let error = invalid_server_error(
                             &state,
-                            String::from(e.description()),
+                            e.to_string(),
                         );
                         return Box::new(future::ok((state, error)));
                     }

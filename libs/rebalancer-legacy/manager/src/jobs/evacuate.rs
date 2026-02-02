@@ -38,7 +38,6 @@ use crate::storinfo::{self as mod_storinfo, SharkSource, StorageNode};
 use std::collections::hash_map::Entry::{Occupied, Vacant};
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use std::error::Error as _Error;
 use std::io::Write;
 use std::str::FromStr;
 use std::string::ToString;
@@ -303,7 +302,7 @@ impl MetadataBackend {
                     .map_err(|e| {
                         InternalError::new(
                             Some(InternalErrorCode::MetadataUpdateFailure),
-                            format!("Batch update failed: {}", e.description()),
+                            format!("Batch update failed: {}", e),
                         )
                         .into()
                     })
@@ -557,14 +556,11 @@ impl MetadataBackend {
                                  committed. Mdapi updates will be reconciled \
                                  on retry. Error: {}",
                                 mdapi_success_count,
-                                e.description()
+                                e
                             );
                             InternalError::new(
                                 Some(InternalErrorCode::MetadataUpdateFailure),
-                                format!(
-                                    "Hybrid moray batch failed: {}",
-                                    e.description()
-                                ),
+                                format!("Hybrid moray batch failed: {}", e),
                             )
                         })?;
                 }
@@ -1631,7 +1627,8 @@ impl EvacuateJob {
 
         debug_assert!(
             entry.is_some(),
-            format!("Remove assignment not in hash: {}", assignment_id)
+            "Remove assignment not in hash: {}",
+            assignment_id
         );
 
         let initial_size = assignment_cache_usage(&assignments);
@@ -3008,7 +3005,7 @@ fn local_db_generator(
             warn!("local db generator exiting early: {}", e);
             return Err(InternalError::new(
                 Some(InternalErrorCode::Crossbeam),
-                CrossbeamError::from(e).description(),
+                format!("{}", CrossbeamError::from(e)),
             )
             .into());
         }
@@ -3526,7 +3523,7 @@ fn _channel_send_assignment(
 
             InternalError::new(
                 Some(InternalErrorCode::Crossbeam),
-                CrossbeamError::from(e).description(),
+                format!("{}", CrossbeamError::from(e)),
             )
         })?;
     }
@@ -4146,7 +4143,7 @@ fn start_assignment_checker(
                             );
                             return Err(InternalError::new(
                                 Some(InternalErrorCode::Crossbeam),
-                                CrossbeamError::from(e).description(),
+                                format!("{}", CrossbeamError::from(e)),
                             )
                             .into());
                         }
@@ -4336,7 +4333,7 @@ fn metadata_update_one(
         .map_err(|e| {
             InternalError::new(
                 Some(InternalErrorCode::MetadataUpdateFailure),
-                e.description(),
+                format!("{}", e),
             )
         })
         .map_err(Error::from);
