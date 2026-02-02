@@ -760,8 +760,34 @@ pub fn run_multithreaded(
         };
 
         if !owners.is_empty() {
-            // Spawn mdapi discovery threads for each shard
-            for shard in conf.min_shard..=conf.max_shard {
+            // Determine which vnodes to query for mdapi discovery.
+            // If mdapi_vnodes is configured, use those (correct behavior).
+            // Otherwise fall back to min_shard..=max_shard (legacy behavior,
+            // which is incorrect but preserved for backward compatibility).
+            let vnodes: Vec<u32> = match &conf.mdapi_vnodes {
+                Some(v) => {
+                    info!(
+                        log,
+                        "Using configured mdapi_vnodes: {:?} ({} vnodes)",
+                        v,
+                        v.len()
+                    );
+                    v.clone()
+                }
+                None => {
+                    warn!(
+                        log,
+                        "mdapi_vnodes not configured, falling back to moray shard \
+                         range {}..={} (this may miss buckets on other vnodes)",
+                        conf.min_shard,
+                        conf.max_shard
+                    );
+                    (conf.min_shard..=conf.max_shard).collect()
+                }
+            };
+
+            // Spawn mdapi discovery threads for each vnode
+            for vnode in vnodes {
                 let mdapi_client_clone = mdapi_client.clone();
                 let obj_tx_clone = obj_tx.clone();
                 let sharks_clone = conf.sharks.clone();
@@ -772,7 +798,7 @@ pub fn run_multithreaded(
                     match mdapi_discovery::discover_mdapi_objects_for_shard(
                         &mdapi_client_clone,
                         &owners_clone,
-                        shard,
+                        vnode,
                         &sharks_clone,
                         &obj_tx_clone,
                         &log_clone,
@@ -780,16 +806,16 @@ pub fn run_multithreaded(
                         Ok(count) => {
                             info!(
                                 log_clone,
-                                "Mdapi discovery for shard {} complete: {} objects",
-                                shard,
+                                "Mdapi discovery for vnode {} complete: {} objects",
+                                vnode,
                                 count
                             );
                         }
                         Err(e) => {
                             slog::error!(
                                 log_clone,
-                                "Mdapi discovery failed for shard {}: {}",
-                                shard,
+                                "Mdapi discovery failed for vnode {}: {}",
+                                vnode,
                                 e
                             );
                             let mut error_list = ERROR_LIST.lock().unwrap();

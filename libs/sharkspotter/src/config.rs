@@ -36,6 +36,10 @@ pub struct Config {
     pub mdapi_endpoint: Option<String>,
     /// Owners to query for bucket objects (required for mdapi discovery)
     pub owners: Option<Vec<Uuid>>,
+    /// Mdapi vnodes to query for bucket discovery. These are the virtual node
+    /// numbers from the buckets-mdplacement ring, NOT moray shard numbers.
+    /// If not specified, defaults to using min_shard..=max_shard (legacy behavior).
+    pub mdapi_vnodes: Option<Vec<u32>>,
 }
 
 impl Default for Config {
@@ -57,6 +61,7 @@ impl Default for Config {
             log_level: Level::Debug,
             mdapi_endpoint: None,
             owners: None,
+            mdapi_vnodes: None,
         }
     }
 }
@@ -182,6 +187,13 @@ impl<'a, 'b> Config {
                 .number_of_values(1)
                 .multiple(true)
                 .takes_value(true))
+            .arg(Arg::with_name("mdapi_vnodes")
+                .long("mdapi-vnodes")
+                .value_name("VNODE")
+                .help("Mdapi vnodes to query for bucket discovery (from buckets-mdplacement ring)")
+                .number_of_values(1)
+                .multiple(true)
+                .takes_value(true))
     }
 
     // TODO: This has grown over time and is now causing a clippy warning.
@@ -268,6 +280,27 @@ impl<'a, 'b> Config {
             }
             if !parsed_owners.is_empty() {
                 config.owners = Some(parsed_owners);
+            }
+        }
+
+        // Parse mdapi vnodes
+        if let Some(vnodes) = matches.values_of("mdapi_vnodes") {
+            let mut parsed_vnodes = Vec::new();
+            for vnode_str in vnodes {
+                match vnode_str.parse::<u32>() {
+                    Ok(vnode) => parsed_vnodes.push(vnode),
+                    Err(e) => {
+                        let msg = format!(
+                            "Invalid mdapi vnode '{}': {}",
+                            vnode_str, e
+                        );
+                        eprintln!("{}", msg);
+                        return Err(Error::new(ErrorKind::Other, msg));
+                    }
+                }
+            }
+            if !parsed_vnodes.is_empty() {
+                config.mdapi_vnodes = Some(parsed_vnodes);
             }
         }
 
@@ -457,5 +490,53 @@ mod test {
         assert!(!config.direct_db);
         assert!(config.mdapi_endpoint.is_none());
         assert!(config.owners.is_none());
+        assert!(config.mdapi_vnodes.is_none());
+    }
+
+    #[test]
+    fn parse_mdapi_vnodes() {
+        let args = vec![
+            "target/debug/sharkspotter",
+            "--domain",
+            "east.joyent.us",
+            "--shark",
+            "1.stor",
+            "--mdapi-endpoint",
+            "mdapi.east.joyent.us:2030",
+            "--owners",
+            "550e8400-e29b-41d4-a716-446655440000",
+            "--mdapi-vnodes",
+            "0",
+            "--mdapi-vnodes",
+            "100",
+            "--mdapi-vnodes",
+            "200",
+        ];
+
+        let matches = Config::get_app().get_matches_from(args);
+        let config = Config::config_from_matches(matches).expect("config");
+
+        let vnodes = config.mdapi_vnodes.expect("vnodes should be set");
+        assert_eq!(vnodes.len(), 3);
+        assert_eq!(vnodes[0], 0);
+        assert_eq!(vnodes[1], 100);
+        assert_eq!(vnodes[2], 200);
+    }
+
+    #[test]
+    fn parse_invalid_mdapi_vnode() {
+        let args = vec![
+            "target/debug/sharkspotter",
+            "--domain",
+            "east.joyent.us",
+            "--shark",
+            "1.stor",
+            "--mdapi-vnodes",
+            "not-a-number",
+        ];
+
+        let matches = Config::get_app().get_matches_from(args);
+        let result = Config::config_from_matches(matches);
+        assert!(result.is_err());
     }
 }
