@@ -264,7 +264,6 @@ table! {
     }
 }
 
-#[sql_type = "sql_types::Text"]
 #[derive(
     AsExpression,
     Clone,
@@ -278,6 +277,7 @@ table! {
     PartialEq,
     Serialize,
 )]
+#[sql_type = "sql_types::Text"]
 #[strum(serialize_all = "snake_case")]
 pub enum JobState {
     Init,
@@ -318,7 +318,6 @@ impl JobAction {
     }
 }
 
-#[sql_type = "sql_types::Text"]
 #[derive(
     AsExpression,
     Debug,
@@ -330,6 +329,7 @@ impl JobAction {
     PartialEq,
     Serialize,
 )]
+#[sql_type = "sql_types::Text"]
 #[strum(serialize_all = "snake_case")]
 pub enum JobActionDbEntry {
     Evacuate,
