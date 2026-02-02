@@ -906,18 +906,53 @@ enum MetadataClientOption<'a> {
     Hash(&'a mut HashMap<u32, MetadataBackend>),
 }
 
+/// Check if a table exists in the database
+fn table_exists(conn: &PgConnection, table_name: &str) -> Result<bool, Error> {
+    use diesel::sql_query;
+    use diesel::sql_types::Text;
+
+    #[derive(QueryableByName)]
+    struct TableCount {
+        #[sql_type = "diesel::sql_types::BigInt"]
+        count: i64,
+    }
+
+    let query = sql_query(
+        "SELECT COUNT(*) as count FROM information_schema.tables \
+         WHERE table_schema = 'public' AND table_name = $1",
+    )
+    .bind::<Text, _>(table_name);
+
+    let result: TableCount = query.get_result(conn)?;
+    Ok(result.count > 0)
+}
+
 fn create_table_common(
     conn: &PgConnection,
     table_name: &str,
     create_query: &str,
 ) -> Result<usize, Error> {
-    // TODO: check if table exists first and if so issue warning.  We may
-    // need to handle this a bit more gracefully in the future for
-    // restarting jobs.
-    let drop_query = format!("DROP TABLE {}", table_name);
+    // Check if table exists first and issue warning for visibility
+    match table_exists(conn, table_name) {
+        Ok(true) => {
+            warn!(
+                "Table '{}' already exists - dropping it. \
+                 This may indicate a previous job that did not complete cleanly.",
+                table_name
+            );
+        }
+        Ok(false) => {
+            debug!("Table '{}' does not exist, will create", table_name);
+        }
+        Err(e) => {
+            debug!("Could not check table existence: {}", e);
+        }
+    }
+
+    let drop_query = format!("DROP TABLE IF EXISTS {}", table_name);
 
     if let Err(e) = conn.execute(&drop_query) {
-        debug!("Table doesn't exist: {}", e);
+        debug!("Error dropping table: {}", e);
     }
 
     conn.execute(&create_query).map_err(Error::from)
