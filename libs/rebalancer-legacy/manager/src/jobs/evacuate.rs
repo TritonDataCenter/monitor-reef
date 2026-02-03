@@ -5578,7 +5578,13 @@ mod tests {
         let job_action = Arc::new(job_action);
 
         // Channels
-        let (full_assignment_tx, full_assignment_rx) = crossbeam::bounded(5);
+        // Use capacity 1 for full_assignment channel to force synchronization
+        // between the assignment generator and verification thread. This
+        // ensures assignment_post_fail is called (restoring assigned_mb)
+        // before the next assignment is created. Without this, the generator
+        // can exhaust available space faster than the verification thread
+        // can restore it, causing objects to be incorrectly skipped.
+        let (full_assignment_tx, full_assignment_rx) = crossbeam::bounded(1);
         let (obj_tx, obj_rx) = crossbeam::bounded(5);
         let (checker_fini_tx, _checker_fini_rx) = crossbeam::bounded(1);
 
