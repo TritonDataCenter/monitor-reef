@@ -314,41 +314,48 @@ impl Config {
         update_config: Arc<Mutex<Config>>,
         config_file: Option<String>,
     ) -> JoinHandle<()> {
+        // Capture the logger before spawning so the new thread can use it.
+        // slog-scope uses thread-local storage, so spawned threads don't
+        // inherit the logger automatically.
+        let logger = slog_scope::logger();
         thread::Builder::new()
             .name(String::from("config updater"))
-            .spawn(move || loop {
-                match config_update_rx.recv() {
-                    Ok(()) => {
-                        let new_config =
-                            match Config::parse_config(&config_file) {
-                                Ok(c) => c,
-                                Err(e) => {
-                                    error!(
-                                        "Error parsing config after signal \
-                                         received. Not updating: {}",
-                                        e
-                                    );
-                                    continue;
-                                }
-                            };
-                        let mut config_lock =
-                            update_config.lock().unwrap_or_else(|e| e.into_inner());
+            .spawn(move || {
+                slog_scope::scope(&logger, || loop {
+                    match config_update_rx.recv() {
+                        Ok(()) => {
+                            let new_config =
+                                match Config::parse_config(&config_file) {
+                                    Ok(c) => c,
+                                    Err(e) => {
+                                        error!(
+                                            "Error parsing config after signal \
+                                             received. Not updating: {}",
+                                            e
+                                        );
+                                        continue;
+                                    }
+                                };
+                            let mut config_lock = update_config
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner());
 
-                        *config_lock = new_config;
-                        debug!(
-                            "Configuration has been updated: {:#?}",
-                            *config_lock
-                        );
+                            *config_lock = new_config;
+                            debug!(
+                                "Configuration has been updated: {:#?}",
+                                *config_lock
+                            );
+                        }
+                        Err(e) => {
+                            warn!(
+                                "Channel has been disconnected, exiting \
+                                 thread: {}",
+                                e
+                            );
+                            return;
+                        }
                     }
-                    Err(e) => {
-                        warn!(
-                            "Channel has been disconnected, exiting \
-                             thread: {}",
-                            e
-                        );
-                        return;
-                    }
-                }
+                })
             })
             .expect("Start config updater")
     }

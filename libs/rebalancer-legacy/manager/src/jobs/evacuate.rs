@@ -3355,7 +3355,11 @@ fn assignment_manager_impl<S>(
 where
     S: SharkSource + 'static,
 {
+    // Capture the logger before returning the closure so spawned threads
+    // can use it. slog-scope uses thread-local storage.
+    let logger = slog_scope::logger();
     move || {
+        slog_scope::scope(&logger, || {
         let mut done = false;
         let mut object_count = 0;
         let max_objects = job_action.max_objects;
@@ -3573,6 +3577,7 @@ where
         info!("Manager: Shutting down assignment checker");
         checker_fini_tx.send(FiniMsg).expect("Fini Msg");
         Ok(())
+        }) // end slog_scope::scope
     }
 }
 
@@ -3831,7 +3836,11 @@ fn shark_assignment_generator(
     assign_msg_rx: crossbeam::Receiver<AssignmentMsg>,
     full_assignment_tx: crossbeam::Sender<Assignment>,
 ) -> impl Fn() -> Result<(), Error> {
+    // Capture the logger before returning the closure so this thread
+    // can use it. slog-scope uses thread-local storage.
+    let logger = slog_scope::logger();
     move || {
+        slog_scope::scope(&logger, || {
         let max_tasks = job_action.config.options.max_tasks_per_assignment;
         let max_age = job_action.config.options.max_assignment_age;
         let from_shark_host = job_action.from_shark.manta_storage_id.clone();
@@ -3975,6 +3984,7 @@ fn shark_assignment_generator(
         } // End while !stop (get next message/object)
 
         Ok(())
+        }) // end slog_scope::scope
     }
 }
 
@@ -4072,9 +4082,16 @@ fn start_assignment_post(
     full_assignment_rx: crossbeam::Receiver<Assignment>,
     job_action: Arc<EvacuateJob>,
 ) -> Result<thread::JoinHandle<Result<(), Error>>, Error> {
+    // Capture the logger before spawning so the new thread can use it.
+    // slog-scope uses thread-local storage.
+    let logger = slog_scope::logger();
     thread::Builder::new()
         .name(String::from("assignment_poster"))
-        .spawn(move || assignment_post(full_assignment_rx, job_action))
+        .spawn(move || {
+            slog_scope::scope(&logger, || {
+                assignment_post(full_assignment_rx, job_action)
+            })
+        })
         .map_err(Error::from)
 }
 
@@ -4155,9 +4172,13 @@ fn start_assignment_checker(
     checker_fini_rx: crossbeam::Receiver<FiniMsg>,
     md_update_tx: crossbeam::Sender<AssignmentCacheEntry>,
 ) -> Result<thread::JoinHandle<Result<(), Error>>, Error> {
+    // Capture the logger before spawning so the new thread can use it.
+    // slog-scope uses thread-local storage.
+    let logger = slog_scope::logger();
     thread::Builder::new()
         .name(String::from("Assignment Checker"))
         .spawn(move || {
+            slog_scope::scope(&logger, || {
             let mut run = true;
             loop {
                 let mut found_assignment_count = 0;
@@ -4291,6 +4312,7 @@ fn start_assignment_checker(
                 );
             }
             Ok(())
+            }) // end slog_scope::scope
         })
         .map_err(Error::from)
 }
@@ -4837,9 +4859,13 @@ fn metadata_update_broker_dynamic(
         }
     };
 
+    // Capture the logger before spawning so the new thread can use it.
+    // slog-scope uses thread-local storage.
+    let logger = slog_scope::logger();
     thread::Builder::new()
         .name(String::from("Metadata Update broker"))
         .spawn(move || {
+            slog_scope::scope(&logger, || {
             loop {
                 if let Ok(msg) = update_rx.try_recv() {
                     debug!("Received metadata update message: {:#?}", msg);
@@ -4904,6 +4930,7 @@ fn metadata_update_broker_dynamic(
             pool.join();
             metrics_gauge_set(MD_THREAD_GAUGE, 0);
             Ok(())
+            }) // end slog_scope::scope
         })
         .map_err(Error::from)
 }
@@ -4985,9 +5012,16 @@ fn metadata_update_broker_static(
     job_action: Arc<EvacuateJob>,
     md_update_rx: crossbeam::Receiver<AssignmentCacheEntry>,
 ) -> Result<thread::JoinHandle<Result<(), Error>>, Error> {
+    // Capture the logger before spawning so the new thread can use it.
+    // slog-scope uses thread-local storage.
+    let logger = slog_scope::logger();
     thread::Builder::new()
         .name(String::from("Metadata Update broker"))
-        .spawn(move || _update_broker_static(job_action, md_update_rx))
+        .spawn(move || {
+            slog_scope::scope(&logger, || {
+                _update_broker_static(job_action, md_update_rx)
+            })
+        })
         .map_err(Error::from)
 }
 
@@ -5194,9 +5228,13 @@ mod tests {
         test_objects: Vec<MantaObject>,
         from_shark: String,
     ) -> thread::JoinHandle<Result<(), Error>> {
+        // Capture the logger before spawning so the new thread can use it.
+        // slog-scope uses thread-local storage.
+        let logger = slog_scope::logger();
         thread::Builder::new()
             .name(String::from("test object generator thread"))
             .spawn(move || {
+                slog_scope::scope(&logger, || {
                 for o in test_objects.into_iter() {
                     let shard = 1;
                     let etag = String::from("Fake_etag");
@@ -5239,6 +5277,7 @@ mod tests {
                     }
                 }
                 Ok(())
+                }) // end slog_scope::scope
             })
             .expect("failed to build object generator thread")
     }
@@ -5463,11 +5502,15 @@ mod tests {
         );
 
         // Verification Thread
+        // Capture the logger before spawning so the new thread can use it.
+        // slog-scope uses thread-local storage.
+        let verif_logger = slog_scope::logger();
         let builder = thread::Builder::new();
         let verif_job_action = Arc::clone(&job_action);
         let verification_thread = builder
             .name(String::from("verification thread"))
             .spawn(move || {
+                slog_scope::scope(&verif_logger, || {
                 let mut object_count = 0;
                 while let Ok(assignment) = full_assignment_rx.recv() {
                     assert_eq!(
@@ -5511,6 +5554,7 @@ mod tests {
 
                     assert_eq!(all_objects.len(), num_objects);
                 }
+                }) // end slog_scope::scope
             })
             .expect("verification thread result");
 
@@ -5578,11 +5622,15 @@ mod tests {
         );
 
         // Verification Thread
+        // Capture the logger before spawning so the new thread can use it.
+        // slog-scope uses thread-local storage.
+        let verif_logger = slog_scope::logger();
         let builder = thread::Builder::new();
         let verif_job_action = Arc::clone(&job_action);
         let verification_thread = builder
             .name(String::from("verification thread"))
             .spawn(move || {
+                slog_scope::scope(&verif_logger, || {
                 let mut object_count = 0;
                 while let Ok(assignment) = full_assignment_rx.recv() {
                     assert_eq!(
@@ -5622,6 +5670,7 @@ mod tests {
                     .expect("getting filtered objects");
 
                 assert_eq!(skipped_objs.len(), num_objects);
+                }) // end slog_scope::scope
             })
             .expect("verification thread result");
 
@@ -5734,11 +5783,15 @@ mod tests {
         );
 
         let verification_objects = test_objects.clone();
+        // Capture the logger before spawning so the new thread can use it.
+        // slog-scope uses thread-local storage.
+        let verif_logger = slog_scope::logger();
         let builder = thread::Builder::new();
         let verif_job_action = Arc::clone(&job_action);
         let verification_thread = builder
             .name(String::from("verification thread"))
             .spawn(move || {
+                slog_scope::scope(&verif_logger, || {
                 debug!("Starting verification thread");
                 let mut assignment_count = 0;
                 let mut task_count = 0;
@@ -5811,6 +5864,7 @@ mod tests {
                     skip_count - insufficient_space_skips
                 );
                 assert_eq!(task_count + skip_count, num_objects);
+                }) // end slog_scope::scope
             })
             .expect("verification thread");
 
