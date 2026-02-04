@@ -223,7 +223,9 @@ async fn test_agent_matches_file_signing_rsa() {
 
     // Sign with file
     let key_path = test_keys_dir().join("id_rsa");
-    let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load RSA key");
+    let key = KeyLoader::load_legacy_from_file(&key_path, None)
+        .await
+        .expect("Failed to load RSA key");
     let file_sig = key.sign(data).expect("File signing should succeed");
 
     // RSA signatures are deterministic, so they should match
@@ -250,7 +252,9 @@ async fn test_agent_fingerprint_matches_file() {
 
     // Get fingerprint from file-loaded key
     let key_path = test_keys_dir().join("id_rsa");
-    let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load RSA key");
+    let key = KeyLoader::load_legacy_from_file(&key_path, None)
+        .await
+        .expect("Failed to load RSA key");
     let pub_blob = key
         .public_key_blob()
         .expect("Failed to get public key blob");

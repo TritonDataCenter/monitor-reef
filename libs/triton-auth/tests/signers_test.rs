@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Signature tests for triton-auth
 //!
@@ -49,10 +49,12 @@ fn test_keys_dir() -> PathBuf {
 /// - keyId matches MD5 fingerprint
 /// - algorithm is "rsa-sha256"
 /// - signature matches known test vector
-#[test]
-fn test_basic_signer_rsa() {
+#[tokio::test]
+async fn test_basic_signer_rsa() {
     let key_path = test_keys_dir().join("id_rsa");
-    let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load RSA key");
+    let key = KeyLoader::load_legacy_from_file(&key_path, None)
+        .await
+        .expect("Failed to load RSA key");
 
     // Get fingerprint
     let pub_blob = key
@@ -84,10 +86,12 @@ fn test_basic_signer_rsa() {
 /// - keyId matches MD5 fingerprint
 /// - algorithm is "dsa-sha1"
 /// - signature is valid (not deterministic, so can't compare exact value)
-#[test]
-fn test_basic_signer_dsa() {
+#[tokio::test]
+async fn test_basic_signer_dsa() {
     let key_path = test_keys_dir().join("id_dsa");
-    let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load DSA key");
+    let key = KeyLoader::load_legacy_from_file(&key_path, None)
+        .await
+        .expect("Failed to load DSA key");
 
     // Get fingerprint
     let pub_blob = key
@@ -120,10 +124,12 @@ fn test_basic_signer_dsa() {
 /// - keyId matches MD5 fingerprint
 /// - algorithm is "ecdsa-sha256"
 /// - signature is valid format
-#[test]
-fn test_basic_signer_ecdsa() {
+#[tokio::test]
+async fn test_basic_signer_ecdsa() {
     let key_path = test_keys_dir().join("id_ecdsa");
-    let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load ECDSA key");
+    let key = KeyLoader::load_legacy_from_file(&key_path, None)
+        .await
+        .expect("Failed to load ECDSA key");
 
     // Get fingerprint
     let pub_blob = key
@@ -161,10 +167,12 @@ fn test_basic_signer_ecdsa() {
 
 /// Mirrors: 'requestSigner rsa' test
 /// Verifies the signing string and authorization header format
-#[test]
-fn test_request_signer_rsa() {
+#[tokio::test]
+async fn test_request_signer_rsa() {
     let key_path = test_keys_dir().join("id_rsa");
-    let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load RSA key");
+    let key = KeyLoader::load_legacy_from_file(&key_path, None)
+        .await
+        .expect("Failed to load RSA key");
     let pub_blob = key
         .public_key_blob()
         .expect("Failed to get public key blob");
@@ -231,10 +239,12 @@ fn test_algorithm_strings_match_node_smartdc_auth() {
 // ============================================================================
 
 /// Full request signing flow test
-#[test]
-fn test_full_request_signing_flow() {
+#[tokio::test]
+async fn test_full_request_signing_flow() {
     let key_path = test_keys_dir().join("id_rsa");
-    let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load RSA key");
+    let key = KeyLoader::load_legacy_from_file(&key_path, None)
+        .await
+        .expect("Failed to load RSA key");
     let pub_blob = key
         .public_key_blob()
         .expect("Failed to get public key blob");

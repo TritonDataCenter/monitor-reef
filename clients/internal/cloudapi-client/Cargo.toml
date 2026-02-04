@@ -17,6 +17,7 @@ path = "src/lib.rs"
 [dependencies]
 progenitor-client = { workspace = true }
 reqwest = { workspace = true }
+schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
@@ -26,6 +27,7 @@ base64 = "0.22"
 rand = "0.9"
 # Authentication support
 triton-auth = { path = "../../../libs/triton-auth" }
+thiserror = { workspace = true }
 
 [build-dependencies]
 progenitor = { workspace = true }

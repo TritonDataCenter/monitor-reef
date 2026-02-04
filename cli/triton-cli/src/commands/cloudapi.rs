@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! CloudAPI raw HTTP request command
 //!
@@ -177,8 +177,8 @@ pub async fn run(args: CloudApiArgs, client: &TypedClient) -> Result<()> {
             Ok(json) => {
                 println!("{}", serde_json::to_string_pretty(&json)?);
             }
+            // arch-lint: allow(no-error-swallowing) reason="Not JSON, print body as-is; valid for text/plain endpoints"
             Err(_) => {
-                // Not JSON, print as-is
                 println!("{}", response_body);
             }
         }

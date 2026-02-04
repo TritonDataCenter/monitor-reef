@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Environment variable export command
 
@@ -10,8 +10,8 @@ use crate::config::{Profile, resolve_profile};
 use anyhow::Result;
 
 /// Generate shell export statements for the profile
-pub fn generate_env(profile_name: Option<&str>, shell: &str) -> Result<()> {
-    let profile = resolve_profile(profile_name)?;
+pub async fn generate_env(profile_name: Option<&str>, shell: &str) -> Result<()> {
+    let profile = resolve_profile(profile_name).await?;
 
     match shell {
         "bash" | "sh" | "zsh" => print_posix_exports(&profile),

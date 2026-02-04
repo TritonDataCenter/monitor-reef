@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! RBAC policy management commands
 
@@ -353,7 +353,8 @@ async fn add_policy_from_file(
         }
         Some(path) => {
             // Read from file
-            let content = std::fs::read_to_string(path)
+            let content = tokio::fs::read_to_string(path)
+                .await
                 .map_err(|e| anyhow::anyhow!("failed to read file '{}': {}", path, e))?;
             serde_json::from_str(&content)
                 .map_err(|e| anyhow::anyhow!("invalid JSON in '{}': {}", path, e))?

@@ -372,7 +372,9 @@ async fn list_rule_instances(
                 m.primary_ip.clone().unwrap_or_else(|| "-".to_string()),
                 m.id.to_string(),
                 m.image.to_string(),
-                m.memory.to_string(),
+                m.memory
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "-".to_string()),
             ]);
         }
         tbl.print(&args.table);

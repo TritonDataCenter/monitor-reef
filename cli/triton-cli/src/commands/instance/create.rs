@@ -10,7 +10,6 @@ use anyhow::Result;
 use clap::Args;
 use cloudapi_client::TypedClient;
 use std::collections::HashMap;
-use std::fs;
 use std::path::Path;
 
 use crate::output::json;
@@ -190,9 +189,16 @@ pub async fn run(args: CreateArgs, client: &TypedClient, use_json: bool) -> Resu
     }
 
     // Build metadata from --metadata, --metadata-file, and --script
-    let metadata = build_metadata(&args)?;
+    let metadata = build_metadata(&args).await?;
     if !metadata.is_empty() {
+        // arch-lint: allow(no-sync-io) reason="metadata() is a builder method, not filesystem I/O"
         request = request.metadata(metadata);
+    }
+
+    // Build tags from --tag
+    let tags = build_tags(&args)?;
+    if !tags.is_empty() {
+        request = request.tags(tags);
     }
 
     // Handle volumes
@@ -266,16 +272,12 @@ pub async fn run(args: CreateArgs, client: &TypedClient, use_json: bool) -> Resu
         return Ok(());
     }
 
-    // Create the instance
-    let response = client
-        .inner()
-        .create_machine()
-        .account(account)
-        .body(request)
-        .send()
-        .await?;
-
-    let machine = response.into_inner();
+    // Create the instance using the legacy-compatible method
+    // This transforms tags/metadata to the format expected by Node.js CloudAPI
+    let machine = client
+        .create_machine_from_progenitor(account, &request)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to create machine: {}", e))?;
     let id_str = machine.id.to_string();
 
     println!("Creating instance {} ({})", &machine.name, &id_str[..8]);
@@ -309,8 +311,36 @@ fn parse_brand(brand: &str) -> Result<cloudapi_client::types::Brand> {
     }
 }
 
+/// Build tags from --tag options
+fn build_tags(args: &CreateArgs) -> Result<serde_json::Map<String, serde_json::Value>> {
+    let mut tags = serde_json::Map::new();
+
+    if let Some(tag_args) = &args.tag {
+        for item in tag_args {
+            let (key, value) = parse_key_value(item)?;
+            // Try to parse as boolean or number, otherwise use as string
+            let json_value = if value == "true" {
+                serde_json::Value::Bool(true)
+            } else if value == "false" {
+                serde_json::Value::Bool(false)
+            } else if let Ok(num) = value.parse::<i64>() {
+                serde_json::Value::Number(num.into())
+            } else if let Ok(num) = value.parse::<f64>() {
+                serde_json::Number::from_f64(num)
+                    .map(serde_json::Value::Number)
+                    .unwrap_or_else(|| serde_json::Value::String(value.clone()))
+            } else {
+                serde_json::Value::String(value)
+            };
+            tags.insert(key, json_value);
+        }
+    }
+
+    Ok(tags)
+}
+
 /// Build metadata from --metadata, --metadata-file, and --script options
-fn build_metadata(args: &CreateArgs) -> Result<HashMap<String, String>> {
+async fn build_metadata(args: &CreateArgs) -> Result<HashMap<String, String>> {
     let mut metadata: HashMap<String, String> = HashMap::new();
 
     // Parse --metadata key=value pairs
@@ -326,10 +356,11 @@ fn build_metadata(args: &CreateArgs) -> Result<HashMap<String, String>> {
         for item in metadata_files {
             let (key, filepath) = parse_key_value_file(item)?;
             let path = Path::new(&filepath);
-            if !path.exists() {
+            if !tokio::fs::try_exists(path).await.unwrap_or(false) {
                 return Err(anyhow::anyhow!("Metadata file not found: {}", filepath));
             }
-            let content = fs::read_to_string(path)
+            let content = tokio::fs::read_to_string(path)
+                .await
                 .map_err(|e| anyhow::anyhow!("Failed to read {}: {}", filepath, e))?;
             metadata.insert(key, content);
         }
@@ -338,19 +369,24 @@ fn build_metadata(args: &CreateArgs) -> Result<HashMap<String, String>> {
     // Handle --script (shortcut for -M user-script=FILE)
     if let Some(script_path) = &args.script {
         let path = Path::new(script_path);
-        if !path.exists() {
+        if !tokio::fs::try_exists(path).await.unwrap_or(false) {
             return Err(anyhow::anyhow!("Script file not found: {}", script_path));
         }
-        let content = fs::read_to_string(path)
+        let content = tokio::fs::read_to_string(path)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to read {}: {}", script_path, e))?;
         metadata.insert("user-script".to_string(), content);
     }
 
     // Handle --cloud-config (shortcut for cloud-init user-data)
     if let Some(cloud_config) = &args.cloud_config {
-        let content = if Path::new(cloud_config).exists() {
+        let content = if tokio::fs::try_exists(Path::new(cloud_config))
+            .await
+            .unwrap_or(false)
+        {
             // Read from file
-            fs::read_to_string(cloud_config)
+            tokio::fs::read_to_string(cloud_config)
+                .await
                 .map_err(|e| anyhow::anyhow!("Failed to read cloud-config file: {}", e))?
         } else {
             // Use as inline content

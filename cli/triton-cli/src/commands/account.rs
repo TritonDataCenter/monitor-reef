@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Account management commands
 
@@ -198,7 +198,8 @@ async fn update_account(
 
     // Handle file-based input
     if let Some(file_path) = &args.file {
-        let content = std::fs::read_to_string(file_path)
+        let content = tokio::fs::read_to_string(file_path)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to read file '{}': {}", file_path.display(), e))?;
 
         let request: cloudapi_client::types::UpdateAccountRequest = serde_json::from_str(&content)

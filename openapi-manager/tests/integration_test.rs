@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 use std::path::Path;
 use std::process::Command;
@@ -28,7 +28,7 @@ fn test_openapi_spec_generation() {
     );
 
     // Verify the generated spec file exists and is valid
-    let spec_path = workspace_root.join("openapi-specs/generated/bugview-api.json");
+    let spec_path = workspace_root.join("openapi-specs/generated/cloudapi-api.json");
     assert!(spec_path.exists(), "OpenAPI spec file not created");
 
     let spec_content = std::fs::read_to_string(&spec_path).expect("Failed to read spec file");

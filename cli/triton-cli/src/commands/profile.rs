@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Profile management commands
 
@@ -129,11 +129,11 @@ pub enum ProfileCommand {
 impl ProfileCommand {
     pub async fn run(self) -> Result<()> {
         match self {
-            Self::List(args) => list_profiles(args),
+            Self::List(args) => list_profiles(args).await,
             Self::Get {
                 name,
                 json: use_json,
-            } => get_profile(name, use_json),
+            } => get_profile(name, use_json).await,
             Self::Create {
                 name,
                 url,
@@ -144,10 +144,10 @@ impl ProfileCommand {
                 copy,
                 no_docker: _no_docker,
                 yes,
-            } => create_profile(name, url, account, key_id, insecure, file, copy, yes),
-            Self::Edit { name } => edit_profile(&name),
-            Self::Delete { names, force } => delete_profiles(&names, force),
-            Self::SetCurrent { name } => set_current_profile(&name),
+            } => create_profile(name, url, account, key_id, insecure, file, copy, yes).await,
+            Self::Edit { name } => edit_profile(&name).await,
+            Self::Delete { names, force } => delete_profiles(&names, force).await,
+            Self::SetCurrent { name } => set_current_profile(&name).await,
             Self::DockerSetup {
                 name,
                 lifetime,
@@ -162,13 +162,13 @@ impl ProfileCommand {
     }
 }
 
-fn list_profiles(args: ProfileListArgs) -> Result<()> {
+async fn list_profiles(args: ProfileListArgs) -> Result<()> {
     use crate::config::env_profile;
 
-    let saved_profiles = Profile::list_all()?;
+    let saved_profiles = Profile::list_all().await?;
 
     // Try to get the current profile (might be "env" from environment variables)
-    let current_profile = resolve_profile(None).ok();
+    let current_profile = resolve_profile(None).await.ok();
     let current_name = current_profile.as_ref().map(|p| p.name.as_str());
 
     // Build list of profiles to display, including "env" if it's the current one
@@ -181,7 +181,7 @@ fn list_profiles(args: ProfileListArgs) -> Result<()> {
 
     // Add saved profiles
     for name in &saved_profiles {
-        if let Ok(profile) = Profile::load(name) {
+        if let Ok(profile) = Profile::load(name).await {
             profiles_to_show.push(profile);
         }
     }
@@ -213,21 +213,21 @@ fn list_profiles(args: ProfileListArgs) -> Result<()> {
     Ok(())
 }
 
-fn get_profile(name: Option<String>, use_json: bool) -> Result<()> {
+async fn get_profile(name: Option<String>, use_json: bool) -> Result<()> {
     use crate::config::env_profile;
 
     let profile = match name {
         Some(n) if n == "env" => env_profile()?,
-        Some(n) => Profile::load(&n)?,
+        Some(n) => Profile::load(&n).await?,
         None => {
-            let config = Config::load()?;
+            let config = Config::load().await?;
             let current = config
                 .current_profile()
                 .ok_or_else(|| anyhow::anyhow!("No current profile set"))?;
             if current == "env" {
                 env_profile()?
             } else {
-                Profile::load(current)?
+                Profile::load(current).await?
             }
         }
     };
@@ -251,7 +251,7 @@ fn get_profile(name: Option<String>, use_json: bool) -> Result<()> {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn create_profile(
+async fn create_profile(
     name: Option<String>,
     url: Option<String>,
     account: Option<String>,
@@ -270,7 +270,7 @@ fn create_profile(
             std::io::stdin().read_to_string(&mut buffer)?;
             buffer
         } else {
-            fs::read_to_string(&file_path).map_err(|e| {
+            tokio::fs::read_to_string(&file_path).await.map_err(|e| {
                 anyhow::anyhow!(
                     "Failed to read profile file '{}': {}",
                     file_path.display(),
@@ -283,12 +283,12 @@ fn create_profile(
             .map_err(|e| anyhow::anyhow!("Failed to parse profile JSON: {}", e))?;
 
         // Check if profile already exists
-        if Profile::list_all()?.contains(&profile.name) {
+        if Profile::list_all().await?.contains(&profile.name) {
             return Err(anyhow::anyhow!("Profile '{}' already exists", profile.name));
         }
 
         let profile_name = profile.name.clone();
-        profile.save()?;
+        profile.save().await?;
         println!("Created profile '{}' from file", profile_name);
 
         // Ask if this should be the current profile (skip if --yes)
@@ -298,9 +298,9 @@ fn create_profile(
                 .default(true)
                 .interact()?
         {
-            let mut config = Config::load()?;
+            let mut config = Config::load().await?;
             config.set_current_profile(&profile_name);
-            config.save()?;
+            config.save().await?;
             println!("Set '{}' as current profile", profile_name);
         }
 
@@ -309,7 +309,7 @@ fn create_profile(
 
     // Load defaults from source profile if --copy is specified
     let copy_profile = if let Some(ref copy_name) = copy {
-        Some(Profile::load(copy_name).map_err(|_| {
+        Some(Profile::load(copy_name).await.map_err(|_| {
             anyhow::anyhow!("no such profile from which to copy: \"{}\"", copy_name)
         })?)
     } else {
@@ -328,7 +328,7 @@ fn create_profile(
     };
 
     // Check if profile already exists
-    if Profile::list_all()?.contains(&name) {
+    if Profile::list_all().await?.contains(&name) {
         return Err(anyhow::anyhow!("Profile '{}' already exists", name));
     }
 
@@ -397,15 +397,15 @@ fn create_profile(
         act_as_account,
     };
 
-    profile.save()?;
+    profile.save().await?;
     println!("Created profile '{}'", name);
 
     // Check if this is the only profile - if so, set it as current automatically
-    let existing_profiles = Profile::list_all()?;
+    let existing_profiles = Profile::list_all().await?;
     if existing_profiles.len() == 1 && existing_profiles.contains(&name) {
-        let mut config = Config::load()?;
+        let mut config = Config::load().await?;
         config.set_current_profile(&name);
-        config.save()?;
+        config.save().await?;
         println!(
             "Set '{}' as current profile (because it is your only profile)",
             name
@@ -416,17 +416,17 @@ fn create_profile(
             .default(true)
             .interact()?
     {
-        let mut config = Config::load()?;
+        let mut config = Config::load().await?;
         config.set_current_profile(&name);
-        config.save()?;
+        config.save().await?;
         println!("Set '{}' as current profile", name);
     }
 
     Ok(())
 }
 
-fn edit_profile(name: &str) -> Result<()> {
-    let mut profile = Profile::load(name)?;
+async fn edit_profile(name: &str) -> Result<()> {
+    let mut profile = Profile::load(name).await?;
 
     profile.url = Input::new()
         .with_prompt("CloudAPI URL")
@@ -448,12 +448,12 @@ fn edit_profile(name: &str) -> Result<()> {
         .default(profile.insecure)
         .interact()?;
 
-    profile.save()?;
+    profile.save().await?;
     println!("Updated profile '{}'", name);
     Ok(())
 }
 
-fn delete_profiles(names: &[String], force: bool) -> Result<()> {
+async fn delete_profiles(names: &[String], force: bool) -> Result<()> {
     for name in names {
         if !force
             && !Confirm::new()
@@ -463,14 +463,14 @@ fn delete_profiles(names: &[String], force: bool) -> Result<()> {
         {
             continue;
         }
-        Profile::delete(name)?;
+        Profile::delete(name).await?;
         println!("Deleted profile '{}'", name);
     }
     Ok(())
 }
 
-fn set_current_profile(name: &str) -> Result<()> {
-    let mut config = Config::load()?;
+async fn set_current_profile(name: &str) -> Result<()> {
+    let mut config = Config::load().await?;
 
     let name = if name == "-" {
         config
@@ -479,12 +479,12 @@ fn set_current_profile(name: &str) -> Result<()> {
             .ok_or_else(|| anyhow::anyhow!("No previous profile"))?
     } else {
         // Verify profile exists
-        Profile::load(name)?;
+        Profile::load(name).await?;
         name.to_string()
     };
 
     config.set_current_profile(&name);
-    config.save()?;
+    config.save().await?;
     println!("Current profile: {}", name);
     Ok(())
 }
@@ -492,7 +492,7 @@ fn set_current_profile(name: &str) -> Result<()> {
 /// Setup Docker TLS certificates for a profile
 async fn docker_setup(name: Option<String>, lifetime: u32, yes: bool) -> Result<()> {
     // Resolve the profile
-    let profile = resolve_profile(name.as_deref())?;
+    let profile = resolve_profile(name.as_deref()).await?;
     let account = profile
         .act_as_account
         .as_deref()
@@ -632,7 +632,7 @@ async fn docker_setup(name: Option<String>, lifetime: u32, yes: bool) -> Result<
 /// Generate CMON client certificates for a profile
 async fn cmon_certgen(name: Option<String>, lifetime: u32, yes: bool) -> Result<()> {
     // Resolve the profile
-    let profile = resolve_profile(name.as_deref())?;
+    let profile = resolve_profile(name.as_deref()).await?;
     let account = profile
         .act_as_account
         .as_deref()

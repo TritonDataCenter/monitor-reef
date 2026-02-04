@@ -97,13 +97,13 @@ impl Fingerprint {
                 let mut hasher = Md5::new();
                 hasher.update(&key_bytes);
                 let result = hasher.finalize();
-                result.as_slice() == expected
+                result[..] == expected[..]
             }
             Fingerprint::Sha256(expected) => {
                 let mut hasher = Sha256::new();
                 hasher.update(&key_bytes);
                 let result = hasher.finalize();
-                result.as_slice() == expected
+                result[..] == expected[..]
             }
         }
     }
@@ -115,13 +115,13 @@ impl Fingerprint {
                 let mut hasher = Md5::new();
                 hasher.update(key_bytes);
                 let result = hasher.finalize();
-                result.as_slice() == expected
+                result[..] == expected[..]
             }
             Fingerprint::Sha256(expected) => {
                 let mut hasher = Sha256::new();
                 hasher.update(key_bytes);
                 let result = hasher.finalize();
-                result.as_slice() == expected
+                result[..] == expected[..]
             }
         }
     }

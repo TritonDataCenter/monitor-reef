@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! RBAC user key management commands
 
@@ -196,7 +196,8 @@ pub async fn add_user_key(
     // Read key from file if prefixed with @
     let key_data = if args.key.starts_with('@') {
         let path = &args.key[1..];
-        std::fs::read_to_string(path)
+        tokio::fs::read_to_string(path)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to read key file '{}': {}", path, e))?
             .trim()
             .to_string()
@@ -280,7 +281,8 @@ async fn add_key_from_file(
         io::stdin().read_to_string(&mut buffer)?;
         buffer.trim().to_string()
     } else {
-        std::fs::read_to_string(file)
+        tokio::fs::read_to_string(file)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to read key file '{}': {}", file, e))?
             .trim()
             .to_string()

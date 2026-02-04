@@ -17,6 +17,7 @@ schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
+vmapi-api = { path = "../vmapi-api" }
 
 [lints]
 workspace = true

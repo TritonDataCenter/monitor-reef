@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! SSH key loading from files
 //!
@@ -84,7 +84,9 @@ impl KeyLoader {
     /// Use `crate::agent::sign_with_agent` for signing operations.
     pub async fn load_private_key(source: &KeySource) -> Result<PrivateKey, AuthError> {
         match source {
-            KeySource::File { path, passphrase } => Self::load_from_file(path, passphrase.as_ref()),
+            KeySource::File { path, passphrase } => {
+                Self::load_from_file(path, passphrase.as_ref()).await
+            }
             KeySource::Agent { fingerprint } => {
                 // For agent-based keys, we can't extract the private key
                 // Return an error indicating agent signing is required
@@ -105,7 +107,7 @@ impl KeyLoader {
                     }
                     Err(_) => {
                         // Fall back to common file locations
-                        Self::load_from_common_paths(fingerprint)
+                        Self::load_from_common_paths(fingerprint).await
                     }
                 }
             }
@@ -116,11 +118,11 @@ impl KeyLoader {
     ///
     /// This method only returns `ssh_key::PrivateKey` for OpenSSH format keys.
     /// For traditional PEM formats, use `load_legacy_from_file` instead.
-    pub fn load_from_file(
+    pub async fn load_from_file(
         path: &Path,
         passphrase: Option<&String>,
     ) -> Result<PrivateKey, AuthError> {
-        let key_data = std::fs::read_to_string(path).map_err(|e| {
+        let key_data = tokio::fs::read_to_string(path).await.map_err(|e| {
             AuthError::KeyLoadError(format!("Failed to read {}: {}", path.display(), e))
         })?;
 
@@ -182,11 +184,11 @@ impl KeyLoader {
     /// - SEC1 ECDSA (P-256, P-384)
     /// - DSA
     /// - PKCS#8
-    pub fn load_legacy_from_file(
+    pub async fn load_legacy_from_file(
         path: &Path,
         passphrase: Option<&str>,
     ) -> Result<LegacyPrivateKey, AuthError> {
-        let key_data = std::fs::read_to_string(path).map_err(|e| {
+        let key_data = tokio::fs::read_to_string(path).await.map_err(|e| {
             AuthError::KeyLoadError(format!("Failed to read {}: {}", path.display(), e))
         })?;
 
@@ -194,7 +196,7 @@ impl KeyLoader {
     }
 
     /// Try loading from common SSH key locations (~/.ssh/)
-    fn load_from_common_paths(fingerprint_str: &str) -> Result<PrivateKey, AuthError> {
+    async fn load_from_common_paths(fingerprint_str: &str) -> Result<PrivateKey, AuthError> {
         // Parse the fingerprint to support both MD5 and SHA256 formats
         let fingerprint = Fingerprint::parse(fingerprint_str)
             .map_err(|e| AuthError::KeyLoadError(format!("Invalid fingerprint: {}", e)))?;
@@ -207,9 +209,9 @@ impl KeyLoader {
 
         for key_file in &key_files {
             let path = ssh_dir.join(key_file);
-            if path.exists() {
+            if tokio::fs::try_exists(&path).await.unwrap_or(false) {
                 // Try to load without passphrase first
-                if let Ok(key) = Self::load_from_file(&path, None) {
+                if let Ok(key) = Self::load_from_file(&path, None).await {
                     // Check if fingerprint matches using the appropriate hash algorithm
                     if fingerprint.matches(key.public_key()) {
                         tracing::debug!(
@@ -230,12 +232,12 @@ impl KeyLoader {
     }
 
     /// List all available key files in ~/.ssh/
-    pub fn list_key_files() -> Result<Vec<PathBuf>, AuthError> {
+    pub async fn list_key_files() -> Result<Vec<PathBuf>, AuthError> {
         let home = dirs::home_dir()
             .ok_or_else(|| AuthError::KeyLoadError("Could not determine home directory".into()))?;
 
         let ssh_dir = home.join(".ssh");
-        if !ssh_dir.exists() {
+        if !tokio::fs::try_exists(&ssh_dir).await.unwrap_or(false) {
             return Ok(Vec::new());
         }
 
@@ -244,7 +246,7 @@ impl KeyLoader {
 
         for pattern in &key_patterns {
             let path = ssh_dir.join(pattern);
-            if path.exists() {
+            if tokio::fs::try_exists(&path).await.unwrap_or(false) {
                 keys.push(path);
             }
         }

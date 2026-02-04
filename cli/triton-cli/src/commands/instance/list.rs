@@ -292,7 +292,10 @@ fn get_field_value(m: &Machine, field: &str, image_map: &HashMap<uuid::Uuid, Str
         "state" => format!("{:?}", m.state).to_lowercase(),
         "brand" => format!("{:?}", m.brand).to_lowercase(),
         "package" => m.package.clone(),
-        "memory" => m.memory.to_string(),
+        "memory" => m
+            .memory
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "-".to_string()),
         "disk" => m.disk.to_string(),
         "primaryip" => m.primary_ip.clone().unwrap_or_else(|| "-".to_string()),
         "created" => m.created.clone(),

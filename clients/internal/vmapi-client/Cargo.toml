@@ -1,0 +1,35 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "vmapi-client"
+version = "9.17.0"
+edition.workspace = true
+description = "VMAPI client library (Progenitor-generated)"
+
+[lib]
+name = "vmapi_client"
+path = "src/lib.rs"
+
+[dependencies]
+progenitor-client = { workspace = true }
+reqwest = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+vmapi-api = { path = "../../../apis/vmapi-api" }
+# Required for WebSocket endpoints (Progenitor-generated code)
+base64 = "0.22"
+rand = "0.9"
+
+[build-dependencies]
+progenitor = { workspace = true }
+serde_json = { workspace = true }
+openapiv3 = { workspace = true }
+
+[lints]
+workspace = true

@@ -88,6 +88,20 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
             },
             api_description: jira_api::jira_api_mod::stub_api_description,
         },
+        ManagedApiConfig {
+            ident: "vmapi-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/vmapi-api")?,
+            },
+            title: "Triton VMAPI",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Triton VMAPI - internal HTTP API for managing virtual machines in a Triton datacenter",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: vmapi_api::vm_api_mod::stub_api_description,
+        },
     ];
     let managed_apis = dropshot_api_manager::ManagedApis::new(apis)?;
     Ok(managed_apis)

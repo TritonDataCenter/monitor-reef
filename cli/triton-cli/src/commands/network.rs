@@ -584,7 +584,7 @@ async fn update_network_ip(
             std::io::stdin().read_to_string(&mut buffer)?;
             buffer
         } else {
-            std::fs::read_to_string(file_path)?
+            tokio::fs::read_to_string(file_path).await?
         };
         let data: serde_json::Value = serde_json::from_str(&content)?;
         data.get("reserved")

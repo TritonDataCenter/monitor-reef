@@ -9,12 +9,15 @@ members = [
     "apis/bugview-api",
     "apis/cloudapi-api",
     "apis/jira-api",
+    "apis/vmapi-api",
     "cli/bugview-cli",
     "cli/cloudapi-cli",
     "cli/triton-cli",
+    "cli/vmapi-cli",
     "clients/internal/bugview-client",
     "clients/internal/cloudapi-client",
     "clients/internal/jira-client",
+    "clients/internal/vmapi-client",
     "libs/triton-auth",
     "openapi-manager",
     "services/bugview-service",
@@ -75,7 +78,10 @@ schemars = { version = "0.8", features = ["derive"] }
 semver = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+tempfile = "3"
+thiserror = "2.0"
 tokio = { version = "1.48", features = ["full"] }
+tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "serde"] }

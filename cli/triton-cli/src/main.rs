@@ -273,7 +273,7 @@ enum Commands {
 
 impl Cli {
     /// Build an authenticated TypedClient from CLI options or profile
-    fn build_client(&self) -> Result<TypedClient> {
+    async fn build_client(&self) -> Result<TypedClient> {
         // First try environment variables / CLI overrides
         let url = self.url.clone().or_else(|| std::env::var("SDC_URL").ok());
         let account = self
@@ -317,10 +317,11 @@ impl Cli {
         }
 
         // Otherwise, load from profile
-        let profile_name = self
-            .profile
-            .clone()
-            .or_else(|| Config::load().ok().and_then(|c| c.profile));
+        let profile_name = self.profile.clone();
+        let profile_name = match profile_name {
+            Some(name) => Some(name),
+            None => Config::load().await.ok().and_then(|c| c.profile),
+        };
 
         let profile_name = profile_name.ok_or_else(|| {
             anyhow::anyhow!(
@@ -328,7 +329,7 @@ impl Cli {
             )
         })?;
 
-        let profile = Profile::load(&profile_name)?;
+        let profile = Profile::load(&profile_name).await?;
 
         // Allow CLI/env overrides on top of profile
         let final_url = url.unwrap_or_else(|| profile.url.clone());
@@ -381,117 +382,119 @@ async fn main() -> Result<()> {
 
     match &cli.command {
         Commands::Profile { command } => command.clone().run().await,
-        Commands::Env { profile, shell } => commands::env::generate_env(profile.as_deref(), shell),
+        Commands::Env { profile, shell } => {
+            commands::env::generate_env(profile.as_deref(), shell).await
+        }
         Commands::Instance { command } => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Image { command } => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Key { command } => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Network { command } => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Fwrule { command } => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Vlan { command } => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Volume { command } => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Package { command } => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Account { command } => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Rbac { command } => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Info => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::info::run(&client, cli.json).await
         }
         Commands::Datacenters => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::datacenters::run(&client, cli.json).await
         }
         Commands::Services => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::services::run(&client, cli.json).await
         }
         Commands::Changefeed(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::changefeed::run(args.clone(), &client, cli.json).await
         }
         Commands::Insts(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::instance::list::run(args.clone(), &client, cli.json).await
         }
         Commands::Create(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::instance::create::run(args.clone(), &client, cli.json).await
         }
         Commands::Ssh(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::instance::ssh::run(args.clone(), &client).await
         }
         Commands::Start(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::instance::lifecycle::start(args.clone(), &client).await
         }
         Commands::Stop(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::instance::lifecycle::stop(args.clone(), &client).await
         }
         Commands::Reboot(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::instance::lifecycle::reboot(args.clone(), &client).await
         }
         Commands::Delete(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::instance::delete::run(args.clone(), &client).await
         }
         Commands::Imgs(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::image::ImageCommand::List(args.clone())
                 .run(&client, cli.json)
                 .await
         }
         Commands::Pkgs(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::package::PackageCommand::List(args.clone())
                 .run(&client, cli.json)
                 .await
         }
         Commands::Nets(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::network::NetworkCommand::List(args.clone())
                 .run(&client, cli.json)
                 .await
         }
         Commands::Vols(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::volume::VolumeCommand::List(args.clone())
                 .run(&client, cli.json)
                 .await
         }
         Commands::Keys => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::key::KeyCommand::List(commands::key::KeyListArgs {
                 table: Default::default(),
                 authorized_keys: false,
@@ -500,7 +503,7 @@ async fn main() -> Result<()> {
             .await
         }
         Commands::Fwrules => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::fwrule::FwruleCommand::List(commands::fwrule::FwruleListArgs {
                 table: Default::default(),
             })
@@ -508,7 +511,7 @@ async fn main() -> Result<()> {
             .await
         }
         Commands::Vlans => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::vlan::VlanCommand::List(commands::vlan::VlanListArgs {
                 filters: vec![],
                 table: Default::default(),
@@ -525,27 +528,27 @@ async fn main() -> Result<()> {
             .await
         }
         Commands::Ip(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::instance::get::ip(args.clone(), &client).await
         }
         Commands::Disks(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::instance::disk::list_disks(args.clone(), &client, cli.json).await
         }
         Commands::Snapshots(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::instance::snapshot::list_snapshots(args.clone(), &client, cli.json).await
         }
         Commands::Tags(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::instance::tag::list_tags(args.clone(), &client, cli.json).await
         }
         Commands::Metadatas(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::instance::metadata::list_metadata(args.clone(), &client, cli.json).await
         }
         Commands::Nics(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::instance::nic::list_nics(args.clone(), &client, cli.json).await
         }
         Commands::Completion { shell } => {
@@ -559,7 +562,7 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Commands::Cloudapi(args) => {
-            let client = cli.build_client()?;
+            let client = cli.build_client().await?;
             commands::cloudapi::run(args.clone(), &client).await
         }
     }

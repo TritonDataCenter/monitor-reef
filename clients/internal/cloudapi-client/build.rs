@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 use progenitor::GenerationSettings;
 use std::env;
@@ -27,7 +27,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // The inner_type stores AuthConfig for each request
         .with_inner_type(syn::parse_quote!(triton_auth::AuthConfig))
         // The pre_hook_async function adds Date and Authorization headers
-        .with_pre_hook_async(syn::parse_quote!(crate::auth::add_auth_headers));
+        .with_pre_hook_async(syn::parse_quote!(crate::auth::add_auth_headers))
+        // Generate JsonSchema impls so types can be used in Dropshot responses
+        .with_derive("schemars::JsonSchema");
 
     let tokens = progenitor::Generator::new(&settings).generate_tokens(&openapi)?;
     std::fs::write(format!("{}/client.rs", out_dir), tokens.to_string())?;

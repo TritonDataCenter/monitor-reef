@@ -2,13 +2,27 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Triton CloudAPI trait definition
 //!
 //! This crate defines the API trait for Triton's CloudAPI service (version 9.20.0).
 //! CloudAPI provides the public-facing REST API for managing virtual machines,
 //! images, networks, volumes, and other resources in Triton.
+//!
+//! # Error Response Format
+//!
+//! Dropshot generates an `Error` schema in the OpenAPI spec with its own format
+//! (`error_code`, required `message`, required `request_id`). However, the real
+//! CloudAPI (Node.js/Restify) returns a different error format:
+//!
+//! ```json
+//! {"code": "ResourceNotFound", "message": "network not found"}
+//! ```
+//!
+//! To ensure the generated `cloudapi-client` can correctly deserialize errors from
+//! the real CloudAPI, the `openapi-manager` crate applies a post-generation transform
+//! to patch the Error schema. See `openapi-manager/src/transforms.rs` for details.
 
 use dropshot::{
     HttpError, HttpResponseCreated, HttpResponseDeleted, HttpResponseOk, Path, Query,
@@ -17,6 +31,10 @@ use dropshot::{
 
 pub mod types;
 pub use types::*;
+
+// Re-export VmState from vmapi-api for changefeed consumers
+// The changefeed sends raw VMAPI states, so consumers need this type.
+pub use vmapi_api::VmState;
 
 /// URL for CloudAPI documentation
 ///

@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Configuration management
 
@@ -52,13 +52,13 @@ pub fn env_profile() -> Result<Profile> {
 /// 2. TRITON_PROFILE environment variable
 /// 3. "env" if TRITON_URL/SDC_URL is set (use env vars directly)
 /// 4. Current profile from config.json
-pub fn resolve_profile(cli_profile: Option<&str>) -> Result<Profile> {
+pub async fn resolve_profile(cli_profile: Option<&str>) -> Result<Profile> {
     // 1. CLI argument
     if let Some(name) = cli_profile {
         if name == "env" {
             return env_profile();
         }
-        return Profile::load(name);
+        return Profile::load(name).await;
     }
 
     // 2. TRITON_PROFILE env var
@@ -66,7 +66,7 @@ pub fn resolve_profile(cli_profile: Option<&str>) -> Result<Profile> {
         if name == "env" {
             return env_profile();
         }
-        return Profile::load(&name);
+        return Profile::load(&name).await;
     }
 
     // 3. Check if env vars are set (implicit "env" profile)
@@ -75,9 +75,9 @@ pub fn resolve_profile(cli_profile: Option<&str>) -> Result<Profile> {
     }
 
     // 4. Current profile from config
-    let config = Config::load()?;
+    let config = Config::load().await?;
     if let Some(name) = config.current_profile() {
-        return Profile::load(name);
+        return Profile::load(name).await;
     }
 
     Err(anyhow::anyhow!(

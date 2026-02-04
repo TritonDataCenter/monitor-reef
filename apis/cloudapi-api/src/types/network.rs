@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Network-related types (networks, fabric VLANs, NICs, IPs)
 
@@ -151,8 +151,8 @@ pub struct UpdateFabricVlanRequest {
 }
 
 /// Request to create fabric network
-#[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub struct CreateFabricNetworkRequest {
     /// Network name
     pub name: String,

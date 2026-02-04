@@ -29,7 +29,7 @@ pub async fn run(client: &TypedClient, use_json: bool) -> Result<()> {
     let machines = machines_response.into_inner();
 
     // Calculate stats
-    let total_memory: u64 = machines.iter().map(|m| m.memory).sum();
+    let total_memory: u64 = machines.iter().filter_map(|m| m.memory).sum();
     let total_disk: u64 = machines.iter().map(|m| m.disk).sum();
 
     // Build full name from first/last name

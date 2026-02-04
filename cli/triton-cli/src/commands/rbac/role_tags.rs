@@ -350,7 +350,7 @@ async fn role_tags_edit(
     }
 
     // Read back the edited file
-    let edited_content = std::fs::read_to_string(temp_file.path())?;
+    let edited_content = tokio::fs::read_to_string(temp_file.path()).await?;
     let edited_tags = text_to_role_tags(&edited_content);
 
     // Check if anything changed

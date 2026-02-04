@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! SSH key management commands
 
@@ -131,7 +131,7 @@ async fn add_key(args: KeyAddArgs, client: &TypedClient, use_json: bool) -> Resu
 
     // Read key from file or stdin
     let key_content = if let Some(file) = &args.file {
-        std::fs::read_to_string(file)?
+        tokio::fs::read_to_string(file).await?
     } else {
         use std::io::Read;
         let mut buffer = String::new();

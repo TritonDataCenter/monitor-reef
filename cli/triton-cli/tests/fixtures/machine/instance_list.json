@@ -1,0 +1,53 @@
+{
+  "id": "8a5918c3-84a2-4122-9ed5-60d76d7a8525",
+  "name": "deploy-424bd6a9",
+  "type": "smartmachine",
+  "brand": "lx",
+  "state": "running",
+  "image": "8a1b6e3a-00ec-4031-b0a8-8fb0f334c394",
+  "ips": [
+    "67.158.54.228",
+    "192.168.128.34"
+  ],
+  "memory": 1024,
+  "disk": 10240,
+  "deletion_protection": false,
+  "metadata": {
+    "root_authorized_keys": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyForTestingPurposesOnly000000000000"
+  },
+  "tags": {
+    "github_url": "https://github.com/octocat/Hello-World",
+    "triton_deploy_app_id": "424bd6a9-b2bb-487b-8931-5fe2dbaae3b7"
+  },
+  "created": "2026-01-26T21:32:02.032Z",
+  "updated": "2026-01-26T21:32:31.000Z",
+  "networks": [
+    "3985900d-15a8-42d8-a997-1f7e8df2d0af",
+    "ac336e0f-8532-4e0e-a19e-7cd5bdd62817"
+  ],
+  "nics": [
+    {
+      "mac": "90:b8:d0:80:ec:ae",
+      "ip": "67.158.54.228",
+      "primary": true,
+      "gateway": "67.158.54.1",
+      "netmask": "255.255.255.0",
+      "network": "3985900d-15a8-42d8-a997-1f7e8df2d0af"
+    },
+    {
+      "mac": "90:b8:d0:80:b2:5a",
+      "ip": "192.168.128.34",
+      "primary": false,
+      "gateway": "192.168.128.1",
+      "netmask": "255.255.252.0",
+      "network": "ac336e0f-8532-4e0e-a19e-7cd5bdd62817"
+    }
+  ],
+  "primaryIp": "67.158.54.228",
+  "firewall_enabled": false,
+  "compute_node": "44454c4c-5300-1057-8050-b7c04f533532",
+  "package": "g1.micro",
+  "age": "16h",
+  "img": "ubuntu-24.04@20250407",
+  "shortid": "8a5918c3"
+}

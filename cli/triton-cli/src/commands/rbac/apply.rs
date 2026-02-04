@@ -12,7 +12,7 @@ use cloudapi_client::TypedClient;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::process::Command;
+use tokio::process::Command;
 
 use crate::config::{Config, Profile, paths};
 use crate::output::{json, table};
@@ -343,19 +343,23 @@ pub async fn rbac_info(args: InfoArgs, client: &TypedClient, use_json: bool) -> 
 pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     // Resolve the current profile for dev mode (if enabled)
     let base_profile = if args.dev_create_keys_and_profiles {
-        let profile_name = Config::load().ok().and_then(|c| c.profile).ok_or_else(|| {
-            anyhow::anyhow!(
-                "--dev-create-keys-and-profiles requires a configured profile.\n\
+        let profile_name = Config::load()
+            .await
+            .ok()
+            .and_then(|c| c.profile)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "--dev-create-keys-and-profiles requires a configured profile.\n\
                      Use 'triton profile create' to create one first."
-            )
-        })?;
-        Some(Profile::load(&profile_name)?)
+                )
+            })?;
+        Some(Profile::load(&profile_name).await?)
     } else {
         None
     };
 
     // Read and parse the config file
-    let content = std::fs::read_to_string(&args.file).map_err(|e| {
+    let content = tokio::fs::read_to_string(&args.file).await.map_err(|e| {
         anyhow::anyhow!(
             "Failed to read config file '{}': {}",
             args.file.display(),
@@ -1045,17 +1049,20 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
 }
 
 /// Generate an SSH key for a user using ssh-keygen
-fn generate_ssh_key(user_login: &str, profile_name: &str) -> Result<(PathBuf, String, String)> {
+async fn generate_ssh_key(
+    user_login: &str,
+    profile_name: &str,
+) -> Result<(PathBuf, String, String)> {
     // Create dev-keys directory
     let keys_dir = paths::config_dir().join("dev-keys");
-    std::fs::create_dir_all(&keys_dir)?;
+    tokio::fs::create_dir_all(&keys_dir).await?;
 
     let key_name = format!("{}-{}", profile_name, user_login);
     let key_path = keys_dir.join(&key_name);
 
     // Remove existing key files if present
-    let _ = std::fs::remove_file(&key_path);
-    let _ = std::fs::remove_file(key_path.with_extension("pub"));
+    let _ = tokio::fs::remove_file(&key_path).await;
+    let _ = tokio::fs::remove_file(key_path.with_extension("pub")).await;
 
     // Generate ed25519 key using ssh-keygen
     let output = Command::new("ssh-keygen")
@@ -1072,6 +1079,7 @@ fn generate_ssh_key(user_login: &str, profile_name: &str) -> Result<(PathBuf, St
             &format!("{}-dev", user_login),
         ])
         .output()
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to run ssh-keygen: {}", e))?;
 
     if !output.status.success() {
@@ -1083,7 +1091,8 @@ fn generate_ssh_key(user_login: &str, profile_name: &str) -> Result<(PathBuf, St
 
     // Read the public key
     let pub_key_path = key_path.with_extension("pub");
-    let public_key = std::fs::read_to_string(&pub_key_path)
+    let public_key = tokio::fs::read_to_string(&pub_key_path)
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to read public key: {}", e))?
         .trim()
         .to_string();
@@ -1094,7 +1103,7 @@ fn generate_ssh_key(user_login: &str, profile_name: &str) -> Result<(PathBuf, St
 }
 
 /// Create a CLI profile for an RBAC user
-fn create_user_profile(
+async fn create_user_profile(
     base_profile: &Profile,
     user_login: &str,
     key_fingerprint: &str,
@@ -1112,7 +1121,7 @@ fn create_user_profile(
         act_as_account: base_profile.act_as_account.clone(),
     };
 
-    profile.save()?;
+    profile.save().await?;
     Ok(profile_name)
 }
 
@@ -1148,7 +1157,8 @@ async fn execute_dev_actions(
         if !use_json {
             println!("  Generating SSH key for user '{}'...", user.login);
         }
-        let (key_path, public_key, key_name) = generate_ssh_key(&user.login, &base_profile.name)?;
+        let (key_path, public_key, key_name) =
+            generate_ssh_key(&user.login, &base_profile.name).await?;
 
         if !use_json {
             println!("    Key saved to: {}", key_path.display());
@@ -1195,7 +1205,7 @@ async fn execute_dev_actions(
             println!("  Creating CLI profile '{}'...", profile_name);
         }
 
-        create_user_profile(base_profile, &user.login, fingerprint)?;
+        create_user_profile(base_profile, &user.login, fingerprint).await?;
 
         if !use_json {
             println!("    Profile created successfully");

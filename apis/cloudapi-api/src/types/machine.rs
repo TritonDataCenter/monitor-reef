@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Machine-related types
 
@@ -74,8 +74,8 @@ pub struct Machine {
     pub image: Uuid,
     /// Package name
     pub package: String,
-    /// RAM in MB
-    pub memory: u64,
+    /// RAM in MB (may be null for some zone types like LX)
+    pub memory: Option<u64>,
     /// Disk space in MB
     pub disk: u64,
     /// IP addresses (always present)
@@ -101,19 +101,40 @@ pub struct Machine {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub docker: Option<bool>,
     /// Firewall enabled
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+    #[serde(
+        rename = "firewall_enabled",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub firewall_enabled: Option<bool>,
     /// Deletion protection enabled
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+    #[serde(
+        rename = "deletion_protection",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub deletion_protection: Option<bool>,
     /// Compute node UUID (server hosting the VM)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+    #[serde(
+        rename = "compute_node",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub compute_node: Option<Uuid>,
     /// DNS names (CNS feature)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+    #[serde(rename = "dns_names", default, skip_serializing_if = "Option::is_none")]
     pub dns_names: Option<Vec<String>>,
     /// Free space in bytes (bhyve with flexible disk)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+    #[serde(
+        rename = "free_space",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub free_space: Option<u64>,
     /// Disks (bhyve VMs only)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -125,7 +146,12 @@ pub struct Machine {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flexible: Option<bool>,
     /// Whether a delegate dataset is present
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+    #[serde(
+        rename = "delegate_dataset",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub delegate_dataset: Option<bool>,
     /// Role tags for RBAC
     #[serde(rename = "role-tag", default, skip_serializing_if = "Option::is_none")]
@@ -139,8 +165,9 @@ pub struct MachineDisk {
     /// Disk UUID
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<Uuid>,
-    /// Disk size in MB
-    pub size: u64,
+    /// Disk size in MB (not present on boot disks backed by images)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
     /// Block size in bytes
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub block_size: Option<u64>,
@@ -224,6 +251,20 @@ pub struct NicSpec {
 }
 
 /// Request to create a machine
+///
+/// This struct supports both the modern nested format and the legacy flattened format:
+///
+/// **Modern format (Rust clients):**
+/// ```json
+/// {"image": "...", "tags": {"foo": "bar"}, "metadata": {"key": "value"}}
+/// ```
+///
+/// **Legacy format (Node.js clients):**
+/// ```json
+/// {"image": "...", "tag.foo": "bar", "metadata.key": "value"}
+/// ```
+///
+/// Use the `tags()` and `metadata()` methods to get the merged result from both formats.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateMachineRequest {
@@ -253,10 +294,10 @@ pub struct CreateMachineRequest {
     /// Locality hints (deprecated, use affinity instead)
     #[serde(default)]
     pub locality: Option<serde_json::Value>,
-    /// Metadata
+    /// Metadata (modern format - nested object)
     #[serde(default)]
     pub metadata: Option<Metadata>,
-    /// Tags
+    /// Tags (modern format - nested object)
     #[serde(default)]
     pub tags: Option<Tags>,
     /// Firewall enabled
@@ -285,6 +326,73 @@ pub struct CreateMachineRequest {
     /// Allow using images shared with this account (not owned by it)
     #[serde(default)]
     pub allow_shared_images: Option<bool>,
+    /// Extra fields for legacy format support (tag.*, metadata.*)
+    /// These are captured by serde's flatten and processed by helper methods.
+    #[serde(flatten)]
+    #[schemars(skip)]
+    pub extra: std::collections::HashMap<String, serde_json::Value>,
+}
+
+impl CreateMachineRequest {
+    /// Get all tags, merging modern `tags` field with legacy `tag.*` fields
+    ///
+    /// Legacy `tag.KEY=VALUE` fields take precedence over the modern `tags` object
+    /// to maintain backwards compatibility.
+    pub fn tags(&self) -> Tags {
+        let mut result = self.tags.clone().unwrap_or_default();
+
+        // Extract legacy tag.* fields
+        for (key, value) in &self.extra {
+            if let Some(tag_key) = key.strip_prefix("tag.") {
+                result.insert(tag_key.to_string(), value.clone());
+            }
+        }
+
+        result
+    }
+
+    /// Get all metadata, merging modern `metadata` field with legacy `metadata.*` fields
+    ///
+    /// Legacy `metadata.KEY=VALUE` fields take precedence over the modern `metadata` object
+    /// to maintain backwards compatibility.
+    pub fn metadata(&self) -> Metadata {
+        let mut result = self.metadata.clone().unwrap_or_default();
+
+        // Extract legacy metadata.* fields (excluding *_pw for passwords)
+        for (key, value) in &self.extra {
+            if let Some(meta_key) = key.strip_prefix("metadata.") {
+                // Skip password fields (handled separately)
+                if !meta_key.ends_with("_pw") {
+                    if let Some(s) = value.as_str() {
+                        result.insert(meta_key.to_string(), s.to_string());
+                    } else {
+                        // Convert non-string values to string
+                        result.insert(meta_key.to_string(), value.to_string());
+                    }
+                }
+            }
+        }
+
+        result
+    }
+
+    /// Check if this request has any tags (from either format)
+    pub fn has_tags(&self) -> bool {
+        if self.tags.as_ref().is_some_and(|t| !t.is_empty()) {
+            return true;
+        }
+        self.extra.keys().any(|k| k.starts_with("tag."))
+    }
+
+    /// Check if this request has any metadata (from either format)
+    pub fn has_metadata(&self) -> bool {
+        if self.metadata.as_ref().is_some_and(|m| !m.is_empty()) {
+            return true;
+        }
+        self.extra
+            .keys()
+            .any(|k| k.starts_with("metadata.") && !k.ends_with("_pw"))
+    }
 }
 
 /// Machine action for action dispatch
@@ -394,6 +502,14 @@ pub struct DisableDeletionProtectionRequest {
 }
 
 /// Query parameters for listing machines
+///
+/// This struct supports both the modern single-tag format and the legacy multi-tag format:
+///
+/// **Modern format:** `?tag=key=value` (single tag filter)
+///
+/// **Legacy format:** `?tag.env=prod&tag.role=web` (multiple tag filters)
+///
+/// Use the `tag_filters()` method to get all tag filters from both formats.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ListMachinesQuery {
@@ -421,7 +537,7 @@ pub struct ListMachinesQuery {
     /// Pagination limit
     #[serde(default)]
     pub limit: Option<u64>,
-    /// Filter by tag (format: key=value)
+    /// Filter by tag (modern format: key=value)
     #[serde(default)]
     pub tag: Option<String>,
     /// Filter by docker flag (added in CloudAPI 8.0.0)
@@ -430,6 +546,49 @@ pub struct ListMachinesQuery {
     /// Include generated credentials in response
     #[serde(default)]
     pub credentials: Option<bool>,
+    /// Include destroyed/tombstone machines
+    #[serde(default)]
+    pub tombstone: Option<bool>,
+    /// Extra fields for legacy format support (tag.*)
+    /// These are captured by serde's flatten and processed by helper methods.
+    #[serde(flatten)]
+    #[schemars(skip)]
+    pub extra: std::collections::HashMap<String, String>,
+}
+
+impl ListMachinesQuery {
+    /// Get all tag filters, merging modern `tag` field with legacy `tag.*` fields
+    ///
+    /// Returns a HashMap of tag_key -> expected_value for filtering.
+    ///
+    /// # Examples
+    ///
+    /// Modern format `?tag=env=prod` returns `{"env": "prod"}`
+    /// Legacy format `?tag.env=prod&tag.role=web` returns `{"env": "prod", "role": "web"}`
+    pub fn tag_filters(&self) -> std::collections::HashMap<String, String> {
+        let mut result = std::collections::HashMap::new();
+
+        // Parse modern format: tag=key=value
+        if let Some(tag_str) = &self.tag
+            && let Some((key, value)) = tag_str.split_once('=')
+        {
+            result.insert(key.to_string(), value.to_string());
+        }
+
+        // Extract legacy tag.* fields
+        for (key, value) in &self.extra {
+            if let Some(tag_key) = key.strip_prefix("tag.") {
+                result.insert(tag_key.to_string(), value.clone());
+            }
+        }
+
+        result
+    }
+
+    /// Check if this query has any tag filters
+    pub fn has_tag_filters(&self) -> bool {
+        self.tag.is_some() || self.extra.keys().any(|k| k.starts_with("tag."))
+    }
 }
 
 /// Audit entry for a machine

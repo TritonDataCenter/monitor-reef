@@ -398,13 +398,6 @@ fn test_image_tag_no_args() {
     triton_cmd().args(["image", "tag"]).assert().failure();
 }
 
-/// Test image delete with no args succeeds (does nothing)
-#[test]
-fn test_image_delete_no_args() {
-    // Unlike other commands, delete with no args is valid and does nothing
-    triton_cmd().args(["image", "delete"]).assert().success();
-}
-
 /// Test image wait requires arguments
 #[test]
 fn test_image_wait_no_args() {

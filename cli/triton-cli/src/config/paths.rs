@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Configuration path resolution
 //!
@@ -25,6 +25,8 @@ pub fn config_dir() -> PathBuf {
     // Check for existing ~/.triton directory (migration support)
     if let Some(home) = dirs::home_dir() {
         let legacy_dir = home.join(".triton");
+        #[allow(clippy::disallowed_methods)]
+        // arch-lint: allow(no-sync-io) reason="Sync function for path resolution; fast local check during startup"
         if legacy_dir.exists() {
             return legacy_dir;
         }
@@ -56,12 +58,12 @@ pub fn profile_path(name: &str) -> PathBuf {
 }
 
 /// Ensure config directories exist
-pub fn ensure_config_dirs() -> std::io::Result<()> {
+pub async fn ensure_config_dirs() -> std::io::Result<()> {
     let config = config_dir();
     let profiles = profiles_dir();
 
-    std::fs::create_dir_all(&config)?;
-    std::fs::create_dir_all(&profiles)?;
+    tokio::fs::create_dir_all(&config).await?;
+    tokio::fs::create_dir_all(&profiles).await?;
 
     Ok(())
 }

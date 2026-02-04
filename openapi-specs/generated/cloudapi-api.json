@@ -3194,10 +3194,19 @@
           {
             "in": "query",
             "name": "tag",
-            "description": "Filter by tag (format: key=value)",
+            "description": "Filter by tag (modern format: key=value)",
             "schema": {
               "nullable": true,
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tombstone",
+            "description": "Include destroyed/tombstone machines",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
             }
           },
           {
@@ -3383,10 +3392,19 @@
           {
             "in": "query",
             "name": "tag",
-            "description": "Filter by tag (format: key=value)",
+            "description": "Filter by tag (modern format: key=value)",
             "schema": {
               "nullable": true,
               "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tombstone",
+            "description": "Include destroyed/tombstone machines",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
             }
           },
           {
@@ -9618,7 +9636,7 @@
             "default": null,
             "type": "string"
           },
-          "internetNat": {
+          "internet_nat": {
             "nullable": true,
             "description": "Internet NAT",
             "default": null,
@@ -9628,11 +9646,11 @@
             "description": "Network name",
             "type": "string"
           },
-          "provisionEndIp": {
+          "provision_end_ip": {
             "description": "Provision end IP",
             "type": "string"
           },
-          "provisionStartIp": {
+          "provision_start_ip": {
             "description": "Provision start IP",
             "type": "string"
           },
@@ -9657,8 +9675,8 @@
         },
         "required": [
           "name",
-          "provisionEndIp",
-          "provisionStartIp",
+          "provision_end_ip",
+          "provision_start_ip",
           "subnet"
         ]
       },
@@ -9780,7 +9798,7 @@
         ]
       },
       "CreateMachineRequest": {
-        "description": "Request to create a machine",
+        "description": "Request to create a machine\n\nThis struct supports both the modern nested format and the legacy flattened format:\n\n**Modern format (Rust clients):** ```json {\"image\": \"...\", \"tags\": {\"foo\": \"bar\"}, \"metadata\": {\"key\": \"value\"}} ```\n\n**Legacy format (Node.js clients):** ```json {\"image\": \"...\", \"tag.foo\": \"bar\", \"metadata.key\": \"value\"} ```\n\nUse the `tags()` and `metadata()` methods to get the merged result from both formats.",
         "type": "object",
         "properties": {
           "affinity": {
@@ -9853,7 +9871,7 @@
           },
           "metadata": {
             "nullable": true,
-            "description": "Metadata",
+            "description": "Metadata (modern format - nested object)",
             "default": null,
             "type": "object",
             "additionalProperties": {
@@ -9891,7 +9909,7 @@
           },
           "tags": {
             "nullable": true,
-            "description": "Tags",
+            "description": "Tags (modern format - nested object)",
             "default": null,
             "type": "object",
             "additionalProperties": true
@@ -10310,7 +10328,7 @@
             "description": "Error information (if image creation failed, API version >= 7.1.0)",
             "allOf": [
               {
-                "$ref": "#/components/schemas/ImageError"
+                "$ref": "#/components/schemas/ImageErrorInfo"
               }
             ]
           },
@@ -10427,8 +10445,8 @@
           "version"
         ]
       },
-      "ImageError": {
-        "description": "Image error information (for failed image creation)",
+      "ImageErrorInfo": {
+        "description": "Image error information (for failed image creation)\n\nNote: Named `ImageErrorInfo` rather than `ImageError` to distinguish this DTO from Rust error types.",
         "type": "object",
         "properties": {
           "code": {
@@ -10436,13 +10454,13 @@
             "type": "string"
           },
           "message": {
+            "nullable": true,
             "description": "Error message",
             "type": "string"
           }
         },
         "required": [
-          "code",
-          "message"
+          "code"
         ]
       },
       "ImageFile": {
@@ -10547,9 +10565,9 @@
               }
             ]
           },
-          "computeNode": {
+          "compute_node": {
             "nullable": true,
-            "description": "Compute node UUID (server hosting the VM)",
+            "description": "Compute node UUID (server hosting the VM) Note: CloudAPI returns this as snake_case despite other fields being camelCase",
             "type": "string",
             "format": "uuid"
           },
@@ -10557,14 +10575,14 @@
             "description": "Creation timestamp",
             "type": "string"
           },
-          "delegateDataset": {
+          "delegate_dataset": {
             "nullable": true,
-            "description": "Whether a delegate dataset is present",
+            "description": "Whether a delegate dataset is present Note: CloudAPI returns this as snake_case despite other fields being camelCase",
             "type": "boolean"
           },
-          "deletionProtection": {
+          "deletion_protection": {
             "nullable": true,
-            "description": "Deletion protection enabled",
+            "description": "Deletion protection enabled Note: CloudAPI returns this as snake_case despite other fields being camelCase",
             "type": "boolean"
           },
           "disk": {
@@ -10581,9 +10599,9 @@
               "$ref": "#/components/schemas/MachineDisk"
             }
           },
-          "dnsNames": {
+          "dns_names": {
             "nullable": true,
-            "description": "DNS names (CNS feature)",
+            "description": "DNS names (CNS feature) Note: CloudAPI returns this as snake_case despite other fields being camelCase",
             "type": "array",
             "items": {
               "type": "string"
@@ -10599,9 +10617,9 @@
             "description": "Whether the VM uses encrypted storage",
             "type": "boolean"
           },
-          "firewallEnabled": {
+          "firewall_enabled": {
             "nullable": true,
-            "description": "Firewall enabled",
+            "description": "Firewall enabled Note: CloudAPI returns this as snake_case despite other fields being camelCase",
             "type": "boolean"
           },
           "flexible": {
@@ -10609,9 +10627,9 @@
             "description": "Whether the VM uses flexible disk mode (bhyve only)",
             "type": "boolean"
           },
-          "freeSpace": {
+          "free_space": {
             "nullable": true,
-            "description": "Free space in bytes (bhyve with flexible disk)",
+            "description": "Free space in bytes (bhyve with flexible disk) Note: CloudAPI returns this as snake_case despite other fields being camelCase",
             "type": "integer",
             "format": "uint64",
             "minimum": 0
@@ -10634,7 +10652,8 @@
             }
           },
           "memory": {
-            "description": "RAM in MB",
+            "nullable": true,
+            "description": "RAM in MB (may be null for some zone types like LX)",
             "type": "integer",
             "format": "uint64",
             "minimum": 0
@@ -10716,7 +10735,6 @@
           "id",
           "image",
           "ips",
-          "memory",
           "metadata",
           "name",
           "package",
@@ -10755,15 +10773,13 @@
             "format": "uuid"
           },
           "size": {
-            "description": "Disk size in MB",
+            "nullable": true,
+            "description": "Disk size in MB (not present on boot disks backed by images)",
             "type": "integer",
             "format": "uint64",
             "minimum": 0
           }
-        },
-        "required": [
-          "size"
-        ]
+        }
       },
       "MachineNic": {
         "description": "Network interface on a machine",

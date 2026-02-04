@@ -248,14 +248,14 @@ fn parse_tag_value(value: &str) -> Value {
 }
 
 /// Load tags from a file (JSON object or key=value pairs)
-fn load_tags_from_file(file_path: &std::path::Path) -> Result<Map<String, Value>> {
+async fn load_tags_from_file(file_path: &std::path::Path) -> Result<Map<String, Value>> {
     let content = if file_path.as_os_str() == "-" {
         use std::io::Read;
         let mut buffer = String::new();
         std::io::stdin().read_to_string(&mut buffer)?;
         buffer
     } else {
-        std::fs::read_to_string(file_path)?
+        tokio::fs::read_to_string(file_path).await?
     };
 
     let trimmed = content.trim();
@@ -296,7 +296,7 @@ async fn set_tags(args: TagSetArgs, client: &TypedClient) -> Result<()> {
     // Load from files if provided
     if let Some(files) = &args.files {
         for file_path in files {
-            let file_tags = load_tags_from_file(file_path)?;
+            let file_tags = load_tags_from_file(file_path).await?;
             for (key, value) in file_tags {
                 tag_map.insert(key, value);
             }
@@ -430,7 +430,7 @@ async fn replace_all_tags(args: TagReplaceAllArgs, client: &TypedClient) -> Resu
     // Load from files if provided
     if let Some(files) = &args.files {
         for file_path in files {
-            let file_tags = load_tags_from_file(file_path)?;
+            let file_tags = load_tags_from_file(file_path).await?;
             for (key, value) in file_tags {
                 tag_map.insert(key, value);
             }

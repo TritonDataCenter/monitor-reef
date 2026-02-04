@@ -1,0 +1,22 @@
+{
+  "id": "a1234567-1234-1234-1234-123456789012",
+  "name": "test-machine-snake-case",
+  "type": "smartmachine",
+  "brand": "joyent",
+  "state": "running",
+  "image": "b1234567-1234-1234-1234-123456789012",
+  "package": "g4-highcpu-1G",
+  "memory": 1024,
+  "disk": 25600,
+  "ips": ["10.88.88.10", "192.168.1.100"],
+  "metadata": {"user-script": "#!/bin/bash\necho hello"},
+  "tags": {"env": "test"},
+  "created": "2024-01-15T10:30:00.000Z",
+  "updated": "2024-01-15T12:45:00.000Z",
+  "firewall_enabled": true,
+  "deletion_protection": false,
+  "compute_node": "d1234567-1234-1234-1234-123456789012",
+  "dns_names": ["test.inst.triton.zone", "test.svc.triton.zone"],
+  "free_space": 5368709120,
+  "delegate_dataset": true
+}

@@ -10,6 +10,10 @@
 RUST_USE_BOOTSTRAP = false
 RUST_CLIPPY_ARGS = --all-targets --all-features -- -D warnings
 
+# Coverage thresholds
+COVERAGE_LINE_THRESHOLD = 40
+COVERAGE_TIMEOUT = 300
+
 ENGBLD_REQUIRE :=       $(shell git submodule update --init deps/eng)
 include ./deps/eng/tools/mk/Makefile.defs
 TOP ?= $(error Unable to access eng.git submodule Makefiles.)
@@ -270,23 +274,3 @@ regen-clients: | $(CARGO_EXEC) ## Regenerate all client libraries
 	@echo "Regenerating clients by rebuilding..."
 	$(CARGO) build
 	@echo "All clients regenerated. Test with: make test"
-
-# Code coverage (configuration in tarpaulin.toml)
-coverage: | $(CARGO_EXEC) ## Run code coverage check (line >= 40%)
-	@if ! $(CARGO) tarpaulin --version >/dev/null 2>&1; then \
-		echo "cargo-tarpaulin not found, installing..."; \
-		$(CARGO) install --features vendored-openssl cargo-tarpaulin; \
-	fi
-	@echo "Running code coverage analysis..."
-	$(CARGO) tarpaulin
-
-# Hopefully, something similar to the no-sync-io check will be added to clippy
-# in the future and we won't need this utility:
-#  - https://github.com/rust-lang/rust-clippy/issues/4377
-#  - https://github.com/rust-lang/rfcs/pull/3639
-arch-lint: | $(CARGO_EXEC) ## Run architecture lints
-	@if ! $(CARGO_HOME)/bin/arch-lint --version >/dev/null 2>&1; then \
-		echo "arch-lint not found, installing..."; \
-		$(CARGO) install arch-lint-cli; \
-	fi
-	$(CARGO_HOME)/bin/arch-lint check

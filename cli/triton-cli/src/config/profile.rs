@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Profile management types
 
@@ -57,9 +57,10 @@ impl Profile {
     }
 
     /// Load a profile from a file
-    pub fn load(name: &str) -> anyhow::Result<Self> {
+    pub async fn load(name: &str) -> anyhow::Result<Self> {
         let path = super::paths::profile_path(name);
-        let content = std::fs::read_to_string(&path)
+        let content = tokio::fs::read_to_string(&path)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to read profile '{}': {}", name, e))?;
         let profile: Profile = serde_json::from_str(&content)
             .map_err(|e| anyhow::anyhow!("Failed to parse profile '{}': {}", name, e))?;
@@ -67,32 +68,33 @@ impl Profile {
     }
 
     /// Save the profile to a file
-    pub fn save(&self) -> anyhow::Result<()> {
-        super::paths::ensure_config_dirs()?;
+    pub async fn save(&self) -> anyhow::Result<()> {
+        super::paths::ensure_config_dirs().await?;
         let path = super::paths::profile_path(&self.name);
         let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(&path, content)?;
+        tokio::fs::write(&path, content).await?;
         Ok(())
     }
 
     /// Delete the profile file
-    pub fn delete(name: &str) -> anyhow::Result<()> {
+    pub async fn delete(name: &str) -> anyhow::Result<()> {
         let path = super::paths::profile_path(name);
-        std::fs::remove_file(&path)
+        tokio::fs::remove_file(&path)
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to delete profile '{}': {}", name, e))?;
         Ok(())
     }
 
     /// List all available profiles
-    pub fn list_all() -> anyhow::Result<Vec<String>> {
+    pub async fn list_all() -> anyhow::Result<Vec<String>> {
         let profiles_dir = super::paths::profiles_dir();
-        if !profiles_dir.exists() {
+        if !tokio::fs::try_exists(&profiles_dir).await.unwrap_or(false) {
             return Ok(vec![]);
         }
 
         let mut profiles = vec![];
-        for entry in std::fs::read_dir(&profiles_dir)? {
-            let entry = entry?;
+        let mut entries = tokio::fs::read_dir(&profiles_dir).await?;
+        while let Some(entry) = entries.next_entry().await? {
             let path = entry.path();
             if path.extension().is_some_and(|ext| ext == "json")
                 && let Some(stem) = path.file_stem()
@@ -139,22 +141,22 @@ pub struct Config {
 
 impl Config {
     /// Load the main config file
-    pub fn load() -> anyhow::Result<Self> {
+    pub async fn load() -> anyhow::Result<Self> {
         let path = super::paths::config_file();
-        if !path.exists() {
+        if !tokio::fs::try_exists(&path).await.unwrap_or(false) {
             return Ok(Self::default());
         }
-        let content = std::fs::read_to_string(&path)?;
+        let content = tokio::fs::read_to_string(&path).await?;
         let config: Config = serde_json::from_str(&content)?;
         Ok(config)
     }
 
     /// Save the main config file
-    pub fn save(&self) -> anyhow::Result<()> {
-        super::paths::ensure_config_dirs()?;
+    pub async fn save(&self) -> anyhow::Result<()> {
+        super::paths::ensure_config_dirs().await?;
         let path = super::paths::config_file();
         let content = serde_json::to_string_pretty(self)?;
-        std::fs::write(&path, content)?;
+        tokio::fs::write(&path, content).await?;
         Ok(())
     }
 

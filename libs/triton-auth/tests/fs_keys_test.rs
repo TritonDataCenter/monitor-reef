@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Filesystem key loading tests for triton-auth
 //!
@@ -33,10 +33,12 @@ fn test_keys_dir() -> PathBuf {
 
 /// Mirrors: 'loadSSHKey full pair' test
 /// Verifies RSA key loading and properties
-#[test]
-fn test_load_rsa_key() {
+#[tokio::test]
+async fn test_load_rsa_key() {
     let key_path = test_keys_dir().join("id_rsa");
-    let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load RSA key");
+    let key = KeyLoader::load_legacy_from_file(&key_path, None)
+        .await
+        .expect("Failed to load RSA key");
 
     // Verify key type
     let key_type = key.key_type();
@@ -45,10 +47,12 @@ fn test_load_rsa_key() {
 
 /// Mirrors: 'loadSSHKey private only dsa' test
 /// Verifies DSA key loading
-#[test]
-fn test_load_dsa_key() {
+#[tokio::test]
+async fn test_load_dsa_key() {
     let key_path = test_keys_dir().join("id_dsa");
-    let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load DSA key");
+    let key = KeyLoader::load_legacy_from_file(&key_path, None)
+        .await
+        .expect("Failed to load DSA key");
 
     // Verify key type
     let key_type = key.key_type();
@@ -56,10 +60,12 @@ fn test_load_dsa_key() {
 }
 
 /// Verifies ECDSA key loading (P-256)
-#[test]
-fn test_load_ecdsa_key() {
+#[tokio::test]
+async fn test_load_ecdsa_key() {
     let key_path = test_keys_dir().join("id_ecdsa");
-    let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load ECDSA key");
+    let key = KeyLoader::load_legacy_from_file(&key_path, None)
+        .await
+        .expect("Failed to load ECDSA key");
 
     // Verify key type - the test key is P-256
     let key_type = key.key_type();
@@ -71,10 +77,12 @@ fn test_load_ecdsa_key() {
 // ============================================================================
 
 /// Verifies RSA key MD5 fingerprint matches expected value
-#[test]
-fn test_rsa_key_fingerprint() {
+#[tokio::test]
+async fn test_rsa_key_fingerprint() {
     let key_path = test_keys_dir().join("id_rsa");
-    let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load RSA key");
+    let key = KeyLoader::load_legacy_from_file(&key_path, None)
+        .await
+        .expect("Failed to load RSA key");
     let pub_blob = key
         .public_key_blob()
         .expect("Failed to get public key blob");
@@ -83,10 +91,12 @@ fn test_rsa_key_fingerprint() {
 }
 
 /// Verifies DSA key MD5 fingerprint matches expected value
-#[test]
-fn test_dsa_key_fingerprint() {
+#[tokio::test]
+async fn test_dsa_key_fingerprint() {
     let key_path = test_keys_dir().join("id_dsa");
-    let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load DSA key");
+    let key = KeyLoader::load_legacy_from_file(&key_path, None)
+        .await
+        .expect("Failed to load DSA key");
     let pub_blob = key
         .public_key_blob()
         .expect("Failed to get public key blob");
@@ -95,10 +105,12 @@ fn test_dsa_key_fingerprint() {
 }
 
 /// Verifies ECDSA key MD5 fingerprint matches expected value
-#[test]
-fn test_ecdsa_key_fingerprint() {
+#[tokio::test]
+async fn test_ecdsa_key_fingerprint() {
     let key_path = test_keys_dir().join("id_ecdsa");
-    let key = KeyLoader::load_legacy_from_file(&key_path, None).expect("Failed to load ECDSA key");
+    let key = KeyLoader::load_legacy_from_file(&key_path, None)
+        .await
+        .expect("Failed to load ECDSA key");
     let pub_blob = key
         .public_key_blob()
         .expect("Failed to get public key blob");
@@ -121,10 +133,10 @@ fn test_parse_md5_fingerprint() {
 
 /// Mirrors: 'loadSSHKey enc-private full pair' test
 /// Verifies that encrypted keys fail without passphrase
-#[test]
-fn test_encrypted_key_without_passphrase_fails() {
+#[tokio::test]
+async fn test_encrypted_key_without_passphrase_fails() {
     let key_path = test_keys_dir().join("id_rsa.enc");
-    let result = KeyLoader::load_legacy_from_file(&key_path, None);
+    let result = KeyLoader::load_legacy_from_file(&key_path, None).await;
     assert!(
         result.is_err(),
         "Should fail to load encrypted key without passphrase"
@@ -134,11 +146,11 @@ fn test_encrypted_key_without_passphrase_fails() {
 /// Mirrors: 'keyring unlock' test
 /// Note: Encrypted PKCS#1 keys with passphrase are not yet fully supported
 /// This test documents expected behavior
-#[test]
-fn test_encrypted_key_with_passphrase() {
+#[tokio::test]
+async fn test_encrypted_key_with_passphrase() {
     let key_path = test_keys_dir().join("id_rsa.enc");
     // The passphrase for id_rsa.enc is "foobar"
-    let result = KeyLoader::load_legacy_from_file(&key_path, Some("foobar"));
+    let result = KeyLoader::load_legacy_from_file(&key_path, Some("foobar")).await;
 
     // Note: Encrypted PKCS#1 keys are not yet supported in legacy_pem
     // This test verifies we get an appropriate error message
@@ -155,10 +167,10 @@ fn test_encrypted_key_with_passphrase() {
 
 /// Tests encrypted id_rsa2 key (different passphrase)
 /// The passphrase for id_rsa2 is "asdfasdf"
-#[test]
-fn test_encrypted_key_id_rsa2() {
+#[tokio::test]
+async fn test_encrypted_key_id_rsa2() {
     let key_path = test_keys_dir().join("id_rsa2");
-    let result = KeyLoader::load_legacy_from_file(&key_path, Some("asdfasdf"));
+    let result = KeyLoader::load_legacy_from_file(&key_path, Some("asdfasdf")).await;
 
     // Same as above - encrypted PKCS#1 not yet supported
     if let Err(e) = &result {
@@ -215,10 +227,10 @@ fn test_encrypted_pem_format_detection() {
 // ============================================================================
 
 /// Verifies loading a non-existent key file fails appropriately
-#[test]
-fn test_load_nonexistent_key_fails() {
+#[tokio::test]
+async fn test_load_nonexistent_key_fails() {
     let key_path = test_keys_dir().join("nonexistent_key");
-    let result = KeyLoader::load_legacy_from_file(&key_path, None);
+    let result = KeyLoader::load_legacy_from_file(&key_path, None).await;
     assert!(result.is_err(), "Should fail to load non-existent key");
 }
 

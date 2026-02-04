@@ -19,12 +19,16 @@ pub type Uuid = uuid::Uuid;
 /// This matches the actual error format returned by CloudAPI, which differs
 /// from Dropshot's default error format. CloudAPI uses `code` instead of
 /// `error_code` and `request_id` is optional.
+///
+/// Note: Named `ErrorResponse` rather than `Error` to distinguish this DTO
+/// from Rust error types.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct Error {
+pub struct ErrorResponse {
     /// Error code (e.g., "InvalidCredentials", "ResourceNotFound")
     pub code: String,
     /// Human-readable error message
-    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
     /// Request ID for tracing (optional, not always present)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub request_id: Option<String>,

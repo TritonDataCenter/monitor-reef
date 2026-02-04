@@ -83,13 +83,17 @@ pub struct ImageFile {
 }
 
 /// Image error information (for failed image creation)
+///
+/// Note: Named `ImageErrorInfo` rather than `ImageError` to distinguish this DTO
+/// from Rust error types.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct ImageError {
+pub struct ImageErrorInfo {
     /// Error code
     pub code: String,
     /// Error message
-    pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<String>,
 }
 
 /// Image/dataset information
@@ -153,7 +157,7 @@ pub struct Image {
     pub files: Option<Vec<ImageFile>>,
     /// Error information (if image creation failed, API version >= 7.1.0)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<ImageError>,
+    pub error: Option<ImageErrorInfo>,
     /// Role tags for RBAC
     #[serde(rename = "role-tag", default, skip_serializing_if = "Option::is_none")]
     pub role_tag: Option<RoleTags>,

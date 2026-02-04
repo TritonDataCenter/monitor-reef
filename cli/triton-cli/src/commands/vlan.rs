@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Fabric VLAN management commands
 
@@ -292,7 +292,7 @@ async fn update_vlan(args: VlanUpdateArgs, client: &TypedClient, use_json: bool)
             std::io::stdin().read_to_string(&mut buffer)?;
             buffer
         } else {
-            std::fs::read_to_string(file_path)?
+            tokio::fs::read_to_string(file_path).await?
         };
         let data: serde_json::Value = serde_json::from_str(&content)?;
         let name = data

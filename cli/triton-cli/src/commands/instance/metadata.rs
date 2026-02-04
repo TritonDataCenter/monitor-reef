@@ -187,7 +187,7 @@ async fn set_metadata(args: MetadataSetArgs, client: &TypedClient) -> Result<()>
             std::io::stdin().read_to_string(&mut buffer)?;
             buffer
         } else {
-            std::fs::read_to_string(file_path)?
+            tokio::fs::read_to_string(file_path).await?
         };
         serde_json::from_str(&content)?
     } else {
