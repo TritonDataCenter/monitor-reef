@@ -2,7 +2,7 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at https://mozilla.org/MPL/2.0/.
 #
-# Copyright 2025 Edgecast Cloud LLC.
+# Copyright 2026 Edgecast Cloud LLC.
 
 # Triton Rust Monorepo Makefile
 # Common development commands for working with trait-based Dropshot APIs
@@ -26,7 +26,7 @@ include ./deps/eng/tools/mk/Makefile.rust.targ
 .PHONY: triton-test triton-test-api triton-test-all
 .PHONY: openapi-generate openapi-list openapi-check
 .PHONY: dev-setup workspace-test integration-test
-.PHONY: list
+.PHONY: list coverage arch-lint
 
 # Default target
 help: ## Show this help message
@@ -261,6 +261,7 @@ check:: | $(CARGO_EXEC) ## Run all validation checks (CI-ready)
 	@echo "Running all validation checks..."
 	$(CARGO) test --workspace
 	$(MAKE) openapi-check
+	$(MAKE) arch-lint
 	@echo ""
 	@echo "All validation checks passed!"
 
@@ -270,3 +271,22 @@ regen-clients: | $(CARGO_EXEC) ## Regenerate all client libraries
 	$(CARGO) build
 	@echo "All clients regenerated. Test with: make test"
 
+# Code coverage (configuration in tarpaulin.toml)
+coverage: | $(CARGO_EXEC) ## Run code coverage check (line >= 40%)
+	@if ! $(CARGO) tarpaulin --version >/dev/null 2>&1; then \
+		echo "cargo-tarpaulin not found, installing..."; \
+		$(CARGO) install --features vendored-openssl cargo-tarpaulin; \
+	fi
+	@echo "Running code coverage analysis..."
+	$(CARGO) tarpaulin
+
+# Hopefully, something similar to the no-sync-io check will be added to clippy
+# in the future and we won't need this utility:
+#  - https://github.com/rust-lang/rust-clippy/issues/4377
+#  - https://github.com/rust-lang/rfcs/pull/3639
+arch-lint: | $(CARGO_EXEC) ## Run architecture lints
+	@if ! $(CARGO_HOME)/bin/arch-lint --version >/dev/null 2>&1; then \
+		echo "arch-lint not found, installing..."; \
+		$(CARGO) install arch-lint-cli; \
+	fi
+	$(CARGO_HOME)/bin/arch-lint check

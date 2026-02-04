@@ -3,7 +3,11 @@ This Source Code Form is subject to the terms of the Mozilla Public
 License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-Copyright 2025 Edgecast Cloud LLC.
+
+
+
+Copyright 2026 Edgecast Cloud LLC.
+
 -->
 
 # Restify to Dropshot Conversion Reference
@@ -70,6 +74,17 @@ The variable name varies (`server`, `http`, `sapi`, etc.) but all map the same w
 - `T | null` / `T | undefined` → `Option<T>`
 - `{}` (key-value objects) → `std::collections::HashMap<String, T>`
 
+
+
+**Don't assume list endpoints return arrays.** Check the handler:
+- `res.json([...])` → `Vec<T>`
+- `res.json({name: url, ...})` → `HashMap<String, String>` or custom type
+
+**Don't assume all values are strings.** Tags/metadata may allow mixed types:
+- `HashMap<String, String>` if values are always strings
+- `HashMap<String, serde_json::Value>` if values can be strings, booleans, or numbers
+
+
 ## Route Conflicts (CRITICAL)
 
 **Dropshot does not support having both a literal path segment and a variable path segment at the same level.**
@@ -118,10 +133,17 @@ If the literal endpoint is just a convenience alias for a default value, merge t
 
 ## JSON Field Naming (API Compatibility)
 
+
 The original Node.js API likely uses camelCase in JSON responses. To maintain API compatibility:
 
 1. Use snake_case for Rust field names (idiomatic Rust)
 2. Add `#[serde(rename_all = "camelCase")]` on structs to serialize as camelCase
+
+The original Node.js API often uses camelCase in JSON responses, but **not always**. Check actual responses.
+
+1. Use snake_case for Rust field names (idiomatic Rust)
+2. Add `#[serde(rename_all = "camelCase")]` on structs **if** the API uses camelCase
+
 3. For individual fields that differ, use `#[serde(rename = "originalName")]`
 
 ```rust
@@ -134,6 +156,76 @@ pub struct VmInfo {
     pub ram: u64,
 }
 ```
+
+
+
+**Common exceptions to watch for:**
+- Fields with hyphens: `role-tag` → `#[serde(rename = "role-tag")]`
+- Fields that stay snake_case: `triton_cns_enabled`, `published_at`
+- All-caps fields: `RAM`, `DNS`
+
+Document these in the Phase 1 plan under "Field Naming Exceptions".
+
+## UUID Handling (IMPORTANT Behavior Change)
+
+**Node.js Triton services only accept lowercase UUIDs.** This is a strict requirement:
+- `69cd99e2-eccc-11f0-88a8-17e540bad9e0` - Valid
+- `69CD99E2-ECCC-11F0-88A8-17E540BAD9E0` - **Invalid** (rejected by Node.js)
+- `69Cd99e2-eccc-11f0-88a8-17e540bad9e0` - **Invalid** (even one uppercase char)
+
+**Rust's `uuid` crate follows Postel's Law** - be liberal in what you accept:
+- **Parses** UUIDs in any case (uppercase, lowercase, mixed all work)
+- **Always emits** UUIDs in lowercase hyphenated format
+
+**This means Rust services will be MORE PERMISSIVE on input** while maintaining compatibility on output. This is an intentional, documented behavior change.
+
+### Using uuid::Uuid
+
+Prefer `uuid::Uuid` over `String` for UUID fields to get automatic parsing and validation:
+
+```rust
+use uuid::Uuid;
+
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct VmPath {
+    pub uuid: Uuid,  // Automatically parses any case, always serializes lowercase
+}
+```
+
+When the Rust service makes calls to existing Node.js services, the uuid crate will emit lowercase UUIDs, maintaining compatibility.
+
+### When UUIDs Accept Special Values
+
+When a field accepts either a UUID or special string values (e.g., "default", "latest"), use an untagged enum instead of `String`:
+
+```rust
+use uuid::Uuid;
+
+/// Accepts either a UUID or the literal "default"
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum UuidOrDefault {
+    Uuid(Uuid),
+    Special(SpecialValue),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum SpecialValue {
+    Default,
+}
+```
+
+This approach:
+- Validates UUIDs are properly formatted (and normalizes to lowercase)
+- Only accepts the specific special values you define
+- Rejects invalid inputs like typos ("defualt") at parse time
+- Makes the API contract explicit in the OpenAPI spec
+
+**Use plain `String` only when:**
+- You need to preserve the original casing for logging/debugging
+- The value is passed through without validation to another service
+
 
 ## Variable HTTP Status Codes
 
@@ -444,6 +536,37 @@ pub trait UsersApi {
 }
 ```
 
+
+
+## Using Enums vs Strings
+
+When a field has a fixed set of known values, prefer an enum:
+
+```rust
+// Good - typed enum
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum Brand {
+    Bhyve,
+    Joyent,
+    #[serde(rename = "joyent-minimal")]
+    JoyentMinimal,
+    Kvm,
+    Lx,
+}
+
+// Use in struct
+pub struct Machine {
+    pub brand: Brand,  // Not String
+}
+```
+
+Use `String` only when:
+- The set of values is truly unbounded
+- New values are added frequently and backward compatibility matters
+- The field is rarely used for logic
+
+
 ## Checklist
 
 Before completing any phase, verify:
@@ -458,9 +581,16 @@ Before completing any phase, verify:
 - [ ] Each endpoint has a doc comment
 - [ ] Tags are meaningful and consistent
 - [ ] Optional fields use `Option<T>` with `#[serde(default)]`
+
 - [ ] JSON field names match original API
 - [ ] Variable status code endpoints use `Response<Body>` return type
 - [ ] Action dispatch endpoints use `serde_json::Value` body with typed request structs exported
+
+- [ ] JSON field names match original API (check for exceptions!)
+- [ ] Variable status code endpoints use `Response<Body>` return type
+- [ ] Action dispatch endpoints use `serde_json::Value` body with typed request structs exported
+- [ ] WebSocket/channel endpoints use `#[channel]` attribute
+
 
 **Build Order (CRITICAL):**
 - [ ] API crate builds successfully BEFORE proceeding to client

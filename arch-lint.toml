@@ -1,0 +1,61 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+# For description of rules see:
+# https://github.com/ynishi/arch-lint?tab=readme-ov-file#available-rules
+
+[analyzer]
+respect_gitignore = true
+exclude = [
+    "**/rust/**",
+    "**/deps/**",
+    "**/target/**",
+    "**/build.rs",
+    "**/tests/**",
+    "**/jira-stub-server/**",
+    # To be modernized:
+    "cli/manatee-echo-resolver",
+    "libs/cueball-dns-resolver",
+    "libs/cueball-manatee-primary-resolver",
+    "libs/cueball-postgres-connection",
+    "libs/cueball-static-resolver",
+    "libs/cueball-tcp-stream-connection",
+    "libs/cueball",
+    "libs/fast",
+    "libs/libmanta",
+    "libs/moray",
+    "libs/quickcheck-helpers",
+    "libs/rebalancer-legacy/agent",
+    "libs/rebalancer-legacy/manager",
+    "libs/rebalancer-legacy/rebalancer",
+    "libs/rust-utils",
+    "libs/sharkspotter",
+]
+
+# Note: unwrap/expect is already caught by clippy (unwrap_used = "deny")
+# prefer clippy
+[rules.no-unwrap-expect]
+enabled = false
+
+[rules.no-sync-io]
+enabled = true
+severity = "error"
+
+[rules.no-panic-in-lib]
+enabled = true
+severity = "error"
+allow_in_tests = true
+
+[rules.no-error-swallowing]
+enabled = true
+severity = "warning"
+
+[rules.prefer-from-over-into]
+enabled = true
+severity = "warning"
+
+[rules.tracing-env-init]
+enabled = false

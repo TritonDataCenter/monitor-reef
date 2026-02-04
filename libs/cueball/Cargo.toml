@@ -1,0 +1,31 @@
+[package]
+name = "cueball"
+version = "0.3.5"
+authors = [
+        "Kelly McLaughlin <kelly.mclaughlin@joyent.com>",
+        "Jon Anderson <jon.anderson@joyent.com>",
+        "Isaac Davis <isaac.davis@joyent.com>"
+]
+description = """
+A connection pool to manage connections to a multi-node service.
+"""
+repository = "https://github.com/joyent/rust-cueball"
+keywords = ["pool","joyent"]
+readme = "../README.md"
+license = "MPL-2.0"
+edition = "2018"
+
+[dependencies]
+backoff = "0.1.5"
+base64 = "0.10.1"
+chrono = "0.4.7"
+derive_more = "0.14.0"
+rand = "0.7.0"
+sha1 = "0.6.0"
+slog = "2.5"
+slog-stdlog = "3"
+timer = "0.2.0"
+typenum = "= 1.10.0"
+
+[dev-dependencies]
+slog-term = "2.4.0"

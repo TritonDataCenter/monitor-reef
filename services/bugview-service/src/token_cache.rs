@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Thread-safe cache for mapping short IDs to JIRA pagination tokens.
 //!
@@ -217,7 +217,9 @@ mod tests {
 
     #[test]
     fn test_token_cache_expiration() {
-        let cache = TokenCache::new_with(Duration::from_millis(10), 100);
+        // Use 1 second TTL to avoid flaky failures when running under code
+        // coverage tools (cargo tarpaulin) which significantly slow execution.
+        let cache = TokenCache::new_with(Duration::from_secs(1), 100);
 
         let short_id = cache.store("token".to_string());
 
@@ -225,7 +227,7 @@ mod tests {
         assert!(cache.get(&short_id).is_some());
 
         // Wait for expiration
-        std::thread::sleep(Duration::from_millis(20));
+        std::thread::sleep(Duration::from_millis(1500));
 
         // Should be expired now
         assert!(cache.get(&short_id).is_none());

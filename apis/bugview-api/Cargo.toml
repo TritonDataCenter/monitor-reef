@@ -9,6 +9,9 @@ name = "bugview-api"
 version = "0.1.0"
 edition.workspace = true
 
+[lints]
+workspace = true
+
 [dependencies]
 dropshot = { workspace = true }
 schemars = { workspace = true }
@@ -16,6 +19,3 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 http = "1.1"
 jira-api = { path = "../jira-api" }
-
-[lints]
-workspace = true

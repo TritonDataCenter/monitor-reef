@@ -3,7 +3,7 @@ This Source Code Form is subject to the terms of the Mozilla Public
 License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-Copyright 2025 Edgecast Cloud LLC.
+Copyright 2026 Edgecast Cloud LLC.
 -->
 
 # Action-Based Endpoint Pattern Analysis
@@ -223,33 +223,59 @@ async fn vm_action(
 pub use generated::Client;
 
 // Re-export types from the API crate
-pub use vmapi_api::{UpdateVmRequest, AddNicsRequest, CreateSnapshotRequest, ...};
+pub use vmapi_api::{
+    VmAction, UpdateVmRequest, AddNicsRequest, CreateSnapshotRequest, ...
+};
 
-// Add typed wrapper methods
-impl Client {
+// Wrapper struct - cannot impl on Progenitor's Client directly
+pub struct TypedClient {
+    inner: Client,
+}
+
+impl TypedClient {
+    pub fn new(base_url: &str) -> Self {
+        Self { inner: Client::new(base_url) }
+    }
+
     /// Start a VM
     pub async fn start_vm(&self, uuid: &Uuid) -> Result<VmActionResponse, Error> {
-        self.vm_action(uuid, "start", serde_json::json!({})).await
+        self.inner.vm_action()
+            .uuid(uuid)
+            .action(VmAction::Start)
+            .body(serde_json::json!({}))
+            .send()
+            .await
+            .map(|r| r.into_inner())
     }
 
     /// Update VM properties
     pub async fn update_vm(
         &self,
         uuid: &Uuid,
-        request: &UpdateVmRequest
+        request: &UpdateVmRequest,
     ) -> Result<VmActionResponse, Error> {
-        let body = serde_json::to_value(request)?;
-        self.vm_action(uuid, "update", body).await
+        self.inner.vm_action()
+            .uuid(uuid)
+            .action(VmAction::Update)
+            .body(serde_json::to_value(request)?)
+            .send()
+            .await
+            .map(|r| r.into_inner())
     }
 
     /// Add NICs to a VM
     pub async fn add_nics(
         &self,
         uuid: &Uuid,
-        request: &AddNicsRequest
+        request: &AddNicsRequest,
     ) -> Result<VmActionResponse, Error> {
-        let body = serde_json::to_value(request)?;
-        self.vm_action(uuid, "add_nics", body).await
+        self.inner.vm_action()
+            .uuid(uuid)
+            .action(VmAction::AddNics)
+            .body(serde_json::to_value(request)?)
+            .send()
+            .await
+            .map(|r| r.into_inner())
     }
 }
 ```
