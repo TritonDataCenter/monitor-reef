@@ -1,0 +1,56 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+# LEGACY WORKSPACE - Rebalancer and dependencies
+# Requires: Rust 1.81+ (system Rust) with pinned dependencies
+#
+# To use this configuration:
+#   mv Cargo.toml Cargo.toml.modern
+#   mv Cargo.toml.legacy Cargo.toml
+#   cp Cargo.lock.legacy Cargo.lock    # Use pinned deps
+#   cargo check --workspace
+#
+# To switch back to modern:
+#   mv Cargo.toml Cargo.toml.legacy
+#   mv Cargo.toml.modern Cargo.toml
+#   rm Cargo.lock                       # Let modern resolve fresh
+#
+# IMPORTANT: The legacy crates require specific dependency pins due to
+# ring 0.14.6 compatibility issues with modern cc crate. The Cargo.lock.legacy
+# file contains working versions. If you need to update dependencies:
+#   cargo update backtrace --precise 0.3.68
+#   cargo update cc --precise 1.0.79
+#
+# These pins avoid a ring build.rs ambiguity error with newer cc versions.
+
+[workspace]
+members = [
+    "libs/cueball",
+    "libs/cueball-dns-resolver",
+    "libs/cueball-manatee-primary-resolver",
+    "libs/cueball-postgres-connection",
+    "libs/cueball-static-resolver",
+    "libs/cueball-tcp-stream-connection",
+    "libs/fast",
+    "libs/libmanta",
+    "libs/moray",
+    "libs/quickcheck-helpers",
+    "libs/rebalancer-legacy/agent",
+    "libs/rebalancer-legacy/manager",
+    "libs/rebalancer-legacy/rebalancer",
+    "libs/rust-utils",
+    "libs/sharkspotter",
+]
+resolver = "2"
+
+[workspace.package]
+edition = "2018"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"

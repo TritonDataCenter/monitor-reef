@@ -4,39 +4,32 @@
 #
 # Copyright 2026 Edgecast Cloud LLC.
 
+# MODERN WORKSPACE - Bugview and new services
+# Requires: Rust 1.90+ (project-local at rust/cargo/bin/cargo)
+#
+# Build with:
+#   CARGO_HOME="$PWD/rust/cargo" RUSTUP_HOME="$PWD/rust/rustup" \
+#     rust/cargo/bin/cargo check --workspace
+#
+# To switch to legacy workspace (rebalancer):
+#   mv Cargo.toml Cargo.toml.modern
+#   mv Cargo.toml.legacy Cargo.toml
+
 [workspace]
 members = [
-    # Modern crates (require Rust 1.90+, edition 2024):
-    #"apis/bugview-api",
-    #"apis/jira-api",
-    #"cli/bugview-cli",
-    #"clients/internal/bugview-client",
-    #"clients/internal/jira-client",
-    #"openapi-manager",
-    #"services/bugview-service",
-    #"services/jira-stub-server",
-
-    # Legacy crates (Rust 1.56, edition 2018):
-    "libs/cueball",
-    "libs/cueball-dns-resolver",
-    "libs/cueball-manatee-primary-resolver",
-    "libs/cueball-postgres-connection",
-    "libs/cueball-static-resolver",
-    "libs/cueball-tcp-stream-connection",
-    "libs/fast",
-    "libs/libmanta",
-    "libs/moray",
-    "libs/quickcheck-helpers",
-    "libs/rebalancer-legacy/agent",
-    "libs/rebalancer-legacy/manager",
-    "libs/rebalancer-legacy/rebalancer",
-    "libs/rust-utils",
-    "libs/sharkspotter",
+    "apis/bugview-api",
+    "apis/jira-api",
+    "cli/bugview-cli",
+    "clients/internal/bugview-client",
+    "clients/internal/jira-client",
+    "openapi-manager",
+    "services/bugview-service",
+    "services/jira-stub-server",
 ]
 resolver = "2"
 
 [workspace.package]
-edition = "2018"
+edition = "2024"
 
 [profile.dev]
 panic = "abort"
