@@ -26,7 +26,7 @@ include ./deps/eng/tools/mk/Makefile.rust.targ
 .PHONY: package-build package-test
 .PHONY: openapi-generate openapi-list openapi-check
 .PHONY: dev-setup workspace-test integration-test
-.PHONY: list coverage arch-lint
+.PHONY: list coverage coverage-legacy arch-lint
 
 # Default target
 help: ## Show this help message
@@ -306,6 +306,32 @@ coverage: | $(CARGO_EXEC) ## Run code coverage check (line >= 40%)
 	fi
 	@echo "Running code coverage analysis..."
 	$(CARGO) tarpaulin
+
+coverage-legacy: ## Run code coverage for legacy crates
+	@if ! cargo tarpaulin --version >/dev/null 2>&1; then \
+		echo "cargo-tarpaulin not found, installing..."; \
+		cargo install --features vendored-openssl cargo-tarpaulin; \
+	fi
+	@echo "Switching to legacy workspace..."
+	@mv Cargo.toml Cargo.toml.modern
+	@mv Cargo.toml.legacy Cargo.toml
+	@if [ -f Cargo.lock ]; then mv Cargo.lock Cargo.lock.modern; fi
+	@cp Cargo.lock.legacy Cargo.lock
+	@echo "Running legacy code coverage with system Rust..."
+	cargo tarpaulin || { \
+		echo "Coverage failed, restoring modern workspace..."; \
+		mv Cargo.toml Cargo.toml.legacy; \
+		mv Cargo.toml.modern Cargo.toml; \
+		rm -f Cargo.lock; \
+		if [ -f Cargo.lock.modern ]; then mv Cargo.lock.modern Cargo.lock; fi; \
+		exit 1; \
+	}
+	@echo "Restoring modern workspace..."
+	@mv Cargo.toml Cargo.toml.legacy
+	@mv Cargo.toml.modern Cargo.toml
+	@rm -f Cargo.lock
+	@if [ -f Cargo.lock.modern ]; then mv Cargo.lock.modern Cargo.lock; fi
+	@echo "Legacy coverage complete."
 
 # Hopefully, something similar to the no-sync-io check will be added to clippy
 # in the future and we won't need this utility:
