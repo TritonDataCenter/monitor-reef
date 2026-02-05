@@ -3,11 +3,7 @@ This Source Code Form is subject to the terms of the Mozilla Public
 License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-
-
-
 Copyright 2026 Edgecast Cloud LLC.
-
 -->
 
 # Restify to Dropshot Conversion Reference
@@ -74,8 +70,6 @@ The variable name varies (`server`, `http`, `sapi`, etc.) but all map the same w
 - `T | null` / `T | undefined` → `Option<T>`
 - `{}` (key-value objects) → `std::collections::HashMap<String, T>`
 
-
-
 **Don't assume list endpoints return arrays.** Check the handler:
 - `res.json([...])` → `Vec<T>`
 - `res.json({name: url, ...})` → `HashMap<String, String>` or custom type
@@ -83,7 +77,6 @@ The variable name varies (`server`, `http`, `sapi`, etc.) but all map the same w
 **Don't assume all values are strings.** Tags/metadata may allow mixed types:
 - `HashMap<String, String>` if values are always strings
 - `HashMap<String, serde_json::Value>` if values can be strings, booleans, or numbers
-
 
 ## Route Conflicts (CRITICAL)
 
@@ -133,17 +126,10 @@ If the literal endpoint is just a convenience alias for a default value, merge t
 
 ## JSON Field Naming (API Compatibility)
 
-
-The original Node.js API likely uses camelCase in JSON responses. To maintain API compatibility:
-
-1. Use snake_case for Rust field names (idiomatic Rust)
-2. Add `#[serde(rename_all = "camelCase")]` on structs to serialize as camelCase
-
 The original Node.js API often uses camelCase in JSON responses, but **not always**. Check actual responses.
 
 1. Use snake_case for Rust field names (idiomatic Rust)
 2. Add `#[serde(rename_all = "camelCase")]` on structs **if** the API uses camelCase
-
 3. For individual fields that differ, use `#[serde(rename = "originalName")]`
 
 ```rust
@@ -156,8 +142,6 @@ pub struct VmInfo {
     pub ram: u64,
 }
 ```
-
-
 
 **Common exceptions to watch for:**
 - Fields with hyphens: `role-tag` → `#[serde(rename = "role-tag")]`
@@ -225,7 +209,6 @@ This approach:
 **Use plain `String` only when:**
 - You need to preserve the original casing for logging/debugging
 - The value is passed through without validation to another service
-
 
 ## Variable HTTP Status Codes
 
@@ -536,8 +519,6 @@ pub trait UsersApi {
 }
 ```
 
-
-
 ## Using Enums vs Strings
 
 When a field has a fixed set of known values, prefer an enum:
@@ -566,7 +547,6 @@ Use `String` only when:
 - New values are added frequently and backward compatibility matters
 - The field is rarely used for logic
 
-
 ## Checklist
 
 Before completing any phase, verify:
@@ -581,16 +561,10 @@ Before completing any phase, verify:
 - [ ] Each endpoint has a doc comment
 - [ ] Tags are meaningful and consistent
 - [ ] Optional fields use `Option<T>` with `#[serde(default)]`
-
-- [ ] JSON field names match original API
-- [ ] Variable status code endpoints use `Response<Body>` return type
-- [ ] Action dispatch endpoints use `serde_json::Value` body with typed request structs exported
-
 - [ ] JSON field names match original API (check for exceptions!)
 - [ ] Variable status code endpoints use `Response<Body>` return type
 - [ ] Action dispatch endpoints use `serde_json::Value` body with typed request structs exported
 - [ ] WebSocket/channel endpoints use `#[channel]` attribute
-
 
 **Build Order (CRITICAL):**
 - [ ] API crate builds successfully BEFORE proceeding to client

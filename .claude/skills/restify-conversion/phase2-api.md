@@ -3,11 +3,7 @@ This Source Code Form is subject to the terms of the Mozilla Public
 License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-
-
-
 Copyright 2026 Edgecast Cloud LLC.
-
 -->
 
 # Phase 2: Generate API Trait
@@ -69,12 +65,9 @@ Key patterns:
 - Path params: `#[derive(Debug, Deserialize, JsonSchema)]`
 - Use `#[serde(rename_all = "camelCase")]` for JSON compatibility
 - Use `#[serde(default)]` for optional fields
-
-
 - Use `#[serde(rename = "field-name")]` for fields with hyphens or non-standard casing
 
 **Don't assume camelCase everywhere.** Check the plan's "Field Naming Exceptions" section for fields that use snake_case or other conventions in the actual API.
-
 
 ### 3b. Create Action-Specific Request Types (CRITICAL)
 
@@ -141,8 +134,6 @@ pub struct CreateDiskRequest {
 }
 ```
 
-
-
 ### 3c. Verify Field Types Against Actual Data
 
 Before finalizing types, verify against test fixtures or existing clients:
@@ -150,7 +141,6 @@ Before finalizing types, verify against test fixtures or existing clients:
 - **String vs Enum**: If a field has a fixed set of values (e.g., `brand: "bhyve" | "kvm" | "lx"`), use an enum
 - **Required vs Optional**: Check if fields are always present or sometimes missing
 - **Primitive types**: `tags` might be `HashMap<String, Value>` not `HashMap<String, String>` if values can be booleans/numbers
-
 
 ### 4. Create lib.rs with API Trait
 
@@ -175,8 +165,6 @@ pub trait <Service>Api {
 
 **Apply route conflict resolutions** from the plan (treating literals as special values).
 
-
-
 **Add WebSocket/channel endpoints** from the plan using `#[channel]` attribute:
 ```rust
 #[channel {
@@ -190,7 +178,6 @@ async fn watch_resource(
     upgraded: WebsocketConnection,
 ) -> WebsocketChannelResult;
 ```
-
 
 ### 5. Add to Workspace
 
@@ -248,11 +235,8 @@ Phase 2 is complete when:
 - [ ] All type modules implemented
 - [ ] **Every action has a dedicated typed request struct** (check plan's action dispatch table)
 - [ ] Action-specific optional fields captured (idempotent, sync, signal, etc.)
-
-
 - [ ] Field naming exceptions from plan applied (snake_case fields, hyphenated names)
 - [ ] WebSocket/channel endpoints implemented (check plan)
-
 - [ ] API trait with all endpoints implemented
 - [ ] Route conflict resolutions applied
 - [ ] Added to workspace Cargo.toml

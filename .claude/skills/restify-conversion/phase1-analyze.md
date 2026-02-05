@@ -3,11 +3,7 @@ This Source Code Form is subject to the terms of the Mozilla Public
 License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-
-
-
 Copyright 2026 Edgecast Cloud LLC.
-
 -->
 
 # Phase 1: Analyze Restify API
@@ -31,10 +27,7 @@ Verify the path exists and contains a Restify service:
 - Check for `package.json`
 - Check for `lib/` directory (structure varies - may be `lib/endpoints/`, `lib/server/endpoints/`, or `lib/*.js`)
 
-
-
 **Do not assume any specific structure** - always search the entire `lib/` tree recursively for route definitions.
-
 
 ### 2. Extract Service Metadata
 
@@ -79,18 +72,12 @@ For each endpoint, record:
 - Path (with parameters)
 - Handler name
 - Request body type (if POST/PUT/PATCH)
-
-- Response type
-- Query parameters
-
-
 - Response type (array vs object/map - check carefully!)
 - Query parameters
 
 **Response type detection:** Don't assume list endpoints return arrays. Check the handler code:
 - `res.json([...])` or `res.send(array)` → `Vec<T>`
 - `res.json({key: value, ...})` → `HashMap<String, T>` or custom struct
-
 
 ### 4. Identify Route Conflicts
 
@@ -141,10 +128,7 @@ Group endpoints by:
 - Resource type (e.g., vms, jobs, tasks)
 - Logical function (e.g., health, admin)
 
-
-### 7. Write Plan File
-
-#### 7. Check for WebSocket/Streaming Endpoints
+### 7. Check for WebSocket/Streaming Endpoints
 
 Search for WebSocket or upgrade handling:
 - `ws.on('connection', ...)` or similar WebSocket patterns
@@ -162,8 +146,7 @@ If an existing client exists (e.g., node-triton for cloudapi), review it for:
 
 Test fixtures in `test/` directories are valuable sources of actual response shapes.
 
-## 9. Write Plan File
-
+### 9. Write Plan File
 
 Create `conversion-plans/<service>/plan.md`:
 
@@ -245,15 +228,12 @@ apis/<service>-api/src/
 ## Types to Define
 - <list major request/response types>
 
-
-
 ## Field Naming Exceptions
 - <list any fields that use snake_case instead of camelCase in the JSON API>
 - Example: `triton_cns_enabled` (not `tritonCnsEnabled`)
 
 ## WebSocket/Channel Endpoints
 - <list any WebSocket or streaming endpoints>
-
 
 ## Phase Status
 - [x] Phase 1: Analyze - COMPLETE
@@ -270,12 +250,9 @@ Phase 1 is complete when:
 - [ ] Version extracted from package.json
 - [ ] All route conflicts identified
 - [ ] Action dispatch endpoints analyzed with field details
-
-
 - [ ] WebSocket/channel endpoints identified
 - [ ] Response types verified (array vs map for each list endpoint)
 - [ ] Field naming exceptions documented
-
 - [ ] File structure planned
 - [ ] Plan file written to `conversion-plans/<service>/plan.md`
 
