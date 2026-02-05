@@ -10,6 +10,9 @@ version = "9.20.0"
 edition.workspace = true
 description = "CLI for Triton CloudAPI"
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "cloudapi"
 path = "src/main.rs"
@@ -23,7 +26,3 @@ anyhow = { workspace = true }
 serde_json = { workspace = true }
 reqwest = { workspace = true }
 uuid = { workspace = true }
-
-[lints]
-workspace = true
-

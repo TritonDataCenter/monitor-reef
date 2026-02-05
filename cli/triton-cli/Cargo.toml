@@ -10,6 +10,9 @@ version = "0.1.0"
 edition.workspace = true
 description = "User-friendly CLI for Triton CloudAPI"
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "triton"
 path = "src/main.rs"
@@ -51,7 +54,3 @@ test-case = "3.3"         # Parameterized tests
 pretty_assertions = "1.4" # Better diff output for test failures
 hostname = "0.4"          # Get hostname for unique test resource names
 regex = "1.10"            # Regex for extracting UUIDs from output
-
-[lints]
-workspace = true
-

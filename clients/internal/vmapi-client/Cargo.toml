@@ -10,6 +10,9 @@ version = "9.17.0"
 edition.workspace = true
 description = "VMAPI client library (Progenitor-generated)"
 
+[lints]
+workspace = true
+
 [lib]
 name = "vmapi_client"
 path = "src/lib.rs"
@@ -30,6 +33,3 @@ rand = "0.9"
 progenitor = { workspace = true }
 serde_json = { workspace = true }
 openapiv3 = { workspace = true }
-
-[lints]
-workspace = true

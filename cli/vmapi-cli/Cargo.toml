@@ -10,6 +10,9 @@ version = "9.17.0"
 edition.workspace = true
 description = "CLI for Triton VMAPI"
 
+[lints]
+workspace = true
+
 [[bin]]
 name = "vmapi"
 path = "src/main.rs"
@@ -22,6 +25,3 @@ tokio = { workspace = true }
 anyhow = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
-
-[lints]
-workspace = true

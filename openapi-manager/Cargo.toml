@@ -12,6 +12,10 @@ edition.workspace = true
 [lints]
 workspace = true
 
+[[bin]]
+name = "openapi-manager"
+path = "src/main.rs"
+
 [dependencies]
 dropshot = { workspace = true }
 dropshot-api-manager = { workspace = true }
@@ -29,7 +33,3 @@ serde_json = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
-
-[[bin]]
-name = "openapi-manager"
-path = "src/main.rs"

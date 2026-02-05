@@ -11,6 +11,9 @@ edition.workspace = true
 description = "HTTP Signature authentication library for Triton CloudAPI"
 license = "MPL-2.0"
 
+[lints]
+workspace = true
+
 [dependencies]
 ssh-key = { version = "0.6", features = ["ed25519", "rsa", "ecdsa", "encryption"] }
 ssh-encoding = "0.2"
@@ -43,7 +46,3 @@ time = "0.3"
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
-
-[lints]
-workspace = true
-
