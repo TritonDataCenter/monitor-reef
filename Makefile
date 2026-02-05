@@ -19,6 +19,7 @@ include ./deps/eng/tools/mk/Makefile.rust.defs
 include ./deps/eng/tools/mk/Makefile.rust.targ
 
 .PHONY: help build test clean lint format
+.PHONY: build-legacy test-legacy clean-legacy
 .PHONY: api-new service-new client-new
 .PHONY: service-build service-test service-run
 .PHONY: client-build client-test
@@ -51,6 +52,59 @@ test: | $(CARGO_EXEC) ## Run all tests
 
 clean:: | $(CARGO_EXEC) ## Clean build artifacts
 	$(CARGO) clean
+
+# Legacy workspace commands (rebalancer, cueball, moray, etc.)
+# These use system Rust and require swapping Cargo.toml files
+
+build-legacy: ## Build legacy crates (rebalancer, cueball, etc.)
+	@echo "Switching to legacy workspace..."
+	@mv Cargo.toml Cargo.toml.modern
+	@mv Cargo.toml.legacy Cargo.toml
+	@cp Cargo.lock.legacy Cargo.lock
+	@echo "Building legacy crates with system Rust..."
+	cargo build --workspace || { \
+		echo "Build failed, restoring modern workspace..."; \
+		mv Cargo.toml Cargo.toml.legacy; \
+		mv Cargo.toml.modern Cargo.toml; \
+		rm -f Cargo.lock; \
+		exit 1; \
+	}
+	@echo "Restoring modern workspace..."
+	@mv Cargo.toml Cargo.toml.legacy
+	@mv Cargo.toml.modern Cargo.toml
+	@rm -f Cargo.lock
+	@echo "Legacy build complete."
+
+test-legacy: ## Test legacy crates (rebalancer, cueball, etc.)
+	@echo "Switching to legacy workspace..."
+	@mv Cargo.toml Cargo.toml.modern
+	@mv Cargo.toml.legacy Cargo.toml
+	@cp Cargo.lock.legacy Cargo.lock
+	@echo "Testing legacy crates with system Rust..."
+	cargo test --workspace -- --test-threads=1 || { \
+		echo "Tests failed, restoring modern workspace..."; \
+		mv Cargo.toml Cargo.toml.legacy; \
+		mv Cargo.toml.modern Cargo.toml; \
+		rm -f Cargo.lock; \
+		exit 1; \
+	}
+	@echo "Restoring modern workspace..."
+	@mv Cargo.toml Cargo.toml.legacy
+	@mv Cargo.toml.modern Cargo.toml
+	@rm -f Cargo.lock
+	@echo "Legacy tests complete."
+
+clean-legacy: ## Clean legacy build artifacts
+	@echo "Switching to legacy workspace..."
+	@mv Cargo.toml Cargo.toml.modern
+	@mv Cargo.toml.legacy Cargo.toml
+	@cp Cargo.lock.legacy Cargo.lock
+	cargo clean
+	@echo "Restoring modern workspace..."
+	@mv Cargo.toml Cargo.toml.legacy
+	@mv Cargo.toml.modern Cargo.toml
+	@rm -f Cargo.lock
+	@echo "Legacy clean complete."
 
 lint: | $(CARGO_EXEC) ## Run clippy linter
 	$(CARGO) clippy $(RUST_CLIPPY_ARGS)
