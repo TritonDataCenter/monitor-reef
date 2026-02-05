@@ -3108,7 +3108,7 @@
           {
             "in": "query",
             "name": "brand",
-            "description": "Filter by brand",
+            "description": "Filter by brand (accepts any brand including internal-only brands)",
             "schema": {
               "$ref": "#/components/schemas/Brand"
             }
@@ -3306,7 +3306,7 @@
           {
             "in": "query",
             "name": "brand",
-            "description": "Filter by brand",
+            "description": "Filter by brand (accepts any brand including internal-only brands)",
             "schema": {
               "$ref": "#/components/schemas/Brand"
             }
@@ -9518,7 +9518,29 @@
         ]
       },
       "Brand": {
-        "description": "VM/Container brand\n\nThe brand determines the virtualization/containerization technology used. Valid brands as defined in `lib/machines.js`: - `bhyve`: FreeBSD hypervisor for hardware VMs - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",
+        "description": "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "bhyve",
+              "joyent",
+              "joyent-minimal",
+              "kvm",
+              "lx"
+            ]
+          },
+          {
+            "description": "Internal brand for image build zones (not provisionable via CloudAPI)",
+            "type": "string",
+            "enum": [
+              "builder"
+            ]
+          }
+        ]
+      },
+      "Brand2": {
+        "description": "VM/Container brand for CloudAPI provisioning requests.\n\nThe brand determines the virtualization/containerization technology used. Valid brands as defined in `lib/machines.js`: - `bhyve`: FreeBSD hypervisor for hardware VMs - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",
         "type": "string",
         "enum": [
           "bhyve",
@@ -9822,7 +9844,7 @@
             "default": null,
             "allOf": [
               {
-                "$ref": "#/components/schemas/Brand"
+                "$ref": "#/components/schemas/Brand2"
               }
             ]
           },
@@ -10558,7 +10580,7 @@
         "type": "object",
         "properties": {
           "brand": {
-            "description": "Brand (joyent, kvm, bhyve, lx, joyent-minimal)",
+            "description": "Brand (joyent, kvm, bhyve, lx, joyent-minimal, and internal-only brands)\n\nUses VMAPI's Brand enum to support internal-only brands like \"builder\" that may be returned by VMAPI but cannot be provisioned via CloudAPI.",
             "allOf": [
               {
                 "$ref": "#/components/schemas/Brand"
@@ -11283,7 +11305,7 @@
         "properties": {
           "brand": {
             "nullable": true,
-            "description": "Brand (joyent, bhyve, kvm, etc.)",
+            "description": "Brand (joyent, bhyve, kvm, etc., including internal-only brands)\n\nUses VMAPI's Brand enum to support internal-only brands like \"builder\" that may exist in the system.",
             "allOf": [
               {
                 "$ref": "#/components/schemas/Brand"

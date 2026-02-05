@@ -25,18 +25,28 @@ pub type MetadataObject = HashMap<String, Value>;
 /// Key-value tags (values can be strings, booleans, or numbers)
 pub type Tags = HashMap<String, Value>;
 
-/// VM/Container brand
+/// VM/Container brand as returned by VMAPI.
 ///
 /// The brand determines the virtualization/containerization technology used.
 /// - `bhyve`: FreeBSD hypervisor for hardware VMs
+/// - `builder`: Internal brand for image build zones (not provisionable via CloudAPI)
 /// - `joyent`: Native SmartOS zone
 /// - `joyent-minimal`: Minimal SmartOS zone
 /// - `kvm`: KVM hardware VM
 /// - `lx`: Linux-branded zone (Linux containers)
+///
+// NOTE: This enum represents all brands that can exist in the system.
+// CloudAPI has a separate, more restrictive Brand enum that only includes
+// brands that can be specified in provisioning requests. This enum includes
+// internal-only brands like "builder" that exist in SmartOS but are not
+// exposed for public provisioning. CloudAPI's output types (Machine, Package)
+// use this enum to accurately represent VM state.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Brand {
     Bhyve,
+    /// Internal brand for image build zones (not provisionable via CloudAPI)
+    Builder,
     Joyent,
     #[serde(rename = "joyent-minimal")]
     JoyentMinimal,

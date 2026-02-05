@@ -46,7 +46,7 @@ pub type Metadata = HashMap<String, String>;
 /// Role tags for RBAC
 pub type RoleTags = Vec<String>;
 
-/// VM/Container brand
+/// VM/Container brand for CloudAPI provisioning requests.
 ///
 /// The brand determines the virtualization/containerization technology used.
 /// Valid brands as defined in `lib/machines.js`:
@@ -55,6 +55,14 @@ pub type RoleTags = Vec<String>;
 /// - `joyent-minimal`: Minimal SmartOS zone
 /// - `kvm`: KVM hardware VM
 /// - `lx`: Linux-branded zone (Linux containers)
+///
+// NOTE: This enum intentionally differs from vmapi_api::Brand.
+// CloudAPI's Brand restricts what brands can be specified in provisioning
+// requests (CreateMachineRequest). VMAPI's Brand includes additional
+// internal-only brands like "builder" that exist in the system but cannot
+// be provisioned via CloudAPI. Output types (Machine, Package) and query
+// filters (ListMachinesQuery) use vmapi_api::Brand to accurately represent
+// and filter by any brand that may exist in the system.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Brand {

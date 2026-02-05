@@ -6,9 +6,12 @@
 
 //! Miscellaneous types (packages, datacenters, services, migrations)
 
-use super::common::{Brand, RoleTags, Timestamp, Uuid};
+use super::common::{RoleTags, Timestamp, Uuid};
+// Package output type uses VMAPI's Brand to accurately represent the brand
+// requirement stored in the system, which may include internal-only brands.
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use vmapi_api::Brand as VmapiBrand;
 
 /// Path parameter for package operations
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -62,9 +65,12 @@ pub struct Package {
     /// Default package
     #[serde(default)]
     pub default: bool,
-    /// Brand (joyent, bhyve, kvm, etc.)
+    /// Brand (joyent, bhyve, kvm, etc., including internal-only brands)
+    ///
+    /// Uses VMAPI's Brand enum to support internal-only brands like "builder"
+    /// that may exist in the system.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub brand: Option<Brand>,
+    pub brand: Option<VmapiBrand>,
     /// Flexible disk mode (bhyve only)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flexible_disk: Option<bool>,

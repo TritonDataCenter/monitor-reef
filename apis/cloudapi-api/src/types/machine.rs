@@ -7,8 +7,12 @@
 //! Machine-related types
 
 use super::common::{Brand, Metadata, RoleTags, Tags, Timestamp, Uuid};
+// Machine output type and ListMachinesQuery use VMAPI's Brand to support internal-only
+// brands (e.g., "builder") that may appear in changefeed messages or operator queries.
+// Only CreateMachineRequest uses CloudAPI's restrictive Brand to validate provisioning.
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use vmapi_api::Brand as VmapiBrand;
 
 /// Path parameter for machine operations
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -66,8 +70,11 @@ pub struct Machine {
     /// Machine type (smartmachine or virtualmachine)
     #[serde(rename = "type")]
     pub machine_type: MachineType,
-    /// Brand (joyent, kvm, bhyve, lx, joyent-minimal)
-    pub brand: Brand,
+    /// Brand (joyent, kvm, bhyve, lx, joyent-minimal, and internal-only brands)
+    ///
+    /// Uses VMAPI's Brand enum to support internal-only brands like "builder"
+    /// that may be returned by VMAPI but cannot be provisioned via CloudAPI.
+    pub brand: VmapiBrand,
     /// Current state
     pub state: MachineState,
     /// Image UUID
@@ -528,9 +535,9 @@ pub struct ListMachinesQuery {
     /// Filter by machine type (smartmachine or virtualmachine)
     #[serde(default, rename = "type")]
     pub machine_type: Option<MachineType>,
-    /// Filter by brand
+    /// Filter by brand (accepts any brand including internal-only brands)
     #[serde(default)]
-    pub brand: Option<Brand>,
+    pub brand: Option<VmapiBrand>,
     /// Pagination offset
     #[serde(default)]
     pub offset: Option<u64>,
