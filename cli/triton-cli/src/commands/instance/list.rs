@@ -85,8 +85,8 @@ pub struct ListArgs {
     pub name: Option<String>,
 
     /// Filter by state
-    #[arg(long)]
-    pub state: Option<String>,
+    #[arg(long, value_enum)]
+    pub state: Option<cloudapi_client::types::MachineState>,
 
     /// Filter by image
     #[arg(long)]
@@ -96,9 +96,9 @@ pub struct ListArgs {
     #[arg(long)]
     pub package: Option<String>,
 
-    /// Filter by brand (joyent, lx, bhyve, kvm)
-    #[arg(long)]
-    pub brand: Option<String>,
+    /// Filter by brand
+    #[arg(long, value_enum)]
+    pub brand: Option<cloudapi_client::types::Brand>,
 
     /// Filter by memory size in MB
     #[arg(long)]
@@ -149,7 +149,7 @@ pub async fn run(args: ListArgs, client: &TypedClient, use_json: bool) -> Result
     if let Some(name) = &args.name {
         req = req.name(name);
     }
-    if let Some(state) = &args.state {
+    if let Some(state) = args.state {
         req = req.state(state);
     }
     if let Some(image) = &args.image {
@@ -162,7 +162,7 @@ pub async fn run(args: ListArgs, client: &TypedClient, use_json: bool) -> Result
     // if let Some(pkg) = &args.package {
     //     req = req.package(pkg);
     // }
-    if let Some(brand) = &args.brand {
+    if let Some(brand) = args.brand {
         req = req.brand(brand);
     }
     if let Some(memory) = args.memory {

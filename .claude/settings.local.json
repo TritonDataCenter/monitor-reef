@@ -5,6 +5,7 @@
       "Bash(git branch:*)",
       "Bash(git commit:*)",
       "Bash(git status:*)",
+      "Bash(grep:*)",
       "Bash(make:*)",
       "Bash(mkdir:*)",
       "WebFetch(domain:api.github.com)",

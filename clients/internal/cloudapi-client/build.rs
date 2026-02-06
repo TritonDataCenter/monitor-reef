@@ -4,7 +4,7 @@
 
 // Copyright 2026 Edgecast Cloud LLC.
 
-use progenitor::GenerationSettings;
+use progenitor::{GenerationSettings, TypePatch};
 use std::env;
 use std::path::Path;
 
@@ -19,6 +19,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let spec = std::fs::read_to_string(spec_path)?;
     let openapi: openapiv3::OpenAPI = serde_json::from_str(&spec)?;
 
+    // Enum types that should derive clap::ValueEnum for CLI consumers.
+    // ValueEnum's default kebab-case naming matches the serde renames
+    // Progenitor generates, so no extra #[value] annotations are needed.
+    let value_enum_patch = TypePatch::default().with_derive("clap::ValueEnum").clone();
+
     let mut settings = GenerationSettings::default();
     settings
         .with_interface(progenitor::InterfaceStyle::Builder)
@@ -29,7 +34,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // The pre_hook_async function adds Date and Authorization headers
         .with_pre_hook_async(syn::parse_quote!(crate::auth::add_auth_headers))
         // Generate JsonSchema impls so types can be used in Dropshot responses
-        .with_derive("schemars::JsonSchema");
+        .with_derive("schemars::JsonSchema")
+        // Add clap::ValueEnum to enum types used as CLI arguments
+        .with_patch("Brand", &value_enum_patch)
+        .with_patch("Brand2", &value_enum_patch)
+        .with_patch("MachineState", &value_enum_patch)
+        .with_patch("MachineType", &value_enum_patch)
+        .with_patch("ImageState", &value_enum_patch)
+        .with_patch("ImageType", &value_enum_patch);
 
     let tokens = progenitor::Generator::new(&settings).generate_tokens(&openapi)?;
     std::fs::write(format!("{}/client.rs", out_dir), tokens.to_string())?;

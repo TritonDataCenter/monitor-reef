@@ -56,11 +56,11 @@ enum Commands {
         #[arg(long)]
         server_uuid: Option<Uuid>,
         /// Filter by state
-        #[arg(long)]
-        state: Option<String>,
+        #[arg(long, value_enum)]
+        state: Option<types::VmState>,
         /// Filter by brand
-        #[arg(long)]
-        brand: Option<String>,
+        #[arg(long, value_enum)]
+        brand: Option<types::Brand>,
         /// Filter by alias
         #[arg(long)]
         alias: Option<String>,
@@ -82,8 +82,8 @@ enum Commands {
         #[arg(long)]
         owner_uuid: Option<Uuid>,
         /// Filter by state
-        #[arg(long)]
-        state: Option<String>,
+        #[arg(long, value_enum)]
+        state: Option<types::VmState>,
     },
 
     /// Get VM details
@@ -352,9 +352,9 @@ enum Commands {
     MigrateVm {
         /// VM UUID
         uuid: Uuid,
-        /// Migration action (begin, estimate, sync, pause, switch, abort, rollback, finalize)
-        #[arg(long)]
-        action: Option<String>,
+        /// Migration action
+        #[arg(long, value_enum)]
+        action: Option<MigrationAction>,
         /// Target server UUID
         #[arg(long)]
         target_server_uuid: Option<Uuid>,
@@ -658,8 +658,8 @@ enum Commands {
     #[command(name = "list-migrations")]
     ListMigrations {
         /// Filter by state
-        #[arg(long)]
-        state: Option<String>,
+        #[arg(long, value_enum)]
+        state: Option<types::MigrationState>,
         /// Filter by source server UUID
         #[arg(long)]
         source_server_uuid: Option<Uuid>,
@@ -719,58 +719,6 @@ enum Commands {
     },
 }
 
-fn parse_migration_action(s: &str) -> Option<MigrationAction> {
-    match s.to_lowercase().as_str() {
-        "begin" => Some(MigrationAction::Begin),
-        "estimate" => Some(MigrationAction::Estimate),
-        "sync" => Some(MigrationAction::Sync),
-        "pause" => Some(MigrationAction::Pause),
-        "switch" => Some(MigrationAction::Switch),
-        "abort" => Some(MigrationAction::Abort),
-        "rollback" => Some(MigrationAction::Rollback),
-        "finalize" => Some(MigrationAction::Finalize),
-        _ => None,
-    }
-}
-
-fn parse_brand(s: &str) -> Result<types::Brand> {
-    match s.to_lowercase().as_str() {
-        "bhyve" => Ok(types::Brand::Bhyve),
-        "kvm" => Ok(types::Brand::Kvm),
-        "joyent" => Ok(types::Brand::Joyent),
-        "joyent-minimal" => Ok(types::Brand::JoyentMinimal),
-        "lx" => Ok(types::Brand::Lx),
-        _ => Err(anyhow::anyhow!("Invalid brand: {}", s)),
-    }
-}
-
-fn parse_vm_state(s: &str) -> Result<types::VmState> {
-    match s.to_lowercase().as_str() {
-        "running" => Ok(types::VmState::Running),
-        "stopped" => Ok(types::VmState::Stopped),
-        "stopping" => Ok(types::VmState::Stopping),
-        "provisioning" => Ok(types::VmState::Provisioning),
-        "failed" => Ok(types::VmState::Failed),
-        "destroyed" => Ok(types::VmState::Destroyed),
-        "incomplete" => Ok(types::VmState::Incomplete),
-        "configured" => Ok(types::VmState::Configured),
-        "ready" => Ok(types::VmState::Ready),
-        "receiving" => Ok(types::VmState::Receiving),
-        _ => Err(anyhow::anyhow!("Invalid state: {}", s)),
-    }
-}
-
-fn parse_migration_state(s: &str) -> Result<types::MigrationState> {
-    match s.to_lowercase().as_str() {
-        "running" => Ok(types::MigrationState::Running),
-        "paused" => Ok(types::MigrationState::Paused),
-        "aborted" => Ok(types::MigrationState::Aborted),
-        "successful" => Ok(types::MigrationState::Successful),
-        "failed" => Ok(types::MigrationState::Failed),
-        _ => Err(anyhow::anyhow!("Invalid migration state: {}", s)),
-    }
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -806,11 +754,11 @@ async fn main() -> Result<()> {
             if let Some(v) = server_uuid {
                 req = req.server_uuid(v);
             }
-            if let Some(v) = &state {
-                req = req.state(parse_vm_state(v)?);
+            if let Some(v) = state {
+                req = req.state(v);
             }
-            if let Some(v) = &brand {
-                req = req.brand(parse_brand(v)?);
+            if let Some(v) = brand {
+                req = req.brand(v);
             }
             if let Some(v) = &alias {
                 req = req.alias(v);
@@ -839,8 +787,8 @@ async fn main() -> Result<()> {
             if let Some(v) = owner_uuid {
                 req = req.owner_uuid(v);
             }
-            if let Some(v) = &state {
-                req = req.state(parse_vm_state(v)?);
+            if let Some(v) = state {
+                req = req.state(v);
             }
             // HEAD returns response with headers; we just confirm success
             let _resp = req.send().await?;
@@ -1161,7 +1109,7 @@ async fn main() -> Result<()> {
             target_server_uuid,
         } => {
             let request = MigrateVmRequest {
-                migration_action: action.as_ref().and_then(|a| parse_migration_action(a)),
+                migration_action: action,
                 target_server_uuid,
                 affinity: None,
             };
@@ -1589,8 +1537,8 @@ async fn main() -> Result<()> {
             raw,
         } => {
             let mut req = client.list_migrations();
-            if let Some(v) = &state {
-                req = req.state(parse_migration_state(v)?);
+            if let Some(v) = state {
+                req = req.state(v);
             }
             if let Some(v) = source_server_uuid {
                 req = req.source_server_uuid(v);

@@ -327,7 +327,7 @@ pub struct DeleteDiskRequest {
 }
 
 /// Migration sub-action for the `migrate` VM action
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, clap::ValueEnum, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MigrationAction {
     Begin,

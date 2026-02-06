@@ -31,6 +31,8 @@ rand = "0.9"
 # Authentication support
 triton-auth = { path = "../../../libs/triton-auth" }
 thiserror = { workspace = true }
+# clap::ValueEnum on generated enum types for CLI consumers
+clap = { workspace = true }
 
 [build-dependencies]
 progenitor = { workspace = true }

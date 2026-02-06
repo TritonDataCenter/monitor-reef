@@ -14,6 +14,7 @@ description = "Triton VMAPI trait definition"
 workspace = true
 
 [dependencies]
+clap = { workspace = true }
 dropshot = { workspace = true }
 http = "1.1"
 schemars = { workspace = true }

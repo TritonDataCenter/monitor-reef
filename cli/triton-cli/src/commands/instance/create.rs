@@ -64,10 +64,9 @@ pub struct CreateArgs {
     #[arg(long)]
     pub deletion_protection: bool,
 
-    /// Instance brand (bhyve, kvm, joyent, joyent-minimal, lx).
-    /// If not specified, inferred from the image.
-    #[arg(long, short = 'b')]
-    pub brand: Option<String>,
+    /// Instance brand. If not specified, inferred from the image.
+    #[arg(long, short = 'b', value_enum)]
+    pub brand: Option<cloudapi_client::types::Brand2>,
 
     /// Volume to mount (NAME[@MOUNTPOINT] or NAME:MODE:MOUNTPOINT).
     /// MODE can be 'ro' or 'rw' (default: 'rw').
@@ -143,8 +142,8 @@ pub async fn run(args: CreateArgs, client: &TypedClient, use_json: bool) -> Resu
     }
 
     // Handle brand
-    if let Some(brand) = &args.brand {
-        request = request.brand(parse_brand(brand)?);
+    if let Some(brand) = args.brand {
+        request = request.brand(brand);
     }
 
     // Handle delegate dataset
@@ -294,21 +293,6 @@ pub async fn run(args: CreateArgs, client: &TypedClient, use_json: bool) -> Resu
     }
 
     Ok(())
-}
-
-/// Parse brand string into Brand enum
-fn parse_brand(brand: &str) -> Result<cloudapi_client::types::Brand> {
-    match brand.to_lowercase().as_str() {
-        "bhyve" => Ok(cloudapi_client::types::Brand::Bhyve),
-        "kvm" => Ok(cloudapi_client::types::Brand::Kvm),
-        "joyent" => Ok(cloudapi_client::types::Brand::Joyent),
-        "joyent-minimal" => Ok(cloudapi_client::types::Brand::JoyentMinimal),
-        "lx" => Ok(cloudapi_client::types::Brand::Lx),
-        _ => Err(anyhow::anyhow!(
-            "Invalid brand '{}'. Valid values: bhyve, kvm, joyent, joyent-minimal, lx",
-            brand
-        )),
-    }
 }
 
 /// Build tags from --tag options
@@ -864,44 +848,5 @@ mod tests {
         );
         assert_eq!(disk.size, Some(20 * 1024));
         assert_eq!(disk.boot, Some(true));
-    }
-
-    // ===== parse_brand tests =====
-
-    #[test]
-    fn test_parse_brand_valid() {
-        assert!(matches!(
-            parse_brand("bhyve").unwrap(),
-            cloudapi_client::types::Brand::Bhyve
-        ));
-        assert!(matches!(
-            parse_brand("kvm").unwrap(),
-            cloudapi_client::types::Brand::Kvm
-        ));
-        assert!(matches!(
-            parse_brand("joyent").unwrap(),
-            cloudapi_client::types::Brand::Joyent
-        ));
-        assert!(matches!(
-            parse_brand("joyent-minimal").unwrap(),
-            cloudapi_client::types::Brand::JoyentMinimal
-        ));
-        assert!(matches!(
-            parse_brand("lx").unwrap(),
-            cloudapi_client::types::Brand::Lx
-        ));
-    }
-
-    #[test]
-    fn test_parse_brand_case_insensitive() {
-        assert!(parse_brand("BHYVE").is_ok());
-        assert!(parse_brand("KVM").is_ok());
-        assert!(parse_brand("Joyent").is_ok());
-    }
-
-    #[test]
-    fn test_parse_brand_invalid() {
-        assert!(parse_brand("invalid").is_err());
-        assert!(parse_brand("").is_err());
     }
 }

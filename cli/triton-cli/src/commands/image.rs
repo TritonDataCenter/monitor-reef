@@ -83,11 +83,11 @@ pub struct ImageListArgs {
     #[arg(long)]
     pub public: bool,
     /// Filter by state
-    #[arg(long)]
-    pub state: Option<String>,
+    #[arg(long, value_enum)]
+    pub state: Option<cloudapi_client::types::ImageState>,
     /// Filter by type
-    #[arg(long, name = "type")]
-    pub image_type: Option<String>,
+    #[arg(long, name = "type", value_enum)]
+    pub image_type: Option<cloudapi_client::types::ImageType>,
 
     /// Include all images (including inactive, disabled, etc.)
     #[arg(short = 'a', long)]
@@ -333,10 +333,10 @@ async fn list_images(args: ImageListArgs, client: &TypedClient, use_json: bool) 
         req = req.os(os);
     }
     // If --all is not set and no explicit state filter, default to "active"
-    if let Some(state) = &args.state {
+    if let Some(state) = args.state {
         req = req.state(state);
     } else if !args.all {
-        req = req.state("active");
+        req = req.state(cloudapi_client::types::ImageState::Active);
     }
     if args.public {
         req = req.public(true);

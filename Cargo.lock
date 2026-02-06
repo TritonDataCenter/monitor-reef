@@ -666,6 +666,7 @@ name = "cloudapi-client"
 version = "9.20.0"
 dependencies = [
  "base64",
+ "clap",
  "cloudapi-api",
  "openapiv3",
  "progenitor",
@@ -4270,6 +4271,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 name = "vmapi-api"
 version = "9.17.0"
 dependencies = [
+ "clap",
  "dropshot",
  "http",
  "schemars",
@@ -4296,6 +4298,7 @@ name = "vmapi-client"
 version = "9.17.0"
 dependencies = [
  "base64",
+ "clap",
  "openapiv3",
  "progenitor",
  "progenitor-client",
