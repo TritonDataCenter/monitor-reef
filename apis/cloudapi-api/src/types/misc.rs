@@ -130,6 +130,35 @@ pub struct Service {
     pub endpoint: String,
 }
 
+/// Migration state
+///
+/// Represents the current state of a migration operation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum MigrationState {
+    Running,
+    Paused,
+    Successful,
+    Finished,
+    Failed,
+    Aborted,
+    #[serde(other)]
+    Unknown,
+}
+
+/// Migration phase
+///
+/// Represents the current phase of a migration operation.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum MigrationPhase {
+    Begin,
+    Sync,
+    Switch,
+    #[serde(other)]
+    Unknown,
+}
+
 /// Migration action to perform
 ///
 /// These actions control the migration lifecycle:
@@ -170,10 +199,10 @@ pub struct Migration {
     /// may be renamed to `machine` in the response.
     #[serde(alias = "machine")]
     pub vm_uuid: Uuid,
-    /// Migration phase (e.g., "start", "sync", "switch")
-    pub phase: String,
-    /// Migration state (e.g., "running", "paused", "successful", "failed")
-    pub state: String,
+    /// Migration phase
+    pub phase: MigrationPhase,
+    /// Migration state
+    pub state: MigrationState,
     /// Progress percentage (0-100)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub progress_percent: Option<f64>,

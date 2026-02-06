@@ -9,6 +9,7 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
+use cloudapi_client::types::SnapshotState;
 use dialoguer::Confirm;
 
 use crate::output::{json, table};
@@ -125,7 +126,7 @@ pub async fn list_snapshots(
         for snap in &snapshots {
             tbl.add_row(vec![
                 &snap.name,
-                &format!("{:?}", snap.state).to_lowercase(),
+                &crate::output::enum_to_display(&snap.state),
                 &snap.created.to_string(),
             ]);
         }
@@ -154,7 +155,10 @@ async fn get_snapshot(args: SnapshotGetArgs, client: &TypedClient, use_json: boo
         json::print_json(&snapshot)?;
     } else {
         println!("Name:    {}", snapshot.name);
-        println!("State:   {:?}", snapshot.state);
+        println!(
+            "State:   {}",
+            crate::output::enum_to_display(&snapshot.state)
+        );
         println!("Created: {}", snapshot.created);
     }
 
@@ -190,7 +194,7 @@ async fn create_snapshot(
         let final_snapshot = wait_for_snapshot_state(
             machine_id,
             &snapshot.name,
-            "created",
+            SnapshotState::Created,
             args.wait_timeout,
             client,
         )
@@ -209,7 +213,7 @@ async fn create_snapshot(
 async fn wait_for_snapshot_state(
     machine_id: uuid::Uuid,
     snapshot_name: &str,
-    target_state: &str,
+    target: SnapshotState,
     timeout_secs: u64,
     client: &TypedClient,
 ) -> Result<cloudapi_client::types::Snapshot> {
@@ -231,25 +235,24 @@ async fn wait_for_snapshot_state(
             .await?;
 
         let snapshot = response.into_inner();
-        let current_state = format!("{:?}", snapshot.state).to_lowercase();
 
-        if current_state == target_state.to_lowercase() {
+        if snapshot.state == target {
             return Ok(snapshot);
         }
 
         // Check for failed state
-        if current_state == "failed" {
+        if snapshot.state == SnapshotState::Failed {
             return Err(anyhow::anyhow!(
                 "Snapshot entered failed state while waiting for {}",
-                target_state
+                crate::output::enum_to_display(&target),
             ));
         }
 
         if start.elapsed() > timeout {
             return Err(anyhow::anyhow!(
                 "Timeout waiting for snapshot to reach state {} (current: {})",
-                target_state,
-                current_state
+                crate::output::enum_to_display(&target),
+                crate::output::enum_to_display(&snapshot.state),
             ));
         }
 

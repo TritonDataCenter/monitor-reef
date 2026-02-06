@@ -9,6 +9,7 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
+use cloudapi_client::types::{MigrationAction, MigrationState};
 
 use crate::output::json;
 
@@ -230,7 +231,13 @@ async fn begin_migration(
 
     if args.wait {
         // Wait for the action to complete
-        wait_for_action(instance_id, "begin", args.wait_timeout, client).await?;
+        wait_for_action(
+            instance_id,
+            MigrationAction::Begin,
+            args.wait_timeout,
+            client,
+        )
+        .await?;
         // Output node-triton compatible message
         println!("Done - begin finished");
     } else if !args.quiet {
@@ -271,7 +278,13 @@ async fn sync_migration(
     let migration = response.into_inner();
 
     if args.wait {
-        wait_for_action(instance_id, "sync", args.wait_timeout, client).await?;
+        wait_for_action(
+            instance_id,
+            MigrationAction::Sync,
+            args.wait_timeout,
+            client,
+        )
+        .await?;
         println!("Done - sync finished");
     } else if use_json {
         json::print_json(&migration)?;
@@ -308,7 +321,13 @@ async fn switch_migration(
     let migration = response.into_inner();
 
     if args.wait {
-        wait_for_action(instance_id, "switch", args.wait_timeout, client).await?;
+        wait_for_action(
+            instance_id,
+            MigrationAction::Switch,
+            args.wait_timeout,
+            client,
+        )
+        .await?;
         println!("Done - switch finished");
     } else if use_json {
         json::print_json(&migration)?;
@@ -323,19 +342,20 @@ async fn switch_migration(
 /// Wait for a migration action to complete
 async fn wait_for_action(
     instance_id: uuid::Uuid,
-    action: &str,
+    action: MigrationAction,
     timeout_secs: u64,
     client: &TypedClient,
 ) -> Result<()> {
     let account = &client.auth_config().account;
     let start = std::time::Instant::now();
     let timeout = std::time::Duration::from_secs(timeout_secs);
+    let action_display = crate::output::enum_to_display(&action);
 
     loop {
         if start.elapsed() > timeout {
             return Err(anyhow::anyhow!(
                 "Migration {} timed out after {} seconds",
-                action,
+                action_display,
                 timeout_secs
             ));
         }
@@ -350,17 +370,16 @@ async fn wait_for_action(
 
         let migration = response.into_inner();
 
-        match migration.state.as_str() {
-            "successful" | "finished" | "paused" => {
-                // Action completed
+        match migration.state {
+            MigrationState::Successful | MigrationState::Finished | MigrationState::Paused => {
                 return Ok(());
             }
-            "failed" | "aborted" => {
+            MigrationState::Failed | MigrationState::Aborted => {
                 return Err(anyhow::anyhow!(
                     "Migration {}: state={}, phase={}",
-                    action,
-                    migration.state,
-                    migration.phase
+                    action_display,
+                    crate::output::enum_to_display(&migration.state),
+                    crate::output::enum_to_display(&migration.phase),
                 ));
             }
             _ => {
@@ -399,23 +418,24 @@ async fn wait_migration(args: MigrationWaitArgs, client: &TypedClient) -> Result
 
         let migration = response.into_inner();
 
-        match migration.state.as_str() {
-            "successful" | "finished" => {
+        match migration.state {
+            MigrationState::Successful | MigrationState::Finished => {
                 println!("\nMigration completed successfully!");
                 return Ok(());
             }
-            "failed" | "aborted" => {
+            MigrationState::Failed | MigrationState::Aborted => {
                 return Err(anyhow::anyhow!(
                     "Migration {}: phase={}",
-                    migration.state,
-                    migration.phase
+                    crate::output::enum_to_display(&migration.state),
+                    crate::output::enum_to_display(&migration.phase),
                 ));
             }
             _ => {
                 if let Some(progress) = migration.progress_percent {
                     print!(
                         "\rProgress: {:.1}% (phase: {})   ",
-                        progress, migration.phase
+                        progress,
+                        crate::output::enum_to_display(&migration.phase),
                     );
                     use std::io::Write;
                     std::io::stdout().flush()?;
@@ -453,7 +473,13 @@ async fn abort_migration(
     let migration = response.into_inner();
 
     if args.wait {
-        wait_for_action(instance_id, "abort", args.wait_timeout, client).await?;
+        wait_for_action(
+            instance_id,
+            MigrationAction::Abort,
+            args.wait_timeout,
+            client,
+        )
+        .await?;
         println!("Done - abort finished");
     } else if use_json {
         json::print_json(&migration)?;

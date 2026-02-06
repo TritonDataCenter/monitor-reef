@@ -20,7 +20,9 @@ pub struct ImagePath {
 }
 
 /// Image state
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum ImageState {
     Active,

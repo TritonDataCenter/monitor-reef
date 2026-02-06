@@ -284,7 +284,13 @@ pub async fn run(args: CreateArgs, client: &TypedClient, use_json: bool) -> Resu
     // Wait if requested
     if args.wait {
         println!("Waiting for instance to be running...");
-        super::wait::wait_for_state(machine.id, "running", args.wait_timeout, client).await?;
+        super::wait::wait_for_state(
+            machine.id,
+            cloudapi_client::types::MachineState::Running,
+            args.wait_timeout,
+            client,
+        )
+        .await?;
         println!("Instance is running");
     }
 

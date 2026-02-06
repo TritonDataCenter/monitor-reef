@@ -54,6 +54,19 @@ pub struct TagPath {
     pub tag: String,
 }
 
+/// Snapshot state
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SnapshotState {
+    Queued,
+    Creating,
+    Created,
+    Failed,
+    Deleted,
+    #[serde(other)]
+    Unknown,
+}
+
 /// Snapshot information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -61,7 +74,7 @@ pub struct Snapshot {
     /// Snapshot name
     pub name: String,
     /// Snapshot state
-    pub state: String,
+    pub state: SnapshotState,
     /// Creation timestamp
     pub created: Timestamp,
     /// Last update timestamp

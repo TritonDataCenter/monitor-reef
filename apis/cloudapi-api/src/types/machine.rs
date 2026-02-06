@@ -35,7 +35,9 @@ pub struct MachinePath {
 /// - `deleted`: VM has been destroyed
 /// - `failed`: VM is in a failed state
 /// - `unknown`: VM state cannot be determined
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum MachineState {
     Running,

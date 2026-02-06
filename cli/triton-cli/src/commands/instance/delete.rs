@@ -58,7 +58,13 @@ pub async fn run(args: DeleteArgs, client: &TypedClient) -> Result<()> {
 
         if args.wait {
             println!("Waiting for instance to be deleted...");
-            super::wait::wait_for_state(machine_id, "deleted", args.wait_timeout, client).await?;
+            super::wait::wait_for_state(
+                machine_id,
+                cloudapi_client::types::MachineState::Deleted,
+                args.wait_timeout,
+                client,
+            )
+            .await?;
             println!("Instance {} deleted", &id_str[..8]);
         }
     }

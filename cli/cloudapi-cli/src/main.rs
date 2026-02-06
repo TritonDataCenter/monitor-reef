@@ -149,6 +149,14 @@ enum Commands {
 
 const DEFAULT_BASE_URL: &str = "https://cloudapi.tritondatacenter.com";
 
+/// Convert a serde-serializable enum value to its wire-format string.
+fn enum_to_display(val: &(impl serde::Serialize + std::fmt::Debug)) -> String {
+    serde_json::to_value(val)
+        .ok()
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_else(|| format!("{:?}", val))
+}
+
 /// Resolve the account from CLI arg or environment variables
 fn resolve_account(cli_account: Option<String>) -> Result<String> {
     cli_account
@@ -276,7 +284,7 @@ async fn main() -> Result<()> {
                     let state_str = img
                         .state
                         .as_ref()
-                        .map(|s| format!("{:?}", s))
+                        .map(enum_to_display)
                         .unwrap_or_else(|| "unknown".to_string());
                     println!("{}: {} {} ({})", img.id, img.name, img.version, state_str);
                 }
@@ -297,7 +305,7 @@ async fn main() -> Result<()> {
                 let state_str = img
                     .state
                     .as_ref()
-                    .map(|s| format!("{:?}", s))
+                    .map(enum_to_display)
                     .unwrap_or_else(|| "unknown".to_string());
                 println!(
                     "ID: {}\nName: {}\nVersion: {}\nState: {}",

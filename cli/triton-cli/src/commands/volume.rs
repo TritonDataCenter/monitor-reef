@@ -10,6 +10,9 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 
+use cloudapi_client::types::VolumeState;
+
+use crate::output::enum_to_display;
 use crate::output::table::{TableBuilder, TableFormatArgs};
 use crate::output::{self, json};
 
@@ -132,7 +135,7 @@ async fn list_volumes(args: VolumeListArgs, client: &TypedClient, use_json: bool
                 vol.name.clone(),
                 format!("{} MB", vol.size),
                 vol.type_.clone(),
-                format!("{:?}", vol.state).to_lowercase(),
+                enum_to_display(&vol.state),
                 output::format_age(&vol.created.to_string()),
                 vol.id.to_string(),
                 vol.created.to_string(),
@@ -164,7 +167,7 @@ async fn get_volume(args: VolumeGetArgs, client: &TypedClient, use_json: bool) -
         println!("ID:      {}", volume.id);
         println!("Name:    {}", volume.name);
         println!("Size:    {} MB", volume.size);
-        println!("State:   {:?}", volume.state);
+        println!("State:   {}", enum_to_display(&volume.state));
         println!("Type:    {}", volume.type_);
         if !volume.networks.is_empty() {
             println!("Networks: {:?}", volume.networks);
@@ -331,22 +334,19 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
 
         if use_json {
             json::print_json(&final_volume)?;
+        } else if final_volume.state == VolumeState::Ready {
+            println!(
+                "Created volume {} ({}) - {} MB",
+                final_volume.name,
+                &final_volume.id.to_string()[..8],
+                final_volume.size
+            );
         } else {
-            let state = format!("{:?}", final_volume.state).to_lowercase();
-            if state == "ready" {
-                println!(
-                    "Created volume {} ({}) - {} MB",
-                    final_volume.name,
-                    &final_volume.id.to_string()[..8],
-                    final_volume.size
-                );
-            } else {
-                return Err(anyhow::anyhow!(
-                    "Failed to create volume {} ({})",
-                    final_volume.name,
-                    final_volume.id
-                ));
-            }
+            return Err(anyhow::anyhow!(
+                "Failed to create volume {} ({})",
+                final_volume.name,
+                final_volume.id
+            ));
         }
     } else {
         println!(
@@ -386,9 +386,8 @@ async fn wait_for_volume_ready(
             .await?;
 
         let volume = response.into_inner();
-        let state = format!("{:?}", volume.state).to_lowercase();
 
-        if state == "ready" || state == "failed" {
+        if volume.state == VolumeState::Ready || volume.state == VolumeState::Failed {
             return Ok(volume);
         }
 
@@ -526,8 +525,7 @@ async fn wait_for_volume_deletion(
         match result {
             Ok(response) => {
                 let volume = response.into_inner();
-                let state = format!("{:?}", volume.state).to_lowercase();
-                if state == "failed" {
+                if volume.state == VolumeState::Failed {
                     return Err(anyhow::anyhow!("Volume deletion failed"));
                 }
             }

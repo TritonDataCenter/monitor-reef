@@ -30,8 +30,8 @@ enum Commands {
         #[arg(long)]
         next_page_token: Option<String>,
         /// Sort field (key, created, or updated)
-        #[arg(long)]
-        sort: Option<String>,
+        #[arg(long, value_enum)]
+        sort: Option<bugview_client::types::IssueSort>,
     },
     /// Get issue details (terminal-friendly view or raw JSON)
     Get {

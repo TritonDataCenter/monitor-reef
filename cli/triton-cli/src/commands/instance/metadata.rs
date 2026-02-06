@@ -227,7 +227,13 @@ async fn set_metadata(args: MetadataSetArgs, client: &TypedClient) -> Result<()>
 
     if args.wait {
         let id_str = machine_id.to_string();
-        super::wait::wait_for_state(machine_id, "running", args.wait_timeout, client).await?;
+        super::wait::wait_for_state(
+            machine_id,
+            cloudapi_client::types::MachineState::Running,
+            args.wait_timeout,
+            client,
+        )
+        .await?;
         if !args.quiet {
             println!("Instance {} is running", &id_str[..8]);
         }

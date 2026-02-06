@@ -275,7 +275,13 @@ async fn add_nic(args: NicAddArgs, client: &TypedClient, use_json: bool) -> Resu
     }
 
     if args.wait {
-        super::wait::wait_for_state(machine_id, "running", args.wait_timeout, client).await?;
+        super::wait::wait_for_state(
+            machine_id,
+            cloudapi_client::types::MachineState::Running,
+            args.wait_timeout,
+            client,
+        )
+        .await?;
     }
 
     if use_json {

@@ -11,10 +11,10 @@ use std::collections::HashMap;
 use anyhow::Result;
 use clap::Args;
 use cloudapi_client::TypedClient;
-use cloudapi_client::types::Machine;
+use cloudapi_client::types::{Brand, Machine};
 use serde::Serialize;
 
-use crate::output::{self, json, table};
+use crate::output::{self, enum_to_display, json, table};
 
 /// Augmented machine output with computed fields for node-triton compatibility
 #[derive(Serialize)]
@@ -43,8 +43,7 @@ impl AugmentedMachine {
 
         let flags = {
             let mut flags = Vec::new();
-            let brand_str = format!("{:?}", m.brand).to_lowercase();
-            if brand_str == "bhyve" {
+            if m.brand == Brand::Bhyve {
                 flags.push('B');
             }
             if m.docker.unwrap_or(false) {
@@ -53,7 +52,7 @@ impl AugmentedMachine {
             if m.firewall_enabled.unwrap_or(false) {
                 flags.push('F');
             }
-            if brand_str == "kvm" {
+            if m.brand == Brand::Kvm {
                 flags.push('K');
             }
             if m.deletion_protection.unwrap_or(false) {
@@ -289,8 +288,8 @@ fn get_field_value(m: &Machine, field: &str, image_map: &HashMap<uuid::Uuid, Str
                 image_str[..8.min(image_str.len())].to_string()
             })
         }
-        "state" => format!("{:?}", m.state).to_lowercase(),
-        "brand" => format!("{:?}", m.brand).to_lowercase(),
+        "state" => enum_to_display(&m.state),
+        "brand" => enum_to_display(&m.brand),
         "package" => m.package.clone(),
         "memory" => m
             .memory
@@ -302,8 +301,7 @@ fn get_field_value(m: &Machine, field: &str, image_map: &HashMap<uuid::Uuid, Str
         "age" => format_age(&m.created),
         "flags" => {
             let mut flags = Vec::new();
-            let brand_str = format!("{:?}", m.brand).to_lowercase();
-            if brand_str == "bhyve" {
+            if m.brand == Brand::Bhyve {
                 flags.push('B');
             }
             if m.docker.unwrap_or(false) {
@@ -312,7 +310,7 @@ fn get_field_value(m: &Machine, field: &str, image_map: &HashMap<uuid::Uuid, Str
             if m.firewall_enabled.unwrap_or(false) {
                 flags.push('F');
             }
-            if brand_str == "kvm" {
+            if m.brand == Brand::Kvm {
                 flags.push('K');
             }
             if m.deletion_protection.unwrap_or(false) {

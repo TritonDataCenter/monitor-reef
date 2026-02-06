@@ -9,7 +9,7 @@
 use anyhow::Result;
 use cloudapi_client::{ClientInfo, TypedClient};
 
-use crate::output::json;
+use crate::output::{enum_to_display, json};
 
 pub async fn run(client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
@@ -45,7 +45,7 @@ pub async fn run(client: &TypedClient, use_json: bool) -> Result<()> {
         // Build instances object with state counts
         let mut states: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         for m in &machines {
-            let state = format!("{:?}", m.state).to_lowercase();
+            let state = enum_to_display(&m.state);
             *states.entry(state).or_insert(0) += 1;
         }
 
@@ -65,7 +65,7 @@ pub async fn run(client: &TypedClient, use_json: bool) -> Result<()> {
         // Build instances object with state counts
         let mut states: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         for m in &machines {
-            let state = format!("{:?}", m.state).to_lowercase();
+            let state = enum_to_display(&m.state);
             *states.entry(state).or_insert(0) += 1;
         }
 

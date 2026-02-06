@@ -12,11 +12,11 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
-use cloudapi_client::types::Image;
+use cloudapi_client::types::{Image, ImageState};
 use dialoguer::Confirm;
 use serde_json::{Map, Value};
 
-use crate::output::{json, table};
+use crate::output::{enum_to_display, json, table};
 
 #[derive(Subcommand, Clone)]
 pub enum ImageCommand {
@@ -226,8 +226,8 @@ pub struct ImageWaitArgs {
     pub images: Vec<String>,
     /// Target state(s) to wait for (comma-separated or multiple -s flags)
     /// Default is "active,failed"
-    #[arg(short = 's', long = "states", value_delimiter = ',', default_values_t = vec!["active".to_string(), "failed".to_string()])]
-    pub states: Vec<String>,
+    #[arg(short = 's', long = "states", value_enum, value_delimiter = ',', default_values_t = vec![cloudapi_client::types::ImageState::Active, cloudapi_client::types::ImageState::Failed])]
+    pub states: Vec<cloudapi_client::types::ImageState>,
     /// Timeout in seconds
     #[arg(long, default_value = "600")]
     pub timeout: u64,
@@ -364,18 +364,10 @@ fn sort_images(images: &mut [Image], field: &str) {
         "name" => images.sort_by(|a, b| a.name.cmp(&b.name)),
         "version" => images.sort_by(|a, b| a.version.cmp(&b.version)),
         "os" => images.sort_by(|a, b| a.os.cmp(&b.os)),
-        "type" => images.sort_by(|a, b| format!("{:?}", a.type_).cmp(&format!("{:?}", b.type_))),
+        "type" => images.sort_by(|a, b| enum_to_display(&a.type_).cmp(&enum_to_display(&b.type_))),
         "state" => images.sort_by(|a, b| {
-            let a_state = a
-                .state
-                .as_ref()
-                .map(|s| format!("{:?}", s))
-                .unwrap_or_default();
-            let b_state = b
-                .state
-                .as_ref()
-                .map(|s| format!("{:?}", s))
-                .unwrap_or_default();
+            let a_state = a.state.as_ref().map(enum_to_display).unwrap_or_default();
+            let b_state = b.state.as_ref().map(enum_to_display).unwrap_or_default();
             a_state.cmp(&b_state)
         }),
         "published_at" | "published" => images.sort_by(|a, b| {
@@ -451,9 +443,9 @@ fn get_image_field_value(img: &Image, field: &str) -> String {
         "state" => img
             .state
             .as_ref()
-            .map(|s| format!("{:?}", s).to_lowercase())
+            .map(enum_to_display)
             .unwrap_or_else(|| "-".to_string()),
-        "type" => format_image_type(&img.type_),
+        "type" => enum_to_display(&img.type_),
         "os" => img.os.clone(),
         "description" | "desc" => img.description.clone().unwrap_or_else(|| "-".to_string()),
         "public" => img
@@ -501,16 +493,6 @@ fn get_image_field_value(img: &Image, field: &str) -> String {
             .map(|u| u.to_string())
             .unwrap_or_else(|| "-".to_string()),
         _ => "-".to_string(),
-    }
-}
-
-/// Format image type with hyphen like node-triton (e.g., "lx-dataset", "zone-dataset")
-fn format_image_type(type_: &cloudapi_client::types::ImageType) -> String {
-    match type_ {
-        cloudapi_client::types::ImageType::Zvol => "zvol".to_string(),
-        cloudapi_client::types::ImageType::LxDataset => "lx-dataset".to_string(),
-        cloudapi_client::types::ImageType::ZoneDataset => "zone-dataset".to_string(),
-        cloudapi_client::types::ImageType::Other => "other".to_string(),
     }
 }
 
@@ -680,7 +662,13 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
     );
 
     if args.wait {
-        wait_for_image_states(image.id, &["active", "failed"], 600, client).await?;
+        wait_for_image_states(
+            image.id,
+            &[ImageState::Active, ImageState::Failed],
+            600,
+            client,
+        )
+        .await?;
         println!("Image is active");
     }
 
@@ -848,8 +836,8 @@ async fn export_image(args: ImageExportArgs, client: &TypedClient, use_json: boo
 
 async fn wait_image(args: ImageWaitArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
-    let states: Vec<&str> = args.states.iter().map(|s| s.as_str()).collect();
     let total = args.images.len();
+    let state_names: Vec<String> = args.states.iter().map(enum_to_display).collect();
 
     // First resolve all images and check if any are already in target state
     let mut images_to_wait: Vec<(uuid::Uuid, String)> = Vec::new(); // (id, display_name)
@@ -867,10 +855,14 @@ async fn wait_image(args: ImageWaitArgs, client: &TypedClient, use_json: bool) -
             .send()
             .await?;
         let image = response.into_inner();
-        let current_state = format!("{:?}", image.state).to_lowercase();
 
-        if states.iter().any(|s| s.to_lowercase() == current_state) {
+        if args.states.iter().any(|s| image.state.as_ref() == Some(s)) {
             done += 1;
+            let current_state = image
+                .state
+                .as_ref()
+                .map(enum_to_display)
+                .unwrap_or_else(|| "unknown".to_string());
             println!(
                 "{}/{}: Image {} ({}@{}) already {}",
                 done, total, image.id, image.name, image.version, current_state
@@ -892,22 +884,26 @@ async fn wait_image(args: ImageWaitArgs, client: &TypedClient, use_json: bool) -
         println!(
             "Waiting for image {} to enter state (states: {})",
             images_to_wait[0].1,
-            states.join(", ")
+            state_names.join(", ")
         );
     } else {
         println!(
             "Waiting for {} images to enter state (states: {})",
             images_to_wait.len(),
-            states.join(", ")
+            state_names.join(", ")
         );
     }
 
     // Wait for each image
     let mut final_images = Vec::new();
     for (image_uuid, display_name) in &images_to_wait {
-        let image = wait_for_image_states(*image_uuid, &states, args.timeout, client).await?;
+        let image = wait_for_image_states(*image_uuid, &args.states, args.timeout, client).await?;
         done += 1;
-        let final_state = format!("{:?}", image.state).to_lowercase();
+        let final_state = image
+            .state
+            .as_ref()
+            .map(enum_to_display)
+            .unwrap_or_else(|| "unknown".to_string());
         println!(
             "{}/{}: Image {} moved to state {}",
             done, total, display_name, final_state
@@ -996,7 +992,7 @@ pub async fn resolve_image(id_or_name: &str, client: &TypedClient) -> Result<uui
 
 async fn wait_for_image_states(
     image_uuid: uuid::Uuid,
-    target_states: &[&str],
+    target_states: &[ImageState],
     timeout_secs: u64,
     client: &TypedClient,
 ) -> Result<Image> {
@@ -1017,20 +1013,20 @@ async fn wait_for_image_states(
             .await?;
 
         let image = response.into_inner();
-        let current_state = format!("{:?}", image.state).to_lowercase();
 
         // Check if current state matches any target state
         if target_states
             .iter()
-            .any(|s| s.to_lowercase() == current_state)
+            .any(|s| image.state.as_ref() == Some(s))
         {
             return Ok(image);
         }
 
         if start.elapsed() > timeout {
+            let target_names: Vec<String> = target_states.iter().map(enum_to_display).collect();
             return Err(anyhow::anyhow!(
                 "Timeout waiting for image states: {}",
-                target_states.join(", ")
+                target_names.join(", ")
             ));
         }
 

@@ -18,6 +18,17 @@ pub enum OutputFormat {
     Json,
 }
 
+/// Convert a serde-serializable enum value to its wire-format string.
+///
+/// Uses serde_json to get the exact rename (lowercase, kebab-case, snake_case, etc.)
+/// matching what the API produces on the wire.
+pub fn enum_to_display<T: serde::Serialize + std::fmt::Debug>(val: &T) -> String {
+    serde_json::to_value(val)
+        .ok()
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_else(|| format!("{:?}", val))
+}
+
 /// Format megabytes as human-readable size (matches node-triton format)
 ///
 /// node-triton uses `humanSizeFromBytes` with `narrow: true` and `precision: 1`.

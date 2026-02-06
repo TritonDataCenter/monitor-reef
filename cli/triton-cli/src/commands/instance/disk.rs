@@ -140,7 +140,7 @@ pub async fn list_disks(args: DiskListArgs, client: &TypedClient, use_json: bool
                 } else {
                     "no"
                 },
-                &format!("{:?}", disk.state).to_lowercase(),
+                disk.state.as_deref().unwrap_or("unknown"),
             ]);
         }
         table::print_table(tbl);
@@ -171,7 +171,7 @@ async fn get_disk(args: DiskGetArgs, client: &TypedClient, use_json: bool) -> Re
         println!("ID:    {}", disk.id);
         println!("Size:  {} MiB", disk.size);
         println!("Boot:  {}", disk.boot.unwrap_or(false));
-        println!("State: {:?}", disk.state);
+        println!("State: {}", disk.state.as_deref().unwrap_or("unknown"));
     }
 
     Ok(())
@@ -205,7 +205,13 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
     );
 
     if args.wait {
-        super::wait::wait_for_state(machine_id, "running", args.wait_timeout, client).await?;
+        super::wait::wait_for_state(
+            machine_id,
+            cloudapi_client::types::MachineState::Running,
+            args.wait_timeout,
+            client,
+        )
+        .await?;
         println!("Instance {} is running", &id_str[..8]);
     }
 

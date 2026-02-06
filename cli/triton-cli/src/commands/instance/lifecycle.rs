@@ -9,6 +9,7 @@
 use anyhow::Result;
 use clap::Args;
 use cloudapi_client::TypedClient;
+use cloudapi_client::types::MachineState;
 
 #[derive(Args, Clone)]
 pub struct StartArgs {
@@ -63,7 +64,13 @@ pub async fn start(args: StartArgs, client: &TypedClient) -> Result<()> {
         println!("Starting instance {}", &id_str[..8]);
 
         if args.wait {
-            super::wait::wait_for_state(machine_id, "running", args.wait_timeout, client).await?;
+            super::wait::wait_for_state(
+                machine_id,
+                MachineState::Running,
+                args.wait_timeout,
+                client,
+            )
+            .await?;
             println!("Instance {} is running", &id_str[..8]);
         }
     }
@@ -81,7 +88,13 @@ pub async fn stop(args: StopArgs, client: &TypedClient) -> Result<()> {
         println!("Stopping instance {}", &id_str[..8]);
 
         if args.wait {
-            super::wait::wait_for_state(machine_id, "stopped", args.wait_timeout, client).await?;
+            super::wait::wait_for_state(
+                machine_id,
+                MachineState::Stopped,
+                args.wait_timeout,
+                client,
+            )
+            .await?;
             println!("Instance {} is stopped", &id_str[..8]);
         }
     }
@@ -99,7 +112,13 @@ pub async fn reboot(args: RebootArgs, client: &TypedClient) -> Result<()> {
         println!("Rebooting instance {}", &id_str[..8]);
 
         if args.wait {
-            super::wait::wait_for_state(machine_id, "running", args.wait_timeout, client).await?;
+            super::wait::wait_for_state(
+                machine_id,
+                MachineState::Running,
+                args.wait_timeout,
+                client,
+            )
+            .await?;
             println!("Instance {} is running", &id_str[..8]);
         }
     }

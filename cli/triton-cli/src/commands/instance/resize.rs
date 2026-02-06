@@ -44,7 +44,13 @@ pub async fn run(args: ResizeArgs, client: &TypedClient) -> Result<()> {
 
     if args.wait {
         println!("Waiting for resize to complete...");
-        super::wait::wait_for_state(machine_id, "running", args.wait_timeout, client).await?;
+        super::wait::wait_for_state(
+            machine_id,
+            cloudapi_client::types::MachineState::Running,
+            args.wait_timeout,
+            client,
+        )
+        .await?;
         println!("Instance {} resize complete", &id_str[..8]);
     }
 

@@ -33,7 +33,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // Add clap::ValueEnum to enum types used as CLI arguments
         .with_patch("Brand", &value_enum_patch)
         .with_patch("VmState", &value_enum_patch)
-        .with_patch("MigrationState", &value_enum_patch);
+        .with_patch("MigrationState", &value_enum_patch)
+        .with_patch("MigrationAction", &value_enum_patch);
 
     let tokens = progenitor::Generator::new(&settings).generate_tokens(&openapi)?;
     std::fs::write(format!("{}/client.rs", out_dir), tokens.to_string())?;

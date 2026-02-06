@@ -10922,8 +10922,12 @@
             "type": "string"
           },
           "phase": {
-            "description": "Migration phase (e.g., \"start\", \"sync\", \"switch\")",
-            "type": "string"
+            "description": "Migration phase",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationPhase"
+              }
+            ]
           },
           "progressHistory": {
             "nullable": true,
@@ -10940,8 +10944,12 @@
             "format": "double"
           },
           "state": {
-            "description": "Migration state (e.g., \"running\", \"paused\", \"successful\", \"failed\")",
-            "type": "string"
+            "description": "Migration state",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationState"
+              }
+            ]
           },
           "updatedTimestamp": {
             "nullable": true,
@@ -11037,6 +11045,16 @@
           "size"
         ]
       },
+      "MigrationPhase": {
+        "description": "Migration phase\n\nRepresents the current phase of a migration operation.",
+        "type": "string",
+        "enum": [
+          "begin",
+          "sync",
+          "switch",
+          "unknown"
+        ]
+      },
       "MigrationProgressEntry": {
         "description": "Progress entry in migration history",
         "type": "object",
@@ -11082,6 +11100,19 @@
           "phase",
           "state",
           "total_progress"
+        ]
+      },
+      "MigrationState": {
+        "description": "Migration state\n\nRepresents the current state of a migration operation.",
+        "type": "string",
+        "enum": [
+          "running",
+          "paused",
+          "successful",
+          "finished",
+          "failed",
+          "aborted",
+          "unknown"
         ]
       },
       "Network": {
@@ -11589,7 +11620,11 @@
           },
           "state": {
             "description": "Snapshot state",
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SnapshotState"
+              }
+            ]
           },
           "updated": {
             "nullable": true,
@@ -11601,6 +11636,18 @@
           "created",
           "name",
           "state"
+        ]
+      },
+      "SnapshotState": {
+        "description": "Snapshot state",
+        "type": "string",
+        "enum": [
+          "queued",
+          "creating",
+          "created",
+          "failed",
+          "deleted",
+          "unknown"
         ]
       },
       "SshKey": {

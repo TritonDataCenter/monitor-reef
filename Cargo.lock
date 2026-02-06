@@ -447,10 +447,12 @@ dependencies = [
 name = "bugview-client"
 version = "0.1.0"
 dependencies = [
+ "clap",
  "openapiv3",
  "progenitor",
  "progenitor-client",
  "reqwest",
+ "schemars",
  "serde",
  "serde_json",
 ]
@@ -638,6 +640,7 @@ checksum = "c3e64b0cc0439b12df2fa678eae89a1c56a529fd067a9115f7827f1fffd22b32"
 name = "cloudapi-api"
 version = "9.20.0"
 dependencies = [
+ "clap",
  "dropshot",
  "http",
  "schemars",
@@ -656,6 +659,7 @@ dependencies = [
  "cloudapi-api",
  "cloudapi-client",
  "reqwest",
+ "serde",
  "serde_json",
  "tokio",
  "uuid",

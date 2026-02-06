@@ -4,7 +4,7 @@
 
 // Copyright 2025 Edgecast Cloud LLC.
 
-use progenitor::GenerationSettings;
+use progenitor::{GenerationSettings, TypePatch};
 use std::env;
 use std::path::Path;
 
@@ -19,10 +19,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let spec = std::fs::read_to_string(spec_path)?;
     let openapi: openapiv3::OpenAPI = serde_json::from_str(&spec)?;
 
+    let value_enum_patch = TypePatch::default().with_derive("clap::ValueEnum").clone();
+
     let mut settings = GenerationSettings::default();
     settings
         .with_interface(progenitor::InterfaceStyle::Builder)
-        .with_tag(progenitor::TagStyle::Merged);
+        .with_tag(progenitor::TagStyle::Merged)
+        .with_derive("schemars::JsonSchema")
+        .with_patch("IssueSort", &value_enum_patch);
 
     let tokens = progenitor::Generator::new(&settings).generate_tokens(&openapi)?;
     std::fs::write(format!("{}/client.rs", out_dir), tokens.to_string())?;

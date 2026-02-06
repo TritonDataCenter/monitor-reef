@@ -10,6 +10,7 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 
+use crate::output::enum_to_display;
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
 
@@ -368,7 +369,7 @@ async fn list_rule_instances(
             tbl.add_row(vec![
                 m.id.to_string()[..8].to_string(),
                 m.name.clone(),
-                format!("{:?}", m.state).to_lowercase(),
+                enum_to_display(&m.state),
                 m.primary_ip.clone().unwrap_or_else(|| "-".to_string()),
                 m.id.to_string(),
                 m.image.to_string(),

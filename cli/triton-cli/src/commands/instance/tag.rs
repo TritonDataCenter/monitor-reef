@@ -331,7 +331,13 @@ async fn set_tags(args: TagSetArgs, client: &TypedClient) -> Result<()> {
         .await?;
 
     if args.wait {
-        super::wait::wait_for_state(machine_id, "running", args.wait_timeout, client).await?;
+        super::wait::wait_for_state(
+            machine_id,
+            cloudapi_client::types::MachineState::Running,
+            args.wait_timeout,
+            client,
+        )
+        .await?;
     }
 
     // Output the updated tags (matching node-triton behavior)
@@ -386,7 +392,13 @@ async fn delete_tag(args: TagDeleteArgs, client: &TypedClient) -> Result<()> {
             .await?;
 
         if args.wait {
-            super::wait::wait_for_state(machine_id, "running", args.wait_timeout, client).await?;
+            super::wait::wait_for_state(
+                machine_id,
+                cloudapi_client::types::MachineState::Running,
+                args.wait_timeout,
+                client,
+            )
+            .await?;
         }
 
         println!("Deleted all tags on instance {}", args.instance);
@@ -406,8 +418,13 @@ async fn delete_tag(args: TagDeleteArgs, client: &TypedClient) -> Result<()> {
                 .await?;
 
             if args.wait {
-                super::wait::wait_for_state(machine_id, "running", args.wait_timeout, client)
-                    .await?;
+                super::wait::wait_for_state(
+                    machine_id,
+                    cloudapi_client::types::MachineState::Running,
+                    args.wait_timeout,
+                    client,
+                )
+                .await?;
             }
 
             println!("Deleted tag {} on instance {}", key, args.instance);
@@ -465,7 +482,13 @@ async fn replace_all_tags(args: TagReplaceAllArgs, client: &TypedClient) -> Resu
         .await?;
 
     if args.wait {
-        super::wait::wait_for_state(machine_id, "running", args.wait_timeout, client).await?;
+        super::wait::wait_for_state(
+            machine_id,
+            cloudapi_client::types::MachineState::Running,
+            args.wait_timeout,
+            client,
+        )
+        .await?;
     }
 
     // Output the updated tags (matching node-triton behavior)
