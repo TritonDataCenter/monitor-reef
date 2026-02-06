@@ -86,6 +86,47 @@ Key implementation notes:
    let items = response.into_inner();
    ```
 
+5. **Use typed enums for CLI args, not strings:**
+   ```rust
+   // GOOD: typed enum with value_enum
+   #[arg(long, short, value_enum)]
+   pub state: Option<Vec<MachineState>>,
+
+   // BAD: string that must be parsed manually
+   #[arg(long, short)]
+   pub state: Option<Vec<String>>,
+   ```
+
+6. **Display enum values with `enum_to_display()`, NEVER with Debug format:**
+   ```rust
+   // GOOD: produces wire-format string like "running"
+   use crate::output::enum_to_display;
+   println!("State: {}", enum_to_display(&machine.state));
+
+   // BAD: produces "Running" (Debug format) — WRONG case, breaks comparisons
+   println!("State: {}", format!("{:?}", machine.state).to_lowercase());
+   ```
+   The `enum_to_display()` utility uses `serde_json::to_value()` to get the exact
+   wire-format string (respecting `rename_all`). If this CLI is standalone (not part of
+   triton-cli), add a local helper:
+   ```rust
+   fn enum_to_display(val: &(impl serde::Serialize + std::fmt::Debug)) -> String {
+       serde_json::to_value(val)
+           .ok()
+           .and_then(|v| v.as_str().map(String::from))
+           .unwrap_or_else(|| format!("{:?}", val))
+   }
+   ```
+
+7. **Compare enum values directly, not as strings:**
+   ```rust
+   // GOOD: type-safe comparison
+   if machine.state == MachineState::Failed { ... }
+
+   // BAD: fragile string comparison with latent bugs
+   if format!("{:?}", machine.state).to_lowercase() == "failed" { ... }
+   ```
+
 **Basic structure:**
 
 ```rust

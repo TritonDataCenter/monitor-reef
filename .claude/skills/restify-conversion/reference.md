@@ -547,6 +547,63 @@ Use `String` only when:
 - New values are added frequently and backward compatibility matters
 - The field is rarely used for logic
 
+### Forward-Compatible Enums (Mandatory for State Fields)
+
+State and status enums **must** include a `#[serde(other)] Unknown` catch-all variant.
+Without this, the client will fail to deserialize if the server adds a new state:
+
+```rust
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum VolumeState {
+    Creating,
+    Ready,
+    Failed,
+    Deleting,
+    /// Catch-all for states added after this client was compiled
+    #[serde(other)]
+    Unknown,
+}
+```
+
+See `apis/cloudapi-api/src/types/changefeed.rs` for the established pattern.
+
+### Displaying Enum Values
+
+**Never use `format!("{:?}", enum).to_lowercase()`** — this is a known anti-pattern that
+produces wrong output for renamed variants (e.g., `JoyentMinimal` becomes `"joyentminimal"`
+instead of `"joyent-minimal"`).
+
+Use `enum_to_display()` which gets the exact serde wire-format string:
+
+```rust
+/// Convert a serde-serializable enum value to its wire-format string.
+pub fn enum_to_display<T: serde::Serialize + std::fmt::Debug>(val: &T) -> String {
+    serde_json::to_value(val)
+        .ok()
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_else(|| format!("{:?}", val))
+}
+```
+
+In triton-cli this lives at `cli/triton-cli/src/output/mod.rs`. Standalone CLIs should
+define a local copy.
+
+### Comparing Enum Values
+
+Always compare typed enums directly — never convert to strings for comparison:
+
+```rust
+// GOOD: type-safe, compiler-checked
+if machine.state == MachineState::Failed { ... }
+if targets.contains(&machine.state) { ... }
+
+// BAD: fragile, latent bugs with Debug format
+if format!("{:?}", machine.state).to_lowercase() == "failed" { ... }
+```
+
+The `PartialEq, Eq` derives on the enum make this possible.
+
 ## Checklist
 
 Before completing any phase, verify:

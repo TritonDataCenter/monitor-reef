@@ -58,6 +58,8 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 <service>-api = { path = "../../../apis/<service>-api" }
+clap = { workspace = true }       # Needed if build.rs patches add clap::ValueEnum
+schemars = { workspace = true }   # Needed if build.rs adds schemars::JsonSchema derive
 
 [build-dependencies]
 progenitor = { workspace = true }
@@ -65,10 +67,12 @@ serde_json = { workspace = true }
 openapiv3 = { workspace = true }
 ```
 
+**Note:** Include `clap` and `schemars` only if `build.rs` uses `.with_derive("schemars::JsonSchema")` or `.with_patch(..., &value_enum_patch)`. These are compile-time dependencies of the generated code.
+
 ### 3. Create build.rs
 
 ```rust
-use progenitor::GenerationSettings;
+use progenitor::{GenerationSettings, TypePatch};
 use std::env;
 use std::path::Path;
 
@@ -82,10 +86,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let spec = std::fs::read_to_string(spec_path)?;
     let openapi: openapiv3::OpenAPI = serde_json::from_str(&spec)?;
 
+    // Patch: add clap::ValueEnum to enums used as CLI --state/--sort args
+    let value_enum_patch = TypePatch::default()
+        .with_derive("clap::ValueEnum")
+        .clone();
+
     let mut settings = GenerationSettings::default();
     settings
         .with_interface(progenitor::InterfaceStyle::Builder)
-        .with_tag(progenitor::TagStyle::Merged);
+        .with_tag(progenitor::TagStyle::Merged)
+        .with_derive("schemars::JsonSchema")
+        // Add ValueEnum to enums that will be used as CLI args:
+        // .with_patch("MachineState", &value_enum_patch)
+        // .with_patch("VolumeState", &value_enum_patch)
+        ;
 
     let tokens = progenitor::Generator::new(&settings).generate_tokens(&openapi)?;
     std::fs::write(format!("{}/client.rs", out_dir), tokens.to_string())?;
@@ -94,6 +108,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 ```
+
+**TypePatch notes:**
+- `with_derive("schemars::JsonSchema")` adds the derive to ALL generated types (required for re-export compatibility)
+- `with_patch("EnumName", &value_enum_patch)` adds `clap::ValueEnum` only to specific enums
+- Use patches when the API crate type does NOT have `clap::ValueEnum` (i.e., the CLI imports from `types::` not the re-export)
+- If the CLI imports the re-exported API crate type directly, put `ValueEnum` on the API crate instead (see Phase 2)
 
 ### 4. Create src/lib.rs
 
