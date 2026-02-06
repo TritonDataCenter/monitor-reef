@@ -1452,14 +1452,14 @@ mod tests {
         let owner = "550e8400-e29b-41d4-a716-446655440000";
         let bucket = "test-bucket";
         let key = "test-object.txt";
+            // Calculate vnode multiple times - should be consistent
+            let vnode1 = calculate_vnode(owner, bucket, key);
+            let vnode2 = calculate_vnode(owner, bucket, key);
+            let vnode3 = calculate_vnode(owner, bucket, key);
 
-        // Calculate vnode multiple times - should be consistent
-        let vnode1 = calculate_vnode(owner, bucket, key);
-        let vnode2 = calculate_vnode(owner, bucket, key);
-        let vnode3 = calculate_vnode(owner, bucket, key);
-
-        assert_eq!(vnode1, vnode2);
-        assert_eq!(vnode2, vnode3);
+            assert_eq!(vnode1, vnode2);
+            assert_eq!(vnode2, vnode3);
+        });
     }
 
     #[test]

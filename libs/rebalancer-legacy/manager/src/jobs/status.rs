@@ -244,13 +244,30 @@ pub fn list_jobs() -> Result<Vec<JobDbEntry>, StatusError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rebalancer::util;
+
+    /// Run a test function with a scoped logger. This uses slog_scope::scope()
+    /// which creates a thread-local logger that doesn't interfere with other
+    /// tests running in parallel under cargo-tarpaulin.
+    fn with_test_logger<F, R>(f: F) -> R
+    where
+        F: FnOnce() -> R,
+    {
+        use slog::{Drain, Logger, o};
+        use std::sync::Mutex;
+
+        let log = Logger::root(
+            Mutex::new(slog::Discard).fuse(),
+            o!("test" => true),
+        );
+        slog_scope::scope(&log, f)
+    }
 
     #[test]
     fn bad_job_id() {
-        let _guard = util::init_global_logger(None);
-        let uuid = Uuid::new_v4();
-        assert!(get_job(uuid).is_err());
+        with_test_logger(|| {
+            let uuid = Uuid::new_v4();
+            assert!(get_job(uuid).is_err());
+        });
     }
 
     // Mock tests for status aggregation logic (no PostgreSQL needed).
