@@ -97,7 +97,7 @@
         "endpoint": "{{MDAPI_ENDPOINT}}",
         {{/MDAPI_ENDPOINT}}
         {{^MDAPI_ENDPOINT}}
-        "endpoint": "localhost:2030",
+        "endpoint": "buckets-mdapi.{{DOMAIN_NAME}}:2030",
         {{/MDAPI_ENDPOINT}}
 
         {{#MDAPI_DEFAULT_BUCKET_ID}}
@@ -112,11 +112,19 @@
         {{/MDAPI_CONNECTION_TIMEOUT_MS}}
 
         {{#MDAPI_SINGLE_BUCKET_MODE}}
-        "single_bucket_mode": {{MDAPI_SINGLE_BUCKET_MODE}}
+        "single_bucket_mode": {{MDAPI_SINGLE_BUCKET_MODE}},
         {{/MDAPI_SINGLE_BUCKET_MODE}}
         {{^MDAPI_SINGLE_BUCKET_MODE}}
-        "single_bucket_mode": false
+        "single_bucket_mode": false,
         {{/MDAPI_SINGLE_BUCKET_MODE}}
+
+        "owners": [{{#MDAPI_OWNERS}}
+            "{{uuid}}"{{^last}},{{/last}}{{/MDAPI_OWNERS}}
+        ],
+
+        "mdapi_vnodes": [{{#MDAPI_VNODES}}
+            {{vnode}}{{^last}},{{/last}}{{/MDAPI_VNODES}}
+        ]
     },
 
     "shards": [{{#INDEX_MORAY_SHARDS}}
