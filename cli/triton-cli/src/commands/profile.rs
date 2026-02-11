@@ -279,8 +279,23 @@ async fn create_profile(
             })?
         };
 
-        let profile: Profile = serde_json::from_str(&content)
+        let mut profile: Profile = serde_json::from_str(&content)
             .map_err(|e| anyhow::anyhow!("Failed to parse profile JSON: {}", e))?;
+
+        // Derive profile name from the filename if not present in JSON
+        // (node-triton profiles don't include a "name" field)
+        if profile.name.is_empty() {
+            if file_path.as_os_str() == "-" {
+                return Err(anyhow::anyhow!(
+                    "Profile JSON from stdin must include a \"name\" field"
+                ));
+            }
+            profile.name = file_path
+                .file_stem()
+                .ok_or_else(|| anyhow::anyhow!("Cannot derive profile name from file path"))?
+                .to_string_lossy()
+                .to_string();
+        }
 
         // Check if profile already exists
         if Profile::list_all().await?.contains(&profile.name) {

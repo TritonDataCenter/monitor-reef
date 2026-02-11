@@ -7,6 +7,7 @@
 //! Machine-related types
 
 use super::common::{Brand, Metadata, RoleTags, Tags, Timestamp, Uuid};
+use super::misc::DiskSize;
 // Machine output type and ListMachinesQuery use VMAPI's Brand to support internal-only
 // brands (e.g., "builder") that may appear in changefeed messages or operator queries.
 // Only CreateMachineRequest uses CloudAPI's restrictive Brand to validate provisioning.
@@ -168,15 +169,18 @@ pub struct Machine {
 }
 
 /// Disk attached to a machine (bhyve VMs)
+///
+/// CloudAPI may omit `size` for the boot disk (which inherits its size
+/// from the image) and may return `"remaining"` for flexible disks.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct MachineDisk {
     /// Disk UUID
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<Uuid>,
-    /// Disk size in MB (not present on boot disks backed by images)
+    /// Disk size in MB, or "remaining" for all available space
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub size: Option<u64>,
+    pub size: Option<DiskSize>,
     /// Block size in bytes
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub block_size: Option<u64>,

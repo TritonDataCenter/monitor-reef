@@ -10782,7 +10782,7 @@
         ]
       },
       "MachineDisk": {
-        "description": "Disk attached to a machine (bhyve VMs)",
+        "description": "Disk attached to a machine (bhyve VMs)\n\nCloudAPI may omit `size` for the boot disk (which inherits its size from the image) and may return `\"remaining\"` for flexible disks.",
         "type": "object",
         "properties": {
           "blockSize": {
@@ -10811,10 +10811,12 @@
           },
           "size": {
             "nullable": true,
-            "description": "Disk size in MB (not present on boot disks backed by images)",
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
+            "description": "Disk size in MB, or \"remaining\" for all available space",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DiskSize"
+              }
+            ]
           }
         }
       },
