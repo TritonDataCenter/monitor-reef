@@ -6,40 +6,81 @@
 
 //! Configuration path resolution
 //!
-//! Supports both legacy ~/.triton/ and XDG ~/.config/triton/ paths.
+//! Matches node-triton's config directory conventions (lib/constants.js).
 
 use std::path::PathBuf;
 
 /// Get the triton configuration directory
 ///
-/// Priority:
-/// 1. TRITON_CONFIG_DIR environment variable
-/// 2. ~/.triton/ if it exists (migration support)
-/// 3. XDG config dir (~/.config/triton/ on Linux/Mac)
+/// Matches node-triton lib/constants.js behavior:
+/// 1. TRITON_CONFIG_DIR environment variable (also used by tests)
+/// 2. $XDG_CONFIG_HOME/triton (if XDG_CONFIG_HOME is set)
+/// 3. ~/.triton (default)
 pub fn config_dir() -> PathBuf {
     // Check environment variable first
     if let Ok(dir) = std::env::var("TRITON_CONFIG_DIR") {
         return PathBuf::from(dir);
     }
 
-    // Check for existing ~/.triton directory (migration support)
-    if let Some(home) = dirs::home_dir() {
-        let legacy_dir = home.join(".triton");
-        #[allow(clippy::disallowed_methods)]
-        // arch-lint: allow(no-sync-io) reason="Sync function for path resolution; fast local check during startup"
-        if legacy_dir.exists() {
-            return legacy_dir;
+    // Honor XDG_CONFIG_HOME if explicitly set (matches node-triton)
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        return PathBuf::from(xdg).join("triton");
+    }
+
+    // Default: ~/.triton (matches node-triton)
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".triton")
+}
+
+/// Check for profiles in alternative config directories and warn on stderr.
+///
+/// Call once during startup to alert users who may have profiles in a
+/// directory that isn't being used.
+pub fn warn_alternative_config_dirs() {
+    let active = config_dir();
+
+    // Only check alternatives when TRITON_CONFIG_DIR isn't set (explicit override)
+    if std::env::var("TRITON_CONFIG_DIR").is_ok() {
+        return;
+    }
+
+    let home = match dirs::home_dir() {
+        Some(h) => h,
+        None => return,
+    };
+
+    let mut alternatives: Vec<PathBuf> = Vec::new();
+
+    // Always check ~/.triton as a potential alternative
+    let dot_triton = home.join(".triton");
+    if dot_triton != active {
+        alternatives.push(dot_triton);
+    }
+
+    // Check $XDG_CONFIG_HOME/triton if XDG is set
+    if let Ok(xdg) = std::env::var("XDG_CONFIG_HOME") {
+        let xdg_triton = PathBuf::from(xdg).join("triton");
+        if xdg_triton != active {
+            alternatives.push(xdg_triton);
         }
     }
 
-    // Default to XDG for new installations
-    directories::ProjectDirs::from("com", "tritondatacenter", "triton")
-        .map(|dirs| dirs.config_dir().to_path_buf())
-        .unwrap_or_else(|| {
-            dirs::home_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join(".triton")
-        })
+    for alt in alternatives {
+        let alt_profiles = alt.join("profiles.d");
+        if let Ok(entries) = std::fs::read_dir(&alt_profiles) {
+            let has_profiles = entries
+                .filter_map(|e| e.ok())
+                .any(|e| e.path().extension().is_some_and(|ext| ext == "json"));
+            if has_profiles {
+                eprintln!(
+                    "Warning: profiles also found in {}, but using {}",
+                    alt.display(),
+                    active.display()
+                );
+            }
+        }
+    }
 }
 
 /// Get the profiles directory

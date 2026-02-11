@@ -369,6 +369,9 @@ impl Cli {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Warn if profiles exist in an alternative config directory
+    config::paths::warn_alternative_config_dirs();
+
     // Set up logging
     if cli.verbose {
         tracing_subscriber::fmt()
