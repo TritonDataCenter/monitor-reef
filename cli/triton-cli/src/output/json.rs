@@ -10,9 +10,19 @@ use serde::Serialize;
 
 /// Print a value as compact JSON (single line)
 ///
-/// This matches node-triton's JSON output format for single objects.
+/// Used for `-j` flag output matching node-triton's `JSON.stringify(obj)`.
 pub fn print_json<T: Serialize>(value: &T) -> anyhow::Result<()> {
     let json = serde_json::to_string(value)?;
+    println!("{}", json);
+    Ok(())
+}
+
+/// Print a value as pretty-printed JSON (indented)
+///
+/// Used as the default output for `get` subcommands, matching
+/// node-triton's `JSON.stringify(obj, null, 4)`.
+pub fn print_json_pretty<T: Serialize>(value: &T) -> anyhow::Result<()> {
+    let json = serde_json::to_string_pretty(value)?;
     println!("{}", json);
     Ok(())
 }

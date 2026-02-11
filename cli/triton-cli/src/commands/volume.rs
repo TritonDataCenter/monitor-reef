@@ -164,15 +164,7 @@ async fn get_volume(args: VolumeGetArgs, client: &TypedClient, use_json: bool) -
     if use_json {
         json::print_json(&volume)?;
     } else {
-        println!("ID:      {}", volume.id);
-        println!("Name:    {}", volume.name);
-        println!("Size:    {} MB", volume.size);
-        println!("State:   {}", enum_to_display(&volume.state));
-        println!("Type:    {}", volume.type_);
-        if !volume.networks.is_empty() {
-            println!("Networks: {:?}", volume.networks);
-        }
-        println!("Created: {}", volume.created);
+        json::print_json_pretty(&volume)?;
     }
 
     Ok(())

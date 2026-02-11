@@ -174,7 +174,7 @@ async fn list_vlans(args: VlanListArgs, client: &TypedClient, use_json: bool) ->
     Ok(())
 }
 
-async fn get_vlan(args: VlanGetArgs, client: &TypedClient, _use_json: bool) -> Result<()> {
+async fn get_vlan(args: VlanGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
     let vlan_id = resolve_vlan(&args.vlan, client).await?;
 
@@ -188,8 +188,11 @@ async fn get_vlan(args: VlanGetArgs, client: &TypedClient, _use_json: bool) -> R
 
     let vlan = response.into_inner();
 
-    // Always output JSON for 'get' commands (matching node-triton behavior)
-    json::print_json(&vlan)?;
+    if use_json {
+        json::print_json(&vlan)?;
+    } else {
+        json::print_json_pretty(&vlan)?;
+    }
 
     Ok(())
 }

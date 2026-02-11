@@ -41,29 +41,7 @@ pub async fn run(args: GetArgs, client: &TypedClient, use_json: bool) -> Result<
     if use_json {
         json::print_json(&machine)?;
     } else {
-        println!("ID:          {}", machine.id);
-        println!("Name:        {}", machine.name);
-        println!("State:       {:?}", machine.state);
-        println!("Image:       {}", machine.image);
-        println!("Package:     {}", machine.package);
-        println!(
-            "Memory:      {} MB",
-            machine
-                .memory
-                .map(|m| m.to_string())
-                .unwrap_or_else(|| "-".to_string())
-        );
-        println!(
-            "Primary IP:  {}",
-            machine.primary_ip.as_deref().unwrap_or("-")
-        );
-        println!("Created:     {}", machine.created);
-        if machine.firewall_enabled.unwrap_or(false) {
-            println!("Firewall:    enabled");
-        }
-        if machine.deletion_protection.unwrap_or(false) {
-            println!("Deletion Protection: enabled");
-        }
+        json::print_json_pretty(&machine)?;
     }
 
     Ok(())

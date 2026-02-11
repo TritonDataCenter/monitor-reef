@@ -168,10 +168,7 @@ async fn get_disk(args: DiskGetArgs, client: &TypedClient, use_json: bool) -> Re
     if use_json {
         json::print_json(&disk)?;
     } else {
-        println!("ID:    {}", disk.id);
-        println!("Size:  {} MiB", disk.size);
-        println!("Boot:  {}", disk.boot.unwrap_or(false));
-        println!("State: {}", disk.state.as_deref().unwrap_or("unknown"));
+        json::print_json_pretty(&disk)?;
     }
 
     Ok(())

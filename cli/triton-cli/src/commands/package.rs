@@ -150,15 +150,10 @@ async fn get_package(args: PackageGetArgs, client: &TypedClient, use_json: bool)
 
     let package = response.into_inner();
 
-    // node-triton outputs JSON by default for package get:
-    // - Without -j: pretty-printed JSON (4-space indent)
-    // - With -j: compact JSON (single line)
     if use_json {
-        // Compact JSON (single line)
-        println!("{}", serde_json::to_string(&package)?);
-    } else {
-        // Pretty-printed JSON (default)
         json::print_json(&package)?;
+    } else {
+        json::print_json_pretty(&package)?;
     }
 
     Ok(())

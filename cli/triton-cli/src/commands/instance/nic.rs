@@ -198,10 +198,11 @@ async fn get_nic(args: NicGetArgs, client: &TypedClient, use_json: bool) -> Resu
 
     let nic = response.into_inner();
 
-    // node-triton outputs JSON by default for nic get
-    // We always output JSON regardless of the -j flag to match node-triton behavior
-    let _ = use_json; // Acknowledge but ignore the flag
-    json::print_json(&NicOutput::from(&nic))?;
+    if use_json {
+        json::print_json(&NicOutput::from(&nic))?;
+    } else {
+        json::print_json_pretty(&NicOutput::from(&nic))?;
+    }
 
     Ok(())
 }

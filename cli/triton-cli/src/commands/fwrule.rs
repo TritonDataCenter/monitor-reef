@@ -180,13 +180,7 @@ async fn get_rule(args: FwruleGetArgs, client: &TypedClient, use_json: bool) -> 
     if use_json {
         json::print_json(&rule)?;
     } else {
-        println!("ID:          {}", rule.id);
-        println!("Rule:        {}", rule.rule);
-        println!("Enabled:     {}", rule.enabled);
-        println!("Log:         {}", rule.log);
-        if let Some(desc) = &rule.description {
-            println!("Description: {}", desc);
-        }
+        json::print_json_pretty(&rule)?;
     }
 
     Ok(())

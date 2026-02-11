@@ -553,7 +553,7 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-async fn get_image(args: ImageGetArgs, client: &TypedClient, _use_json: bool) -> Result<()> {
+async fn get_image(args: ImageGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
     let image_uuid = resolve_image(&args.image, client).await?;
 
@@ -567,8 +567,11 @@ async fn get_image(args: ImageGetArgs, client: &TypedClient, _use_json: bool) ->
 
     let image = response.into_inner();
 
-    // Always output JSON for `image get` to match node-triton behavior
-    json::print_json(&image)?;
+    if use_json {
+        json::print_json(&image)?;
+    } else {
+        json::print_json_pretty(&image)?;
+    }
 
     Ok(())
 }

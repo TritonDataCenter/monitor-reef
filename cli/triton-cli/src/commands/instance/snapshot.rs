@@ -154,12 +154,7 @@ async fn get_snapshot(args: SnapshotGetArgs, client: &TypedClient, use_json: boo
     if use_json {
         json::print_json(&snapshot)?;
     } else {
-        println!("Name:    {}", snapshot.name);
-        println!(
-            "State:   {}",
-            crate::output::enum_to_display(&snapshot.state)
-        );
-        println!("Created: {}", snapshot.created);
+        json::print_json_pretty(&snapshot)?;
     }
 
     Ok(())

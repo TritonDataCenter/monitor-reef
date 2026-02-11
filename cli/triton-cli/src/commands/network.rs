@@ -267,14 +267,10 @@ async fn get_network(args: NetworkGetArgs, client: &TypedClient, use_json: bool)
 
     let network = response.into_inner();
 
-    // Always output JSON for 'get' commands (matching node-triton behavior)
-    // -j flag controls compact vs pretty output
     if use_json {
-        // Compact JSON (one line)
-        println!("{}", serde_json::to_string(&network)?);
-    } else {
-        // Pretty JSON (indented)
         json::print_json(&network)?;
+    } else {
+        json::print_json_pretty(&network)?;
     }
 
     Ok(())
@@ -555,14 +551,10 @@ async fn get_network_ip(
 
     let ip = response.into_inner();
 
-    // Always output JSON for 'get' commands (matching node-triton behavior)
-    // -j flag controls compact vs pretty output
     if use_json {
-        // Compact JSON (one line)
-        println!("{}", serde_json::to_string(&ip)?);
-    } else {
-        // Pretty JSON (indented)
         json::print_json(&ip)?;
+    } else {
+        json::print_json_pretty(&ip)?;
     }
 
     Ok(())
