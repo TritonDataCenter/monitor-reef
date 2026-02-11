@@ -6,6 +6,7 @@
 
 //! CLI commands
 
+pub mod accesskey;
 pub mod account;
 pub mod changefeed;
 pub mod cloudapi;
@@ -24,6 +25,7 @@ pub mod services;
 pub mod vlan;
 pub mod volume;
 
+pub use accesskey::AccesskeyCommand;
 pub use account::AccountCommand;
 pub use fwrule::FwruleCommand;
 pub use image::ImageCommand;

@@ -17,8 +17,8 @@ mod config;
 mod output;
 
 use commands::{
-    AccountCommand, FwruleCommand, ImageCommand, InstanceCommand, KeyCommand, NetworkCommand,
-    PackageCommand, ProfileCommand, RbacCommand, VlanCommand, VolumeCommand,
+    AccesskeyCommand, AccountCommand, FwruleCommand, ImageCommand, InstanceCommand, KeyCommand,
+    NetworkCommand, PackageCommand, ProfileCommand, RbacCommand, VlanCommand, VolumeCommand,
 };
 use config::profile::{Config, Profile};
 
@@ -122,6 +122,12 @@ enum Commands {
     Key {
         #[command(subcommand)]
         command: KeyCommand,
+    },
+
+    /// Manage access keys
+    Accesskey {
+        #[command(subcommand)]
+        command: AccesskeyCommand,
     },
 
     /// Manage networks
@@ -397,6 +403,10 @@ async fn main() -> Result<()> {
             command.clone().run(&client, cli.json, cache.as_ref()).await
         }
         Commands::Key { command } => {
+            let (client, _profile) = cli.build_client().await?;
+            command.clone().run(&client, cli.json).await
+        }
+        Commands::Accesskey { command } => {
             let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }

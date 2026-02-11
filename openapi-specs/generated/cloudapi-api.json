@@ -347,6 +347,61 @@
           }
         }
       },
+      "post": {
+        "tags": [
+          "accesskeys"
+        ],
+        "summary": "Update access key",
+        "operationId": "update_access_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accesskeyid",
+            "description": "Access key ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAccessKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessKey"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
       "delete": {
         "tags": [
           "accesskeys"
@@ -8458,6 +8513,71 @@
           }
         }
       },
+      "post": {
+        "tags": [
+          "users",
+          "accesskeys"
+        ],
+        "summary": "Update user access key",
+        "operationId": "update_user_access_key",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "accesskeyid",
+            "description": "Access key ID",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "account",
+            "description": "Account login name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "User UUID or login",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAccessKeyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccessKey"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
       "delete": {
         "tags": [
           "users",
@@ -9343,24 +9463,43 @@
         "description": "Access key information",
         "type": "object",
         "properties": {
+          "accesskeyid": {
+            "description": "Access key ID",
+            "type": "string"
+          },
           "created": {
             "description": "Creation timestamp",
             "type": "string"
           },
-          "id": {
-            "description": "Access key ID",
+          "credentialtype": {
+            "description": "Credential type: \"permanent\" or \"temporary\"",
             "type": "string"
           },
-          "user": {
-            "description": "User UUID",
-            "type": "string",
-            "format": "uuid"
+          "description": {
+            "nullable": true,
+            "description": "Description",
+            "type": "string"
+          },
+          "expiration": {
+            "nullable": true,
+            "description": "Expiration timestamp (null for permanent keys)",
+            "type": "string"
+          },
+          "status": {
+            "description": "Status: \"Active\", \"Inactive\", or \"Expired\"",
+            "type": "string"
+          },
+          "updated": {
+            "description": "Last updated timestamp",
+            "type": "string"
           }
         },
         "required": [
+          "accesskeyid",
           "created",
-          "id",
-          "user"
+          "credentialtype",
+          "status",
+          "updated"
         ]
       },
       "Account": {
@@ -9584,41 +9723,64 @@
         "description": "Request to create access key",
         "type": "object",
         "properties": {
-          "name": {
+          "description": {
             "nullable": true,
-            "description": "Access key name (optional)",
-            "default": null,
+            "description": "Description",
+            "type": "string"
+          },
+          "status": {
+            "nullable": true,
+            "description": "Initial status (defaults to \"Active\")",
             "type": "string"
           }
         }
       },
       "CreateAccessKeyResponse": {
-        "description": "Response when creating access key (includes secret)",
+        "description": "Response when creating access key (includes secret shown only once)",
         "type": "object",
         "properties": {
+          "accesskeyid": {
+            "description": "Access key ID",
+            "type": "string"
+          },
+          "accesskeysecret": {
+            "description": "Access key secret (only provided on creation)",
+            "type": "string"
+          },
           "created": {
             "description": "Creation timestamp",
             "type": "string"
           },
-          "id": {
-            "description": "Access key ID",
+          "credentialtype": {
+            "description": "Credential type",
             "type": "string"
           },
-          "secret": {
-            "description": "Access key secret (only provided on creation)",
+          "description": {
+            "nullable": true,
+            "description": "Description",
             "type": "string"
           },
-          "user": {
-            "description": "User UUID",
-            "type": "string",
-            "format": "uuid"
+          "expiration": {
+            "nullable": true,
+            "description": "Expiration timestamp",
+            "type": "string"
+          },
+          "status": {
+            "description": "Status",
+            "type": "string"
+          },
+          "updated": {
+            "description": "Last updated timestamp",
+            "type": "string"
           }
         },
         "required": [
+          "accesskeyid",
+          "accesskeysecret",
           "created",
-          "id",
-          "secret",
-          "user"
+          "credentialtype",
+          "status",
+          "updated"
         ]
       },
       "CreateDiskRequest": {
@@ -11707,6 +11869,22 @@
         "description": "Request to add/replace machine tags",
         "type": "object",
         "additionalProperties": true
+      },
+      "UpdateAccessKeyRequest": {
+        "description": "Request to update an access key",
+        "type": "object",
+        "properties": {
+          "description": {
+            "nullable": true,
+            "description": "New description",
+            "type": "string"
+          },
+          "status": {
+            "nullable": true,
+            "description": "New status: \"Active\" or \"Inactive\"",
+            "type": "string"
+          }
+        }
       },
       "UpdateAccountRequest": {
         "description": "Request to update account",

@@ -6,7 +6,7 @@
 
 //! SSH key and access key types
 
-use super::common::{RoleTags, Timestamp, Uuid};
+use super::common::{RoleTags, Timestamp};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -69,35 +69,66 @@ pub struct CreateSshKeyRequest {
 
 /// Access key information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct AccessKey {
     /// Access key ID
-    pub id: String,
-    /// User UUID
-    pub user: Uuid,
+    pub accesskeyid: String,
+    /// Status: "Active", "Inactive", or "Expired"
+    pub status: String,
+    /// Credential type: "permanent" or "temporary"
+    pub credentialtype: String,
+    /// Description
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     /// Creation timestamp
     pub created: Timestamp,
+    /// Last updated timestamp
+    pub updated: Timestamp,
+    /// Expiration timestamp (null for permanent keys)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expiration: Option<Timestamp>,
 }
 
 /// Request to create access key
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct CreateAccessKeyRequest {
-    /// Access key name (optional)
-    #[serde(default)]
-    pub name: Option<String>,
+    /// Initial status (defaults to "Active")
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// Description
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
-/// Response when creating access key (includes secret)
+/// Response when creating access key (includes secret shown only once)
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct CreateAccessKeyResponse {
     /// Access key ID
-    pub id: String,
+    pub accesskeyid: String,
     /// Access key secret (only provided on creation)
-    pub secret: String,
-    /// User UUID
-    pub user: Uuid,
+    pub accesskeysecret: String,
+    /// Status
+    pub status: String,
+    /// Credential type
+    pub credentialtype: String,
+    /// Description
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
     /// Creation timestamp
     pub created: Timestamp,
+    /// Last updated timestamp
+    pub updated: Timestamp,
+    /// Expiration timestamp
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub expiration: Option<Timestamp>,
+}
+
+/// Request to update an access key
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct UpdateAccessKeyRequest {
+    /// New status: "Active" or "Inactive"
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    /// New description
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }

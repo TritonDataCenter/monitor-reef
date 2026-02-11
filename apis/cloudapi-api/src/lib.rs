@@ -1694,6 +1694,18 @@ pub trait CloudApi {
         path: Path<AccessKeyPath>,
     ) -> Result<HttpResponseOk<AccessKey>, HttpError>;
 
+    /// Update access key
+    #[endpoint {
+        method = POST,
+        path = "/{account}/accesskeys/{accesskeyid}",
+        tags = ["accesskeys"],
+    }]
+    async fn update_access_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<AccessKeyPath>,
+        body: TypedBody<UpdateAccessKeyRequest>,
+    ) -> Result<HttpResponseOk<AccessKey>, HttpError>;
+
     /// Delete access key
     #[endpoint {
         method = DELETE,
@@ -1763,6 +1775,18 @@ pub trait CloudApi {
     async fn head_user_access_key(
         rqctx: RequestContext<Self::Context>,
         path: Path<UserAccessKeyPath>,
+    ) -> Result<HttpResponseOk<AccessKey>, HttpError>;
+
+    /// Update user access key
+    #[endpoint {
+        method = POST,
+        path = "/{account}/users/{uuid}/accesskeys/{accesskeyid}",
+        tags = ["users", "accesskeys"],
+    }]
+    async fn update_user_access_key(
+        rqctx: RequestContext<Self::Context>,
+        path: Path<UserAccessKeyPath>,
+        body: TypedBody<UpdateAccessKeyRequest>,
     ) -> Result<HttpResponseOk<AccessKey>, HttpError>;
 
     /// Delete user access key

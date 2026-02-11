@@ -6,6 +6,7 @@
 
 //! RBAC (Role-Based Access Control) management commands
 
+mod accesskeys;
 mod apply;
 mod common;
 mod editor;
@@ -19,6 +20,7 @@ use anyhow::Result;
 use clap::Subcommand;
 use cloudapi_client::TypedClient;
 
+pub use accesskeys::{RbacAccesskeyCommand, UserAccesskeysArgs};
 pub use apply::{ApplyArgs, ResetArgs};
 pub use keys::{RbacKeyCommand, UserKeyAddArgs, UserKeyDeleteArgs, UserKeysArgs};
 pub use policy::RbacPolicyCommand;
@@ -53,6 +55,10 @@ pub enum RbacCommand {
     Keys(UserKeysArgs),
     /// Manage SSH keys for a sub-user (show/add/delete)
     Key(#[command(flatten)] RbacKeyCommand),
+    /// List access keys for a sub-user
+    Accesskeys(UserAccesskeysArgs),
+    /// Manage access keys for a sub-user (show/create/update/delete)
+    Accesskey(#[command(flatten)] RbacAccesskeyCommand),
     /// Add SSH key to a sub-user (deprecated: use 'key -a' instead)
     #[command(visible_alias = "add-key", hide = true)]
     KeyAdd(UserKeyAddArgs),
@@ -81,6 +87,10 @@ impl RbacCommand {
             Self::Policies => policy::list_policies(client, use_json).await,
             Self::Keys(args) => keys::list_user_keys(args, client, use_json).await,
             Self::Key(command) => command.run(client, use_json).await,
+            Self::Accesskeys(args) => {
+                accesskeys::list_user_access_keys(args, client, use_json).await
+            }
+            Self::Accesskey(command) => command.run(client, use_json).await,
             Self::KeyAdd(args) => keys::add_user_key(args, client, use_json).await,
             Self::KeyDelete(args) => keys::delete_user_key(args, client).await,
             Self::RoleTags { command } => command.run(client, use_json).await,
