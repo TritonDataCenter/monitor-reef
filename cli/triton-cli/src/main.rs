@@ -289,11 +289,8 @@ impl Cli {
         if let (Some(url), Some(account), Some(key_id)) =
             (url.clone(), account.clone(), key_id.clone())
         {
-            let mut auth_config = triton_auth::AuthConfig::new(
-                account,
-                key_id.clone(),
-                triton_auth::KeySource::auto(&key_id),
-            );
+            let mut auth_config =
+                triton_auth::AuthConfig::new(account, triton_auth::KeySource::auto(&key_id));
 
             // Apply RBAC options from CLI
             if let Some(user) = &self.user {
@@ -338,7 +335,6 @@ impl Cli {
 
         let mut auth_config = triton_auth::AuthConfig::new(
             final_account,
-            final_key_id.clone(),
             triton_auth::KeySource::auto(&final_key_id),
         );
 

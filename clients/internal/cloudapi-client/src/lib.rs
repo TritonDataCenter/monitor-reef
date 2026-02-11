@@ -22,7 +22,6 @@
 //! // Configure authentication
 //! let auth_config = AuthConfig::new(
 //!     "myaccount",
-//!     "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99",
 //!     KeySource::auto("aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"),
 //! );
 //!
@@ -54,7 +53,6 @@
 //!
 //! let auth_config = AuthConfig::new(
 //!     "myaccount",
-//!     "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99",
 //!     KeySource::auto("aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"),
 //! );
 //!

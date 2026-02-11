@@ -121,7 +121,6 @@ impl Profile {
     pub fn to_auth_config(&self) -> triton_auth::AuthConfig {
         let mut config = triton_auth::AuthConfig::new(
             self.account.clone(),
-            self.key_id.clone(),
             triton_auth::KeySource::auto(&self.key_id),
         );
 

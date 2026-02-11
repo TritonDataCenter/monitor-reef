@@ -192,7 +192,7 @@ fn create_auth_config(account: &str, key_id: &str, key_path: Option<String>) -> 
         Some(path) => KeySource::file(path),
         None => KeySource::auto(key_id),
     };
-    AuthConfig::new(account, key_id, key_source)
+    AuthConfig::new(account, key_source)
 }
 
 #[tokio::main]

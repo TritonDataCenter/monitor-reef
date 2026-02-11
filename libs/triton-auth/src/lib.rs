@@ -41,14 +41,12 @@
 //! // Configure authentication - can use either MD5 or SHA256 fingerprint
 //! let config = AuthConfig::new(
 //!     "myaccount",
-//!     "SHA256:29GY+6bxcBkcNNUzTnEcTdTv1W3d3PN/OxyplcYSoX4=",  // SHA256 format
 //!     KeySource::auto("SHA256:29GY+6bxcBkcNNUzTnEcTdTv1W3d3PN/OxyplcYSoX4="),
 //! );
 //!
 //! // Or use MD5 format
 //! let config = AuthConfig::new(
 //!     "myaccount",
-//!     "fa:56:a1:6b:cc:04:97:fe:e2:98:54:c4:2e:0d:26:c6",  // MD5 format
 //!     KeySource::auto("fa:56:a1:6b:cc:04:97:fe:e2:98:54:c4:2e:0d:26:c6"),
 //! );
 //!
@@ -98,9 +96,6 @@ pub struct AuthConfig {
     pub account: String,
     /// RBAC sub-user login (optional)
     pub user: Option<String>,
-    /// SSH key fingerprint (MD5 or SHA256 format)
-    /// Can be: "aa:bb:cc:..." or "MD5:aa:bb:..." or "SHA256:base64..."
-    pub key_id: String,
     /// How to load/access the signing key
     pub key_source: KeySource,
     /// RBAC roles to assume (optional, added as query param)
@@ -116,21 +111,11 @@ impl AuthConfig {
     ///
     /// # Arguments
     /// * `account` - The CloudAPI account login name
-    /// * `key_id` - SSH key fingerprint (MD5 or SHA256 format)
     /// * `key_source` - How to load the signing key (file, agent, or auto)
-    ///
-    /// # Fingerprint Formats
-    /// - MD5: `aa:bb:cc:dd:...` or `MD5:aa:bb:cc:dd:...`
-    /// - SHA256: `SHA256:base64data`
-    pub fn new(
-        account: impl Into<String>,
-        key_id: impl Into<String>,
-        key_source: KeySource,
-    ) -> Self {
+    pub fn new(account: impl Into<String>, key_source: KeySource) -> Self {
         Self {
             account: account.into(),
             user: None,
-            key_id: key_id.into(),
             key_source,
             roles: None,
             act_as: None,
@@ -174,8 +159,8 @@ impl AuthConfig {
 /// A tuple of (date_header_value, authorization_header_value)
 ///
 /// # Fingerprint Handling
-/// The `key_id` in config can be either MD5 or SHA256 format. When matching keys,
-/// the library uses the appropriate hash algorithm. However, the Authorization
+/// The fingerprint in `KeySource` can be either MD5 or SHA256 format. When matching
+/// keys, the library uses the appropriate hash algorithm. However, the Authorization
 /// header always uses MD5 format (CloudAPI server requirement).
 ///
 /// # Errors
@@ -273,12 +258,11 @@ mod tests {
 
     #[test]
     fn test_auth_config_builder() {
-        let config = AuthConfig::new("myaccount", "aa:bb:cc:dd", KeySource::agent("aa:bb:cc:dd"))
+        let config = AuthConfig::new("myaccount", KeySource::agent("aa:bb:cc:dd"))
             .with_user("subuser")
             .with_roles(vec!["admin".to_string(), "operator".to_string()]);
 
         assert_eq!(config.account, "myaccount");
-        assert_eq!(config.key_id, "aa:bb:cc:dd");
         assert_eq!(config.user, Some("subuser".to_string()));
         assert_eq!(
             config.roles,

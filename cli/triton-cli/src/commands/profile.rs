@@ -519,11 +519,7 @@ async fn docker_setup(name: Option<String>, lifetime: u32, yes: bool) -> Result<
     );
 
     // Check for Docker service
-    let auth_config = AuthConfig::new(
-        &profile.account,
-        &profile.key_id,
-        KeySource::auto(&profile.key_id),
-    );
+    let auth_config = AuthConfig::new(&profile.account, KeySource::auto(&profile.key_id));
     let client = TypedClient::new(&profile.url, auth_config);
 
     println!("Checking for Docker service...");
@@ -659,11 +655,7 @@ async fn cmon_certgen(name: Option<String>, lifetime: u32, yes: bool) -> Result<
     );
 
     // Check for CMON service
-    let auth_config = AuthConfig::new(
-        &profile.account,
-        &profile.key_id,
-        KeySource::auto(&profile.key_id),
-    );
+    let auth_config = AuthConfig::new(&profile.account, KeySource::auto(&profile.key_id));
     let client = TypedClient::new(&profile.url, auth_config);
 
     println!("Checking for CMON service...");
