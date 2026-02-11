@@ -3458,7 +3458,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
@@ -3466,7 +3466,7 @@
                 }
               }
             },
-            "description": "successful operation"
+            "description": "successful creation"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
@@ -11653,7 +11653,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "201": {
             "content": {
               "application/json": {
                 "schema": {
@@ -11661,7 +11661,7 @@
                 }
               }
             },
-            "description": "successful operation"
+            "description": "successful creation"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
