@@ -392,4 +392,190 @@ mod tests {
         assert_eq!(package.name, "sample-bhyve-flexible-1G");
         assert!(package.disks.is_some());
     }
+
+    /// Test that the full package list response from CloudAPI can be deserialized.
+    ///
+    /// This test uses the exact JSON payload that caused the "Invalid Response Payload"
+    /// error during `triton instance create`. The error occurred at column 2064 which
+    /// corresponds to a bhyve package with `"disks":[{}]` - an empty disk object that
+    /// is missing the required `size` field.
+    ///
+    /// The node-triton client handles this correctly, but the Rust client fails because
+    /// `PackageDisk.size` is required.
+    ///
+    /// Currently fails because PackageDisk requires `size` field.
+    #[test]
+    fn test_package_list_deserialize_with_bhyve_empty_disk() {
+        // This is the exact JSON from the error message during `triton instance create`
+        let json = r#"[
+            {
+                "default": false,
+                "disk": 3072,
+                "id": "a50fa089-2bb6-47d5-9a68-dc71c7b0cd03",
+                "lwps": 4000,
+                "memory": 128,
+                "name": "sample-128M",
+                "swap": 512,
+                "vcpus": 1,
+                "version": "1.0.0"
+            },
+            {
+                "default": false,
+                "disk": 6144,
+                "id": "c5cd8a4a-c155-4145-8c3c-add3084eff6d",
+                "lwps": 4000,
+                "memory": 256,
+                "name": "sample-256M",
+                "swap": 1024,
+                "vcpus": 1,
+                "version": "1.0.0"
+            },
+            {
+                "default": false,
+                "disk": 12288,
+                "id": "5256392c-2d60-4ab6-b479-006be74eb50a",
+                "lwps": 4000,
+                "memory": 512,
+                "name": "sample-512M",
+                "swap": 2048,
+                "vcpus": 1,
+                "version": "1.0.0"
+            },
+            {
+                "default": true,
+                "disk": 25600,
+                "id": "5cc453da-fca8-4cd8-87b1-9bf15826d3a6",
+                "lwps": 4000,
+                "memory": 1024,
+                "name": "sample-1G",
+                "swap": 4096,
+                "vcpus": 1,
+                "version": "1.0.0"
+            },
+            {
+                "default": false,
+                "disk": 51200,
+                "id": "a6342267-49ac-4904-bb5e-fe1cdc5f14a7",
+                "lwps": 4000,
+                "memory": 2048,
+                "name": "sample-2G",
+                "swap": 8192,
+                "vcpus": 1,
+                "version": "1.0.0"
+            },
+            {
+                "default": false,
+                "disk": 102400,
+                "id": "fa5fc249-d1d8-4247-8aba-766fb39c96f4",
+                "lwps": 4000,
+                "memory": 4096,
+                "name": "sample-4G",
+                "swap": 16384,
+                "vcpus": 1,
+                "version": "1.0.0"
+            },
+            {
+                "default": false,
+                "disk": 204800,
+                "id": "0d8198d8-903d-4597-a92b-3042ae5e2c31",
+                "lwps": 4000,
+                "memory": 8192,
+                "name": "sample-8G",
+                "swap": 32768,
+                "vcpus": 1,
+                "version": "1.0.0"
+            },
+            {
+                "default": false,
+                "disk": 409600,
+                "id": "1ae37cc9-db17-4b02-a9d2-5146496e0802",
+                "lwps": 4000,
+                "memory": 16384,
+                "name": "sample-16G",
+                "swap": 65536,
+                "vcpus": 1,
+                "version": "1.0.0"
+            },
+            {
+                "default": false,
+                "disk": 819200,
+                "id": "c2e0b9c5-4f6f-47ba-8f1f-5cd901447ea8",
+                "lwps": 4000,
+                "memory": 32768,
+                "name": "sample-32G",
+                "swap": 131072,
+                "vcpus": 1,
+                "version": "1.0.0"
+            },
+            {
+                "default": false,
+                "disk": 1638400,
+                "id": "0efa587b-7124-4142-bd0d-4c923e6fc18f",
+                "lwps": 4000,
+                "memory": 65536,
+                "name": "sample-64G",
+                "swap": 262144,
+                "vcpus": 1,
+                "version": "1.0.0"
+            },
+            {
+                "brand": "bhyve",
+                "default": true,
+                "disk": 24576,
+                "id": "d4cab42f-3a39-4b4c-9d9b-d40cb202f0eb",
+                "lwps": 4000,
+                "memory": 1024,
+                "name": "sample-bhyve-flexible-1G",
+                "swap": 4096,
+                "vcpus": 1,
+                "version": "1.0.0",
+                "flexible_disk": true
+            },
+            {
+                "brand": "bhyve",
+                "default": true,
+                "disk": 40960,
+                "id": "1b00c697-49f9-484b-89a5-51126911ed6e",
+                "lwps": 4000,
+                "memory": 1024,
+                "name": "sample-bhyve-reserved-snapshots-space",
+                "swap": 4096,
+                "vcpus": 1,
+                "version": "1.0.0",
+                "flexible_disk": true,
+                "disks": [{}, {"size": 10240}]
+            },
+            {
+                "brand": "bhyve",
+                "default": true,
+                "disk": 24576,
+                "id": "de4c471c-bc46-4497-b4ed-8c4f06867a56",
+                "lwps": 4000,
+                "memory": 1024,
+                "name": "sample-bhyve-three-disks",
+                "swap": 4096,
+                "vcpus": 1,
+                "version": "1.0.0",
+                "flexible_disk": true,
+                "disks": [{}, {"size": 6144}, {"size": "remaining"}]
+            }
+        ]"#;
+
+        let packages: Vec<Package> =
+            serde_json::from_str(json).expect("should deserialize package list");
+        assert_eq!(packages.len(), 13);
+
+        // Verify the problematic bhyve packages are present
+        let reserved_snapshots = packages
+            .iter()
+            .find(|p| p.name == "sample-bhyve-reserved-snapshots-space")
+            .expect("should find reserved-snapshots package");
+        assert!(reserved_snapshots.disks.is_some());
+
+        let three_disks = packages
+            .iter()
+            .find(|p| p.name == "sample-bhyve-three-disks")
+            .expect("should find three-disks package");
+        assert!(three_disks.disks.is_some());
+    }
 }
