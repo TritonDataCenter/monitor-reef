@@ -171,3 +171,37 @@ impl Config {
         self.profile = Some(name.to_string());
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test that a node-triton-compatible profile file (without a "name"
+    /// field) can be deserialized.
+    ///
+    /// BUG: This test currently FAILS because Profile.name is a required
+    /// serde field. node-triton forbids "name" in profile JSON files
+    /// (see node-triton lib/config.js:331-336) — the name is derived
+    /// from the filename (e.g. local.json -> "local"). The Rust Profile
+    /// struct must not require "name" in the JSON payload.
+    #[test]
+    fn test_deserialize_profile_without_name_field() {
+        let json = r#"{
+            "url": "https://127.0.0.1",
+            "account": "user",
+            "keyId": "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00",
+            "insecure": true
+        }"#;
+
+        let profile: Profile = serde_json::from_str(json)
+            .expect("Should parse profile without 'name' field");
+
+        assert_eq!(profile.url, "https://127.0.0.1");
+        assert_eq!(profile.account, "user");
+        assert_eq!(
+            profile.key_id,
+            "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00"
+        );
+        assert!(profile.insecure);
+    }
+}
