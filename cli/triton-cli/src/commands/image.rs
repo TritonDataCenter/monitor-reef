@@ -297,7 +297,7 @@ impl ImageCommand {
         cache: Option<&crate::cache::ImageCache>,
     ) -> Result<()> {
         match self {
-            Self::List(args) => list_images(args, client, use_json).await,
+            Self::List(args) => list_images(args, client, use_json, cache).await,
             Self::Get(args) => get_image(args, client, use_json, cache).await,
             Self::Create(args) => create_image(args, client, use_json).await,
             Self::Delete(args) => delete_images(args, client, cache).await,
@@ -329,31 +329,59 @@ impl ImageTagCommand {
     }
 }
 
-async fn list_images(args: ImageListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+async fn list_images(
+    args: ImageListArgs,
+    client: &TypedClient,
+    use_json: bool,
+    cache: Option<&crate::cache::ImageCache>,
+) -> Result<()> {
     let account = &client.auth_config().account;
-    let mut req = client.inner().list_images().account(account);
 
-    if let Some(name) = &args.name {
-        req = req.name(name);
-    }
-    if let Some(version) = &args.version {
-        req = req.version(version);
-    }
-    if let Some(os) = &args.os {
-        req = req.os(os);
-    }
-    // If --all is not set and no explicit state filter, default to "active"
-    if let Some(state) = args.state {
-        req = req.state(state);
-    } else if !args.all {
-        req = req.state(cloudapi_client::types::ImageState::Active);
-    }
-    if args.public {
-        req = req.public(true);
-    }
+    // Determine if this is an unfiltered query that can use/populate cache
+    let is_unfiltered =
+        args.name.is_none() && args.version.is_none() && args.os.is_none() && !args.public;
+    let is_default_state = args.state.is_none() && !args.all;
 
-    let response = req.send().await?;
-    let mut images = response.into_inner();
+    // Try cache for unfiltered default queries
+    let mut images = if is_unfiltered && is_default_state {
+        if let Some(cached) = cache.and_then(|c| c.load_list()) {
+            cached
+        } else {
+            let response = client
+                .inner()
+                .list_images()
+                .account(account)
+                .state(cloudapi_client::types::ImageState::Active)
+                .send()
+                .await?;
+            let fetched = response.into_inner();
+            if let Some(c) = cache {
+                c.save_list(&fetched);
+            }
+            fetched
+        }
+    } else {
+        let mut req = client.inner().list_images().account(account);
+        if let Some(name) = &args.name {
+            req = req.name(name);
+        }
+        if let Some(version) = &args.version {
+            req = req.version(version);
+        }
+        if let Some(os) = &args.os {
+            req = req.os(os);
+        }
+        if let Some(state) = args.state {
+            req = req.state(state);
+        } else if !args.all {
+            req = req.state(cloudapi_client::types::ImageState::Active);
+        }
+        if args.public {
+            req = req.public(true);
+        }
+        let response = req.send().await?;
+        response.into_inner()
+    };
 
     // Sort images if requested
     if let Some(ref sort_field) = args.sort_by {
