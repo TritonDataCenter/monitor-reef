@@ -22,13 +22,27 @@ pub struct PackagePath {
     pub package: String,
 }
 
+/// Disk size value in a package definition
+///
+/// CloudAPI returns disk sizes as either a numeric value (megabytes)
+/// or a string like "remaining" indicating use of remaining space.
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum DiskSize {
+    /// Size in megabytes
+    Megabytes(u64),
+
+    /// Named size value (e.g. "remaining")
+    Named(String),
+}
+
 /// Disk configuration in a package (bhyve only)
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct PackageDisk {
-    /// Disk size in MB
+    /// Disk size in MB or a named value like "remaining"
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub size: Option<u64>,
+    pub size: Option<DiskSize>,
 
     /// Block size in bytes
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -403,7 +417,6 @@ mod tests {
     /// The node-triton client handles this correctly, but the Rust client fails because
     /// `PackageDisk.size` is required.
     ///
-    /// Currently fails because PackageDisk requires `size` field.
     #[test]
     fn test_package_list_deserialize_with_bhyve_empty_disk() {
         // This is the exact JSON from the error message during `triton instance create`

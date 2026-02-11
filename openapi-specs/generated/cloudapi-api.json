@@ -10194,6 +10194,21 @@
           "size"
         ]
       },
+      "DiskSize": {
+        "description": "Disk size value in a package definition\n\nCloudAPI returns disk sizes as either a numeric value (megabytes) or a string like \"remaining\" indicating use of remaining space.",
+        "anyOf": [
+          {
+            "description": "Size in megabytes",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          {
+            "description": "Named size value (e.g. \"remaining\")",
+            "type": "string"
+          }
+        ]
+      },
       "DiskSpec": {
         "description": "Disk specification for bhyve instance creation",
         "type": "object",
@@ -11447,10 +11462,12 @@
           },
           "size": {
             "nullable": true,
-            "description": "Disk size in MB",
-            "type": "integer",
-            "format": "uint64",
-            "minimum": 0
+            "description": "Disk size in MB or a named value like \"remaining\"",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DiskSize"
+              }
+            ]
           }
         }
       },
