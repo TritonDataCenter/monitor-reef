@@ -70,10 +70,18 @@ impl Profile {
     }
 
     /// Save the profile to a file
+    ///
+    /// The `name` field is excluded from the JSON file because it is derived
+    /// from the filename (e.g. `local.json` → `"local"`). node-triton forbids
+    /// `name` in profile JSON files (see node-triton lib/config.js:331-336).
     pub async fn save(&self) -> anyhow::Result<()> {
         super::paths::ensure_config_dirs().await?;
         let path = super::paths::profile_path(&self.name);
-        let content = serde_json::to_string_pretty(self)?;
+        let mut value = serde_json::to_value(self)?;
+        if let Some(obj) = value.as_object_mut() {
+            obj.remove("name");
+        }
+        let content = serde_json::to_string_pretty(&value)?;
         tokio::fs::write(&path, content).await?;
         Ok(())
     }
@@ -203,5 +211,29 @@ mod tests {
             "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00"
         );
         assert!(profile.insecure);
+    }
+
+    /// Test that serialized profile output includes `name` (needed for CLI
+    /// `-j` JSON output) but that the save-to-disk path would strip it.
+    #[test]
+    fn test_serialize_profile_includes_name_for_cli_output() {
+        let profile = Profile::new(
+            "test".to_string(),
+            "https://127.0.0.1".to_string(),
+            "user".to_string(),
+            "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00".to_string(),
+        );
+
+        // Normal serialization includes name (used by `print_json`)
+        let value = serde_json::to_value(&profile).expect("should serialize");
+        assert_eq!(value["name"], "test");
+
+        // The save() path strips name for node-triton compatibility
+        let mut disk_value = value;
+        disk_value.as_object_mut().unwrap().remove("name");
+        assert!(disk_value.get("name").is_none());
+        // Other fields are preserved
+        assert_eq!(disk_value["url"], "https://127.0.0.1");
+        assert_eq!(disk_value["account"], "user");
     }
 }
