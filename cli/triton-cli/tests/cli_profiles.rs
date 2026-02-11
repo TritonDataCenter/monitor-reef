@@ -231,11 +231,16 @@ fn test_profile_list_shows_env() {
 }
 
 /// Test profile list works with empty HOME (no saved profiles)
+///
+/// Uses TRITON_CONFIG_DIR to ensure no profiles are found, since
+/// dirs::home_dir() may resolve the real home via the password
+/// database even when HOME is overridden.
 #[test]
 fn test_profile_list_empty() {
     let output = triton_cmd()
         .args(["profile", "list", "-j"])
         .env("HOME", "/nonexistent")
+        .env("TRITON_CONFIG_DIR", "/nonexistent/.triton")
         .env_remove("TRITON_URL")
         .env_remove("SDC_URL")
         .output()

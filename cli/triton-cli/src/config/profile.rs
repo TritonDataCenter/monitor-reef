@@ -11,7 +11,8 @@ use serde::{Deserialize, Serialize};
 /// A connection profile
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
-    /// Profile name
+    /// Profile name (derived from filename, not present in JSON)
+    #[serde(default)]
     pub name: String,
 
     /// CloudAPI URL
@@ -62,8 +63,9 @@ impl Profile {
         let content = tokio::fs::read_to_string(&path)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to read profile '{}': {}", name, e))?;
-        let profile: Profile = serde_json::from_str(&content)
+        let mut profile: Profile = serde_json::from_str(&content)
             .map_err(|e| anyhow::anyhow!("Failed to parse profile '{}': {}", name, e))?;
+        profile.name = name.to_string();
         Ok(profile)
     }
 
@@ -179,11 +181,9 @@ mod tests {
     /// Test that a node-triton-compatible profile file (without a "name"
     /// field) can be deserialized.
     ///
-    /// BUG: This test currently FAILS because Profile.name is a required
-    /// serde field. node-triton forbids "name" in profile JSON files
-    /// (see node-triton lib/config.js:331-336) — the name is derived
-    /// from the filename (e.g. local.json -> "local"). The Rust Profile
-    /// struct must not require "name" in the JSON payload.
+    /// node-triton forbids "name" in profile JSON files (see node-triton
+    /// lib/config.js:331-336) — the name is derived from the filename
+    /// (e.g. local.json -> "local").
     #[test]
     fn test_deserialize_profile_without_name_field() {
         let json = r#"{
@@ -193,8 +193,8 @@ mod tests {
             "insecure": true
         }"#;
 
-        let profile: Profile = serde_json::from_str(json)
-            .expect("Should parse profile without 'name' field");
+        let profile: Profile =
+            serde_json::from_str(json).expect("Should parse profile without 'name' field");
 
         assert_eq!(profile.url, "https://127.0.0.1");
         assert_eq!(profile.account, "user");
