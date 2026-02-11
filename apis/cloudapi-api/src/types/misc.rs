@@ -333,3 +333,63 @@ pub struct UserKeyResourcePath {
     /// Resource ID (key name/fingerprint)
     pub resource_id: String,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Test that a simple package (without disks) can be deserialized.
+    ///
+    /// This is the format returned for standard SmartOS/LX packages.
+    #[test]
+    fn test_package_deserialize_simple() {
+        let json = r#"{
+            "default": false,
+            "disk": 3072,
+            "id": "a50fa089-2bb6-47d5-9a68-dc71c7b0cd03",
+            "lwps": 4000,
+            "memory": 128,
+            "name": "sample-128M",
+            "swap": 512,
+            "vcpus": 1,
+            "version": "1.0.0"
+        }"#;
+
+        let package: Package = serde_json::from_str(json).expect("should deserialize");
+        assert_eq!(package.name, "sample-128M");
+        assert_eq!(package.memory, 128);
+        assert_eq!(package.disk, 3072);
+        assert!(!package.default);
+        assert!(package.disks.is_none());
+    }
+
+    /// Test that a bhyve package with empty disk entry can be deserialized.
+    ///
+    /// The CloudAPI returns bhyve packages with `disks` arrays that may contain
+    /// empty objects `{}` to indicate "use remaining space". This test verifies
+    /// that such packages can be deserialized correctly.
+    ///
+    /// Currently fails because PackageDisk requires `size` field.
+    /// See: https://github.com/TritonDataCenter/triton/issues/XXX
+    #[test]
+    fn test_package_deserialize_bhyve_with_empty_disk() {
+        let json = r#"{
+            "brand": "bhyve",
+            "default": true,
+            "disk": 24576,
+            "id": "d4cab42f-3a39-4b4c-9d9b-d40cb202f0eb",
+            "lwps": 4000,
+            "memory": 1024,
+            "name": "sample-bhyve-flexible-1G",
+            "swap": 4096,
+            "vcpus": 1,
+            "version": "1.0.0",
+            "flexible_disk": true,
+            "disks": [{}]
+        }"#;
+
+        let package: Package = serde_json::from_str(json).expect("should deserialize");
+        assert_eq!(package.name, "sample-bhyve-flexible-1G");
+        assert!(package.disks.is_some());
+    }
+}
