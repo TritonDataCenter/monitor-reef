@@ -378,7 +378,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // Warn if profiles exist in an alternative config directory
-    config::paths::warn_alternative_config_dirs();
+    config::paths::warn_alternative_config_dirs().await;
 
     // Set up logging
     if cli.verbose {
@@ -394,12 +394,12 @@ async fn main() -> Result<()> {
         }
         Commands::Instance { command } => {
             let (client, profile) = cli.build_client().await?;
-            let cache = cache::ImageCache::new(&profile);
+            let cache = cache::ImageCache::new(&profile).await;
             command.clone().run(&client, cli.json, cache.as_ref()).await
         }
         Commands::Image { command } => {
             let (client, profile) = cli.build_client().await?;
-            let cache = cache::ImageCache::new(&profile);
+            let cache = cache::ImageCache::new(&profile).await;
             command.clone().run(&client, cli.json, cache.as_ref()).await
         }
         Commands::Key { command } => {
@@ -456,17 +456,17 @@ async fn main() -> Result<()> {
         }
         Commands::Insts(args) => {
             let (client, profile) = cli.build_client().await?;
-            let cache = cache::ImageCache::new(&profile);
+            let cache = cache::ImageCache::new(&profile).await;
             commands::instance::list::run(args.clone(), &client, cli.json, cache.as_ref()).await
         }
         Commands::Create(args) => {
             let (client, profile) = cli.build_client().await?;
-            let cache = cache::ImageCache::new(&profile);
+            let cache = cache::ImageCache::new(&profile).await;
             commands::instance::create::run(args.clone(), &client, cli.json, cache.as_ref()).await
         }
         Commands::Ssh(args) => {
             let (client, profile) = cli.build_client().await?;
-            let cache = cache::ImageCache::new(&profile);
+            let cache = cache::ImageCache::new(&profile).await;
             commands::instance::ssh::run(args.clone(), &client, cache.as_ref()).await
         }
         Commands::Start(args) => {
@@ -487,7 +487,7 @@ async fn main() -> Result<()> {
         }
         Commands::Imgs(args) => {
             let (client, profile) = cli.build_client().await?;
-            let cache = cache::ImageCache::new(&profile);
+            let cache = cache::ImageCache::new(&profile).await;
             commands::image::ImageCommand::List(args.clone())
                 .run(&client, cli.json, cache.as_ref())
                 .await

@@ -344,21 +344,32 @@ async fn list_images(
 
     // Try cache for unfiltered default queries
     let mut images = if is_unfiltered && is_default_state {
-        if let Some(cached) = cache.and_then(|c| c.load_list()) {
-            cached
-        } else {
-            let response = client
-                .inner()
-                .list_images()
-                .account(account)
-                .state(cloudapi_client::types::ImageState::Active)
-                .send()
-                .await?;
-            let fetched = response.into_inner();
-            if let Some(c) = cache {
-                c.save_list(&fetched);
+        match cache {
+            Some(c) => match c.load_list().await {
+                Some(cached) => cached,
+                None => {
+                    let response = client
+                        .inner()
+                        .list_images()
+                        .account(account)
+                        .state(cloudapi_client::types::ImageState::Active)
+                        .send()
+                        .await?;
+                    let fetched = response.into_inner();
+                    c.save_list(&fetched).await;
+                    fetched
+                }
+            },
+            None => {
+                let response = client
+                    .inner()
+                    .list_images()
+                    .account(account)
+                    .state(cloudapi_client::types::ImageState::Active)
+                    .send()
+                    .await?;
+                response.into_inner()
             }
-            fetched
         }
     } else {
         let mut req = client.inner().list_images().account(account);
@@ -1025,15 +1036,21 @@ pub async fn resolve_image(
             .send()
             .await?;
         response.into_inner()
-    } else if let Some(cached) = cache.and_then(|c| c.load_list()) {
-        cached
     } else {
-        let response = client.inner().list_images().account(account).send().await?;
-        let fetched = response.into_inner();
-        if let Some(c) = cache {
-            c.save_list(&fetched);
+        let cached = match cache {
+            Some(c) => c.load_list().await,
+            None => None,
+        };
+        if let Some(cached) = cached {
+            cached
+        } else {
+            let response = client.inner().list_images().account(account).send().await?;
+            let fetched = response.into_inner();
+            if let Some(c) = cache {
+                c.save_list(&fetched).await;
+            }
+            fetched
         }
-        fetched
     };
 
     resolve_from_list(&images, name)

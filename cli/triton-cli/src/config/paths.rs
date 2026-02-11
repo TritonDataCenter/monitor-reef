@@ -37,7 +37,7 @@ pub fn config_dir() -> PathBuf {
 ///
 /// Call once during startup to alert users who may have profiles in a
 /// directory that isn't being used.
-pub fn warn_alternative_config_dirs() {
+pub async fn warn_alternative_config_dirs() {
     let active = config_dir();
 
     // Only check alternatives when TRITON_CONFIG_DIR isn't set (explicit override)
@@ -68,10 +68,14 @@ pub fn warn_alternative_config_dirs() {
 
     for alt in alternatives {
         let alt_profiles = alt.join("profiles.d");
-        if let Ok(entries) = std::fs::read_dir(&alt_profiles) {
-            let has_profiles = entries
-                .filter_map(|e| e.ok())
-                .any(|e| e.path().extension().is_some_and(|ext| ext == "json"));
+        if let Ok(mut entries) = tokio::fs::read_dir(&alt_profiles).await {
+            let mut has_profiles = false;
+            while let Ok(Some(entry)) = entries.next_entry().await {
+                if entry.path().extension().is_some_and(|ext| ext == "json") {
+                    has_profiles = true;
+                    break;
+                }
+            }
             if has_profiles {
                 eprintln!(
                     "Warning: profiles also found in {}, but using {}",

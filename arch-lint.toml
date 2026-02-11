@@ -16,6 +16,8 @@ exclude = [
     "**/build.rs",
     "**/tests/**",
     "**/jira-stub-server/**",
+    # Build tool, not an async service:
+    "openapi-manager/**",
     # To be modernized:
     "cli/manatee-echo-resolver",
     "libs/cueball-dns-resolver",

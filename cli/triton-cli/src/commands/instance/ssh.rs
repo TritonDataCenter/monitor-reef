@@ -226,7 +226,11 @@ async fn fetch_image_default_user(
     cache: Option<&crate::cache::ImageCache>,
 ) -> String {
     // Try cache first (uses longer GET_TTL)
-    if let Some(image) = cache.and_then(|c| c.get_image(image_id)) {
+    let cached_image = match cache {
+        Some(c) => c.get_image(image_id).await,
+        None => None,
+    };
+    if let Some(image) = cached_image {
         if let Some(ref tags) = image.tags
             && let Some(user) = get_tag_string(tags, TAG_DEFAULT_USER)
         {

@@ -33,46 +33,47 @@ impl ImageCache {
     ///
     /// Creates the cache directory if needed. Returns None if the directory
     /// cannot be created.
-    pub fn new(profile: &Profile) -> Option<Self> {
+    pub async fn new(profile: &Profile) -> Option<Self> {
         let slug = profile_slug(profile);
         let dir = crate::config::paths::cache_dir(&slug);
-        std::fs::create_dir_all(&dir).ok()?;
+        tokio::fs::create_dir_all(&dir).await.ok()?;
         Some(Self {
             cache_path: dir.join("images.json"),
         })
     }
 
     /// Load the cached image list if it exists and is fresh enough.
-    pub fn load_list(&self) -> Option<Vec<Image>> {
-        self.load_if_fresh(LIST_TTL)
+    pub async fn load_list(&self) -> Option<Vec<Image>> {
+        self.load_if_fresh(LIST_TTL).await
     }
 
     /// Save the image list to the cache file.
-    pub fn save_list(&self, images: &[Image]) {
-        let _ = std::fs::write(
+    pub async fn save_list(&self, images: &[Image]) {
+        let _ = tokio::fs::write(
             &self.cache_path,
             serde_json::to_string(images).unwrap_or_default(),
-        );
+        )
+        .await;
     }
 
     /// Look up a single image by UUID from the cache (uses longer TTL).
-    pub fn get_image(&self, id: uuid::Uuid) -> Option<Image> {
-        let images = self.load_if_fresh(GET_TTL)?;
+    pub async fn get_image(&self, id: uuid::Uuid) -> Option<Image> {
+        let images = self.load_if_fresh(GET_TTL).await?;
         images.into_iter().find(|img| img.id == id)
     }
 
-    fn load_if_fresh(&self, ttl: Duration) -> Option<Vec<Image>> {
-        let meta = std::fs::metadata(&self.cache_path).ok()?;
+    async fn load_if_fresh(&self, ttl: Duration) -> Option<Vec<Image>> {
+        let meta = tokio::fs::metadata(&self.cache_path).await.ok()?;
         let modified = meta.modified().ok()?;
         if SystemTime::now().duration_since(modified).unwrap_or(ttl) >= ttl {
             return None;
         }
-        let data = std::fs::read_to_string(&self.cache_path).ok()?;
+        let data = tokio::fs::read_to_string(&self.cache_path).await.ok()?;
         match serde_json::from_str(&data) {
             Ok(images) => Some(images),
             Err(_) => {
                 // Corrupt cache — delete it
-                let _ = std::fs::remove_file(&self.cache_path);
+                let _ = tokio::fs::remove_file(&self.cache_path).await;
                 None
             }
         }
@@ -129,47 +130,47 @@ mod tests {
         assert_eq!(profile_slug(&profile), "admin@localhost_8443");
     }
 
-    #[test]
-    fn test_cache_load_missing_file() {
+    #[tokio::test]
+    async fn test_cache_load_missing_file() {
         let cache = ImageCache {
             cache_path: PathBuf::from("/nonexistent/path/images.json"),
         };
-        assert!(cache.load_list().is_none());
+        assert!(cache.load_list().await.is_none());
     }
 
-    #[test]
-    fn test_cache_save_and_load() {
+    #[tokio::test]
+    async fn test_cache_save_and_load() {
         let dir = std::env::temp_dir().join(format!("triton-cache-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        tokio::fs::create_dir_all(&dir).await.unwrap();
         let cache = ImageCache {
             cache_path: dir.join("images.json"),
         };
 
         // Save empty list
-        cache.save_list(&[]);
-        let loaded = cache.load_list();
+        cache.save_list(&[]).await;
+        let loaded = cache.load_list().await;
         assert!(loaded.is_some());
         assert!(loaded.unwrap().is_empty());
 
         // Cleanup
-        let _ = std::fs::remove_dir_all(&dir);
+        let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 
-    #[test]
-    fn test_cache_corrupt_json_deleted() {
+    #[tokio::test]
+    async fn test_cache_corrupt_json_deleted() {
         let dir =
             std::env::temp_dir().join(format!("triton-cache-corrupt-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        tokio::fs::create_dir_all(&dir).await.unwrap();
         let path = dir.join("images.json");
-        std::fs::write(&path, "not valid json{{{").unwrap();
+        tokio::fs::write(&path, "not valid json{{{").await.unwrap();
 
         let cache = ImageCache {
             cache_path: path.clone(),
         };
-        assert!(cache.load_list().is_none());
+        assert!(cache.load_list().await.is_none());
         // File should have been deleted
         assert!(!path.exists());
 
-        let _ = std::fs::remove_dir_all(&dir);
+        let _ = tokio::fs::remove_dir_all(&dir).await;
     }
 }

@@ -22,7 +22,6 @@ use serde_json::Value;
 /// This keeps the generated specs pristine so `openapi-check` continues to work.
 pub fn apply_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Result<()> {
     let source = generated_dir.join("cloudapi-api.json");
-    // arch-lint: allow(no-sync-io) reason="Build tool runs synchronously, not an async service"
     if source.exists() {
         std::fs::create_dir_all(patched_dir).context("failed to create patched specs directory")?;
         let dest = patched_dir.join("cloudapi-api.json");
@@ -52,13 +51,11 @@ pub fn check_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Res
     }
 
     // Generate what the patched file should look like
-    // arch-lint: allow(no-sync-io) reason="Build tool runs synchronously, not an async service"
     let content = std::fs::read_to_string(&source).context("failed to read source spec")?;
     let mut spec: Value = serde_json::from_str(&content).context("failed to parse spec")?;
     patch_cloudapi_error_schema(&mut spec);
     let expected = serde_json::to_string_pretty(&spec).context("failed to serialize")?;
 
-    // arch-lint: allow(no-sync-io) reason="Build tool runs synchronously, not an async service"
     let actual = std::fs::read_to_string(&dest).context("failed to read patched spec")?;
 
     if expected != actual {
@@ -99,14 +96,12 @@ pub fn check_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Res
 ///
 /// This function reads a source spec, patches the Error schema, and writes to a destination.
 fn transform_cloudapi_error_schema(source: &Utf8Path, dest: &Utf8Path) -> Result<()> {
-    // arch-lint: allow(no-sync-io) reason="Build tool runs synchronously, not an async service"
     let content = std::fs::read_to_string(source).context("failed to read spec file")?;
     let mut spec: Value = serde_json::from_str(&content).context("failed to parse spec as JSON")?;
 
     patch_cloudapi_error_schema(&mut spec);
 
     let output = serde_json::to_string_pretty(&spec).context("failed to serialize spec")?;
-    // arch-lint: allow(no-sync-io) reason="Build tool runs synchronously, not an async service"
     std::fs::write(dest, output).context("failed to write patched spec file")?;
 
     eprintln!("Wrote patched CloudAPI spec to {}", dest);
@@ -170,12 +165,10 @@ mod tests {
     }
 
     fn write_spec(path: &Utf8Path, spec: &Value) {
-        // arch-lint: allow(no-sync-io) reason="Test uses sync IO for simplicity"
         std::fs::write(path, serde_json::to_string_pretty(spec).unwrap()).unwrap();
     }
 
     fn read_spec(path: &Utf8Path) -> Value {
-        // arch-lint: allow(no-sync-io) reason="Test uses sync IO for simplicity"
         let content = std::fs::read_to_string(path).unwrap();
         serde_json::from_str(&content).unwrap()
     }
@@ -203,7 +196,6 @@ mod tests {
         let root = Utf8Path::from_path(temp_dir.path()).unwrap();
         let generated = root.join("generated");
         let patched = root.join("patched");
-        // arch-lint: allow(no-sync-io) reason="Test uses sync IO for simplicity"
         std::fs::create_dir_all(&generated).unwrap();
 
         write_spec(&generated.join("cloudapi-api.json"), &dropshot_error_spec());
@@ -228,7 +220,6 @@ mod tests {
         let root = Utf8Path::from_path(temp_dir.path()).unwrap();
         let generated = root.join("generated");
         let patched = root.join("patched");
-        // arch-lint: allow(no-sync-io) reason="Test uses sync IO for simplicity"
         std::fs::create_dir_all(&generated).unwrap();
         std::fs::create_dir_all(&patched).unwrap();
 

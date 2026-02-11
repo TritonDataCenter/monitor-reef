@@ -191,7 +191,10 @@ pub async fn run(
     }
 
     // Try loading images from cache first to avoid a parallel API call
-    let cached_images = cache.and_then(|c| c.load_list());
+    let cached_images = match cache {
+        Some(c) => c.load_list().await,
+        None => None,
+    };
 
     let (machines, image_map) = if let Some(images) = cached_images {
         // Cache hit — only fetch machines (skip images API call)
@@ -210,7 +213,7 @@ pub async fn run(
             Ok(r) => {
                 let images = r.into_inner();
                 if let Some(c) = cache {
-                    c.save_list(&images);
+                    c.save_list(&images).await;
                 }
                 images
                     .into_iter()
