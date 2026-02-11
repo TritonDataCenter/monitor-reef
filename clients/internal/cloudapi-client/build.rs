@@ -11,7 +11,9 @@ use std::path::Path;
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out_dir = env::var("OUT_DIR")?;
 
-    let spec_path = "../../../openapi-specs/generated/cloudapi-api.json";
+    // Read from the patched spec which has CloudAPI's actual error format
+    // (code + optional message/request_id) rather than Dropshot's default.
+    let spec_path = "../../../openapi-specs/patched/cloudapi-api.json";
 
     assert!(Path::new(spec_path).exists(), "{spec_path} does not exist!");
     println!("cargo:rerun-if-changed={}", spec_path);

@@ -184,9 +184,10 @@ openapi-generate: | $(CARGO_EXEC) ## Generate OpenAPI specs from API traits
 	@echo "Generating OpenAPI specs using dropshot-api-manager..."
 	$(CARGO) run -p openapi-manager -- generate
 	@echo "OpenAPI specs generated in openapi-specs/generated/"
+	@echo "Patched client specs in openapi-specs/patched/"
 	@echo ""
 	@echo "    Don't forget to commit the updated specs:"
-	@echo "    git add openapi-specs/generated/"
+	@echo "    git add openapi-specs/generated/ openapi-specs/patched/"
 	@echo "    git commit -m 'Update OpenAPI specs'"
 
 openapi-list: | $(CARGO_EXEC) ## List all managed APIs
