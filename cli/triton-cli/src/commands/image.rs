@@ -290,31 +290,41 @@ pub struct ImageTagDeleteArgs {
 }
 
 impl ImageCommand {
-    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
+    pub async fn run(
+        self,
+        client: &TypedClient,
+        use_json: bool,
+        cache: Option<&crate::cache::ImageCache>,
+    ) -> Result<()> {
         match self {
             Self::List(args) => list_images(args, client, use_json).await,
-            Self::Get(args) => get_image(args, client, use_json).await,
+            Self::Get(args) => get_image(args, client, use_json, cache).await,
             Self::Create(args) => create_image(args, client, use_json).await,
-            Self::Delete(args) => delete_images(args, client).await,
-            Self::Clone(args) => clone_image(args, client, use_json).await,
+            Self::Delete(args) => delete_images(args, client, cache).await,
+            Self::Clone(args) => clone_image(args, client, use_json, cache).await,
             Self::Copy(args) => copy_image(args, client, use_json).await,
-            Self::Update(args) => update_image(args, client, use_json).await,
-            Self::Export(args) => export_image(args, client, use_json).await,
-            Self::Share(args) => share_image(args, client, use_json).await,
-            Self::Unshare(args) => unshare_image(args, client, use_json).await,
-            Self::Tag { command } => command.run(client, use_json).await,
-            Self::Wait(args) => wait_image(args, client, use_json).await,
+            Self::Update(args) => update_image(args, client, use_json, cache).await,
+            Self::Export(args) => export_image(args, client, use_json, cache).await,
+            Self::Share(args) => share_image(args, client, use_json, cache).await,
+            Self::Unshare(args) => unshare_image(args, client, use_json, cache).await,
+            Self::Tag { command } => command.run(client, use_json, cache).await,
+            Self::Wait(args) => wait_image(args, client, use_json, cache).await,
         }
     }
 }
 
 impl ImageTagCommand {
-    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
+    pub async fn run(
+        self,
+        client: &TypedClient,
+        use_json: bool,
+        cache: Option<&crate::cache::ImageCache>,
+    ) -> Result<()> {
         match self {
-            Self::List(args) => list_image_tags(args, client, use_json).await,
-            Self::Get(args) => get_image_tag(args, client).await,
-            Self::Set(args) => set_image_tags(args, client).await,
-            Self::Delete(args) => delete_image_tag(args, client).await,
+            Self::List(args) => list_image_tags(args, client, use_json, cache).await,
+            Self::Get(args) => get_image_tag(args, client, cache).await,
+            Self::Set(args) => set_image_tags(args, client, cache).await,
+            Self::Delete(args) => delete_image_tag(args, client, cache).await,
         }
     }
 }
@@ -553,9 +563,14 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-async fn get_image(args: ImageGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+async fn get_image(
+    args: ImageGetArgs,
+    client: &TypedClient,
+    use_json: bool,
+    cache: Option<&crate::cache::ImageCache>,
+) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_uuid = resolve_image(&args.image, client).await?;
+    let image_uuid = resolve_image(&args.image, client, cache).await?;
 
     let response = client
         .inner()
@@ -682,11 +697,15 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
     Ok(())
 }
 
-async fn delete_images(args: ImageDeleteArgs, client: &TypedClient) -> Result<()> {
+async fn delete_images(
+    args: ImageDeleteArgs,
+    client: &TypedClient,
+    cache: Option<&crate::cache::ImageCache>,
+) -> Result<()> {
     let account = &client.auth_config().account;
 
     for image_name in &args.images {
-        let image_uuid = resolve_image(image_name, client).await?;
+        let image_uuid = resolve_image(image_name, client, cache).await?;
 
         if !args.force {
             use dialoguer::Confirm;
@@ -713,9 +732,14 @@ async fn delete_images(args: ImageDeleteArgs, client: &TypedClient) -> Result<()
     Ok(())
 }
 
-async fn clone_image(args: ImageCloneArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+async fn clone_image(
+    args: ImageCloneArgs,
+    client: &TypedClient,
+    use_json: bool,
+    cache: Option<&crate::cache::ImageCache>,
+) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_uuid = resolve_image(&args.image, client).await?;
+    let image_uuid = resolve_image(&args.image, client, cache).await?;
 
     // Handle dry-run
     if args.dry_run {
@@ -786,9 +810,14 @@ async fn copy_image(args: ImageCopyArgs, client: &TypedClient, use_json: bool) -
     Ok(())
 }
 
-async fn update_image(args: ImageUpdateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+async fn update_image(
+    args: ImageUpdateArgs,
+    client: &TypedClient,
+    use_json: bool,
+    cache: Option<&crate::cache::ImageCache>,
+) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_uuid = resolve_image(&args.image, client).await?;
+    let image_uuid = resolve_image(&args.image, client, cache).await?;
 
     let request = cloudapi_client::UpdateImageRequest {
         name: args.name.clone(),
@@ -812,9 +841,14 @@ async fn update_image(args: ImageUpdateArgs, client: &TypedClient, use_json: boo
     Ok(())
 }
 
-async fn export_image(args: ImageExportArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+async fn export_image(
+    args: ImageExportArgs,
+    client: &TypedClient,
+    use_json: bool,
+    cache: Option<&crate::cache::ImageCache>,
+) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_uuid = resolve_image(&args.image, client).await?;
+    let image_uuid = resolve_image(&args.image, client, cache).await?;
 
     // Handle dry-run
     if args.dry_run {
@@ -837,7 +871,12 @@ async fn export_image(args: ImageExportArgs, client: &TypedClient, use_json: boo
     Ok(())
 }
 
-async fn wait_image(args: ImageWaitArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+async fn wait_image(
+    args: ImageWaitArgs,
+    client: &TypedClient,
+    use_json: bool,
+    cache: Option<&crate::cache::ImageCache>,
+) -> Result<()> {
     let account = &client.auth_config().account;
     let total = args.images.len();
     let state_names: Vec<String> = args.states.iter().map(enum_to_display).collect();
@@ -847,7 +886,7 @@ async fn wait_image(args: ImageWaitArgs, client: &TypedClient, use_json: bool) -
     let mut done = 0;
 
     for image_ref in &args.images {
-        let image_uuid = resolve_image(image_ref, client).await?;
+        let image_uuid = resolve_image(image_ref, client, cache).await?;
 
         // Get current state
         let response = client
@@ -927,7 +966,11 @@ async fn wait_image(args: ImageWaitArgs, client: &TypedClient, use_json: bool) -
 /// - If full UUID, use directly
 /// - Otherwise, list all images and match by name or short ID
 /// - Short ID is the first segment of UUID (before first dash)
-pub async fn resolve_image(id_or_name: &str, client: &TypedClient) -> Result<uuid::Uuid> {
+pub async fn resolve_image(
+    id_or_name: &str,
+    client: &TypedClient,
+    cache: Option<&crate::cache::ImageCache>,
+) -> Result<uuid::Uuid> {
     // UUID check - call API directly
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
         return Ok(uuid);
@@ -942,35 +985,42 @@ pub async fn resolve_image(id_or_name: &str, client: &TypedClient) -> Result<uui
 
     let account = &client.auth_config().account;
 
-    // Build list request - only filter by name/version if version is specified
-    // (matches node-triton behavior which lists all images for name-only lookups)
-    let mut request = client.inner().list_images().account(account);
-    if let Some(v) = version {
-        request = request.name(name).version(v);
-    }
-    let response = request.send().await?;
-    let images = response.into_inner();
+    // For unfiltered lookups (no version), try cache first
+    let images = if let Some(v) = version {
+        // Version-filtered request — always go to API
+        let response = client
+            .inner()
+            .list_images()
+            .account(account)
+            .name(name)
+            .version(v)
+            .send()
+            .await?;
+        response.into_inner()
+    } else if let Some(cached) = cache.and_then(|c| c.load_list()) {
+        cached
+    } else {
+        let response = client.inner().list_images().account(account).send().await?;
+        let fetched = response.into_inner();
+        if let Some(c) = cache {
+            c.save_list(&fetched);
+        }
+        fetched
+    };
 
-    // Collect name matches and short ID matches (like node-triton)
+    resolve_from_list(&images, name)
+}
+
+fn resolve_from_list(images: &[Image], name: &str) -> Result<uuid::Uuid> {
     let mut name_matches: Vec<_> = images.iter().filter(|img| img.name == name).collect();
     let short_id_matches: Vec<_> = images
         .iter()
-        .filter(|img| {
-            // Short ID is first segment of UUID (before first dash)
-            img.id
-                .to_string()
-                .split('-')
-                .next()
-                .map(|short| short == name)
-                .unwrap_or(false)
-        })
+        .filter(|img| img.id.to_string().starts_with(name))
         .collect();
 
     // Prefer name matches (sorted by published_at, return most recent)
     if !name_matches.is_empty() {
-        // Sort by published_at ascending, return last (most recent)
         name_matches.sort_by(|a, b| a.published_at.cmp(&b.published_at));
-        // Safe: we just checked is_empty() above
         if let Some(most_recent) = name_matches.last() {
             return Ok(most_recent.id);
         }
@@ -1037,9 +1087,14 @@ async fn wait_for_image_states(
     }
 }
 
-async fn share_image(args: ImageShareArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+async fn share_image(
+    args: ImageShareArgs,
+    client: &TypedClient,
+    use_json: bool,
+    cache: Option<&crate::cache::ImageCache>,
+) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_uuid = resolve_image(&args.image, client).await?;
+    let image_uuid = resolve_image(&args.image, client, cache).await?;
     let target_account: cloudapi_client::Uuid = args
         .account
         .parse()
@@ -1066,9 +1121,14 @@ async fn share_image(args: ImageShareArgs, client: &TypedClient, use_json: bool)
     Ok(())
 }
 
-async fn unshare_image(args: ImageUnshareArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+async fn unshare_image(
+    args: ImageUnshareArgs,
+    client: &TypedClient,
+    use_json: bool,
+    cache: Option<&crate::cache::ImageCache>,
+) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_uuid = resolve_image(&args.image, client).await?;
+    let image_uuid = resolve_image(&args.image, client, cache).await?;
     let target_account: cloudapi_client::Uuid = args
         .account
         .parse()
@@ -1106,9 +1166,10 @@ async fn list_image_tags(
     args: ImageTagListArgs,
     client: &TypedClient,
     use_json: bool,
+    cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_uuid = resolve_image(&args.image, client).await?;
+    let image_uuid = resolve_image(&args.image, client, cache).await?;
 
     // Get image to retrieve tags
     let response = client
@@ -1141,9 +1202,13 @@ async fn list_image_tags(
     Ok(())
 }
 
-async fn get_image_tag(args: ImageTagGetArgs, client: &TypedClient) -> Result<()> {
+async fn get_image_tag(
+    args: ImageTagGetArgs,
+    client: &TypedClient,
+    cache: Option<&crate::cache::ImageCache>,
+) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_uuid = resolve_image(&args.image, client).await?;
+    let image_uuid = resolve_image(&args.image, client, cache).await?;
 
     // Get image to retrieve tags
     let response = client
@@ -1170,9 +1235,13 @@ async fn get_image_tag(args: ImageTagGetArgs, client: &TypedClient) -> Result<()
     Ok(())
 }
 
-async fn set_image_tags(args: ImageTagSetArgs, client: &TypedClient) -> Result<()> {
+async fn set_image_tags(
+    args: ImageTagSetArgs,
+    client: &TypedClient,
+    cache: Option<&crate::cache::ImageCache>,
+) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_uuid = resolve_image(&args.image, client).await?;
+    let image_uuid = resolve_image(&args.image, client, cache).await?;
 
     // Get existing image to merge tags
     let response = client
@@ -1223,7 +1292,11 @@ async fn set_image_tags(args: ImageTagSetArgs, client: &TypedClient) -> Result<(
     Ok(())
 }
 
-async fn delete_image_tag(args: ImageTagDeleteArgs, client: &TypedClient) -> Result<()> {
+async fn delete_image_tag(
+    args: ImageTagDeleteArgs,
+    client: &TypedClient,
+    cache: Option<&crate::cache::ImageCache>,
+) -> Result<()> {
     if !args.force
         && !Confirm::new()
             .with_prompt(format!("Delete tag {}?", args.key))
@@ -1234,7 +1307,7 @@ async fn delete_image_tag(args: ImageTagDeleteArgs, client: &TypedClient) -> Res
     }
 
     let account = &client.auth_config().account;
-    let image_uuid = resolve_image(&args.image, client).await?;
+    let image_uuid = resolve_image(&args.image, client, cache).await?;
 
     // Get existing image to remove tag
     let response = client

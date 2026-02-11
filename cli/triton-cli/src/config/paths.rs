@@ -83,6 +83,11 @@ pub fn warn_alternative_config_dirs() {
     }
 }
 
+/// Get the cache directory for a specific profile
+pub fn cache_dir(profile_slug: &str) -> PathBuf {
+    config_dir().join("cache").join(profile_slug)
+}
+
 /// Get the profiles directory
 pub fn profiles_dir() -> PathBuf {
     config_dir().join("profiles.d")

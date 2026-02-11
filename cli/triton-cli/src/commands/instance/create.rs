@@ -117,11 +117,18 @@ pub struct CreateArgs {
     pub wait_timeout: u64,
 }
 
-pub async fn run(args: CreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+pub async fn run(
+    args: CreateArgs,
+    client: &TypedClient,
+    use_json: bool,
+    cache: Option<&crate::cache::ImageCache>,
+) -> Result<()> {
     let account = &client.auth_config().account;
 
     // Resolve image (could be name@version or UUID)
-    let image_id = resolve_image(&args.image, client).await?;
+    let image_id = crate::commands::image::resolve_image(&args.image, client, cache)
+        .await?
+        .to_string();
 
     // Resolve package (could be name or UUID)
     let package_id = resolve_package(&args.package, client).await?;
@@ -610,63 +617,6 @@ async fn parse_nic_spec(
         primary: primary.or(if is_first { Some(true) } else { None }),
         gateway: None,
     })
-}
-
-async fn resolve_image(id_or_name: &str, client: &TypedClient) -> Result<String> {
-    // First try as full UUID
-    if uuid::Uuid::parse_str(id_or_name).is_ok() {
-        return Ok(id_or_name.to_string());
-    }
-
-    let account = &client.auth_config().account;
-
-    // Check if it looks like a short UUID (hex characters only)
-    let is_short_uuid = id_or_name.chars().all(|c| c.is_ascii_hexdigit());
-
-    if is_short_uuid {
-        // Fetch all images and find by UUID prefix
-        let response = client.inner().list_images().account(account).send().await?;
-        let images = response.into_inner();
-
-        for img in &images {
-            let img_id_str = img.id.to_string();
-            if img_id_str.starts_with(id_or_name) {
-                return Ok(img_id_str);
-            }
-        }
-        return Err(anyhow::anyhow!("Image not found: {}", id_or_name));
-    }
-
-    // Parse name@version format
-    let (name, version) = if let Some(idx) = id_or_name.rfind('@') {
-        (&id_or_name[..idx], Some(&id_or_name[idx + 1..]))
-    } else {
-        (id_or_name, None)
-    };
-
-    let response = client
-        .inner()
-        .list_images()
-        .account(account)
-        .name(name)
-        .send()
-        .await?;
-
-    let images = response.into_inner();
-
-    // Find matching image
-    for img in &images {
-        if let Some(v) = version {
-            if img.version == v {
-                return Ok(img.id.to_string());
-            }
-        } else {
-            // Return first match if no version specified (usually most recent)
-            return Ok(img.id.to_string());
-        }
-    }
-
-    Err(anyhow::anyhow!("Image not found: {}", id_or_name))
 }
 
 async fn resolve_package(id_or_name: &str, client: &TypedClient) -> Result<String> {

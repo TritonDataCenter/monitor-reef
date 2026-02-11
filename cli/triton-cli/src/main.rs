@@ -11,6 +11,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
 use cloudapi_client::TypedClient;
 
+mod cache;
 mod commands;
 mod config;
 mod output;
@@ -273,7 +274,7 @@ enum Commands {
 
 impl Cli {
     /// Build an authenticated TypedClient from CLI options or profile
-    async fn build_client(&self) -> Result<TypedClient> {
+    async fn build_client(&self) -> Result<(TypedClient, Profile)> {
         // First try environment variables / CLI overrides
         let url = self.url.clone().or_else(|| std::env::var("SDC_URL").ok());
         let account = self
@@ -289,8 +290,10 @@ impl Cli {
         if let (Some(url), Some(account), Some(key_id)) =
             (url.clone(), account.clone(), key_id.clone())
         {
-            let mut auth_config =
-                triton_auth::AuthConfig::new(account, triton_auth::KeySource::auto(&key_id));
+            let mut auth_config = triton_auth::AuthConfig::new(
+                account.clone(),
+                triton_auth::KeySource::auto(&key_id),
+            );
 
             // Apply RBAC options from CLI
             if let Some(user) = &self.user {
@@ -306,11 +309,11 @@ impl Cli {
                 auth_config = auth_config.with_accept_version(version.clone());
             }
 
-            return Ok(TypedClient::new_with_insecure(
-                &url,
-                auth_config,
-                self.insecure,
-            )?);
+            let profile = Profile::new("env".into(), url.clone(), account, key_id);
+            return Ok((
+                TypedClient::new_with_insecure(&url, auth_config, self.insecure)?,
+                profile,
+            ));
         }
 
         // Otherwise, load from profile
@@ -357,11 +360,10 @@ impl Cli {
         // Insecure mode: CLI flag or profile setting
         let insecure = self.insecure || profile.insecure;
 
-        Ok(TypedClient::new_with_insecure(
-            &final_url,
-            auth_config,
-            insecure,
-        )?)
+        Ok((
+            TypedClient::new_with_insecure(&final_url, auth_config, insecure)?,
+            profile,
+        ))
     }
 }
 
@@ -385,115 +387,121 @@ async fn main() -> Result<()> {
             commands::env::generate_env(profile.as_deref(), shell).await
         }
         Commands::Instance { command } => {
-            let client = cli.build_client().await?;
-            command.clone().run(&client, cli.json).await
+            let (client, profile) = cli.build_client().await?;
+            let cache = cache::ImageCache::new(&profile);
+            command.clone().run(&client, cli.json, cache.as_ref()).await
         }
         Commands::Image { command } => {
-            let client = cli.build_client().await?;
-            command.clone().run(&client, cli.json).await
+            let (client, profile) = cli.build_client().await?;
+            let cache = cache::ImageCache::new(&profile);
+            command.clone().run(&client, cli.json, cache.as_ref()).await
         }
         Commands::Key { command } => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Network { command } => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Fwrule { command } => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Vlan { command } => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Volume { command } => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Package { command } => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Account { command } => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Rbac { command } => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Info => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::info::run(&client, cli.json).await
         }
         Commands::Datacenters => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::datacenters::run(&client, cli.json).await
         }
         Commands::Services => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::services::run(&client, cli.json).await
         }
         Commands::Changefeed(args) => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::changefeed::run(args.clone(), &client, cli.json).await
         }
         Commands::Insts(args) => {
-            let client = cli.build_client().await?;
-            commands::instance::list::run(args.clone(), &client, cli.json).await
+            let (client, profile) = cli.build_client().await?;
+            let cache = cache::ImageCache::new(&profile);
+            commands::instance::list::run(args.clone(), &client, cli.json, cache.as_ref()).await
         }
         Commands::Create(args) => {
-            let client = cli.build_client().await?;
-            commands::instance::create::run(args.clone(), &client, cli.json).await
+            let (client, profile) = cli.build_client().await?;
+            let cache = cache::ImageCache::new(&profile);
+            commands::instance::create::run(args.clone(), &client, cli.json, cache.as_ref()).await
         }
         Commands::Ssh(args) => {
-            let client = cli.build_client().await?;
-            commands::instance::ssh::run(args.clone(), &client).await
+            let (client, profile) = cli.build_client().await?;
+            let cache = cache::ImageCache::new(&profile);
+            commands::instance::ssh::run(args.clone(), &client, cache.as_ref()).await
         }
         Commands::Start(args) => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::lifecycle::start(args.clone(), &client).await
         }
         Commands::Stop(args) => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::lifecycle::stop(args.clone(), &client).await
         }
         Commands::Reboot(args) => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::lifecycle::reboot(args.clone(), &client).await
         }
         Commands::Delete(args) => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::delete::run(args.clone(), &client).await
         }
         Commands::Imgs(args) => {
-            let client = cli.build_client().await?;
+            let (client, profile) = cli.build_client().await?;
+            let cache = cache::ImageCache::new(&profile);
             commands::image::ImageCommand::List(args.clone())
-                .run(&client, cli.json)
+                .run(&client, cli.json, cache.as_ref())
                 .await
         }
         Commands::Pkgs(args) => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::package::PackageCommand::List(args.clone())
                 .run(&client, cli.json)
                 .await
         }
         Commands::Nets(args) => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::network::NetworkCommand::List(args.clone())
                 .run(&client, cli.json)
                 .await
         }
         Commands::Vols(args) => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::volume::VolumeCommand::List(args.clone())
                 .run(&client, cli.json)
                 .await
         }
         Commands::Keys => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::key::KeyCommand::List(commands::key::KeyListArgs {
                 table: Default::default(),
                 authorized_keys: false,
@@ -502,7 +510,7 @@ async fn main() -> Result<()> {
             .await
         }
         Commands::Fwrules => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::fwrule::FwruleCommand::List(commands::fwrule::FwruleListArgs {
                 table: Default::default(),
             })
@@ -510,7 +518,7 @@ async fn main() -> Result<()> {
             .await
         }
         Commands::Vlans => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::vlan::VlanCommand::List(commands::vlan::VlanListArgs {
                 filters: vec![],
                 table: Default::default(),
@@ -527,27 +535,27 @@ async fn main() -> Result<()> {
             .await
         }
         Commands::Ip(args) => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::get::ip(args.clone(), &client).await
         }
         Commands::Disks(args) => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::disk::list_disks(args.clone(), &client, cli.json).await
         }
         Commands::Snapshots(args) => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::snapshot::list_snapshots(args.clone(), &client, cli.json).await
         }
         Commands::Tags(args) => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::tag::list_tags(args.clone(), &client, cli.json).await
         }
         Commands::Metadatas(args) => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::metadata::list_metadata(args.clone(), &client, cli.json).await
         }
         Commands::Nics(args) => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::nic::list_nics(args.clone(), &client, cli.json).await
         }
         Commands::Completion { shell } => {
@@ -561,7 +569,7 @@ async fn main() -> Result<()> {
             Ok(())
         }
         Commands::Cloudapi(args) => {
-            let client = cli.build_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::cloudapi::run(args.clone(), &client).await
         }
     }

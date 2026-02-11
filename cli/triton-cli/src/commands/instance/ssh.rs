@@ -79,7 +79,11 @@ struct ProxyConfig {
     user: String,
 }
 
-pub async fn run(args: SshArgs, client: &TypedClient) -> Result<()> {
+pub async fn run(
+    args: SshArgs,
+    client: &TypedClient,
+    cache: Option<&crate::cache::ImageCache>,
+) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = &client.auth_config().account;
 
@@ -96,7 +100,7 @@ pub async fn run(args: SshArgs, client: &TypedClient) -> Result<()> {
     let machine = response.into_inner();
 
     // Resolve SSH configuration
-    let config = resolve_ssh_config(&args, &machine, client).await?;
+    let config = resolve_ssh_config(&args, &machine, client, cache).await?;
 
     // Build and execute SSH command
     execute_ssh(&args, &config)
@@ -107,6 +111,7 @@ async fn resolve_ssh_config(
     args: &SshArgs,
     machine: &Machine,
     client: &TypedClient,
+    cache: Option<&crate::cache::ImageCache>,
 ) -> Result<SshConfig> {
     // Determine target IP - check tritoncli.ssh.ip tag first, then primary_ip
     let ip = if let Some(tag_ip) = get_tag_string(&machine.tags, TAG_SSH_IP) {
@@ -137,14 +142,14 @@ async fn resolve_ssh_config(
         user.clone()
     } else {
         // Try to get default_user from image
-        fetch_image_default_user(machine.image, client).await
+        fetch_image_default_user(machine.image, client, cache).await
     };
 
     // Determine proxy configuration (unless disabled)
     let proxy = if args.no_proxy {
         None
     } else {
-        resolve_proxy_config(machine, client).await?
+        resolve_proxy_config(machine, client, cache).await?
     };
 
     Ok(SshConfig {
@@ -159,6 +164,7 @@ async fn resolve_ssh_config(
 async fn resolve_proxy_config(
     machine: &Machine,
     client: &TypedClient,
+    cache: Option<&crate::cache::ImageCache>,
 ) -> Result<Option<ProxyConfig>> {
     // Check if instance has tritoncli.ssh.proxy tag
     let proxy_ref = match get_tag_string(&machine.tags, TAG_SSH_PROXY) {
@@ -204,7 +210,7 @@ async fn resolve_proxy_config(
         proxy_user
     } else {
         // Try to get default_user from proxy's image
-        fetch_image_default_user(proxy_machine.image, client).await
+        fetch_image_default_user(proxy_machine.image, client, cache).await
     };
 
     Ok(Some(ProxyConfig {
@@ -214,10 +220,24 @@ async fn resolve_proxy_config(
 }
 
 /// Fetch an image by UUID and get its default user
-async fn fetch_image_default_user(image_id: uuid::Uuid, client: &TypedClient) -> String {
+async fn fetch_image_default_user(
+    image_id: uuid::Uuid,
+    client: &TypedClient,
+    cache: Option<&crate::cache::ImageCache>,
+) -> String {
+    // Try cache first (uses longer GET_TTL)
+    if let Some(image) = cache.and_then(|c| c.get_image(image_id)) {
+        if let Some(ref tags) = image.tags
+            && let Some(user) = get_tag_string(tags, TAG_DEFAULT_USER)
+        {
+            return user;
+        }
+        return "root".to_string();
+    }
+
     let account = &client.auth_config().account;
 
-    // Try to fetch the image
+    // Cache miss — fetch from API
     let image_result = client
         .inner()
         .get_image()
@@ -229,7 +249,6 @@ async fn fetch_image_default_user(image_id: uuid::Uuid, client: &TypedClient) ->
     match image_result {
         Ok(response) => {
             let image = response.into_inner();
-            // Check the image's tags for default_user
             if let Some(ref tags) = image.tags
                 && let Some(user) = get_tag_string(tags, TAG_DEFAULT_USER)
             {
@@ -237,10 +256,7 @@ async fn fetch_image_default_user(image_id: uuid::Uuid, client: &TypedClient) ->
             }
             "root".to_string()
         }
-        Err(_) => {
-            // If we can't fetch the image, just default to root
-            "root".to_string()
-        }
+        Err(_) => "root".to_string(),
     }
 }
 

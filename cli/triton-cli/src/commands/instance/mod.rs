@@ -140,18 +140,23 @@ pub enum InstanceCommand {
 }
 
 impl InstanceCommand {
-    pub async fn run(self, client: &TypedClient, json: bool) -> Result<()> {
+    pub async fn run(
+        self,
+        client: &TypedClient,
+        json: bool,
+        cache: Option<&crate::cache::ImageCache>,
+    ) -> Result<()> {
         match self {
-            Self::List(args) => list::run(args, client, json).await,
+            Self::List(args) => list::run(args, client, json, cache).await,
             Self::Get(args) => get::run(args, client, json).await,
-            Self::Create(args) => create::run(args, client, json).await,
+            Self::Create(args) => create::run(args, client, json, cache).await,
             Self::Delete(args) => delete::run(args, client).await,
             Self::Start(args) => lifecycle::start(args, client).await,
             Self::Stop(args) => lifecycle::stop(args, client).await,
             Self::Reboot(args) => lifecycle::reboot(args, client).await,
             Self::Resize(args) => resize::run(args, client).await,
             Self::Rename(args) => rename::run(args, client).await,
-            Self::Ssh(args) => ssh::run(args, client).await,
+            Self::Ssh(args) => ssh::run(args, client, cache).await,
             Self::Wait(args) => wait::run(args, client, json).await,
             Self::Audit(args) => audit::run(args, client, json).await,
             Self::EnableFirewall(args) => firewall::enable(args, client).await,

@@ -140,7 +140,12 @@ pub struct ListArgs {
     pub credentials: bool,
 }
 
-pub async fn run(args: ListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+pub async fn run(
+    args: ListArgs,
+    client: &TypedClient,
+    use_json: bool,
+    cache: Option<&crate::cache::ImageCache>,
+) -> Result<()> {
     let account = &client.auth_config().account;
 
     let mut req = client.inner().list_machines().account(account);
@@ -185,24 +190,39 @@ pub async fn run(args: ListArgs, client: &TypedClient, use_json: bool) -> Result
         }
     }
 
-    // Fetch machines and images in parallel for performance
-    let images_req = client.inner().list_images().account(account).send();
-    let (machines_response, images_response) = tokio::join!(req.send(), images_req);
+    // Try loading images from cache first to avoid a parallel API call
+    let cached_images = cache.and_then(|c| c.load_list());
 
-    let machines = machines_response?.into_inner();
-
-    // Build image UUID -> name@version map
-    let image_map: HashMap<uuid::Uuid, String> = images_response
-        .map(|r| {
-            r.into_inner()
-                .into_iter()
-                .map(|img| (img.id, format!("{}@{}", img.name, img.version)))
-                .collect()
-        })
-        .unwrap_or_default();
+    let (machines, image_map) = if let Some(images) = cached_images {
+        // Cache hit — only fetch machines (skip images API call)
+        let machines = req.send().await?.into_inner();
+        let map: HashMap<uuid::Uuid, String> = images
+            .into_iter()
+            .map(|img| (img.id, format!("{}@{}", img.name, img.version)))
+            .collect();
+        (machines, map)
+    } else {
+        // Cache miss — fetch machines and images in parallel
+        let images_req = client.inner().list_images().account(account).send();
+        let (machines_response, images_response) = tokio::join!(req.send(), images_req);
+        let machines = machines_response?.into_inner();
+        let map: HashMap<uuid::Uuid, String> = match images_response {
+            Ok(r) => {
+                let images = r.into_inner();
+                if let Some(c) = cache {
+                    c.save_list(&images);
+                }
+                images
+                    .into_iter()
+                    .map(|img| (img.id, format!("{}@{}", img.name, img.version)))
+                    .collect()
+            }
+            Err(_) => HashMap::new(),
+        };
+        (machines, map)
+    };
 
     if use_json {
-        // Augment machines with computed fields for node-triton compatibility
         let augmented: Vec<AugmentedMachine> = machines
             .iter()
             .map(|m| AugmentedMachine::from_machine(m, &image_map))
