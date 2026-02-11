@@ -47,16 +47,16 @@ pub struct RbacAccesskeyCommand {
     pub delete: bool,
 
     /// Status for create/update (Active or Inactive)
-    #[arg(long)]
+    #[arg(short = 's', long)]
     pub status: Option<String>,
 
     /// Description for create/update
-    #[arg(long)]
+    #[arg(short = 'D', long, visible_alias = "desc")]
     pub description: Option<String>,
 
     /// Skip confirmation (for delete)
-    #[arg(short = 'y', long = "yes")]
-    pub yes: bool,
+    #[arg(short = 'f', long = "force", visible_alias = "yes", short_alias = 'y')]
+    pub force: bool,
 
     /// Arguments: USER [ACCESSKEYID...]
     #[arg(trailing_var_arg = true)]
@@ -96,7 +96,7 @@ impl RbacAccesskeyCommand {
             }
             let user = &self.args[0];
             let ids: Vec<String> = self.args[1..].to_vec();
-            delete_user_access_keys(user, ids, self.yes, client).await
+            delete_user_access_keys(user, ids, self.force, client).await
         } else if self.args.len() >= 2 {
             // Default: show accesskey
             let user = &self.args[0];
@@ -261,14 +261,14 @@ async fn update_user_access_key(
 async fn delete_user_access_keys(
     user: &str,
     ids: Vec<String>,
-    yes: bool,
+    force: bool,
     client: &TypedClient,
 ) -> Result<()> {
     let account = &client.auth_config().account;
     let user_id = resolve_user(user, client).await?;
 
     for id in &ids {
-        if !yes {
+        if !force {
             use dialoguer::Confirm;
             if !Confirm::new()
                 .with_prompt(format!("Delete user {} access key '{}'?", user, id))

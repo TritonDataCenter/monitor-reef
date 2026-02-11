@@ -231,6 +231,10 @@ enum Commands {
     #[command(alias = "volumes")]
     Vols(commands::volume::VolumeListArgs),
 
+    /// List access keys (shortcut for 'accesskey list')
+    #[command(hide = true)]
+    Accesskeys(commands::accesskey::AccesskeyListArgs),
+
     /// List SSH keys (shortcut for 'key list')
     Keys,
 
@@ -507,6 +511,12 @@ async fn main() -> Result<()> {
         Commands::Vols(args) => {
             let (client, _profile) = cli.build_client().await?;
             commands::volume::VolumeCommand::List(args.clone())
+                .run(&client, cli.json)
+                .await
+        }
+        Commands::Accesskeys(args) => {
+            let (client, _profile) = cli.build_client().await?;
+            commands::accesskey::AccesskeyCommand::List(args.clone())
                 .run(&client, cli.json)
                 .await
         }

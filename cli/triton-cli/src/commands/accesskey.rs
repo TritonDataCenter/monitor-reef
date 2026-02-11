@@ -44,10 +44,10 @@ pub struct AccesskeyGetArgs {
 #[derive(Args, Clone)]
 pub struct AccesskeyCreateArgs {
     /// Initial status (Active or Inactive)
-    #[arg(long)]
+    #[arg(short, long)]
     pub status: Option<String>,
     /// Description for the access key
-    #[arg(long)]
+    #[arg(short, long, visible_alias = "desc")]
     pub description: Option<String>,
 }
 
@@ -56,10 +56,10 @@ pub struct AccesskeyUpdateArgs {
     /// Access key ID
     pub accesskeyid: String,
     /// New status (Active or Inactive)
-    #[arg(long)]
+    #[arg(short, long)]
     pub status: Option<String>,
     /// New description
-    #[arg(long)]
+    #[arg(short, long, visible_alias = "desc")]
     pub description: Option<String>,
 }
 
