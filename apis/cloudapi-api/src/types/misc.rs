@@ -27,7 +27,9 @@ pub struct PackagePath {
 #[serde(rename_all = "camelCase")]
 pub struct PackageDisk {
     /// Disk size in MB
-    pub size: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<u64>,
+
     /// Block size in bytes
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub block_size: Option<u64>,
@@ -369,8 +371,6 @@ mod tests {
     /// empty objects `{}` to indicate "use remaining space". This test verifies
     /// that such packages can be deserialized correctly.
     ///
-    /// Currently fails because PackageDisk requires `size` field.
-    /// See: https://github.com/TritonDataCenter/triton/issues/XXX
     #[test]
     fn test_package_deserialize_bhyve_with_empty_disk() {
         let json = r#"{

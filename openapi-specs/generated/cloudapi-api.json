@@ -11446,15 +11446,13 @@
             "minimum": 0
           },
           "size": {
+            "nullable": true,
             "description": "Disk size in MB",
             "type": "integer",
             "format": "uint64",
             "minimum": 0
           }
-        },
-        "required": [
-          "size"
-        ]
+        }
       },
       "Policy": {
         "description": "Policy information",
