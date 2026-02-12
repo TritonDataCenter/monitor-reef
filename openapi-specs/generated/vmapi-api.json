@@ -3085,6 +3085,13 @@
             "enum": [
               "running"
             ]
+          },
+          {
+            "description": "Unknown state (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
           }
         ]
       },

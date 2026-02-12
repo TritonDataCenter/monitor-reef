@@ -76,6 +76,9 @@ pub enum MigrationState {
     Failed,
     /// Running (in progress)
     Running,
+    /// Unknown state (forward compatibility)
+    #[serde(other)]
+    Unknown,
 }
 
 /// Migration phase
