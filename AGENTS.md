@@ -592,7 +592,7 @@ bd create --title "Short description" --description "Details" --add-label type-s
 
 ### Session Convention
 
-When working on tracked items, check `bd ready` at session start to see the current work queue. When finishing work, close completed issues and create new ones for any follow-up work discovered.
+When working on tracked items, check `bd ready` at session start to see the current work queue. When finishing work, commit the changes and close the issue in a single atomic commit (include the updated `.beads/issues.jsonl` in the commit). Create new issues for any follow-up work discovered.
 
 ### MCP Integration (Optional)
 
