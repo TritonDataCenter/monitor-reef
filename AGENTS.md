@@ -586,13 +586,22 @@ bd show <id>
 # Close an issue after fixing
 bd close <id>
 
+# Close as won't-fix (add a comment explaining why)
+bd comments add <id> "Reason for not fixing..."
+bd close <id> -r "wontfix: brief summary"
+
 # Create a new issue
 bd create --title "Short description" --description "Details" --add-label type-safety
 ```
 
 ### Session Convention
 
-When working on tracked items, check `bd ready` at session start to see the current work queue. When finishing work, close the issue with `bd close <id>` first, then create an atomic commit that includes both the code changes and the updated `.beads/issues.jsonl`. Create new issues for any follow-up work discovered.
+When working on tracked items, check `bd ready` at session start to see the current work queue. When finishing work:
+
+1. Add comments with reasoning using `bd comments add <id> "..."`, especially for won't-fix closures
+2. Close the issue with `bd close <id>` (use `-r` for a short reason)
+3. Create an atomic commit that includes both the code changes and the updated `.beads/issues.jsonl`
+4. Create new issues for any follow-up work discovered
 
 ### MCP Integration (Optional)
 
