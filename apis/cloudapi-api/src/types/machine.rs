@@ -49,6 +49,7 @@ pub enum MachineState {
     Deleted,
     Offline,
     Ready,
+    #[serde(other)]
     Unknown,
 }
 
