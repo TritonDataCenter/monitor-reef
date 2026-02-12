@@ -2731,13 +2731,24 @@
       },
       "JobExecution": {
         "description": "Job execution state",
-        "type": "string",
-        "enum": [
-          "queued",
-          "running",
-          "succeeded",
-          "failed",
-          "canceled"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "canceled"
+            ]
+          },
+          {
+            "description": "Unknown state (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
         ]
       },
       "JobResponse": {

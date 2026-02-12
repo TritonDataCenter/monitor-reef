@@ -68,6 +68,9 @@ pub enum JobExecution {
     Succeeded,
     Failed,
     Canceled,
+    /// Unknown state (forward compatibility)
+    #[serde(other)]
+    Unknown,
 }
 
 /// Task chain entry in a job
