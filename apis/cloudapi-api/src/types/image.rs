@@ -194,7 +194,7 @@ pub struct CreateImageRequest {
 }
 
 /// Image action for action dispatch
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "kebab-case")]
 pub enum ImageAction {
     Update,

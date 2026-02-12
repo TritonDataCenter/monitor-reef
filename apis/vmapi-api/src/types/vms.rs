@@ -86,7 +86,7 @@ pub struct VmActionQuery {
 }
 
 /// VM actions available via POST /vms/:uuid?action=<action>
-#[derive(Debug, Clone, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum VmAction {
     Start,

@@ -411,7 +411,7 @@ impl CreateMachineRequest {
 }
 
 /// Machine action for action dispatch
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MachineAction {
     Start,
