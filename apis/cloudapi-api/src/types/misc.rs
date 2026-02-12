@@ -149,7 +149,9 @@ pub struct Service {
 /// Migration state
 ///
 /// Represents the current state of a migration operation.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum MigrationState {
     Running,
