@@ -34,9 +34,9 @@ Copyright 2026 Edgecast Cloud LLC.
 ```
 clients/internal/<service>-client/
 ├── Cargo.toml
-├── build.rs
 └── src/
-    └── lib.rs
+    ├── lib.rs
+    └── generated.rs  (created by client-generator)
 ```
 
 ### 2. Create Cargo.toml
@@ -48,6 +48,9 @@ version = "<version-from-plan>"
 edition.workspace = true
 description = "<Service> client library (Progenitor-generated)"
 
+[lints]
+workspace = true
+
 [lib]
 name = "<service>_client"
 path = "src/lib.rs"
@@ -58,40 +61,22 @@ reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 <service>-api = { path = "../../../apis/<service>-api" }
-clap = { workspace = true }       # Needed if build.rs patches add clap::ValueEnum
-schemars = { workspace = true }   # Needed if build.rs adds schemars::JsonSchema derive
-
-[build-dependencies]
-progenitor = { workspace = true }
-serde_json = { workspace = true }
-openapiv3 = { workspace = true }
+clap = { workspace = true }       # Needed if client-generator patches add clap::ValueEnum
+schemars = { workspace = true }   # Needed if client-generator adds schemars::JsonSchema derive
 ```
 
-**Note:** Include `clap` and `schemars` only if `build.rs` uses `.with_derive("schemars::JsonSchema")` or `.with_patch(..., &value_enum_patch)`. These are compile-time dependencies of the generated code.
+**Note:** Include `clap` and `schemars` only if the client-generator config uses `.with_derive("schemars::JsonSchema")` or `.with_patch(..., &value_enum_patch)`. These are compile-time dependencies of the generated code.
 
-### 3. Create build.rs
+### 3. Register in client-generator
+
+Add a `ClientConfig` entry to the `CLIENTS` array in `client-generator/src/main.rs`:
 
 ```rust
-use progenitor::{GenerationSettings, TypePatch};
-use std::env;
-use std::path::Path;
+// In client-generator/src/main.rs
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let out_dir = env::var("OUT_DIR")?;
-    let spec_path = "../../../openapi-specs/generated/<service>-api.json";
+fn configure_<service>(settings: &mut GenerationSettings) {
+    let value_enum_patch = TypePatch::default().with_derive("clap::ValueEnum").clone();
 
-    assert!(Path::new(spec_path).exists(), "{spec_path} does not exist!");
-    println!("cargo:rerun-if-changed={}", spec_path);
-
-    let spec = std::fs::read_to_string(spec_path)?;
-    let openapi: openapiv3::OpenAPI = serde_json::from_str(&spec)?;
-
-    // Patch: add clap::ValueEnum to enums used as CLI --state/--sort args
-    let value_enum_patch = TypePatch::default()
-        .with_derive("clap::ValueEnum")
-        .clone();
-
-    let mut settings = GenerationSettings::default();
     settings
         .with_interface(progenitor::InterfaceStyle::Builder)
         .with_tag(progenitor::TagStyle::Merged)
@@ -100,13 +85,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         // .with_patch("MachineState", &value_enum_patch)
         // .with_patch("VolumeState", &value_enum_patch)
         ;
-
-    let tokens = progenitor::Generator::new(&settings).generate_tokens(&openapi)?;
-    std::fs::write(format!("{}/client.rs", out_dir), tokens.to_string())?;
-
-    println!("Generated client from OpenAPI spec: {}", spec_path);
-    Ok(())
 }
+
+// Add to CLIENTS array:
+ClientConfig {
+    name: "<service>-client",
+    spec_path: "openapi-specs/generated/<service>-api.json",
+    output_path: "clients/internal/<service>-client/src/generated.rs",
+    configure: configure_<service>,
+},
 ```
 
 **TypePatch notes:**
@@ -116,9 +103,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - If the CLI imports the re-exported API crate type directly, put `ValueEnum` on the API crate instead (see Phase 2)
 
 **Type Safety Rule — Patch Consistency:**
-Every enum that will be used as a CLI argument (`#[arg(value_enum)]`) MUST have a corresponding `with_patch` call here. When adding enums to the API trait, proactively identify which will become CLI filter/sort arguments and add patches immediately. Missing patches cause compile errors when the CLI tries to use `ValueEnum` on the Progenitor-generated copy.
+Every enum that will be used as a CLI argument (`#[arg(value_enum)]`) MUST have a corresponding `with_patch` call in the client-generator config. When adding enums to the API trait, proactively identify which will become CLI filter/sort arguments and add patches immediately. Missing patches cause compile errors when the CLI tries to use `ValueEnum` on the Progenitor-generated copy.
 
-### 4. Create src/lib.rs
+### 4. Generate Client Code
+
+```bash
+make clients-generate
+```
+
+This creates `clients/internal/<service>-client/src/generated.rs` with formatted, readable Progenitor output.
+
+### 5. Create src/lib.rs
 
 **First, read the API crate to find exact type names to re-export.**
 
@@ -127,7 +122,10 @@ Every enum that will be used as a CLI argument (`#[arg(value_enum)]`) MUST have 
 //!
 //! This client provides typed access to the <Service> API.
 
-include!(concat!(env!("OUT_DIR"), "/client.rs"));
+// Allow unwrap in generated code - Progenitor uses it in Client::new()
+#[allow(clippy::unwrap_used)]
+mod generated;
+pub use generated::*;
 
 // Re-export types from the API crate.
 // VERIFY these names match apis/<service>-api/src/*.rs exactly!
@@ -140,7 +138,7 @@ pub use <service>_api::{
 };
 ```
 
-### 5. Add Typed Wrapper Methods (REQUIRED for action-dispatch pattern)
+### 6. Add Typed Wrapper Methods (REQUIRED for action-dispatch pattern)
 
 **If the API uses `?action=` query parameters, you MUST add typed wrapper methods.**
 
@@ -191,41 +189,6 @@ impl TypedClient {
             .map(|r| r.into_inner())
     }
 
-    /// Stop a VM
-    pub async fn stop_vm(
-        &self,
-        uuid: &str,
-        idempotent: bool,
-    ) -> Result<types::AsyncJobResponse, Error<types::Error>> {
-        let body = <service>_api::StopVmRequest {
-            idempotent: if idempotent { Some(true) } else { None },
-        };
-        self.inner.vm_action()
-            .uuid(uuid)
-            .action(<service>_api::VmAction::Stop)
-            .body(serde_json::to_value(&body).unwrap_or_default())
-            .send()
-            .await
-            .map(|r| r.into_inner())
-    }
-
-    /// Update VM properties
-    ///
-    /// Takes a typed request struct with all updateable fields.
-    pub async fn update_vm(
-        &self,
-        uuid: &str,
-        request: &<service>_api::UpdateVmRequest,
-    ) -> Result<types::AsyncJobResponse, Error<types::Error>> {
-        self.inner.vm_action()
-            .uuid(uuid)
-            .action(<service>_api::VmAction::Update)
-            .body(serde_json::to_value(request).unwrap_or_default())
-            .send()
-            .await
-            .map(|r| r.into_inner())
-    }
-
     // ... MUST add one wrapper per action in the VmAction enum
 }
 ```
@@ -237,7 +200,7 @@ impl TypedClient {
 - Common parameters (like `idempotent`) should be explicit function parameters
 - Complex requests (like `update`) should take the full request struct
 
-### 6. Add to Workspace
+### 7. Add to Workspace
 
 **Only after ALL files exist**, edit root `Cargo.toml`:
 
@@ -248,7 +211,7 @@ members = [
 ]
 ```
 
-### 7. Build Client
+### 8. Build Client
 
 ```bash
 make format package-build PACKAGE=<service>-client
@@ -258,7 +221,7 @@ Common errors:
 - Wrong type names in re-exports (read API crate source!)
 - Missing dependency on API crate
 
-### 8. Update Plan File
+### 9. Update Plan File
 
 Add to `conversion-plans/<service>/plan.md`:
 
@@ -282,7 +245,8 @@ Add to `conversion-plans/<service>/plan.md`:
 Phase 3 is complete when:
 - [ ] All client files created before workspace addition
 - [ ] Cargo.toml has API crate dependency
-- [ ] build.rs points to correct spec path
+- [ ] Client registered in client-generator with correct spec path and patches
+- [ ] `make clients-generate` produces `src/generated.rs`
 - [ ] lib.rs re-exports verified type names
 - [ ] **Typed wrapper methods added for ALL actions** (if action-dispatch pattern)
 - [ ] Added to workspace Cargo.toml
@@ -308,6 +272,6 @@ If build fails:
 The orchestrator will run:
 ```bash
 make check
-git add clients/internal/<service>-client/ conversion-plans/<service>/plan.md Cargo.toml Cargo.lock
+git add clients/internal/<service>-client/ client-generator/src/main.rs conversion-plans/<service>/plan.md Cargo.toml Cargo.lock
 git commit -m "Add <service> client library (Phase 3)"
 ```

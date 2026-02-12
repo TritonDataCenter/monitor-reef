@@ -130,16 +130,13 @@ client-new: ## Create new client (usage: make client-new CLIENT=my-service-clien
 	cp -r clients/internal/client-template clients/internal/$(CLIENT)
 	sed -i 's/client-template/$(CLIENT)/g' clients/internal/$(CLIENT)/Cargo.toml
 	sed -i 's/client_template/$(shell echo $(CLIENT) | tr '-' '_')/g' clients/internal/$(CLIENT)/Cargo.toml
-	@if [ ! -z "$(API)" ]; then \
-		sed -i 's|generated/example-api.json|generated/$(API).json|g' clients/internal/$(CLIENT)/build.rs; \
-		echo "Updated build.rs to use $(API).json"; \
-	fi
 	@echo "Created new client: clients/internal/$(CLIENT)"
 	@echo ""
 	@echo "Next steps:"
-	@echo "  1. Add 'clients/internal/$(CLIENT)' to workspace Cargo.toml members list"
-	@echo "  2. Verify build.rs points to correct OpenAPI spec"
-	@echo "  3. Run: make client-build CLIENT=$(CLIENT)"
+	@echo "  1. Register the client in client-generator/src/main.rs"
+	@echo "  2. Add 'clients/internal/$(CLIENT)' to workspace Cargo.toml members list"
+	@echo "  3. Run: make clients-generate"
+	@echo "  4. Run: make client-build CLIENT=$(CLIENT)"
 
 client-build: | $(CARGO_EXEC) ## Build specific client (usage: make client-build CLIENT=my-service-client)
 	@if [ -z "$(CLIENT)" ]; then echo "Usage: make client-build CLIENT=my-service-client"; exit 1; fi

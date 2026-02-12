@@ -406,7 +406,11 @@ The client crate depends on the API crate and provides typed wrappers. Since we 
 
 ```rust
 // clients/internal/vmapi-client/src/lib.rs
-include!(concat!(env!("OUT_DIR"), "/client.rs"));
+
+// Generated code lives in src/generated.rs (created by client-generator)
+#[allow(clippy::unwrap_used)]
+mod generated;
+pub use generated::*;
 
 // Re-export action enum and request types from API crate
 pub use vmapi_api::{VmAction, UpdateVmRequest, AddNicsRequest, ...};
@@ -613,7 +617,7 @@ These patterns prevent the most common type-safety issues in generated CLI code:
 | Hardcoded enum string | `if s == "running"` | `if m.state == MachineState::Running` |
 | Display format | `format!("{:?}", e).to_lowercase()` | `enum_to_display(&e)` |
 | Duplicate enum | `enum State { Running, ... }` | `use client::MachineState` |
-| Missing ValueEnum | enum in API crate without `ValueEnum` | Add derive + `with_patch` in build.rs |
+| Missing ValueEnum | enum in API crate without `ValueEnum` | Add derive + `with_patch` in client-generator config |
 | String CLI arg | `#[arg(long)] state: String` | `#[arg(long, value_enum)] state: MachineState` |
 | Direct API import | `use vmapi_api::MachineState` | `use vmapi_client::MachineState` |
 

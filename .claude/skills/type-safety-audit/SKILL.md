@@ -45,20 +45,20 @@ Find enums used as CLI `#[arg(value_enum)]` fields that lack the `ValueEnum` der
 2. For each match, identify the type of the field
 3. Check if that type has `clap::ValueEnum` derived — either:
    - On the API crate type in `apis/*/src/types/*.rs`
-   - Via `with_patch` in the corresponding `clients/internal/*/build.rs`
+   - Via `with_patch` in the corresponding client's configuration in `client-generator/src/main.rs`
 
-**A finding exists when:** The type has neither a `ValueEnum` derive on the source nor a `with_patch` in build.rs.
+**A finding exists when:** The type has neither a `ValueEnum` derive on the source nor a `with_patch` in the client-generator config.
 
-### Check 3: Missing build.rs Patches
+### Check 3: Missing client-generator Patches
 
-Check that all enums used as CLI arguments have corresponding `with_patch` calls.
+Check that all enums used as CLI arguments have corresponding `with_patch` calls in the client-generator.
 
 **How to find them:**
 1. From Check 2, get the list of enum types used with `value_enum`
-2. Read each `clients/internal/*/build.rs`
+2. Read `client-generator/src/main.rs` to find each client's `configure_*` function
 3. Compare: every enum used as a CLI `value_enum` arg should have a `with_patch` line (unless the API crate type itself has `ValueEnum`)
 
-**A finding exists when:** An enum is used with `value_enum` in a CLI but has no `with_patch` in the client build.rs and no `ValueEnum` on the API type.
+**A finding exists when:** An enum is used with `value_enum` in a CLI but has no `with_patch` in the client-generator config and no `ValueEnum` on the API type.
 
 ### Check 4: Duplicate Enum Definitions
 
@@ -116,7 +116,7 @@ bd create \
 **Title conventions:**
 - Check 1: `Hardcoded enum string "<value>" in <file>`
 - Check 2: `Missing ValueEnum derive on <EnumName>`
-- Check 3: `Missing with_patch for <EnumName> in <client>/build.rs`
+- Check 3: `Missing with_patch for <EnumName> in client-generator config for <client>`
 - Check 4: `Duplicate enum <EnumName> in <cli-file> (exists in <api-crate>)`
 - Check 5: `Debug format anti-pattern on <EnumName> in <file>`
 - Check 6: `Missing #[serde(other)] on <EnumName>`

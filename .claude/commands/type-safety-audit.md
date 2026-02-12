@@ -20,7 +20,7 @@ Follow those instructions to:
 1. Search for hardcoded enum string literals
 2. Find enums missing `clap::ValueEnum` derives
 3. Identify duplicate enum definitions
-4. Check for missing `with_patch` calls in build.rs files
+4. Check for missing `with_patch` calls in client-generator config
 5. Find `format!("{:?}", ...)` anti-patterns on enums
 6. Check for missing `#[serde(other)] Unknown` variants on state enums
 
