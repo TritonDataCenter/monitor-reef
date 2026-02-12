@@ -21,6 +21,7 @@
 mod common;
 
 use assert_cmd::Command;
+use cloudapi_client::MachineState;
 use predicates::prelude::*;
 
 fn triton_cmd() -> Command {
@@ -191,7 +192,7 @@ fn test_delete_alias() {
 struct InstanceInfo {
     id: String,
     name: String,
-    state: String,
+    state: MachineState,
     #[serde(default)]
     metadata: Option<serde_json::Value>,
     #[serde(default)]
@@ -299,7 +300,8 @@ fn test_instance_manage_workflow() {
 
     // Verify initial state
     assert_eq!(
-        instance.state, "running",
+        instance.state,
+        MachineState::Running,
         "instance should be running after -w"
     );
 
@@ -367,7 +369,11 @@ fn test_instance_manage_workflow() {
     let (stdout, _, success) = run_triton_with_profile(["instance", "get", "-j", &inst_alias]);
     assert!(success, "get should succeed");
     let instance: InstanceInfo = serde_json::from_str(&stdout).expect("should parse JSON");
-    assert_eq!(instance.state, "stopped", "instance should be stopped");
+    assert_eq!(
+        instance.state,
+        MachineState::Stopped,
+        "instance should be stopped"
+    );
 
     // Test: triton start with wait
     eprintln!("Test: triton start -w {}", inst_alias);
@@ -382,7 +388,11 @@ fn test_instance_manage_workflow() {
     let (stdout, _, success) = run_triton_with_profile(["instance", "get", "-j", &inst_alias]);
     assert!(success, "get should succeed");
     let instance: InstanceInfo = serde_json::from_str(&stdout).expect("should parse JSON");
-    assert_eq!(instance.state, "running", "instance should be running");
+    assert_eq!(
+        instance.state,
+        MachineState::Running,
+        "instance should be running"
+    );
 
     // Test: triton reboot with wait
     eprintln!("Test: triton reboot -w {}", inst_alias);
@@ -401,7 +411,11 @@ fn test_instance_manage_workflow() {
     let (stdout, _, success) = run_triton_with_profile(["instance", "get", "-j", &inst_alias]);
     assert!(success, "get should succeed");
     let instance: InstanceInfo = serde_json::from_str(&stdout).expect("should parse JSON");
-    assert_eq!(instance.state, "running", "instance should be running");
+    assert_eq!(
+        instance.state,
+        MachineState::Running,
+        "instance should be running"
+    );
 
     // Test: triton inst resize (if resize package available)
     if !resize_pkg_name.is_empty() {
@@ -527,7 +541,11 @@ fn test_instance_get_deleted() {
     if !stdout.trim().is_empty()
         && let Ok(instance) = serde_json::from_str::<InstanceInfo>(&stdout)
     {
-        assert_eq!(instance.state, "deleted", "state should be 'deleted'");
+        assert_eq!(
+            instance.state,
+            MachineState::Deleted,
+            "state should be 'deleted'"
+        );
     }
 }
 
@@ -578,11 +596,12 @@ fn test_instance_wait() {
     let instances: Vec<InstanceInfo> = json_stream_parse(&stdout);
     let instance = instances.last().expect("should have instance");
     let inst_id = &instance.id;
-    eprintln!("Created instance {} in state {}", inst_id, instance.state);
+    eprintln!("Created instance {} in state {:?}", inst_id, instance.state);
 
     // Instance should be in provisioning state
     assert_eq!(
-        instance.state, "provisioning",
+        instance.state,
+        MachineState::Provisioning,
         "instance should be provisioning"
     );
 
