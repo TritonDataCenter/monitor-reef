@@ -52,12 +52,9 @@
 //! let jobs = client.inner().list_jobs().send().await?;
 //! ```
 
-// Include the Progenitor-generated client code
 // Allow unwrap in generated code - Progenitor uses it in Client::new()
 #[allow(clippy::unwrap_used)]
-mod generated {
-    include!(concat!(env!("OUT_DIR"), "/client.rs"));
-}
+mod generated;
 pub use generated::*;
 
 // Re-export types from the API crate for convenience.

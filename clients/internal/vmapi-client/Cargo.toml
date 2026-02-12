@@ -30,8 +30,3 @@ base64 = "0.22"
 rand = "0.9"
 # clap::ValueEnum on generated enum types for CLI consumers
 clap = { workspace = true }
-
-[build-dependencies]
-progenitor = { workspace = true }
-serde_json = { workspace = true }
-openapiv3 = { workspace = true }

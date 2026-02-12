@@ -155,10 +155,10 @@ fn generate_client(root: &Utf8Path, config: &ClientConfig) -> Result<String> {
         spec_path
     );
 
-    let spec_str = std::fs::read_to_string(&spec_path)
-        .with_context(|| format!("reading {}", spec_path))?;
-    let openapi: openapiv3::OpenAPI = serde_json::from_str(&spec_str)
-        .with_context(|| format!("parsing {}", spec_path))?;
+    let spec_str =
+        std::fs::read_to_string(&spec_path).with_context(|| format!("reading {}", spec_path))?;
+    let openapi: openapiv3::OpenAPI =
+        serde_json::from_str(&spec_str).with_context(|| format!("parsing {}", spec_path))?;
 
     let mut settings = GenerationSettings::default();
     (config.configure)(&mut settings);
@@ -179,8 +179,8 @@ fn generate_client(root: &Utf8Path, config: &ClientConfig) -> Result<String> {
 }
 
 fn reformat_code(input: String) -> Result<String> {
-    let formatted = rustfmt_wrapper::rustfmt(input)
-        .map_err(|e| anyhow::anyhow!("rustfmt failed: {}", e))?;
+    let formatted =
+        rustfmt_wrapper::rustfmt(input).map_err(|e| anyhow::anyhow!("rustfmt failed: {}", e))?;
     space_out_items(formatted).map_err(|e| anyhow::anyhow!("space_out_items failed: {}", e))
 }
 
