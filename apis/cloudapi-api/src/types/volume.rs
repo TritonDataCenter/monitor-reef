@@ -20,13 +20,15 @@ pub struct VolumePath {
 }
 
 /// Volume state
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum VolumeState {
     Creating,
     Ready,
     Failed,
     Deleting,
+    #[serde(other)]
+    Unknown,
 }
 
 /// Volume information

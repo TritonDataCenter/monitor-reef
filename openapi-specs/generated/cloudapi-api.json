@@ -12376,7 +12376,8 @@
           "creating",
           "ready",
           "failed",
-          "deleting"
+          "deleting",
+          "unknown"
         ]
       },
       "ImageAction": {

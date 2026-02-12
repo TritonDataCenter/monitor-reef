@@ -2988,7 +2988,8 @@
           "creating",
           "ready",
           "failed",
-          "deleting"
+          "deleting",
+          "unknown"
         ],
         "type": "string"
       }
