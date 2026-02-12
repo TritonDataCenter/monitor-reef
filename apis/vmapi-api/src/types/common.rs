@@ -74,6 +74,9 @@ pub enum VmState {
     Configured,
     Ready,
     Receiving,
+    /// Unknown state (forward compatibility)
+    #[serde(other)]
+    Unknown,
 }
 
 impl VmState {
@@ -101,6 +104,7 @@ impl std::fmt::Display for VmState {
             VmState::Configured => "configured",
             VmState::Ready => "ready",
             VmState::Receiving => "receiving",
+            VmState::Unknown => "unknown",
         };
         write!(f, "{}", s)
     }
@@ -121,6 +125,7 @@ impl std::str::FromStr for VmState {
             "configured" => Ok(VmState::Configured),
             "ready" => Ok(VmState::Ready),
             "receiving" => Ok(VmState::Receiving),
+            "unknown" => Ok(VmState::Unknown),
             _ => Err(format!("unknown VM state: {}", s)),
         }
     }

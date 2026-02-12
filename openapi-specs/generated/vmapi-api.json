@@ -3727,18 +3727,29 @@
       },
       "VmState": {
         "description": "VM state\n\nThese states reflect the possible values returned by VMAPI.",
-        "type": "string",
-        "enum": [
-          "running",
-          "stopped",
-          "stopping",
-          "provisioning",
-          "failed",
-          "destroyed",
-          "incomplete",
-          "configured",
-          "ready",
-          "receiving"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "stopping",
+              "provisioning",
+              "failed",
+              "destroyed",
+              "incomplete",
+              "configured",
+              "ready",
+              "receiving"
+            ]
+          },
+          {
+            "description": "Unknown state (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
         ]
       },
       "VmStatus": {
