@@ -55,7 +55,9 @@ pub struct TagPath {
 }
 
 /// Snapshot state
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum SnapshotState {
     Queued,
