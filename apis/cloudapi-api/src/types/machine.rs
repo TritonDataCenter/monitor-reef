@@ -53,7 +53,9 @@ pub enum MachineState {
 }
 
 /// Machine type (virtualization category)
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum MachineType {
     /// SmartOS zone or Linux container
