@@ -59,7 +59,9 @@ pub enum Brand {
 /// VM state
 ///
 /// These states reflect the possible values returned by VMAPI.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
+)]
 #[serde(rename_all = "lowercase")]
 pub enum VmState {
     Running,
