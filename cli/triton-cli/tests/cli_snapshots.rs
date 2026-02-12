@@ -21,6 +21,7 @@
 mod common;
 
 use assert_cmd::Command;
+use cloudapi_client::SnapshotState;
 use predicates::prelude::*;
 
 fn triton_cmd() -> Command {
@@ -140,7 +141,7 @@ fn test_instance_snapshots_alias() {
 #[derive(Debug, serde::Deserialize)]
 struct SnapshotInfo {
     name: String,
-    state: String,
+    state: SnapshotState,
 }
 
 /// Full instance snapshot workflow test
@@ -220,7 +221,7 @@ fn test_instance_snapshot_workflow() {
     assert!(success, "snapshot get should succeed");
     let snap: SnapshotInfo = serde_json::from_str(&stdout).expect("should parse JSON");
     assert_eq!(snap.name, snap_name_2);
-    assert_eq!(snap.state, "created");
+    assert_eq!(snap.state, SnapshotState::Created);
 
     // Test: Delete snapshot 2
     eprintln!(
@@ -276,7 +277,7 @@ fn test_instance_snapshot_workflow() {
     assert!(success, "snapshot get should succeed");
     let snap: SnapshotInfo = serde_json::from_str(&stdout).expect("should parse JSON");
     assert_eq!(snap.name, snap_name);
-    assert_eq!(snap.state, "created");
+    assert_eq!(snap.state, SnapshotState::Created);
 
     // Test: List snapshots
     eprintln!("Test: triton instance snapshot list {}", inst_short_id);
