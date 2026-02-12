@@ -841,7 +841,7 @@ async fn main() -> Result<()> {
                 "brand": brand,
             }))
             .map_err(|e| anyhow::anyhow!("Failed to build request: {}", e))?;
-            let resp = client.create_vm().body(&body).send().await?;
+            let resp = client.create_vm().body(body).send().await?;
             let result = resp.into_inner();
             println!("VM creation initiated:");
             println!("  VM UUID: {}", result.vm_uuid);
@@ -860,14 +860,14 @@ async fn main() -> Result<()> {
                 "vms": vms,
             }))
             .map_err(|e| anyhow::anyhow!("Failed to build request: {}", e))?;
-            let resp = client.put_vms().body(&body).send().await?;
+            let resp = client.put_vms().body(body).send().await?;
             println!("{}", serde_json::to_string_pretty(&resp.into_inner())?);
         }
 
         Commands::PutVm { uuid, vm_json } => {
             let vm: serde_json::Map<String, serde_json::Value> = serde_json::from_str(&vm_json)?;
             let body = types::PutVmRequest::from(vm);
-            let resp = client.put_vm().uuid(uuid).body(&body).send().await?;
+            let resp = client.put_vm().uuid(uuid).body(body).send().await?;
             println!("{}", serde_json::to_string_pretty(&resp.into_inner())?);
         }
 
@@ -1187,7 +1187,7 @@ async fn main() -> Result<()> {
 
         Commands::PostJobResults { results_json } => {
             let body: types::PostJobResultsRequest = serde_json::from_str(&results_json)?;
-            let resp = client.post_job_results().body(&body).send().await?;
+            let resp = client.post_job_results().body(body).send().await?;
             println!("{}", serde_json::to_string_pretty(&resp.into_inner())?);
         }
 
@@ -1245,7 +1245,7 @@ async fn main() -> Result<()> {
             let resp = client
                 .add_customer_metadata()
                 .uuid(uuid)
-                .body(&body)
+                .body(body)
                 .send()
                 .await?;
             let result = resp.into_inner();
@@ -1266,7 +1266,7 @@ async fn main() -> Result<()> {
             let resp = client
                 .set_customer_metadata()
                 .uuid(uuid)
-                .body(&body)
+                .body(body)
                 .send()
                 .await?;
             let result = resp.into_inner();
@@ -1343,7 +1343,7 @@ async fn main() -> Result<()> {
             let resp = client
                 .add_internal_metadata()
                 .uuid(uuid)
-                .body(&body)
+                .body(body)
                 .send()
                 .await?;
             let result = resp.into_inner();
@@ -1364,7 +1364,7 @@ async fn main() -> Result<()> {
             let resp = client
                 .set_internal_metadata()
                 .uuid(uuid)
-                .body(&body)
+                .body(body)
                 .send()
                 .await?;
             let result = resp.into_inner();
@@ -1430,7 +1430,7 @@ async fn main() -> Result<()> {
             let metadata: serde_json::Map<String, serde_json::Value> =
                 serde_json::from_str(&tags_json)?;
             let body = types::AddMetadataRequest(metadata);
-            let resp = client.add_tags().uuid(uuid).body(&body).send().await?;
+            let resp = client.add_tags().uuid(uuid).body(body).send().await?;
             let result = resp.into_inner();
             println!("Tags update initiated:");
             println!("  VM UUID: {}", result.vm_uuid);
@@ -1443,7 +1443,7 @@ async fn main() -> Result<()> {
             let metadata: serde_json::Map<String, serde_json::Value> =
                 serde_json::from_str(&tags_json)?;
             let body = types::SetMetadataRequest(metadata);
-            let resp = client.set_tags().uuid(uuid).body(&body).send().await?;
+            let resp = client.set_tags().uuid(uuid).body(body).send().await?;
             let result = resp.into_inner();
             println!("Tags replacement initiated:");
             println!("  VM UUID: {}", result.vm_uuid);
@@ -1478,7 +1478,7 @@ async fn main() -> Result<()> {
         Commands::AddRoleTags { uuid, role_tags } => {
             let tags: Vec<String> = role_tags.split(',').map(|s| s.trim().to_string()).collect();
             let body = types::AddRoleTagsRequest { role_tags: tags };
-            let resp = client.add_role_tags().uuid(uuid).body(&body).send().await?;
+            let resp = client.add_role_tags().uuid(uuid).body(body).send().await?;
             let result = resp.into_inner();
             println!("Role tags: {:?}", result.role_tags);
         }
@@ -1486,7 +1486,7 @@ async fn main() -> Result<()> {
         Commands::SetRoleTags { uuid, role_tags } => {
             let tags: Vec<String> = role_tags.split(',').map(|s| s.trim().to_string()).collect();
             let body = types::SetRoleTagsRequest { role_tags: tags };
-            let resp = client.set_role_tags().uuid(uuid).body(&body).send().await?;
+            let resp = client.set_role_tags().uuid(uuid).body(body).send().await?;
             let result = resp.into_inner();
             println!("Role tags: {:?}", result.role_tags);
         }
@@ -1586,7 +1586,7 @@ async fn main() -> Result<()> {
             let resp = client
                 .store_migration_record()
                 .uuid(uuid)
-                .body(&body)
+                .body(body)
                 .send()
                 .await?;
             let migration = resp.into_inner();
@@ -1601,7 +1601,7 @@ async fn main() -> Result<()> {
             let resp = client
                 .report_migration_progress()
                 .uuid(uuid)
-                .body(&body)
+                .body(body)
                 .send()
                 .await?;
             let migration = resp.into_inner();
@@ -1613,7 +1613,7 @@ async fn main() -> Result<()> {
             let resp = client
                 .update_vm_server_uuid()
                 .uuid(uuid)
-                .body(&body)
+                .body(body)
                 .send()
                 .await?;
             let vm = resp.into_inner();
