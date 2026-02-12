@@ -88,16 +88,10 @@ pub async fn run(
     let account = &client.auth_config().account;
 
     // Get instance details
-    let response = client
-        .inner()
-        .get_machine()
-        .account(account)
-        .machine(machine_id)
-        .send()
+    let machine = client
+        .get_machine(account, &machine_id)
         .await
         .context("Failed to get instance")?;
-
-    let machine = response.into_inner();
 
     // Resolve SSH configuration
     let config = resolve_ssh_config(&args, &machine, client, cache).await?;
@@ -179,16 +173,10 @@ async fn resolve_proxy_config(
         .await
         .with_context(|| format!("Failed to resolve SSH proxy instance '{}'", proxy_ref))?;
 
-    let proxy_response = client
-        .inner()
-        .get_machine()
-        .account(account)
-        .machine(proxy_id)
-        .send()
+    let proxy_machine = client
+        .get_machine(account, &proxy_id)
         .await
         .with_context(|| format!("Failed to get SSH proxy instance '{}'", proxy_ref))?;
-
-    let proxy_machine = proxy_response.into_inner();
 
     // Get proxy IP - check tritoncli.ssh.ip tag first, then primary_ip
     let proxy_ip = if let Some(tag_ip) = get_tag_string(&proxy_machine.tags, TAG_SSH_IP) {

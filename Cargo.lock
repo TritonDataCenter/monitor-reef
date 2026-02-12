@@ -652,21 +652,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "cloudapi-cli"
-version = "9.20.0"
-dependencies = [
- "anyhow",
- "clap",
- "cloudapi-api",
- "cloudapi-client",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "uuid",
-]
-
-[[package]]
 name = "cloudapi-client"
 version = "9.20.0"
 dependencies = [

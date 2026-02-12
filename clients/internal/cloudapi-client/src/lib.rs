@@ -484,72 +484,42 @@ impl TypedClient {
 
     /// Get a machine by UUID
     ///
-    /// This method handles the CloudAPI quirk where deleted machines return
-    /// HTTP 410 Gone with the Machine body (instead of an Error body).
-    /// The progenitor-generated client fails to parse this, so we handle it
-    /// manually here.
-    ///
-    /// # Arguments
-    /// * `account` - Account login name
-    /// * `machine` - Machine UUID
+    /// This wraps the Progenitor-generated `get_machine` to handle the CloudAPI
+    /// quirk where deleted machines return HTTP 410 Gone with a Machine body
+    /// (not an Error body). Progenitor treats 4xx as errors and fails to parse
+    /// the Machine body, so we catch the parse failure and recover.
     ///
     /// # Returns
     /// Returns the Machine. If the machine is deleted, `machine.state` will be
     /// `MachineState::Deleted`. Check the state to determine if the machine
     /// is still active.
-    ///
-    /// # Errors
-    /// Returns an error if the machine is not found (404) or on other failures.
     pub async fn get_machine(
         &self,
         account: &str,
         machine: &Uuid,
     ) -> Result<types::Machine, GetMachineError> {
-        // Build the URL and path for signing
-        let base = self.base_url.trim_end_matches('/');
-        let path = format!("/{}/machines/{}", account, machine);
-        let url = format!("{}{}", base, path);
-
-        // Sign the request using triton-auth
-        let (date_header, auth_header) = triton_auth::sign_request(&self.auth_config, "GET", &path)
-            .await
-            .map_err(GetMachineError::Auth)?;
-
-        // Send the request
-        let response = self
-            .http_client
-            .get(&url)
-            .header("Date", &date_header)
-            .header("Authorization", &auth_header)
-            .header("Accept", "application/json")
+        match self
+            .inner
+            .get_machine()
+            .account(account)
+            .machine(machine.to_string())
             .send()
             .await
-            .map_err(GetMachineError::Request)?;
-
-        let status = response.status();
-
-        // Handle success cases: 200 OK and 410 Gone both return Machine body
-        if status.is_success() || status == reqwest::StatusCode::GONE {
-            let response_text = response
-                .text()
-                .await
-                .map_err(GetMachineError::ResponseParse)?;
-
-            let machine: types::Machine =
-                serde_json::from_str(&response_text).map_err(|e| GetMachineError::JsonParse {
+        {
+            Ok(rv) => Ok(rv.into_inner()),
+            // 410 Gone returns a Machine body, which Progenitor fails to
+            // deserialize as types::Error → surfaces as InvalidResponsePayload
+            // with the raw bytes still intact.
+            Err(Error::InvalidResponsePayload(bytes, _)) => {
+                serde_json::from_slice(&bytes).map_err(|e| GetMachineError::JsonParse {
                     error: e.to_string(),
-                    body: response_text.clone(),
-                })?;
-
-            Ok(machine)
-        } else if status == reqwest::StatusCode::NOT_FOUND {
-            Err(GetMachineError::NotFound)
-        } else {
-            let error_body = response.text().await.unwrap_or_default();
-            Err(GetMachineError::Server {
-                status,
-                body: error_body,
-            })
+                    body: String::from_utf8_lossy(&bytes).to_string(),
+                })
+            }
+            Err(Error::ErrorResponse(rv)) if rv.status() == reqwest::StatusCode::NOT_FOUND => {
+                Err(GetMachineError::NotFound)
+            }
+            Err(e) => Err(GetMachineError::Client(e.to_string())),
         }
     }
 
@@ -1016,27 +986,15 @@ pub enum CreateMachineError {
 /// Error type for the get_machine method
 #[derive(Debug, thiserror::Error)]
 pub enum GetMachineError {
-    /// Authentication/signing error
-    #[error("authentication error: {0}")]
-    Auth(#[from] AuthError),
-    /// HTTP request error
-    #[error("request error: {0}")]
-    Request(reqwest::Error),
-    /// Failed to parse response body
-    #[error("failed to parse response: {0}")]
-    ResponseParse(reqwest::Error),
-    /// Failed to parse response JSON
+    /// Progenitor client error (auth, transport, server errors)
+    #[error("{0}")]
+    Client(String),
+    /// Failed to parse response JSON (usually a 410 Gone body)
     #[error("failed to parse JSON: {error}\nResponse body: {body}")]
     JsonParse { error: String, body: String },
     /// Machine not found (404)
     #[error("machine not found")]
     NotFound,
-    /// Server returned an error response
-    #[error("server error ({status}): {body}")]
-    Server {
-        status: reqwest::StatusCode,
-        body: String,
-    },
 }
 
 // =============================================================================

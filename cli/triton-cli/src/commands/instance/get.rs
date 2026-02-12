@@ -28,15 +28,7 @@ pub async fn run(args: GetArgs, client: &TypedClient, use_json: bool) -> Result<
     let account = &client.auth_config().account;
     let machine_uuid = resolve_instance(&args.instance, client).await?;
 
-    let response = client
-        .inner()
-        .get_machine()
-        .account(account)
-        .machine(machine_uuid)
-        .send()
-        .await?;
-
-    let machine = response.into_inner();
+    let machine = client.get_machine(account, &machine_uuid).await?;
 
     if use_json {
         json::print_json(&machine)?;
@@ -51,15 +43,7 @@ pub async fn ip(args: IpArgs, client: &TypedClient) -> Result<()> {
     let account = &client.auth_config().account;
     let machine_uuid = resolve_instance(&args.instance, client).await?;
 
-    let response = client
-        .inner()
-        .get_machine()
-        .account(account)
-        .machine(machine_uuid)
-        .send()
-        .await?;
-
-    let machine = response.into_inner();
+    let machine = client.get_machine(account, &machine_uuid).await?;
 
     if let Some(ip) = machine.primary_ip {
         println!("{}", ip);

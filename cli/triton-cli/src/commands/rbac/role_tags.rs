@@ -483,14 +483,7 @@ async fn get_current_role_tags(
     match resource_type {
         RoleTagResource::Instance => {
             let uuid = parse_resource_uuid(resource_id, resource_type)?;
-            let machine = client
-                .inner()
-                .get_machine()
-                .account(account)
-                .machine(uuid)
-                .send()
-                .await?
-                .into_inner();
+            let machine = client.get_machine(account, &uuid).await?;
             Ok(machine.role_tag.unwrap_or_default())
         }
         RoleTagResource::Image => {

@@ -71,15 +71,7 @@ pub async fn wait_for_states(
     let timeout = Duration::from_secs(timeout_secs);
 
     loop {
-        let response = client
-            .inner()
-            .get_machine()
-            .account(account)
-            .machine(machine_id)
-            .send()
-            .await?;
-
-        let machine = response.into_inner();
+        let machine = client.get_machine(account, &machine_id).await?;
 
         if target_states.contains(&machine.state) {
             return Ok(machine);
