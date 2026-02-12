@@ -2072,9 +2072,13 @@
             "type": "boolean"
           },
           "state": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NicState"
+              }
+            ],
             "description": "State",
-            "nullable": true,
-            "type": "string"
+            "nullable": true
           }
         },
         "required": [
@@ -2114,6 +2118,16 @@
           "network"
         ],
         "type": "object"
+      },
+      "NicState": {
+        "description": "NIC state",
+        "enum": [
+          "provisioning",
+          "running",
+          "stopped",
+          "unknown"
+        ],
+        "type": "string"
       },
       "Package": {
         "description": "Package information",

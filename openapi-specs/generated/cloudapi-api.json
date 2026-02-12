@@ -11469,7 +11469,11 @@
           "state": {
             "nullable": true,
             "description": "State",
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NicState"
+              }
+            ]
           }
         },
         "required": [
@@ -11507,6 +11511,16 @@
         },
         "required": [
           "network"
+        ]
+      },
+      "NicState": {
+        "description": "NIC state",
+        "type": "string",
+        "enum": [
+          "provisioning",
+          "running",
+          "stopped",
+          "unknown"
         ]
       },
       "Package": {

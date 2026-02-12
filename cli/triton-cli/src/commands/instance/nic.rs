@@ -12,7 +12,7 @@ use cloudapi_client::TypedClient;
 use dialoguer::Confirm;
 use serde::{Deserialize, Serialize};
 
-use crate::output::{json, table};
+use crate::output::{enum_to_display, json, table};
 
 #[derive(Subcommand, Clone)]
 pub enum NicCommand {
@@ -117,7 +117,7 @@ impl From<&cloudapi_client::types::Nic> for NicOutput {
             primary: nic.primary,
             netmask: nic.netmask.clone(),
             gateway: nic.gateway.clone().unwrap_or_default(),
-            state: nic.state.clone().unwrap_or_default(),
+            state: nic.state.as_ref().map(enum_to_display).unwrap_or_default(),
             network: nic.network.to_string(),
         }
     }

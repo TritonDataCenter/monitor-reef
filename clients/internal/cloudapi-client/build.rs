@@ -46,6 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_patch("ImageType", &value_enum_patch)
         .with_patch("MigrationAction", &value_enum_patch)
         .with_patch("MigrationState", &value_enum_patch)
+        .with_patch("NicState", &value_enum_patch)
         .with_patch("SnapshotState", &value_enum_patch)
         .with_patch("VolumeState", &value_enum_patch);
 

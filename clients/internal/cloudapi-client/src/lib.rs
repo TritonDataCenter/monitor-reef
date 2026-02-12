@@ -172,6 +172,7 @@ pub use cloudapi_api::{
     Nic,
     NicPath,
     NicSpec,
+    NicState,
     Package,
     PackagePath,
     Policy,

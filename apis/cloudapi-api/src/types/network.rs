@@ -206,6 +206,19 @@ pub struct UpdateFabricNetworkRequest {
     pub routes: Option<serde_json::Value>,
 }
 
+/// NIC state
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum NicState {
+    Provisioning,
+    Running,
+    Stopped,
+    #[serde(other)]
+    Unknown,
+}
+
 /// NIC information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -225,7 +238,7 @@ pub struct Nic {
     pub network: Uuid,
     /// State
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub state: Option<String>,
+    pub state: Option<NicState>,
 }
 
 /// Request to add NIC
