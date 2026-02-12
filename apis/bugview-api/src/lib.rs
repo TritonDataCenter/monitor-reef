@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 
 /// Sort field for issue lists
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema, clap::ValueEnum)]
 #[serde(rename_all = "lowercase")]
 pub enum IssueSort {
     /// Sort by issue key (e.g., OS-1234)
