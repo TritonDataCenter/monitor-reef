@@ -115,6 +115,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - Use patches when the API crate type does NOT have `clap::ValueEnum` (i.e., the CLI imports from `types::` not the re-export)
 - If the CLI imports the re-exported API crate type directly, put `ValueEnum` on the API crate instead (see Phase 2)
 
+**Type Safety Rule — Patch Consistency:**
+Every enum that will be used as a CLI argument (`#[arg(value_enum)]`) MUST have a corresponding `with_patch` call here. When adding enums to the API trait, proactively identify which will become CLI filter/sort arguments and add patches immediately. Missing patches cause compile errors when the CLI tries to use `ValueEnum` on the Progenitor-generated copy.
+
 ### 4. Create src/lib.rs
 
 **First, read the API crate to find exact type names to re-export.**

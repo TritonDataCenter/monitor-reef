@@ -127,6 +127,27 @@ Key implementation notes:
    if format!("{:?}", machine.state).to_lowercase() == "failed" { ... }
    ```
 
+8. **Import types from client re-exports, never reimplement:**
+   ```rust
+   // GOOD: import from client crate (re-exported API type or Progenitor type)
+   use vmapi_client::MachineState;        // re-exported API type
+   use vmapi_client::types::VmListSort;   // Progenitor-generated type
+
+   // BAD: reimplementing an enum that already exists
+   enum MachineState { Running, Stopped, ... }  // DUPLICATE — use the import!
+   ```
+
+9. **No hardcoded enum string literals:**
+   ```rust
+   // GOOD: use typed enum
+   if machine.state == MachineState::Running { ... }
+   println!("{}", enum_to_display(&machine.state));
+
+   // BAD: string literal matching a variant wire name
+   if state == "running" { ... }
+   row.push("running".to_string());
+   ```
+
 **Basic structure:**
 
 ```rust
