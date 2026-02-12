@@ -281,7 +281,7 @@ pub async fn run(
     // Create the instance using the legacy-compatible method
     // This transforms tags/metadata to the format expected by Node.js CloudAPI
     let machine = client
-        .create_machine_from_progenitor(account, &request)
+        .create_machine(account, &request)
         .await
         .map_err(|e| anyhow::anyhow!("Failed to create machine: {}", e))?;
     let id_str = machine.id.to_string();

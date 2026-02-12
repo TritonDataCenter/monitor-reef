@@ -357,79 +357,11 @@ impl TypedClient {
 
     /// Create a machine with legacy-compatible format
     ///
-    /// This method transforms the clean `CreateMachineRequest` format into the
-    /// legacy dot-notation format expected by the Node.js CloudAPI server.
+    /// This method accepts the Progenitor-generated `types::CreateMachineRequest` and
+    /// transforms it to the legacy format expected by Node.js CloudAPI.
     ///
     /// Node.js CloudAPI expects tags as `tag.KEY=VALUE` and metadata as
     /// `metadata.KEY=VALUE` as top-level JSON fields, not nested objects.
-    ///
-    /// # Arguments
-    /// * `account` - Account login name
-    /// * `request` - Machine creation request
-    ///
-    /// # Errors
-    /// Returns an error if the request fails or the server returns an error.
-    pub async fn create_machine(
-        &self,
-        account: &str,
-        request: &CreateMachineRequest,
-    ) -> Result<types::Machine, CreateMachineError> {
-        // Transform the request to legacy format with flattened tags/metadata
-        let legacy_body = transform_create_machine_to_legacy(request);
-
-        // Build the URL and path for signing
-        // Note: base_url might have trailing slash, so trim it
-        let base = self.base_url.trim_end_matches('/');
-        let path = format!("/{}/machines", account);
-        let url = format!("{}{}", base, path);
-
-        // Sign the request using triton-auth
-        let (date_header, auth_header) =
-            triton_auth::sign_request(&self.auth_config, "POST", &path)
-                .await
-                .map_err(CreateMachineError::Auth)?;
-
-        // Send the request with our transformed body
-        let response = self
-            .http_client
-            .post(&url)
-            .header("Date", &date_header)
-            .header("Authorization", &auth_header)
-            .header("Content-Type", "application/json")
-            .header("Accept", "application/json")
-            .json(&legacy_body)
-            .send()
-            .await
-            .map_err(CreateMachineError::Request)?;
-
-        let status = response.status();
-        if status.is_success() {
-            // Get the response text first for debugging
-            let response_text = response
-                .text()
-                .await
-                .map_err(CreateMachineError::ResponseParse)?;
-            // Try to parse as Machine
-            let machine: types::Machine = serde_json::from_str(&response_text).map_err(|e| {
-                CreateMachineError::JsonParse {
-                    error: e.to_string(),
-                    body: response_text.clone(),
-                }
-            })?;
-            Ok(machine)
-        } else {
-            let error_body = response.text().await.unwrap_or_default();
-            Err(CreateMachineError::Server {
-                status,
-                body: error_body,
-            })
-        }
-    }
-
-    /// Create a machine from the Progenitor-generated request type
-    ///
-    /// This method accepts the Progenitor-generated `types::CreateMachineRequest` and
-    /// transforms it to the legacy format expected by Node.js CloudAPI.
     ///
     /// # Arguments
     /// * `account` - Account login name
@@ -437,7 +369,7 @@ impl TypedClient {
     ///
     /// # Errors
     /// Returns an error if the request fails or the server returns an error.
-    pub async fn create_machine_from_progenitor(
+    pub async fn create_machine(
         &self,
         account: &str,
         request: &types::CreateMachineRequest,
@@ -1141,121 +1073,6 @@ fn transform_progenitor_request_to_legacy(
                 }
             }
         }
-    }
-
-    obj
-}
-
-/// Transform a CreateMachineRequest (cloudapi_api type) into the legacy format
-///
-/// Node.js CloudAPI expects tags as `tag.KEY=VALUE` and metadata as
-/// `metadata.KEY=VALUE` as top-level JSON fields, not nested objects.
-fn transform_create_machine_to_legacy(request: &CreateMachineRequest) -> serde_json::Value {
-    // Start with the standard serialization
-    let mut obj = serde_json::json!({
-        "image": request.image,
-        "package": request.package,
-    });
-
-    // SAFETY: obj is created as a JSON object above, so this unwrap is safe
-    let Some(map) = obj.as_object_mut() else {
-        return obj;
-    };
-
-    // Add optional fields
-    if let Some(name) = &request.name {
-        map.insert("name".to_string(), serde_json::Value::String(name.clone()));
-    }
-
-    if let Some(networks) = &request.networks {
-        map.insert(
-            "networks".to_string(),
-            serde_json::to_value(networks).unwrap_or_default(),
-        );
-    }
-
-    if let Some(nics) = &request.nics {
-        map.insert(
-            "nics".to_string(),
-            serde_json::to_value(nics).unwrap_or_default(),
-        );
-    }
-
-    if let Some(affinity) = &request.affinity {
-        map.insert(
-            "affinity".to_string(),
-            serde_json::to_value(affinity).unwrap_or_default(),
-        );
-    }
-
-    if let Some(locality) = &request.locality {
-        map.insert("locality".to_string(), locality.clone());
-    }
-
-    if let Some(firewall_enabled) = request.firewall_enabled {
-        map.insert(
-            "firewall_enabled".to_string(),
-            serde_json::Value::Bool(firewall_enabled),
-        );
-    }
-
-    if let Some(deletion_protection) = request.deletion_protection {
-        map.insert(
-            "deletion_protection".to_string(),
-            serde_json::Value::Bool(deletion_protection),
-        );
-    }
-
-    if let Some(brand) = &request.brand {
-        map.insert(
-            "brand".to_string(),
-            serde_json::to_value(brand).unwrap_or_default(),
-        );
-    }
-
-    if let Some(volumes) = &request.volumes {
-        map.insert(
-            "volumes".to_string(),
-            serde_json::to_value(volumes).unwrap_or_default(),
-        );
-    }
-
-    if let Some(disks) = &request.disks {
-        map.insert(
-            "disks".to_string(),
-            serde_json::to_value(disks).unwrap_or_default(),
-        );
-    }
-
-    if let Some(delegate_dataset) = request.delegate_dataset {
-        map.insert(
-            "delegate_dataset".to_string(),
-            serde_json::Value::Bool(delegate_dataset),
-        );
-    }
-
-    if let Some(encrypted) = request.encrypted {
-        map.insert("encrypted".to_string(), serde_json::Value::Bool(encrypted));
-    }
-
-    if let Some(allow_shared_images) = request.allow_shared_images {
-        map.insert(
-            "allow_shared_images".to_string(),
-            serde_json::Value::Bool(allow_shared_images),
-        );
-    }
-
-    // Flatten tags using the helper method that handles both formats
-    let tags = request.tags();
-    for (key, value) in tags {
-        map.insert(format!("tag.{key}"), value);
-    }
-
-    // Flatten metadata using the helper method that handles both formats
-    // arch-lint: allow(no-sync-io) reason="metadata() is a struct method, not filesystem I/O"
-    let metadata = request.metadata();
-    for (key, value) in metadata {
-        map.insert(format!("metadata.{key}"), serde_json::Value::String(value));
     }
 
     obj
