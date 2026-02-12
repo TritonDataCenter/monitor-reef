@@ -110,7 +110,7 @@ bd create \
 - Verification: how to confirm the fix>" \
   --priority P2 \
   --type task \
-  --add-label type-safety
+  --labels type-safety
 ```
 
 **Title conventions:**
