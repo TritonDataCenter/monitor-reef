@@ -1345,7 +1345,8 @@
           "unactivated",
           "disabled",
           "creating",
-          "failed"
+          "failed",
+          "unknown"
         ],
         "type": "string"
       },

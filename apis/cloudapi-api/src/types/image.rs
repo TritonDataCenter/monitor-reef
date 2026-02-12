@@ -30,6 +30,8 @@ pub enum ImageState {
     Disabled,
     Creating,
     Failed,
+    #[serde(other)]
+    Unknown,
 }
 
 /// Image type

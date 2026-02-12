@@ -10755,7 +10755,8 @@
           "unactivated",
           "disabled",
           "creating",
-          "failed"
+          "failed",
+          "unknown"
         ]
       },
       "ImageType": {
