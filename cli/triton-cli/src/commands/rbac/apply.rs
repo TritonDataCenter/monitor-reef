@@ -170,13 +170,21 @@ struct ApplyResult {
     summary: ApplySummary,
 }
 
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum ApplyStatus {
+    Success,
+    Failed,
+    DryRun,
+}
+
 #[derive(serde::Serialize)]
 struct ApplyChangeResult {
     action: String,
     #[serde(rename = "type")]
     item_type: String,
     name: String,
-    status: String,
+    status: ApplyStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
 }
@@ -659,7 +667,7 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
                         action: action.to_string(),
                         item_type: item_type.to_string(),
                         name,
-                        status: "dry-run".to_string(),
+                        status: ApplyStatus::DryRun,
                         error: None,
                     }
                 })
@@ -782,7 +790,7 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
                     action: action.to_string(),
                     item_type: item_type.to_string(),
                     name,
-                    status: "success".to_string(),
+                    status: ApplyStatus::Success,
                     error: None,
                 });
             }
@@ -794,7 +802,7 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
                     action: action.to_string(),
                     item_type: item_type.to_string(),
                     name,
-                    status: "failed".to_string(),
+                    status: ApplyStatus::Failed,
                     error: Some(e.to_string()),
                 });
             }
