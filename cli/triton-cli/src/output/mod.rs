@@ -18,6 +18,11 @@ pub enum OutputFormat {
     Json,
 }
 
+/// Display string for unknown/missing state values.
+///
+/// Matches the wire-format serialization of `#[serde(other)] Unknown` enum variants.
+pub const UNKNOWN_DISPLAY: &str = "unknown";
+
 /// Convert a serde-serializable enum value to its wire-format string.
 ///
 /// Uses serde_json to get the exact rename (lowercase, kebab-case, snake_case, etc.)
@@ -27,6 +32,16 @@ pub fn enum_to_display<T: serde::Serialize + std::fmt::Debug>(val: &T) -> String
         .ok()
         .and_then(|v| v.as_str().map(String::from))
         .unwrap_or_else(|| format!("{:?}", val))
+}
+
+/// Convert an optional serde-serializable enum to its wire-format display string.
+///
+/// Returns [`UNKNOWN_DISPLAY`] when the value is `None`.
+pub fn opt_enum_to_display<T: serde::Serialize + std::fmt::Debug>(val: Option<&T>) -> String {
+    match val {
+        Some(v) => enum_to_display(v),
+        None => UNKNOWN_DISPLAY.to_string(),
+    }
 }
 
 /// Format megabytes as human-readable size (matches node-triton format)

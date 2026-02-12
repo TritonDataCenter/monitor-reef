@@ -16,7 +16,7 @@ use cloudapi_client::types::{Image, ImageState};
 use dialoguer::Confirm;
 use serde_json::{Map, Value};
 
-use crate::output::{enum_to_display, json, table};
+use crate::output::{enum_to_display, json, opt_enum_to_display, table};
 
 #[derive(Subcommand, Clone)]
 pub enum ImageCommand {
@@ -939,11 +939,7 @@ async fn wait_image(
 
         if args.states.iter().any(|s| image.state.as_ref() == Some(s)) {
             done += 1;
-            let current_state = image
-                .state
-                .as_ref()
-                .map(enum_to_display)
-                .unwrap_or_else(|| "unknown".to_string());
+            let current_state = opt_enum_to_display(image.state.as_ref());
             println!(
                 "{}/{}: Image {} ({}@{}) already {}",
                 done, total, image.id, image.name, image.version, current_state
@@ -980,11 +976,7 @@ async fn wait_image(
     for (image_uuid, display_name) in &images_to_wait {
         let image = wait_for_image_states(*image_uuid, &args.states, args.timeout, client).await?;
         done += 1;
-        let final_state = image
-            .state
-            .as_ref()
-            .map(enum_to_display)
-            .unwrap_or_else(|| "unknown".to_string());
+        let final_state = opt_enum_to_display(image.state.as_ref());
         println!(
             "{}/{}: Image {} moved to state {}",
             done, total, display_name, final_state
