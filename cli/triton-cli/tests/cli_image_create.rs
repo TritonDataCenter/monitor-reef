@@ -26,6 +26,7 @@
 mod common;
 
 use assert_cmd::Command;
+use cloudapi_client::{ImageState, MachineState};
 use predicates::prelude::*;
 use serde::Deserialize;
 use serde_json::Value;
@@ -52,7 +53,7 @@ struct ImageInfo {
     id: String,
     name: String,
     version: String,
-    state: String,
+    state: ImageState,
     #[serde(default)]
     public: bool,
     #[serde(default)]
@@ -71,7 +72,7 @@ struct InstanceCreateOutput {
     #[serde(default)]
     image: Option<String>,
     #[serde(default)]
-    state: Option<String>,
+    state: Option<MachineState>,
 }
 
 /// Helper to run triton command with profile env and assert success
@@ -143,8 +144,8 @@ fn test_image_create_workflow() {
     let origin_inst = &lines[lines.len() - 1]; // Last line is final state
     assert!(!origin_inst.id.is_empty(), "Origin instance should have ID");
     assert_eq!(
-        origin_inst.state.as_deref(),
-        Some("running"),
+        origin_inst.state,
+        Some(MachineState::Running),
         "Origin instance should be running"
     );
 
@@ -170,7 +171,7 @@ fn test_image_create_workflow() {
     assert_eq!(img.name, image_name, "Image name should match");
     assert_eq!(img.version, image_version, "Image version should match");
     assert!(!img.public, "Image should not be public");
-    assert_eq!(img.state, "active", "Image should be active");
+    assert_eq!(img.state, ImageState::Active, "Image should be active");
     if let Some(origin) = &origin_image {
         assert_eq!(
             img.origin.as_ref(),
@@ -192,8 +193,8 @@ fn test_image_create_workflow() {
         "Derived instance should have ID"
     );
     assert_eq!(
-        derived_inst.state.as_deref(),
-        Some("running"),
+        derived_inst.state,
+        Some(MachineState::Running),
         "Derived instance should be running"
     );
 
