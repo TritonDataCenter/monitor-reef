@@ -132,6 +132,7 @@ pub use cloudapi_api::{
     DiskActionQuery,
     DiskPath,
     DiskSpec,
+    DiskState,
     EnableDeletionProtectionRequest,
     EnableFirewallRequest,
     ExportImageRequest,

@@ -899,9 +899,13 @@
             "type": "integer"
           },
           "state": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DiskState"
+              }
+            ],
             "description": "State",
-            "nullable": true,
-            "type": "string"
+            "nullable": true
           }
         },
         "required": [
@@ -962,6 +966,18 @@
           }
         },
         "type": "object"
+      },
+      "DiskState": {
+        "description": "Disk state",
+        "enum": [
+          "creating",
+          "running",
+          "resizing",
+          "failed",
+          "deleted",
+          "unknown"
+        ],
+        "type": "string"
       },
       "Error": {
         "description": "CloudAPI error response",

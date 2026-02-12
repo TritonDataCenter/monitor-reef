@@ -44,6 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_patch("MachineType", &value_enum_patch)
         .with_patch("ImageState", &value_enum_patch)
         .with_patch("ImageType", &value_enum_patch)
+        .with_patch("DiskState", &value_enum_patch)
         .with_patch("MigrationAction", &value_enum_patch)
         .with_patch("MigrationState", &value_enum_patch)
         .with_patch("NicState", &value_enum_patch)

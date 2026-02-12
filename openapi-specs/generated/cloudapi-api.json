@@ -10348,7 +10348,11 @@
           "state": {
             "nullable": true,
             "description": "State",
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DiskState"
+              }
+            ]
           }
         },
         "required": [
@@ -10401,6 +10405,18 @@
             "minimum": 0
           }
         }
+      },
+      "DiskState": {
+        "description": "Disk state",
+        "type": "string",
+        "enum": [
+          "creating",
+          "running",
+          "resizing",
+          "failed",
+          "deleted",
+          "unknown"
+        ]
       },
       "Error": {
         "description": "Error information from a response.",

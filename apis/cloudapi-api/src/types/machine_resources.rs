@@ -93,6 +93,21 @@ pub struct CreateSnapshotRequest {
     pub name: Option<String>,
 }
 
+/// Disk state
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum DiskState {
+    Creating,
+    Running,
+    Resizing,
+    Failed,
+    Deleted,
+    #[serde(other)]
+    Unknown,
+}
+
 /// Disk information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -109,7 +124,7 @@ pub struct Disk {
     pub boot: Option<bool>,
     /// State
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub state: Option<String>,
+    pub state: Option<DiskState>,
 }
 
 /// Request to create disk

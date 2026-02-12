@@ -11,7 +11,7 @@ use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 use dialoguer::Confirm;
 
-use crate::output::{json, table};
+use crate::output::{enum_to_display, json, table};
 
 #[derive(Subcommand, Clone)]
 pub enum DiskCommand {
@@ -140,7 +140,11 @@ pub async fn list_disks(args: DiskListArgs, client: &TypedClient, use_json: bool
                 } else {
                     "no"
                 },
-                disk.state.as_deref().unwrap_or("unknown"),
+                &disk
+                    .state
+                    .as_ref()
+                    .map(enum_to_display)
+                    .unwrap_or_else(|| "unknown".to_string()),
             ]);
         }
         table::print_table(tbl);
