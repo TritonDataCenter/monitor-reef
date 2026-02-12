@@ -19,7 +19,8 @@
       "Bash(bd show:*)",
       "Bash(bd update:*)",
       "Bash(bd close:*)",
-      "Bash(bd comment:*)"
+      "Bash(bd comment:*)",
+      "Bash(bd list:*)"
     ]
   }
 }
