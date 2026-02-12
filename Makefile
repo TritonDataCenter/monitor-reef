@@ -31,6 +31,7 @@ include ./deps/eng/tools/mk/Makefile.rust.targ
 .PHONY: openapi-generate openapi-list openapi-check
 .PHONY: dev-setup workspace-test integration-test
 .PHONY: list coverage arch-lint
+.PHONY: clients-generate clients-check
 
 # Default target
 help: ## Show this help message
@@ -266,12 +267,21 @@ check:: | $(CARGO_EXEC) ## Run all validation checks (CI-ready)
 	@echo "Running all validation checks..."
 	$(CARGO) test --workspace
 	$(MAKE) openapi-check
+	$(MAKE) clients-check
 	$(MAKE) arch-lint
 	@echo ""
 	@echo "All validation checks passed!"
 
-# Regenerate clients after OpenAPI spec changes
-regen-clients: | $(CARGO_EXEC) ## Regenerate all client libraries
-	@echo "Regenerating clients by rebuilding..."
-	$(CARGO) build
-	@echo "All clients regenerated. Test with: make test"
+# Client code generation (checked-in generated.rs files)
+clients-generate: | $(CARGO_EXEC) ## Generate all client src/generated.rs files
+	$(CARGO) run -p client-generator -- generate
+
+clients-check: | $(CARGO_EXEC) ## Check that generated client code is up-to-date (use in CI)
+	$(CARGO) run -p client-generator -- check
+
+clients-list: | $(CARGO_EXEC) ## List all managed clients
+	$(CARGO) run -p client-generator -- list
+
+# Regenerate everything (OpenAPI specs + client code)
+regen-clients: openapi-generate clients-generate ## Regenerate OpenAPI specs and client code
+	@echo "All specs and clients regenerated. Test with: make test"
