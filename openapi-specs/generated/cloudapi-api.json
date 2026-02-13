@@ -9857,7 +9857,7 @@
             "default": null,
             "type": "string"
           },
-          "internet_nat": {
+          "internetNat": {
             "nullable": true,
             "description": "Internet NAT",
             "default": null,
@@ -9867,11 +9867,11 @@
             "description": "Network name",
             "type": "string"
           },
-          "provision_end_ip": {
+          "provisionEndIp": {
             "description": "Provision end IP",
             "type": "string"
           },
-          "provision_start_ip": {
+          "provisionStartIp": {
             "description": "Provision start IP",
             "type": "string"
           },
@@ -9896,8 +9896,8 @@
         },
         "required": [
           "name",
-          "provision_end_ip",
-          "provision_start_ip",
+          "provisionEndIp",
+          "provisionStartIp",
           "subnet"
         ]
       },

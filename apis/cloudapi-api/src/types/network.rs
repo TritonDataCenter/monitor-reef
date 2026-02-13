@@ -152,7 +152,7 @@ pub struct UpdateFabricVlanRequest {
 
 /// Request to create fabric network
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "camelCase")]
 pub struct CreateFabricNetworkRequest {
     /// Network name
     pub name: String,
