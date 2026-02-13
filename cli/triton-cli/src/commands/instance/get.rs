@@ -61,19 +61,17 @@ pub async fn resolve_instance(id_or_name: &str, client: &TypedClient) -> Result<
         return Ok(uuid);
     }
 
-    // Try as short ID or name
     let account = &client.auth_config().account;
-    let response = client
-        .inner()
-        .list_machines()
-        .account(account)
-        .send()
-        .await?;
 
-    let machines = response.into_inner();
-
-    // Try short ID match (at least 8 characters)
+    // Try short ID match (at least 8 characters) — requires fetching all machines
     if id_or_name.len() >= 8 {
+        let response = client
+            .inner()
+            .list_machines()
+            .account(account)
+            .send()
+            .await?;
+        let machines = response.into_inner();
         for m in &machines {
             if m.id.to_string().starts_with(id_or_name) {
                 return Ok(m.id);
@@ -81,11 +79,17 @@ pub async fn resolve_instance(id_or_name: &str, client: &TypedClient) -> Result<
         }
     }
 
-    // Try exact name match
-    for m in &machines {
-        if m.name == id_or_name {
-            return Ok(m.id);
-        }
+    // Try exact name match using server-side filter
+    let response = client
+        .inner()
+        .list_machines()
+        .account(account)
+        .name(id_or_name)
+        .send()
+        .await?;
+    let machines = response.into_inner();
+    if let Some(m) = machines.first() {
+        return Ok(m.id);
     }
 
     Err(anyhow::anyhow!("Instance not found: {}", id_or_name))

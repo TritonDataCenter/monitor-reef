@@ -99,6 +99,7 @@ fn human_size_from_bytes(bytes: u64) -> String {
 
     const SIZES: &[&str] = &["B", "KiB", "MiB", "GiB", "TiB", "PiB"];
     let i = (bytes as f64).log(1024.0).floor() as usize;
+    let i = i.min(SIZES.len() - 1);
     let size = bytes as f64 / 1024_f64.powi(i as i32);
     format!("{:.1} {}", size, SIZES[i])
 }

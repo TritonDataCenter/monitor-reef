@@ -736,6 +736,7 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
         roles_deleted: 0,
     };
     let mut results = Vec::new();
+    let mut failure_count: usize = 0;
     // Track successfully created users for dev mode
     let mut created_users: Vec<RbacConfigUser> = Vec::new();
 
@@ -798,6 +799,7 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
                 if !use_json {
                     println!("  {} {} - FAILED: {}", action, name, e);
                 }
+                failure_count += 1;
                 results.push(ApplyChangeResult {
                     action: action.to_string(),
                     item_type: item_type.to_string(),
@@ -848,6 +850,14 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
             println!();
             println!("Dev mode: No new users were created, skipping key/profile generation.");
         }
+    }
+
+    // Return an error if any operations failed
+    if failure_count > 0 {
+        return Err(anyhow::anyhow!(
+            "{} operation(s) failed during apply",
+            failure_count
+        ));
     }
 
     Ok(())
