@@ -53,12 +53,12 @@ pub fn check_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Res
     // Generate what the patched file should look like
     let content = std::fs::read_to_string(&source).context("failed to read source spec")?;
     let mut spec: Value = serde_json::from_str(&content).context("failed to parse spec")?;
-    patch_cloudapi_error_schema(&mut spec);
+    patch_cloudapi_error_schema(&mut spec)?;
     let expected = serde_json::to_string_pretty(&spec).context("failed to serialize")?;
 
     let actual = std::fs::read_to_string(&dest).context("failed to read patched spec")?;
 
-    if expected != actual {
+    if expected.trim_end() != actual.trim_end() {
         eprintln!(
             "Patched spec is stale: {}\n  fix: run `make openapi-generate`",
             dest
@@ -99,7 +99,7 @@ fn transform_cloudapi_error_schema(source: &Utf8Path, dest: &Utf8Path) -> Result
     let content = std::fs::read_to_string(source).context("failed to read spec file")?;
     let mut spec: Value = serde_json::from_str(&content).context("failed to parse spec as JSON")?;
 
-    patch_cloudapi_error_schema(&mut spec);
+    patch_cloudapi_error_schema(&mut spec)?;
 
     let output = serde_json::to_string_pretty(&spec).context("failed to serialize spec")?;
     std::fs::write(dest, output).context("failed to write patched spec file")?;
@@ -109,33 +109,37 @@ fn transform_cloudapi_error_schema(source: &Utf8Path, dest: &Utf8Path) -> Result
 }
 
 /// Patch the Error schema in a parsed OpenAPI spec to match CloudAPI's wire format.
-fn patch_cloudapi_error_schema(spec: &mut Value) {
+fn patch_cloudapi_error_schema(spec: &mut Value) -> Result<()> {
     let error_schema = spec
         .get_mut("components")
         .and_then(|c| c.get_mut("schemas"))
         .and_then(|s| s.get_mut("Error"));
 
-    if let Some(error) = error_schema {
-        *error = serde_json::json!({
-            "description": "CloudAPI error response",
-            "type": "object",
-            "properties": {
-                "code": {
-                    "description": "Error code (e.g., \"InvalidCredentials\", \"ResourceNotFound\")",
-                    "type": "string"
-                },
-                "message": {
-                    "description": "Human-readable error message",
-                    "type": "string"
-                },
-                "request_id": {
-                    "description": "Request ID for tracing (optional, not always present)",
-                    "type": "string"
-                }
+    let error = error_schema.ok_or_else(|| {
+        anyhow::anyhow!("Error schema not found in spec; expected components.schemas.Error")
+    })?;
+
+    *error = serde_json::json!({
+        "description": "CloudAPI error response",
+        "type": "object",
+        "properties": {
+            "code": {
+                "description": "Error code (e.g., \"InvalidCredentials\", \"ResourceNotFound\")",
+                "type": "string"
             },
-            "required": ["code"]
-        });
-    }
+            "message": {
+                "description": "Human-readable error message",
+                "type": "string"
+            },
+            "request_id": {
+                "description": "Request ID for tracing (optional, not always present)",
+                "type": "string"
+            }
+        },
+        "required": ["code"]
+    });
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -176,7 +180,7 @@ mod tests {
     #[test]
     fn test_patch_cloudapi_error_schema() {
         let mut spec = dropshot_error_spec();
-        patch_cloudapi_error_schema(&mut spec);
+        patch_cloudapi_error_schema(&mut spec).unwrap();
 
         let error = &spec["components"]["schemas"]["Error"];
 
@@ -188,6 +192,26 @@ mod tests {
         let required = error["required"].as_array().unwrap();
         assert_eq!(required.len(), 1);
         assert_eq!(required[0], "code");
+    }
+
+    #[test]
+    fn test_patch_errors_on_missing_error_schema() {
+        let mut spec = serde_json::json!({
+            "openapi": "3.0.3",
+            "info": { "title": "Test", "version": "1.0.0" },
+            "paths": {},
+            "components": {
+                "schemas": {}
+            }
+        });
+        let result = patch_cloudapi_error_schema(&mut spec);
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Error schema not found"),
+        );
     }
 
     #[test]

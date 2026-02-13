@@ -189,6 +189,7 @@ impl SshIdentity {
     pub fn new(bytes: &[u8], comment: &str) -> Result<SshIdentity, AuthError> {
         // The type of the key is held in the key itself - extract it here
         let type_len = read_u32be(bytes, 0)? as usize;
+        check_wire_length(type_len, "key type string")?;
         let key_type = read_string(bytes, 4, type_len)?;
 
         // Generate fingerprints
@@ -504,5 +505,31 @@ mod tests {
             raw_key: vec![],
         };
         assert!(!ed25519_ident.is_rsa());
+    }
+
+    #[test]
+    fn test_identity_new_empty_bytes() {
+        let result = SshIdentity::new(&[], "test");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_identity_new_truncated_bytes() {
+        // Only 2 bytes, not enough for the u32 type length
+        let result = SshIdentity::new(&[0, 0], "test");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_identity_new_valid() {
+        // Construct a minimal valid SSH key blob: 4-byte length + "ssh-rsa"
+        let key_type = b"ssh-rsa";
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&(key_type.len() as u32).to_be_bytes());
+        bytes.extend_from_slice(key_type);
+        let ident = SshIdentity::new(&bytes, "test comment").unwrap();
+        assert_eq!(ident.key_type, "ssh-rsa");
+        assert_eq!(ident.comment, "test comment");
+        assert!(ident.is_rsa());
     }
 }

@@ -527,6 +527,11 @@ fn write_ssh_string(buf: &mut Vec<u8>, data: &[u8]) {
 
 /// Write an SSH mpint (4-byte length + data, with leading zero for negative prevention)
 fn write_ssh_mpint(buf: &mut Vec<u8>, data: &[u8]) {
+    if data.is_empty() {
+        buf.extend_from_slice(&0u32.to_be_bytes());
+        return;
+    }
+
     // Skip leading zeros (except one if needed for sign bit)
     let mut start = 0;
     while start < data.len() - 1 && data[start] == 0 {
@@ -577,5 +582,28 @@ mod tests {
             ),
             PemKeyFormat::EncryptedPkcs1
         );
+    }
+
+    #[test]
+    fn test_write_ssh_mpint_empty_input() {
+        let mut buf = Vec::new();
+        write_ssh_mpint(&mut buf, &[]);
+        // Empty mpint: 4-byte zero length
+        assert_eq!(buf, vec![0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn test_write_ssh_mpint_with_high_bit() {
+        let mut buf = Vec::new();
+        write_ssh_mpint(&mut buf, &[0x80]);
+        // Should prepend a zero byte to avoid negative interpretation
+        assert_eq!(buf, vec![0, 0, 0, 2, 0, 0x80]);
+    }
+
+    #[test]
+    fn test_write_ssh_mpint_normal() {
+        let mut buf = Vec::new();
+        write_ssh_mpint(&mut buf, &[0x01, 0x02]);
+        assert_eq!(buf, vec![0, 0, 0, 2, 0x01, 0x02]);
     }
 }
