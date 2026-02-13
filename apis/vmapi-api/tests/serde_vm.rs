@@ -13,7 +13,7 @@
 mod common;
 
 use uuid::Uuid;
-use vmapi_api::types::{Brand, Vm, VmState};
+use vmapi_api::types::{Brand, SnapshotState, Vm, VmState};
 
 #[test]
 fn test_vm_smartos_deserialize() {
@@ -142,7 +142,7 @@ fn test_vm_bhyve_snapshots() {
     let snapshots = vm.snapshots.expect("snapshots should be present");
     assert_eq!(snapshots.len(), 1);
     assert_eq!(snapshots[0].name, "pre-upgrade");
-    assert_eq!(snapshots[0].state.as_deref(), Some("created"));
+    assert_eq!(snapshots[0].state, SnapshotState::Created);
 }
 
 #[test]

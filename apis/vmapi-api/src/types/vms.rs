@@ -86,7 +86,7 @@ pub struct VmActionQuery {
 }
 
 /// VM actions available via POST /vms/:uuid?action=<action>
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum VmAction {
     Start,
@@ -105,6 +105,9 @@ pub enum VmAction {
     ResizeDisk,
     DeleteDisk,
     Migrate,
+    /// Unknown action (forward compatibility)
+    #[serde(other)]
+    Unknown,
 }
 
 // ============================================================================
@@ -415,6 +418,20 @@ pub struct Disk {
     pub image_uuid: Option<Uuid>,
 }
 
+/// Snapshot state
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SnapshotState {
+    Queued,
+    Creating,
+    Created,
+    Failed,
+    Deleted,
+    /// Unknown state (forward compatibility)
+    #[serde(other)]
+    Unknown,
+}
+
 /// Snapshot of a VM
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Snapshot {
@@ -423,8 +440,7 @@ pub struct Snapshot {
     /// Creation timestamp
     pub created_at: Timestamp,
     /// Snapshot state
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub state: Option<String>,
+    pub state: SnapshotState,
 }
 
 /// VM object returned by VMAPI

@@ -117,6 +117,7 @@ pub use vmapi_api::{
     SetMetadataRequest,
     SetRoleTagsRequest,
     Snapshot,
+    SnapshotState,
     StartVmRequest,
     StatusesResponse,
     StopVmRequest,

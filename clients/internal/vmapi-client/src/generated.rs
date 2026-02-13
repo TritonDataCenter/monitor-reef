@@ -2338,7 +2338,8 @@ pub mod types {
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"created_at\","]
-    #[doc = "    \"name\""]
+    #[doc = "    \"name\","]
+    #[doc = "    \"state\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"created_at\": {"]
@@ -2351,9 +2352,10 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"state\": {"]
     #[doc = "      \"description\": \"Snapshot state\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"string\","]
-    #[doc = "        \"null\""]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/SnapshotState\""]
+    #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -2369,13 +2371,123 @@ pub mod types {
         #[doc = "Snapshot name"]
         pub name: ::std::string::String,
         #[doc = "Snapshot state"]
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub state: ::std::option::Option<::std::string::String>,
+        pub state: SnapshotState,
     }
 
     impl Snapshot {
         pub fn builder() -> builder::Snapshot {
             Default::default()
+        }
+    }
+
+    #[doc = "Snapshot state"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Snapshot state\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"queued\","]
+    #[doc = "        \"creating\","]
+    #[doc = "        \"created\","]
+    #[doc = "        \"failed\","]
+    #[doc = "        \"deleted\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown state (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum SnapshotState {
+        #[serde(rename = "queued")]
+        Queued,
+        #[serde(rename = "creating")]
+        Creating,
+        #[serde(rename = "created")]
+        Created,
+        #[serde(rename = "failed")]
+        Failed,
+        #[serde(rename = "deleted")]
+        Deleted,
+        #[doc = "Unknown state (forward compatibility)"]
+        #[serde(rename = "unknown")]
+        Unknown,
+    }
+
+    impl ::std::fmt::Display for SnapshotState {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Queued => f.write_str("queued"),
+                Self::Creating => f.write_str("creating"),
+                Self::Created => f.write_str("created"),
+                Self::Failed => f.write_str("failed"),
+                Self::Deleted => f.write_str("deleted"),
+                Self::Unknown => f.write_str("unknown"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for SnapshotState {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "queued" => Ok(Self::Queued),
+                "creating" => Ok(Self::Creating),
+                "created" => Ok(Self::Created),
+                "failed" => Ok(Self::Failed),
+                "deleted" => Ok(Self::Deleted),
+                "unknown" => Ok(Self::Unknown),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for SnapshotState {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for SnapshotState {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for SnapshotState {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
         }
     }
 
@@ -3119,24 +3231,35 @@ pub mod types {
     #[doc = r" ```json"]
     #[doc = "{"]
     #[doc = "  \"description\": \"VM actions available via POST /vms/:uuid?action=<action>\","]
-    #[doc = "  \"type\": \"string\","]
-    #[doc = "  \"enum\": ["]
-    #[doc = "    \"start\","]
-    #[doc = "    \"stop\","]
-    #[doc = "    \"kill\","]
-    #[doc = "    \"reboot\","]
-    #[doc = "    \"reprovision\","]
-    #[doc = "    \"update\","]
-    #[doc = "    \"add_nics\","]
-    #[doc = "    \"update_nics\","]
-    #[doc = "    \"remove_nics\","]
-    #[doc = "    \"create_snapshot\","]
-    #[doc = "    \"rollback_snapshot\","]
-    #[doc = "    \"delete_snapshot\","]
-    #[doc = "    \"create_disk\","]
-    #[doc = "    \"resize_disk\","]
-    #[doc = "    \"delete_disk\","]
-    #[doc = "    \"migrate\""]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"start\","]
+    #[doc = "        \"stop\","]
+    #[doc = "        \"kill\","]
+    #[doc = "        \"reboot\","]
+    #[doc = "        \"reprovision\","]
+    #[doc = "        \"update\","]
+    #[doc = "        \"add_nics\","]
+    #[doc = "        \"update_nics\","]
+    #[doc = "        \"remove_nics\","]
+    #[doc = "        \"create_snapshot\","]
+    #[doc = "        \"rollback_snapshot\","]
+    #[doc = "        \"delete_snapshot\","]
+    #[doc = "        \"create_disk\","]
+    #[doc = "        \"resize_disk\","]
+    #[doc = "        \"delete_disk\","]
+    #[doc = "        \"migrate\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown action (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
     #[doc = "  ]"]
     #[doc = "}"]
     #[doc = r" ```"]
@@ -3187,6 +3310,9 @@ pub mod types {
         DeleteDisk,
         #[serde(rename = "migrate")]
         Migrate,
+        #[doc = "Unknown action (forward compatibility)"]
+        #[serde(rename = "unknown")]
+        Unknown,
     }
 
     impl ::std::fmt::Display for VmAction {
@@ -3208,6 +3334,7 @@ pub mod types {
                 Self::ResizeDisk => f.write_str("resize_disk"),
                 Self::DeleteDisk => f.write_str("delete_disk"),
                 Self::Migrate => f.write_str("migrate"),
+                Self::Unknown => f.write_str("unknown"),
             }
         }
     }
@@ -3232,6 +3359,7 @@ pub mod types {
                 "resize_disk" => Ok(Self::ResizeDisk),
                 "delete_disk" => Ok(Self::DeleteDisk),
                 "migrate" => Ok(Self::Migrate),
+                "unknown" => Ok(Self::Unknown),
                 _ => Err("invalid value".into()),
             }
         }
@@ -5654,10 +5782,7 @@ pub mod types {
         pub struct Snapshot {
             created_at: ::std::result::Result<::std::string::String, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
-            state: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
-                ::std::string::String,
-            >,
+            state: ::std::result::Result<super::SnapshotState, ::std::string::String>,
         }
 
         impl ::std::default::Default for Snapshot {
@@ -5665,7 +5790,7 @@ pub mod types {
                 Self {
                     created_at: Err("no value supplied for created_at".to_string()),
                     name: Err("no value supplied for name".to_string()),
-                    state: Ok(Default::default()),
+                    state: Err("no value supplied for state".to_string()),
                 }
             }
         }
@@ -5693,7 +5818,7 @@ pub mod types {
             }
             pub fn state<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<super::SnapshotState>,
                 T::Error: ::std::fmt::Display,
             {
                 self.state = value

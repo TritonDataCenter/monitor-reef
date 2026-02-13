@@ -3376,14 +3376,40 @@
             "type": "string"
           },
           "state": {
-            "nullable": true,
             "description": "Snapshot state",
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SnapshotState"
+              }
+            ]
           }
         },
         "required": [
           "created_at",
-          "name"
+          "name",
+          "state"
+        ]
+      },
+      "SnapshotState": {
+        "description": "Snapshot state",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "queued",
+              "creating",
+              "created",
+              "failed",
+              "deleted"
+            ]
+          },
+          {
+            "description": "Unknown state (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
         ]
       },
       "StoreMigrationRecordRequest": {
@@ -3794,24 +3820,35 @@
       },
       "VmAction": {
         "description": "VM actions available via POST /vms/:uuid?action=<action>",
-        "type": "string",
-        "enum": [
-          "start",
-          "stop",
-          "kill",
-          "reboot",
-          "reprovision",
-          "update",
-          "add_nics",
-          "update_nics",
-          "remove_nics",
-          "create_snapshot",
-          "rollback_snapshot",
-          "delete_snapshot",
-          "create_disk",
-          "resize_disk",
-          "delete_disk",
-          "migrate"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "start",
+              "stop",
+              "kill",
+              "reboot",
+              "reprovision",
+              "update",
+              "add_nics",
+              "update_nics",
+              "remove_nics",
+              "create_snapshot",
+              "rollback_snapshot",
+              "delete_snapshot",
+              "create_disk",
+              "resize_disk",
+              "delete_disk",
+              "migrate"
+            ]
+          },
+          {
+            "description": "Unknown action (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
         ]
       }
     },
