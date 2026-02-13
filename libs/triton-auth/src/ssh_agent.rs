@@ -252,6 +252,10 @@ impl SshAgentClient {
             .set_read_timeout(Some(Duration::new(5, 0)))
             .map_err(|e| AuthError::AgentError(format!("Failed to set read timeout: {}", e)))?;
 
+        stream
+            .set_write_timeout(Some(Duration::new(5, 0)))
+            .map_err(|e| AuthError::AgentError(format!("Failed to set write timeout: {}", e)))?;
+
         Ok(SshAgentClient { stream })
     }
 
