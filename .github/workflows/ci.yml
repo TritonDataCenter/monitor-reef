@@ -15,10 +15,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Install Rust 1.90 with components
+      - name: Install Rust 1.92 with components
         uses: dtolnay/rust-toolchain@0f44b27771c32bda9f458f75a1e241b09791b331 # 1.91.1
         with:
-          toolchain: 1.90
+          toolchain: 1.92
           components: clippy, rustfmt
 
       - name: Cache cargo
