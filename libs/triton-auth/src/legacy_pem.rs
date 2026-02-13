@@ -373,12 +373,20 @@ impl LegacyPrivateKey {
                 let r_bytes = signature.r().to_bytes_be();
                 let s_bytes = signature.s().to_bytes_be();
 
+                if r_bytes.len() > 20 || s_bytes.len() > 20 {
+                    return Err(AuthError::SigningError(format!(
+                        "DSA signature component exceeds 20 bytes (r={}, s={})",
+                        r_bytes.len(),
+                        s_bytes.len()
+                    )));
+                }
+
                 // Pad to 20 bytes each (SHA-1 output size)
                 let mut sig_bytes = vec![0u8; 40];
-                let r_start = 20 - r_bytes.len().min(20);
-                let s_start = 40 - s_bytes.len().min(20);
-                sig_bytes[r_start..20].copy_from_slice(&r_bytes[..r_bytes.len().min(20)]);
-                sig_bytes[s_start..40].copy_from_slice(&s_bytes[..s_bytes.len().min(20)]);
+                let r_start = 20 - r_bytes.len();
+                let s_start = 40 - s_bytes.len();
+                sig_bytes[r_start..20].copy_from_slice(&r_bytes);
+                sig_bytes[s_start..40].copy_from_slice(&s_bytes);
 
                 Ok(sig_bytes)
             }
