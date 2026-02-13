@@ -119,8 +119,9 @@ pub async fn run(args: CloudApiArgs, client: &TypedClient) -> Result<()> {
     let (date_header, auth_header) =
         triton_auth::sign_request(auth_config, method_str, &path).await?;
 
-    // Build request
-    let http_client = reqwest::Client::new();
+    // Build request using the same HTTP client as the typed client
+    // (inherits TLS settings including --insecure)
+    let http_client = client.http_client();
     let mut request = match args.method {
         HttpMethod::Get => http_client.get(&url),
         HttpMethod::Post => http_client.post(&url),

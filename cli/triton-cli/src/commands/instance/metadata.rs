@@ -14,7 +14,7 @@ use cloudapi_client::TypedClient;
 use cloudapi_client::types::AddMetadataRequest;
 use dialoguer::Confirm;
 
-use crate::output::{json, table};
+use crate::output::{enum_to_display, json, table};
 
 #[derive(Subcommand, Clone)]
 pub enum MetadataCommand {
@@ -210,6 +210,13 @@ async fn set_metadata(args: MetadataSetArgs, client: &TypedClient) -> Result<()>
 
     let request = AddMetadataRequest::from(meta_map.clone());
 
+    // Capture current state before metadata operation so --wait uses the correct target
+    let pre_state = if args.wait {
+        Some(client.get_machine(account, &machine_id).await?.state)
+    } else {
+        None
+    };
+
     client
         .inner()
         .add_machine_metadata()
@@ -225,17 +232,15 @@ async fn set_metadata(args: MetadataSetArgs, client: &TypedClient) -> Result<()>
         }
     }
 
-    if args.wait {
+    if let Some(target_state) = pre_state {
         let id_str = machine_id.to_string();
-        super::wait::wait_for_state(
-            machine_id,
-            cloudapi_client::types::MachineState::Running,
-            args.wait_timeout,
-            client,
-        )
-        .await?;
+        super::wait::wait_for_state(machine_id, target_state, args.wait_timeout, client).await?;
         if !args.quiet {
-            println!("Instance {} is running", &id_str[..8]);
+            println!(
+                "Instance {} is {}",
+                &id_str[..8],
+                enum_to_display(&target_state)
+            );
         }
     }
 

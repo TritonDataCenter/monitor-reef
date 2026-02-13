@@ -339,6 +339,14 @@ impl TypedClient {
         &self.auth_config
     }
 
+    /// Access the underlying reqwest HTTP client
+    ///
+    /// This shares the same TLS configuration (e.g., insecure mode)
+    /// as the Progenitor-generated client.
+    pub fn http_client(&self) -> &reqwest::Client {
+        &self.http_client
+    }
+
     // ========================================================================
     // Machine Creation (with legacy format transformation)
     // ========================================================================
