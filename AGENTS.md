@@ -20,7 +20,7 @@ Trait-based OpenAPI-driven migration of Node.js services to Rust. API traits (Dr
 - **`services/`** — Trait implementations: `bugview-service`, `jira-stub-server`
 - **`clients/internal/`** — Progenitor-generated clients: `cloudapi-client`, `vmapi-client`, `bugview-client`, `jira-client`
 - **`cli/`** — CLIs: `triton-cli`, `vmapi-cli`, `bugview-cli`, `manatee-echo-resolver`
-- **`libs/`** — Shared crates: `cueball*`, `fast`, `libmanta`, `moray`, `rust-utils`, `triton-auth`
+- **`libs/`** — Shared crates: `cueball*`, `fast`, `libmanta`, `moray`, `quickcheck-helpers`, `rebalancer-legacy`, `rust-utils`, `sharkspotter`, `triton-auth`
 - **`client-generator/`** — Progenitor-based code generator
 - **`openapi-manager/`** — Spec management (dropshot-api-manager)
 - **`openapi-specs/generated/`** — Generated specs (checked into git)
@@ -61,9 +61,13 @@ Run `make help` to see all available targets. Key commands:
 
 | Target | Description |
 |--------|-------------|
+| `make service-build SERVICE=X` | Build specific service |
+| `make service-test SERVICE=X` | Test specific service |
+| `make service-run SERVICE=X` | Run a service |
+| `make client-build CLIENT=X` | Build specific client |
+| `make client-test CLIENT=X` | Test specific client |
 | `make package-build PACKAGE=X` | Build specific package |
 | `make package-test PACKAGE=X` | Test specific package |
-| `make service-run SERVICE=X` | Run a service |
 
 ### OpenAPI commands
 
@@ -223,6 +227,7 @@ Tutorial content for less-frequent tasks has been moved to dedicated files:
 - **[CLI Development](docs/tutorials/cli-development.md)** — Building CLI applications on generated clients
 - **[External APIs](docs/tutorials/external-apis.md)** — Hand-writing minimal clients for legacy/external APIs
 - **[Testing Guide](docs/tutorials/testing-guide.md)** — Test types, fixture management, doctests policy
+- **[Checked-in Client Generation](docs/design/checked-in-client-generation.md)** — Design rationale for committing generated client code
 
 ## References
 

@@ -171,7 +171,13 @@ impl CertGenerator {
         let now = std::time::SystemTime::now();
         let backdate = Duration::from_secs(300); // 5 minutes
         let not_before = now.checked_sub(backdate).unwrap_or(now);
-        let not_after = not_before + Duration::from_secs(SECONDS_PER_DAY * lifetime_days as u64);
+        let not_after = not_before
+            .checked_add(Duration::from_secs(SECONDS_PER_DAY * lifetime_days as u64))
+            .ok_or_else(|| {
+                AuthError::SigningError(
+                    "Overflow calculating certificate not_after time".to_string(),
+                )
+            })?;
 
         let not_before_secs = not_before
             .duration_since(std::time::UNIX_EPOCH)

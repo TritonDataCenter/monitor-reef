@@ -115,7 +115,7 @@ fn main() -> Result<ExitCode> {
     let patched_dir = root.join("openapi-specs/patched");
 
     // Detect subcommand before App::parse() consumes the args
-    let is_check = std::env::args().any(|a| a == "check");
+    let is_check = std::env::args().nth(1).as_deref() == Some("check");
 
     let app = dropshot_api_manager::App::parse();
     let env = environment()?;

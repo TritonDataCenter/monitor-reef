@@ -23,6 +23,8 @@ Follow those instructions to:
 4. Check for missing `with_patch` calls in client-generator config
 5. Find `format!("{:?}", ...)` anti-patterns on enums
 6. Check for missing `#[serde(other)] Unknown` variants on state enums
+7. Find CLI imports directly from API crates instead of client re-exports
+8. Check for fields needing explicit `#[serde(rename)]` overrides
 
 Each finding becomes a Beads issue with category label `type-safety`.
 

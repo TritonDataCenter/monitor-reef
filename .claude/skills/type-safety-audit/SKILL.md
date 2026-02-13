@@ -96,6 +96,31 @@ Find state/status enums without `#[serde(other)]` catch-all variants.
 
 **Exception:** Enums that are only used for request input (not deserialized from server responses) don't need `#[serde(other)]`.
 
+### Check 7: Re-export Pattern Violations
+
+Find CLI code that imports types directly from API crates instead of through client re-exports.
+
+**How to find them:**
+1. Grep `cli/*/src/**/*.rs` for `use .*_api::` imports
+2. Check if the imported type is re-exported from the corresponding `*_client` crate
+
+**A finding exists when:** A CLI imports a type directly from an API crate (`*_api::`) that is available via the client crate's re-exports.
+
+**Exception:** Types that are intentionally not re-exported by the client crate.
+
+### Check 8: Field Naming Exceptions
+
+Find struct fields in API types that may need explicit `#[serde(rename = "...")]` overrides because they don't follow the struct-level `rename_all` convention.
+
+**How to find them:**
+1. Read `apis/*/src/types/*.rs` for structs with `#[serde(rename_all = "camelCase")]`
+2. Check if any field names contain underscores (snake_case) that would be auto-renamed to camelCase by serde
+3. Cross-reference with the actual JSON wire format from the Node.js service to identify fields that should remain snake_case
+
+**A finding exists when:** A field in a `rename_all = "camelCase"` struct should keep its snake_case wire format (per the original Node.js API) but lacks an explicit `#[serde(rename = "...")]` override.
+
+**Known correct overrides (not findings):** `dns_names`, `free_space`, `delegate_dataset` in `Machine`.
+
 ## Filing Issues
 
 For each finding, run:
@@ -120,6 +145,8 @@ bd create \
 - Check 4: `Duplicate enum <EnumName> in <cli-file> (exists in <api-crate>)`
 - Check 5: `Debug format anti-pattern on <EnumName> in <file>`
 - Check 6: `Missing #[serde(other)] on <EnumName>`
+- Check 7: `Direct API crate import of <Type> in <cli-file> (should use <client> re-export)`
+- Check 8: `Missing serde rename override on <field> in <Struct>`
 
 **Priority:**
 - P1: Issues that cause runtime bugs (wrong comparisons, missing variants causing deserialization failures)
@@ -139,6 +166,8 @@ Check 3 (missing with_patch): N findings
 Check 4 (duplicate enums):   N findings
 Check 5 (Debug format):      N findings
 Check 6 (missing serde(other)): N findings
+Check 7 (re-export pattern):    N findings
+Check 8 (field naming):         N findings
 Total: N findings filed as Beads issues
 
 Run `bd ready` to see the work queue.
