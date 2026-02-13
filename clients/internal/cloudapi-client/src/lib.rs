@@ -32,17 +32,6 @@
 //! let machines = client.inner().list_machines().account("myaccount").send().await?;
 //! ```
 //!
-//! ### Unauthenticated Client
-//!
-//! For unauthenticated requests (limited API access):
-//!
-//! ```ignore
-//! use cloudapi_client::UnauthenticatedClient;
-//!
-//! let client = UnauthenticatedClient::new("https://cloudapi.example.com");
-//! // Only works for endpoints that don't require authentication
-//! ```
-//!
 //! ### TypedClient for Action-based Endpoints
 //!
 //! For action-based endpoints (machines, images, volumes, disks), use the
