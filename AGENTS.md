@@ -213,7 +213,7 @@ bd close <id> -r "wontfix: reason"  # Close as won't-fix
 bd create --title "..." --description "..." --add-label type-safety
 ```
 
-**Session convention**: Check `bd ready` at session start. When finishing: add comments (`bd comments add <id> "..."`), close the issue, commit code + `.beads/issues.jsonl` together, and create new issues for follow-up work.
+**Session convention**: When asked to "work on the next bead" (or similar), run `bd ready` to find the next unclaimed issue, then `bd show <id>` for details, `bd update <id> --claim` to claim it, implement the fix, and `bd close <id>` when done. Always commit code changes together with the updated `.beads/issues.jsonl`. Create new issues for any follow-up work discovered.
 
 ## Detailed Guides
 
