@@ -20,7 +20,7 @@ ssh-encoding = "0.2"
 base64 = "0.22"
 md-5 = "0.10"
 chrono = { workspace = true }
-thiserror = "2.0"
+thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 dirs = "6.0"
