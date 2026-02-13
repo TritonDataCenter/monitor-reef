@@ -1,0 +1,27 @@
+{
+  "id": "d8e9f2a1-3b4c-5d6e-7f8a-9b0c1d2e3f4a",
+  "name": "ubuntu-22",
+  "version": "20240115",
+  "os": "linux",
+  "type": "zvol",
+  "description": "Ubuntu 22.04 LTS bhyve image",
+  "requirements": {
+    "minRam": 1024,
+    "maxRam": 65536,
+    "brand": "bhyve",
+    "bootrom": "uefi"
+  },
+  "published_at": "2024-01-15T00:00:00Z",
+  "owner": "9dce1460-0c4c-4417-ab8b-25ca478c5a78",
+  "public": true,
+  "state": "active",
+  "imageSize": 10240,
+  "files": [
+    {
+      "compression": "gzip",
+      "sha1": "abc123def456abc123def456abc123def456abc1",
+      "size": 536870912
+    }
+  ],
+  "role-tag": ["admin", "operator"]
+}

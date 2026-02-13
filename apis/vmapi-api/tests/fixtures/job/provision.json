@@ -1,0 +1,37 @@
+{
+  "uuid": "f6789012-6789-6789-6789-678901234567",
+  "name": "provision",
+  "execution": "succeeded",
+  "vm_uuid": "a1234567-1234-1234-1234-123456789012",
+  "chain": [
+    {
+      "name": "cnapi.validate_vm",
+      "body": "function validateVm(job, cb) {}",
+      "timeout": 30
+    },
+    {
+      "name": "cnapi.provision_vm",
+      "body": "function provisionVm(job, cb) {}",
+      "timeout": 300,
+      "retry": 3
+    }
+  ],
+  "chain_results": [
+    {
+      "result": "OK",
+      "name": "cnapi.validate_vm",
+      "started_at": "2024-01-15T10:30:00.000Z",
+      "finished_at": "2024-01-15T10:30:01.000Z"
+    },
+    {
+      "result": "OK",
+      "name": "cnapi.provision_vm",
+      "started_at": "2024-01-15T10:30:01.000Z",
+      "finished_at": "2024-01-15T10:30:30.000Z"
+    }
+  ],
+  "created_at": "2024-01-15T10:30:00.000Z",
+  "elapsed": 30.5,
+  "timeout": 600,
+  "num_tasks_done": 2
+}

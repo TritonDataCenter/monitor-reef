@@ -1,0 +1,12 @@
+{
+  "vm_uuid": "b2345678-2345-2345-2345-234567890123",
+  "state": "successful",
+  "phase": "switch",
+  "source_server_uuid": "44454c4c-5300-1057-8050-b7c04f533532",
+  "target_server_uuid": "55565c5c-6400-2068-9060-c8d15f644643",
+  "created_timestamp": "2024-06-14T10:00:00.000Z",
+  "started_timestamp": "2024-06-14T10:00:01.000Z",
+  "finished_timestamp": "2024-06-14T10:05:00.000Z",
+  "duration_ms": 299999,
+  "automatic": true
+}

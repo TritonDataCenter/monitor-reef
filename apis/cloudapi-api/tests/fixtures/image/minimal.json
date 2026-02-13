@@ -1,0 +1,7 @@
+{
+  "id": "e3b0c442-e29b-41d4-a716-446655440000",
+  "name": "test-image",
+  "version": "1.0.0",
+  "os": "linux",
+  "type": "lx-dataset"
+}

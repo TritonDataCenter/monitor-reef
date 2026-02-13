@@ -1,0 +1,18 @@
+{
+  "id": "ac336e0f-8532-4e0e-a19e-7cd5bdd62817",
+  "name": "my-fabric-network",
+  "public": false,
+  "fabric": true,
+  "description": "Private fabric network",
+  "gateway": "192.168.128.1",
+  "provision_start_ip": "192.168.128.2",
+  "provision_end_ip": "192.168.131.254",
+  "subnet": "192.168.128.0/22",
+  "netmask": "255.255.252.0",
+  "vlan_id": 100,
+  "internet_nat": true,
+  "resolvers": ["8.8.8.8", "8.8.4.4"],
+  "suffixes": ["inst.triton.zone", "svc.triton.zone"],
+  "routes": {"10.0.0.0/8": "192.168.128.1"},
+  "role-tag": ["admin"]
+}

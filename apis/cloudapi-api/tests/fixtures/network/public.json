@@ -1,0 +1,12 @@
+{
+  "id": "3985900d-15a8-42d8-a997-1f7e8df2d0af",
+  "name": "external",
+  "public": true,
+  "description": "Public internet network",
+  "gateway": "67.158.54.1",
+  "provision_start_ip": "67.158.54.10",
+  "provision_end_ip": "67.158.54.254",
+  "subnet": "67.158.54.0/24",
+  "netmask": "255.255.255.0",
+  "resolvers": ["8.8.8.8", "8.8.4.4"]
+}
