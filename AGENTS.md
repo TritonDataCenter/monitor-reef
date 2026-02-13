@@ -23,6 +23,8 @@ Our migration strategy centers on **trait-based OpenAPI-driven development** to 
 5. **Generate client libraries** using Progenitor from validated specs
 6. **Validate compatibility** by comparing OpenAPI specs before deployment
 
+**Tooling**: The `/restify-conversion` skill automates the multi-phase conversion of Node.js Restify API services to Rust Dropshot API traits. It handles route extraction, type mapping, and trait generation. Use it when starting a new service migration. See `.claude/skills/restify-conversion/SKILL.md` for details. Migration plans are stored in `conversion-plans/`.
+
 ## Repository Structure
 
 ```
@@ -30,24 +32,42 @@ triton-rust-monorepo/
 ├── apis/                    # API trait definitions (fast to compile)
 │   ├── api-template/       # Template for creating new API traits
 │   ├── bugview-api/        # Bugview public issue viewer API
-│   └── ...                 # Add more API definitions as needed
+│   ├── cloudapi-api/       # CloudAPI (Triton public cloud API)
+│   ├── jira-api/           # JIRA integration API
+│   └── vmapi-api/          # VMAPI (internal VM management API)
 ├── services/               # Service implementations
 │   ├── service-template/   # Template for trait-based services
 │   ├── bugview-service/    # Bugview using external JIRA API
-│   └── ...                 # Add more services as needed
+│   └── jira-stub-server/   # Stub JIRA server for testing
 ├── clients/                # Client libraries
-│   ├── internal/           # Clients for our trait-based APIs
-│   │   ├── client-template/ # Template for generating API clients
-│   │   ├── bugview-client/ # Bugview API client (Progenitor-generated)
-│   │   └── jira-client/    # Client for JIRA API subset
-│   └── external/           # Clients for external/legacy APIs
+│   └── internal/           # Clients for our trait-based APIs
+│       ├── client-template/ # Template for generating API clients
+│       ├── bugview-client/ # Bugview API client (Progenitor-generated)
+│       ├── cloudapi-client/ # CloudAPI client
+│       ├── jira-client/    # Client for JIRA API subset
+│       └── vmapi-client/   # VMAPI client
 ├── cli/                    # Command-line applications
-│   └── bugview-cli/        # CLI for Bugview service
-├── openapi-manager/        # OpenAPI spec management (dropshot-api-manager integration)
-├── openapi-specs/          # OpenAPI specifications
+│   ├── bugview-cli/        # CLI for Bugview service
+│   ├── manatee-echo-resolver/ # Manatee primary resolver echo tool
+│   ├── triton-cli/         # Main Triton CLI (triton command)
+│   └── vmapi-cli/          # VMAPI CLI
+├── client-generator/        # Progenitor-based client code generator
+├── conversion-plans/        # Migration plans (cloudapi, vmapi, triton, manta-rebalancer)
+├── deps/                    # Build dependencies (eng, scripts)
+├── docs/                    # Design documents
+├── libs/                    # Shared library crates
+│   ├── cueball/            # Connection pooling framework
+│   ├── cueball-*/          # Cueball resolvers and connections
+│   ├── fast/               # Fast protocol library
+│   ├── libmanta/           # Manta client library
+│   ├── moray/              # Moray key-value store client
+│   ├── rust-utils/         # Shared Rust utilities
+│   └── triton-auth/        # Triton authentication library
+├── openapi-manager/         # OpenAPI spec management (dropshot-api-manager integration)
+├── openapi-specs/           # OpenAPI specifications
 │   ├── generated/          # Generated from our trait-based APIs (checked into git)
-│   └── external/           # External API specs for reference (tracked in git)
-└── tests/                  # Integration tests
+│   └── patched/            # Post-generation patched specs (e.g., schema fixes)
+└── rust/                    # Rust toolchain configuration (cargo, settings.toml)
 ```
 
 ## Core Technologies
@@ -282,7 +302,44 @@ make package-build PACKAGE=my-service-cli
 - API changes automatically flow through client regeneration
 - Client library can be reused by other applications
 
-### 6. Consuming External APIs (Interim Migration Pattern)
+### 6. Action-Dispatch Pattern
+
+Several CloudAPI endpoints use a single HTTP `POST` to handle multiple operations, with the specific operation selected via an `action` query parameter. This mirrors the original Node.js CloudAPI's Restify routes.
+
+**How it works**: A `POST` endpoint accepts an `action` query parameter whose value is an enum variant. The request body varies depending on the action. The endpoint implementation dispatches to the correct handler based on the action value.
+
+**Existing action-dispatch endpoints**:
+- `POST /{account}/machines/{machine}?action=...` -- `MachineAction` (start, stop, reboot, resize, rename, enable/disable firewall, enable/disable deletion protection)
+- `POST /{account}/images/{dataset}?action=...` -- `ImageAction` (update, export, clone, import-from-datacenter, share, unshare)
+- `POST /{account}/machines/{machine}/disks/{disk}?action=...` -- `DiskAction` (resize)
+- `POST /{account}/volumes/{id}?action=...` -- `VolumeAction` (update)
+
+**Pattern structure**: Each action-dispatch endpoint has three components:
+
+1. **Action enum** -- defines the valid actions with appropriate serde rename (e.g., `MachineAction` in `apis/cloudapi-api/src/types/machine.rs`)
+2. **Action query struct** -- wraps the enum for Dropshot's `Query<>` extractor (e.g., `MachineActionQuery { action: MachineAction }`)
+3. **Per-action request structs** -- separate typed bodies for each action variant (e.g., `StartMachineRequest`, `ResizeMachineRequest`)
+
+**Body handling**: Because different actions require different body shapes, the endpoint signature uses `TypedBody<serde_json::Value>`. The implementation deserializes into the appropriate request struct after matching on the action.
+
+```rust
+// In the API trait:
+async fn update_machine(
+    rqctx: RequestContext<Self::Context>,
+    path: Path<MachinePath>,
+    query: Query<MachineActionQuery>,
+    body: TypedBody<serde_json::Value>,
+) -> Result<HttpResponseOk<Machine>, HttpError>;
+
+// In the implementation, dispatch on the action:
+match query.into_inner().action {
+    MachineAction::Start => { /* deserialize body as StartMachineRequest */ }
+    MachineAction::Stop => { /* deserialize body as StopMachineRequest */ }
+    // ...
+}
+```
+
+### 7. Consuming External APIs (Interim Migration Pattern)
 
 When building new services that need to consume external/legacy APIs during migration:
 
@@ -337,7 +394,41 @@ impl ExternalApiClient {
 - Hand-writing 3-5 endpoint wrappers takes less time than debugging generated code
 - This pattern works great for migration: your NEW Rust service has a clean API while consuming the OLD API internally
 
-### 7. Testing and Validation
+### 8. WebSocket / Channel Endpoints
+
+Dropshot supports WebSocket endpoints via the `#[channel]` attribute. These are used for real-time streaming endpoints such as the changefeed, VNC console, and migration progress.
+
+**Defining a channel endpoint**:
+
+```rust
+#[channel {
+    protocol = WEBSOCKETS,
+    path = "/{account}/changefeed",
+    tags = ["changefeed"],
+}]
+async fn get_changefeed(
+    rqctx: RequestContext<Self::Context>,
+    path: Path<AccountPath>,
+    upgraded: WebsocketConnection,
+) -> WebsocketChannelResult;
+```
+
+**Key differences from REST endpoints**:
+- Use `#[channel { protocol = WEBSOCKETS, ... }]` instead of `#[endpoint { ... }]`
+- The last parameter must be `upgraded: WebsocketConnection`
+- Return type is `WebsocketChannelResult` (not `Result<HttpResponse*, HttpError>`)
+- Import `WebsocketChannelResult` and `WebsocketConnection` from `dropshot`
+
+**Existing WebSocket endpoints** in CloudAPI:
+- `/{account}/changefeed` -- real-time VM state change notifications (see `apis/cloudapi-api/src/types/changefeed.rs` for message types)
+- `/{account}/migrations/{machine}/watch` -- migration progress streaming
+- `/{account}/machines/{machine}/vnc` -- VNC console proxy
+
+**Client-side consumption**: WebSocket endpoints are not covered by Progenitor-generated clients. Consumers must use a WebSocket client library (e.g., `tokio-tungstenite`) directly. See the changefeed types module for the subscription/message protocol.
+
+**Message format**: Channel endpoints typically exchange JSON-serialized messages. Define request and response message types in the API types module so both server and client can share them. For example, `ChangefeedSubscription` (client sends) and `ChangefeedMessage` (server sends) in `apis/cloudapi-api/src/types/changefeed.rs`.
+
+### 9. Testing and Validation
 
 All services must include:
 - **Unit tests** for business logic
@@ -503,7 +594,7 @@ All services must:
 
 ## Type Safety Rules
 
-These rules prevent type-safety issues in CLI and client code. They are enforced by the `/type-safety-audit` skill and should be followed in all new code.
+These rules prevent type-safety issues in CLI and client code. They are enforced by the `/type-safety-audit` skill (see `.claude/commands/type-safety-audit.md`) and should be followed in all new code. Violations found by the audit should be filed as beads issues with the `type-safety` label (see [Issue Tracking with Beads](#issue-tracking-with-beads)).
 
 ### 1. No Hardcoded Enum Strings
 
@@ -555,6 +646,49 @@ println!("  Brand: {}", enum_to_display(brand));
 // RIGHT: use .join() for collections
 println!("Waiting for {}", target_names.join(", "));
 ```
+
+### 8. Field Naming Exceptions
+
+Most CloudAPI response structs use `#[serde(rename_all = "camelCase")]` to match the JSON wire format. However, some fields from the original Node.js CloudAPI are returned in snake_case or other non-camelCase formats. These must use explicit `#[serde(rename = "...")]` overrides.
+
+**Known exceptions in `Machine` (camelCase struct)**:
+- `dns_names` -- returned as `"dns_names"` (snake_case) by CloudAPI despite other fields being camelCase
+- `free_space` -- returned as `"free_space"` (snake_case) for bhyve flexible disk VMs
+- `delegate_dataset` -- returned as `"delegate_dataset"` (snake_case)
+
+**Other common rename patterns**:
+- `type` fields -- Rust reserves `type` as a keyword, so fields like `machine_type` and `volume_type` use `#[serde(rename = "type")]`
+- `role-tag` fields -- CloudAPI uses hyphenated `"role-tag"` in JSON, mapped to `role_tag` in Rust with `#[serde(rename = "role-tag")]`
+- Enum variants with hyphens -- e.g., `#[serde(rename = "joyent-minimal")]`, `#[serde(rename = "zone-dataset")]`
+
+**When adding new fields**: Always check the actual JSON wire format from the original Node.js service. If a field does not follow the struct-level `rename_all` convention, add an explicit `#[serde(rename = "...")]` with a comment explaining the exception.
+
+```rust
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Machine {
+    pub id: Uuid,
+    pub name: String,
+    // ...
+    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+    #[serde(rename = "dns_names", default, skip_serializing_if = "Option::is_none")]
+    pub dns_names: Option<Vec<String>>,
+}
+```
+
+## UUID Handling Conventions
+
+UUIDs are pervasive throughout the Triton APIs. Follow these conventions for consistency:
+
+**Type alias**: API crates define `pub type Uuid = uuid::Uuid;` in their common types module (see `apis/cloudapi-api/src/types/common.rs`). Use this alias in all struct fields and function signatures rather than raw `uuid::Uuid` or `String`.
+
+**Serialization**: The `uuid` crate's serde support handles serialization/deserialization as lowercase hyphenated strings (e.g., `"28faa36c-2031-4632-a819-f7defa1299a3"`). No custom serde logic is needed.
+
+**Path parameters**: UUID path parameters (machine IDs, image IDs, etc.) are parsed automatically by Dropshot via the `Uuid` type in `Path<>` structs. Invalid UUIDs produce a 400 error.
+
+**String UUIDs**: Some fields use `String` instead of `Uuid` when the upstream API may return non-UUID values or when the field serves double duty (e.g., `ChangefeedSubscription.vms` accepts UUIDs as strings). Prefer typed `Uuid` unless there is a specific reason for `String`.
+
+**Testing**: When constructing test UUIDs, use `uuid::Uuid::parse_str("...")` or `uuid::Uuid::nil()` rather than placeholder strings.
 
 ## Observability
 
@@ -609,7 +743,7 @@ When adding new services or APIs:
 
 ## Issue Tracking with Beads
 
-This repo uses [Beads](https://github.com/steveyegge/beads) (`bd` CLI) for lightweight issue tracking. Issues are stored in `.beads/` with JSONL export tracked in git.
+This repo uses [Beads](https://github.com/steveyegge/beads) (`bd` CLI) for lightweight issue tracking. Issues are stored in `.beads/` with JSONL export tracked in git. Type safety findings from the `/type-safety-audit` skill (see [Type Safety Rules](#type-safety-rules)) should be tracked as beads issues with the `type-safety` label.
 
 ### Core Workflow
 
