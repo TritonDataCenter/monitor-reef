@@ -35,36 +35,48 @@ pub enum KeyType {
 
 impl KeyType {
     /// Determine key type from an SSH private key
-    pub fn from_private_key(key: &PrivateKey) -> Self {
+    pub fn from_private_key(key: &PrivateKey) -> Result<Self, AuthError> {
         use ssh_key::Algorithm;
         match key.algorithm() {
-            Algorithm::Rsa { .. } => Self::Rsa,
-            Algorithm::Dsa => Self::Dsa,
+            Algorithm::Rsa { .. } => Ok(Self::Rsa),
+            Algorithm::Dsa => Ok(Self::Dsa),
             Algorithm::Ecdsa { curve } => match curve.as_str() {
-                "nistp256" => Self::Ecdsa256,
-                "nistp384" => Self::Ecdsa384,
-                "nistp521" => Self::Ecdsa521,
-                _ => Self::Ecdsa256,
+                "nistp256" => Ok(Self::Ecdsa256),
+                "nistp384" => Ok(Self::Ecdsa384),
+                "nistp521" => Ok(Self::Ecdsa521),
+                other => Err(AuthError::KeyLoadError(format!(
+                    "unsupported ECDSA curve: {}",
+                    other
+                ))),
             },
-            Algorithm::Ed25519 => Self::Ed25519,
-            _ => Self::Rsa, // fallback
+            Algorithm::Ed25519 => Ok(Self::Ed25519),
+            other => Err(AuthError::KeyLoadError(format!(
+                "unsupported SSH key algorithm: {:?}",
+                other
+            ))),
         }
     }
 
     /// Determine key type from an SSH public key
-    pub fn from_public_key(key: &ssh_key::PublicKey) -> Self {
+    pub fn from_public_key(key: &ssh_key::PublicKey) -> Result<Self, AuthError> {
         use ssh_key::Algorithm;
         match key.algorithm() {
-            Algorithm::Rsa { .. } => Self::Rsa,
-            Algorithm::Dsa => Self::Dsa,
+            Algorithm::Rsa { .. } => Ok(Self::Rsa),
+            Algorithm::Dsa => Ok(Self::Dsa),
             Algorithm::Ecdsa { curve } => match curve.as_str() {
-                "nistp256" => Self::Ecdsa256,
-                "nistp384" => Self::Ecdsa384,
-                "nistp521" => Self::Ecdsa521,
-                _ => Self::Ecdsa256,
+                "nistp256" => Ok(Self::Ecdsa256),
+                "nistp384" => Ok(Self::Ecdsa384),
+                "nistp521" => Ok(Self::Ecdsa521),
+                other => Err(AuthError::KeyLoadError(format!(
+                    "unsupported ECDSA curve: {}",
+                    other
+                ))),
             },
-            Algorithm::Ed25519 => Self::Ed25519,
-            _ => Self::Rsa, // fallback
+            Algorithm::Ed25519 => Ok(Self::Ed25519),
+            other => Err(AuthError::KeyLoadError(format!(
+                "unsupported SSH key algorithm: {:?}",
+                other
+            ))),
         }
     }
 
@@ -202,7 +214,7 @@ impl RequestSigner {
 /// # Returns
 /// The base64-encoded signature
 pub fn sign_with_key(key: &PrivateKey, data: &[u8]) -> Result<String, AuthError> {
-    let key_type = KeyType::from_private_key(key);
+    let key_type = KeyType::from_private_key(key)?;
     let hash_alg = key_type.hash_alg();
 
     // Sign using the ssh-key crate

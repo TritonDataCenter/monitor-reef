@@ -150,7 +150,7 @@ impl CertGenerator {
         let ssh_signing_key = SshSigningKey::new(&self.identity)?;
 
         // Create issuer params with the SSH key's fingerprint as the DN
-        let md5_fp_b64 = self.md5_fingerprint_base64();
+        let md5_fp_b64 = self.md5_fingerprint_base64()?;
         let mut issuer_params = CertificateParams::default();
         let mut issuer_dn = DistinguishedName::new();
         issuer_dn.push(DnType::CommonName, &md5_fp_b64);
@@ -224,14 +224,21 @@ impl CertGenerator {
     }
 
     /// Get the MD5 fingerprint in base64 format (used for issuer DN)
-    fn md5_fingerprint_base64(&self) -> String {
+    fn md5_fingerprint_base64(&self) -> Result<String, AuthError> {
         // Convert colon-separated hex to bytes
         let hex_parts: Vec<&str> = self.identity.md5_fp.split(':').collect();
         let bytes: Vec<u8> = hex_parts
             .iter()
-            .filter_map(|h| u8::from_str_radix(h, 16).ok())
-            .collect();
-        base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes)
+            .map(|h| {
+                u8::from_str_radix(h, 16).map_err(|_| {
+                    AuthError::KeyLoadError(format!("invalid hex in MD5 fingerprint: {:?}", h))
+                })
+            })
+            .collect::<Result<Vec<u8>, AuthError>>()?;
+        Ok(base64::Engine::encode(
+            &base64::engine::general_purpose::STANDARD,
+            &bytes,
+        ))
     }
 
     /// Get the SSH key fingerprint

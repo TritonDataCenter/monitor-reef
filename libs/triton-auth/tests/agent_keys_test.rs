@@ -99,7 +99,7 @@ async fn test_agent_signer_rsa() {
         .expect("Key should be in agent");
 
     // Verify algorithm
-    let key_type = triton_auth::signature::KeyType::from_public_key(&pub_key);
+    let key_type = triton_auth::signature::KeyType::from_public_key(&pub_key).unwrap();
     assert_eq!(key_type.algorithm_string(), "rsa-sha256");
 
     // Sign "foobar"

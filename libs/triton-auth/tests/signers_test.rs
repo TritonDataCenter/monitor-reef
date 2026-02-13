@@ -71,7 +71,7 @@ async fn test_basic_signer_rsa() {
     assert_eq!(key_id, ID_RSA_MD5);
 
     // Verify algorithm
-    let key_type = key.key_type();
+    let key_type = key.key_type().unwrap();
     assert_eq!(key_type.algorithm_string(), "rsa-sha256");
 
     // Verify signature matches known test vector
@@ -108,7 +108,7 @@ async fn test_basic_signer_dsa() {
     assert_eq!(key_id, ID_DSA_MD5);
 
     // Verify algorithm
-    let key_type = key.key_type();
+    let key_type = key.key_type().unwrap();
     assert_eq!(key_type.algorithm_string(), "dsa-sha1");
 
     // DSA signatures are not deterministic, but should be valid base64
@@ -146,7 +146,7 @@ async fn test_basic_signer_ecdsa() {
     assert_eq!(key_id, ID_ECDSA_MD5);
 
     // Verify algorithm
-    let key_type = key.key_type();
+    let key_type = key.key_type().unwrap();
     assert_eq!(key_type.algorithm_string(), "ecdsa-sha256");
 
     // ECDSA signatures are not deterministic, but should be valid base64

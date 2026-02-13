@@ -41,7 +41,7 @@ async fn test_load_rsa_key() {
         .expect("Failed to load RSA key");
 
     // Verify key type
-    let key_type = key.key_type();
+    let key_type = key.key_type().unwrap();
     assert!(matches!(key_type, KeyType::Rsa));
 }
 
@@ -55,7 +55,7 @@ async fn test_load_dsa_key() {
         .expect("Failed to load DSA key");
 
     // Verify key type
-    let key_type = key.key_type();
+    let key_type = key.key_type().unwrap();
     assert!(matches!(key_type, KeyType::Dsa));
 }
 
@@ -68,7 +68,7 @@ async fn test_load_ecdsa_key() {
         .expect("Failed to load ECDSA key");
 
     // Verify key type - the test key is P-256
-    let key_type = key.key_type();
+    let key_type = key.key_type().unwrap();
     assert!(matches!(key_type, KeyType::Ecdsa256));
 }
 

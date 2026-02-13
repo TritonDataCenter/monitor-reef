@@ -383,7 +383,11 @@ impl TypedClient {
         let path_and_query = if let Some(roles) = &self.auth_config.roles
             && !roles.is_empty()
         {
-            format!("{}?as-role={}", path, roles.join(","))
+            let encoded_roles: Vec<String> = roles
+                .iter()
+                .map(|r| urlencoding::encode(r).into_owned())
+                .collect();
+            format!("{}?as-role={}", path, encoded_roles.join(","))
         } else {
             path.clone()
         };

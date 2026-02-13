@@ -178,7 +178,7 @@ pub async fn sign_request(
         KeySource::Agent { fingerprint } => {
             // Find key in agent to determine type
             let pub_key = agent::find_key_in_agent(fingerprint).await?;
-            let key_type = KeyType::from_public_key(&pub_key);
+            let key_type = KeyType::from_public_key(&pub_key)?;
             // Always compute MD5 fingerprint for the Authorization header
             let md5_fp = md5_fingerprint(&pub_key)?;
 
@@ -191,7 +191,7 @@ pub async fn sign_request(
         KeySource::File { .. } => {
             // Load key from file
             let key = KeyLoader::load_private_key(&config.key_source).await?;
-            let key_type = KeyType::from_private_key(&key);
+            let key_type = KeyType::from_private_key(&key)?;
             // Always compute MD5 fingerprint for the Authorization header
             let md5_fp = md5_fingerprint(key.public_key())?;
 
@@ -205,7 +205,7 @@ pub async fn sign_request(
             // Try agent first, fall back to file
             match agent::find_key_in_agent(fingerprint).await {
                 Ok(pub_key) => {
-                    let key_type = KeyType::from_public_key(&pub_key);
+                    let key_type = KeyType::from_public_key(&pub_key)?;
                     // Always compute MD5 fingerprint for the Authorization header
                     let md5_fp = md5_fingerprint(&pub_key)?;
 
@@ -222,7 +222,7 @@ pub async fn sign_request(
                         fingerprint: fingerprint.clone(),
                     })
                     .await?;
-                    let key_type = KeyType::from_private_key(&key);
+                    let key_type = KeyType::from_private_key(&key)?;
                     // Always compute MD5 fingerprint for the Authorization header
                     let md5_fp = md5_fingerprint(key.public_key())?;
 

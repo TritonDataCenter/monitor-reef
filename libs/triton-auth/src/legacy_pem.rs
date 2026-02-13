@@ -216,12 +216,12 @@ impl LegacyPrivateKey {
     }
 
     /// Get the key type for HTTP Signature algorithm selection
-    pub fn key_type(&self) -> KeyType {
+    pub fn key_type(&self) -> Result<KeyType, AuthError> {
         match self {
-            Self::Rsa(_) => KeyType::Rsa,
-            Self::EcdsaP256(_) => KeyType::Ecdsa256,
-            Self::EcdsaP384(_) => KeyType::Ecdsa384,
-            Self::Dsa(_) => KeyType::Dsa,
+            Self::Rsa(_) => Ok(KeyType::Rsa),
+            Self::EcdsaP256(_) => Ok(KeyType::Ecdsa256),
+            Self::EcdsaP384(_) => Ok(KeyType::Ecdsa384),
+            Self::Dsa(_) => Ok(KeyType::Dsa),
             Self::OpenSsh(key) => KeyType::from_private_key(key),
         }
     }
@@ -309,7 +309,7 @@ impl LegacyPrivateKey {
         match self {
             Self::OpenSsh(key) => {
                 // Use ssh-key's signing
-                let key_type = KeyType::from_private_key(key);
+                let key_type = KeyType::from_private_key(key)?;
                 let hash_alg = match key_type {
                     KeyType::Rsa | KeyType::Dsa | KeyType::Ecdsa256 | KeyType::Ecdsa384 => {
                         ssh_key::HashAlg::Sha256
