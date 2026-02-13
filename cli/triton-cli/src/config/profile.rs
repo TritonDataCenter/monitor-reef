@@ -59,7 +59,7 @@ impl Profile {
 
     /// Load a profile from a file
     pub async fn load(name: &str) -> anyhow::Result<Self> {
-        let path = super::paths::profile_path(name);
+        let path = super::paths::profile_path(name)?;
         let content = tokio::fs::read_to_string(&path)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to read profile '{}': {}", name, e))?;
@@ -76,7 +76,7 @@ impl Profile {
     /// `name` in profile JSON files (see node-triton lib/config.js:331-336).
     pub async fn save(&self) -> anyhow::Result<()> {
         super::paths::ensure_config_dirs().await?;
-        let path = super::paths::profile_path(&self.name);
+        let path = super::paths::profile_path(&self.name)?;
         let mut value = serde_json::to_value(self)?;
         if let Some(obj) = value.as_object_mut() {
             obj.remove("name");
@@ -88,7 +88,7 @@ impl Profile {
 
     /// Delete the profile file
     pub async fn delete(name: &str) -> anyhow::Result<()> {
-        let path = super::paths::profile_path(name);
+        let path = super::paths::profile_path(name)?;
         tokio::fs::remove_file(&path)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to delete profile '{}': {}", name, e))?;

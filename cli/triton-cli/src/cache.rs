@@ -35,7 +35,7 @@ impl ImageCache {
     /// cannot be created.
     pub async fn new(profile: &Profile) -> Option<Self> {
         let slug = profile_slug(profile);
-        let dir = crate::config::paths::cache_dir(&slug);
+        let dir = crate::config::paths::cache_dir(&slug).ok()?;
         tokio::fs::create_dir_all(&dir).await.ok()?;
         Some(Self {
             cache_path: dir.join("images.json"),

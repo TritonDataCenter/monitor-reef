@@ -853,25 +853,18 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
     Ok(())
 }
 
-/// Generate a random password for new users
-fn generate_password() -> String {
+/// Generate a random password for new users using the OS CSPRNG.
+fn generate_password() -> Result<String> {
     use std::fmt::Write;
-    let mut rng = [0u8; 24];
-    // Use a simple random source
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default();
-    // Mix in some entropy from time
-    let seed = now.as_nanos();
-    for (i, b) in rng.iter_mut().enumerate() {
-        *b = ((seed >> (i * 3)) & 0xFF) as u8 ^ (i as u8 * 17);
-    }
-    let mut result = String::with_capacity(32);
-    for b in &rng {
+    let mut buf = [0u8; 24];
+    getrandom::fill(&mut buf)
+        .map_err(|e| anyhow::anyhow!("Failed to generate random password: {}", e))?;
+    let mut result = String::with_capacity(buf.len() * 2);
+    for b in &buf {
         // Writing to a String never fails
         let _ = write!(result, "{:02x}", b);
     }
-    result
+    Ok(result)
 }
 
 async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Result<()> {
@@ -888,7 +881,7 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             let request = cloudapi_client::types::CreateUserRequest {
                 login: login.clone(),
                 email: email.clone(),
-                password: generate_password(),
+                password: generate_password()?,
                 company_name: company_name.clone(),
                 first_name: first_name.clone(),
                 last_name: last_name.clone(),
