@@ -1,6 +1,7 @@
 {
   "permissions": {
     "allow": [
+      "Bash(bd:*)",
       "Bash(git add:*)",
       "Bash(git branch:*)",
       "Bash(git commit:*)",
@@ -13,14 +14,7 @@
       "WebFetch(domain:github.com)",
       "WebFetch(domain:lib.rs)",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebSearch",
-      "Bash(bd create:*)",
-      "Bash(bd ready:*)",
-      "Bash(bd show:*)",
-      "Bash(bd update:*)",
-      "Bash(bd close:*)",
-      "Bash(bd comment:*)",
-      "Bash(bd list:*)"
+      "WebSearch"
     ]
   }
 }
