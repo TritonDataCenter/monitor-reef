@@ -13,6 +13,7 @@
 //! Note: These tests require a running SSH agent with keys loaded.
 //! Tests are designed to pass gracefully when no agent is available.
 
+use serial_test::serial;
 use std::path::PathBuf;
 use triton_auth::{
     fingerprint::md5_fingerprint_bytes, key_loader::KeyLoader, signature::encode_signature,
@@ -39,6 +40,7 @@ fn test_keys_dir() -> PathBuf {
 /// Mirrors: 'agentsigner throws with no agent' test
 /// When no SSH agent is available, operations should fail gracefully
 #[tokio::test]
+#[serial]
 async fn test_no_agent_returns_error() {
     // Clear agent environment to simulate no agent
     let old_sock = std::env::var("SSH_AUTH_SOCK").ok();
@@ -80,6 +82,7 @@ async fn agent_has_key(fingerprint: &str) -> bool {
 /// Mirrors: 'agentsigner rsa' test
 /// Signs "foobar" using RSA key from agent
 #[tokio::test]
+#[serial]
 async fn test_agent_signer_rsa() {
     if !agent_has_key(ID_RSA_MD5).await {
         eprintln!(
@@ -117,6 +120,7 @@ async fn test_agent_signer_rsa() {
 /// Mirrors: 'agentsigner dsa' test
 /// Signs "foobar" using DSA key from agent
 #[tokio::test]
+#[serial]
 async fn test_agent_signer_dsa() {
     if !agent_has_key(ID_DSA_MD5).await {
         eprintln!(
@@ -143,6 +147,7 @@ async fn test_agent_signer_dsa() {
 /// Mirrors: 'agentsigner ecdsa + buffer' test
 /// Signs random data using ECDSA key from agent
 #[tokio::test]
+#[serial]
 async fn test_agent_signer_ecdsa() {
     if !agent_has_key(ID_ECDSA_MD5).await {
         eprintln!(
@@ -169,6 +174,7 @@ async fn test_agent_signer_ecdsa() {
 /// Mirrors: 'agentsigner with empty agent' test
 /// Verifies error when key is not in agent
 #[tokio::test]
+#[serial]
 async fn test_agent_key_not_found() {
     // Use a fingerprint that definitely won't be in the agent
     let fake_fp = "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00";
@@ -186,6 +192,7 @@ async fn test_agent_key_not_found() {
 /// Mirrors: 'clisigner with only agent' test
 /// When agent has key, file fallback is not needed
 #[tokio::test]
+#[serial]
 async fn test_agent_preferred_over_file() {
     if !agent_has_key(ID_RSA_MD5).await {
         eprintln!("Skipping test_agent_preferred_over_file: RSA key not in agent");
@@ -208,6 +215,7 @@ async fn test_agent_preferred_over_file() {
 
 /// Verifies that signing with agent produces same result as file-based signing (for RSA)
 #[tokio::test]
+#[serial]
 async fn test_agent_matches_file_signing_rsa() {
     if !agent_has_key(ID_RSA_MD5).await {
         eprintln!("Skipping test_agent_matches_file_signing_rsa: RSA key not in agent");
@@ -237,6 +245,7 @@ async fn test_agent_matches_file_signing_rsa() {
 
 /// Verifies fingerprints match between agent and file-loaded keys
 #[tokio::test]
+#[serial]
 async fn test_agent_fingerprint_matches_file() {
     if !agent_has_key(ID_RSA_MD5).await {
         eprintln!("Skipping test_agent_fingerprint_matches_file: RSA key not in agent");

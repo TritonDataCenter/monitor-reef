@@ -83,7 +83,11 @@ pub fn json_stream_parse<T: DeserializeOwned>(output: &str) -> Vec<T> {
     output
         .lines()
         .filter(|line| !line.trim().is_empty())
-        .filter_map(|line| serde_json::from_str(line).ok())
+        .map(|line| {
+            serde_json::from_str(line).unwrap_or_else(|e| {
+                panic!("Failed to parse JSON line in CLI output: {e}\n  line: {line}")
+            })
+        })
         .collect()
 }
 
