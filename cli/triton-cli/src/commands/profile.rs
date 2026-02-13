@@ -584,6 +584,11 @@ async fn docker_setup(name: Option<String>, lifetime: u32, yes: bool) -> Result<
     let key_path = docker_dir.join("key.pem");
     let cert_path = docker_dir.join("cert.pem");
     fs::write(&key_path, &cert.key_pem)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))?;
+    }
     fs::write(&cert_path, &cert.cert_pem)?;
 
     // Download CA certificate from Docker host
@@ -726,6 +731,11 @@ async fn cmon_certgen(name: Option<String>, lifetime: u32, yes: bool) -> Result<
     let key_path = PathBuf::from(format!("{}-key.pem", fn_stub));
     let cert_path = PathBuf::from(format!("{}-cert.pem", fn_stub));
     fs::write(&key_path, &cert.key_pem)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(&key_path, fs::Permissions::from_mode(0o600))?;
+    }
     fs::write(&cert_path, &cert.cert_pem)?;
 
     // Generate example Prometheus configuration
