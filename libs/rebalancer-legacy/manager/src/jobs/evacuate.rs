@@ -400,7 +400,7 @@ impl MetadataBackend {
                         .iter()
                         .zip(values_for_callback.iter())
                         .filter(|((obj, _, _), _)| {
-                            successful_set.contains(obj.name.as_str())
+                            successful_set.contains(obj.object_id.as_str())
                         })
                         .map(|(obj, val)| (obj.clone(), val.clone()))
                         .unzip();
@@ -431,7 +431,7 @@ impl MetadataBackend {
                         result
                             .errors
                             .iter()
-                            .map(|(name, _)| name.as_str())
+                            .map(|(id, _)| id.as_str())
                             .collect::<Vec<_>>()
                     );
                     return Err(InternalError::new(
@@ -557,7 +557,7 @@ impl MetadataBackend {
                         let successful_mdapi_objects: Vec<_> = mdapi_objects
                             .iter()
                             .filter(|(obj, _, _)| {
-                                successful_set.contains(obj.name.as_str())
+                                successful_set.contains(obj.object_id.as_str())
                             })
                             .cloned()
                             .collect();
@@ -567,7 +567,7 @@ impl MetadataBackend {
                             .iter()
                             .zip(mdapi_requests.iter())
                             .filter(|((obj, _, _), _)| {
-                                successful_set.contains(obj.name.as_str())
+                                successful_set.contains(obj.object_id.as_str())
                             })
                             .map(|(_, br)| br.value.clone())
                             .collect();
@@ -600,7 +600,7 @@ impl MetadataBackend {
                             result
                                 .errors
                                 .iter()
-                                .map(|(name, _)| name.as_str())
+                                .map(|(id, _)| id.as_str())
                                 .collect::<Vec<_>>()
                         );
                         let error_msg = format!(

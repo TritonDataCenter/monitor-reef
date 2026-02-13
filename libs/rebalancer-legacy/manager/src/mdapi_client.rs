@@ -464,16 +464,20 @@ pub fn put_object(
 /// * `Result<BatchUpdateResult, Error>` - Summary of successful and failed updates
 ///
 /// # Notes
-/// Unlike moray's batch API, mdapi currently processes updates individually.
-/// This function provides the same interface with optimized error handling.
-/// The result includes both successful and failed object names to enable
+/// When the server supports the batchupdateobjects RPC (CHG-048), all
+/// objects are sent in a single RPC and the server executes per-vnode
+/// atomic transactions. For older servers, falls back to individual
+/// put_object calls with vnode grouping for cache locality.
+/// The result includes both successful and failed object IDs to enable
 /// proper partial failure handling - callers can mark successful objects
 /// as complete and only retry/error the failed ones.
+/// Object IDs (UUIDs) are used instead of names to avoid ambiguity when
+/// the same name exists across different buckets or vnodes.
 pub struct BatchUpdateResult {
     pub successful: usize,
     pub failed: usize,
-    pub successful_objects: Vec<String>, // object names that succeeded
-    pub errors: Vec<(String, Error)>,    // (object_name, error) for failures
+    pub successful_objects: Vec<String>, // object_id UUIDs (as strings) that succeeded
+    pub errors: Vec<(String, Error)>,    // (object_id, error) for failures
 }
 
 /// Default maximum batch size if not configured
@@ -728,7 +732,7 @@ pub fn batch_update_with_config(
                 total_failed += chunk.len();
                 for (obj, _, _) in chunk {
                     all_errors.push((
-                        obj.name.clone(),
+                        obj.object_id.clone(),
                         Error::Internal(InternalError::new(
                             Some(InternalErrorCode::MetadataUpdateFailure),
                             format!("Chunk failed: {}", e),
@@ -763,22 +767,241 @@ pub fn batch_update(
     batch_update_with_config(mclient, objects, Some(DEFAULT_MAX_BATCH_SIZE))
 }
 
-/// Internal batch update implementation that processes a single batch.
+/// Internal batch update using native batchupdateobjects
+/// RPC with fallback to individual put_object calls.
+///
+/// # Strategy
+///
+/// 1. Convert objects to ObjectUpdate payloads.
+/// 2. Send a single batchupdateobjects RPC.
+/// 3. Parse per-object results from the response.
+/// 4. If the server does not support the RPC (older
+///    buckets-mdapi), fall back to individual calls.
+///
+/// # Time complexity
+///
+/// Native path: O(N) payload build + 1 RPC round-trip.
+/// Fallback path: O(N) individual RPCs.
 fn batch_update_internal(
     mclient: &MdapiClient,
     objects: Vec<(&MantaObject, Uuid, Option<&str>)>,
 ) -> Result<BatchUpdateResult, Error> {
     debug!("Processing batch of {} objects", objects.len());
 
+    // Build ObjectUpdate payloads for all objects,
+    // keeping an object_id index for result mapping.
+    let mut updates = Vec::with_capacity(objects.len());
+    let mut object_ids: Vec<String> =
+        Vec::with_capacity(objects.len());
+
+    for (object, bucket_id, etag) in &objects {
+        let owner =
+            Uuid::parse_str(&object.owner).map_err(|e| {
+                Error::Internal(InternalError::new(
+                    Some(InternalErrorCode::BadMantaObject),
+                    format!("Invalid owner UUID: {}", e),
+                ))
+            })?;
+
+        let vnode =
+            u64::try_from(object.vnode).map_err(|_| {
+                Error::Internal(InternalError::new(
+                    Some(InternalErrorCode::BadMantaObject),
+                    format!(
+                        "Negative vnode {} in object {}",
+                        object.vnode, object.key
+                    ),
+                ))
+            })?;
+
+        let id = Uuid::parse_str(&object.object_id)
+            .map_err(|e| {
+                Error::Internal(InternalError::new(
+                    Some(InternalErrorCode::BadMantaObject),
+                    format!(
+                        "Invalid object_id UUID: {}",
+                        e
+                    ),
+                ))
+            })?;
+
+        let sharks = convert_sharks(&object.sharks);
+        let headers =
+            convert_headers(&object.headers, &object.key);
+
+        let conditions = match etag {
+            Some(e) => Conditions {
+                if_match: Some(vec![e.to_string()]),
+                if_none_match: None,
+                if_modified_since: None,
+                if_unmodified_since: None,
+            },
+            None => Conditions::default(),
+        };
+
+        updates.push(libmanta::mdapi::ObjectUpdate {
+            owner,
+            bucket_id: *bucket_id,
+            name: object.name.clone(),
+            id,
+            vnode,
+            content_type: object.content_type.clone(),
+            headers,
+            properties: None,
+            request_id: Uuid::new_v4(),
+            sharks: Some(sharks),
+            conditions,
+        });
+
+        object_ids.push(object.object_id.clone());
+    }
+
+    // Attempt native batch RPC
+    match mclient.batch_update_objects(updates) {
+        Ok(response) => {
+            parse_batch_response(response, &object_ids)
+        }
+        Err(libmanta::mdapi::MdapiError::RpcError(
+            ref msg,
+        )) if msg.contains("Unsupported")
+            || msg.contains("not implemented")
+            || msg.contains("Not implemented") =>
+        {
+            info!(
+                "batchupdateobjects RPC not supported, \
+                 falling back to individual updates"
+            );
+            batch_update_fallback(mclient, objects)
+        }
+        Err(e) => {
+            error!(
+                "batchupdateobjects RPC failed: {}",
+                e
+            );
+            Err(Error::from(e))
+        }
+    }
+}
+
+/// Parse the batchupdateobjects RPC response into a
+/// BatchUpdateResult.
+///
+/// The response JSON has the shape:
+/// ```json
+/// {
+///   "results": [
+///     { "id": "uuid", "name": "...", "success": true, ... },
+///     { "id": "uuid", "name": "...", "success": false,
+///       "object": { ... } }
+///   ],
+///   "failed_vnodes": [
+///     { "vnode": V,
+///       "error": { ... },
+///       "objects": [ <original UpdateObjectPayload>, ... ] }
+///   ]
+/// }
+/// ```
+/// Each entry in `failed_vnodes[].objects` is the full
+/// original request payload, so callers can resubmit
+/// directly.
+fn parse_batch_response(
+    response: Value,
+    object_ids: &[String],
+) -> Result<BatchUpdateResult, Error> {
+    let mut successful_objects = Vec::new();
+    let mut errors: Vec<(String, Error)> = Vec::new();
+
+    // Collect succeeded object IDs.
+    if let Some(arr) = response
+        .get("succeeded")
+        .and_then(|v| v.as_array())
+    {
+        for item in arr {
+            let id = item
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            successful_objects.push(id);
+        }
+    }
+
+    // Collect per-vnode failures.
+    if let Some(vnodes) = response
+        .get("failed_vnodes")
+        .and_then(|v| v.as_array())
+    {
+        for vf in vnodes {
+            let vnode = vf
+                .get("vnode")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let err_msg = vf
+                .get("error")
+                .map(|e| e.to_string())
+                .unwrap_or_else(|| "unknown error".to_string());
+
+            if let Some(objs) =
+                vf.get("objects").and_then(|v| v.as_array())
+            {
+                for obj in objs {
+                    let id = obj
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
+                    errors.push((
+                        id,
+                        Error::Internal(InternalError::new(
+                            Some(
+                                InternalErrorCode::MetadataUpdateFailure,
+                            ),
+                            format!(
+                                "vnode {} failed: {}",
+                                vnode, err_msg
+                            ),
+                        )),
+                    ));
+                }
+            }
+        }
+    }
+
+    let successful = successful_objects.len();
+    let failed = errors.len();
+
+    debug!(
+        "Batch RPC complete: {} successful, {} failed",
+        successful, failed
+    );
+
+    Ok(BatchUpdateResult {
+        successful,
+        failed,
+        successful_objects,
+        errors,
+    })
+}
+
+/// Fallback: individual put_object calls when the server
+/// does not support batchupdateobjects.
+///
+/// This preserves the original per-object behavior with
+/// vnode grouping for cache locality.
+fn batch_update_fallback(
+    mclient: &MdapiClient,
+    objects: Vec<(&MantaObject, Uuid, Option<&str>)>,
+) -> Result<BatchUpdateResult, Error> {
     let mut successful = 0;
     let mut failed = 0;
     let mut successful_objects = Vec::new();
     let mut errors = Vec::new();
 
-    // Group objects by vnode for better cache locality
-    // This allows mdapi server to handle updates to the same vnode more efficiently
-    let mut grouped: HashMap<i64, Vec<(&MantaObject, Uuid, Option<&str>)>> =
-        HashMap::new();
+    // Group by vnode for cache locality
+    let mut grouped: HashMap<
+        i64,
+        Vec<(&MantaObject, Uuid, Option<&str>)>,
+    > = HashMap::new();
     for obj_tuple in objects {
         let vnode = obj_tuple.0.vnode;
         grouped
@@ -787,38 +1010,32 @@ fn batch_update_internal(
             .push(obj_tuple);
     }
 
-    trace!(
-        "Grouped {} objects into {} vnodes",
-        grouped.values().map(|v| v.len()).sum::<usize>(),
-        grouped.len()
-    );
-
-    // Process each vnode group
-    for (vnode, vnode_objects) in grouped {
-        trace!(
-            "Processing vnode {} with {} objects",
-            vnode,
-            vnode_objects.len()
-        );
-
+    for (_vnode, vnode_objects) in grouped {
         for (object, bucket_id, etag) in vnode_objects {
-            match put_object(mclient, object, bucket_id, etag) {
+            match put_object(
+                mclient, object, bucket_id, etag,
+            ) {
                 Ok(_) => {
                     successful += 1;
-                    successful_objects.push(object.name.clone());
-                    trace!("Successfully updated object: {}", object.name);
+                    successful_objects
+                        .push(object.object_id.clone());
                 }
                 Err(e) => {
                     failed += 1;
-                    warn!("Failed to update object {}: {}", object.name, e);
-                    errors.push((object.name.clone(), e));
+                    warn!(
+                        "Failed to update object {} ({}): {}",
+                        object.object_id, object.name, e
+                    );
+                    errors
+                        .push((object.object_id.clone(), e));
                 }
             }
         }
     }
 
     debug!(
-        "Batch complete: {} successful, {} failed",
+        "Fallback batch complete: {} successful, \
+         {} failed",
         successful, failed
     );
 
@@ -1543,16 +1760,19 @@ mod tests {
 
     #[test]
     fn test_batch_update_result_structure() {
-        // Test BatchUpdateResult structure
+        // Test BatchUpdateResult structure (uses object_id UUIDs)
+        let id1 = "550e8400-e29b-41d4-a716-446655440001";
+        let id2 = "550e8400-e29b-41d4-a716-446655440002";
+        let id3 = "550e8400-e29b-41d4-a716-446655440003";
         let result = BatchUpdateResult {
             successful: 5,
             failed: 2,
             successful_objects: vec![
-                "obj2".to_string(),
-                "obj3".to_string(),
+                id2.to_string(),
+                id3.to_string(),
             ],
             errors: vec![(
-                "obj1".to_string(),
+                id1.to_string(),
                 Error::Internal(InternalError::new(
                     Some(InternalErrorCode::Other),
                     "test error".to_string(),
@@ -1564,7 +1784,7 @@ mod tests {
         assert_eq!(result.failed, 2);
         assert_eq!(result.successful_objects.len(), 2);
         assert_eq!(result.errors.len(), 1);
-        assert_eq!(result.errors[0].0, "obj1");
+        assert_eq!(result.errors[0].0, id1);
     }
 
     #[test]
@@ -1849,7 +2069,10 @@ mod tests {
         let result = BatchUpdateResult {
             successful: 10,
             failed: 0,
-            successful_objects: vec!["obj1".to_string(), "obj2".to_string()],
+            successful_objects: vec![
+                "550e8400-e29b-41d4-a716-446655440001".to_string(),
+                "550e8400-e29b-41d4-a716-446655440002".to_string(),
+            ],
             errors: vec![],
         };
 
@@ -1867,14 +2090,14 @@ mod tests {
             successful_objects: vec![],
             errors: vec![
                 (
-                    "obj1".to_string(),
+                    "550e8400-e29b-41d4-a716-446655440001".to_string(),
                     Error::Internal(InternalError::new(
                         Some(InternalErrorCode::Other),
                         "error 1".to_string(),
                     )),
                 ),
                 (
-                    "obj2".to_string(),
+                    "550e8400-e29b-41d4-a716-446655440002".to_string(),
                     Error::Internal(InternalError::new(
                         Some(InternalErrorCode::Other),
                         "error 2".to_string(),
@@ -1891,15 +2114,15 @@ mod tests {
 
     #[test]
     fn test_batch_update_result_partial_failure() {
+        let id_ok1 = "550e8400-e29b-41d4-a716-446655440001".to_string();
+        let id_ok2 = "550e8400-e29b-41d4-a716-446655440002".to_string();
+        let id_fail = "550e8400-e29b-41d4-a716-446655440003".to_string();
         let result = BatchUpdateResult {
             successful: 8,
             failed: 2,
-            successful_objects: vec![
-                "success1".to_string(),
-                "success2".to_string(),
-            ],
+            successful_objects: vec![id_ok1.clone(), id_ok2.clone()],
             errors: vec![(
-                "failed_obj".to_string(),
+                id_fail.clone(),
                 Error::Internal(InternalError::new(
                     Some(InternalErrorCode::MetadataUpdateFailure),
                     "update failed".to_string(),
@@ -1910,10 +2133,10 @@ mod tests {
         assert_eq!(result.successful, 8);
         assert_eq!(result.failed, 2);
         assert_eq!(result.errors.len(), 1);
-        assert!(result.errors[0].0.contains("failed_obj"));
+        assert_eq!(result.errors[0].0, id_fail);
         // Verify we can identify which objects succeeded
         assert_eq!(result.successful_objects.len(), 2);
-        assert!(result.successful_objects.contains(&"success1".to_string()));
+        assert!(result.successful_objects.contains(&id_ok1));
     }
 
     #[test]
@@ -2159,9 +2382,12 @@ mod tests {
         let chunk1 = BatchUpdateResult {
             successful: 10,
             failed: 2,
-            successful_objects: vec!["obj1".to_string(), "obj2".to_string()],
+            successful_objects: vec![
+                "550e8400-e29b-41d4-a716-446655440001".to_string(),
+                "550e8400-e29b-41d4-a716-446655440002".to_string(),
+            ],
             errors: vec![(
-                "err1".to_string(),
+                "550e8400-e29b-41d4-a716-446655440099".to_string(),
                 Error::Internal(InternalError::new(
                     Some(InternalErrorCode::Other),
                     "test".to_string(),
@@ -2172,7 +2398,9 @@ mod tests {
         let chunk2 = BatchUpdateResult {
             successful: 8,
             failed: 1,
-            successful_objects: vec!["obj3".to_string()],
+            successful_objects: vec![
+                "550e8400-e29b-41d4-a716-446655440003".to_string(),
+            ],
             errors: vec![],
         };
 

@@ -944,6 +944,42 @@ impl MdapiClient {
         self.call("updateobject", &update)
     }
 
+    /// Batch update multiple objects in a single RPC.
+    ///
+    /// Sends all updates to the server which groups them
+    /// by vnode and executes per-vnode atomic transactions.
+    ///
+    /// # Arguments
+    ///
+    /// * `updates` - Vector of object updates to process
+    ///
+    /// # Returns
+    ///
+    /// JSON value containing BatchUpdateObjectsResponse
+    /// with per-object success/failure results.
+    ///
+    /// # Errors
+    ///
+    /// Returns `MdapiError::RpcError` if the RPC fails
+    /// or the server does not support this method.
+    pub fn batch_update_objects(
+        &self,
+        updates: Vec<ObjectUpdate>,
+    ) -> Result<Value, MdapiError> {
+        #[derive(Serialize)]
+        struct BatchPayload {
+            objects: Vec<ObjectUpdate>,
+            request_id: Uuid,
+        }
+
+        let payload = BatchPayload {
+            objects: updates,
+            request_id: Self::generate_request_id(),
+        };
+
+        self.call("batchupdateobjects", &payload)
+    }
+
     /// Delete an object
     ///
     /// # Arguments
