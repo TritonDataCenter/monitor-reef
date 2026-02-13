@@ -38,7 +38,11 @@ pub async fn add_auth_headers(
         if !query.is_empty() {
             query.push('&');
         }
-        query.push_str(&format!("as-role={}", roles.join(",")));
+        let encoded_roles: Vec<String> = roles
+            .iter()
+            .map(|r| urlencoding::encode(r).into_owned())
+            .collect();
+        query.push_str(&format!("as-role={}", encoded_roles.join(",")));
         url.set_query(Some(&query));
     }
 
