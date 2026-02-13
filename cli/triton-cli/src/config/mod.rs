@@ -45,12 +45,32 @@ pub fn env_profile() -> Result<Profile> {
     Ok(profile)
 }
 
+/// Check if all required environment variables for an env profile are available.
+///
+/// Returns true only when all three required variables (URL, account, key ID)
+/// are present. This prevents partial env vars from triggering the env profile
+/// path, which would produce confusing errors about missing variables. Partial
+/// env vars instead fall through to the saved-profile path where they can act
+/// as overrides.
+fn env_profile_available() -> bool {
+    let has_url = std::env::var("TRITON_URL").is_ok() || std::env::var("SDC_URL").is_ok();
+    let has_account =
+        std::env::var("TRITON_ACCOUNT").is_ok() || std::env::var("SDC_ACCOUNT").is_ok();
+    let has_key_id = std::env::var("TRITON_KEY_ID").is_ok() || std::env::var("SDC_KEY_ID").is_ok();
+    has_url && has_account && has_key_id
+}
+
 /// Resolve which profile to use
+///
+/// This is the single source of truth for profile resolution. Both the
+/// `Cli::build_client()` method (for API commands) and standalone commands
+/// (`env`, `profile docker-setup`, etc.) use this function.
 ///
 /// Priority:
 /// 1. CLI --profile argument
 /// 2. TRITON_PROFILE environment variable
-/// 3. "env" if TRITON_URL/SDC_URL is set (use env vars directly)
+/// 3. "env" if all required env vars are set (TRITON_URL/SDC_URL,
+///    TRITON_ACCOUNT/SDC_ACCOUNT, TRITON_KEY_ID/SDC_KEY_ID)
 /// 4. Current profile from config.json
 pub async fn resolve_profile(cli_profile: Option<&str>) -> Result<Profile> {
     // 1. CLI argument
@@ -69,8 +89,8 @@ pub async fn resolve_profile(cli_profile: Option<&str>) -> Result<Profile> {
         return Profile::load(&name).await;
     }
 
-    // 3. Check if env vars are set (implicit "env" profile)
-    if std::env::var("TRITON_URL").is_ok() || std::env::var("SDC_URL").is_ok() {
+    // 3. Check if all required env vars are set (implicit "env" profile)
+    if env_profile_available() {
         return env_profile();
     }
 
@@ -81,6 +101,7 @@ pub async fn resolve_profile(cli_profile: Option<&str>) -> Result<Profile> {
     }
 
     Err(anyhow::anyhow!(
-        "No profile configured. Use 'triton profile create' or set TRITON_* environment variables."
+        "No profile configured. Use 'triton profile create' or set TRITON_URL, \
+         TRITON_ACCOUNT, and TRITON_KEY_ID environment variables."
     ))
 }

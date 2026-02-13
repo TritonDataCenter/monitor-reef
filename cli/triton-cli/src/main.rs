@@ -20,7 +20,8 @@ use commands::{
     AccesskeyCommand, AccountCommand, FwruleCommand, ImageCommand, InstanceCommand, KeyCommand,
     NetworkCommand, PackageCommand, ProfileCommand, RbacCommand, VlanCommand, VolumeCommand,
 };
-use config::profile::{Config, Profile};
+use config::profile::Profile;
+use config::resolve_profile;
 
 /// Custom version string matching node-triton format
 fn version_string() -> &'static str {
@@ -284,67 +285,30 @@ enum Commands {
 
 impl Cli {
     /// Build an authenticated TypedClient from CLI options or profile
+    ///
+    /// Uses `resolve_profile` as the single source of truth for profile
+    /// resolution, then applies CLI/env overrides on top.
     async fn build_client(&self) -> Result<(TypedClient, Profile)> {
-        // First try environment variables / CLI overrides
-        let url = self.url.clone().or_else(|| std::env::var("SDC_URL").ok());
-        let account = self
+        let profile = resolve_profile(self.profile.as_deref()).await?;
+
+        // Allow CLI/env overrides on top of the resolved profile.
+        // self.url/account/key_id pick up TRITON_* vars via clap's `env`,
+        // and we also check SDC_* as a legacy fallback.
+        let final_url = self
+            .url
+            .clone()
+            .or_else(|| std::env::var("SDC_URL").ok())
+            .unwrap_or_else(|| profile.url.clone());
+        let final_account = self
             .account
             .clone()
-            .or_else(|| std::env::var("SDC_ACCOUNT").ok());
-        let key_id = self
+            .or_else(|| std::env::var("SDC_ACCOUNT").ok())
+            .unwrap_or_else(|| profile.account.clone());
+        let final_key_id = self
             .key_id
             .clone()
-            .or_else(|| std::env::var("SDC_KEY_ID").ok());
-
-        // If we have all required values from env/CLI, use them directly
-        if let (Some(url), Some(account), Some(key_id)) =
-            (url.clone(), account.clone(), key_id.clone())
-        {
-            let mut auth_config = triton_auth::AuthConfig::new(
-                account.clone(),
-                triton_auth::KeySource::auto(&key_id),
-            );
-
-            // Apply RBAC options from CLI
-            if let Some(user) = &self.user {
-                auth_config = auth_config.with_user(user.clone());
-            }
-            if !self.role.is_empty() {
-                auth_config = auth_config.with_roles(self.role.clone());
-            }
-            if let Some(act_as) = &self.act_as {
-                auth_config = auth_config.with_act_as(act_as.clone());
-            }
-            if let Some(version) = &self.accept_version {
-                auth_config = auth_config.with_accept_version(version.clone());
-            }
-
-            let profile = Profile::new("env".into(), url.clone(), account, key_id);
-            return Ok((
-                TypedClient::new_with_insecure(&url, auth_config, self.insecure)?,
-                profile,
-            ));
-        }
-
-        // Otherwise, load from profile
-        let profile_name = self.profile.clone();
-        let profile_name = match profile_name {
-            Some(name) => Some(name),
-            None => Config::load().await.ok().and_then(|c| c.profile),
-        };
-
-        let profile_name = profile_name.ok_or_else(|| {
-            anyhow::anyhow!(
-                "No profile configured. Use 'triton profile create' or set TRITON_URL, TRITON_ACCOUNT, and TRITON_KEY_ID"
-            )
-        })?;
-
-        let profile = Profile::load(&profile_name).await?;
-
-        // Allow CLI/env overrides on top of profile
-        let final_url = url.unwrap_or_else(|| profile.url.clone());
-        let final_account = account.unwrap_or_else(|| profile.account.clone());
-        let final_key_id = key_id.unwrap_or_else(|| profile.key_id.clone());
+            .or_else(|| std::env::var("SDC_KEY_ID").ok())
+            .unwrap_or_else(|| profile.key_id.clone());
 
         let mut auth_config = triton_auth::AuthConfig::new(
             final_account,
