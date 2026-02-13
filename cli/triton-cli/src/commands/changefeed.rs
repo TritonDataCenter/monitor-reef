@@ -10,54 +10,25 @@
 
 use anyhow::{Result, anyhow};
 use clap::Args;
-use cloudapi_client::{ClientInfo, TypedClient};
+use cloudapi_client::{
+    ChangefeedMessage, ChangefeedResource, ChangefeedSubResource, ChangefeedSubscription,
+    ClientInfo, TypedClient,
+};
 use futures_util::{SinkExt, StreamExt};
 use http::Uri;
-use serde::{Deserialize, Serialize};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream,
     tungstenite::{Message, handshake::client::generate_key, protocol::WebSocketConfig},
 };
 
+use crate::output::enum_to_display;
+
 #[derive(Args, Clone)]
 pub struct ChangefeedArgs {
     /// Filter to specific instance UUIDs (comma-separated)
     #[arg(long, value_delimiter = ',')]
     pub instances: Vec<String>,
-}
-
-/// Subscription message sent to the changefeed
-#[derive(Serialize)]
-struct SubscriptionMessage {
-    resource: String,
-    #[serde(rename = "subResources")]
-    sub_resources: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    vms: Vec<String>,
-}
-
-/// Changefeed message from CloudAPI
-#[derive(Deserialize, Debug)]
-struct ChangefeedMessage {
-    /// When the change was published (Unix timestamp in milliseconds)
-    published: i64,
-    /// The kind of change
-    #[serde(rename = "changeKind")]
-    change_kind: ChangeKind,
-    /// Current state of the resource
-    #[serde(rename = "resourceState")]
-    resource_state: String,
-    /// UUID of the changed resource
-    #[serde(rename = "changedResourceId")]
-    changed_resource_id: String,
-}
-
-#[derive(Deserialize, Debug)]
-struct ChangeKind {
-    /// Type of resources that changed (e.g., "state", "tags")
-    #[serde(rename = "subResources")]
-    sub_resources: Vec<String>,
 }
 
 pub async fn run(args: ChangefeedArgs, client: &TypedClient, use_json: bool) -> Result<()> {
@@ -77,19 +48,24 @@ pub async fn run(args: ChangefeedArgs, client: &TypedClient, use_json: bool) -> 
     println!("Connected. Subscribing to VM changes...");
 
     // Send subscription message
-    let subscription = SubscriptionMessage {
-        resource: "vm".to_string(),
+    let vms = if args.instances.is_empty() {
+        None
+    } else {
+        Some(args.instances.clone())
+    };
+    let subscription = ChangefeedSubscription {
+        resource: ChangefeedResource::Vm,
         sub_resources: vec![
-            "alias".to_string(),
-            "customer_metadata".to_string(),
-            "destroyed".to_string(),
-            "nics".to_string(),
-            "owner_uuid".to_string(),
-            "server_uuid".to_string(),
-            "state".to_string(),
-            "tags".to_string(),
+            ChangefeedSubResource::Alias,
+            ChangefeedSubResource::CustomerMetadata,
+            ChangefeedSubResource::Destroyed,
+            ChangefeedSubResource::Nics,
+            ChangefeedSubResource::OwnerUuid,
+            ChangefeedSubResource::ServerUuid,
+            ChangefeedSubResource::State,
+            ChangefeedSubResource::Tags,
         ],
-        vms: args.instances.clone(),
+        vms,
     };
 
     let sub_json = serde_json::to_string(&subscription)?;
@@ -151,15 +127,26 @@ fn handle_message(text: &str, use_json: bool) -> Result<()> {
         // Parse and format nicely
         let msg: ChangefeedMessage = serde_json::from_str(text)?;
 
-        // Format timestamp
-        let timestamp = chrono::DateTime::from_timestamp_millis(msg.published)
+        // Format timestamp (published is a string containing millisecond Unix timestamp)
+        let timestamp = msg
+            .published
+            .parse::<i64>()
+            .ok()
+            .and_then(chrono::DateTime::from_timestamp_millis)
             .map(|dt| dt.to_rfc3339())
-            .unwrap_or_else(|| msg.published.to_string());
+            .unwrap_or_else(|| msg.published.clone());
 
         let short_id = &msg.changed_resource_id[..8.min(msg.changed_resource_id.len())];
 
+        let sub_resources: Vec<String> = msg
+            .change_kind
+            .sub_resources
+            .iter()
+            .map(enum_to_display)
+            .collect();
+
         println!("Change ({}) =>", timestamp);
-        println!("  modified: {}", msg.change_kind.sub_resources.join(", "));
+        println!("  modified: {}", sub_resources.join(", "));
         println!("  state: {}", msg.resource_state);
         println!("  object: {}", short_id);
     }
