@@ -4550,6 +4550,7 @@ version = "9.17.0"
 dependencies = [
  "anyhow",
  "clap",
+ "serde",
  "serde_json",
  "tokio",
  "uuid",

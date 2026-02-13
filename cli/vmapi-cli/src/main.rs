@@ -24,6 +24,14 @@ use vmapi_client::{
     UpdateNicsRequest, UpdateVmRequest,
 };
 
+/// Convert a serde-serializable enum value to its wire-format string.
+fn enum_to_display<T: serde::Serialize + std::fmt::Debug>(val: &T) -> String {
+    serde_json::to_value(val)
+        .ok()
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_else(|| format!("{:?}", val))
+}
+
 #[derive(Parser)]
 #[command(name = "vmapi", version, about = "CLI for Triton VMAPI")]
 struct Cli {
@@ -776,7 +784,12 @@ async fn main() -> Result<()> {
             } else {
                 for vm in &vms {
                     let alias_str = vm.alias.as_deref().unwrap_or("<unnamed>");
-                    println!("{}: {} ({:?})", vm.uuid, alias_str, vm.state);
+                    println!(
+                        "{}: {} ({})",
+                        vm.uuid,
+                        alias_str,
+                        enum_to_display(&vm.state)
+                    );
                 }
                 println!("\nTotal: {} VMs", vms.len());
             }
@@ -804,8 +817,8 @@ async fn main() -> Result<()> {
                 let alias_str = vm.alias.as_deref().unwrap_or("<unnamed>");
                 println!("UUID: {}", vm.uuid);
                 println!("Alias: {}", alias_str);
-                println!("Brand: {:?}", vm.brand);
-                println!("State: {:?}", vm.state);
+                println!("Brand: {}", enum_to_display(&vm.brand));
+                println!("State: {}", enum_to_display(&vm.state));
                 println!("Owner: {}", vm.owner_uuid);
                 if let Some(ram) = vm.ram {
                     println!("RAM: {} MB", ram);
@@ -1150,7 +1163,7 @@ async fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&jobs)?);
             } else {
                 for job in &jobs {
-                    println!("{}: {:?}", job.uuid, job.execution);
+                    println!("{}: {}", job.uuid, enum_to_display(&job.execution));
                 }
                 println!("\nTotal: {} jobs", jobs.len());
             }
@@ -1163,7 +1176,7 @@ async fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&job)?);
             } else {
                 println!("Job UUID: {}", job.uuid);
-                println!("Execution: {:?}", job.execution);
+                println!("Execution: {}", enum_to_display(&job.execution));
                 if let Some(vm) = job.vm_uuid {
                     println!("VM UUID: {}", vm);
                 }
@@ -1181,7 +1194,7 @@ async fn main() -> Result<()> {
             } else {
                 println!("Job completed:");
                 println!("  UUID: {}", job.uuid);
-                println!("  Execution: {:?}", job.execution);
+                println!("  Execution: {}", enum_to_display(&job.execution));
             }
         }
 
@@ -1202,7 +1215,7 @@ async fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&jobs)?);
             } else {
                 for job in &jobs {
-                    println!("{}: {:?}", job.uuid, job.execution);
+                    println!("{}: {}", job.uuid, enum_to_display(&job.execution));
                 }
                 println!("\nTotal: {} jobs for VM {}", jobs.len(), uuid);
             }
@@ -1522,7 +1535,7 @@ async fn main() -> Result<()> {
             } else {
                 println!("VM Statuses:");
                 for (uuid, status) in statuses.iter() {
-                    println!("  {}: {:?}", uuid, status.state);
+                    println!("  {}: {}", uuid, enum_to_display(&status.state));
                 }
             }
         }
@@ -1552,7 +1565,12 @@ async fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&migrations)?);
             } else {
                 for m in &migrations {
-                    println!("{}: {:?} ({:?})", m.vm_uuid, m.state, m.phase);
+                    println!(
+                        "{}: {} ({})",
+                        m.vm_uuid,
+                        enum_to_display(&m.state),
+                        enum_to_display(&m.phase)
+                    );
                 }
                 println!("\nTotal: {} migrations", migrations.len());
             }
@@ -1565,8 +1583,8 @@ async fn main() -> Result<()> {
                 println!("{}", serde_json::to_string_pretty(&migration)?);
             } else {
                 println!("Migration for VM {}:", migration.vm_uuid);
-                println!("  State: {:?}", migration.state);
-                println!("  Phase: {:?}", migration.phase);
+                println!("  State: {}", enum_to_display(&migration.state));
+                println!("  Phase: {}", enum_to_display(&migration.phase));
                 if let Some(src) = migration.source_server_uuid {
                     println!("  Source server: {}", src);
                 }
