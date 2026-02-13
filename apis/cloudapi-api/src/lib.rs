@@ -1704,7 +1704,7 @@ pub trait CloudApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<AccessKeyPath>,
         body: TypedBody<UpdateAccessKeyRequest>,
-    ) -> Result<HttpResponseCreated<AccessKey>, HttpError>;
+    ) -> Result<HttpResponseOk<AccessKey>, HttpError>;
 
     /// Delete access key
     #[endpoint {
@@ -1787,7 +1787,7 @@ pub trait CloudApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<UserAccessKeyPath>,
         body: TypedBody<UpdateAccessKeyRequest>,
-    ) -> Result<HttpResponseCreated<AccessKey>, HttpError>;
+    ) -> Result<HttpResponseOk<AccessKey>, HttpError>;
 
     /// Delete user access key
     #[endpoint {

@@ -53,6 +53,9 @@ use super::Machine;
 pub enum ChangefeedResource {
     /// Virtual machine resources
     Vm,
+    /// Unknown resource type (forward compatibility)
+    #[serde(other)]
+    Unknown,
 }
 
 /// Sub-resources that can be monitored for changes.
