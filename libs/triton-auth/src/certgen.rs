@@ -31,7 +31,7 @@ use der::asn1::ObjectIdentifier;
 use rand::rngs::OsRng;
 use rcgen::{
     CertificateParams, CustomExtension, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa,
-    KeyPair, KeyUsagePurpose, SerialNumber,
+    Issuer, KeyPair, KeyUsagePurpose, SerialNumber, SignatureAlgorithm,
 };
 
 use std::time::Duration;
@@ -141,25 +141,30 @@ impl CertGenerator {
         purpose: CertPurpose,
         lifetime_days: u32,
     ) -> Result<GeneratedCert, AuthError> {
-        // Generate a new ECDSA P-256 key pair for the certificate
+        // Generate a new ECDSA P-256 key pair for the certificate subject
         // Using ECDSA for performance (especially important for CMON)
         let key_pair = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256)
             .map_err(|e| AuthError::SigningError(format!("Failed to generate key pair: {}", e)))?;
 
-        // Create certificate parameters
+        // Create SSH signing key for the issuer (the SSH key signs the cert)
+        let ssh_signing_key = SshSigningKey::new(&self.identity)?;
+
+        // Create issuer params with the SSH key's fingerprint as the DN
+        let md5_fp_b64 = self.md5_fingerprint_base64();
+        let mut issuer_params = CertificateParams::default();
+        let mut issuer_dn = DistinguishedName::new();
+        issuer_dn.push(DnType::CommonName, &md5_fp_b64);
+        issuer_params.distinguished_name = issuer_dn;
+
+        let issuer = Issuer::new(issuer_params, ssh_signing_key);
+
+        // Create subject certificate parameters
         let mut params = CertificateParams::default();
 
         // Set subject DN: CN=<account>
         let mut subject_dn = DistinguishedName::new();
         subject_dn.push(DnType::CommonName, account);
         params.distinguished_name = subject_dn;
-
-        // Set issuer DN: CN=<md5_fingerprint_base64>
-        // The issuer is the SSH key that signs this certificate
-        let md5_fp_b64 = self.md5_fingerprint_base64();
-        let mut issuer_dn = DistinguishedName::new();
-        issuer_dn.push(DnType::CommonName, &md5_fp_b64);
-        // Note: issuer is set implicitly when using signed_by()
 
         // Set validity period
         // Backdate by 5 minutes to account for clock skew
@@ -205,18 +210,10 @@ impl CertGenerator {
             create_custom_eku_extension(purpose.oid()).map_err(AuthError::SigningError)?;
         params.custom_extensions = vec![custom_eku];
 
-        // For self-signed certs (we'll sign with SSH key conceptually)
-        // rcgen doesn't support external signing, so we generate a self-signed cert
-        // The SSH key acts as the conceptual issuer but the cert is technically self-signed
-        //
-        // Note: This is a simplification. The original node-triton implementation
-        // used sshpk to actually sign the certificate with the SSH key. For full
-        // compatibility, we would need to implement X.509 DER encoding and signing
-        // manually. For now, we use self-signed certs which work for Docker/CMON
-        // authentication when the SSH key is registered with the Triton account.
-        let cert = params.self_signed(&key_pair).map_err(|e| {
-            AuthError::SigningError(format!("Failed to generate certificate: {}", e))
-        })?;
+        // Sign the certificate with the SSH key via the SSH agent
+        let cert = params
+            .signed_by(&key_pair, &issuer)
+            .map_err(|e| AuthError::SigningError(format!("Failed to sign certificate: {}", e)))?;
 
         Ok(GeneratedCert {
             cert_pem: cert.pem(),
@@ -245,6 +242,226 @@ impl CertGenerator {
     /// Get the SSH key type
     pub fn key_type(&self) -> &str {
         &self.identity.key_type
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SSH-agent-backed signing key for rcgen
+// ---------------------------------------------------------------------------
+
+/// A signing key backed by an SSH agent, implementing rcgen's `SigningKey` trait.
+///
+/// This bridges the SSH agent's signing capability with rcgen's certificate
+/// generation, allowing X.509 certificates to be properly signed by SSH keys.
+struct SshSigningKey {
+    identity: SshIdentity,
+    algorithm: &'static SignatureAlgorithm,
+    /// The SSH public key converted to X.509 SubjectPublicKey DER format
+    public_key_der: Vec<u8>,
+}
+
+impl SshSigningKey {
+    fn new(identity: &SshIdentity) -> Result<Self, AuthError> {
+        let (algorithm, public_key_der) = match identity.key_type.as_str() {
+            "ssh-rsa" => {
+                let der = ssh_rsa_pubkey_to_der(&identity.raw_key)?;
+                (&rcgen::PKCS_RSA_SHA256, der)
+            }
+            "ecdsa-sha2-nistp256" => {
+                let point = ssh_ecdsa_pubkey_to_point(&identity.raw_key)?;
+                (&rcgen::PKCS_ECDSA_P256_SHA256, point)
+            }
+            "ecdsa-sha2-nistp384" => {
+                let point = ssh_ecdsa_pubkey_to_point(&identity.raw_key)?;
+                (&rcgen::PKCS_ECDSA_P384_SHA384, point)
+            }
+            other => {
+                return Err(AuthError::KeyLoadError(format!(
+                    "Unsupported SSH key type for certificate signing: {other}"
+                )));
+            }
+        };
+
+        Ok(Self {
+            identity: identity.clone(),
+            algorithm,
+            public_key_der,
+        })
+    }
+}
+
+impl rcgen::PublicKeyData for SshSigningKey {
+    fn der_bytes(&self) -> &[u8] {
+        &self.public_key_der
+    }
+
+    fn algorithm(&self) -> &'static SignatureAlgorithm {
+        self.algorithm
+    }
+}
+
+impl rcgen::SigningKey for SshSigningKey {
+    fn sign(&self, msg: &[u8]) -> Result<Vec<u8>, rcgen::Error> {
+        let mut client = SshAgentClient::connect_env().map_err(|_| rcgen::Error::RemoteKeyError)?;
+        let raw_sig = client
+            .sign_data(&self.identity, msg)
+            .map_err(|_| rcgen::Error::RemoteKeyError)?;
+
+        if self.identity.is_rsa() {
+            // RSA: SSH agent returns raw PKCS#1 v1.5 signature bytes,
+            // which is exactly what X.509 expects
+            Ok(raw_sig)
+        } else {
+            // ECDSA: SSH agent returns (r, s) as SSH mpints,
+            // X.509 expects DER-encoded SEQUENCE { INTEGER r, INTEGER s }
+            ssh_ecdsa_sig_to_der(&raw_sig).map_err(|_| rcgen::Error::RemoteKeyError)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// SSH ↔ X.509 format conversion helpers
+// ---------------------------------------------------------------------------
+
+/// Read a big-endian u32 length field from an SSH wire-format buffer,
+/// advancing the offset past it.
+fn read_ssh_u32(buf: &[u8], offset: &mut usize) -> Result<usize, AuthError> {
+    if *offset + 4 > buf.len() {
+        return Err(AuthError::KeyLoadError(
+            "SSH key data truncated (expected 4-byte length)".to_string(),
+        ));
+    }
+    let val = ((buf[*offset] as u32) << 24)
+        | ((buf[*offset + 1] as u32) << 16)
+        | ((buf[*offset + 2] as u32) << 8)
+        | (buf[*offset + 3] as u32);
+    *offset += 4;
+    Ok(val as usize)
+}
+
+/// Read `len` bytes from `buf` at `offset`, advancing the offset.
+fn read_ssh_bytes<'a>(
+    buf: &'a [u8],
+    offset: &mut usize,
+    len: usize,
+) -> Result<&'a [u8], AuthError> {
+    if *offset + len > buf.len() {
+        return Err(AuthError::KeyLoadError(
+            "SSH key data truncated".to_string(),
+        ));
+    }
+    let result = &buf[*offset..*offset + len];
+    *offset += len;
+    Ok(result)
+}
+
+/// Convert an SSH RSA public key to X.509 SubjectPublicKey DER format.
+///
+/// SSH wire format: `string("ssh-rsa") || mpint(e) || mpint(n)`
+/// X.509 RSA SubjectPublicKey: `SEQUENCE { INTEGER n, INTEGER e }`
+fn ssh_rsa_pubkey_to_der(raw_key: &[u8]) -> Result<Vec<u8>, AuthError> {
+    let mut offset = 0;
+
+    // Skip key type string
+    let type_len = read_ssh_u32(raw_key, &mut offset)?;
+    read_ssh_bytes(raw_key, &mut offset, type_len)?;
+
+    // Read e (public exponent)
+    let e_len = read_ssh_u32(raw_key, &mut offset)?;
+    let e = read_ssh_bytes(raw_key, &mut offset, e_len)?;
+
+    // Read n (modulus)
+    let n_len = read_ssh_u32(raw_key, &mut offset)?;
+    let n = read_ssh_bytes(raw_key, &mut offset, n_len)?;
+
+    // DER encode as SEQUENCE { INTEGER n, INTEGER e }
+    let n_der = der_encode_integer(n);
+    let e_der = der_encode_integer(e);
+    let mut inner = Vec::with_capacity(n_der.len() + e_der.len());
+    inner.extend_from_slice(&n_der);
+    inner.extend_from_slice(&e_der);
+    Ok(der_encode_sequence(&inner))
+}
+
+/// Extract the uncompressed EC point from an SSH ECDSA public key.
+///
+/// SSH wire format: `string("ecdsa-sha2-nistp*") || string("nistp*") || string(Q)`
+/// X.509 EC SubjectPublicKey: the uncompressed point Q directly
+fn ssh_ecdsa_pubkey_to_point(raw_key: &[u8]) -> Result<Vec<u8>, AuthError> {
+    let mut offset = 0;
+
+    // Skip key type string
+    let type_len = read_ssh_u32(raw_key, &mut offset)?;
+    read_ssh_bytes(raw_key, &mut offset, type_len)?;
+
+    // Skip curve name
+    let curve_len = read_ssh_u32(raw_key, &mut offset)?;
+    read_ssh_bytes(raw_key, &mut offset, curve_len)?;
+
+    // Read point Q
+    let point_len = read_ssh_u32(raw_key, &mut offset)?;
+    let point = read_ssh_bytes(raw_key, &mut offset, point_len)?;
+
+    Ok(point.to_vec())
+}
+
+/// Convert an SSH ECDSA signature from SSH mpint format to X.509 DER format.
+///
+/// SSH format: `mpint(r) || mpint(s)` (two length-prefixed big-endian integers)
+/// X.509 DER: `SEQUENCE { INTEGER r, INTEGER s }`
+fn ssh_ecdsa_sig_to_der(sig: &[u8]) -> Result<Vec<u8>, AuthError> {
+    let mut offset = 0;
+
+    // Read r
+    let r_len = read_ssh_u32(sig, &mut offset)?;
+    let r = read_ssh_bytes(sig, &mut offset, r_len)?;
+
+    // Read s
+    let s_len = read_ssh_u32(sig, &mut offset)?;
+    let s = read_ssh_bytes(sig, &mut offset, s_len)?;
+
+    // DER encode as SEQUENCE { INTEGER r, INTEGER s }
+    let r_der = der_encode_integer(r);
+    let s_der = der_encode_integer(s);
+    let mut inner = Vec::with_capacity(r_der.len() + s_der.len());
+    inner.extend_from_slice(&r_der);
+    inner.extend_from_slice(&s_der);
+    Ok(der_encode_sequence(&inner))
+}
+
+/// DER-encode a byte slice as an INTEGER.
+///
+/// SSH mpints and DER INTEGERs share the same encoding rules for positive
+/// integers: no unnecessary leading zeros, but a leading 0x00 byte if the
+/// MSB of the value is set (to indicate the number is positive).
+fn der_encode_integer(bytes: &[u8]) -> Vec<u8> {
+    let mut result = Vec::with_capacity(4 + bytes.len());
+    result.push(0x02); // INTEGER tag
+    der_encode_length(&mut result, bytes.len());
+    result.extend_from_slice(bytes);
+    result
+}
+
+/// DER-encode a byte slice as a SEQUENCE.
+fn der_encode_sequence(contents: &[u8]) -> Vec<u8> {
+    let mut result = Vec::with_capacity(4 + contents.len());
+    result.push(0x30); // SEQUENCE tag
+    der_encode_length(&mut result, contents.len());
+    result.extend_from_slice(contents);
+    result
+}
+
+/// Encode a DER length field (supports lengths up to 65535).
+fn der_encode_length(buf: &mut Vec<u8>, len: usize) {
+    if len < 128 {
+        buf.push(len as u8);
+    } else if len < 256 {
+        buf.push(0x81);
+        buf.push(len as u8);
+    } else {
+        buf.push(0x82);
+        buf.push((len >> 8) as u8);
+        buf.push(len as u8);
     }
 }
 
@@ -300,5 +517,131 @@ mod tests {
     fn test_cert_purpose_name() {
         assert_eq!(CertPurpose::Docker.name(), "Docker");
         assert_eq!(CertPurpose::Cmon.name(), "CMON");
+    }
+
+    #[test]
+    fn test_der_encode_integer_small() {
+        // Small positive integer with MSB clear
+        let result = der_encode_integer(&[0x42]);
+        assert_eq!(result, vec![0x02, 0x01, 0x42]);
+    }
+
+    #[test]
+    fn test_der_encode_integer_with_leading_zero() {
+        // SSH mpint with leading zero (MSB set in value)
+        let result = der_encode_integer(&[0x00, 0x80, 0x01]);
+        assert_eq!(result, vec![0x02, 0x03, 0x00, 0x80, 0x01]);
+    }
+
+    #[test]
+    fn test_der_encode_sequence() {
+        let inner = vec![0x02, 0x01, 0x42]; // INTEGER 0x42
+        let result = der_encode_sequence(&inner);
+        assert_eq!(result, vec![0x30, 0x03, 0x02, 0x01, 0x42]);
+    }
+
+    #[test]
+    fn test_der_encode_length() {
+        // Short form (< 128)
+        let mut buf = Vec::new();
+        der_encode_length(&mut buf, 42);
+        assert_eq!(buf, vec![42]);
+
+        // Long form, 1 byte (128..255)
+        let mut buf = Vec::new();
+        der_encode_length(&mut buf, 200);
+        assert_eq!(buf, vec![0x81, 200]);
+
+        // Long form, 2 bytes (256..65535)
+        let mut buf = Vec::new();
+        der_encode_length(&mut buf, 300);
+        assert_eq!(buf, vec![0x82, 0x01, 0x2C]);
+    }
+
+    #[test]
+    fn test_ssh_rsa_pubkey_to_der() {
+        // Construct a minimal SSH RSA public key:
+        // string("ssh-rsa") || mpint(e=65537) || mpint(n=small_value)
+        let mut raw_key = Vec::new();
+        // Key type: "ssh-rsa"
+        let key_type = b"ssh-rsa";
+        raw_key.extend_from_slice(&(key_type.len() as u32).to_be_bytes());
+        raw_key.extend_from_slice(key_type);
+        // e = 65537 = 0x010001
+        let e = [0x01, 0x00, 0x01];
+        raw_key.extend_from_slice(&(e.len() as u32).to_be_bytes());
+        raw_key.extend_from_slice(&e);
+        // n = small test value (with leading zero for positive sign)
+        let n = [0x00, 0x80, 0x42];
+        raw_key.extend_from_slice(&(n.len() as u32).to_be_bytes());
+        raw_key.extend_from_slice(&n);
+
+        let der = ssh_rsa_pubkey_to_der(&raw_key).unwrap();
+        // Should be SEQUENCE { INTEGER n, INTEGER e }
+        assert_eq!(der[0], 0x30); // SEQUENCE tag
+        // Verify it contains both integers
+        assert!(der.len() > 4);
+    }
+
+    #[test]
+    fn test_ssh_ecdsa_pubkey_to_point() {
+        // Construct a minimal SSH ECDSA public key:
+        // string("ecdsa-sha2-nistp256") || string("nistp256") || string(Q)
+        let mut raw_key = Vec::new();
+        let key_type = b"ecdsa-sha2-nistp256";
+        raw_key.extend_from_slice(&(key_type.len() as u32).to_be_bytes());
+        raw_key.extend_from_slice(key_type);
+        let curve = b"nistp256";
+        raw_key.extend_from_slice(&(curve.len() as u32).to_be_bytes());
+        raw_key.extend_from_slice(curve);
+        // Fake uncompressed point (0x04 prefix + 64 bytes)
+        let mut point = vec![0x04];
+        point.extend_from_slice(&[0xAA; 32]); // x
+        point.extend_from_slice(&[0xBB; 32]); // y
+        raw_key.extend_from_slice(&(point.len() as u32).to_be_bytes());
+        raw_key.extend_from_slice(&point);
+
+        let result = ssh_ecdsa_pubkey_to_point(&raw_key).unwrap();
+        assert_eq!(result.len(), 65); // 1 + 32 + 32
+        assert_eq!(result[0], 0x04); // uncompressed point prefix
+    }
+
+    #[test]
+    fn test_ssh_ecdsa_sig_to_der() {
+        // Construct an SSH ECDSA signature: mpint(r) || mpint(s)
+        let mut sig = Vec::new();
+        // r = [0x00, 0x80, 0x42] (leading zero because MSB set)
+        let r = [0x00, 0x80, 0x42];
+        sig.extend_from_slice(&(r.len() as u32).to_be_bytes());
+        sig.extend_from_slice(&r);
+        // s = [0x01, 0x23]
+        let s = [0x01, 0x23];
+        sig.extend_from_slice(&(s.len() as u32).to_be_bytes());
+        sig.extend_from_slice(&s);
+
+        let der = ssh_ecdsa_sig_to_der(&sig).unwrap();
+        // Should be SEQUENCE { INTEGER r, INTEGER s }
+        assert_eq!(der[0], 0x30); // SEQUENCE tag
+        // Verify structure: SEQUENCE(9) { INTEGER(3) 00 80 42, INTEGER(2) 01 23 }
+        assert_eq!(
+            der,
+            vec![
+                0x30, 0x09, // SEQUENCE, length 9
+                0x02, 0x03, 0x00, 0x80, 0x42, // INTEGER r
+                0x02, 0x02, 0x01, 0x23, // INTEGER s
+            ]
+        );
+    }
+
+    #[test]
+    fn test_ssh_signing_key_rejects_ed25519() {
+        let identity = SshIdentity {
+            key_type: "ssh-ed25519".to_string(),
+            comment: "test".to_string(),
+            md5_fp: "".to_string(),
+            sha256_fp: "".to_string(),
+            raw_key: vec![],
+        };
+        assert!(SshSigningKey::new(&identity).is_err());
     }
 }
