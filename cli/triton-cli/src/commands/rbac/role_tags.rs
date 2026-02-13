@@ -9,7 +9,7 @@
 use std::io::Write;
 
 use anyhow::Result;
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 use cloudapi_client::TypedClient;
 
 use crate::output::json;
@@ -18,9 +18,13 @@ use super::common::resolve_user;
 
 /// Parse resource ID as UUID, returning an error if invalid
 fn parse_resource_uuid(resource_id: &str, resource_type: &RoleTagResource) -> Result<uuid::Uuid> {
-    resource_id
-        .parse()
-        .map_err(|_| anyhow::anyhow!("Invalid UUID for {:?}: {}", resource_type, resource_id))
+    resource_id.parse().map_err(|_| {
+        let type_name = resource_type
+            .to_possible_value()
+            .map(|v| v.get_name().to_string())
+            .unwrap_or_else(|| format!("{:?}", resource_type));
+        anyhow::anyhow!("Invalid UUID for {}: {}", type_name, resource_id)
+    })
 }
 
 /// Resource types that support role tags

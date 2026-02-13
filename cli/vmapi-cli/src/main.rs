@@ -1493,7 +1493,7 @@ async fn main() -> Result<()> {
             let body = types::AddRoleTagsRequest { role_tags: tags };
             let resp = client.add_role_tags().uuid(uuid).body(body).send().await?;
             let result = resp.into_inner();
-            println!("Role tags: {:?}", result.role_tags);
+            println!("Role tags: {}", result.role_tags.join(", "));
         }
 
         Commands::SetRoleTags { uuid, role_tags } => {
@@ -1501,7 +1501,7 @@ async fn main() -> Result<()> {
             let body = types::SetRoleTagsRequest { role_tags: tags };
             let resp = client.set_role_tags().uuid(uuid).body(body).send().await?;
             let result = resp.into_inner();
-            println!("Role tags: {:?}", result.role_tags);
+            println!("Role tags: {}", result.role_tags.join(", "));
         }
 
         Commands::DeleteRoleTag { uuid, role_tag } => {

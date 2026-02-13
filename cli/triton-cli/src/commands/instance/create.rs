@@ -233,7 +233,7 @@ pub async fn run(
         if use_json {
             json::print_json(&request)?;
         } else {
-            println!("  Image: {:?}", request.image);
+            println!("  Image: {}", request.image);
             println!("  Package: {}", request.package);
             if let Some(name) = &request.name {
                 println!("  Name: {}", name);
@@ -242,16 +242,32 @@ pub async fn run(
                 println!("  Brand: {}", enum_to_display(brand));
             }
             if let Some(networks) = &request.networks {
-                println!("  Networks: {:?}", networks);
+                println!(
+                    "  Networks: {}",
+                    networks
+                        .iter()
+                        .map(|n| n.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
             }
             if let Some(nics) = &request.nics {
                 println!("  NICs: {} specified", nics.len());
             }
             if let Some(metadata) = &request.metadata {
-                println!("  Metadata keys: {:?}", metadata.keys().collect::<Vec<_>>());
+                println!(
+                    "  Metadata keys: {}",
+                    metadata.keys().cloned().collect::<Vec<_>>().join(", ")
+                );
             }
             if let Some(tags) = &request.tags {
-                println!("  Tags: {:?}", tags);
+                println!(
+                    "  Tags: {}",
+                    tags.iter()
+                        .map(|(k, v)| format!("{}={}", k, v))
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                );
             }
             if request.firewall_enabled == Some(true) {
                 println!("  Firewall: enabled");

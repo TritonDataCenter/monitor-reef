@@ -338,8 +338,11 @@ async fn list_images(
     let account = &client.auth_config().account;
 
     // Determine if this is an unfiltered query that can use/populate cache
-    let is_unfiltered =
-        args.name.is_none() && args.version.is_none() && args.os.is_none() && !args.public;
+    let is_unfiltered = args.name.is_none()
+        && args.version.is_none()
+        && args.os.is_none()
+        && args.image_type.is_none()
+        && !args.public;
     let is_default_state = args.state.is_none() && !args.all;
 
     // Try cache for unfiltered default queries
@@ -389,6 +392,9 @@ async fn list_images(
         }
         if args.public {
             req = req.public(true);
+        }
+        if let Some(image_type) = args.image_type {
+            req = req.type_(image_type);
         }
         let response = req.send().await?;
         response.into_inner()
@@ -695,10 +701,16 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
             println!("  EULA:        {}", eula);
         }
         if let Some(acl) = &args.acl {
-            println!("  ACL:         {:?}", acl);
+            println!("  ACL:         {}", acl.join(", "));
         }
         if let Some(tags) = &args.tags {
-            println!("  Tags:        {:?}", tags);
+            println!(
+                "  Tags:        {}",
+                tags.iter()
+                    .map(|t| t.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
         }
         println!("  From instance: {}", args.instance);
         return Ok(());
