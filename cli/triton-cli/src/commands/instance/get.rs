@@ -63,8 +63,12 @@ pub async fn resolve_instance(id_or_name: &str, client: &TypedClient) -> Result<
 
     let account = &client.auth_config().account;
 
-    // Try short ID match (at least 8 characters) — requires fetching all machines
-    if id_or_name.len() >= 8 {
+    // Try short ID match (at least 8 hex characters) — requires fetching all machines
+    let is_short_uuid = id_or_name.len() >= 8
+        && id_or_name
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() || c == '-');
+    if is_short_uuid {
         let response = client
             .inner()
             .list_machines()
@@ -72,10 +76,25 @@ pub async fn resolve_instance(id_or_name: &str, client: &TypedClient) -> Result<
             .send()
             .await?;
         let machines = response.into_inner();
-        for m in &machines {
-            if m.id.to_string().starts_with(id_or_name) {
-                return Ok(m.id);
+        let matches: Vec<_> = machines
+            .iter()
+            .filter(|m| m.id.to_string().starts_with(id_or_name))
+            .collect();
+        match matches.len() {
+            1 => return Ok(matches[0].id),
+            n if n > 1 => {
+                let ids: Vec<String> = matches
+                    .iter()
+                    .map(|m| m.id.to_string()[..8].to_string())
+                    .collect();
+                return Err(anyhow::anyhow!(
+                    "Ambiguous short ID '{}' matches {} instances: {}",
+                    id_or_name,
+                    n,
+                    ids.join(", ")
+                ));
             }
+            _ => {} // No matches, fall through to name lookup
         }
     }
 
