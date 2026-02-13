@@ -380,22 +380,46 @@ impl TypedClient {
         // Note: base_url might have trailing slash, so trim it
         let base = self.base_url.trim_end_matches('/');
         let path = format!("/{}/machines", account);
-        let url = format!("{}{}", base, path);
 
-        // Sign the request using triton-auth
+        // Add RBAC roles as query parameter before signing so the
+        // signature covers the role parameter
+        let path_and_query = if let Some(roles) = &self.auth_config.roles
+            && !roles.is_empty()
+        {
+            format!("{}?as-role={}", path, roles.join(","))
+        } else {
+            path.clone()
+        };
+
+        let url = format!("{}{}", base, path_and_query);
+
+        // Sign the request using triton-auth (path includes role query
+        // param so the signature covers it)
         let (date_header, auth_header) =
-            triton_auth::sign_request(&self.auth_config, "POST", &path)
+            triton_auth::sign_request(&self.auth_config, "POST", &path_and_query)
                 .await
                 .map_err(CreateMachineError::Auth)?;
 
         // Send the request with our transformed body
-        let response = self
+        let mut req = self
             .http_client
             .post(&url)
             .header("Date", &date_header)
             .header("Authorization", &auth_header)
             .header("Content-Type", "application/json")
-            .header("Accept", "application/json")
+            .header("Accept", "application/json");
+
+        // Add X-Act-As header if present (for operator masquerading)
+        if let Some(act_as) = &self.auth_config.act_as {
+            req = req.header("x-act-as", act_as);
+        }
+
+        // Add Accept-Version header if present (for API versioning)
+        if let Some(version) = &self.auth_config.accept_version {
+            req = req.header("accept-version", version);
+        }
+
+        let response = req
             .json(&legacy_body)
             .send()
             .await
