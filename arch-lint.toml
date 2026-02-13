@@ -16,8 +16,11 @@ exclude = [
     "**/build.rs",
     "**/tests/**",
     "**/jira-stub-server/**",
-    # Build tool, not an async service:
+    # Build tools, not async services:
     "openapi-manager/**",
+    "client-generator/**",
+    # Progenitor-generated code:
+    "**/src/generated.rs",
     # To be modernized:
     "cli/manatee-echo-resolver",
     "libs/cueball-dns-resolver",
