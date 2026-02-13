@@ -272,9 +272,20 @@ check:: | $(CARGO_EXEC) ## Run all validation checks (CI-ready)
 # Client code generation (checked-in generated.rs files)
 clients-generate: | $(CARGO_EXEC) ## Generate all client src/generated.rs files
 	$(CARGO) run -p client-generator -- generate
+	$(CARGO) fmt -- clients/internal/*/src/generated.rs
 
 clients-check: | $(CARGO_EXEC) ## Check that generated client code is up-to-date (use in CI)
-	$(CARGO) run -p client-generator -- check
+	@echo "Checking client generated code is up-to-date..."
+	$(CARGO) run -p client-generator -- generate
+	$(CARGO) fmt -- clients/internal/*/src/generated.rs
+	@if git diff --quiet clients/internal/*/src/generated.rs; then \
+		echo "All clients are up-to-date."; \
+	else \
+		echo "ERROR: Generated client code is stale. Run 'make clients-generate' and commit."; \
+		git diff --stat clients/internal/*/src/generated.rs; \
+		git checkout -- clients/internal/*/src/generated.rs; \
+		exit 1; \
+	fi
 
 clients-list: | $(CARGO_EXEC) ## List all managed clients
 	$(CARGO) run -p client-generator -- list
