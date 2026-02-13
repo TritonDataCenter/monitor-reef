@@ -54,6 +54,10 @@ pub enum Brand {
     JoyentMinimal,
     Kvm,
     Lx,
+    /// Unknown brand (forward compatibility)
+    #[serde(other)]
+    #[clap(skip)]
+    Unknown,
 }
 
 /// VM state

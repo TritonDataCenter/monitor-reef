@@ -141,7 +141,7 @@ pub async fn list_user_access_keys(
         for key in &keys {
             tbl.add_row(vec![
                 key.accesskeyid.clone(),
-                key.status.clone(),
+                crate::output::enum_to_display(&key.status),
                 key.updated.clone(),
                 key.description.clone().unwrap_or_default(),
                 key.created.clone(),
@@ -193,7 +193,9 @@ async fn create_user_access_key(
     let user_id = resolve_user(user, client).await?;
 
     let request = cloudapi_client::types::CreateAccessKeyRequest {
-        status,
+        status: status
+            .map(|s| serde_json::from_value(serde_json::Value::String(s)))
+            .transpose()?,
         description,
     };
 
@@ -232,7 +234,9 @@ async fn update_user_access_key(
     let user_id = resolve_user(user, client).await?;
 
     let request = cloudapi_client::types::UpdateAccessKeyRequest {
-        status,
+        status: status
+            .map(|s| serde_json::from_value(serde_json::Value::String(s)))
+            .transpose()?,
         description,
     };
 

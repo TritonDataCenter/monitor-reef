@@ -25,8 +25,12 @@
             "type": "string"
           },
           "credentialtype": {
-            "description": "Credential type: \"permanent\" or \"temporary\"",
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CredentialType"
+              }
+            ],
+            "description": "Credential type"
           },
           "description": {
             "description": "Description",
@@ -39,8 +43,12 @@
             "type": "string"
           },
           "status": {
-            "description": "Status: \"Active\", \"Inactive\", or \"Expired\"",
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AccessKeyStatus"
+              }
+            ],
+            "description": "Status"
           },
           "updated": {
             "description": "Last updated timestamp",
@@ -55,6 +63,16 @@
           "updated"
         ],
         "type": "object"
+      },
+      "AccessKeyStatus": {
+        "description": "Access key status",
+        "enum": [
+          "Active",
+          "Inactive",
+          "Expired",
+          "Unknown"
+        ],
+        "type": "string"
       },
       "Account": {
         "description": "Account information",
@@ -229,6 +247,13 @@
               "builder"
             ],
             "type": "string"
+          },
+          {
+            "description": "Unknown brand (forward compatibility)",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
           }
         ]
       },
@@ -282,9 +307,13 @@
             "type": "string"
           },
           "status": {
-            "description": "Initial status (defaults to \"Active\")",
-            "nullable": true,
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AccessKeyStatus"
+              }
+            ],
+            "description": "Initial status (defaults to Active)",
+            "nullable": true
           }
         },
         "type": "object"
@@ -305,8 +334,12 @@
             "type": "string"
           },
           "credentialtype": {
-            "description": "Credential type",
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CredentialType"
+              }
+            ],
+            "description": "Credential type"
           },
           "description": {
             "description": "Description",
@@ -319,8 +352,12 @@
             "type": "string"
           },
           "status": {
-            "description": "Status",
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AccessKeyStatus"
+              }
+            ],
+            "description": "Status"
           },
           "updated": {
             "description": "Last updated timestamp",
@@ -855,6 +892,15 @@
         ],
         "type": "object"
       },
+      "CredentialType": {
+        "description": "Credential type",
+        "enum": [
+          "permanent",
+          "temporary",
+          "unknown"
+        ],
+        "type": "string"
+      },
       "Datacenter": {
         "description": "Datacenter information (used for add_foreign_datacenter response)",
         "properties": {
@@ -1352,13 +1398,24 @@
       },
       "ImageType": {
         "description": "Image type",
-        "enum": [
-          "zone-dataset",
-          "lx-dataset",
-          "zvol",
-          "other"
-        ],
-        "type": "string"
+        "oneOf": [
+          {
+            "enum": [
+              "zone-dataset",
+              "lx-dataset",
+              "zvol",
+              "other"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Unknown type (forward compatibility)",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
       },
       "Machine": {
         "description": "Machine information",
@@ -1673,6 +1730,13 @@
             "description": "Hardware VM (KVM or bhyve)",
             "enum": [
               "virtualmachine"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Unknown type (forward compatibility)",
+            "enum": [
+              "unknown"
             ],
             "type": "string"
           }
@@ -2182,7 +2246,7 @@
             "nullable": true,
             "type": "array"
           },
-          "flexibleDisk": {
+          "flexible_disk": {
             "description": "Flexible disk mode (bhyve only)",
             "nullable": true,
             "type": "boolean"
@@ -2516,9 +2580,13 @@
             "type": "string"
           },
           "status": {
-            "description": "New status: \"Active\" or \"Inactive\"",
-            "nullable": true,
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AccessKeyStatus"
+              }
+            ],
+            "description": "New status",
+            "nullable": true
           }
         },
         "type": "object"

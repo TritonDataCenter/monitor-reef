@@ -88,7 +88,11 @@ pub struct Package {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub brand: Option<VmapiBrand>,
     /// Flexible disk mode (bhyve only)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "flexible_disk",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub flexible_disk: Option<bool>,
     /// Disk configuration (bhyve only)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -406,6 +410,7 @@ mod tests {
 
         let package: Package = serde_json::from_str(json).expect("should deserialize");
         assert_eq!(package.name, "sample-bhyve-flexible-1G");
+        assert_eq!(package.flexible_disk, Some(true));
         assert!(package.disks.is_some());
     }
 

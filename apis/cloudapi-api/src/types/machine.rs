@@ -63,6 +63,10 @@ pub enum MachineType {
     Smartmachine,
     /// Hardware VM (KVM or bhyve)
     Virtualmachine,
+    /// Unknown type (forward compatibility)
+    #[serde(other)]
+    #[clap(skip)]
+    Unknown,
 }
 
 /// Machine information

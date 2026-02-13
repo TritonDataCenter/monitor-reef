@@ -62,8 +62,12 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"credentialtype\": {"]
-    #[doc = "      \"description\": \"Credential type: \\\"permanent\\\" or \\\"temporary\\\"\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"description\": \"Credential type\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/CredentialType\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"description\": {"]
     #[doc = "      \"description\": \"Description\","]
@@ -80,8 +84,12 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"status\": {"]
-    #[doc = "      \"description\": \"Status: \\\"Active\\\", \\\"Inactive\\\", or \\\"Expired\\\"\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"description\": \"Status\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/AccessKeyStatus\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"updated\": {"]
     #[doc = "      \"description\": \"Last updated timestamp\","]
@@ -99,16 +107,16 @@ pub mod types {
         pub accesskeyid: ::std::string::String,
         #[doc = "Creation timestamp"]
         pub created: ::std::string::String,
-        #[doc = "Credential type: \"permanent\" or \"temporary\""]
-        pub credentialtype: ::std::string::String,
+        #[doc = "Credential type"]
+        pub credentialtype: CredentialType,
         #[doc = "Description"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub description: ::std::option::Option<::std::string::String>,
         #[doc = "Expiration timestamp (null for permanent keys)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub expiration: ::std::option::Option<::std::string::String>,
-        #[doc = "Status: \"Active\", \"Inactive\", or \"Expired\""]
-        pub status: ::std::string::String,
+        #[doc = "Status"]
+        pub status: AccessKeyStatus,
         #[doc = "Last updated timestamp"]
         pub updated: ::std::string::String,
     }
@@ -116,6 +124,92 @@ pub mod types {
     impl AccessKey {
         pub fn builder() -> builder::AccessKey {
             Default::default()
+        }
+    }
+
+    #[doc = "Access key status"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Access key status\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"Active\","]
+    #[doc = "    \"Inactive\","]
+    #[doc = "    \"Expired\","]
+    #[doc = "    \"Unknown\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum AccessKeyStatus {
+        Active,
+        Inactive,
+        Expired,
+        Unknown,
+    }
+
+    impl ::std::fmt::Display for AccessKeyStatus {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Active => f.write_str("Active"),
+                Self::Inactive => f.write_str("Inactive"),
+                Self::Expired => f.write_str("Expired"),
+                Self::Unknown => f.write_str("Unknown"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for AccessKeyStatus {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "Active" => Ok(Self::Active),
+                "Inactive" => Ok(Self::Inactive),
+                "Expired" => Ok(Self::Expired),
+                "Unknown" => Ok(Self::Unknown),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for AccessKeyStatus {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for AccessKeyStatus {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for AccessKeyStatus {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
         }
     }
 
@@ -506,6 +600,13 @@ pub mod types {
     #[doc = "      \"enum\": ["]
     #[doc = "        \"builder\""]
     #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown brand (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  ]"]
     #[doc = "}"]
@@ -539,6 +640,9 @@ pub mod types {
         #[doc = "Internal brand for image build zones (not provisionable via CloudAPI)"]
         #[serde(rename = "builder")]
         Builder,
+        #[doc = "Unknown brand (forward compatibility)"]
+        #[serde(rename = "unknown")]
+        Unknown,
     }
 
     impl ::std::fmt::Display for Brand {
@@ -550,6 +654,7 @@ pub mod types {
                 Self::Kvm => f.write_str("kvm"),
                 Self::Lx => f.write_str("lx"),
                 Self::Builder => f.write_str("builder"),
+                Self::Unknown => f.write_str("unknown"),
             }
         }
     }
@@ -564,6 +669,7 @@ pub mod types {
                 "kvm" => Ok(Self::Kvm),
                 "lx" => Ok(Self::Lx),
                 "builder" => Ok(Self::Builder),
+                "unknown" => Ok(Self::Unknown),
                 _ => Err("invalid value".into()),
             }
         }
@@ -797,10 +903,18 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"status\": {"]
-    #[doc = "      \"description\": \"Initial status (defaults to \\\"Active\\\")\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"string\","]
-    #[doc = "        \"null\""]
+    #[doc = "      \"description\": \"Initial status (defaults to Active)\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/AccessKeyStatus\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -814,9 +928,9 @@ pub mod types {
         #[doc = "Description"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub description: ::std::option::Option<::std::string::String>,
-        #[doc = "Initial status (defaults to \"Active\")"]
+        #[doc = "Initial status (defaults to Active)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub status: ::std::option::Option<::std::string::String>,
+        pub status: ::std::option::Option<AccessKeyStatus>,
     }
 
     impl ::std::default::Default for CreateAccessKeyRequest {
@@ -865,7 +979,11 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"credentialtype\": {"]
     #[doc = "      \"description\": \"Credential type\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/CredentialType\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"description\": {"]
     #[doc = "      \"description\": \"Description\","]
@@ -883,7 +1001,11 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"status\": {"]
     #[doc = "      \"description\": \"Status\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/AccessKeyStatus\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"updated\": {"]
     #[doc = "      \"description\": \"Last updated timestamp\","]
@@ -904,7 +1026,7 @@ pub mod types {
         #[doc = "Creation timestamp"]
         pub created: ::std::string::String,
         #[doc = "Credential type"]
-        pub credentialtype: ::std::string::String,
+        pub credentialtype: CredentialType,
         #[doc = "Description"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub description: ::std::option::Option<::std::string::String>,
@@ -912,7 +1034,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub expiration: ::std::option::Option<::std::string::String>,
         #[doc = "Status"]
-        pub status: ::std::string::String,
+        pub status: AccessKeyStatus,
         #[doc = "Last updated timestamp"]
         pub updated: ::std::string::String,
     }
@@ -1935,6 +2057,91 @@ pub mod types {
     impl CreateVolumeRequest {
         pub fn builder() -> builder::CreateVolumeRequest {
             Default::default()
+        }
+    }
+
+    #[doc = "Credential type"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Credential type\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"permanent\","]
+    #[doc = "    \"temporary\","]
+    #[doc = "    \"unknown\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum CredentialType {
+        #[serde(rename = "permanent")]
+        Permanent,
+        #[serde(rename = "temporary")]
+        Temporary,
+        #[serde(rename = "unknown")]
+        Unknown,
+    }
+
+    impl ::std::fmt::Display for CredentialType {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Permanent => f.write_str("permanent"),
+                Self::Temporary => f.write_str("temporary"),
+                Self::Unknown => f.write_str("unknown"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for CredentialType {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "permanent" => Ok(Self::Permanent),
+                "temporary" => Ok(Self::Temporary),
+                "unknown" => Ok(Self::Unknown),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for CredentialType {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for CredentialType {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for CredentialType {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
         }
     }
 
@@ -3289,12 +3496,23 @@ pub mod types {
     #[doc = r" ```json"]
     #[doc = "{"]
     #[doc = "  \"description\": \"Image type\","]
-    #[doc = "  \"type\": \"string\","]
-    #[doc = "  \"enum\": ["]
-    #[doc = "    \"zone-dataset\","]
-    #[doc = "    \"lx-dataset\","]
-    #[doc = "    \"zvol\","]
-    #[doc = "    \"other\""]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"zone-dataset\","]
+    #[doc = "        \"lx-dataset\","]
+    #[doc = "        \"zvol\","]
+    #[doc = "        \"other\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown type (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
     #[doc = "  ]"]
     #[doc = "}"]
     #[doc = r" ```"]
@@ -3322,6 +3540,9 @@ pub mod types {
         Zvol,
         #[serde(rename = "other")]
         Other,
+        #[doc = "Unknown type (forward compatibility)"]
+        #[serde(rename = "unknown")]
+        Unknown,
     }
 
     impl ::std::fmt::Display for ImageType {
@@ -3331,6 +3552,7 @@ pub mod types {
                 Self::LxDataset => f.write_str("lx-dataset"),
                 Self::Zvol => f.write_str("zvol"),
                 Self::Other => f.write_str("other"),
+                Self::Unknown => f.write_str("unknown"),
             }
         }
     }
@@ -3343,6 +3565,7 @@ pub mod types {
                 "lx-dataset" => Ok(Self::LxDataset),
                 "zvol" => Ok(Self::Zvol),
                 "other" => Ok(Self::Other),
+                "unknown" => Ok(Self::Unknown),
                 _ => Err("invalid value".into()),
             }
         }
@@ -4119,6 +4342,13 @@ pub mod types {
     #[doc = "      \"enum\": ["]
     #[doc = "        \"virtualmachine\""]
     #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown type (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  ]"]
     #[doc = "}"]
@@ -4145,6 +4375,9 @@ pub mod types {
         #[doc = "Hardware VM (KVM or bhyve)"]
         #[serde(rename = "virtualmachine")]
         Virtualmachine,
+        #[doc = "Unknown type (forward compatibility)"]
+        #[serde(rename = "unknown")]
+        Unknown,
     }
 
     impl ::std::fmt::Display for MachineType {
@@ -4152,6 +4385,7 @@ pub mod types {
             match *self {
                 Self::Smartmachine => f.write_str("smartmachine"),
                 Self::Virtualmachine => f.write_str("virtualmachine"),
+                Self::Unknown => f.write_str("unknown"),
             }
         }
     }
@@ -4162,6 +4396,7 @@ pub mod types {
             match value {
                 "smartmachine" => Ok(Self::Smartmachine),
                 "virtualmachine" => Ok(Self::Virtualmachine),
+                "unknown" => Ok(Self::Unknown),
                 _ => Err("invalid value".into()),
             }
         }
@@ -5457,7 +5692,7 @@ pub mod types {
     #[doc = "        \"$ref\": \"#/components/schemas/PackageDisk\""]
     #[doc = "      }"]
     #[doc = "    },"]
-    #[doc = "    \"flexibleDisk\": {"]
+    #[doc = "    \"flexible_disk\": {"]
     #[doc = "      \"description\": \"Flexible disk mode (bhyve only)\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"boolean\","]
@@ -5548,11 +5783,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub disks: ::std::option::Option<::std::vec::Vec<PackageDisk>>,
         #[doc = "Flexible disk mode (bhyve only)"]
-        #[serde(
-            rename = "flexibleDisk",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub flexible_disk: ::std::option::Option<bool>,
         #[doc = "Group"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -6288,10 +6519,18 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"status\": {"]
-    #[doc = "      \"description\": \"New status: \\\"Active\\\" or \\\"Inactive\\\"\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"string\","]
-    #[doc = "        \"null\""]
+    #[doc = "      \"description\": \"New status\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/AccessKeyStatus\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -6305,9 +6544,9 @@ pub mod types {
         #[doc = "New description"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub description: ::std::option::Option<::std::string::String>,
-        #[doc = "New status: \"Active\" or \"Inactive\""]
+        #[doc = "New status"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub status: ::std::option::Option<::std::string::String>,
+        pub status: ::std::option::Option<AccessKeyStatus>,
     }
 
     impl ::std::default::Default for UpdateAccessKeyRequest {
@@ -7621,7 +7860,7 @@ pub mod types {
         pub struct AccessKey {
             accesskeyid: ::std::result::Result<::std::string::String, ::std::string::String>,
             created: ::std::result::Result<::std::string::String, ::std::string::String>,
-            credentialtype: ::std::result::Result<::std::string::String, ::std::string::String>,
+            credentialtype: ::std::result::Result<super::CredentialType, ::std::string::String>,
             description: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
@@ -7630,7 +7869,7 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
-            status: ::std::result::Result<::std::string::String, ::std::string::String>,
+            status: ::std::result::Result<super::AccessKeyStatus, ::std::string::String>,
             updated: ::std::result::Result<::std::string::String, ::std::string::String>,
         }
 
@@ -7671,7 +7910,7 @@ pub mod types {
             }
             pub fn credentialtype<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<super::CredentialType>,
                 T::Error: ::std::fmt::Display,
             {
                 self.credentialtype = value.try_into().map_err(|e| {
@@ -7701,7 +7940,7 @@ pub mod types {
             }
             pub fn status<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<super::AccessKeyStatus>,
                 T::Error: ::std::fmt::Display,
             {
                 self.status = value
@@ -8344,7 +8583,7 @@ pub mod types {
                 ::std::string::String,
             >,
             status: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<super::AccessKeyStatus>,
                 ::std::string::String,
             >,
         }
@@ -8371,7 +8610,7 @@ pub mod types {
             }
             pub fn status<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::AccessKeyStatus>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.status = value
@@ -8407,7 +8646,7 @@ pub mod types {
             accesskeyid: ::std::result::Result<::std::string::String, ::std::string::String>,
             accesskeysecret: ::std::result::Result<::std::string::String, ::std::string::String>,
             created: ::std::result::Result<::std::string::String, ::std::string::String>,
-            credentialtype: ::std::result::Result<::std::string::String, ::std::string::String>,
+            credentialtype: ::std::result::Result<super::CredentialType, ::std::string::String>,
             description: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
@@ -8416,7 +8655,7 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
-            status: ::std::result::Result<::std::string::String, ::std::string::String>,
+            status: ::std::result::Result<super::AccessKeyStatus, ::std::string::String>,
             updated: ::std::result::Result<::std::string::String, ::std::string::String>,
         }
 
@@ -8468,7 +8707,7 @@ pub mod types {
             }
             pub fn credentialtype<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<super::CredentialType>,
                 T::Error: ::std::fmt::Display,
             {
                 self.credentialtype = value.try_into().map_err(|e| {
@@ -8498,7 +8737,7 @@ pub mod types {
             }
             pub fn status<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<super::AccessKeyStatus>,
                 T::Error: ::std::fmt::Display,
             {
                 self.status = value
@@ -13873,7 +14112,7 @@ pub mod types {
                 ::std::string::String,
             >,
             status: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<super::AccessKeyStatus>,
                 ::std::string::String,
             >,
         }
@@ -13900,7 +14139,7 @@ pub mod types {
             }
             pub fn status<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::AccessKeyStatus>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.status = value

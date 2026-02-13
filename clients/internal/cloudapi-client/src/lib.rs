@@ -82,6 +82,7 @@ pub use cloudapi_api::{
     // Key types
     AccessKey,
     AccessKeyPath,
+    AccessKeyStatus,
     // Account types
     Account,
     AccountPath,
@@ -120,6 +121,7 @@ pub use cloudapi_api::{
     CreateUserRequest,
     // Volume types
     CreateVolumeRequest,
+    CredentialType,
     Datacenter,
     Datacenters,
     DisableDeletionProtectionRequest,

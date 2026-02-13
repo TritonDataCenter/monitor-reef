@@ -140,6 +140,13 @@ pub mod types {
     #[doc = "      \"enum\": ["]
     #[doc = "        \"builder\""]
     #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown brand (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  ]"]
     #[doc = "}"]
@@ -173,6 +180,9 @@ pub mod types {
         #[doc = "Internal brand for image build zones (not provisionable via CloudAPI)"]
         #[serde(rename = "builder")]
         Builder,
+        #[doc = "Unknown brand (forward compatibility)"]
+        #[serde(rename = "unknown")]
+        Unknown,
     }
 
     impl ::std::fmt::Display for Brand {
@@ -184,6 +194,7 @@ pub mod types {
                 Self::Kvm => f.write_str("kvm"),
                 Self::Lx => f.write_str("lx"),
                 Self::Builder => f.write_str("builder"),
+                Self::Unknown => f.write_str("unknown"),
             }
         }
     }
@@ -198,6 +209,7 @@ pub mod types {
                 "kvm" => Ok(Self::Kvm),
                 "lx" => Ok(Self::Lx),
                 "builder" => Ok(Self::Builder),
+                "unknown" => Ok(Self::Unknown),
                 _ => Err("invalid value".into()),
             }
         }
@@ -1126,11 +1138,22 @@ pub mod types {
     #[doc = r" ```json"]
     #[doc = "{"]
     #[doc = "  \"description\": \"Migration phase\","]
-    #[doc = "  \"type\": \"string\","]
-    #[doc = "  \"enum\": ["]
-    #[doc = "    \"begin\","]
-    #[doc = "    \"sync\","]
-    #[doc = "    \"switch\""]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"begin\","]
+    #[doc = "        \"sync\","]
+    #[doc = "        \"switch\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown phase (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
     #[doc = "  ]"]
     #[doc = "}"]
     #[doc = r" ```"]
@@ -1155,6 +1178,9 @@ pub mod types {
         Sync,
         #[serde(rename = "switch")]
         Switch,
+        #[doc = "Unknown phase (forward compatibility)"]
+        #[serde(rename = "unknown")]
+        Unknown,
     }
 
     impl ::std::fmt::Display for MigrationPhase {
@@ -1163,6 +1189,7 @@ pub mod types {
                 Self::Begin => f.write_str("begin"),
                 Self::Sync => f.write_str("sync"),
                 Self::Switch => f.write_str("switch"),
+                Self::Unknown => f.write_str("unknown"),
             }
         }
     }
@@ -1174,6 +1201,7 @@ pub mod types {
                 "begin" => Ok(Self::Begin),
                 "sync" => Ok(Self::Sync),
                 "switch" => Ok(Self::Switch),
+                "unknown" => Ok(Self::Unknown),
                 _ => Err("invalid value".into()),
             }
         }

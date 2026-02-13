@@ -10,6 +10,7 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 
+use crate::output::enum_to_display;
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
 
@@ -109,8 +110,8 @@ async fn list_access_keys(
         for key in &keys {
             tbl.add_row(vec![
                 key.accesskeyid.clone(),
-                key.status.clone(),
-                key.credentialtype.clone(),
+                enum_to_display(&key.status),
+                enum_to_display(&key.credentialtype),
                 key.updated.clone(),
                 key.description.clone().unwrap_or_default(),
                 key.created.clone(),
@@ -156,7 +157,10 @@ async fn create_access_key(
     let account = &client.auth_config().account;
 
     let request = cloudapi_client::types::CreateAccessKeyRequest {
-        status: args.status,
+        status: args
+            .status
+            .map(|s| serde_json::from_value(serde_json::Value::String(s)))
+            .transpose()?,
         description: args.description,
     };
 
@@ -190,7 +194,10 @@ async fn update_access_key(
     let account = &client.auth_config().account;
 
     let request = cloudapi_client::types::UpdateAccessKeyRequest {
-        status: args.status,
+        status: args
+            .status
+            .map(|s| serde_json::from_value(serde_json::Value::String(s)))
+            .transpose()?,
         description: args.description,
     };
 

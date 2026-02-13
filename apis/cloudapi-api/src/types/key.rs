@@ -67,15 +67,35 @@ pub struct CreateSshKeyRequest {
     pub key: String,
 }
 
+/// Access key status
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub enum AccessKeyStatus {
+    Active,
+    Inactive,
+    Expired,
+    #[serde(other)]
+    Unknown,
+}
+
+/// Credential type
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum CredentialType {
+    Permanent,
+    Temporary,
+    #[serde(other)]
+    Unknown,
+}
+
 /// Access key information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct AccessKey {
     /// Access key ID
     pub accesskeyid: String,
-    /// Status: "Active", "Inactive", or "Expired"
-    pub status: String,
-    /// Credential type: "permanent" or "temporary"
-    pub credentialtype: String,
+    /// Status
+    pub status: AccessKeyStatus,
+    /// Credential type
+    pub credentialtype: CredentialType,
     /// Description
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -91,9 +111,9 @@ pub struct AccessKey {
 /// Request to create access key
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct CreateAccessKeyRequest {
-    /// Initial status (defaults to "Active")
+    /// Initial status (defaults to Active)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
+    pub status: Option<AccessKeyStatus>,
     /// Description
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -107,9 +127,9 @@ pub struct CreateAccessKeyResponse {
     /// Access key secret (only provided on creation)
     pub accesskeysecret: String,
     /// Status
-    pub status: String,
+    pub status: AccessKeyStatus,
     /// Credential type
-    pub credentialtype: String,
+    pub credentialtype: CredentialType,
     /// Description
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -125,9 +145,9 @@ pub struct CreateAccessKeyResponse {
 /// Request to update an access key
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct UpdateAccessKeyRequest {
-    /// New status: "Active" or "Inactive"
+    /// New status
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub status: Option<String>,
+    pub status: Option<AccessKeyStatus>,
     /// New description
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,

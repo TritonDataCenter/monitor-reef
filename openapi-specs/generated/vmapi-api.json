@@ -2425,6 +2425,13 @@
             "enum": [
               "builder"
             ]
+          },
+          {
+            "description": "Unknown brand (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
           }
         ]
       },
@@ -2857,11 +2864,22 @@
       },
       "MigrationPhase": {
         "description": "Migration phase",
-        "type": "string",
-        "enum": [
-          "begin",
-          "sync",
-          "switch"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "begin",
+              "sync",
+              "switch"
+            ]
+          },
+          {
+            "description": "Unknown phase (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
         ]
       },
       "MigrationProgress": {

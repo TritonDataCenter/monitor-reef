@@ -48,6 +48,10 @@ pub enum ImageType {
     Zvol,
     #[serde(rename = "other")]
     Other,
+    /// Unknown type (forward compatibility)
+    #[serde(other)]
+    #[clap(skip)]
+    Unknown,
 }
 
 /// Image requirements

@@ -90,6 +90,9 @@ pub enum MigrationPhase {
     Begin,
     Sync,
     Switch,
+    /// Unknown phase (forward compatibility)
+    #[serde(other)]
+    Unknown,
 }
 
 /// Migration progress entry
