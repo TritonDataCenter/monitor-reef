@@ -90,6 +90,9 @@ pub fn format_age(timestamp: &str) -> String {
         let duration = now.signed_duration_since(created_utc);
 
         let seconds = duration.num_seconds();
+        if seconds < 0 {
+            return "-".to_string();
+        }
         let years = seconds / 60 / 60 / 24 / 365;
         if years > 0 {
             return format!("{}y", years);

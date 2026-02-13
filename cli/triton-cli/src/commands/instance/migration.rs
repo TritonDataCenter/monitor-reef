@@ -11,7 +11,7 @@ use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 use cloudapi_client::types::{MigrationAction, MigrationState};
 
-use crate::output::json;
+use crate::output::{enum_to_display, json};
 
 #[derive(Subcommand, Clone)]
 pub enum MigrationCommand {
@@ -154,8 +154,8 @@ async fn get_migration(args: MigrationGetArgs, client: &TypedClient, use_json: b
         json::print_json(&migration)?;
     } else {
         println!("Instance:   {}", migration.vm_uuid);
-        println!("State:      {}", migration.state);
-        println!("Phase:      {}", migration.phase);
+        println!("State:      {}", enum_to_display(&migration.state));
+        println!("Phase:      {}", enum_to_display(&migration.phase));
         if let Some(progress) = migration.progress_percent {
             println!("Progress:   {:.1}%", progress);
         }
@@ -245,8 +245,8 @@ async fn begin_migration(
             json::print_json(&migration)?;
         } else {
             println!("Migration started for instance {}", &id_str[..8]);
-            println!("State: {}", migration.state);
-            println!("Phase: {}", migration.phase);
+            println!("State: {}", enum_to_display(&migration.state));
+            println!("Phase: {}", enum_to_display(&migration.phase));
         }
     }
 
@@ -289,8 +289,8 @@ async fn sync_migration(
     } else if use_json {
         json::print_json(&migration)?;
     } else {
-        println!("State: {}", migration.state);
-        println!("Phase: {}", migration.phase);
+        println!("State: {}", enum_to_display(&migration.state));
+        println!("Phase: {}", enum_to_display(&migration.phase));
     }
 
     Ok(())
@@ -332,8 +332,8 @@ async fn switch_migration(
     } else if use_json {
         json::print_json(&migration)?;
     } else {
-        println!("State: {}", migration.state);
-        println!("Phase: {}", migration.phase);
+        println!("State: {}", enum_to_display(&migration.state));
+        println!("Phase: {}", enum_to_display(&migration.phase));
     }
 
     Ok(())
@@ -485,8 +485,8 @@ async fn abort_migration(
         json::print_json(&migration)?;
     } else {
         println!("Migration aborted for instance {}", &id_str[..8]);
-        println!("State: {}", migration.state);
-        println!("Phase: {}", migration.phase);
+        println!("State: {}", enum_to_display(&migration.state));
+        println!("Phase: {}", enum_to_display(&migration.phase));
     }
 
     Ok(())
