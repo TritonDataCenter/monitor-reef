@@ -27,7 +27,7 @@ pub struct CreateArgs {
     pub name: Option<String>,
 
     /// Network IDs (comma-separated or multiple flags)
-    #[arg(long, short = 'N')]
+    #[arg(long, short = 'N', conflicts_with = "nic")]
     pub network: Option<Vec<String>>,
 
     /// Tags (key=value, multiple allowed)
