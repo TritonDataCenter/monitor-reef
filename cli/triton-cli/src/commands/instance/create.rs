@@ -12,7 +12,7 @@ use cloudapi_client::TypedClient;
 use std::collections::HashMap;
 use std::path::Path;
 
-use crate::output::json;
+use crate::output::{enum_to_display, json};
 
 #[derive(Args, Clone)]
 pub struct CreateArgs {
@@ -239,7 +239,7 @@ pub async fn run(
                 println!("  Name: {}", name);
             }
             if let Some(brand) = &request.brand {
-                println!("  Brand: {:?}", brand);
+                println!("  Brand: {}", enum_to_display(brand));
             }
             if let Some(networks) = &request.networks {
                 println!("  Networks: {:?}", networks);

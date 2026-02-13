@@ -540,6 +540,22 @@ Enums deserializing untrusted or evolving input (state fields, status fields) mu
 
 CLIs import types from `<service>_client` re-exports, not directly from API crates. The client crate re-exports canonical API types alongside Progenitor-generated types in `src/lib.rs`.
 
+### 7. No Debug Format for User-Facing Output
+
+Never use `{:?}` (Debug format) for values shown to users. Use `enum_to_display()` for serde enums, `.join(", ")` for collections, or implement `Display`. Debug format exposes Rust internals (e.g., `Brand::Bhyve` instead of `bhyve`).
+
+```rust
+// WRONG: Debug format in user-facing output
+println!("  Brand: {:?}", brand);
+println!("Waiting for {:?}", target_names);
+
+// RIGHT: use enum_to_display() for serde enums
+println!("  Brand: {}", enum_to_display(brand));
+
+// RIGHT: use .join() for collections
+println!("Waiting for {}", target_names.join(", "));
+```
+
 ## Observability
 
 Include in all services:

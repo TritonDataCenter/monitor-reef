@@ -81,16 +81,16 @@ pub async fn wait_for_states(
         if machine.state == MachineState::Failed && !target_states.contains(&MachineState::Failed) {
             let target_names: Vec<String> = target_states.iter().map(enum_to_display).collect();
             return Err(anyhow::anyhow!(
-                "Instance entered failed state while waiting for {:?}",
-                target_names
+                "Instance entered failed state while waiting for {}",
+                target_names.join(", ")
             ));
         }
 
         if start.elapsed() > timeout {
             let target_names: Vec<String> = target_states.iter().map(enum_to_display).collect();
             return Err(anyhow::anyhow!(
-                "Timeout waiting for instance to reach state {:?} (current: {})",
-                target_names,
+                "Timeout waiting for instance to reach state {} (current: {})",
+                target_names.join(", "),
                 enum_to_display(&machine.state)
             ));
         }
