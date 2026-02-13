@@ -388,15 +388,16 @@ async fn delete_network(args: NetworkDeleteArgs, client: &TypedClient) -> Result
 
     // Confirm unless forced
     if !args.force {
-        println!(
-            "Are you sure you want to delete network '{}' ({})? [y/N]",
-            network_name,
-            &network_id[..8]
-        );
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        if !input.trim().eq_ignore_ascii_case("y") {
-            println!("Aborted.");
+        use dialoguer::Confirm;
+        if !Confirm::new()
+            .with_prompt(format!(
+                "Delete network '{}' ({})?",
+                network_name,
+                &network_id[..8]
+            ))
+            .default(false)
+            .interact()?
+        {
             return Ok(());
         }
     }
