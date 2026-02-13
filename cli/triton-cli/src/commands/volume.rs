@@ -234,7 +234,7 @@ fn parse_volume_size(size_str: &str) -> Result<u64> {
 }
 
 /// Parse tags from key=value format into a serde_json Map
-fn parse_tags(tag_list: &[String]) -> serde_json::Map<String, serde_json::Value> {
+fn parse_tags(tag_list: &[String]) -> Result<serde_json::Map<String, serde_json::Value>> {
     let mut tags = serde_json::Map::new();
     for tag in tag_list {
         if let Some((key, value)) = tag.split_once('=') {
@@ -251,9 +251,14 @@ fn parse_tags(tag_list: &[String]) -> serde_json::Map<String, serde_json::Value>
                 serde_json::Value::String(value.to_string())
             };
             tags.insert(key.to_string(), json_value);
+        } else {
+            return Err(anyhow::anyhow!(
+                "Invalid tag format '{}', expected key=value",
+                tag
+            ));
         }
     }
-    tags
+    Ok(tags)
 }
 
 async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
@@ -292,7 +297,7 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
     };
 
     // Parse tags
-    let tags = args.tags.as_ref().map(|t| parse_tags(t));
+    let tags = args.tags.as_ref().map(|t| parse_tags(t)).transpose()?;
 
     let request = cloudapi_client::types::CreateVolumeRequest {
         name: args.name.clone(),
@@ -605,14 +610,14 @@ mod tests {
     #[test]
     fn test_parse_tags_simple() {
         let tags = vec!["foo=bar".to_string()];
-        let result = parse_tags(&tags);
+        let result = parse_tags(&tags).unwrap();
         assert_eq!(result.get("foo").unwrap(), "bar");
     }
 
     #[test]
     fn test_parse_tags_boolean() {
         let tags = vec!["enabled=true".to_string(), "disabled=false".to_string()];
-        let result = parse_tags(&tags);
+        let result = parse_tags(&tags).unwrap();
         assert_eq!(result.get("enabled").unwrap(), true);
         assert_eq!(result.get("disabled").unwrap(), false);
     }
@@ -620,14 +625,14 @@ mod tests {
     #[test]
     fn test_parse_tags_numeric() {
         let tags = vec!["count=42".to_string()];
-        let result = parse_tags(&tags);
+        let result = parse_tags(&tags).unwrap();
         assert_eq!(result.get("count").unwrap(), 42);
     }
 
     #[test]
     fn test_parse_tags_float() {
         let tags = vec!["pi=3.14".to_string()];
-        let result = parse_tags(&tags);
+        let result = parse_tags(&tags).unwrap();
         // Check it's a number (float comparison is tricky)
         assert!(result.get("pi").unwrap().is_f64());
     }
@@ -636,7 +641,7 @@ mod tests {
     fn test_parse_tags_string_with_number_like_value() {
         // Values that look like numbers but shouldn't be converted
         let tags = vec!["version=1.0.0".to_string()];
-        let result = parse_tags(&tags);
+        let result = parse_tags(&tags).unwrap();
         // This should remain a string because it can't be parsed as a number
         assert!(result.get("version").unwrap().is_string());
     }
@@ -644,16 +649,16 @@ mod tests {
     #[test]
     fn test_parse_tags_empty() {
         let tags: Vec<String> = vec![];
-        let result = parse_tags(&tags);
+        let result = parse_tags(&tags).unwrap();
         assert!(result.is_empty());
     }
 
     #[test]
-    fn test_parse_tags_ignores_invalid_format() {
-        // Tags without '=' are silently ignored
+    fn test_parse_tags_rejects_invalid_format() {
         let tags = vec!["valid=tag".to_string(), "invalid-no-equals".to_string()];
         let result = parse_tags(&tags);
-        assert_eq!(result.len(), 1);
-        assert_eq!(result.get("valid").unwrap(), "tag");
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("invalid-no-equals"));
     }
 }

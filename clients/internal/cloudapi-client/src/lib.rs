@@ -1064,10 +1064,7 @@ fn transform_progenitor_request_to_legacy(
             && let Some(meta_obj) = metadata.as_object()
         {
             for (key, value) in meta_obj {
-                // Skip password fields (handled separately by CloudAPI)
-                if !key.ends_with("_pw") {
-                    map.insert(format!("metadata.{key}"), value.clone());
-                }
+                map.insert(format!("metadata.{key}"), value.clone());
             }
         }
     }
