@@ -42,23 +42,87 @@ const SSH_AGENT_SIGN_RESPONSE: u8 = 14;
 /// Request RSA signature using SHA-256 hash algorithm
 const SSH_AGENT_RSA_SHA2_256: u32 = 0x02;
 
-/// Read a big-endian u32 from a buffer at the given offset
-fn read_u32be(buf: &[u8], offset: usize) -> u32 {
-    ((buf[offset] as u32) << 24)
-        + ((buf[offset + 1] as u32) << 16)
-        + ((buf[offset + 2] as u32) << 8)
-        + (buf[offset + 3] as u32)
+/// Maximum allocation size for wire-protocol length fields (10 MB).
+/// Prevents a malicious or malformed agent response from causing OOM
+/// by specifying an extremely large length field.
+const MAX_WIRE_LENGTH: usize = 10 * 1024 * 1024;
+
+/// Read a big-endian u32 from a buffer at the given offset.
+/// Returns an error if the buffer is too short.
+fn read_u32be(buf: &[u8], offset: usize) -> Result<u32, AuthError> {
+    let bytes = buf.get(offset..offset + 4).ok_or_else(|| {
+        AuthError::AgentError(format!(
+            "Buffer underflow: need 4 bytes at offset {} but buffer length is {}",
+            offset,
+            buf.len()
+        ))
+    })?;
+    Ok(((bytes[0] as u32) << 24)
+        + ((bytes[1] as u32) << 16)
+        + ((bytes[2] as u32) << 8)
+        + (bytes[3] as u32))
 }
 
-/// Read a u8 from a buffer at the given offset
-fn read_u8(buf: &[u8], offset: usize) -> u8 {
-    buf[offset]
+/// Read a u8 from a buffer at the given offset.
+/// Returns an error if the offset is out of bounds.
+fn read_u8(buf: &[u8], offset: usize) -> Result<u8, AuthError> {
+    buf.get(offset).copied().ok_or_else(|| {
+        AuthError::AgentError(format!(
+            "Buffer underflow: need 1 byte at offset {} but buffer length is {}",
+            offset,
+            buf.len()
+        ))
+    })
 }
 
-/// Read a string from a buffer at the given offset with the given length
-fn read_string(buf: &[u8], offset: usize, len: usize) -> String {
-    let slice = &buf[offset..(offset + len)];
-    String::from_utf8(slice.to_vec()).unwrap_or_default()
+/// Read a string from a buffer at the given offset with the given length.
+/// Returns an error if the slice is out of bounds.
+fn read_string(buf: &[u8], offset: usize, len: usize) -> Result<String, AuthError> {
+    let end = offset.checked_add(len).ok_or_else(|| {
+        AuthError::AgentError(format!(
+            "Integer overflow computing string end: offset={}, len={}",
+            offset, len
+        ))
+    })?;
+    let slice = buf.get(offset..end).ok_or_else(|| {
+        AuthError::AgentError(format!(
+            "Buffer underflow: need {} bytes at offset {} but buffer length is {}",
+            len,
+            offset,
+            buf.len()
+        ))
+    })?;
+    Ok(String::from_utf8(slice.to_vec()).unwrap_or_default())
+}
+
+/// Check that a wire-protocol length field does not exceed the safety cap.
+fn check_wire_length(len: usize, context: &str) -> Result<(), AuthError> {
+    if len > MAX_WIRE_LENGTH {
+        return Err(AuthError::AgentError(format!(
+            "Wire-protocol length {} exceeds maximum {} in {}",
+            len, MAX_WIRE_LENGTH, context
+        )));
+    }
+    Ok(())
+}
+
+/// Read a slice from a buffer at the given offset with the given length.
+/// Returns an error if the slice is out of bounds.
+fn read_slice(buf: &[u8], offset: usize, len: usize) -> Result<&[u8], AuthError> {
+    let end = offset.checked_add(len).ok_or_else(|| {
+        AuthError::AgentError(format!(
+            "Integer overflow computing slice end: offset={}, len={}",
+            offset, len
+        ))
+    })?;
+    buf.get(offset..end).ok_or_else(|| {
+        AuthError::AgentError(format!(
+            "Buffer underflow: need {} bytes at offset {} but buffer length is {}",
+            len,
+            offset,
+            buf.len()
+        ))
+    })
 }
 
 /// Write bytes to a buffer at the given offset
@@ -119,23 +183,25 @@ pub struct SshIdentity {
 }
 
 impl SshIdentity {
-    /// Create a new SshIdentity from raw key bytes and comment
-    pub fn new(bytes: &[u8], comment: &str) -> SshIdentity {
+    /// Create a new SshIdentity from raw key bytes and comment.
+    /// Returns an error if the key bytes are malformed (too short to contain
+    /// the key type string).
+    pub fn new(bytes: &[u8], comment: &str) -> Result<SshIdentity, AuthError> {
         // The type of the key is held in the key itself - extract it here
-        let type_len = read_u32be(bytes, 0) as usize;
-        let key_type = read_string(bytes, 4, type_len);
+        let type_len = read_u32be(bytes, 0)? as usize;
+        let key_type = read_string(bytes, 4, type_len)?;
 
         // Generate fingerprints
         let md5_fp = md5_fingerprint(bytes);
         let sha256_fp = sha256_fingerprint(bytes);
 
-        SshIdentity {
+        Ok(SshIdentity {
             raw_key: bytes.to_vec(),
             key_type,
             comment: comment.to_string(),
             md5_fp,
             sha256_fp,
-        }
+        })
     }
 
     /// Check if this identity matches the given fingerprint
@@ -213,10 +279,11 @@ impl SshAgentClient {
         self.stream
             .read_exact(&mut buf)
             .map_err(|e| AuthError::AgentError(format!("Failed to read from SSH agent: {}", e)))?;
-        let len = read_u32be(&buf, 0);
+        let len = read_u32be(&buf, 0)? as usize;
+        check_wire_length(len, "identities response")?;
 
         // Read the rest of the response
-        let mut buf = vec![0; len as usize];
+        let mut buf = vec![0; len];
         self.stream
             .read_exact(&mut buf)
             .map_err(|e| AuthError::AgentError(format!("Failed to read from SSH agent: {}", e)))?;
@@ -224,7 +291,7 @@ impl SshAgentClient {
         let mut idx = 0;
 
         // First byte should be the correct response type
-        let response_type = read_u8(&buf, idx);
+        let response_type = read_u8(&buf, idx)?;
         if response_type != SSH_AGENT_IDENTITIES_ANSWER {
             return Err(AuthError::AgentError(format!(
                 "Unexpected response type: {}",
@@ -234,27 +301,29 @@ impl SshAgentClient {
         idx += 1;
 
         // Next u32 is the number of keys in the agent
-        let num_keys = read_u32be(&buf, idx);
+        let num_keys = read_u32be(&buf, idx)?;
         idx += 4;
 
         // Loop through each key found
         for _ in 0..num_keys {
             // Read key length
-            let len = read_u32be(&buf, idx) as usize;
+            let len = read_u32be(&buf, idx)? as usize;
+            check_wire_length(len, "identity key blob")?;
             idx += 4;
 
             // Extract the bytes for the key
-            let bytes = &buf[idx..(idx + len)];
+            let bytes = read_slice(&buf, idx, len)?;
             idx += len;
 
-            // Read the comment
-            let len = read_u32be(&buf, idx) as usize;
+            // Read the comment length
+            let comment_len = read_u32be(&buf, idx)? as usize;
+            check_wire_length(comment_len, "identity comment")?;
             idx += 4;
-            let comment = read_string(&buf, idx, len);
-            idx += len;
+            let comment = read_string(&buf, idx, comment_len)?;
+            idx += comment_len;
 
             // Make a new SshIdentity
-            let ident = SshIdentity::new(bytes, &comment);
+            let ident = SshIdentity::new(bytes, &comment)?;
             identities.push(ident);
         }
 
@@ -322,10 +391,11 @@ impl SshAgentClient {
         self.stream
             .read_exact(&mut buf)
             .map_err(|e| AuthError::AgentError(format!("Failed to read from SSH agent: {}", e)))?;
-        let len = read_u32be(&buf, 0);
+        let len = read_u32be(&buf, 0)? as usize;
+        check_wire_length(len, "sign response")?;
 
         // Read the rest of the response
-        let mut buf = vec![0; len as usize];
+        let mut buf = vec![0; len];
         self.stream
             .read_exact(&mut buf)
             .map_err(|e| AuthError::AgentError(format!("Failed to read from SSH agent: {}", e)))?;
@@ -333,7 +403,7 @@ impl SshAgentClient {
         let mut idx = 0;
 
         // First byte should be the correct response type
-        let response_type = read_u8(&buf, idx);
+        let response_type = read_u8(&buf, idx)?;
         if response_type != SSH_AGENT_SIGN_RESPONSE {
             return Err(AuthError::AgentError(format!(
                 "Unexpected response type: {}, expected sign response",
@@ -343,18 +413,21 @@ impl SshAgentClient {
         idx += 1;
 
         // Next u32 is the total signature blob length
-        let _total_len = read_u32be(&buf, idx);
+        let _total_len = read_u32be(&buf, idx)?;
         idx += 4;
 
         // Read signature type string
-        let len = read_u32be(&buf, idx) as usize;
+        let sig_type_len = read_u32be(&buf, idx)? as usize;
+        check_wire_length(sig_type_len, "signature type string")?;
         idx += 4;
-        let _sig_type = read_string(&buf, idx, len);
-        idx += len;
+        let _sig_type = read_string(&buf, idx, sig_type_len)?;
+        idx += sig_type_len;
 
         // Read the actual signature bytes
-        let len = read_u32be(&buf, idx) as usize;
-        let blob = &buf[(idx + 4)..(idx + 4 + len)];
+        let sig_len = read_u32be(&buf, idx)? as usize;
+        check_wire_length(sig_len, "signature blob")?;
+        idx += 4;
+        let blob = read_slice(&buf, idx, sig_len)?;
 
         Ok(blob.to_vec())
     }

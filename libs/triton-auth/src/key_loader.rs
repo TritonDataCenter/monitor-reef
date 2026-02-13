@@ -17,10 +17,11 @@ use crate::error::AuthError;
 use crate::fingerprint::Fingerprint;
 use crate::legacy_pem::{LegacyPrivateKey, PemKeyFormat};
 use ssh_key::PrivateKey;
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 /// Source for loading SSH keys
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub enum KeySource {
     /// Load key from SSH agent using fingerprint
     Agent {
@@ -39,6 +40,31 @@ pub enum KeySource {
         /// Fingerprint in MD5 or SHA256 format
         fingerprint: String,
     },
+}
+
+impl fmt::Debug for KeySource {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            KeySource::Agent { fingerprint } => f
+                .debug_struct("Agent")
+                .field("fingerprint", fingerprint)
+                .finish(),
+            KeySource::File { path, passphrase } => {
+                let mut s = f.debug_struct("File");
+                s.field("path", path);
+                if passphrase.is_some() {
+                    s.field("passphrase", &"[REDACTED]");
+                } else {
+                    s.field("passphrase", &None::<String>);
+                }
+                s.finish()
+            }
+            KeySource::Auto { fingerprint } => f
+                .debug_struct("Auto")
+                .field("fingerprint", fingerprint)
+                .finish(),
+        }
+    }
 }
 
 impl KeySource {
