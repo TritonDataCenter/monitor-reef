@@ -321,6 +321,13 @@ async fn set_tags(args: TagSetArgs, client: &TypedClient) -> Result<()> {
 
     let request = TagsRequest::from(tag_map);
 
+    // Capture current state before tag operation so --wait uses the correct target
+    let pre_state = if args.wait {
+        Some(client.get_machine(account, &machine_id).await?.state)
+    } else {
+        None
+    };
+
     client
         .inner()
         .add_machine_tags()
@@ -330,14 +337,8 @@ async fn set_tags(args: TagSetArgs, client: &TypedClient) -> Result<()> {
         .send()
         .await?;
 
-    if args.wait {
-        super::wait::wait_for_state(
-            machine_id,
-            cloudapi_client::types::MachineState::Running,
-            args.wait_timeout,
-            client,
-        )
-        .await?;
+    if let Some(target_state) = pre_state {
+        super::wait::wait_for_state(machine_id, target_state, args.wait_timeout, client).await?;
     }
 
     // Output the updated tags (matching node-triton behavior)
@@ -381,6 +382,13 @@ async fn delete_tag(args: TagDeleteArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = &client.auth_config().account;
 
+    // Capture current state before tag operation so --wait uses the correct target
+    let pre_state = if args.wait {
+        Some(client.get_machine(account, &machine_id).await?.state)
+    } else {
+        None
+    };
+
     if args.all {
         // Delete all tags
         client
@@ -391,14 +399,9 @@ async fn delete_tag(args: TagDeleteArgs, client: &TypedClient) -> Result<()> {
             .send()
             .await?;
 
-        if args.wait {
-            super::wait::wait_for_state(
-                machine_id,
-                cloudapi_client::types::MachineState::Running,
-                args.wait_timeout,
-                client,
-            )
-            .await?;
+        if let Some(target_state) = pre_state {
+            super::wait::wait_for_state(machine_id, target_state, args.wait_timeout, client)
+                .await?;
         }
 
         println!("Deleted all tags on instance {}", args.instance);
@@ -417,14 +420,9 @@ async fn delete_tag(args: TagDeleteArgs, client: &TypedClient) -> Result<()> {
                 .send()
                 .await?;
 
-            if args.wait {
-                super::wait::wait_for_state(
-                    machine_id,
-                    cloudapi_client::types::MachineState::Running,
-                    args.wait_timeout,
-                    client,
-                )
-                .await?;
+            if let Some(target_state) = pre_state {
+                super::wait::wait_for_state(machine_id, target_state, args.wait_timeout, client)
+                    .await?;
             }
 
             println!("Deleted tag {} on instance {}", key, args.instance);
@@ -472,6 +470,13 @@ async fn replace_all_tags(args: TagReplaceAllArgs, client: &TypedClient) -> Resu
 
     let request = TagsRequest::from(tag_map);
 
+    // Capture current state before tag operation so --wait uses the correct target
+    let pre_state = if args.wait {
+        Some(client.get_machine(account, &machine_id).await?.state)
+    } else {
+        None
+    };
+
     client
         .inner()
         .replace_machine_tags()
@@ -481,14 +486,8 @@ async fn replace_all_tags(args: TagReplaceAllArgs, client: &TypedClient) -> Resu
         .send()
         .await?;
 
-    if args.wait {
-        super::wait::wait_for_state(
-            machine_id,
-            cloudapi_client::types::MachineState::Running,
-            args.wait_timeout,
-            client,
-        )
-        .await?;
+    if let Some(target_state) = pre_state {
+        super::wait::wait_for_state(machine_id, target_state, args.wait_timeout, client).await?;
     }
 
     // Output the updated tags (matching node-triton behavior)

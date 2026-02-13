@@ -138,6 +138,17 @@ pub use vmapi_api::{
     VmStatus,
 };
 
+/// Serialize a request type to JSON Value, panicking on failure.
+///
+/// All request types in this crate are simple structs (String, Option, Uuid
+/// fields) whose serialization cannot fail. This replaces the previous
+/// `unwrap_or_default()` pattern which silently produced `Value::Null` on
+/// error, masking bugs as confusing server-side failures.
+#[allow(clippy::expect_used)]
+fn to_json_value<T: serde::Serialize>(value: &T) -> serde_json::Value {
+    serde_json::to_value(value).expect("request serialization should not fail")
+}
+
 /// Typed client wrapper for action-based endpoints
 ///
 /// This wrapper provides ergonomic methods for VMAPI's action-based endpoints
@@ -195,7 +206,7 @@ impl TypedClient {
             .vm_action()
             .uuid(*uuid)
             .action(types::VmAction::Start)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -218,7 +229,7 @@ impl TypedClient {
             .vm_action()
             .uuid(*uuid)
             .action(types::VmAction::Stop)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -244,7 +255,7 @@ impl TypedClient {
             .vm_action()
             .uuid(*uuid)
             .action(types::VmAction::Kill)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -267,7 +278,7 @@ impl TypedClient {
             .vm_action()
             .uuid(*uuid)
             .action(types::VmAction::Reboot)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -288,7 +299,7 @@ impl TypedClient {
             .vm_action()
             .uuid(*uuid)
             .action(types::VmAction::Reprovision)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -308,7 +319,7 @@ impl TypedClient {
             .vm_action()
             .uuid(*uuid)
             .action(types::VmAction::Update)
-            .body(serde_json::to_value(request).unwrap_or_default())
+            .body(to_json_value(request))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -328,7 +339,7 @@ impl TypedClient {
             .vm_action()
             .uuid(*uuid)
             .action(types::VmAction::AddNics)
-            .body(serde_json::to_value(request).unwrap_or_default())
+            .body(to_json_value(request))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -348,7 +359,7 @@ impl TypedClient {
             .vm_action()
             .uuid(*uuid)
             .action(types::VmAction::UpdateNics)
-            .body(serde_json::to_value(request).unwrap_or_default())
+            .body(to_json_value(request))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -369,7 +380,7 @@ impl TypedClient {
             .vm_action()
             .uuid(*uuid)
             .action(types::VmAction::RemoveNics)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -390,7 +401,7 @@ impl TypedClient {
             .vm_action()
             .uuid(*uuid)
             .action(types::VmAction::CreateSnapshot)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -411,7 +422,7 @@ impl TypedClient {
             .vm_action()
             .uuid(*uuid)
             .action(types::VmAction::RollbackSnapshot)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -432,7 +443,7 @@ impl TypedClient {
             .vm_action()
             .uuid(*uuid)
             .action(types::VmAction::DeleteSnapshot)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -452,7 +463,7 @@ impl TypedClient {
             .vm_action()
             .uuid(*uuid)
             .action(types::VmAction::CreateDisk)
-            .body(serde_json::to_value(request).unwrap_or_default())
+            .body(to_json_value(request))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -472,7 +483,7 @@ impl TypedClient {
             .vm_action()
             .uuid(*uuid)
             .action(types::VmAction::ResizeDisk)
-            .body(serde_json::to_value(request).unwrap_or_default())
+            .body(to_json_value(request))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -493,7 +504,7 @@ impl TypedClient {
             .vm_action()
             .uuid(*uuid)
             .action(types::VmAction::DeleteDisk)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -513,7 +524,7 @@ impl TypedClient {
             .vm_action()
             .uuid(*uuid)
             .action(types::VmAction::Migrate)
-            .body(serde_json::to_value(request).unwrap_or_default())
+            .body(to_json_value(request))
             .send()
             .await
             .map(|r| r.into_inner())

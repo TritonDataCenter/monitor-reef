@@ -557,7 +557,7 @@ impl TypedClient {
             .account(account)
             .machine(machine.to_string())
             .action(types::MachineAction::Start)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|_| ())
@@ -581,7 +581,7 @@ impl TypedClient {
             .account(account)
             .machine(machine.to_string())
             .action(types::MachineAction::Stop)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|_| ())
@@ -605,7 +605,7 @@ impl TypedClient {
             .account(account)
             .machine(machine.to_string())
             .action(types::MachineAction::Reboot)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|_| ())
@@ -631,7 +631,7 @@ impl TypedClient {
             .account(account)
             .machine(machine.to_string())
             .action(types::MachineAction::Resize)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|_| ())
@@ -657,7 +657,7 @@ impl TypedClient {
             .account(account)
             .machine(machine.to_string())
             .action(types::MachineAction::Rename)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|_| ())
@@ -681,7 +681,7 @@ impl TypedClient {
             .account(account)
             .machine(machine.to_string())
             .action(types::MachineAction::EnableFirewall)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|_| ())
@@ -705,7 +705,7 @@ impl TypedClient {
             .account(account)
             .machine(machine.to_string())
             .action(types::MachineAction::DisableFirewall)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|_| ())
@@ -729,7 +729,7 @@ impl TypedClient {
             .account(account)
             .machine(machine.to_string())
             .action(types::MachineAction::EnableDeletionProtection)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|_| ())
@@ -753,7 +753,7 @@ impl TypedClient {
             .account(account)
             .machine(machine.to_string())
             .action(types::MachineAction::DisableDeletionProtection)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|_| ())
@@ -780,7 +780,7 @@ impl TypedClient {
             .account(account)
             .dataset(dataset.to_string())
             .action(types::ImageAction::Update)
-            .body(serde_json::to_value(request).unwrap_or_default())
+            .body(to_json_value(request))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -804,7 +804,7 @@ impl TypedClient {
             .account(account)
             .dataset(dataset.to_string())
             .action(types::ImageAction::Export)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -826,7 +826,7 @@ impl TypedClient {
             .account(account)
             .dataset(dataset.to_string())
             .action(types::ImageAction::Clone)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -852,7 +852,7 @@ impl TypedClient {
             .account(account)
             .dataset(dataset.to_string())
             .action(types::ImageAction::ImportFromDatacenter)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -878,7 +878,7 @@ impl TypedClient {
             .account(account)
             .dataset(dataset.to_string())
             .action(types::ImageAction::Share)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -904,7 +904,7 @@ impl TypedClient {
             .account(account)
             .dataset(dataset.to_string())
             .action(types::ImageAction::Unshare)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -931,7 +931,7 @@ impl TypedClient {
             .account(account)
             .id(id.to_string())
             .action(types::VolumeAction::Update)
-            .body(serde_json::to_value(request).unwrap_or_default())
+            .body(to_json_value(request))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -961,7 +961,7 @@ impl TypedClient {
             .machine(machine.to_string())
             .disk(disk.to_string())
             .action(types::DiskAction::Resize)
-            .body(serde_json::to_value(request).unwrap_or_default())
+            .body(to_json_value(request))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -1010,6 +1010,21 @@ pub enum GetMachineError {
 }
 
 // =============================================================================
+// Infallible serialization helper
+// =============================================================================
+
+/// Serialize a request type to JSON Value, panicking on failure.
+///
+/// All request types in this crate are simple structs (String, Option, Uuid
+/// fields) whose serialization cannot fail. This replaces the previous
+/// `unwrap_or_default()` pattern which silently produced `Value::Null` on
+/// error, masking bugs as confusing server-side failures.
+#[allow(clippy::expect_used)]
+fn to_json_value<T: serde::Serialize>(value: &T) -> serde_json::Value {
+    serde_json::to_value(value).expect("request serialization should not fail")
+}
+
+// =============================================================================
 // Legacy format transformation for Node.js CloudAPI compatibility
 // =============================================================================
 
@@ -1020,7 +1035,7 @@ fn transform_progenitor_request_to_legacy(
     request: &types::CreateMachineRequest,
 ) -> serde_json::Value {
     // Serialize the request to JSON, then extract and flatten tags/metadata
-    let mut obj = serde_json::to_value(request).unwrap_or_default();
+    let mut obj = to_json_value(request);
 
     if let Some(map) = obj.as_object_mut() {
         // Extract and flatten tags
