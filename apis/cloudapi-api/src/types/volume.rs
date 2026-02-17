@@ -46,7 +46,7 @@ pub struct Volume {
     /// Volume type
     #[serde(rename = "type")]
     pub volume_type: String,
-    /// Size in MB
+    /// Size in MiB
     pub size: u64,
     /// State
     pub state: VolumeState,
@@ -70,7 +70,7 @@ pub struct Volume {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct VolumeSize {
-    /// Size in GB
+    /// Size in MiB
     pub size: u64,
 }
 
@@ -84,7 +84,7 @@ pub struct CreateVolumeRequest {
     /// Volume type
     #[serde(default, rename = "type")]
     pub volume_type: Option<String>,
-    /// Size in MB
+    /// Size in MiB
     pub size: u64,
     /// Networks (array of UUIDs)
     #[serde(default)]

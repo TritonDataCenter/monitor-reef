@@ -868,7 +868,7 @@
             "type": "array"
           },
           "size": {
-            "description": "Size in MB",
+            "description": "Size in MiB",
             "format": "uint64",
             "minimum": 0,
             "type": "integer"
@@ -2996,7 +2996,7 @@
             "type": "array"
           },
           "size": {
-            "description": "Size in MB",
+            "description": "Size in MiB",
             "format": "uint64",
             "minimum": 0,
             "type": "integer"
@@ -3070,7 +3070,7 @@
         "description": "Volume size option",
         "properties": {
           "size": {
-            "description": "Size in GB",
+            "description": "Size in MiB",
             "format": "uint64",
             "minimum": 0,
             "type": "integer"

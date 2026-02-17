@@ -10315,7 +10315,7 @@
             }
           },
           "size": {
-            "description": "Size in MB",
+            "description": "Size in MiB",
             "type": "integer",
             "format": "uint64",
             "minimum": 0
@@ -12391,7 +12391,7 @@
             }
           },
           "size": {
-            "description": "Size in MB",
+            "description": "Size in MiB",
             "type": "integer",
             "format": "uint64",
             "minimum": 0
@@ -12458,7 +12458,7 @@
         "type": "object",
         "properties": {
           "size": {
-            "description": "Size in GB",
+            "description": "Size in MiB",
             "type": "integer",
             "format": "uint64",
             "minimum": 0

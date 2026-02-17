@@ -133,7 +133,7 @@ async fn list_volumes(args: VolumeListArgs, client: &TypedClient, use_json: bool
             tbl.add_row(vec![
                 vol.id.to_string()[..8].to_string(),
                 vol.name.clone(),
-                format!("{} MB", vol.size),
+                format!("{} MiB", vol.size),
                 vol.type_.clone(),
                 enum_to_display(&vol.state),
                 output::format_age(&vol.created.to_string()),
@@ -281,11 +281,7 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
             .send()
             .await?;
         let sizes = sizes_response.into_inner();
-        sizes
-            .iter()
-            .map(|s| s.size * 1024) // Convert GB to MB
-            .min()
-            .unwrap_or(10 * 1024) // Fallback to 10 GB
+        sizes.iter().map(|s| s.size).min().unwrap_or(10240) // Fallback: 10 GiB in MiB
     };
 
     // Handle network - resolve name/shortid to UUID if provided
@@ -333,7 +329,7 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
             json::print_json(&final_volume)?;
         } else if final_volume.state == VolumeState::Ready {
             println!(
-                "Created volume {} ({}) - {} MB",
+                "Created volume {} ({}) - {} MiB",
                 final_volume.name,
                 &final_volume.id.to_string()[..8],
                 final_volume.size
@@ -347,7 +343,7 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
         }
     } else {
         println!(
-            "Creating volume {} ({}) - {} MB",
+            "Creating volume {} ({}) - {} MiB",
             volume.name,
             &volume.id.to_string()[..8],
             volume.size
@@ -455,7 +451,7 @@ async fn list_volume_sizes(
     } else {
         let mut tbl = TableBuilder::new(&["SIZE"]);
         for size in &sizes {
-            tbl.add_row(vec![format!("{} GB", size.size)]);
+            tbl.add_row(vec![format!("{} MiB", size.size)]);
         }
         tbl.print(&args.table);
     }
