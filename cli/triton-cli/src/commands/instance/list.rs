@@ -12,7 +12,7 @@ use anyhow::Result;
 use clap::Args;
 use cloudapi_client::TypedClient;
 use cloudapi_client::types::{Brand, Machine};
-use serde::Serialize;
+use serde::{Serialize, de::DeserializeOwned};
 
 use crate::output::{self, enum_to_display, json, table};
 
@@ -138,14 +138,105 @@ pub struct ListArgs {
     /// Include generated credentials in output (metadata.credentials)
     #[arg(long)]
     pub credentials: bool,
+
+    /// Filters in key=value format (e.g., name=lb, state=running, tag.foo=bar)
+    ///
+    /// Supported filter keys: brand, docker, image, memory, name, state, type
+    #[arg(trailing_var_arg = true)]
+    pub filters: Vec<String>,
+}
+
+/// Valid filter keys for positional key=value arguments
+const VALID_FILTERS: &[&str] = &[
+    "brand", "docker", "image", "memory", "name", "state", "type",
+];
+
+/// Check if a filter key is valid (exact match or tag.* pattern)
+fn is_valid_filter(key: &str) -> bool {
+    VALID_FILTERS.contains(&key) || key.starts_with("tag.")
+}
+
+/// Deserialize a serde enum from its wire-format string value.
+fn parse_serde_enum<T: DeserializeOwned>(value: &str) -> std::result::Result<T, serde_json::Error> {
+    serde_json::from_value(serde_json::Value::String(value.to_string()))
+}
+
+/// Apply positional key=value filters to the ListArgs, merging with any
+/// existing --flag values. Positional filters override flags if both are set.
+/// Returns an optional MachineType filter (from `type=` positional arg).
+fn apply_positional_filters(
+    args: &mut ListArgs,
+) -> Result<Option<cloudapi_client::types::MachineType>> {
+    let mut machine_type = None;
+    for filter in std::mem::take(&mut args.filters) {
+        let (key, value) = filter
+            .split_once('=')
+            .ok_or_else(|| anyhow::anyhow!("Invalid filter '{}': must be key=value", filter))?;
+
+        if !is_valid_filter(key) {
+            anyhow::bail!(
+                "Unknown filter '{}'. Valid filters: {}, tag.*",
+                key,
+                VALID_FILTERS.join(", ")
+            );
+        }
+
+        match key {
+            "name" => args.name = Some(value.to_string()),
+            "state" => {
+                args.state = Some(parse_serde_enum(value).map_err(|_| {
+                    anyhow::anyhow!(
+                        "Invalid state value '{}': expected running, stopped, etc.",
+                        value
+                    )
+                })?);
+            }
+            "image" => args.image = Some(value.to_string()),
+            "brand" => {
+                args.brand = Some(parse_serde_enum(value).map_err(|_| {
+                    anyhow::anyhow!("Invalid brand value '{}': expected bhyve, kvm, etc.", value)
+                })?);
+            }
+            "memory" => {
+                args.memory = Some(value.parse().map_err(|_| {
+                    anyhow::anyhow!("Invalid memory value '{}': expected integer (MB)", value)
+                })?);
+            }
+            "docker" => {
+                args.docker = Some(value.parse().map_err(|_| {
+                    anyhow::anyhow!("Invalid docker value '{}': expected true or false", value)
+                })?);
+            }
+            "type" => {
+                machine_type = Some(parse_serde_enum(value).map_err(|_| {
+                    anyhow::anyhow!(
+                        "Invalid type value '{}': expected smartmachine or virtualmachine",
+                        value
+                    )
+                })?);
+            }
+            _ if key.starts_with("tag.") => {
+                let tag_key = &key["tag.".len()..];
+                let tag_entry = format!("{}={}", tag_key, value);
+                match &mut args.tag {
+                    Some(tags) => tags.push(tag_entry),
+                    None => args.tag = Some(vec![tag_entry]),
+                }
+            }
+            _ => unreachable!(),
+        }
+    }
+    Ok(machine_type)
 }
 
 pub async fn run(
-    args: ListArgs,
+    mut args: ListArgs,
     client: &TypedClient,
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
+    let machine_type = apply_positional_filters(&mut args)?;
+
     let account = &client.auth_config().account;
 
     let mut req = client.inner().list_machines().account(account);
@@ -180,6 +271,9 @@ pub async fn run(
     }
     if let Some(limit) = args.limit {
         req = req.limit(limit);
+    }
+    if let Some(mt) = machine_type {
+        req = req.type_(mt);
     }
     // Handle tags - CloudAPI uses tag.key=value format
     if let Some(tags) = &args.tag {
