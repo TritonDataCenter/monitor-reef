@@ -283,7 +283,6 @@ clients-check: | $(CARGO_EXEC) ## Check that generated client code is up-to-date
 	else \
 		echo "ERROR: Generated client code is stale. Run 'make clients-generate' and commit."; \
 		git diff --stat clients/internal/*/src/generated.rs; \
-		git checkout -- clients/internal/*/src/generated.rs; \
 		exit 1; \
 	fi
 
