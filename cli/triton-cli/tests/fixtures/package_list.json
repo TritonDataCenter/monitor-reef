@@ -1,0 +1,10 @@
+{
+  "id": "7b17343c-94af-6266-e0e8-893a3b9993d0",
+  "name": "g1.micro",
+  "memory": 128,
+  "disk": 12288,
+  "swap": 256,
+  "vcpus": 0,
+  "lwps": 4000,
+  "default": false
+}
