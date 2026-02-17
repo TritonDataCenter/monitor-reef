@@ -14,6 +14,7 @@ use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 use cloudapi_client::types::{Image, ImageState};
 use dialoguer::Confirm;
+use serde::de::DeserializeOwned;
 use serde_json::{Map, Value};
 
 use crate::output::{enum_to_display, json, opt_enum_to_display, table};
@@ -112,6 +113,12 @@ pub struct ImageListArgs {
     /// Sort by field (name, version, published_at, etc.)
     #[arg(short = 's', long)]
     pub sort_by: Option<String>,
+
+    /// Filters in key=value format (e.g., name=base-64, state=active, type=zone-dataset)
+    ///
+    /// Supported filter keys: name, os, version, public, state, owner, type
+    #[arg(trailing_var_arg = true)]
+    pub filters: Vec<String>,
 }
 
 #[derive(Args, Clone)]
@@ -329,12 +336,80 @@ impl ImageTagCommand {
     }
 }
 
+/// Valid filter keys for positional key=value arguments
+const VALID_FILTERS: &[&str] = &["name", "os", "version", "public", "state", "owner", "type"];
+
+/// Check if a filter key is valid
+fn is_valid_filter(key: &str) -> bool {
+    VALID_FILTERS.contains(&key)
+}
+
+/// Deserialize a serde enum from its wire-format string value.
+fn parse_serde_enum<T: DeserializeOwned>(value: &str) -> std::result::Result<T, serde_json::Error> {
+    serde_json::from_value(serde_json::Value::String(value.to_string()))
+}
+
+/// Apply positional key=value filters to the ImageListArgs, merging with any
+/// existing --flag values. Positional filters override flags if both are set.
+/// Returns an optional owner UUID filter (from `owner=` positional arg).
+fn apply_positional_filters(args: &mut ImageListArgs) -> Result<Option<cloudapi_client::Uuid>> {
+    let mut owner = None;
+    for filter in std::mem::take(&mut args.filters) {
+        let (key, value) = filter
+            .split_once('=')
+            .ok_or_else(|| anyhow::anyhow!("Invalid filter '{}': must be key=value", filter))?;
+
+        if !is_valid_filter(key) {
+            anyhow::bail!(
+                "Unknown filter '{}'. Valid filters: {}",
+                key,
+                VALID_FILTERS.join(", ")
+            );
+        }
+
+        match key {
+            "name" => args.name = Some(value.to_string()),
+            "os" => args.os = Some(value.to_string()),
+            "version" => args.version = Some(value.to_string()),
+            "public" => {
+                args.public = value.parse().map_err(|_| {
+                    anyhow::anyhow!("Invalid public value '{}': expected true or false", value)
+                })?;
+            }
+            "state" => {
+                args.state = Some(parse_serde_enum(value).map_err(|_| {
+                    anyhow::anyhow!(
+                        "Invalid state value '{}': expected active, disabled, etc.",
+                        value
+                    )
+                })?);
+            }
+            "owner" => {
+                owner = Some(value.parse().map_err(|_| {
+                    anyhow::anyhow!("Invalid owner value '{}': expected UUID", value)
+                })?);
+            }
+            "type" => {
+                args.image_type = Some(parse_serde_enum(value).map_err(|_| {
+                    anyhow::anyhow!(
+                        "Invalid type value '{}': expected zone-dataset, lx-dataset, zvol, etc.",
+                        value
+                    )
+                })?);
+            }
+            _ => unreachable!(),
+        }
+    }
+    Ok(owner)
+}
+
 async fn list_images(
-    args: ImageListArgs,
+    mut args: ImageListArgs,
     client: &TypedClient,
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
+    let owner = apply_positional_filters(&mut args)?;
     let account = &client.auth_config().account;
 
     // Determine if this is an unfiltered query that can use/populate cache
@@ -342,7 +417,8 @@ async fn list_images(
         && args.version.is_none()
         && args.os.is_none()
         && args.image_type.is_none()
-        && !args.public;
+        && !args.public
+        && owner.is_none();
     let is_default_state = args.state.is_none() && !args.all;
 
     // Try cache for unfiltered default queries
@@ -395,6 +471,9 @@ async fn list_images(
         }
         if let Some(image_type) = args.image_type {
             req = req.type_(image_type);
+        }
+        if let Some(owner) = owner {
+            req = req.owner(owner);
         }
         let response = req.send().await?;
         response.into_inner()
