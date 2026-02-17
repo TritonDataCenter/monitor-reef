@@ -513,6 +513,10 @@ impl TypedClient {
     /// (not an Error body). Progenitor treats 4xx as errors and fails to parse
     /// the Machine body, so we catch the parse failure and recover.
     ///
+    /// Because `InvalidResponsePayload` doesn't carry the HTTP status code,
+    /// we validate that the recovered Machine has `state == Deleted` to confirm
+    /// this was actually a 410 Gone response and not some other parse failure.
+    ///
     /// # Returns
     /// Returns the Machine. If the machine is deleted, `machine.state` will be
     /// `MachineState::Deleted`. Check the state to determine if the machine
@@ -533,12 +537,23 @@ impl TypedClient {
             Ok(rv) => Ok(rv.into_inner()),
             // 410 Gone returns a Machine body, which Progenitor fails to
             // deserialize as types::Error → surfaces as InvalidResponsePayload
-            // with the raw bytes still intact.
+            // with the raw bytes still intact. Since InvalidResponsePayload
+            // doesn't carry the HTTP status code, we validate that the parsed
+            // Machine is in Deleted state to confirm this was a 410 response.
             Err(Error::InvalidResponsePayload(bytes, _)) => {
-                serde_json::from_slice(&bytes).map_err(|e| GetMachineError::JsonParse {
-                    error: e.to_string(),
-                    body: String::from_utf8_lossy(&bytes).to_string(),
-                })
+                let machine: types::Machine =
+                    serde_json::from_slice(&bytes).map_err(|e| GetMachineError::JsonParse {
+                        error: e.to_string(),
+                        body: String::from_utf8_lossy(&bytes).to_string(),
+                    })?;
+                if machine.state == types::MachineState::Deleted {
+                    Ok(machine)
+                } else {
+                    Err(GetMachineError::UnexpectedRecovery {
+                        state: machine.state,
+                        body: String::from_utf8_lossy(&bytes).to_string(),
+                    })
+                }
             }
             Err(Error::ErrorResponse(rv)) if rv.status() == reqwest::StatusCode::NOT_FOUND => {
                 Err(GetMachineError::NotFound)
@@ -1013,9 +1028,16 @@ pub enum GetMachineError {
     /// Progenitor client error (auth, transport, server errors)
     #[error("{0}")]
     Client(String),
-    /// Failed to parse response JSON (usually a 410 Gone body)
+    /// Failed to parse response body as a Machine during 410 recovery
     #[error("failed to parse JSON: {error}\nResponse body: {body}")]
     JsonParse { error: String, body: String },
+    /// Recovered a Machine from InvalidResponsePayload but state was not Deleted,
+    /// meaning this was likely not a 410 Gone response
+    #[error("unexpected machine state during 410 recovery: {state:?}\nResponse body: {body}")]
+    UnexpectedRecovery {
+        state: types::MachineState,
+        body: String,
+    },
     /// Machine not found (404)
     #[error("machine not found")]
     NotFound,
