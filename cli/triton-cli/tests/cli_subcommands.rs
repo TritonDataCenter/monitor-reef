@@ -1065,3 +1065,298 @@ fn test_subcommand_services_shortcut() {
 fn test_subcommand_datacenters_shortcut() {
     test_subcommand_help(&["datacenters"]);
 }
+
+// =============================================================================
+// Accesskey commands
+// =============================================================================
+
+#[test]
+fn test_subcommand_accesskey() {
+    test_subcommand_help(&["accesskey"]);
+}
+
+#[test]
+fn test_subcommand_accesskey_create() {
+    test_subcommand_help(&["accesskey", "create"]);
+}
+
+#[test]
+fn test_subcommand_accesskey_list() {
+    test_subcommand_help(&["accesskey", "list"]);
+}
+
+#[test]
+fn test_subcommand_accesskey_list_aliases() {
+    test_alias_consistency(
+        &["accesskey", "list"],
+        &[&["accesskey", "ls"], &["accesskeys"]],
+    );
+}
+
+#[test]
+fn test_subcommand_accesskey_get() {
+    test_subcommand_help(&["accesskey", "get"]);
+}
+
+#[test]
+fn test_subcommand_accesskey_update() {
+    test_subcommand_help(&["accesskey", "update"]);
+}
+
+#[test]
+fn test_subcommand_accesskey_delete() {
+    test_subcommand_help(&["accesskey", "delete"]);
+}
+
+#[test]
+fn test_subcommand_accesskey_delete_alias() {
+    test_alias_consistency(&["accesskey", "delete"], &[&["accesskey", "rm"]]);
+}
+
+// =============================================================================
+// RBAC commands
+// =============================================================================
+
+#[test]
+fn test_subcommand_rbac() {
+    test_subcommand_help(&["rbac"]);
+}
+
+#[test]
+fn test_subcommand_rbac_info() {
+    test_subcommand_help(&["rbac", "info"]);
+}
+
+#[test]
+fn test_subcommand_rbac_apply() {
+    test_subcommand_help(&["rbac", "apply"]);
+}
+
+#[test]
+fn test_subcommand_rbac_reset() {
+    test_subcommand_help(&["rbac", "reset"]);
+}
+
+// =============================================================================
+// RBAC user subcommands
+// =============================================================================
+
+#[test]
+fn test_subcommand_rbac_user() {
+    test_subcommand_help(&["rbac", "user"]);
+}
+
+#[test]
+fn test_subcommand_rbac_user_list() {
+    test_subcommand_help(&["rbac", "user", "list"]);
+}
+
+#[test]
+fn test_subcommand_rbac_user_list_alias() {
+    test_alias_consistency(&["rbac", "user", "list"], &[&["rbac", "user", "ls"]]);
+}
+
+#[test]
+fn test_subcommand_rbac_user_get() {
+    test_subcommand_help(&["rbac", "user", "get"]);
+}
+
+#[test]
+fn test_subcommand_rbac_user_create() {
+    test_subcommand_help(&["rbac", "user", "create"]);
+}
+
+#[test]
+fn test_subcommand_rbac_user_update() {
+    test_subcommand_help(&["rbac", "user", "update"]);
+}
+
+#[test]
+fn test_subcommand_rbac_user_delete() {
+    test_subcommand_help(&["rbac", "user", "delete"]);
+}
+
+#[test]
+fn test_subcommand_rbac_user_delete_alias() {
+    test_alias_consistency(&["rbac", "user", "delete"], &[&["rbac", "user", "rm"]]);
+}
+
+// =============================================================================
+// RBAC role subcommands
+// =============================================================================
+
+#[test]
+fn test_subcommand_rbac_role() {
+    test_subcommand_help(&["rbac", "role"]);
+}
+
+#[test]
+fn test_subcommand_rbac_role_list() {
+    test_subcommand_help(&["rbac", "role", "list"]);
+}
+
+#[test]
+fn test_subcommand_rbac_role_list_alias() {
+    test_alias_consistency(&["rbac", "role", "list"], &[&["rbac", "role", "ls"]]);
+}
+
+#[test]
+fn test_subcommand_rbac_role_get() {
+    test_subcommand_help(&["rbac", "role", "get"]);
+}
+
+#[test]
+fn test_subcommand_rbac_role_create() {
+    test_subcommand_help(&["rbac", "role", "create"]);
+}
+
+#[test]
+fn test_subcommand_rbac_role_update() {
+    test_subcommand_help(&["rbac", "role", "update"]);
+}
+
+#[test]
+fn test_subcommand_rbac_role_delete() {
+    test_subcommand_help(&["rbac", "role", "delete"]);
+}
+
+#[test]
+fn test_subcommand_rbac_role_delete_alias() {
+    test_alias_consistency(&["rbac", "role", "delete"], &[&["rbac", "role", "rm"]]);
+}
+
+// =============================================================================
+// RBAC policy subcommands
+// =============================================================================
+
+#[test]
+fn test_subcommand_rbac_policy() {
+    test_subcommand_help(&["rbac", "policy"]);
+}
+
+#[test]
+fn test_subcommand_rbac_policy_list() {
+    test_subcommand_help(&["rbac", "policy", "list"]);
+}
+
+#[test]
+fn test_subcommand_rbac_policy_list_alias() {
+    test_alias_consistency(&["rbac", "policy", "list"], &[&["rbac", "policy", "ls"]]);
+}
+
+#[test]
+fn test_subcommand_rbac_policy_get() {
+    test_subcommand_help(&["rbac", "policy", "get"]);
+}
+
+#[test]
+fn test_subcommand_rbac_policy_create() {
+    test_subcommand_help(&["rbac", "policy", "create"]);
+}
+
+#[test]
+fn test_subcommand_rbac_policy_update() {
+    test_subcommand_help(&["rbac", "policy", "update"]);
+}
+
+#[test]
+fn test_subcommand_rbac_policy_delete() {
+    test_subcommand_help(&["rbac", "policy", "delete"]);
+}
+
+#[test]
+fn test_subcommand_rbac_policy_delete_alias() {
+    test_alias_consistency(&["rbac", "policy", "delete"], &[&["rbac", "policy", "rm"]]);
+}
+
+// =============================================================================
+// RBAC key/keys commands
+// =============================================================================
+
+#[test]
+fn test_subcommand_rbac_keys() {
+    test_subcommand_help(&["rbac", "keys"]);
+}
+
+#[test]
+fn test_subcommand_rbac_key() {
+    test_subcommand_help(&["rbac", "key"]);
+}
+
+// =============================================================================
+// RBAC accesskey/accesskeys commands
+// =============================================================================
+
+#[test]
+fn test_subcommand_rbac_accesskeys() {
+    test_subcommand_help(&["rbac", "accesskeys"]);
+}
+
+#[test]
+fn test_subcommand_rbac_accesskey() {
+    test_subcommand_help(&["rbac", "accesskey"]);
+}
+
+// =============================================================================
+// RBAC role-tags subcommands
+// =============================================================================
+
+#[test]
+fn test_subcommand_rbac_role_tags() {
+    test_subcommand_help(&["rbac", "role-tags"]);
+}
+
+#[test]
+fn test_subcommand_rbac_role_tags_alias() {
+    test_alias_consistency(&["rbac", "role-tags"], &[&["rbac", "role-tag"]]);
+}
+
+#[test]
+fn test_subcommand_rbac_role_tags_set() {
+    test_subcommand_help(&["rbac", "role-tags", "set"]);
+}
+
+#[test]
+fn test_subcommand_rbac_role_tags_add() {
+    test_subcommand_help(&["rbac", "role-tags", "add"]);
+}
+
+#[test]
+fn test_subcommand_rbac_role_tags_remove() {
+    test_subcommand_help(&["rbac", "role-tags", "remove"]);
+}
+
+#[test]
+fn test_subcommand_rbac_role_tags_remove_alias() {
+    test_alias_consistency(
+        &["rbac", "role-tags", "remove"],
+        &[&["rbac", "role-tags", "rm"]],
+    );
+}
+
+#[test]
+fn test_subcommand_rbac_role_tags_clear() {
+    test_subcommand_help(&["rbac", "role-tags", "clear"]);
+}
+
+#[test]
+fn test_subcommand_rbac_role_tags_edit() {
+    test_subcommand_help(&["rbac", "role-tags", "edit"]);
+}
+
+#[test]
+fn test_subcommand_rbac_role_tags_edit_alias() {
+    test_alias_consistency(
+        &["rbac", "role-tags", "edit"],
+        &[&["rbac", "role-tags", "e"]],
+    );
+}
+
+// =============================================================================
+// Changefeed command
+// =============================================================================
+
+#[test]
+fn test_subcommand_changefeed() {
+    test_subcommand_help(&["changefeed"]);
+}
