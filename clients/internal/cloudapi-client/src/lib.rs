@@ -63,6 +63,8 @@ pub mod auth;
 mod generated;
 pub use generated::*;
 
+use progenitor_client::{ClientHooks, OperationInfo};
+
 // Re-export triton-auth types for convenience
 pub use triton_auth::{AuthConfig, AuthError, KeySource};
 
@@ -215,6 +217,74 @@ pub use cloudapi_api::{
     VolumeState,
 };
 
+// =============================================================================
+// ClientHooks: intercept create_machine to transform body to legacy format
+// =============================================================================
+
+/// Override the default (empty) `ClientHooks` impl on `&Client` via auto-ref
+/// specialization: the generated code calls `client.pre(...)` where `client`
+/// is `&Client`, so `&self` resolves to `&Client` (exact match on `Client`)
+/// before `&&Client` (auto-ref match on `&Client`).
+impl ClientHooks<triton_auth::AuthConfig> for Client {
+    async fn pre<E>(
+        &self,
+        request: &mut reqwest::Request,
+        info: &OperationInfo,
+    ) -> std::result::Result<(), Error<E>> {
+        if info.operation_id == "create_machine" {
+            transform_create_machine_body(request);
+        }
+        Ok(())
+    }
+}
+
+/// Transform a create_machine request body from structured to legacy format.
+///
+/// Node.js CloudAPI expects tags as `tag.KEY=VALUE` and metadata as
+/// `metadata.KEY=VALUE` as top-level JSON fields, not nested objects.
+/// This runs in the `pre` hook after auth headers are already set
+/// (HTTP Signature auth signs method+path, not the body).
+fn transform_create_machine_body(request: &mut reqwest::Request) {
+    let Some(bytes) = request.body().and_then(|b| b.as_bytes()) else {
+        return;
+    };
+    let Ok(mut obj) = serde_json::from_slice::<serde_json::Value>(bytes) else {
+        return;
+    };
+
+    let Some(map) = obj.as_object_mut() else {
+        return;
+    };
+
+    // Flatten tags: {"tags": {"k": "v"}} → {"tag.k": "v"}
+    if let Some(tags) = map.remove("tags")
+        && let Some(tags_obj) = tags.as_object()
+    {
+        for (key, value) in tags_obj {
+            map.insert(format!("tag.{key}"), value.clone());
+        }
+    }
+
+    // Flatten metadata: {"metadata": {"k": "v"}} → {"metadata.k": "v"}
+    if let Some(metadata) = map.remove("metadata")
+        && let Some(meta_obj) = metadata.as_object()
+    {
+        for (key, value) in meta_obj {
+            map.insert(format!("metadata.{key}"), value.clone());
+        }
+    }
+
+    // Replace the body and update Content-Length
+    #[allow(clippy::expect_used)]
+    let new_bytes = serde_json::to_vec(&obj).expect("re-serialization should not fail");
+    let len = new_bytes.len();
+    *request.body_mut() = Some(reqwest::Body::from(new_bytes));
+    request.headers_mut().insert(
+        reqwest::header::CONTENT_LENGTH,
+        reqwest::header::HeaderValue::from(len),
+    );
+}
+
 /// Authenticated client wrapper
 ///
 /// This wrapper provides access to a CloudAPI client configured with
@@ -285,7 +355,6 @@ pub struct TypedClient {
     inner: Client,
     auth_config: AuthConfig,
     http_client: reqwest::Client,
-    base_url: String,
 }
 
 impl TypedClient {
@@ -300,7 +369,6 @@ impl TypedClient {
             inner: Client::new_with_client(base_url, http_client.clone(), auth_config.clone()),
             auth_config,
             http_client,
-            base_url: base_url.to_string(),
         }
     }
 
@@ -325,7 +393,6 @@ impl TypedClient {
             inner: Client::new_with_client(base_url, http_client.clone(), auth_config.clone()),
             auth_config,
             http_client,
-            base_url: base_url.to_string(),
         })
     }
 
@@ -348,20 +415,19 @@ impl TypedClient {
     }
 
     // ========================================================================
-    // Machine Creation (with legacy format transformation)
+    // Machine Creation (body transformation handled by ClientHooks pre-hook)
     // ========================================================================
 
     /// Create a machine with legacy-compatible format
     ///
-    /// This method accepts the Progenitor-generated `types::CreateMachineRequest` and
-    /// transforms it to the legacy format expected by Node.js CloudAPI.
-    ///
     /// Node.js CloudAPI expects tags as `tag.KEY=VALUE` and metadata as
     /// `metadata.KEY=VALUE` as top-level JSON fields, not nested objects.
+    /// The `ClientHooks::pre` hook on `Client` transparently transforms the
+    /// request body before it is sent.
     ///
     /// # Arguments
     /// * `account` - Account login name
-    /// * `request` - Machine creation request (Progenitor type)
+    /// * `request` - Machine creation request
     ///
     /// # Errors
     /// Returns an error if the request fails or the server returns an error.
@@ -369,85 +435,14 @@ impl TypedClient {
         &self,
         account: &str,
         request: &types::CreateMachineRequest,
-    ) -> Result<types::Machine, CreateMachineError> {
-        // Transform via JSON serialization and legacy flattening
-        let legacy_body = transform_progenitor_request_to_legacy(request);
-
-        // Build the URL and path for signing
-        // Note: base_url might have trailing slash, so trim it
-        let base = self.base_url.trim_end_matches('/');
-        let path = format!("/{}/machines", account);
-
-        // Add RBAC roles as query parameter before signing so the
-        // signature covers the role parameter
-        let path_and_query = if let Some(roles) = &self.auth_config.roles
-            && !roles.is_empty()
-        {
-            let encoded_roles: Vec<String> = roles
-                .iter()
-                .map(|r| urlencoding::encode(r).into_owned())
-                .collect();
-            format!("{}?as-role={}", path, encoded_roles.join(","))
-        } else {
-            path.clone()
-        };
-
-        let url = format!("{}{}", base, path_and_query);
-
-        // Sign the request using triton-auth (path includes role query
-        // param so the signature covers it)
-        let (date_header, auth_header) =
-            triton_auth::sign_request(&self.auth_config, "POST", &path_and_query)
-                .await
-                .map_err(CreateMachineError::Auth)?;
-
-        // Send the request with our transformed body
-        let mut req = self
-            .http_client
-            .post(&url)
-            .header("Date", &date_header)
-            .header("Authorization", &auth_header)
-            .header("Content-Type", "application/json")
-            .header("Accept", "application/json");
-
-        // Add X-Act-As header if present (for operator masquerading)
-        if let Some(act_as) = &self.auth_config.act_as {
-            req = req.header("x-act-as", act_as);
-        }
-
-        // Add Accept-Version header if present (for API versioning)
-        if let Some(version) = &self.auth_config.accept_version {
-            req = req.header("accept-version", version);
-        }
-
-        let response = req
-            .json(&legacy_body)
+    ) -> Result<types::Machine, Error<types::Error>> {
+        self.inner
+            .create_machine()
+            .account(account)
+            .body(request.clone())
             .send()
             .await
-            .map_err(CreateMachineError::Request)?;
-
-        let status = response.status();
-        if status.is_success() {
-            // Get the response text first for debugging
-            let response_text = response
-                .text()
-                .await
-                .map_err(CreateMachineError::ResponseParse)?;
-            // Try to parse as Machine
-            let machine: types::Machine = serde_json::from_str(&response_text).map_err(|e| {
-                CreateMachineError::JsonParse {
-                    error: e.to_string(),
-                    body: response_text.clone(),
-                }
-            })?;
-            Ok(machine)
-        } else {
-            let error_body = response.text().await.unwrap_or_default();
-            Err(CreateMachineError::Server {
-                status,
-                body: error_body,
-            })
-        }
+            .map(|r| r.into_inner())
     }
 
     /// List machines with tag filtering
@@ -999,29 +994,6 @@ impl TypedClient {
 // Error types for custom methods
 // =============================================================================
 
-/// Error type for the create_machine method
-#[derive(Debug, thiserror::Error)]
-pub enum CreateMachineError {
-    /// Authentication/signing error
-    #[error("authentication error: {0}")]
-    Auth(#[from] AuthError),
-    /// HTTP request error
-    #[error("request error: {0}")]
-    Request(reqwest::Error),
-    /// Failed to parse response body
-    #[error("failed to parse response: {0}")]
-    ResponseParse(reqwest::Error),
-    /// Failed to parse response JSON
-    #[error("failed to parse JSON: {error}\nResponse body: {body}")]
-    JsonParse { error: String, body: String },
-    /// Server returned an error response
-    #[error("server error ({status}): {body}")]
-    Server {
-        status: reqwest::StatusCode,
-        body: String,
-    },
-}
-
 /// Error type for the get_machine method
 #[derive(Debug, thiserror::Error)]
 pub enum GetMachineError {
@@ -1056,40 +1028,4 @@ pub enum GetMachineError {
 #[allow(clippy::expect_used)]
 fn to_json_value<T: serde::Serialize>(value: &T) -> serde_json::Value {
     serde_json::to_value(value).expect("request serialization should not fail")
-}
-
-// =============================================================================
-// Legacy format transformation for Node.js CloudAPI compatibility
-// =============================================================================
-
-/// Transform a Progenitor-generated CreateMachineRequest into the legacy format
-///
-/// This handles the Progenitor-generated type which uses serde_json::Map for tags/metadata.
-fn transform_progenitor_request_to_legacy(
-    request: &types::CreateMachineRequest,
-) -> serde_json::Value {
-    // Serialize the request to JSON, then extract and flatten tags/metadata
-    let mut obj = to_json_value(request);
-
-    if let Some(map) = obj.as_object_mut() {
-        // Extract and flatten tags
-        if let Some(tags) = map.remove("tags")
-            && let Some(tags_obj) = tags.as_object()
-        {
-            for (key, value) in tags_obj {
-                map.insert(format!("tag.{key}"), value.clone());
-            }
-        }
-
-        // Extract and flatten metadata
-        if let Some(metadata) = map.remove("metadata")
-            && let Some(meta_obj) = metadata.as_object()
-        {
-            for (key, value) in meta_obj {
-                map.insert(format!("metadata.{key}"), value.clone());
-            }
-        }
-    }
-
-    obj
 }
