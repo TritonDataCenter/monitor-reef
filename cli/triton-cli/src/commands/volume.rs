@@ -18,8 +18,30 @@ use crate::output::{self, json};
 
 #[derive(Args, Clone)]
 pub struct VolumeListArgs {
+    /// Filter by name
+    #[arg(long)]
+    pub name: Option<String>,
+
+    /// Filter by state (creating, ready, failed, deleting)
+    #[arg(long)]
+    pub state: Option<VolumeState>,
+
+    /// Filter by size in MiB
+    #[arg(long)]
+    pub size: Option<u64>,
+
+    /// Filter by type (e.g., tritonnfs)
+    #[arg(long = "type")]
+    pub volume_type: Option<String>,
+
     #[command(flatten)]
     pub table: TableFormatArgs,
+
+    /// Filters in key=value format (e.g., name=mydata, state=ready)
+    ///
+    /// Supported filter keys: name, size, state, type
+    #[arg(trailing_var_arg = true)]
+    pub filters: Vec<String>,
 }
 
 #[derive(Args, Clone)]
@@ -112,7 +134,65 @@ impl VolumeCommand {
     }
 }
 
-async fn list_volumes(args: VolumeListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+/// Valid filter keys for positional key=value arguments
+const VALID_FILTERS: &[&str] = &["name", "size", "state", "type"];
+
+/// Check if a filter key is valid
+fn is_valid_filter(key: &str) -> bool {
+    VALID_FILTERS.contains(&key)
+}
+
+/// Deserialize a serde enum from its wire-format string value.
+fn parse_serde_enum<T: serde::de::DeserializeOwned>(
+    value: &str,
+) -> std::result::Result<T, serde_json::Error> {
+    serde_json::from_value(serde_json::Value::String(value.to_string()))
+}
+
+/// Apply positional key=value filters to the VolumeListArgs, merging with any
+/// existing --flag values. Positional filters override flags if both are set.
+fn apply_positional_filters(args: &mut VolumeListArgs) -> Result<()> {
+    for filter in std::mem::take(&mut args.filters) {
+        let (key, value) = filter
+            .split_once('=')
+            .ok_or_else(|| anyhow::anyhow!("Invalid filter '{}': must be key=value", filter))?;
+
+        if !is_valid_filter(key) {
+            anyhow::bail!(
+                "Unknown filter '{}'. Valid filters: {}",
+                key,
+                VALID_FILTERS.join(", ")
+            );
+        }
+
+        match key {
+            "name" => args.name = Some(value.to_string()),
+            "state" => {
+                args.state = Some(parse_serde_enum(value).map_err(|_| {
+                    anyhow::anyhow!(
+                        "Invalid state value '{}': expected creating, ready, failed, deleting",
+                        value
+                    )
+                })?);
+            }
+            "size" => {
+                args.size = Some(value.parse().map_err(|_| {
+                    anyhow::anyhow!("Invalid size value '{}': expected a number in MiB", value)
+                })?);
+            }
+            "type" => args.volume_type = Some(value.to_string()),
+            _ => unreachable!(),
+        }
+    }
+    Ok(())
+}
+
+async fn list_volumes(
+    mut args: VolumeListArgs,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
+    apply_positional_filters(&mut args)?;
     let account = &client.auth_config().account;
     let response = client
         .inner()
@@ -121,7 +201,35 @@ async fn list_volumes(args: VolumeListArgs, client: &TypedClient, use_json: bool
         .send()
         .await?;
 
-    let volumes = response.into_inner();
+    let all_volumes = response.into_inner();
+
+    // Apply client-side filters
+    let volumes: Vec<_> = all_volumes
+        .into_iter()
+        .filter(|vol| {
+            if let Some(ref name) = args.name
+                && vol.name != *name
+            {
+                return false;
+            }
+            if let Some(state) = args.state
+                && vol.state != state
+            {
+                return false;
+            }
+            if let Some(size) = args.size
+                && vol.size != size
+            {
+                return false;
+            }
+            if let Some(ref vtype) = args.volume_type
+                && vol.type_ != *vtype
+            {
+                return false;
+            }
+            true
+        })
+        .collect();
 
     if use_json {
         json::print_json_stream(&volumes)?;

@@ -23,6 +23,12 @@ pub struct NetworkListArgs {
 
     #[command(flatten)]
     pub table: TableFormatArgs,
+
+    /// Filters in key=value format (e.g., public=true)
+    ///
+    /// Supported filter keys: public
+    #[arg(trailing_var_arg = true)]
+    pub filters: Vec<String>,
 }
 
 /// Parse a boolean filter value ("true" or "false")
@@ -190,7 +196,46 @@ impl NetworkIpCommand {
     }
 }
 
-async fn list_networks(args: NetworkListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+/// Valid filter keys for positional key=value arguments
+const VALID_FILTERS: &[&str] = &["public"];
+
+/// Check if a filter key is valid
+fn is_valid_filter(key: &str) -> bool {
+    VALID_FILTERS.contains(&key)
+}
+
+/// Apply positional key=value filters to the NetworkListArgs, merging with any
+/// existing --flag values. Positional filters override flags if both are set.
+fn apply_positional_filters(args: &mut NetworkListArgs) -> Result<()> {
+    for filter in std::mem::take(&mut args.filters) {
+        let (key, value) = filter
+            .split_once('=')
+            .ok_or_else(|| anyhow::anyhow!("Invalid filter '{}': must be key=value", filter))?;
+
+        if !is_valid_filter(key) {
+            anyhow::bail!(
+                "Unknown filter '{}'. Valid filters: {}",
+                key,
+                VALID_FILTERS.join(", ")
+            );
+        }
+
+        match key {
+            "public" => {
+                args.public = Some(parse_bool_filter(value).map_err(|e| anyhow::anyhow!(e))?);
+            }
+            _ => unreachable!(),
+        }
+    }
+    Ok(())
+}
+
+async fn list_networks(
+    mut args: NetworkListArgs,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
+    apply_positional_filters(&mut args)?;
     let account = &client.auth_config().account;
     let response = client
         .inner()
