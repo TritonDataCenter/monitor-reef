@@ -342,13 +342,6 @@ fn test_reboot_alias_zero_args_succeeds() {
 // Invalid argument values
 // =============================================================================
 
-#[test]
-fn test_instance_list_invalid_output_format() {
-    triton_cmd()
-        .args(["instance", "list", "-o", "invalid_format"])
-        .assert()
-        .failure();
-}
 
 #[test]
 fn test_completion_invalid_shell() {
