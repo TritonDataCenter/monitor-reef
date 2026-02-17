@@ -140,6 +140,17 @@ pub enum InstanceCommand {
 }
 
 impl InstanceCommand {
+    /// Returns true if this is a variadic command with no arguments (a no-op).
+    pub fn is_empty_variadic(&self) -> bool {
+        match self {
+            Self::Delete(args) => args.instances.is_empty(),
+            Self::Start(args) => args.instances.is_empty(),
+            Self::Stop(args) => args.instances.is_empty(),
+            Self::Reboot(args) => args.instances.is_empty(),
+            _ => false,
+        }
+    }
+
     pub async fn run(
         self,
         client: &TypedClient,

@@ -62,6 +62,14 @@ pub struct KeyDeleteArgs {
 }
 
 impl KeyCommand {
+    /// Returns true if this is a variadic command with no arguments (a no-op).
+    pub fn is_empty_variadic(&self) -> bool {
+        match self {
+            Self::Delete(args) => args.keys.is_empty(),
+            _ => false,
+        }
+    }
+
     pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
             Self::List(args) => list_keys(args, client, use_json).await,

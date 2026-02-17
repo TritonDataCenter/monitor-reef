@@ -360,6 +360,7 @@ async fn main() -> Result<()> {
         Commands::Env { profile, shell } => {
             commands::env::generate_env(profile.as_deref(), shell).await
         }
+        Commands::Instance { command } if command.is_empty_variadic() => Ok(()),
         Commands::Instance { command } => {
             let (client, profile) = cli.build_client().await?;
             let cache = cache::ImageCache::new(&profile).await;
@@ -370,6 +371,7 @@ async fn main() -> Result<()> {
             let cache = cache::ImageCache::new(&profile).await;
             command.clone().run(&client, cli.json, cache.as_ref()).await
         }
+        Commands::Key { command } if command.is_empty_variadic() => Ok(()),
         Commands::Key { command } => {
             let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
@@ -382,6 +384,7 @@ async fn main() -> Result<()> {
             let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
+        Commands::Fwrule { command } if command.is_empty_variadic() => Ok(()),
         Commands::Fwrule { command } => {
             let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
@@ -390,6 +393,7 @@ async fn main() -> Result<()> {
             let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
+        Commands::Volume { command } if command.is_empty_variadic() => Ok(()),
         Commands::Volume { command } => {
             let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
@@ -437,18 +441,22 @@ async fn main() -> Result<()> {
             let cache = cache::ImageCache::new(&profile).await;
             commands::instance::ssh::run(args.clone(), &client, cache.as_ref()).await
         }
+        Commands::Start(args) if args.instances.is_empty() => Ok(()),
         Commands::Start(args) => {
             let (client, _profile) = cli.build_client().await?;
             commands::instance::lifecycle::start(args.clone(), &client).await
         }
+        Commands::Stop(args) if args.instances.is_empty() => Ok(()),
         Commands::Stop(args) => {
             let (client, _profile) = cli.build_client().await?;
             commands::instance::lifecycle::stop(args.clone(), &client).await
         }
+        Commands::Reboot(args) if args.instances.is_empty() => Ok(()),
         Commands::Reboot(args) => {
             let (client, _profile) = cli.build_client().await?;
             commands::instance::lifecycle::reboot(args.clone(), &client).await
         }
+        Commands::Delete(args) if args.instances.is_empty() => Ok(()),
         Commands::Delete(args) => {
             let (client, _profile) = cli.build_client().await?;
             commands::instance::delete::run(args.clone(), &client).await
