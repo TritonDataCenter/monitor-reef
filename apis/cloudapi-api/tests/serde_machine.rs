@@ -204,3 +204,98 @@ fn test_real_cloudapi_response() {
     assert!(machine.tags.contains_key("github_url"));
     assert!(machine.tags.contains_key("triton_deploy_app_id"));
 }
+
+/// Round-trip test: serialize then deserialize a Machine and verify all fields survive.
+///
+/// This is critical because Machine has mixed naming conventions: camelCase for most
+/// fields, explicit snake_case renames for 6 fields, and `type` -> `machine_type`.
+/// A round-trip failure would indicate a serde configuration bug.
+#[test]
+fn test_machine_round_trip() {
+    let original: Machine = common::deserialize_fixture("machine", "instance_get.json");
+    let serialized = serde_json::to_string(&original).unwrap();
+    let deserialized: Machine = serde_json::from_str(&serialized).unwrap();
+
+    // Core fields
+    assert_eq!(original.id, deserialized.id);
+    assert_eq!(original.name, deserialized.name);
+    assert_eq!(original.machine_type, deserialized.machine_type);
+    assert_eq!(original.state, deserialized.state);
+    assert_eq!(original.image, deserialized.image);
+    assert_eq!(original.package, deserialized.package);
+    assert_eq!(original.memory, deserialized.memory);
+    assert_eq!(original.disk, deserialized.disk);
+    assert_eq!(original.ips, deserialized.ips);
+
+    // Snake_case renamed fields (the most fragile)
+    assert_eq!(original.firewall_enabled, deserialized.firewall_enabled);
+    assert_eq!(
+        original.deletion_protection,
+        deserialized.deletion_protection
+    );
+    assert_eq!(original.compute_node, deserialized.compute_node);
+    assert_eq!(original.dns_names, deserialized.dns_names);
+    assert_eq!(original.free_space, deserialized.free_space);
+    assert_eq!(original.delegate_dataset, deserialized.delegate_dataset);
+
+    // Other optional fields
+    assert_eq!(original.primary_ip, deserialized.primary_ip);
+    assert_eq!(original.networks, deserialized.networks);
+    assert_eq!(original.docker, deserialized.docker);
+    assert_eq!(original.encrypted, deserialized.encrypted);
+    assert_eq!(original.flexible, deserialized.flexible);
+
+    // NICs round-trip
+    assert_eq!(original.nics.len(), deserialized.nics.len());
+    for (orig_nic, deser_nic) in original.nics.iter().zip(deserialized.nics.iter()) {
+        assert_eq!(orig_nic.mac, deser_nic.mac);
+        assert_eq!(orig_nic.ip, deser_nic.ip);
+        assert_eq!(orig_nic.primary, deser_nic.primary);
+        assert_eq!(orig_nic.netmask, deser_nic.netmask);
+        assert_eq!(orig_nic.gateway, deser_nic.gateway);
+        assert_eq!(orig_nic.network, deser_nic.network);
+    }
+}
+
+/// Verify that serialized Machine JSON uses the correct key names.
+///
+/// This catches bugs where the Rust field name leaks into the JSON instead of the
+/// serde-renamed wire format key.
+#[test]
+fn test_machine_serialized_keys() {
+    let machine: Machine = common::deserialize_fixture("machine", "instance_get.json");
+    let serialized = serde_json::to_string(&machine).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&serialized).unwrap();
+    let obj = json.as_object().unwrap();
+
+    // `type` not `machine_type`
+    assert!(obj.contains_key("type"), "should serialize as 'type'");
+    assert!(
+        !obj.contains_key("machine_type"),
+        "should not use Rust field name"
+    );
+
+    // Snake_case fields should keep their explicit rename
+    assert!(
+        obj.contains_key("firewall_enabled"),
+        "should serialize as 'firewall_enabled'"
+    );
+    assert!(
+        obj.contains_key("deletion_protection"),
+        "should serialize as 'deletion_protection'"
+    );
+    assert!(
+        obj.contains_key("compute_node"),
+        "should serialize as 'compute_node'"
+    );
+    assert!(
+        obj.contains_key("dns_names"),
+        "should serialize as 'dns_names'"
+    );
+
+    // camelCase fields should be camelCase
+    assert!(
+        obj.contains_key("primaryIp"),
+        "should serialize as 'primaryIp'"
+    );
+}
