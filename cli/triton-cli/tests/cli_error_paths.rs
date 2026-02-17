@@ -342,7 +342,6 @@ fn test_reboot_alias_zero_args_succeeds() {
 // Invalid argument values
 // =============================================================================
 
-
 #[test]
 fn test_completion_invalid_shell() {
     triton_cmd()
