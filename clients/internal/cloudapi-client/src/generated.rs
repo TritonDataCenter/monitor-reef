@@ -2011,7 +2011,7 @@ pub mod types {
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"size\": {"]
-    #[doc = "      \"description\": \"Size in MB\","]
+    #[doc = "      \"description\": \"Size in MiB\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"uint64\","]
     #[doc = "      \"minimum\": 0.0"]
@@ -2045,7 +2045,7 @@ pub mod types {
         #[doc = "Networks (array of UUIDs)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub networks: ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
-        #[doc = "Size in MB"]
+        #[doc = "Size in MiB"]
         pub size: u64,
         #[doc = "Tags"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -7517,7 +7517,7 @@ pub mod types {
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"size\": {"]
-    #[doc = "      \"description\": \"Size in MB\","]
+    #[doc = "      \"description\": \"Size in MiB\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"uint64\","]
     #[doc = "      \"minimum\": 0.0"]
@@ -7570,7 +7570,7 @@ pub mod types {
         #[doc = "References (machines using this volume)"]
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
         pub refs: ::std::vec::Vec<::uuid::Uuid>,
-        #[doc = "Size in MB"]
+        #[doc = "Size in MiB"]
         pub size: u64,
         #[doc = "State"]
         pub state: VolumeState,
@@ -7741,7 +7741,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"size\": {"]
-    #[doc = "      \"description\": \"Size in GB\","]
+    #[doc = "      \"description\": \"Size in MiB\","]
     #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"uint64\","]
     #[doc = "      \"minimum\": 0.0"]
@@ -7754,7 +7754,7 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct VolumeSize {
-        #[doc = "Size in GB"]
+        #[doc = "Size in MiB"]
         pub size: u64,
     }
 

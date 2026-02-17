@@ -28,8 +28,8 @@ pub fn triton_cmd() -> Command {
     Command::cargo_bin("triton").expect("Failed to find triton binary")
 }
 
-/// Run triton with the given arguments and return (stdout, stderr)
-pub fn run_triton<I, S>(args: I) -> (String, String)
+/// Run triton with the given arguments and return (stdout, stderr, success)
+pub fn run_triton<I, S>(args: I) -> (String, String, bool)
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,
@@ -41,8 +41,9 @@ where
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let success = output.status.success();
 
-    (stdout, stderr)
+    (stdout, stderr, success)
 }
 
 /// Run triton with environment variables for profile configuration
