@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! HTML rendering for bugview
 //!
@@ -189,7 +189,8 @@ impl HtmlRenderer {
             .map(adf_to_html)
             .unwrap_or_default();
 
-        // Extract and render comments
+        // Extract and render comments, filtering out restricted comments
+        // (defense in depth: JSON path also filters via strip_restricted_comments)
         let comments: Vec<CommentView> = issue
             .fields
             .get("comment")
@@ -198,6 +199,7 @@ impl HtmlRenderer {
             .map(|comments| {
                 comments
                     .iter()
+                    .filter(|comment| !crate::search::comment_has_visibility(comment))
                     .map(|comment| {
                         let author = comment
                             .get("author")

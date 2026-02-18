@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Issue search and conversion helpers.
 //!
@@ -169,6 +169,51 @@ pub fn convert_to_list_item(issue: jira_api::Issue) -> IssueListItem {
         resolution,
         updated,
         created,
+    }
+}
+
+/// Check if a JIRA comment has a visibility restriction set.
+///
+/// JIRA populates the `visibility` field when a comment is restricted via the
+/// "Restrict to" role/group dropdown. Any truthy (present and non-null) value
+/// means the comment is restricted and should not be shown publicly.
+///
+/// This matches the original Node.js bugview behavior: `if (com.visibility) { continue; }`
+pub fn comment_has_visibility(comment: &serde_json::Value) -> bool {
+    comment.get("visibility").is_some_and(|v| !v.is_null())
+}
+
+/// Strip restricted comments from JIRA issue fields.
+///
+/// # Security
+///
+/// JIRA comments with a `visibility` field set are restricted to specific
+/// roles or groups. This function removes them before any public rendering
+/// or serialization to prevent leaking restricted content.
+///
+/// Operates on the raw `fields` HashMap so it applies uniformly regardless
+/// of output format (JSON or HTML).
+pub fn strip_restricted_comments(
+    fields: &mut std::collections::HashMap<String, serde_json::Value>,
+) {
+    if let Some(comment_obj) = fields.get_mut("comment")
+        && let Some(comments_array) = comment_obj.get_mut("comments")
+        && let Some(arr) = comments_array.as_array_mut()
+    {
+        arr.retain(|comment| {
+            let restricted = comment_has_visibility(comment);
+            if restricted {
+                let id = comment
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+                tracing::debug!(
+                    comment_id = %id,
+                    "Stripping restricted comment with visibility set"
+                );
+            }
+            !restricted
+        });
     }
 }
 
