@@ -30,7 +30,7 @@ curl http://127.0.0.1:8080/bugview/index.json | jq
 ## Project Structure
 
 ```
-triton-rust-monorepo/
+monitor-reef/
 ├── Makefile                        # Developer commands (make help)
 ├── AGENTS.md                       # Comprehensive migration guide
 ├── apis/                           # API trait definitions (fast to compile)

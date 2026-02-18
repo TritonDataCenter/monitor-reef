@@ -28,7 +28,7 @@ fn version_string() -> &'static str {
     concat!(
         "Triton CLI ",
         env!("CARGO_PKG_VERSION"),
-        "\nhttps://github.com/TritonDataCenter/triton-rust-monorepo"
+        "\nhttps://github.com/TritonDataCenter/monitor-reef"
     )
 }
 

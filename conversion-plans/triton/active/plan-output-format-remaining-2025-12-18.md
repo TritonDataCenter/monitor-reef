@@ -69,7 +69,7 @@ https://github.com/TritonDataCenter/node-triton
 2. Output format:
    ```
    Triton CLI <version>
-   https://github.com/TritonDataCenter/triton-rust-monorepo
+   https://github.com/TritonDataCenter/monitor-reef
    ```
 
 ---

@@ -29,7 +29,7 @@ fn test_triton_version() {
         .success()
         .stdout(predicate::str::is_match(r"Triton CLI \d+\.\d+\.\d+").unwrap())
         .stdout(predicate::str::contains(
-            "https://github.com/TritonDataCenter/triton-rust-monorepo",
+            "https://github.com/TritonDataCenter/monitor-reef",
         ));
 }
 
