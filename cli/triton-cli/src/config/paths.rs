@@ -108,7 +108,7 @@ pub fn validate_profile_name(name: &str) -> Result<()> {
 
     for ch in name.chars() {
         match ch {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' => {}
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '@' => {}
             '/' | '\\' | '\0' => {
                 bail!(
                     "Profile name contains forbidden character {:?}: '{}'",
@@ -119,7 +119,7 @@ pub fn validate_profile_name(name: &str) -> Result<()> {
             _ => {
                 bail!(
                     "Profile name contains invalid character {:?}: '{}'. \
-                     Only alphanumeric, hyphens, underscores, and dots are allowed.",
+                     Only alphanumeric, hyphens, underscores, dots, and @ are allowed.",
                     ch,
                     name
                 );
@@ -208,5 +208,10 @@ mod tests {
         assert!(profile_path("test_profile").is_ok());
         assert!(profile_path("profile.v2").is_ok());
         assert!(profile_path("MyProfile123").is_ok());
+    }
+
+    #[test]
+    fn test_cache_dir_allows_at_in_slug() {
+        assert!(cache_dir("myaccount@us-central-1.api.example.com").is_ok());
     }
 }
