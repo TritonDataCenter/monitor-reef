@@ -283,6 +283,109 @@ enum Commands {
     Cloudapi(commands::cloudapi::CloudApiArgs),
 }
 
+/// Extra certificate locations to probe on platforms where `openssl-probe`
+/// doesn't find the system CA store (e.g., SmartOS/illumos with pkgsrc).
+const EXTRA_CERT_FILES: &[&str] = &[
+    "/opt/local/etc/openssl/certs/ca-certificates.crt",
+    "/etc/ssl/certs/ca-certificates.crt",
+];
+const EXTRA_CERT_DIRS: &[&str] = &["/opt/local/etc/openssl/certs", "/etc/ssl/certs"];
+
+/// Build a root certificate store with a three-tier fallback:
+///
+/// 1. Native system certs (via `rustls-native-certs` / `openssl-probe`)
+/// 2. Extra platform-specific paths (SmartOS pkgsrc, etc.)
+/// 3. Bundled Mozilla roots (via `webpki-roots`) as a last resort
+///
+/// This handles platforms like SmartOS/illumos where `openssl-probe` doesn't
+/// check the paths where certificates are actually installed.
+fn build_root_cert_store() -> rustls::RootCertStore {
+    let mut root_store = rustls::RootCertStore::empty();
+
+    // 1. Try native certs (respects SSL_CERT_FILE / SSL_CERT_DIR)
+    for cert in rustls_native_certs::load_native_certs().certs {
+        let _ = root_store.add(cert);
+    }
+    if !root_store.is_empty() {
+        return root_store;
+    }
+
+    // 2. Probe extra platform-specific paths
+    load_extra_cert_paths(&mut root_store);
+    if !root_store.is_empty() {
+        return root_store;
+    }
+
+    // 3. Fall back to bundled Mozilla roots
+    eprintln!(
+        "\
+warning: no native root certificates found; using bundled Mozilla roots
+
+  If you need to trust additional CAs (e.g., a self-signed certificate),
+  point the TLS library at your certificate store:
+
+    export SSL_CERT_FILE=/path/to/ca-bundle.pem
+    export SSL_CERT_DIR=/path/to/certs/directory"
+    );
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+
+    root_store
+}
+
+/// Try loading PEM certificates from extra platform-specific paths into the
+/// root store. Stops as soon as any certificates are loaded.
+fn load_extra_cert_paths(root_store: &mut rustls::RootCertStore) {
+    // Try bundle files first (single file containing many PEM certs)
+    for path in EXTRA_CERT_FILES {
+        if let Ok(file) = std::fs::File::open(path) {
+            let mut reader = std::io::BufReader::new(file);
+            for cert in rustls_pemfile::certs(&mut reader).flatten() {
+                let _ = root_store.add(cert);
+            }
+            if !root_store.is_empty() {
+                return;
+            }
+        }
+    }
+
+    // Try cert directories (individual PEM files, including OpenSSL hash symlinks)
+    for dir_path in EXTRA_CERT_DIRS {
+        let Ok(entries) = std::fs::read_dir(dir_path) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() {
+                continue;
+            }
+            if let Ok(file) = std::fs::File::open(&path) {
+                let mut reader = std::io::BufReader::new(file);
+                for cert in rustls_pemfile::certs(&mut reader).flatten() {
+                    let _ = root_store.add(cert);
+                }
+            }
+        }
+        if !root_store.is_empty() {
+            return;
+        }
+    }
+}
+
+/// Build a reqwest HTTP client with CA cert fallback for platforms where
+/// the default certificate store isn't found (e.g., SmartOS/illumos).
+fn build_http_client(insecure: bool) -> Result<reqwest::Client> {
+    let root_store = build_root_cert_store();
+    let tls_config = rustls::ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+
+    reqwest::Client::builder()
+        .danger_accept_invalid_certs(insecure)
+        .use_preconfigured_tls(tls_config)
+        .build()
+        .map_err(|e| anyhow::anyhow!("failed to build HTTP client: {e}"))
+}
+
 impl Cli {
     /// Build an authenticated TypedClient from CLI options or profile
     ///
@@ -334,8 +437,9 @@ impl Cli {
         // Insecure mode: CLI flag or profile setting
         let insecure = self.insecure || profile.insecure;
 
+        let http_client = build_http_client(insecure)?;
         Ok((
-            TypedClient::new_with_insecure(&final_url, auth_config, insecure)?,
+            TypedClient::new_with_http_client(&final_url, auth_config, http_client),
             profile,
         ))
     }

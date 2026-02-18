@@ -40,6 +40,12 @@ getrandom = "0.3"
 chrono = { workspace = true }
 reqwest = { workspace = true }
 
+# TLS certificate fallback for platforms where native cert probing fails (e.g., illumos)
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }
+rustls-native-certs = "0.8"
+rustls-pemfile = "2"
+webpki-roots = "1"
+
 # VNC proxy dependencies
 tokio-tungstenite = { workspace = true }
 futures-util = "0.3"

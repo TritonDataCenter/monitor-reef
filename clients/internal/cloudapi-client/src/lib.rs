@@ -396,6 +396,27 @@ impl TypedClient {
         })
     }
 
+    /// Create a new typed client with a pre-built HTTP client
+    ///
+    /// This allows the caller to control how the `reqwest::Client` is built,
+    /// including custom TLS configuration or certificate loading.
+    ///
+    /// # Arguments
+    /// * `base_url` - CloudAPI base URL (e.g., "https://cloudapi.example.com")
+    /// * `auth_config` - Authentication configuration
+    /// * `http_client` - Pre-built reqwest HTTP client
+    pub fn new_with_http_client(
+        base_url: &str,
+        auth_config: AuthConfig,
+        http_client: reqwest::Client,
+    ) -> Self {
+        Self {
+            inner: Client::new_with_client(base_url, http_client.clone(), auth_config.clone()),
+            auth_config,
+            http_client,
+        }
+    }
+
     /// Access the underlying Progenitor client for non-wrapped methods
     pub fn inner(&self) -> &Client {
         &self.inner
