@@ -21,7 +21,10 @@ use dropshot::{
 use html::HtmlRenderer;
 use http::Response;
 use jira_client::{JiraClient, JiraClientTrait};
-use search::{fetch_issues_for_html, filter_remote_links, issue_has_public_label, search_issues};
+use search::{
+    fetch_issues_for_html, filter_remote_links, issue_has_public_label, search_issues,
+    strip_restricted_comments,
+};
 use std::sync::Arc;
 use token_cache::TokenCache;
 use tracing::info;
@@ -244,7 +247,12 @@ impl BugviewApi for BugviewServiceImpl {
             })
             .collect();
 
-        let fields = serde_json::to_value(issue.fields).map_err(|e| {
+        // Strip restricted comments before serializing to prevent leaking
+        // comments with visibility restrictions (role/group-restricted)
+        let mut fields_map = issue.fields;
+        strip_restricted_comments(&mut fields_map);
+
+        let fields = serde_json::to_value(fields_map).map_err(|e| {
             tracing::error!(
                 issue_key = %issue.key,
                 error = %e,
@@ -1246,6 +1254,122 @@ mod tests {
             StatusCode::NOT_FOUND,
             "Full JSON endpoint should return 404 when JIRA says issue not found"
         );
+    }
+
+    #[test]
+    fn test_strip_restricted_comments_removes_visibility() {
+        use crate::search::strip_restricted_comments;
+
+        let mut fields: std::collections::HashMap<String, serde_json::Value> =
+            serde_json::from_value(serde_json::json!({
+                "comment": {
+                    "comments": [
+                        {
+                            "id": "100",
+                            "body": "public comment",
+                            "created": "2024-01-01T00:00:00.000+0000"
+                        },
+                        {
+                            "id": "200",
+                            "body": "restricted comment",
+                            "created": "2024-01-02T00:00:00.000+0000",
+                            "visibility": {
+                                "type": "role",
+                                "value": "Developers",
+                                "identifier": "Developers"
+                            }
+                        },
+                        {
+                            "id": "300",
+                            "body": "another public comment",
+                            "created": "2024-01-03T00:00:00.000+0000"
+                        }
+                    ]
+                }
+            }))
+            .unwrap();
+
+        strip_restricted_comments(&mut fields);
+
+        let comments = fields["comment"]["comments"].as_array().unwrap();
+        assert_eq!(comments.len(), 2, "restricted comment should be removed");
+        assert_eq!(comments[0]["id"].as_str(), Some("100"));
+        assert_eq!(comments[1]["id"].as_str(), Some("300"));
+    }
+
+    #[test]
+    fn test_strip_restricted_comments_keeps_public() {
+        use crate::search::strip_restricted_comments;
+
+        let mut fields: std::collections::HashMap<String, serde_json::Value> =
+            serde_json::from_value(serde_json::json!({
+                "comment": {
+                    "comments": [
+                        {"id": "100", "body": "public 1"},
+                        {"id": "200", "body": "public 2"}
+                    ]
+                }
+            }))
+            .unwrap();
+
+        strip_restricted_comments(&mut fields);
+
+        let comments = fields["comment"]["comments"].as_array().unwrap();
+        assert_eq!(comments.len(), 2, "all public comments should remain");
+    }
+
+    #[test]
+    fn test_strip_restricted_comments_handles_null_visibility() {
+        use crate::search::strip_restricted_comments;
+
+        let mut fields: std::collections::HashMap<String, serde_json::Value> =
+            serde_json::from_value(serde_json::json!({
+                "comment": {
+                    "comments": [
+                        {"id": "100", "body": "has null visibility", "visibility": null},
+                        {"id": "200", "body": "no visibility field"}
+                    ]
+                }
+            }))
+            .unwrap();
+
+        strip_restricted_comments(&mut fields);
+
+        let comments = fields["comment"]["comments"].as_array().unwrap();
+        assert_eq!(
+            comments.len(),
+            2,
+            "null visibility should be treated as public"
+        );
+    }
+
+    #[test]
+    fn test_strip_restricted_comments_handles_no_comments() {
+        use crate::search::strip_restricted_comments;
+
+        // No comment field at all
+        let mut fields: std::collections::HashMap<String, serde_json::Value> =
+            serde_json::from_value(serde_json::json!({
+                "summary": "Test issue"
+            }))
+            .unwrap();
+
+        strip_restricted_comments(&mut fields);
+        // Should not panic
+        assert!(!fields.contains_key("comment"));
+
+        // Empty comments array
+        let mut fields2: std::collections::HashMap<String, serde_json::Value> =
+            serde_json::from_value(serde_json::json!({
+                "comment": {
+                    "comments": []
+                }
+            }))
+            .unwrap();
+
+        strip_restricted_comments(&mut fields2);
+        let comments = fields2["comment"]["comments"].as_array().unwrap();
+        assert_eq!(comments.len(), 0);
     }
 
     #[tokio::test]

@@ -611,6 +611,49 @@ async fn test_bugview_service_e2e() {
         "fulljson should have summary field"
     );
 
+    // Test 4b: Verify restricted comments are filtered from fulljson
+    let fulljson_comments = fulljson["fields"]["comment"]["comments"]
+        .as_array()
+        .expect("fulljson should have comments array");
+
+    // The restricted comment (id 999999) should NOT appear
+    assert!(
+        !fulljson_comments
+            .iter()
+            .any(|c| c.get("visibility").is_some_and(|v| !v.is_null())),
+        "fulljson should NOT contain any comments with visibility set"
+    );
+    assert!(
+        !fulljson_comments.iter().any(|c| {
+            c.get("id")
+                .and_then(|v| v.as_str())
+                .is_some_and(|id| id == "999999")
+        }),
+        "fulljson should NOT contain the restricted comment (id 999999)"
+    );
+
+    // Public comments should still be present
+    assert!(
+        fulljson_comments.iter().any(|c| {
+            c.get("id")
+                .and_then(|v| v.as_str())
+                .is_some_and(|id| id == "134217")
+        }),
+        "fulljson should still contain public comment 134217"
+    );
+
+    // Test 4c: Verify restricted comment text does NOT appear in HTML
+    assert!(
+        !public_html.contains("RESTRICTED: This comment should never appear"),
+        "HTML should NOT contain restricted comment text"
+    );
+
+    // Public comments should still be rendered in HTML
+    assert!(
+        public_html.contains("Nahum Shalman") || public_html.contains("Dan McDonald"),
+        "HTML should still contain public comment authors"
+    );
+
     // Test 5: GET /bugview/fulljson/FAKE-PRIVATE-1 - should return 404
     let private_json_url = format!("{}/bugview/fulljson/FAKE-PRIVATE-1", bugview_base_url);
     let private_json_resp = client

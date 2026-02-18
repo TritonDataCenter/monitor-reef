@@ -954,12 +954,69 @@
             "timeZone": "America/Detroit"
           },
           "updated": "2025-11-21T11:34:06.049-0500"
+        },
+        {
+          "author": {
+            "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+            "accountType": "atlassian",
+            "active": true,
+            "avatarUrls": {
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32",
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48"
+            },
+            "displayName": "Nahum Shalman",
+            "emailAddress": "nahum.shalman@mnx.io",
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+            "timeZone": "America/Detroit"
+          },
+          "body": {
+            "content": [
+              {
+                "content": [
+                  {
+                    "text": "RESTRICTED: This comment should never appear in public bugview output.",
+                    "type": "text"
+                  }
+                ],
+                "type": "paragraph"
+              }
+            ],
+            "type": "doc",
+            "version": 1
+          },
+          "created": "2025-11-22T09:00:00.000-0500",
+          "id": "999999",
+          "jsdPublic": true,
+          "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment/999999",
+          "updateAuthor": {
+            "accountId": "712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+            "accountType": "atlassian",
+            "active": true,
+            "avatarUrls": {
+              "16x16": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/16",
+              "24x24": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/24",
+              "32x32": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/32",
+              "48x48": "https://avatar-management--avatars.us-west-2.prod.public.atl-paas.net/712020:0ead04dd-ba05-4023-a084-4c5de9a2f5c4/613d8989-8c2c-4ab3-a9f0-5b089ee3878d/48"
+            },
+            "displayName": "Nahum Shalman",
+            "emailAddress": "nahum.shalman@mnx.io",
+            "self": "https://mnx.atlassian.net/rest/api/3/user?accountId=712020%3A0ead04dd-ba05-4023-a084-4c5de9a2f5c4",
+            "timeZone": "America/Detroit"
+          },
+          "updated": "2025-11-22T09:00:00.000-0500",
+          "visibility": {
+            "type": "role",
+            "value": "Developers",
+            "identifier": "Developers"
+          }
         }
       ],
-      "maxResults": 6,
+      "maxResults": 7,
       "self": "https://mnx.atlassian.net/rest/api/3/issue/57781/comment",
       "startAt": 0,
-      "total": 6
+      "total": 7
     },
     "components": [],
     "created": "2025-10-31T10:30:15.019-0400",
