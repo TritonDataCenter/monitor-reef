@@ -153,14 +153,48 @@ ISOLATED_HOME="$(mktemp -d "${TMPDIR:-/tmp}/triton-compare-home.XXXXXX")"
 ISOLATED_CONFIG="$ISOLATED_HOME/.triton"
 mkdir -p "$ISOLATED_CONFIG/profiles.d"
 
-# Write a deterministic test profile
-cat > "$ISOLATED_CONFIG/profiles.d/test-compare.json" <<'PROFILE_EOF'
+# Generate SSH keys in various formats to exercise key discovery
+# Each profile gets a key whose fingerprint matches its keyId
+ISOLATED_SSH="$ISOLATED_HOME/.ssh"
+mkdir -p "$ISOLATED_SSH"
+chmod 700 "$ISOLATED_SSH"
+
+# Key 1: ed25519 in OpenSSH format (the easy case)
+ssh-keygen -t ed25519 -f "$ISOLATED_SSH/id_ed25519" -N "" -q
+KEY1_FP=$(ssh-keygen -lf "$ISOLATED_SSH/id_ed25519" -E md5 | awk '{print $2}' | sed 's/^MD5://')
+
+# Key 2: RSA in PKCS#1 PEM format (the problematic format from differences.md #1)
+ssh-keygen -t rsa -b 2048 -f "$ISOLATED_SSH/id_rsa" -N "" -m PEM -q
+KEY2_FP=$(ssh-keygen -lf "$ISOLATED_SSH/id_rsa" -E md5 | awk '{print $2}' | sed 's/^MD5://')
+
+# Key 3: ECDSA in OpenSSH format
+ssh-keygen -t ecdsa -b 256 -f "$ISOLATED_SSH/id_ecdsa" -N "" -q
+KEY3_FP=$(ssh-keygen -lf "$ISOLATED_SSH/id_ecdsa" -E md5 | awk '{print $2}' | sed 's/^MD5://')
+
+# Write profiles with keyIds matching the generated keys
+cat > "$ISOLATED_CONFIG/profiles.d/test-compare.json" <<EOF
 {
     "url": "https://cloudapi.us-test-1.example.com",
     "account": "testuser@example.com",
-    "keyId": "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
+    "keyId": "$KEY1_FP"
 }
-PROFILE_EOF
+EOF
+
+cat > "$ISOLATED_CONFIG/profiles.d/staging.json" <<EOF
+{
+    "url": "https://cloudapi.staging.example.com",
+    "account": "deploy@example.com",
+    "keyId": "$KEY2_FP"
+}
+EOF
+
+cat > "$ISOLATED_CONFIG/profiles.d/us-west-1.json" <<EOF
+{
+    "url": "https://cloudapi.us-west-1.example.com",
+    "account": "admin@example.com",
+    "keyId": "$KEY3_FP"
+}
+EOF
 
 # Set test-compare as the current profile
 echo '"test-compare"' > "$ISOLATED_CONFIG/profile"
