@@ -413,5 +413,8 @@ async fn resolve_rule(id_or_short: &str, client: &TypedClient) -> Result<uuid::U
         }
     }
 
-    Err(anyhow::anyhow!("Firewall rule not found: {}", id_or_short))
+    Err(
+        crate::errors::ResourceNotFoundError(format!("Firewall rule not found: {}", id_or_short))
+            .into(),
+    )
 }

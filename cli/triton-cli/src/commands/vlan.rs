@@ -221,7 +221,7 @@ async fn resolve_vlan(id_or_name: &str, client: &TypedClient) -> Result<u16> {
         }
     }
 
-    Err(anyhow::anyhow!("VLAN not found: {}", id_or_name))
+    Err(crate::errors::ResourceNotFoundError(format!("VLAN not found: {}", id_or_name)).into())
 }
 
 async fn create_vlan(args: VlanCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {

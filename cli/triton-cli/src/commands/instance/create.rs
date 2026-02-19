@@ -671,7 +671,7 @@ async fn resolve_package(id_or_name: &str, client: &TypedClient) -> Result<Strin
         }
     }
 
-    Err(anyhow::anyhow!("Package not found: {}", id_or_name))
+    Err(crate::errors::ResourceNotFoundError(format!("Package not found: {}", id_or_name)).into())
 }
 
 #[cfg(test)]

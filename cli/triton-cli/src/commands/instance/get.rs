@@ -111,5 +111,5 @@ pub async fn resolve_instance(id_or_name: &str, client: &TypedClient) -> Result<
         return Ok(m.id);
     }
 
-    Err(anyhow::anyhow!("Instance not found: {}", id_or_name))
+    Err(crate::errors::ResourceNotFoundError(format!("Instance not found: {}", id_or_name)).into())
 }

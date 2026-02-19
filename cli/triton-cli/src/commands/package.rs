@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Package management commands
 
@@ -299,5 +299,5 @@ pub async fn resolve_package(id_or_name: &str, client: &TypedClient) -> Result<S
         }
     }
 
-    Err(anyhow::anyhow!("Package not found: {}", id_or_name))
+    Err(crate::errors::ResourceNotFoundError(format!("Package not found: {}", id_or_name)).into())
 }

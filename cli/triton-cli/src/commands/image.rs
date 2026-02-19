@@ -1159,17 +1159,18 @@ fn resolve_from_list(images: &[Image], name: &str) -> Result<uuid::Uuid> {
     if short_id_matches.len() == 1 {
         return Ok(short_id_matches[0].id);
     } else if short_id_matches.len() > 1 {
-        return Err(anyhow::anyhow!(
+        return Err(crate::errors::ResourceNotFoundError(format!(
             "no image with name \"{}\" was found and \"{}\" is an ambiguous short id",
-            name,
-            name
-        ));
+            name, name
+        ))
+        .into());
     }
 
-    Err(anyhow::anyhow!(
+    Err(crate::errors::ResourceNotFoundError(format!(
         "no image with name or short id \"{}\" was found",
         name
     ))
+    .into())
 }
 
 async fn wait_for_image_states(
@@ -1358,7 +1359,11 @@ async fn get_image_tag(
         };
         println!("{}", value_str);
     } else {
-        return Err(anyhow::anyhow!("Tag '{}' not found on image", args.key));
+        return Err(crate::errors::ResourceNotFoundError(format!(
+            "Tag '{}' not found on image",
+            args.key
+        ))
+        .into());
     }
 
     Ok(())
@@ -1452,7 +1457,11 @@ async fn delete_image_tag(
     let mut tags: HashMap<String, Value> = image.tags.unwrap_or_default().into_iter().collect();
 
     if tags.remove(&args.key).is_none() {
-        return Err(anyhow::anyhow!("Tag '{}' not found on image", args.key));
+        return Err(crate::errors::ResourceNotFoundError(format!(
+            "Tag '{}' not found on image",
+            args.key
+        ))
+        .into());
     }
 
     // Update image with removed tag

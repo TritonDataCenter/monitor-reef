@@ -14,6 +14,7 @@ use cloudapi_client::TypedClient;
 mod cache;
 mod commands;
 mod config;
+mod errors;
 mod output;
 
 use commands::{
@@ -463,8 +464,14 @@ async fn main() {
         // duplicates the prefix we add here. Strip it to avoid
         // "triton: error: Error: ...".
         let msg = msg.strip_prefix("Error: ").unwrap_or(&msg);
+        // Exit code 3 for resource-not-found (matches Node.js triton convention).
+        let exit_code = if e.downcast_ref::<errors::ResourceNotFoundError>().is_some() {
+            3
+        } else {
+            1
+        };
         eprintln!("triton: error: {msg}");
-        std::process::exit(1);
+        std::process::exit(exit_code);
     }
 }
 

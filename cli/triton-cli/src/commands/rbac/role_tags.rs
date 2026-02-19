@@ -413,7 +413,11 @@ async fn resolve_resource_id(
                     .await?;
                 let machines = response.into_inner();
                 if machines.is_empty() {
-                    Err(anyhow::anyhow!("Instance not found: {}", resource))
+                    Err(crate::errors::ResourceNotFoundError(format!(
+                        "Instance not found: {}",
+                        resource
+                    ))
+                    .into())
                 } else if machines.len() > 1 {
                     Err(anyhow::anyhow!(
                         "Multiple instances found with name '{}'. Please use UUID.",
@@ -446,7 +450,11 @@ async fn resolve_resource_id(
                         return Ok(net.id.to_string());
                     }
                 }
-                Err(anyhow::anyhow!("Network not found: {}", resource))
+                Err(crate::errors::ResourceNotFoundError(format!(
+                    "Network not found: {}",
+                    resource
+                ))
+                .into())
             }
         }
         RoleTagResource::Package => {

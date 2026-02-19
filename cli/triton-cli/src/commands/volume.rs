@@ -607,7 +607,7 @@ pub async fn resolve_volume(id_or_name: &str, client: &TypedClient) -> Result<uu
         }
     }
 
-    Err(anyhow::anyhow!("Volume not found: {}", id_or_name))
+    Err(crate::errors::ResourceNotFoundError(format!("Volume not found: {}", id_or_name)).into())
 }
 
 async fn wait_for_volume_deletion(

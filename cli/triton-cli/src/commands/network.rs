@@ -687,5 +687,5 @@ pub async fn resolve_network(id_or_name: &str, client: &TypedClient) -> Result<u
         }
     }
 
-    Err(anyhow::anyhow!("Network not found: {}", id_or_name))
+    Err(crate::errors::ResourceNotFoundError(format!("Network not found: {}", id_or_name)).into())
 }

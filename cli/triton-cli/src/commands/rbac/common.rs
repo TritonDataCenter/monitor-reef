@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Common utilities for RBAC commands
 
@@ -26,5 +26,5 @@ pub async fn resolve_user(id_or_login: &str, client: &TypedClient) -> Result<Str
         }
     }
 
-    Err(anyhow::anyhow!("User not found: {}", id_or_login))
+    Err(crate::errors::ResourceNotFoundError(format!("User not found: {}", id_or_login)).into())
 }
