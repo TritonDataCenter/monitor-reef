@@ -214,37 +214,40 @@ async fn list_profiles(args: ProfileListArgs) -> Result<()> {
 }
 
 async fn get_profile(name: Option<String>, use_json: bool) -> Result<()> {
-    use crate::config::env_profile;
+    let profile = resolve_profile(name.as_deref()).await?;
 
-    let profile = match name {
-        Some(n) if n == "env" => env_profile()?,
-        Some(n) => Profile::load(&n).await?,
-        None => {
-            let config = Config::load().await?;
-            let current = config
-                .current_profile()
-                .ok_or_else(|| anyhow::anyhow!("No current profile set"))?;
-            if current == "env" {
-                env_profile()?
-            } else {
-                Profile::load(current).await?
-            }
-        }
+    // Determine if this is the current profile
+    let is_curr = if name.is_none() {
+        true // No name specified = resolved to current profile
+    } else {
+        resolve_profile(None)
+            .await
+            .ok()
+            .is_some_and(|current| current.name == profile.name)
     };
 
     if use_json {
-        json::print_json(&profile)?;
+        // Build JSON with curr field, matching node-triton format
+        let mut value = serde_json::to_value(&profile)?;
+        if let Some(obj) = value.as_object_mut() {
+            obj.insert("curr".to_string(), serde_json::Value::Bool(is_curr));
+        }
+        json::print_json(&value)?;
     } else {
-        println!("Name:     {}", profile.name);
-        println!("URL:      {}", profile.url);
-        println!("Account:  {}", profile.account);
-        println!("Key ID:   {}", profile.key_id);
-        println!("Insecure: {}", profile.insecure);
+        // Match node-triton text format: lowercase labels, no padding
+        println!("name: {}", profile.name);
+        println!("account: {}", profile.account);
+        println!("curr: {}", is_curr);
+        println!("keyId: {}", profile.key_id);
+        println!("url: {}", profile.url);
+        if profile.insecure {
+            println!("insecure: {}", profile.insecure);
+        }
         if let Some(user) = &profile.user {
-            println!("User:     {}", user);
+            println!("user: {}", user);
         }
         if let Some(roles) = &profile.roles {
-            println!("Roles:    {}", roles.join(", "));
+            println!("roles: {}", roles.join(", "));
         }
     }
     Ok(())

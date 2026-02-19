@@ -279,6 +279,108 @@ fn test_profile_get_help() {
         .stdout(predicate::str::contains("Usage:"));
 }
 
+/// Test profile get (no name) falls back to env vars
+///
+/// Regression: `triton profile get` with no name used to fail when no
+/// saved profile existed, even if TRITON_* env vars were set. It now
+/// uses `resolve_profile()` which checks env vars at step 3.
+#[test]
+fn test_profile_get_default_uses_env_vars() {
+    let test_url = "https://cloudapi.test.example.com";
+    let test_account = "test-account";
+    let test_key_id = "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff";
+
+    let output = triton_cmd()
+        .args(["profile", "get"])
+        .env("TRITON_URL", test_url)
+        .env("TRITON_ACCOUNT", test_account)
+        .env("TRITON_KEY_ID", test_key_id)
+        .env_remove("TRITON_PROFILE")
+        .env("HOME", "/nonexistent")
+        .env("TRITON_CONFIG_DIR", "/nonexistent/.triton")
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        output.status.success(),
+        "profile get (no name) should succeed with env vars.\nstdout: {}\nstderr: {}",
+        stdout,
+        stderr
+    );
+
+    // Text output should match node-triton format
+    assert!(
+        stdout.contains("name: env"),
+        "Should show 'name: env' in text output. Got: {}",
+        stdout
+    );
+    assert!(
+        stdout.contains("curr: true"),
+        "Should show 'curr: true' in text output. Got: {}",
+        stdout
+    );
+}
+
+/// Test profile get -j includes `curr` field
+#[test]
+fn test_profile_get_json_includes_curr() {
+    let output = triton_cmd()
+        .args(["profile", "get", "-j", "env"])
+        .env("TRITON_URL", "https://cloudapi.test.example.com")
+        .env("TRITON_ACCOUNT", "test-account")
+        .env(
+            "TRITON_KEY_ID",
+            "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
+        )
+        .env_remove("TRITON_PROFILE")
+        .env("HOME", "/nonexistent")
+        .env("TRITON_CONFIG_DIR", "/nonexistent/.triton")
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+
+    let profile: Value = serde_json::from_str(&stdout).expect("Should parse JSON");
+    assert!(
+        profile.get("curr").is_some(),
+        "JSON output should include 'curr' field. Got: {}",
+        stdout
+    );
+}
+
+/// Test profile get -j omits insecure when false
+#[test]
+fn test_profile_get_json_omits_insecure_false() {
+    let output = triton_cmd()
+        .args(["profile", "get", "-j", "env"])
+        .env("TRITON_URL", "https://cloudapi.test.example.com")
+        .env("TRITON_ACCOUNT", "test-account")
+        .env(
+            "TRITON_KEY_ID",
+            "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
+        )
+        .env_remove("TRITON_TLS_INSECURE")
+        .env_remove("SDC_TLS_INSECURE")
+        .env("HOME", "/nonexistent")
+        .env("TRITON_CONFIG_DIR", "/nonexistent/.triton")
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+
+    let profile: Value = serde_json::from_str(&stdout).expect("Should parse JSON");
+    assert!(
+        profile.get("insecure").is_none(),
+        "JSON should omit 'insecure' when false. Got: {}",
+        stdout
+    );
+}
+
 /// Test profile ls alias (alias for list)
 #[test]
 fn test_profile_ls_alias() {

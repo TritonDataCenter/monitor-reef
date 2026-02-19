@@ -26,7 +26,7 @@ pub struct Profile {
     pub key_id: String,
 
     /// Skip TLS certificate verification
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub insecure: bool,
 
     /// RBAC sub-user login (optional)
