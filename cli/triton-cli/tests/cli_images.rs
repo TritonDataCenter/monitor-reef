@@ -131,6 +131,16 @@ fn test_imgs_shortcut() {
         .stdout(predicate::str::contains("Usage:"));
 }
 
+/// Test `triton image cp` alias for copy
+#[test]
+fn test_image_cp_alias() {
+    triton_cmd()
+        .args(["image", "cp", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Usage:"));
+}
+
 /// Test `triton image create -h` shows help
 #[test]
 fn test_image_create_help() {

@@ -34,6 +34,7 @@ pub enum ImageCommand {
     /// Clone image to account
     Clone(ImageCloneArgs),
     /// Copy image from another datacenter
+    #[command(visible_alias = "cp")]
     Copy(ImageCopyArgs),
     /// Update image metadata
     Update(ImageUpdateArgs),

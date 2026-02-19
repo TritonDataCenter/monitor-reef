@@ -17,7 +17,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # ---------- defaults ----------
 NODE_TRITON="${NODE_TRITON:-$(command -v triton 2>/dev/null || echo "")}"
-RUST_TRITON="${RUST_TRITON:-target/release/triton}"
+RUST_TRITON="${RUST_TRITON:-target/debug/triton}"
 TIER="offline"
 PROFILE=""
 OUTPUT_DIR=""
@@ -44,7 +44,7 @@ Compare Node.js triton and Rust triton CLI output.
 
 Options:
   --node-triton PATH   Path to Node.js triton (default: $(which triton))
-  --rust-triton PATH   Path to Rust triton (default: target/release/triton)
+  --rust-triton PATH   Path to Rust triton (default: target/debug/triton)
   --tier TIER          "offline", "api", or "all" (default: offline)
   --profile NAME       Profile name for API tests
   --output-dir DIR     Directory for diff artifacts (default: mktemp -d)
@@ -63,9 +63,9 @@ Examples:
   # Full comparison with API access
   ./triton-compare.sh --tier all --profile demo
 
-  # Use specific binaries
+  # Use specific binaries (e.g. release build)
   ./triton-compare.sh --node-triton /usr/local/bin/triton \
-                      --rust-triton ./target/debug/triton
+                      --rust-triton ./target/release/triton
 EOF
 }
 
@@ -101,7 +101,7 @@ fi
 
 if [[ ! -x "$RUST_TRITON" ]]; then
     echo "Error: Rust triton not executable: $RUST_TRITON" >&2
-    echo "  Build with: make build-release" >&2
+    echo "  Build with: make build" >&2
     exit 2
 fi
 

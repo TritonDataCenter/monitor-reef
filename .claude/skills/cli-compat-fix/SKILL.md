@@ -219,8 +219,8 @@ make format && make lint
 # 2. Run the specific test
 cargo test -p <name>-cli --test <test_file> -- <test_function_name>
 
-# 3. Rebuild the release binary (comparison script uses target/release/)
-cargo build --release -p <name>-cli
+# 3. Build the binary (comparison script uses target/debug/)
+cargo build -p <name>-cli
 
 # 4. Re-run comparison to confirm the diff is gone
 cli/<name>-cli/tests/comparison/<name>-compare.sh --tier offline
