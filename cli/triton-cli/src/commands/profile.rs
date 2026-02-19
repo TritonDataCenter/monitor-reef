@@ -509,9 +509,13 @@ async fn set_current_profile(name: &str) -> Result<()> {
         name.to_string()
     };
 
-    config.set_current_profile(&name);
-    config.save().await?;
-    println!("Current profile: {}", name);
+    if config.current_profile() == Some(&name) {
+        println!("\"{}\" is already the current profile", name);
+    } else {
+        config.set_current_profile(&name);
+        config.save().await?;
+        println!("Set \"{}\" as current profile", name);
+    }
     Ok(())
 }
 

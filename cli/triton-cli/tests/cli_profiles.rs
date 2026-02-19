@@ -455,7 +455,6 @@ fn test_profile_set_alias() {
 
 /// Test `triton profile set-current env` succeeds when env vars are set
 ///
-/// Node.js: `triton profile set-current env` → `"env" is already the current profile`
 /// Rust previously failed with: `Error: Failed to read profile 'env': No such file or directory`
 /// because the "env" profile is virtual (constructed from environment variables, no file on disk).
 #[test]
@@ -484,8 +483,57 @@ fn test_profile_set_current_env() {
         stderr
     );
     assert!(
-        stdout.contains("Current profile: env"),
-        "Should print current profile.\nstdout: {}",
+        stdout.contains("Set \"env\" as current profile"),
+        "Should print 'Set' message when changing profile.\nstdout: {}",
+        stdout
+    );
+}
+
+/// Test `triton profile set-current env` prints "already current" when env is already set
+///
+/// Node.js: `triton profile set-current env` → `"env" is already the current profile`
+#[test]
+fn test_profile_set_current_already_current() {
+    let tmp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+
+    // First, set env as current profile
+    triton_cmd()
+        .args(["profile", "set-current", "env"])
+        .env("TRITON_URL", "https://cloudapi.test.example.com")
+        .env("TRITON_ACCOUNT", "test-account")
+        .env(
+            "TRITON_KEY_ID",
+            "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
+        )
+        .env("HOME", tmp_dir.path())
+        .assert()
+        .success();
+
+    // Second call should say "already the current profile"
+    let output = triton_cmd()
+        .args(["profile", "set-current", "env"])
+        .env("TRITON_URL", "https://cloudapi.test.example.com")
+        .env("TRITON_ACCOUNT", "test-account")
+        .env(
+            "TRITON_KEY_ID",
+            "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
+        )
+        .env("HOME", tmp_dir.path())
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        output.status.success(),
+        "set-current env (already current) should succeed.\nstdout: {}\nstderr: {}",
+        stdout,
+        stderr
+    );
+    assert!(
+        stdout.contains("\"env\" is already the current profile"),
+        "Should print 'already current' message.\nstdout: {}",
         stdout
     );
 }
