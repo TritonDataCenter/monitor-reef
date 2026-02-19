@@ -268,7 +268,7 @@ fn test_connection_error_exit_code_is_nonzero() {
 }
 
 // =============================================================================
-// Error message quality (no panic, no Debug format)
+// Error message quality (no panic, no Debug format, no double prefix)
 // =============================================================================
 
 #[test]
@@ -292,6 +292,46 @@ fn test_no_profile_error_is_user_friendly() {
     assert!(
         !combined.trim().is_empty(),
         "error scenario should produce some diagnostic output"
+    );
+}
+
+#[test]
+fn test_no_double_error_prefix() {
+    // Auth errors go through progenitor's Error::Custom which adds an
+    // "Error: " prefix.  The CLI must strip it to avoid "Error: Error: ...".
+    let output = triton_with_url("http://127.0.0.1:1")
+        .args(["instance", "list"])
+        .output()
+        .expect("Failed to execute");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        !stderr.contains("Error: Error:"),
+        "error message must not have double 'Error:' prefix, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("triton: error:"),
+        "error message should use 'triton: error:' prefix, got: {stderr}"
+    );
+}
+
+#[test]
+fn test_no_profile_error_uses_triton_prefix() {
+    let output = triton_no_profile()
+        .args(["instance", "list"])
+        .output()
+        .expect("Failed to execute");
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        stderr.contains("triton: error:"),
+        "error should use 'triton: error:' prefix, got: {stderr}"
+    );
+    assert!(
+        !stderr.contains("Error: Error:"),
+        "error must not have double prefix, got: {stderr}"
     );
 }
 

@@ -243,7 +243,7 @@ fn test_key_add_fails_without_matching_key() {
         .env("HOME", "/nonexistent")
         .assert()
         .failure()
-        .stderr(predicate::str::contains("Error"));
+        .stderr(predicate::str::contains("triton: error:"));
 }
 
 // key delete accepts variadic args - zero is a no-op

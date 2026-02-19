@@ -443,7 +443,20 @@ impl Cli {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
+    if let Err(e) = try_main().await {
+        // Format with alternate display to include the full error chain.
+        let msg = format!("{e:#}");
+        // Progenitor's Error::Custom Display prepends "Error: ", which
+        // duplicates the prefix we add here. Strip it to avoid
+        // "triton: error: Error: ...".
+        let msg = msg.strip_prefix("Error: ").unwrap_or(&msg);
+        eprintln!("triton: error: {msg}");
+        std::process::exit(1);
+    }
+}
+
+async fn try_main() -> Result<()> {
     let cli = Cli::parse();
 
     // Warn if profiles exist in an alternative config directory
