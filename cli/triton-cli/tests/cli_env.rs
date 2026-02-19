@@ -279,13 +279,13 @@ fn test_env_bash_no_docker_setup() {
     );
 }
 
-/// Test that `triton env -s fish` outputs Docker variables in fish syntax.
+/// Test that `triton env --shell fish` outputs Docker variables in fish syntax.
 #[test]
 fn test_env_fish_docker_vars() {
     let tmp = setup_docker_env(true);
 
     let output = triton_cmd()
-        .args(["env", "-s", "fish"])
+        .args(["env", "--shell", "fish"])
         .env("TRITON_URL", "https://cloudapi.test.example.com")
         .env("TRITON_ACCOUNT", "test-account")
         .env(
@@ -307,6 +307,260 @@ fn test_env_fish_docker_vars() {
     assert!(
         stdout.contains("set -gx DOCKER_TLS_VERIFY '1'"),
         "Should use fish syntax for DOCKER_TLS_VERIFY. Got:\n{}",
+        stdout
+    );
+}
+
+/// Helper: run `triton env` with standard env vars and extra args, return stdout.
+fn run_env_with_args(args: &[&str]) -> String {
+    let mut cmd = triton_cmd();
+    let mut all_args = vec!["env"];
+    all_args.extend_from_slice(args);
+    let output = cmd
+        .args(all_args)
+        .env("TRITON_URL", "https://cloudapi.test.example.com")
+        .env("TRITON_ACCOUNT", "test-account")
+        .env(
+            "TRITON_KEY_ID",
+            "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
+        )
+        .env("HOME", "/nonexistent")
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "Command should succeed.\nstdout: {}\nstderr: {}",
+        stdout,
+        stderr
+    );
+    stdout
+}
+
+/// Test that `--triton` emits only the triton section.
+#[test]
+fn test_env_triton_section_only() {
+    let stdout = run_env_with_args(&["--triton"]);
+
+    assert!(
+        stdout.contains("# triton"),
+        "Should have triton section. Got:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("TRITON_PROFILE"),
+        "Should have TRITON_PROFILE. Got:\n{}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("# docker"),
+        "Should NOT have docker section. Got:\n{}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("# smartdc"),
+        "Should NOT have smartdc section. Got:\n{}",
+        stdout
+    );
+}
+
+/// Test that `--docker` emits only the docker section.
+#[test]
+fn test_env_docker_section_only() {
+    let stdout = run_env_with_args(&["--docker"]);
+
+    assert!(
+        stdout.contains("# docker"),
+        "Should have docker section. Got:\n{}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("# triton"),
+        "Should NOT have triton section. Got:\n{}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("# smartdc"),
+        "Should NOT have smartdc section. Got:\n{}",
+        stdout
+    );
+}
+
+/// Test that `--smartdc` / `-s` emits only the smartdc section.
+#[test]
+fn test_env_smartdc_section_only() {
+    let stdout = run_env_with_args(&["-s"]);
+
+    assert!(
+        stdout.contains("# smartdc"),
+        "Should have smartdc section. Got:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("SDC_URL"),
+        "Should have SDC_URL. Got:\n{}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("# triton"),
+        "Should NOT have triton section. Got:\n{}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("# docker"),
+        "Should NOT have docker section. Got:\n{}",
+        stdout
+    );
+}
+
+/// Test that combining section flags emits only those sections.
+#[test]
+fn test_env_combined_sections() {
+    let stdout = run_env_with_args(&["--triton", "--docker"]);
+
+    assert!(
+        stdout.contains("# triton"),
+        "Should have triton section. Got:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("# docker"),
+        "Should have docker section. Got:\n{}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("# smartdc"),
+        "Should NOT have smartdc section. Got:\n{}",
+        stdout
+    );
+}
+
+/// Test that `--unset` emits unset commands for all sections (POSIX).
+#[test]
+fn test_env_unset_posix() {
+    let stdout = run_env_with_args(&["--unset"]);
+
+    // triton section
+    assert!(
+        stdout.contains("unset TRITON_PROFILE"),
+        "Should unset TRITON_PROFILE. Got:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("unset TRITON_URL"),
+        "Should unset TRITON_URL. Got:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("unset TRITON_ACCOUNT"),
+        "Should unset TRITON_ACCOUNT. Got:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("unset TRITON_USER"),
+        "Should unset TRITON_USER. Got:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("unset TRITON_KEY_ID"),
+        "Should unset TRITON_KEY_ID. Got:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("unset TRITON_TLS_INSECURE"),
+        "Should unset TRITON_TLS_INSECURE. Got:\n{}",
+        stdout
+    );
+    // docker section
+    assert!(
+        stdout.contains("unset DOCKER_HOST"),
+        "Should unset DOCKER_HOST. Got:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("unset DOCKER_CERT_PATH"),
+        "Should unset DOCKER_CERT_PATH. Got:\n{}",
+        stdout
+    );
+    // smartdc section
+    assert!(
+        stdout.contains("unset SDC_URL"),
+        "Should unset SDC_URL. Got:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("unset SDC_TESTING"),
+        "Should unset SDC_TESTING. Got:\n{}",
+        stdout
+    );
+
+    // Should NOT contain any export statements
+    assert!(
+        !stdout.contains("export "),
+        "Should NOT have any exports in unset mode. Got:\n{}",
+        stdout
+    );
+}
+
+/// Test that `--unset --triton` only unsets triton variables.
+#[test]
+fn test_env_unset_triton_only() {
+    let stdout = run_env_with_args(&["--unset", "--triton"]);
+
+    assert!(
+        stdout.contains("unset TRITON_PROFILE"),
+        "Should unset TRITON_PROFILE. Got:\n{}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("DOCKER_"),
+        "Should NOT mention DOCKER_ vars. Got:\n{}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("SDC_"),
+        "Should NOT mention SDC_ vars. Got:\n{}",
+        stdout
+    );
+}
+
+/// Test that `--unset` with fish shell uses `set -e`.
+#[test]
+fn test_env_unset_fish() {
+    let stdout = run_env_with_args(&["--unset", "--shell", "fish"]);
+
+    assert!(
+        stdout.contains("set -e TRITON_PROFILE"),
+        "Should use fish unset syntax. Got:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("set -e DOCKER_HOST"),
+        "Should use fish unset for DOCKER_HOST. Got:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("set -e SDC_URL"),
+        "Should use fish unset for SDC_URL. Got:\n{}",
+        stdout
+    );
+}
+
+/// Test that `--unset` with powershell uses `Remove-Item`.
+#[test]
+fn test_env_unset_powershell() {
+    let stdout = run_env_with_args(&["--unset", "--shell", "powershell"]);
+
+    assert!(
+        stdout.contains("Remove-Item Env:TRITON_PROFILE -ErrorAction SilentlyContinue"),
+        "Should use PowerShell unset syntax. Got:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("Remove-Item Env:SDC_URL -ErrorAction SilentlyContinue"),
+        "Should use PowerShell unset for SDC_URL. Got:\n{}",
         stdout
     );
 }

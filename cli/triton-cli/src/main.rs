@@ -101,8 +101,20 @@ enum Commands {
         /// Profile name (defaults to current)
         profile: Option<String>,
         /// Shell type (bash, fish, powershell)
-        #[arg(short, long, default_value = "bash")]
+        #[arg(long, default_value = "bash")]
         shell: String,
+        /// Emit only the Triton section
+        #[arg(short = 't', long = "triton")]
+        triton_section: bool,
+        /// Emit only the Docker section
+        #[arg(short = 'd', long)]
+        docker: bool,
+        /// Emit only the SmartDC/SDC section
+        #[arg(short = 's', long)]
+        smartdc: bool,
+        /// Emit unset commands instead of exports
+        #[arg(short = 'u', long)]
+        unset: bool,
     },
 
     /// Manage instances
@@ -471,8 +483,23 @@ async fn try_main() -> Result<()> {
 
     match &cli.command {
         Commands::Profile { command } => command.clone().run().await,
-        Commands::Env { profile, shell } => {
-            commands::env::generate_env(profile.as_deref(), shell).await
+        Commands::Env {
+            profile,
+            shell,
+            triton_section,
+            docker,
+            smartdc,
+            unset,
+        } => {
+            commands::env::generate_env(
+                profile.as_deref(),
+                shell,
+                *triton_section,
+                *docker,
+                *smartdc,
+                *unset,
+            )
+            .await
         }
         Commands::Instance { command } if command.is_empty_variadic() => Ok(()),
         Commands::Instance { command } => {

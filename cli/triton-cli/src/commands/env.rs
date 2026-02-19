@@ -15,12 +15,12 @@ use std::collections::BTreeMap;
 ///
 /// Returns the env map from `config_dir/docker/<profile_name>/setup.json`
 /// if the file exists and is valid, or an empty map otherwise.
-fn read_docker_env(profile_name: &str) -> BTreeMap<String, String> {
+async fn read_docker_env(profile_name: &str) -> BTreeMap<String, String> {
     let setup_path = config_dir()
         .join("docker")
         .join(profile_name)
         .join("setup.json");
-    let contents = match std::fs::read_to_string(&setup_path) {
+    let contents = match tokio::fs::read_to_string(&setup_path).await {
         Ok(c) => c,
         Err(_) => return BTreeMap::new(),
     };
@@ -38,16 +38,81 @@ fn read_docker_env(profile_name: &str) -> BTreeMap<String, String> {
         .collect()
 }
 
-/// Generate shell export statements for the profile
-pub async fn generate_env(profile_name: Option<&str>, shell: &str) -> Result<()> {
+/// Generate shell export statements for the profile.
+///
+/// If any section flag is set, only those sections are emitted.
+/// If none are set, all sections are emitted.
+/// When `unset` is true, emit unset commands instead of exports.
+pub async fn generate_env(
+    profile_name: Option<&str>,
+    shell: &str,
+    triton_section: bool,
+    docker_section: bool,
+    smartdc_section: bool,
+    unset: bool,
+) -> Result<()> {
     let profile = resolve_profile(profile_name).await?;
-    let docker_env = read_docker_env(&profile.name);
+    let docker_env = read_docker_env(&profile.name).await;
+
+    // If no section flags specified, emit all sections
+    let emit_all = !triton_section && !docker_section && !smartdc_section;
+    let emit_triton = emit_all || triton_section;
+    let emit_docker = emit_all || docker_section;
+    let emit_smartdc = emit_all || smartdc_section;
 
     match shell {
-        "bash" | "sh" | "zsh" => print_posix_exports(&profile, &docker_env),
-        "fish" => print_fish_exports(&profile, &docker_env),
-        "powershell" | "pwsh" => print_powershell_exports(&profile, &docker_env),
-        _ => print_posix_exports(&profile, &docker_env),
+        "bash" | "sh" | "zsh" => {
+            if unset {
+                print_posix_unsets(emit_triton, emit_docker, emit_smartdc);
+            } else {
+                print_posix_exports(
+                    &profile,
+                    &docker_env,
+                    emit_triton,
+                    emit_docker,
+                    emit_smartdc,
+                );
+            }
+        }
+        "fish" => {
+            if unset {
+                print_fish_unsets(emit_triton, emit_docker, emit_smartdc);
+            } else {
+                print_fish_exports(
+                    &profile,
+                    &docker_env,
+                    emit_triton,
+                    emit_docker,
+                    emit_smartdc,
+                );
+            }
+        }
+        "powershell" | "pwsh" => {
+            if unset {
+                print_powershell_unsets(emit_triton, emit_docker, emit_smartdc);
+            } else {
+                print_powershell_exports(
+                    &profile,
+                    &docker_env,
+                    emit_triton,
+                    emit_docker,
+                    emit_smartdc,
+                );
+            }
+        }
+        _ => {
+            if unset {
+                print_posix_unsets(emit_triton, emit_docker, emit_smartdc);
+            } else {
+                print_posix_exports(
+                    &profile,
+                    &docker_env,
+                    emit_triton,
+                    emit_docker,
+                    emit_smartdc,
+                );
+            }
+        }
     }
 
     Ok(())
@@ -90,113 +155,232 @@ fn shell_escape_powershell(value: &str) -> String {
     value.replace('\'', "''")
 }
 
-fn print_posix_exports(profile: &Profile, docker_env: &BTreeMap<String, String>) {
-    // triton section
-    println!("# triton");
-    println!(
-        "export TRITON_PROFILE=\"{}\"",
-        shell_escape_double(&profile.name)
-    );
+const TRITON_VARS: &[&str] = &[
+    "TRITON_PROFILE",
+    "TRITON_URL",
+    "TRITON_ACCOUNT",
+    "TRITON_USER",
+    "TRITON_KEY_ID",
+    "TRITON_TLS_INSECURE",
+];
 
-    // docker section
-    println!("# docker");
-    for (key, value) in docker_env {
-        println!("export {}=\"{}\"", key, shell_escape_double(value));
+const DOCKER_VARS: &[&str] = &[
+    "DOCKER_HOST",
+    "DOCKER_CERT_PATH",
+    "DOCKER_TLS_VERIFY",
+    "COMPOSE_HTTP_TIMEOUT",
+];
+
+const SMARTDC_VARS: &[&str] = &[
+    "SDC_URL",
+    "SDC_ACCOUNT",
+    "SDC_USER",
+    "SDC_KEY_ID",
+    "SDC_TESTING",
+];
+
+fn print_posix_exports(
+    profile: &Profile,
+    docker_env: &BTreeMap<String, String>,
+    emit_triton: bool,
+    emit_docker: bool,
+    emit_smartdc: bool,
+) {
+    if emit_triton {
+        println!("# triton");
+        println!(
+            "export TRITON_PROFILE=\"{}\"",
+            shell_escape_double(&profile.name)
+        );
     }
 
-    // smartdc/SDC section for backwards compatibility
-    println!("# smartdc");
-    println!("export SDC_URL=\"{}\"", shell_escape_double(&profile.url));
-    println!(
-        "export SDC_ACCOUNT=\"{}\"",
-        shell_escape_double(&profile.account)
-    );
-
-    if let Some(user) = &profile.user {
-        println!("export SDC_USER=\"{}\"", shell_escape_double(user));
-    } else {
-        println!("unset SDC_USER");
+    if emit_docker {
+        println!("# docker");
+        for (key, value) in docker_env {
+            println!("export {}=\"{}\"", key, shell_escape_double(value));
+        }
     }
 
-    println!(
-        "export SDC_KEY_ID=\"{}\"",
-        shell_escape_double(&profile.key_id)
-    );
-    println!("unset SDC_TESTING");
+    if emit_smartdc {
+        println!("# smartdc");
+        println!("export SDC_URL=\"{}\"", shell_escape_double(&profile.url));
+        println!(
+            "export SDC_ACCOUNT=\"{}\"",
+            shell_escape_double(&profile.account)
+        );
 
-    println!("# Run this command to configure your shell:");
-    println!("#     eval \"$(triton env)\"");
+        if let Some(user) = &profile.user {
+            println!("export SDC_USER=\"{}\"", shell_escape_double(user));
+        } else {
+            println!("unset SDC_USER");
+        }
+
+        println!(
+            "export SDC_KEY_ID=\"{}\"",
+            shell_escape_double(&profile.key_id)
+        );
+        println!("unset SDC_TESTING");
+    }
+
+    // Only show the eval hint when emitting all sections in export mode
+    if emit_triton && emit_docker && emit_smartdc {
+        println!("# Run this command to configure your shell:");
+        println!("#     eval \"$(triton env)\"");
+    }
 }
 
-fn print_fish_exports(profile: &Profile, docker_env: &BTreeMap<String, String>) {
-    // triton section
-    println!("# triton");
-    println!(
-        "set -gx TRITON_PROFILE '{}'",
-        shell_escape_single(&profile.name)
-    );
-
-    // docker section
-    println!("# docker");
-    for (key, value) in docker_env {
-        println!("set -gx {} '{}'", key, shell_escape_single(value));
+fn print_posix_unsets(emit_triton: bool, emit_docker: bool, emit_smartdc: bool) {
+    if emit_triton {
+        println!("# triton");
+        for var in TRITON_VARS {
+            println!("unset {var}");
+        }
     }
-
-    // smartdc/SDC section for backwards compatibility
-    println!("# smartdc");
-    println!("set -gx SDC_URL '{}'", shell_escape_single(&profile.url));
-    println!(
-        "set -gx SDC_ACCOUNT '{}'",
-        shell_escape_single(&profile.account)
-    );
-
-    if let Some(user) = &profile.user {
-        println!("set -gx SDC_USER '{}'", shell_escape_single(user));
-    } else {
-        println!("set -e SDC_USER");
+    if emit_docker {
+        println!("# docker");
+        for var in DOCKER_VARS {
+            println!("unset {var}");
+        }
     }
-
-    println!(
-        "set -gx SDC_KEY_ID '{}'",
-        shell_escape_single(&profile.key_id)
-    );
-    println!("set -e SDC_TESTING");
-
-    println!("# Run this command to configure your shell:");
-    println!("#     triton env | source");
+    if emit_smartdc {
+        println!("# smartdc");
+        for var in SMARTDC_VARS {
+            println!("unset {var}");
+        }
+    }
 }
 
-fn print_powershell_exports(profile: &Profile, docker_env: &BTreeMap<String, String>) {
-    // triton section
-    println!("# triton");
-    println!(
-        "$env:TRITON_PROFILE = '{}'",
-        shell_escape_powershell(&profile.name)
-    );
-
-    // docker section
-    println!("# docker");
-    for (key, value) in docker_env {
-        println!("$env:{} = '{}'", key, shell_escape_powershell(value));
+fn print_fish_exports(
+    profile: &Profile,
+    docker_env: &BTreeMap<String, String>,
+    emit_triton: bool,
+    emit_docker: bool,
+    emit_smartdc: bool,
+) {
+    if emit_triton {
+        println!("# triton");
+        println!(
+            "set -gx TRITON_PROFILE '{}'",
+            shell_escape_single(&profile.name)
+        );
     }
 
-    // smartdc/SDC section for backwards compatibility
-    println!("# smartdc");
-    println!("$env:SDC_URL = '{}'", shell_escape_powershell(&profile.url));
-    println!(
-        "$env:SDC_ACCOUNT = '{}'",
-        shell_escape_powershell(&profile.account)
-    );
-
-    if let Some(user) = &profile.user {
-        println!("$env:SDC_USER = '{}'", shell_escape_powershell(user));
-    } else {
-        println!("Remove-Item Env:SDC_USER -ErrorAction SilentlyContinue");
+    if emit_docker {
+        println!("# docker");
+        for (key, value) in docker_env {
+            println!("set -gx {} '{}'", key, shell_escape_single(value));
+        }
     }
 
-    println!(
-        "$env:SDC_KEY_ID = '{}'",
-        shell_escape_powershell(&profile.key_id)
-    );
-    println!("Remove-Item Env:SDC_TESTING -ErrorAction SilentlyContinue");
+    if emit_smartdc {
+        println!("# smartdc");
+        println!("set -gx SDC_URL '{}'", shell_escape_single(&profile.url));
+        println!(
+            "set -gx SDC_ACCOUNT '{}'",
+            shell_escape_single(&profile.account)
+        );
+
+        if let Some(user) = &profile.user {
+            println!("set -gx SDC_USER '{}'", shell_escape_single(user));
+        } else {
+            println!("set -e SDC_USER");
+        }
+
+        println!(
+            "set -gx SDC_KEY_ID '{}'",
+            shell_escape_single(&profile.key_id)
+        );
+        println!("set -e SDC_TESTING");
+    }
+
+    if emit_triton && emit_docker && emit_smartdc {
+        println!("# Run this command to configure your shell:");
+        println!("#     triton env | source");
+    }
+}
+
+fn print_fish_unsets(emit_triton: bool, emit_docker: bool, emit_smartdc: bool) {
+    if emit_triton {
+        println!("# triton");
+        for var in TRITON_VARS {
+            println!("set -e {var}");
+        }
+    }
+    if emit_docker {
+        println!("# docker");
+        for var in DOCKER_VARS {
+            println!("set -e {var}");
+        }
+    }
+    if emit_smartdc {
+        println!("# smartdc");
+        for var in SMARTDC_VARS {
+            println!("set -e {var}");
+        }
+    }
+}
+
+fn print_powershell_exports(
+    profile: &Profile,
+    docker_env: &BTreeMap<String, String>,
+    emit_triton: bool,
+    emit_docker: bool,
+    emit_smartdc: bool,
+) {
+    if emit_triton {
+        println!("# triton");
+        println!(
+            "$env:TRITON_PROFILE = '{}'",
+            shell_escape_powershell(&profile.name)
+        );
+    }
+
+    if emit_docker {
+        println!("# docker");
+        for (key, value) in docker_env {
+            println!("$env:{} = '{}'", key, shell_escape_powershell(value));
+        }
+    }
+
+    if emit_smartdc {
+        println!("# smartdc");
+        println!("$env:SDC_URL = '{}'", shell_escape_powershell(&profile.url));
+        println!(
+            "$env:SDC_ACCOUNT = '{}'",
+            shell_escape_powershell(&profile.account)
+        );
+
+        if let Some(user) = &profile.user {
+            println!("$env:SDC_USER = '{}'", shell_escape_powershell(user));
+        } else {
+            println!("Remove-Item Env:SDC_USER -ErrorAction SilentlyContinue");
+        }
+
+        println!(
+            "$env:SDC_KEY_ID = '{}'",
+            shell_escape_powershell(&profile.key_id)
+        );
+        println!("Remove-Item Env:SDC_TESTING -ErrorAction SilentlyContinue");
+    }
+}
+
+fn print_powershell_unsets(emit_triton: bool, emit_docker: bool, emit_smartdc: bool) {
+    if emit_triton {
+        println!("# triton");
+        for var in TRITON_VARS {
+            println!("Remove-Item Env:{var} -ErrorAction SilentlyContinue");
+        }
+    }
+    if emit_docker {
+        println!("# docker");
+        for var in DOCKER_VARS {
+            println!("Remove-Item Env:{var} -ErrorAction SilentlyContinue");
+        }
+    }
+    if emit_smartdc {
+        println!("# smartdc");
+        for var in SMARTDC_VARS {
+            println!("Remove-Item Env:{var} -ErrorAction SilentlyContinue");
+        }
+    }
 }
