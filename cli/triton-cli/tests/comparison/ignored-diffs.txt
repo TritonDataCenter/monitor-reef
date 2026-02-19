@@ -1,0 +1,17 @@
+# Intentional divergences between Node.js and Rust triton CLI
+#
+# Format: test-id  reason
+# Lines starting with # are comments.
+#
+# These tests are skipped entirely. Use this for differences that are
+# by design and will never be "fixed." For differences that can be
+# normalized away (e.g., stripping repo URLs), add normalization to
+# the script instead — no entry needed here.
+
+# Top-level help uses clap's format which is fundamentally different
+# from node-triton's grouped layout. This is a deliberate choice.
+help                clap vs node-triton help layout is by design
+
+# --version includes different repo URLs; version numbers are already
+# normalized but the repo URL line differs. This is expected.
+version             different repo URLs is intentional

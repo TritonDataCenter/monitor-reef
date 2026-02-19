@@ -1,0 +1,30 @@
+# Known diffs between Node.js and Rust triton CLI
+#
+# Format: test-id  bead-id  [description]
+# Lines starting with # are comments.
+#
+# When a diff is fixed and the test flips to PASS, the script flags it
+# as "fixed?" so you know to close the bead and remove the line.
+
+# Profile commands — differences.md #6, #7, #8
+profile-get         TBD  profile get output format differs (labels, padding, field order)
+profile-get-json    TBD  profile get -j schema mismatch (curr vs insecure)
+profile-list-json   TBD  profile list -j schema mismatch (curr vs insecure)
+
+# Env command — differences.md #9, #10, #11
+env-bash            TBD  double vs single quotes, missing docker vars
+env-fish            TBD  quote style and docker vars (fish shell)
+
+# Completion — differences.md #17
+completion-bash     TBD  completion syntax differs between clap and node-triton
+
+# Subcommand help texts — differences.md #12
+help-instance       TBD  help format differs (clap vs node-triton layout)
+help-image          TBD  help format differs
+help-package        TBD  help format differs
+help-network        TBD  help format differs
+help-volume         TBD  help format differs
+help-key            TBD  help format differs
+help-fwrule         TBD  help format differs
+help-vlan           TBD  help format differs
+help-account        TBD  help format differs

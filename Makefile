@@ -28,6 +28,7 @@ include ./deps/eng/tools/mk/Makefile.rust.targ
 .PHONY: client-build client-test
 .PHONY: package-build package-test
 .PHONY: triton-test triton-test-api triton-test-all
+.PHONY: triton-compare triton-compare-api triton-compare-all
 .PHONY: openapi-generate openapi-list openapi-check
 .PHONY: dev-setup workspace-test integration-test
 .PHONY: list coverage arch-lint
@@ -176,6 +177,18 @@ triton-test-all: | $(CARGO_EXEC) ## Run all triton-cli tests (offline + API)
 triton-test-file: | $(CARGO_EXEC) ## Run specific triton-cli test file (usage: make triton-test-file TEST=cli_vlans)
 	@if [ -z "$(TEST)" ]; then echo "Usage: make triton-test-file TEST=cli_vlans"; exit 1; fi
 	$(CARGO) test -p triton-cli --test $(TEST)
+
+# Triton CLI comparison tests (Node.js vs Rust)
+triton-compare: build-release ## Compare Node.js vs Rust triton (offline tests)
+	cli/triton-cli/tests/comparison/triton-compare.sh --tier offline
+
+triton-compare-api: build-release ## Compare Node.js vs Rust triton (API tests, needs PROFILE=name)
+	@if [ -z "$(PROFILE)" ]; then echo "Usage: make triton-compare-api PROFILE=demo"; exit 1; fi
+	cli/triton-cli/tests/comparison/triton-compare.sh --tier api --profile $(PROFILE)
+
+triton-compare-all: build-release ## Compare Node.js vs Rust triton (all tests, needs PROFILE=name)
+	@if [ -z "$(PROFILE)" ]; then echo "Usage: make triton-compare-all PROFILE=demo"; exit 1; fi
+	cli/triton-cli/tests/comparison/triton-compare.sh --tier all --profile $(PROFILE)
 
 # OpenAPI management commands (using dropshot-api-manager)
 openapi-generate: | $(CARGO_EXEC) ## Generate OpenAPI specs from API traits
