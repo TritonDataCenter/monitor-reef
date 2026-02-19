@@ -216,20 +216,16 @@ pub async fn sign_request(
                     (key_type, encode_signature(&sig_bytes), md5_fp)
                 }
                 Err(_) => {
-                    // Fall back to file-based key loading
-                    // Use internal search which will scan ~/.ssh/ for matching keys
-                    let key = key_loader::KeyLoader::load_private_key(&KeySource::Auto {
-                        fingerprint: fingerprint.clone(),
-                    })
-                    .await?;
-                    let key_type = KeyType::from_private_key(&key)?;
-                    // Always compute MD5 fingerprint for the Authorization header
-                    let md5_fp = md5_fingerprint(key.public_key())?;
+                    // Fall back to file-based key loading (supports all key formats)
+                    let legacy_key = KeyLoader::load_legacy_from_common_paths(fingerprint).await?;
+                    let key_type = legacy_key.key_type()?;
+                    let pub_blob = legacy_key.public_key_blob()?;
+                    let md5_fp = fingerprint::md5_fingerprint_bytes(&pub_blob);
 
                     let signer = create_signer_with_fp(config, key_type, &md5_fp);
                     let signing_string = signer.signing_string(method, path, &date);
-                    let signature_b64 = sign_with_key(&key, signing_string.as_bytes())?;
-                    (key_type, signature_b64, md5_fp)
+                    let sig_bytes = legacy_key.sign(signing_string.as_bytes())?;
+                    (key_type, encode_signature(&sig_bytes), md5_fp)
                 }
             }
         }

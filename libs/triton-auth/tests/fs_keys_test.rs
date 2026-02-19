@@ -18,6 +18,9 @@ use triton_auth::{
     signature::KeyType,
 };
 
+/// Test key fingerprints for OpenSSH-format ed25519 key
+const ID_ED25519_MD5: &str = "4c:2d:7d:ef:1a:f7:37:1a:9e:d8:e8:27:5d:c0:3a:40";
+
 /// Test key fingerprints from node-smartdc-auth test suite
 const ID_RSA_MD5: &str = "fa:56:a1:6b:cc:04:97:fe:e2:98:54:c4:2e:0d:26:c6";
 const ID_DSA_MD5: &str = "a6:e6:68:d3:28:2b:0a:a0:12:54:da:c4:c0:22:8d:ba";
@@ -248,4 +251,105 @@ fn test_parse_invalid_fingerprint_fails() {
     // Invalid hex
     let result = parse_fingerprint("gg:hh:ii:jj:kk:ll:mm:nn:oo:pp:qq:rr:ss:tt:uu:vv");
     assert!(result.is_err(), "Should fail on invalid hex");
+}
+
+// ============================================================================
+// scan_ssh_dir_for_key tests (auto-discovery of keys by fingerprint)
+// ============================================================================
+
+/// PKCS#1 RSA key discovered via scan_ssh_dir_for_key
+///
+/// This is the core bug from monitor-reef-e56: load_from_common_paths
+/// previously only tried OpenSSH-format loading, which skips PKCS#1 keys.
+#[tokio::test]
+async fn test_scan_finds_pkcs1_rsa_key() {
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let ssh_dir = tmp_dir.path().join(".ssh");
+    tokio::fs::create_dir_all(&ssh_dir).await.unwrap();
+
+    let src = test_keys_dir().join("id_rsa");
+    tokio::fs::copy(&src, ssh_dir.join("id_rsa")).await.unwrap();
+
+    let key = KeyLoader::scan_ssh_dir_for_key(&ssh_dir, ID_RSA_MD5)
+        .await
+        .expect("Should find PKCS#1 RSA key via scan");
+
+    assert!(matches!(key.key_type().unwrap(), KeyType::Rsa));
+}
+
+/// SEC1 ECDSA key discovered via scan_ssh_dir_for_key
+#[tokio::test]
+async fn test_scan_finds_sec1_ecdsa_key() {
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let ssh_dir = tmp_dir.path().join(".ssh");
+    tokio::fs::create_dir_all(&ssh_dir).await.unwrap();
+
+    let src = test_keys_dir().join("id_ecdsa");
+    tokio::fs::copy(&src, ssh_dir.join("id_ecdsa"))
+        .await
+        .unwrap();
+
+    let key = KeyLoader::scan_ssh_dir_for_key(&ssh_dir, ID_ECDSA_MD5)
+        .await
+        .expect("Should find SEC1 ECDSA key via scan");
+
+    assert!(matches!(key.key_type().unwrap(), KeyType::Ecdsa256));
+}
+
+/// DSA key discovered via scan_ssh_dir_for_key
+#[tokio::test]
+async fn test_scan_finds_dsa_key() {
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let ssh_dir = tmp_dir.path().join(".ssh");
+    tokio::fs::create_dir_all(&ssh_dir).await.unwrap();
+
+    let src = test_keys_dir().join("id_dsa");
+    tokio::fs::copy(&src, ssh_dir.join("id_dsa")).await.unwrap();
+
+    let key = KeyLoader::scan_ssh_dir_for_key(&ssh_dir, ID_DSA_MD5)
+        .await
+        .expect("Should find DSA key via scan");
+
+    assert!(matches!(key.key_type().unwrap(), KeyType::Dsa));
+}
+
+/// OpenSSH ed25519 key still works (regression guard)
+#[tokio::test]
+async fn test_scan_finds_openssh_ed25519_key() {
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let ssh_dir = tmp_dir.path().join(".ssh");
+    tokio::fs::create_dir_all(&ssh_dir).await.unwrap();
+
+    let src = test_keys_dir().join("id_ed25519");
+    tokio::fs::copy(&src, ssh_dir.join("id_ed25519"))
+        .await
+        .unwrap();
+
+    let key = KeyLoader::scan_ssh_dir_for_key(&ssh_dir, ID_ED25519_MD5)
+        .await
+        .expect("Should find OpenSSH ed25519 key via scan");
+
+    assert!(matches!(key.key_type().unwrap(), KeyType::Ed25519));
+}
+
+/// Non-matching fingerprint returns error
+#[tokio::test]
+async fn test_scan_no_match_returns_error() {
+    let tmp_dir = tempfile::tempdir().unwrap();
+    let ssh_dir = tmp_dir.path().join(".ssh");
+    tokio::fs::create_dir_all(&ssh_dir).await.unwrap();
+
+    let src = test_keys_dir().join("id_rsa");
+    tokio::fs::copy(&src, ssh_dir.join("id_rsa")).await.unwrap();
+
+    // Use a fingerprint that doesn't match any key in the dir
+    let result = KeyLoader::scan_ssh_dir_for_key(
+        &ssh_dir,
+        "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00",
+    )
+    .await;
+    assert!(
+        result.is_err(),
+        "Should fail when no key matches fingerprint"
+    );
 }

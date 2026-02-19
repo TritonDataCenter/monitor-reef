@@ -132,8 +132,16 @@ impl KeyLoader {
                         )))
                     }
                     Err(_) => {
-                        // Fall back to common file locations
-                        Self::load_from_common_paths(fingerprint).await
+                        // Fall back to common file locations (supports all key formats)
+                        let legacy_key = Self::load_legacy_from_common_paths(fingerprint).await?;
+                        match legacy_key {
+                            LegacyPrivateKey::OpenSsh(key) => Ok(key),
+                            _ => Err(AuthError::ConfigError(
+                                "Key found but is in legacy PEM format; \
+                                 use sign_request() for full format support"
+                                    .into(),
+                            )),
+                        }
                     }
                 }
             }
@@ -222,38 +230,52 @@ impl KeyLoader {
     }
 
     /// Try loading from common SSH key locations (~/.ssh/)
-    async fn load_from_common_paths(fingerprint_str: &str) -> Result<PrivateKey, AuthError> {
-        // Parse the fingerprint to support both MD5 and SHA256 formats
-        let fingerprint = Fingerprint::parse(fingerprint_str)
-            .map_err(|e| AuthError::KeyLoadError(format!("Invalid fingerprint: {}", e)))?;
-
+    ///
+    /// Supports all key formats (OpenSSH, PKCS#1, SEC1, DSA, PKCS#8) by using
+    /// `load_legacy_from_file` which handles all PEM formats.
+    pub async fn load_legacy_from_common_paths(
+        fingerprint_str: &str,
+    ) -> Result<LegacyPrivateKey, AuthError> {
         let home = dirs::home_dir()
             .ok_or_else(|| AuthError::KeyLoadError("Could not determine home directory".into()))?;
 
         let ssh_dir = home.join(".ssh");
+        Self::scan_ssh_dir_for_key(&ssh_dir, fingerprint_str).await
+    }
+
+    /// Scan an SSH directory for a key matching the given fingerprint
+    ///
+    /// This is the testable core of `load_legacy_from_common_paths`, accepting
+    /// an explicit directory path instead of using `~/.ssh/`.
+    pub async fn scan_ssh_dir_for_key(
+        ssh_dir: &Path,
+        fingerprint_str: &str,
+    ) -> Result<LegacyPrivateKey, AuthError> {
+        let fingerprint = Fingerprint::parse(fingerprint_str)
+            .map_err(|e| AuthError::KeyLoadError(format!("Invalid fingerprint: {}", e)))?;
+
         let key_files = ["id_ed25519", "id_ecdsa", "id_rsa", "id_dsa"];
 
         for key_file in &key_files {
             let path = ssh_dir.join(key_file);
-            if tokio::fs::try_exists(&path).await.unwrap_or(false) {
-                // Try to load without passphrase first
-                if let Ok(key) = Self::load_from_file(&path, None).await {
-                    // Check if fingerprint matches using the appropriate hash algorithm
-                    if fingerprint.matches(key.public_key()) {
-                        tracing::debug!(
-                            "Found matching key at {} for fingerprint {}",
-                            path.display(),
-                            fingerprint_str
-                        );
-                        return Ok(key);
-                    }
-                }
+            if tokio::fs::try_exists(&path).await.unwrap_or(false)
+                && let Ok(key) = Self::load_legacy_from_file(&path, None).await
+                && let Ok(blob) = key.public_key_blob()
+                && fingerprint.matches_bytes(&blob)
+            {
+                tracing::debug!(
+                    "Found matching key at {} for fingerprint {}",
+                    path.display(),
+                    fingerprint_str
+                );
+                return Ok(key);
             }
         }
 
         Err(AuthError::KeyNotFound(format!(
-            "No key with fingerprint {} found in ~/.ssh/",
-            fingerprint_str
+            "No key with fingerprint {} found in {}",
+            fingerprint_str,
+            ssh_dir.display()
         )))
     }
 
