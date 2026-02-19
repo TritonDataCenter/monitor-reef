@@ -1626,8 +1626,8 @@
       "MachineDisk": {
         "description": "Disk attached to a machine (bhyve VMs)\n\nCloudAPI may omit `size` for the boot disk (which inherits its size from the image) and may return `\"remaining\"` for flexible disks.",
         "properties": {
-          "blockSize": {
-            "description": "Block size in bytes",
+          "block_size": {
+            "description": "Block size in bytes Note: CloudAPI returns this as snake_case despite other fields being camelCase",
             "format": "uint64",
             "minimum": 0,
             "nullable": true,

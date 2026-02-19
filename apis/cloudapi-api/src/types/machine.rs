@@ -189,7 +189,12 @@ pub struct MachineDisk {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<DiskSize>,
     /// Block size in bytes
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+    #[serde(
+        rename = "block_size",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub block_size: Option<u64>,
     /// Boot disk
     #[serde(default, skip_serializing_if = "Option::is_none")]

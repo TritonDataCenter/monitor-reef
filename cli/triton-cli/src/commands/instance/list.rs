@@ -26,7 +26,8 @@ struct AugmentedMachine {
     /// Image name@version
     img: String,
     /// Instance flags (B=bhyve, D=docker, F=firewall, K=kvm, P=deletion_protection)
-    flags: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    flags: Option<String>,
     /// Age of the instance
     age: String,
 }
@@ -59,9 +60,9 @@ impl AugmentedMachine {
                 flags.push('P');
             }
             if flags.is_empty() {
-                "-".to_string()
+                None
             } else {
-                flags.into_iter().collect()
+                Some(flags.into_iter().collect())
             }
         };
 

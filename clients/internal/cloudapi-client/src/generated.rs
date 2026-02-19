@@ -4044,8 +4044,8 @@ pub mod types {
     #[doc = "  \"description\": \"Disk attached to a machine (bhyve VMs)\\n\\nCloudAPI may omit `size` for the boot disk (which inherits its size from the image) and may return `\\\"remaining\\\"` for flexible disks.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"blockSize\": {"]
-    #[doc = "      \"description\": \"Block size in bytes\","]
+    #[doc = "    \"block_size\": {"]
+    #[doc = "      \"description\": \"Block size in bytes Note: CloudAPI returns this as snake_case despite other fields being camelCase\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"integer\","]
     #[doc = "        \"null\""]
@@ -4099,12 +4099,8 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct MachineDisk {
-        #[doc = "Block size in bytes"]
-        #[serde(
-            rename = "blockSize",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[doc = "Block size in bytes Note: CloudAPI returns this as snake_case despite other fields being camelCase"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub block_size: ::std::option::Option<u64>,
         #[doc = "Boot disk"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
