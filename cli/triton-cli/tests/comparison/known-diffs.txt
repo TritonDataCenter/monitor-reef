@@ -6,6 +6,4 @@
 # When a diff is fixed and the test flips to PASS, the script flags it
 # as "fixed?" so you know to close the bead and remove the line.
 
-# Missing alias — discovered by help coverage normalization
-# (not a help-* test; tracked separately since it's a real feature gap)
-# help-image          monitor-reef-7wk  image copy missing 'cp' alias
+help-image          monitor-reef-7wk  image copy missing 'cp' alias

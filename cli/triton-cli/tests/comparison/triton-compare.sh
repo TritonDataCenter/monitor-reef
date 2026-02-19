@@ -220,6 +220,9 @@ normalize_text() {
 
 # Extract sorted subcommand names from help output (either Node.js or Rust format)
 # Produces one "command-name" per line, sorted. Filters out "help".
+# Also extracts aliases:
+#   Node.js format: "copy (cp)" → outputs both "copy" and "cp"
+#   Rust/clap format: "copy  Copy image [aliases: cp]" → outputs both "copy" and "cp"
 # Uses POSIX awk only (no gawk, alas).
 normalize_help_commands() {
     awk '
@@ -228,6 +231,22 @@ normalize_help_commands() {
     in_cmds && /^[[:space:]]+[a-z]/ {
         if ($1 == "help") next
         print $1
+        # Node.js aliases: "copy (cp)" — $2 is "(alias)"
+        if ($2 ~ /^\([a-z?]+\)$/) {
+            alias = $2
+            gsub(/[()]/, "", alias)
+            if (alias != "?") print alias
+        }
+        # Rust/clap aliases: "[aliases: cp, ...]"
+        if (match($0, /\[aliases:/)) {
+            rest = substr($0, RSTART + 10)
+            gsub(/\].*/, "", rest)
+            n = split(rest, aliases, /,[[:space:]]*/)
+            for (i = 1; i <= n; i++) {
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", aliases[i])
+                if (aliases[i] != "") print aliases[i]
+            }
+        }
     }' | sort
 }
 
