@@ -59,12 +59,18 @@ exists for that CLI.
 
 ### 1a. Run the comparison
 
-Use `--output-dir` so you have a known path to read diffs from:
+Use `--output-dir` under `./target/` so the results are readable without
+extra permissions (target/ is gitignored, and mktemp avoids collisions):
 
 ```bash
-OUTPUT_DIR=$(mktemp -d)
+mkdir -p ./target
+OUTPUT_DIR=$(mktemp -d ./target/triton-compare.XXXXXX)
 cli/<name>-cli/tests/comparison/<name>-compare.sh --output-dir "$OUTPUT_DIR"
 ```
+
+The comparison script auto-cleans the directory on all-PASS. On DIFF, it
+persists so you can read the diff files. Since it's under target/, leftover
+dirs are harmless and get cleaned by `make clean`.
 
 This produces a report with PASS/DIFF/SKIP/NEW annotations and saves
 diffs and raw outputs to `$OUTPUT_DIR/`.

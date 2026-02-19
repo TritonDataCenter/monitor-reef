@@ -7,24 +7,13 @@
 # as "fixed?" so you know to close the bead and remove the line.
 
 # Profile commands — differences.md #6, #7, #8
-profile-get         TBD  profile get output format differs (labels, padding, field order)
-profile-get-json    TBD  profile get -j schema mismatch (curr vs insecure)
-profile-list-json   TBD  profile list -j schema mismatch (curr vs insecure)
+profile-get         monitor-reef-cws  profile get exits 1 with no output
+profile-get-json    monitor-reef-cws  profile get -j exits 1 with no output
+profile-list-json   monitor-reef-610  profile list -j shows insecure instead of curr
 
-# Env command — differences.md #9, #10, #11
-env-bash            TBD  double vs single quotes, missing docker vars
-env-fish            TBD  quote style and docker vars (fish shell)
+# Env command — differences.md #9
+env-bash            monitor-reef-bxv  double vs single quotes in exports
 
-# Completion — differences.md #17
-completion-bash     TBD  completion syntax differs between clap and node-triton
-
-# Subcommand help texts — differences.md #12
-help-instance       TBD  help format differs (clap vs node-triton layout)
-help-image          TBD  help format differs
-help-package        TBD  help format differs
-help-network        TBD  help format differs
-help-volume         TBD  help format differs
-help-key            TBD  help format differs
-help-fwrule         TBD  help format differs
-help-vlan           TBD  help format differs
-help-account        TBD  help format differs
+# Missing alias — discovered by help coverage normalization
+# (not a help-* test; tracked separately since it's a real feature gap)
+# help-image          monitor-reef-7wk  image copy missing 'cp' alias

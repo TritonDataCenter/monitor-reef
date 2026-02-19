@@ -218,6 +218,19 @@ normalize_text() {
     strip_ansi | normalize_version | normalize_cli_name
 }
 
+# Extract sorted subcommand names from help output (either Node.js or Rust format)
+# Produces one "command-name" per line, sorted. Filters out "help".
+# Uses POSIX awk only (no gawk, alas).
+normalize_help_commands() {
+    awk '
+    /^Commands:/ { in_cmds=1; next }
+    /^Options:/ || /^Usage:/ || /^[^ ]/ { in_cmds=0 }
+    in_cmds && /^[[:space:]]+[a-z]/ {
+        if ($1 == "help") next
+        print $1
+    }' | sort
+}
+
 # ---------- tracking helpers ----------
 
 # Check if a test is in the ignored list; if so, skip it
@@ -412,6 +425,91 @@ skip_test() {
     SKIP_COUNT=$((SKIP_COUNT + 1))
 }
 
+# Run a help coverage test: compare subcommand names, not exact help text
+# This verifies the Rust CLI has the same subcommands as Node.js, ignoring
+# layout differences (clap vs node-cmdln).
+run_help_coverage_test() {
+    local test_id="$1"; shift
+    local description="$1"; shift
+    local env_mode="$1"; shift
+    # Remaining args are the triton subcommand + flags
+
+    # Check ignored list first
+    if is_ignored "$test_id"; then
+        printf "SKIP     %-30s %s (intentional: %s)\n" \
+            "$test_id" "$description" "${IGNORED_DIFFS[$test_id]}"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        return 0
+    fi
+
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "  Running: triton $*"
+    fi
+
+    local node_out="$OUTPUT_DIR/node/$test_id.out"
+    local node_err="$OUTPUT_DIR/node/$test_id.err"
+    local rust_out="$OUTPUT_DIR/rust/$test_id.out"
+    local rust_err="$OUTPUT_DIR/rust/$test_id.err"
+
+    local node_exit=0
+    local rust_exit=0
+
+    # Run both CLIs
+    if [[ "$env_mode" == "isolated" ]]; then
+        HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
+            "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
+        HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
+            "$RUST_TRITON" "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
+    else
+        "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
+        "$RUST_TRITON" "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
+    fi
+
+    # Extract subcommand names
+    local node_norm="$OUTPUT_DIR/node/$test_id.norm"
+    local rust_norm="$OUTPUT_DIR/rust/$test_id.norm"
+
+    normalize_help_commands < "$node_out" > "$node_norm"
+    normalize_help_commands < "$rust_out" > "$rust_norm"
+
+    # Superset check: every Node.js command must exist in Rust.
+    # Extra Rust commands are OK (improvements). Only missing ones are flagged.
+    local missing
+    missing="$(comm -23 "$node_norm" "$rust_norm")"
+
+    local diff_file="$OUTPUT_DIR/diffs/$test_id.diff"
+
+    if [[ -z "$missing" ]]; then
+        local annotation
+        annotation="$(pass_annotation "$test_id")"
+        printf "PASS     %-30s %s%s\n" "$test_id" "$description" "$annotation"
+        PASS_COUNT=$((PASS_COUNT + 1))
+        if [[ -n "$annotation" ]]; then
+            FIXED_COUNT=$((FIXED_COUNT + 1))
+        fi
+        rm -f "$diff_file"
+    else
+        {
+            echo "Commands in Node.js but missing from Rust:"
+            echo "$missing" | sed 's/^/  /'
+            local extra
+            extra="$(comm -13 "$node_norm" "$rust_norm")"
+            if [[ -n "$extra" ]]; then
+                echo ""
+                echo "Extra commands in Rust (OK):"
+                echo "$extra" | sed 's/^/  /'
+            fi
+        } > "$diff_file"
+        local annotation
+        annotation="$(diff_annotation "$test_id")"
+        printf "DIFF     %-30s %s%s\n" "$test_id" "$description" "$annotation"
+        DIFF_COUNT=$((DIFF_COUNT + 1))
+        if [[ "$annotation" == " (NEW)" ]]; then
+            NEW_COUNT=$((NEW_COUNT + 1))
+        fi
+    fi
+}
+
 # ---------- Tier 1: Offline tests ----------
 
 run_offline_tests() {
@@ -457,9 +555,9 @@ run_offline_tests() {
         isolated completion bash 2>/dev/null || \
     skip_test "completion-bash" "completion bash" "syntax differs"
 
-    # Subcommand help texts
+    # Subcommand help — compare command coverage, not layout
     for subcmd in instance image package network volume key fwrule vlan account; do
-        run_test "help-$subcmd" "$subcmd --help" \
+        run_help_coverage_test "help-$subcmd" "$subcmd --help" \
             isolated "$subcmd" --help
     done
 

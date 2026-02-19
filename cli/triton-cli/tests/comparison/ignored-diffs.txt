@@ -15,3 +15,11 @@ help                clap vs node-triton help layout is by design
 # --version includes different repo URLs; version numbers are already
 # normalized but the repo URL line differs. This is expected.
 version             different repo URLs is intentional
+
+# Fish shell support: Node.js doesn't support fish (exits 1),
+# Rust adds fish support (exits 0). This is an intentional improvement.
+env-fish            Rust adds fish shell support that Node.js lacks
+
+# Bash completion: completely different systems (node-dashdash 2K lines
+# vs clap_complete 13K lines). clap_complete is the standard for clap CLIs.
+completion-bash     clap_complete vs node-dashdash is by design
