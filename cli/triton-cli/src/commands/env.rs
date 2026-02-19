@@ -6,18 +6,48 @@
 
 //! Environment variable export command
 
+use crate::config::paths::config_dir;
 use crate::config::{Profile, resolve_profile};
 use anyhow::Result;
+use std::collections::BTreeMap;
+
+/// Read Docker environment variables from the profile's setup.json file.
+///
+/// Returns the env map from `config_dir/docker/<profile_name>/setup.json`
+/// if the file exists and is valid, or an empty map otherwise.
+fn read_docker_env(profile_name: &str) -> BTreeMap<String, String> {
+    let setup_path = config_dir()
+        .join("docker")
+        .join(profile_name)
+        .join("setup.json");
+    let contents = match std::fs::read_to_string(&setup_path) {
+        Ok(c) => c,
+        Err(_) => return BTreeMap::new(),
+    };
+    let parsed: serde_json::Value = match serde_json::from_str(&contents) {
+        Ok(v) => v,
+        Err(_) => return BTreeMap::new(),
+    };
+    let Some(env_obj) = parsed.get("env").and_then(|v| v.as_object()) else {
+        return BTreeMap::new();
+    };
+    // Collect non-null string values, using BTreeMap for deterministic ordering
+    env_obj
+        .iter()
+        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+        .collect()
+}
 
 /// Generate shell export statements for the profile
 pub async fn generate_env(profile_name: Option<&str>, shell: &str) -> Result<()> {
     let profile = resolve_profile(profile_name).await?;
+    let docker_env = read_docker_env(&profile.name);
 
     match shell {
-        "bash" | "sh" | "zsh" => print_posix_exports(&profile),
-        "fish" => print_fish_exports(&profile),
-        "powershell" | "pwsh" => print_powershell_exports(&profile),
-        _ => print_posix_exports(&profile),
+        "bash" | "sh" | "zsh" => print_posix_exports(&profile, &docker_env),
+        "fish" => print_fish_exports(&profile, &docker_env),
+        "powershell" | "pwsh" => print_powershell_exports(&profile, &docker_env),
+        _ => print_posix_exports(&profile, &docker_env),
     }
 
     Ok(())
@@ -60,7 +90,7 @@ fn shell_escape_powershell(value: &str) -> String {
     value.replace('\'', "''")
 }
 
-fn print_posix_exports(profile: &Profile) {
+fn print_posix_exports(profile: &Profile, docker_env: &BTreeMap<String, String>) {
     // triton section
     println!("# triton");
     println!(
@@ -68,8 +98,11 @@ fn print_posix_exports(profile: &Profile) {
         shell_escape_double(&profile.name)
     );
 
-    // docker section (placeholder for future docker host support)
+    // docker section
     println!("# docker");
+    for (key, value) in docker_env {
+        println!("export {}=\"{}\"", key, shell_escape_double(value));
+    }
 
     // smartdc/SDC section for backwards compatibility
     println!("# smartdc");
@@ -95,7 +128,7 @@ fn print_posix_exports(profile: &Profile) {
     println!("#     eval \"$(triton env)\"");
 }
 
-fn print_fish_exports(profile: &Profile) {
+fn print_fish_exports(profile: &Profile, docker_env: &BTreeMap<String, String>) {
     // triton section
     println!("# triton");
     println!(
@@ -103,8 +136,11 @@ fn print_fish_exports(profile: &Profile) {
         shell_escape_single(&profile.name)
     );
 
-    // docker section (placeholder for future docker host support)
+    // docker section
     println!("# docker");
+    for (key, value) in docker_env {
+        println!("set -gx {} '{}'", key, shell_escape_single(value));
+    }
 
     // smartdc/SDC section for backwards compatibility
     println!("# smartdc");
@@ -130,7 +166,7 @@ fn print_fish_exports(profile: &Profile) {
     println!("#     triton env | source");
 }
 
-fn print_powershell_exports(profile: &Profile) {
+fn print_powershell_exports(profile: &Profile, docker_env: &BTreeMap<String, String>) {
     // triton section
     println!("# triton");
     println!(
@@ -138,8 +174,11 @@ fn print_powershell_exports(profile: &Profile) {
         shell_escape_powershell(&profile.name)
     );
 
-    // docker section (placeholder for future docker host support)
+    // docker section
     println!("# docker");
+    for (key, value) in docker_env {
+        println!("$env:{} = '{}'", key, shell_escape_powershell(value));
+    }
 
     // smartdc/SDC section for backwards compatibility
     println!("# smartdc");
