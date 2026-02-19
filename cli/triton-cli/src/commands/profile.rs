@@ -89,6 +89,7 @@ pub enum ProfileCommand {
     },
 
     /// Set the current profile
+    #[command(alias = "set")]
     SetCurrent {
         /// Profile name (use '-' for previous)
         name: String,

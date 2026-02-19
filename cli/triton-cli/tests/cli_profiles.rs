@@ -439,3 +439,16 @@ fn test_profile_ls_alias() {
         .success()
         .stdout(predicate::str::contains("Usage:"));
 }
+
+/// Test profile set alias (alias for set-current)
+///
+/// Node.js `triton profile set NAME` works as shorthand for `set-current`.
+/// Verify the alias is recognized and routes to the same subcommand.
+#[test]
+fn test_profile_set_alias() {
+    triton_cmd()
+        .args(["profile", "set", "--help"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Set the current profile"));
+}
