@@ -381,6 +381,55 @@ fn test_profile_get_json_omits_insecure_false() {
     );
 }
 
+/// Test profile list -j includes `curr` field on each profile
+#[test]
+fn test_profile_list_json_includes_curr() {
+    let output = triton_cmd()
+        .args(["profile", "list", "-j"])
+        .env("TRITON_URL", "https://cloudapi.test.example.com")
+        .env("TRITON_ACCOUNT", "test-account")
+        .env(
+            "TRITON_KEY_ID",
+            "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
+        )
+        .env("HOME", "/nonexistent")
+        .env("TRITON_CONFIG_DIR", "/nonexistent/.triton")
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "Command should succeed.\nstdout: {}\nstderr: {}",
+        stdout,
+        stderr
+    );
+
+    let profiles: Vec<Value> = stdout
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_str(line).expect("Should parse JSON line"))
+        .collect();
+
+    assert!(!profiles.is_empty(), "Should have at least one profile");
+
+    for profile in &profiles {
+        assert!(
+            profile.get("curr").is_some(),
+            "Each profile in JSON list should include 'curr' field. Got: {}",
+            profile
+        );
+    }
+
+    // The env profile should be current
+    let env_profile = profiles
+        .iter()
+        .find(|p| p["name"] == "env")
+        .expect("Should include env profile");
+    assert_eq!(env_profile["curr"], true, "env profile should be current");
+}
+
 /// Test profile ls alias (alias for list)
 #[test]
 fn test_profile_ls_alias() {

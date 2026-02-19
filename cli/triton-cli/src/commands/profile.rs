@@ -187,7 +187,14 @@ async fn list_profiles(args: ProfileListArgs) -> Result<()> {
     }
 
     if args.json {
-        json::print_json_stream(&profiles_to_show)?;
+        for profile in &profiles_to_show {
+            let is_curr = Some(profile.name.as_str()) == current_name;
+            let mut value = serde_json::to_value(profile)?;
+            if let Some(obj) = value.as_object_mut() {
+                obj.insert("curr".to_string(), serde_json::Value::Bool(is_curr));
+            }
+            json::print_json(&value)?;
+        }
     } else {
         let mut tbl = TableBuilder::new(&["NAME", "CURR", "ACCOUNT", "USER", "URL"])
             .with_long_headers(&["KEYID", "INSECURE"]);

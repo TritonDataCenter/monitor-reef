@@ -6,9 +6,6 @@
 # When a diff is fixed and the test flips to PASS, the script flags it
 # as "fixed?" so you know to close the bead and remove the line.
 
-# Profile commands — differences.md #8
-profile-list-json   monitor-reef-610  profile list -j missing curr field
-
 # Env command — differences.md #9
 env-bash            monitor-reef-bxv  double vs single quotes in exports
 
