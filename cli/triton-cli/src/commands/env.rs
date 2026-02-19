@@ -23,14 +23,31 @@ pub async fn generate_env(profile_name: Option<&str>, shell: &str) -> Result<()>
     Ok(())
 }
 
-/// Escape a value for safe embedding in a POSIX single-quoted string.
+/// Escape a value for safe embedding in a POSIX double-quoted string.
 ///
-/// Single-quoted strings in POSIX shells treat all characters literally
-/// except that a single quote cannot appear inside them. The standard
-/// idiom is to end the current single-quoted segment, insert an escaped
-/// single quote (\'), and start a new single-quoted segment:
-///   value with 'quote  ->  'value with '\''quote'
-fn shell_escape_posix(value: &str) -> String {
+/// In POSIX double-quoted strings, five characters have special meaning
+/// and must be escaped with a backslash: `$`, `` ` ``, `\`, `"`, and `!`.
+fn shell_escape_double(value: &str) -> String {
+    let mut result = String::with_capacity(value.len());
+    for ch in value.chars() {
+        match ch {
+            '$' | '`' | '\\' | '"' | '!' => {
+                result.push('\\');
+                result.push(ch);
+            }
+            _ => result.push(ch),
+        }
+    }
+    result
+}
+
+/// Escape a value for safe embedding in a single-quoted string (fish shell).
+///
+/// Single-quoted strings treat all characters literally except that a
+/// single quote cannot appear inside them. The standard idiom is to end
+/// the current segment, insert an escaped single quote (\'), and start
+/// a new segment: `value with 'quote` -> `'value with '\''quote'`
+fn shell_escape_single(value: &str) -> String {
     value.replace('\'', "'\\''")
 }
 
@@ -47,8 +64,8 @@ fn print_posix_exports(profile: &Profile) {
     // triton section
     println!("# triton");
     println!(
-        "export TRITON_PROFILE='{}'",
-        shell_escape_posix(&profile.name)
+        "export TRITON_PROFILE=\"{}\"",
+        shell_escape_double(&profile.name)
     );
 
     // docker section (placeholder for future docker host support)
@@ -56,21 +73,21 @@ fn print_posix_exports(profile: &Profile) {
 
     // smartdc/SDC section for backwards compatibility
     println!("# smartdc");
-    println!("export SDC_URL='{}'", shell_escape_posix(&profile.url));
+    println!("export SDC_URL=\"{}\"", shell_escape_double(&profile.url));
     println!(
-        "export SDC_ACCOUNT='{}'",
-        shell_escape_posix(&profile.account)
+        "export SDC_ACCOUNT=\"{}\"",
+        shell_escape_double(&profile.account)
     );
 
     if let Some(user) = &profile.user {
-        println!("export SDC_USER='{}'", shell_escape_posix(user));
+        println!("export SDC_USER=\"{}\"", shell_escape_double(user));
     } else {
         println!("unset SDC_USER");
     }
 
     println!(
-        "export SDC_KEY_ID='{}'",
-        shell_escape_posix(&profile.key_id)
+        "export SDC_KEY_ID=\"{}\"",
+        shell_escape_double(&profile.key_id)
     );
     println!("unset SDC_TESTING");
 
@@ -83,7 +100,7 @@ fn print_fish_exports(profile: &Profile) {
     println!("# triton");
     println!(
         "set -gx TRITON_PROFILE '{}'",
-        shell_escape_posix(&profile.name)
+        shell_escape_single(&profile.name)
     );
 
     // docker section (placeholder for future docker host support)
@@ -91,21 +108,21 @@ fn print_fish_exports(profile: &Profile) {
 
     // smartdc/SDC section for backwards compatibility
     println!("# smartdc");
-    println!("set -gx SDC_URL '{}'", shell_escape_posix(&profile.url));
+    println!("set -gx SDC_URL '{}'", shell_escape_single(&profile.url));
     println!(
         "set -gx SDC_ACCOUNT '{}'",
-        shell_escape_posix(&profile.account)
+        shell_escape_single(&profile.account)
     );
 
     if let Some(user) = &profile.user {
-        println!("set -gx SDC_USER '{}'", shell_escape_posix(user));
+        println!("set -gx SDC_USER '{}'", shell_escape_single(user));
     } else {
         println!("set -e SDC_USER");
     }
 
     println!(
         "set -gx SDC_KEY_ID '{}'",
-        shell_escape_posix(&profile.key_id)
+        shell_escape_single(&profile.key_id)
     );
     println!("set -e SDC_TESTING");
 
