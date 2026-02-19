@@ -6,8 +6,8 @@
   "type": "zvol",
   "description": "Ubuntu 22.04 LTS bhyve image",
   "requirements": {
-    "minRam": 1024,
-    "maxRam": 65536,
+    "min_ram": 1024,
+    "max_ram": 65536,
     "brand": "bhyve",
     "bootrom": "uefi"
   },
@@ -15,7 +15,7 @@
   "owner": "9dce1460-0c4c-4417-ab8b-25ca478c5a78",
   "public": true,
   "state": "active",
-  "imageSize": 10240,
+  "image_size": 10240,
   "files": [
     {
       "compression": "gzip",

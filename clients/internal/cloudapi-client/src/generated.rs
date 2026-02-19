@@ -2878,8 +2878,8 @@ pub mod types {
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
-    #[doc = "    \"imageSize\": {"]
-    #[doc = "      \"description\": \"Image size in bytes (zvol images only)\","]
+    #[doc = "    \"image_size\": {"]
+    #[doc = "      \"description\": \"Image size in bytes (zvol images only) Note: CloudAPI returns this as snake_case despite other fields being camelCase\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"integer\","]
     #[doc = "        \"null\""]
@@ -3007,12 +3007,8 @@ pub mod types {
         pub homepage: ::std::option::Option<::std::string::String>,
         #[doc = "Image UUID"]
         pub id: ::uuid::Uuid,
-        #[doc = "Image size in bytes (zvol images only)"]
-        #[serde(
-            rename = "imageSize",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[doc = "Image size in bytes (zvol images only) Note: CloudAPI returns this as snake_case despite other fields being camelCase"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub image_size: ::std::option::Option<u64>,
         #[doc = "Image name"]
         pub name: ::std::string::String,
@@ -3295,7 +3291,7 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
-    #[doc = "    \"maxMemory\": {"]
+    #[doc = "    \"max_memory\": {"]
     #[doc = "      \"description\": \"Maximum memory (alias for max_ram)\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"integer\","]
@@ -3304,7 +3300,7 @@ pub mod types {
     #[doc = "      \"format\": \"uint64\","]
     #[doc = "      \"minimum\": 0.0"]
     #[doc = "    },"]
-    #[doc = "    \"maxRam\": {"]
+    #[doc = "    \"max_ram\": {"]
     #[doc = "      \"description\": \"Maximum RAM in MB\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"integer\","]
@@ -3313,7 +3309,7 @@ pub mod types {
     #[doc = "      \"format\": \"uint64\","]
     #[doc = "      \"minimum\": 0.0"]
     #[doc = "    },"]
-    #[doc = "    \"minMemory\": {"]
+    #[doc = "    \"min_memory\": {"]
     #[doc = "      \"description\": \"Minimum memory (alias for min_ram)\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"integer\","]
@@ -3322,7 +3318,7 @@ pub mod types {
     #[doc = "      \"format\": \"uint64\","]
     #[doc = "      \"minimum\": 0.0"]
     #[doc = "    },"]
-    #[doc = "    \"minRam\": {"]
+    #[doc = "    \"min_ram\": {"]
     #[doc = "      \"description\": \"Minimum RAM in MB\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"integer\","]
@@ -3346,32 +3342,16 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub brand: ::std::option::Option<::std::string::String>,
         #[doc = "Maximum memory (alias for max_ram)"]
-        #[serde(
-            rename = "maxMemory",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub max_memory: ::std::option::Option<u64>,
         #[doc = "Maximum RAM in MB"]
-        #[serde(
-            rename = "maxRam",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub max_ram: ::std::option::Option<u64>,
         #[doc = "Minimum memory (alias for min_ram)"]
-        #[serde(
-            rename = "minMemory",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub min_memory: ::std::option::Option<u64>,
         #[doc = "Minimum RAM in MB"]
-        #[serde(
-            rename = "minRam",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub min_ram: ::std::option::Option<u64>,
     }
 

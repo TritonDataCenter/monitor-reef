@@ -58,7 +58,6 @@ pub enum ImageType {
 ///
 /// Specifies hardware/software requirements for an image.
 #[derive(Debug, Default, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct ImageRequirements {
     /// Minimum RAM in MB
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -160,7 +159,12 @@ pub struct Image {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<Uuid>,
     /// Image size in bytes (zvol images only)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "image_size"
+    )]
     pub image_size: Option<u64>,
     /// Files array (contains compression, sha1, size)
     #[serde(default, skip_serializing_if = "Option::is_none")]

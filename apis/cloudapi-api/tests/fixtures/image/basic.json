@@ -6,7 +6,7 @@
   "type": "zone-dataset",
   "description": "A 64-bit SmartOS image with just essential packages installed.",
   "requirements": {
-    "minRam": 256
+    "min_ram": 256
   },
   "homepage": "https://docs.tritondatacenter.com/public-cloud/instances/infrastructure/images/smartos/base",
   "published_at": "2021-04-01T00:42:24Z",

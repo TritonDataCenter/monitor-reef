@@ -1178,8 +1178,8 @@
             "format": "uuid",
             "type": "string"
           },
-          "imageSize": {
-            "description": "Image size in bytes (zvol images only)",
+          "image_size": {
+            "description": "Image size in bytes (zvol images only) Note: CloudAPI returns this as snake_case despite other fields being camelCase",
             "format": "uint64",
             "minimum": 0,
             "nullable": true,
@@ -1353,28 +1353,28 @@
             "nullable": true,
             "type": "string"
           },
-          "maxMemory": {
+          "max_memory": {
             "description": "Maximum memory (alias for max_ram)",
             "format": "uint64",
             "minimum": 0,
             "nullable": true,
             "type": "integer"
           },
-          "maxRam": {
+          "max_ram": {
             "description": "Maximum RAM in MB",
             "format": "uint64",
             "minimum": 0,
             "nullable": true,
             "type": "integer"
           },
-          "minMemory": {
+          "min_memory": {
             "description": "Minimum memory (alias for min_ram)",
             "format": "uint64",
             "minimum": 0,
             "nullable": true,
             "type": "integer"
           },
-          "minRam": {
+          "min_ram": {
             "description": "Minimum RAM in MB",
             "format": "uint64",
             "minimum": 0,
