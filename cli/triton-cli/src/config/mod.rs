@@ -97,6 +97,9 @@ pub async fn resolve_profile(cli_profile: Option<&str>) -> Result<Profile> {
     // 4. Current profile from config
     let config = Config::load().await?;
     if let Some(name) = config.current_profile() {
+        if name == "env" {
+            return env_profile();
+        }
         return Profile::load(name).await;
     }
 

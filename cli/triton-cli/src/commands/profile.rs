@@ -504,8 +504,8 @@ async fn set_current_profile(name: &str) -> Result<()> {
             .clone()
             .ok_or_else(|| anyhow::anyhow!("No previous profile"))?
     } else {
-        // Verify profile exists
-        Profile::load(name).await?;
+        // Verify profile exists (resolve_profile handles the "env" profile)
+        resolve_profile(Some(name)).await?;
         name.to_string()
     };
 

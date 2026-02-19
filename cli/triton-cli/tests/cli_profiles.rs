@@ -452,3 +452,59 @@ fn test_profile_set_alias() {
         .success()
         .stdout(predicate::str::contains("Set the current profile"));
 }
+
+/// Test `triton profile set-current env` succeeds when env vars are set
+///
+/// Node.js: `triton profile set-current env` → `"env" is already the current profile`
+/// Rust previously failed with: `Error: Failed to read profile 'env': No such file or directory`
+/// because the "env" profile is virtual (constructed from environment variables, no file on disk).
+#[test]
+fn test_profile_set_current_env() {
+    let tmp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+
+    let output = triton_cmd()
+        .args(["profile", "set-current", "env"])
+        .env("TRITON_URL", "https://cloudapi.test.example.com")
+        .env("TRITON_ACCOUNT", "test-account")
+        .env(
+            "TRITON_KEY_ID",
+            "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
+        )
+        .env("HOME", tmp_dir.path())
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        output.status.success(),
+        "set-current env should succeed.\nstdout: {}\nstderr: {}",
+        stdout,
+        stderr
+    );
+    assert!(
+        stdout.contains("Current profile: env"),
+        "Should print current profile.\nstdout: {}",
+        stdout
+    );
+}
+
+/// Test `triton profile set-current env` fails without env vars
+#[test]
+fn test_profile_set_current_env_missing_vars() {
+    let tmp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+
+    triton_cmd()
+        .args(["profile", "set-current", "env"])
+        .env("HOME", tmp_dir.path())
+        .env_remove("TRITON_URL")
+        .env_remove("SDC_URL")
+        .env_remove("TRITON_ACCOUNT")
+        .env_remove("SDC_ACCOUNT")
+        .env_remove("TRITON_KEY_ID")
+        .env_remove("SDC_KEY_ID")
+        .env_remove("TRITON_PROFILE")
+        .assert()
+        .failure();
+}
