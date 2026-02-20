@@ -10331,7 +10331,11 @@
             "nullable": true,
             "description": "Volume type",
             "default": null,
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/VolumeType"
+              }
+            ]
           }
         },
         "required": [
@@ -10761,7 +10765,11 @@
           "brand": {
             "nullable": true,
             "description": "Required brand",
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Brand"
+              }
+            ]
           },
           "max_memory": {
             "nullable": true,
@@ -11383,6 +11391,32 @@
           "unknown"
         ]
       },
+      "MountMode": {
+        "description": "Volume mount mode",
+        "oneOf": [
+          {
+            "description": "Read-write",
+            "type": "string",
+            "enum": [
+              "rw"
+            ]
+          },
+          {
+            "description": "Read-only",
+            "type": "string",
+            "enum": [
+              "ro"
+            ]
+          },
+          {
+            "description": "Unknown mode (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
+        ]
+      },
       "Network": {
         "description": "Network information\n\nNote: CloudAPI returns snake_case for this object, so we use snake_case to match the API response format for CLI compatibility with node-triton.",
         "type": "object",
@@ -11395,7 +11429,6 @@
           "fabric": {
             "nullable": true,
             "description": "Fabric network",
-            "default": null,
             "type": "boolean"
           },
           "gateway": {
@@ -11439,7 +11472,6 @@
           "resolvers": {
             "nullable": true,
             "description": "Resolvers",
-            "default": null,
             "type": "array",
             "items": {
               "type": "string"
@@ -12419,7 +12451,11 @@
           },
           "type": {
             "description": "Volume type",
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/VolumeType"
+              }
+            ]
           }
         },
         "required": [
@@ -12439,8 +12475,12 @@
         "properties": {
           "mode": {
             "nullable": true,
-            "description": "Mount mode (defaults to \"rw\")",
-            "type": "string"
+            "description": "Mount mode (defaults to read-write)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MountMode"
+              }
+            ]
           },
           "mountpoint": {
             "description": "Mount point inside the instance",
@@ -12452,8 +12492,12 @@
           },
           "type": {
             "nullable": true,
-            "description": "Volume type (defaults to \"tritonnfs\")",
-            "type": "string"
+            "description": "Volume type (defaults to tritonnfs)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/VolumeType"
+              }
+            ]
           }
         },
         "required": [
@@ -12485,6 +12529,24 @@
           "failed",
           "deleting",
           "unknown"
+        ]
+      },
+      "VolumeType": {
+        "description": "Volume type",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "tritonnfs"
+            ]
+          },
+          {
+            "description": "Unknown type (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
         ]
       },
       "ImageAction": {

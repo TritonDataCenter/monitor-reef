@@ -8,6 +8,7 @@
 
 use super::common::{Brand, Metadata, RoleTags, Tags, Timestamp, Uuid};
 use super::misc::DiskSize;
+use super::volume::VolumeType;
 // Machine output type and ListMachinesQuery use VMAPI's Brand to support internal-only
 // brands (e.g., "builder") that may appear in changefeed messages or operator queries.
 // Only CreateMachineRequest uses CloudAPI's restrictive Brand to validate provisioning.
@@ -223,21 +224,34 @@ pub struct MachineNic {
     pub network: Uuid,
 }
 
+/// Volume mount mode
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum MountMode {
+    /// Read-write
+    Rw,
+    /// Read-only
+    Ro,
+    /// Unknown mode (forward compatibility)
+    #[serde(other)]
+    Unknown,
+}
+
 /// Volume mount specification for instance creation
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct VolumeMount {
     /// Volume name
     pub name: String,
-    /// Mount mode (defaults to "rw")
+    /// Mount mode (defaults to read-write)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub mode: Option<String>,
+    pub mode: Option<MountMode>,
     /// Mount point inside the instance
     pub mountpoint: String,
-    /// Volume type (defaults to "tritonnfs")
+    /// Volume type (defaults to tritonnfs)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[serde(rename = "type")]
-    pub volume_type: Option<String>,
+    pub volume_type: Option<VolumeType>,
 }
 
 /// Disk specification for bhyve instance creation

@@ -11,7 +11,7 @@
 
 mod common;
 
-use cloudapi_api::types::{Machine, MachineState, MachineType};
+use cloudapi_api::types::{Machine, MachineState, MachineType, MountMode};
 use uuid::Uuid;
 
 #[test]
@@ -298,4 +298,29 @@ fn test_machine_serialized_keys() {
         obj.contains_key("primaryIp"),
         "should serialize as 'primaryIp'"
     );
+}
+
+/// Test MountMode wire format serialization.
+#[test]
+fn test_mount_mode_wire_format() {
+    let cases = [("rw", MountMode::Rw), ("ro", MountMode::Ro)];
+
+    for (json_value, expected) in cases {
+        let json = format!(r#""{}""#, json_value);
+        let parsed: MountMode = serde_json::from_str(&json)
+            .unwrap_or_else(|_| panic!("Failed to parse mount mode: {}", json_value));
+        assert_eq!(parsed, expected);
+
+        // Round-trip
+        let serialized = serde_json::to_string(&expected).unwrap();
+        assert_eq!(serialized, json);
+    }
+}
+
+/// Test forward compatibility: unknown mount modes deserialize as Unknown.
+#[test]
+fn test_mount_mode_unknown_variant() {
+    let json = r#""rwx""#;
+    let parsed: MountMode = serde_json::from_str(json).unwrap();
+    assert_eq!(parsed, MountMode::Unknown);
 }

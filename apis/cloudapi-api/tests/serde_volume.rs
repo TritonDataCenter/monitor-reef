@@ -11,7 +11,7 @@
 
 mod common;
 
-use cloudapi_api::types::{Volume, VolumeState};
+use cloudapi_api::types::{Volume, VolumeState, VolumeType};
 use uuid::Uuid;
 
 #[test]
@@ -27,7 +27,7 @@ fn test_volume_basic_deserialize() {
         volume.owner_uuid,
         Uuid::parse_str("9dce1460-0c4c-4417-ab8b-25ca478c5a78").unwrap()
     );
-    assert_eq!(volume.volume_type, "tritonnfs");
+    assert_eq!(volume.volume_type, VolumeType::Tritonnfs);
     assert_eq!(volume.size, 10240);
     assert_eq!(volume.state, VolumeState::Ready);
 }
@@ -36,7 +36,7 @@ fn test_volume_basic_deserialize() {
 #[test]
 fn test_volume_type_rename() {
     let volume: Volume = common::deserialize_fixture("volume", "basic.json");
-    assert_eq!(volume.volume_type, "tritonnfs");
+    assert_eq!(volume.volume_type, VolumeType::Tritonnfs);
 
     // Verify round-trip serializes back to "type"
     let serialized = serde_json::to_value(&volume).unwrap();
@@ -120,6 +120,26 @@ fn test_volume_state_variants() {
             .unwrap_or_else(|_| panic!("Failed to parse volume state: {}", json_value));
         assert_eq!(parsed, expected);
     }
+}
+
+/// Test VolumeType wire format serialization.
+#[test]
+fn test_volume_type_wire_format() {
+    let json = r#""tritonnfs""#;
+    let parsed: VolumeType = serde_json::from_str(json).unwrap();
+    assert_eq!(parsed, VolumeType::Tritonnfs);
+
+    // Round-trip
+    let serialized = serde_json::to_string(&VolumeType::Tritonnfs).unwrap();
+    assert_eq!(serialized, r#""tritonnfs""#);
+}
+
+/// Test forward compatibility: unknown volume types deserialize as Unknown.
+#[test]
+fn test_volume_type_unknown_variant() {
+    let json = r#""somefuturetype""#;
+    let parsed: VolumeType = serde_json::from_str(json).unwrap();
+    assert_eq!(parsed, VolumeType::Unknown);
 }
 
 /// Test forward compatibility: unknown volume states deserialize as Unknown.

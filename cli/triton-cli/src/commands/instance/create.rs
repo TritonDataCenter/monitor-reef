@@ -460,15 +460,19 @@ fn parse_volume_spec(spec: &str) -> Result<cloudapi_client::types::VolumeMount> 
     let parts: Vec<&str> = spec.split(':').collect();
     if parts.len() == 3 {
         let name = parts[0].to_string();
-        let mode = parts[1].to_string();
+        let mode_str = parts[1];
         let mountpoint = parts[2].to_string();
 
-        if mode != "ro" && mode != "rw" {
-            return Err(anyhow::anyhow!(
-                "Invalid volume mode '{}'. Expected 'ro' or 'rw'",
-                mode
-            ));
-        }
+        let mode = match mode_str {
+            "rw" => cloudapi_client::types::MountMode::Rw,
+            "ro" => cloudapi_client::types::MountMode::Ro,
+            _ => {
+                return Err(anyhow::anyhow!(
+                    "Invalid volume mode '{}'. Expected 'ro' or 'rw'",
+                    mode_str
+                ));
+            }
+        };
 
         return Ok(cloudapi_client::types::VolumeMount {
             name,
@@ -778,14 +782,14 @@ mod tests {
         let mount = parse_volume_spec("myvolume:ro:/data").unwrap();
         assert_eq!(mount.name, "myvolume");
         assert_eq!(mount.mountpoint, "/data");
-        assert_eq!(mount.mode, Some("ro".to_string()));
+        assert_eq!(mount.mode, Some(cloudapi_client::types::MountMode::Ro));
     }
 
     #[test]
     fn test_parse_volume_spec_rw_mode() {
         let mount = parse_volume_spec("myvolume:rw:/data").unwrap();
         assert_eq!(mount.name, "myvolume");
-        assert_eq!(mount.mode, Some("rw".to_string()));
+        assert_eq!(mount.mode, Some(cloudapi_client::types::MountMode::Rw));
     }
 
     #[test]

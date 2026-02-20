@@ -74,7 +74,7 @@ pub struct Network {
     /// Public network
     pub public: bool,
     /// Fabric network
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fabric: Option<bool>,
     /// Description
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -105,7 +105,7 @@ pub struct Network {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub suffixes: Option<Vec<String>>,
     /// Resolvers
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resolvers: Option<Vec<String>>,
     /// Routes
     #[serde(default, skip_serializing_if = "Option::is_none")]

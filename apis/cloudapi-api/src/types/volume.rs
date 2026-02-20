@@ -19,6 +19,19 @@ pub struct VolumePath {
     pub id: Uuid,
 }
 
+/// Volume type
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
+)]
+#[serde(rename_all = "lowercase")]
+pub enum VolumeType {
+    Tritonnfs,
+    /// Unknown type (forward compatibility)
+    #[serde(other)]
+    #[clap(skip)]
+    Unknown,
+}
+
 /// Volume state
 #[derive(
     Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
@@ -47,7 +60,7 @@ pub struct Volume {
     pub owner_uuid: Uuid,
     /// Volume type
     #[serde(rename = "type")]
-    pub volume_type: String,
+    pub volume_type: VolumeType,
     /// Size in MiB
     pub size: u64,
     /// State
@@ -89,7 +102,7 @@ pub struct CreateVolumeRequest {
     pub name: Option<String>,
     /// Volume type
     #[serde(default, rename = "type")]
-    pub volume_type: Option<String>,
+    pub volume_type: Option<VolumeType>,
     /// Size in MiB
     pub size: u64,
     /// Networks (array of UUIDs)

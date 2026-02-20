@@ -10,7 +10,7 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 
-use cloudapi_client::types::VolumeState;
+use cloudapi_client::types::{VolumeState, VolumeType};
 
 use crate::output::enum_to_display;
 use crate::output::table::{TableBuilder, TableFormatArgs};
@@ -32,7 +32,7 @@ pub struct VolumeListArgs {
 
     /// Filter by type (e.g., tritonnfs)
     #[arg(long = "type")]
-    pub volume_type: Option<String>,
+    pub volume_type: Option<VolumeType>,
 
     #[command(flatten)]
     pub table: TableFormatArgs,
@@ -84,7 +84,7 @@ pub struct VolumeCreateArgs {
 
     /// Volume type (default: tritonnfs)
     #[arg(long, short = 't', default_value = "tritonnfs")]
-    pub r#type: String,
+    pub r#type: VolumeType,
 
     /// Network ID, name, or short ID (uses default fabric network if not specified)
     #[arg(long, short = 'N')]
@@ -188,7 +188,11 @@ fn apply_positional_filters(args: &mut VolumeListArgs) -> Result<()> {
                     anyhow::anyhow!("Invalid size value '{}': expected a number in MiB", value)
                 })?);
             }
-            "type" => args.volume_type = Some(value.to_string()),
+            "type" => {
+                args.volume_type = Some(parse_serde_enum(value).map_err(|_| {
+                    anyhow::anyhow!("Invalid type value '{}': expected tritonnfs", value)
+                })?);
+            }
             _ => unreachable!(),
         }
     }
@@ -230,8 +234,8 @@ async fn list_volumes(
             {
                 return false;
             }
-            if let Some(ref vtype) = args.volume_type
-                && vol.type_ != *vtype
+            if let Some(vtype) = args.volume_type
+                && vol.type_ != vtype
             {
                 return false;
             }
@@ -250,7 +254,7 @@ async fn list_volumes(
                 vol.id.to_string()[..8].to_string(),
                 vol.name.clone(),
                 format_volume_size(vol.size),
-                vol.type_.clone(),
+                enum_to_display(&vol.type_),
                 enum_to_display(&vol.state),
                 output::format_age(&vol.created.to_string()),
                 vol.id.to_string(),
@@ -419,7 +423,7 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
 
     let request = cloudapi_client::types::CreateVolumeRequest {
         name: args.name.clone(),
-        type_: Some(args.r#type.clone()),
+        type_: Some(args.r#type),
         size,
         networks,
         tags,

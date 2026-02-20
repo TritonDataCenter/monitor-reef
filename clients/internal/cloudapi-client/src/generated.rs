@@ -2026,9 +2026,17 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"type\": {"]
     #[doc = "      \"description\": \"Volume type\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"string\","]
-    #[doc = "        \"null\""]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/VolumeType\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -2057,7 +2065,7 @@ pub mod types {
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub type_: ::std::option::Option<::std::string::String>,
+        pub type_: ::std::option::Option<VolumeType>,
     }
 
     impl CreateVolumeRequest {
@@ -3286,9 +3294,17 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"brand\": {"]
     #[doc = "      \"description\": \"Required brand\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"string\","]
-    #[doc = "        \"null\""]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Brand\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"max_memory\": {"]
@@ -3340,7 +3356,7 @@ pub mod types {
         pub bootrom: ::std::option::Option<::std::string::String>,
         #[doc = "Required brand"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub brand: ::std::option::Option<::std::string::String>,
+        pub brand: ::std::option::Option<Brand>,
         #[doc = "Maximum memory (alias for max_ram)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub max_memory: ::std::option::Option<u64>,
@@ -5083,6 +5099,111 @@ pub mod types {
     }
 
     impl ::std::convert::TryFrom<::std::string::String> for MigrationState {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    #[doc = "Volume mount mode"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Volume mount mode\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Read-write\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"rw\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Read-only\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"ro\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown mode (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum MountMode {
+        #[doc = "Read-write"]
+        #[serde(rename = "rw")]
+        Rw,
+        #[doc = "Read-only"]
+        #[serde(rename = "ro")]
+        Ro,
+        #[doc = "Unknown mode (forward compatibility)"]
+        #[serde(rename = "unknown")]
+        Unknown,
+    }
+
+    impl ::std::fmt::Display for MountMode {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Rw => f.write_str("rw"),
+                Self::Ro => f.write_str("ro"),
+                Self::Unknown => f.write_str("unknown"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for MountMode {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "rw" => Ok(Self::Rw),
+                "ro" => Ok(Self::Ro),
+                "unknown" => Ok(Self::Unknown),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for MountMode {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for MountMode {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for MountMode {
         type Error = self::error::ConversionError;
         fn try_from(
             value: ::std::string::String,
@@ -7522,7 +7643,11 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"type\": {"]
     #[doc = "      \"description\": \"Volume type\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/VolumeType\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -7557,7 +7682,7 @@ pub mod types {
         pub tags: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
         #[doc = "Volume type"]
         #[serde(rename = "type")]
-        pub type_: ::std::string::String,
+        pub type_: VolumeType,
     }
 
     impl Volume {
@@ -7655,10 +7780,18 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"mode\": {"]
-    #[doc = "      \"description\": \"Mount mode (defaults to \\\"rw\\\")\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"string\","]
-    #[doc = "        \"null\""]
+    #[doc = "      \"description\": \"Mount mode (defaults to read-write)\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/MountMode\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"mountpoint\": {"]
@@ -7670,10 +7803,18 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"type\": {"]
-    #[doc = "      \"description\": \"Volume type (defaults to \\\"tritonnfs\\\")\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"string\","]
-    #[doc = "        \"null\""]
+    #[doc = "      \"description\": \"Volume type (defaults to tritonnfs)\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/VolumeType\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -7684,20 +7825,20 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct VolumeMount {
-        #[doc = "Mount mode (defaults to \"rw\")"]
+        #[doc = "Mount mode (defaults to read-write)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub mode: ::std::option::Option<::std::string::String>,
+        pub mode: ::std::option::Option<MountMode>,
         #[doc = "Mount point inside the instance"]
         pub mountpoint: ::std::string::String,
         #[doc = "Volume name"]
         pub name: ::std::string::String,
-        #[doc = "Volume type (defaults to \"tritonnfs\")"]
+        #[doc = "Volume type (defaults to tritonnfs)"]
         #[serde(
             rename = "type",
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub type_: ::std::option::Option<::std::string::String>,
+        pub type_: ::std::option::Option<VolumeType>,
     }
 
     impl VolumeMount {
@@ -7830,6 +7971,98 @@ pub mod types {
     }
 
     impl ::std::convert::TryFrom<::std::string::String> for VolumeState {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    #[doc = "Volume type"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Volume type\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"tritonnfs\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown type (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        clap :: ValueEnum,
+        schemars :: JsonSchema,
+    )]
+    pub enum VolumeType {
+        #[serde(rename = "tritonnfs")]
+        Tritonnfs,
+        #[doc = "Unknown type (forward compatibility)"]
+        #[serde(rename = "unknown")]
+        Unknown,
+    }
+
+    impl ::std::fmt::Display for VolumeType {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Tritonnfs => f.write_str("tritonnfs"),
+                Self::Unknown => f.write_str("unknown"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for VolumeType {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "tritonnfs" => Ok(Self::Tritonnfs),
+                "unknown" => Ok(Self::Unknown),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for VolumeType {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for VolumeType {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for VolumeType {
         type Error = self::error::ConversionError;
         fn try_from(
             value: ::std::string::String,
@@ -10105,7 +10338,7 @@ pub mod types {
                 ::std::string::String,
             >,
             type_: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<super::VolumeType>,
                 ::std::string::String,
             >,
         }
@@ -10169,7 +10402,7 @@ pub mod types {
             }
             pub fn type_<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::VolumeType>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.type_ = value
@@ -11278,10 +11511,8 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
-            brand: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
-                ::std::string::String,
-            >,
+            brand:
+                ::std::result::Result<::std::option::Option<super::Brand>, ::std::string::String>,
             max_memory: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
             max_ram: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
             min_memory: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
@@ -11314,7 +11545,7 @@ pub mod types {
             }
             pub fn brand<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::Brand>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.brand = value
@@ -15280,7 +15511,7 @@ pub mod types {
                 ::serde_json::Map<::std::string::String, ::serde_json::Value>,
                 ::std::string::String,
             >,
-            type_: ::std::result::Result<::std::string::String, ::std::string::String>,
+            type_: ::std::result::Result<super::VolumeType, ::std::string::String>,
         }
 
         impl ::std::default::Default for Volume {
@@ -15406,7 +15637,7 @@ pub mod types {
             }
             pub fn type_<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<super::VolumeType>,
                 T::Error: ::std::fmt::Display,
             {
                 self.type_ = value
@@ -15458,13 +15689,13 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct VolumeMount {
             mode: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<super::MountMode>,
                 ::std::string::String,
             >,
             mountpoint: ::std::result::Result<::std::string::String, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             type_: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<super::VolumeType>,
                 ::std::string::String,
             >,
         }
@@ -15483,7 +15714,7 @@ pub mod types {
         impl VolumeMount {
             pub fn mode<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::MountMode>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.mode = value
@@ -15513,7 +15744,7 @@ pub mod types {
             }
             pub fn type_<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::VolumeType>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.type_ = value

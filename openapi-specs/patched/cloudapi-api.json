@@ -881,10 +881,14 @@
             "type": "object"
           },
           "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/VolumeType"
+              }
+            ],
             "default": null,
             "description": "Volume type",
-            "nullable": true,
-            "type": "string"
+            "nullable": true
           }
         },
         "required": [
@@ -1349,9 +1353,13 @@
             "type": "string"
           },
           "brand": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Brand"
+              }
+            ],
             "description": "Required brand",
-            "nullable": true,
-            "type": "string"
+            "nullable": true
           },
           "max_memory": {
             "description": "Maximum memory (alias for max_ram)",
@@ -1989,6 +1997,32 @@
         ],
         "type": "string"
       },
+      "MountMode": {
+        "description": "Volume mount mode",
+        "oneOf": [
+          {
+            "description": "Read-write",
+            "enum": [
+              "rw"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Read-only",
+            "enum": [
+              "ro"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Unknown mode (forward compatibility)",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
       "Network": {
         "description": "Network information\n\nNote: CloudAPI returns snake_case for this object, so we use snake_case to match the API response format for CLI compatibility with node-triton.",
         "properties": {
@@ -1998,7 +2032,6 @@
             "type": "string"
           },
           "fabric": {
-            "default": null,
             "description": "Fabric network",
             "nullable": true,
             "type": "boolean"
@@ -2042,7 +2075,6 @@
             "type": "boolean"
           },
           "resolvers": {
-            "default": null,
             "description": "Resolvers",
             "items": {
               "type": "string"
@@ -3023,8 +3055,12 @@
             "type": "object"
           },
           "type": {
-            "description": "Volume type",
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/VolumeType"
+              }
+            ],
+            "description": "Volume type"
           }
         },
         "required": [
@@ -3050,9 +3086,13 @@
         "description": "Volume mount specification for instance creation",
         "properties": {
           "mode": {
-            "description": "Mount mode (defaults to \"rw\")",
-            "nullable": true,
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MountMode"
+              }
+            ],
+            "description": "Mount mode (defaults to read-write)",
+            "nullable": true
           },
           "mountpoint": {
             "description": "Mount point inside the instance",
@@ -3063,9 +3103,13 @@
             "type": "string"
           },
           "type": {
-            "description": "Volume type (defaults to \"tritonnfs\")",
-            "nullable": true,
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/VolumeType"
+              }
+            ],
+            "description": "Volume type (defaults to tritonnfs)",
+            "nullable": true
           }
         },
         "required": [
@@ -3099,6 +3143,24 @@
           "unknown"
         ],
         "type": "string"
+      },
+      "VolumeType": {
+        "description": "Volume type",
+        "oneOf": [
+          {
+            "enum": [
+              "tritonnfs"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Unknown type (forward compatibility)",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
       }
     }
   },

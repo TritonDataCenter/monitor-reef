@@ -9,6 +9,7 @@
 use super::common::{RoleTags, Tags, Timestamp, Uuid};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use vmapi_api::Brand as VmapiBrand;
 
 /// Path parameter for image operations
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -73,7 +74,7 @@ pub struct ImageRequirements {
     pub max_memory: Option<u64>,
     /// Required brand
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub brand: Option<String>,
+    pub brand: Option<VmapiBrand>,
     /// Required bootrom (for bhyve)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bootrom: Option<String>,

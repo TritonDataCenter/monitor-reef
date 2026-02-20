@@ -14,6 +14,7 @@ mod common;
 
 use cloudapi_api::types::{Image, ImageState, ImageType};
 use uuid::Uuid;
+use vmapi_api::Brand as VmapiBrand;
 
 #[test]
 fn test_image_basic_deserialize() {
@@ -70,7 +71,7 @@ fn test_image_zvol_with_requirements() {
     assert_eq!(image.image_type, ImageType::Zvol);
     assert_eq!(image.requirements.min_ram, Some(1024));
     assert_eq!(image.requirements.max_ram, Some(65536));
-    assert_eq!(image.requirements.brand.as_deref(), Some("bhyve"));
+    assert_eq!(image.requirements.brand, Some(VmapiBrand::Bhyve));
     assert_eq!(image.requirements.bootrom.as_deref(), Some("uefi"));
     assert_eq!(image.image_size, Some(10240));
 }

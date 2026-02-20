@@ -156,6 +156,7 @@ pub use cloudapi_api::{
     MigrationEstimateRequest,
     MigrationPhase,
     MigrationState,
+    MountMode,
     Network,
     NetworkIp,
     NetworkIpPath,
@@ -215,6 +216,7 @@ pub use cloudapi_api::{
     VolumePath,
     VolumeSize,
     VolumeState,
+    VolumeType,
 };
 
 // =============================================================================
