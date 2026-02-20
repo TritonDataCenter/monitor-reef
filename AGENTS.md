@@ -214,7 +214,8 @@ bd update <id> --claim      # Claim an issue
 bd show <id>                # View details
 bd close <id>               # Close after fixing
 bd close <id> -r "wontfix: reason"  # Close as won't-fix
-bd create --title "..." --description "..." --add-label type-safety
+bd create --title "..." --description "..." --labels type-safety
+bd comments add <id> "comment text"  # Add a comment to an issue
 ```
 
 **Session convention**: When asked to "work on the next bead" (or similar), run `bd ready` to find the next unclaimed issue, then `bd show <id>` for details, `bd update <id> --claim` to claim it, implement the fix, and `bd close <id>` when done. Always commit code changes together with the updated `.beads/issues.jsonl`. Create new issues for any follow-up work discovered.

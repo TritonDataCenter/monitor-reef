@@ -160,6 +160,16 @@ fn test_account_get() {
         "Should show login field. Got:\n{}",
         stdout
     );
+
+    // Should include address fields (even if null), matching node-triton
+    for field in ["postalCode:", "address:", "city:", "state:", "country:"] {
+        assert!(
+            stdout.contains(field),
+            "Should show {} field. Got:\n{}",
+            field,
+            stdout
+        );
+    }
 }
 
 /// Test `triton account get -j` returns JSON

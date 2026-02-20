@@ -7,5 +7,5 @@
 # as "fixed?" so you know to close the bead and remove the line.
 
 image-get           monitor-reef-4o4  JSON key ordering
+instance-get        monitor-reef-4o4  JSON key ordering
 network-get         monitor-reef-4o4  JSON key ordering
-account-get         monitor-reef-lfi  missing address fields

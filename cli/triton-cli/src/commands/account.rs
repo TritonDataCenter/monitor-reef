@@ -58,6 +58,14 @@ impl AccountCommand {
     }
 }
 
+/// Display an Option as its value or "null", matching node-triton output.
+fn opt_display<T: std::fmt::Display>(opt: &Option<T>) -> String {
+    match opt {
+        Some(v) => v.to_string(),
+        None => "null".to_string(),
+    }
+}
+
 /// Format a duration as a human-readable relative time string (e.g., "1d", "41w")
 fn long_ago(when: &str) -> String {
     use chrono::{DateTime, Utc};
@@ -116,21 +124,19 @@ async fn get_account(client: &TypedClient, use_json: bool) -> Result<()> {
         println!("id: {}", acc.id);
         println!("login: {}", acc.login);
         println!("email: {}", acc.email);
-        if let Some(company) = &acc.company_name {
-            println!("companyName: {}", company);
-        }
-        if let Some(first) = &acc.first_name {
-            println!("firstName: {}", first);
-        }
-        if let Some(last) = &acc.last_name {
-            println!("lastName: {}", last);
-        }
-        if let Some(cns) = acc.triton_cns_enabled {
-            println!("triton_cns_enabled: {}", cns);
-        }
-        if let Some(phone) = &acc.phone {
-            println!("phone: {}", phone);
-        }
+        println!("companyName: {}", opt_display(&acc.company_name));
+        println!("firstName: {}", opt_display(&acc.first_name));
+        println!("lastName: {}", opt_display(&acc.last_name));
+        println!("postalCode: {}", opt_display(&acc.postal_code));
+        println!(
+            "triton_cns_enabled: {}",
+            opt_display(&acc.triton_cns_enabled)
+        );
+        println!("address: {}", opt_display(&acc.address));
+        println!("city: {}", opt_display(&acc.city));
+        println!("state: {}", opt_display(&acc.state));
+        println!("country: {}", opt_display(&acc.country));
+        println!("phone: {}", opt_display(&acc.phone));
         println!("updated: {} ({})", acc.updated, long_ago(&acc.updated));
         println!("created: {} ({})", acc.created, long_ago(&acc.created));
     }
