@@ -707,7 +707,14 @@ async fn try_main() -> Result<()> {
         }
         Commands::Completion { shell } => {
             let mut cmd = Cli::command();
-            let name = cmd.get_name().to_string();
+            let name = std::env::args()
+                .next()
+                .and_then(|s| {
+                    std::path::Path::new(&s)
+                        .file_name()
+                        .map(|f| f.to_string_lossy().into_owned())
+                })
+                .unwrap_or_else(|| cmd.get_name().to_string());
             generate(*shell, &mut cmd, name, &mut std::io::stdout());
             Ok(())
         }
