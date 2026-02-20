@@ -176,7 +176,7 @@ pub async fn run(args: CloudApiArgs, client: &TypedClient) -> Result<()> {
     if args.pretty && !response_body.is_empty() {
         match serde_json::from_str::<serde_json::Value>(&response_body) {
             Ok(json) => {
-                println!("{}", serde_json::to_string_pretty(&json)?);
+                println!("{}", crate::output::json::to_json_pretty(&json)?);
             }
             // arch-lint: allow(no-error-swallowing) reason="Not JSON, print body as-is; valid for text/plain endpoints"
             Err(_) => {

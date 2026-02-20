@@ -6,10 +6,8 @@
 # When a diff is fixed and the test flips to PASS, the script flags it
 # as "fixed?" so you know to close the bead and remove the line.
 
-image-list-json     monitor-reef-3f1  missing image_size, min_memory, min_ram
-image-get           monitor-reef-bg6  JSON indent and key ordering
-package-get         monitor-reef-bg6  JSON indent and key ordering
-network-get         monitor-reef-bg6  JSON indent and key ordering
+image-get           monitor-reef-4o4  JSON key ordering
+network-get         monitor-reef-4o4  JSON key ordering
 account-get         monitor-reef-lfi  missing address fields
 info                monitor-reef-0sl  totalDisk rounding difference
 key-get             monitor-reef-exc  output format differs (raw key vs structured)

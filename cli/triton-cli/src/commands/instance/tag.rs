@@ -171,7 +171,7 @@ pub async fn list_tags(args: TagListArgs, client: &TypedClient, use_json: bool) 
     if use_json {
         println!("{}", serde_json::to_string(&tags)?);
     } else {
-        println!("{}", serde_json::to_string_pretty(&tags)?);
+        println!("{}", crate::output::json::to_json_pretty(&tags)?);
     }
 
     Ok(())
@@ -358,7 +358,7 @@ async fn set_tags(args: TagSetArgs, client: &TypedClient) -> Result<()> {
         if args.json {
             println!("{}", serde_json::to_string(&updated_tags)?);
         } else {
-            println!("{}", serde_json::to_string_pretty(&updated_tags)?);
+            println!("{}", crate::output::json::to_json_pretty(&updated_tags)?);
         }
     }
 
@@ -507,7 +507,7 @@ async fn replace_all_tags(args: TagReplaceAllArgs, client: &TypedClient) -> Resu
         if args.json {
             println!("{}", serde_json::to_string(&updated_tags)?);
         } else {
-            println!("{}", serde_json::to_string_pretty(&updated_tags)?);
+            println!("{}", crate::output::json::to_json_pretty(&updated_tags)?);
         }
     }
 
