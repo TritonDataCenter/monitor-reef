@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! SSH key and access key types
 
@@ -68,6 +68,9 @@ pub struct CreateSshKeyRequest {
 }
 
 /// Access key status
+// Note: No `rename_all` needed — Node.js CloudAPI uses PascalCase for status
+// values ("Active", "Inactive", "Expired"), which matches serde's default.
+// See `sdc-cloudapi/lib/endpoints/accesskeys.js` `translateAccessKey()`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 pub enum AccessKeyStatus {
     Active,

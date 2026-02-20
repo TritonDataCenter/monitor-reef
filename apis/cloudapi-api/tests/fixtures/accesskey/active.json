@@ -1,0 +1,9 @@
+{
+    "accesskeyid": "AKID1234567890",
+    "status": "Active",
+    "credentialtype": "permanent",
+    "description": "My test key",
+    "created": "2024-01-15T10:00:00.000Z",
+    "updated": "2024-01-15T10:00:00.000Z",
+    "expiration": null
+}
