@@ -157,7 +157,7 @@ async fn run_tcp_mode(
                         }
                     }
                     Err(e) => {
-                        eprintln!("Failed to connect to CloudAPI: {}", e);
+                        tracing::error!("failed to connect to CloudAPI: {}", e);
                     }
                 }
 
@@ -238,7 +238,7 @@ async fn handle_ws_connection(browser_ws: AxumWebSocket, state: Arc<WsProxyState
             Ok(ws) => ws,
             // arch-lint: allow(no-error-swallowing) reason="WebSocket handler cannot propagate errors; log and close gracefully"
             Err(e) => {
-                eprintln!("Failed to connect to CloudAPI: {}", e);
+                tracing::error!("failed to connect to CloudAPI: {}", e);
                 return;
             }
         };
@@ -248,7 +248,7 @@ async fn handle_ws_connection(browser_ws: AxumWebSocket, state: Arc<WsProxyState
     // Bridge the two WebSocket connections
     // arch-lint: allow(no-error-swallowing) reason="Handler cannot return errors to WebSocket framework; log and cleanup"
     if let Err(e) = bridge_websockets(browser_ws, cloudapi_ws).await {
-        eprintln!("WebSocket bridge error: {}", e);
+        tracing::error!("WebSocket bridge error: {}", e);
     }
 
     println!("Browser disconnected");

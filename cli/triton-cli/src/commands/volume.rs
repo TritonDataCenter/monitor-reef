@@ -388,7 +388,7 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
 
     // Warn about affinity if specified (not currently supported by API)
     if args.affinity.is_some() {
-        eprintln!("Warning: --affinity option is not currently supported by the API");
+        tracing::warn!("--affinity option is not currently supported by the API");
     }
 
     // Parse size

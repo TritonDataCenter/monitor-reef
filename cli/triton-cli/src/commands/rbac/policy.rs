@@ -520,7 +520,7 @@ async fn edit_policy_in_editor(policy_ref: &str, client: &TypedClient) -> Result
         match serde_yaml::from_str::<PolicyEdit>(&result.content) {
             Ok(edited) => {
                 if edited.rules.is_empty() {
-                    eprintln!("Error: At least one rule is required");
+                    tracing::error!("at least one rule is required");
                     if !editor::prompt_retry()? {
                         anyhow::bail!("Aborted");
                     }
@@ -549,7 +549,7 @@ async fn edit_policy_in_editor(policy_ref: &str, client: &TypedClient) -> Result
                 return Ok(());
             }
             Err(e) => {
-                eprintln!("Error parsing YAML: {}", e);
+                tracing::error!("parsing YAML: {}", e);
                 if !editor::prompt_retry()? {
                     anyhow::bail!("Aborted");
                 }

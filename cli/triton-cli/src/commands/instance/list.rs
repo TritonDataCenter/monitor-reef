@@ -316,7 +316,7 @@ pub async fn run(
                     .collect()
             }
             Err(e) => {
-                eprintln!("warning: failed to fetch images: {}", e);
+                tracing::warn!("failed to fetch images: {}", e);
                 HashMap::new()
             }
         };

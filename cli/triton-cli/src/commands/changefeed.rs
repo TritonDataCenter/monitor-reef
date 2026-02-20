@@ -106,7 +106,7 @@ pub async fn run(args: ChangefeedArgs, client: &TypedClient, use_json: bool) -> 
                         // Ignore ping/pong and binary messages
                     }
                     Some(Err(e)) => {
-                        eprintln!("WebSocket error: {}", e);
+                        tracing::error!("WebSocket error: {}", e);
                         break;
                     }
                     None => {

@@ -628,7 +628,7 @@ async fn edit_role_in_editor(role_ref: &str, client: &TypedClient) -> Result<()>
                 return Ok(());
             }
             Err(e) => {
-                eprintln!("Error parsing YAML: {}", e);
+                tracing::error!("parsing YAML: {}", e);
                 if !editor::prompt_retry()? {
                     anyhow::bail!("Aborted");
                 }

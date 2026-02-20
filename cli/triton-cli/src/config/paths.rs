@@ -31,8 +31,8 @@ pub fn config_dir() -> PathBuf {
     // Default: ~/.triton (matches node-triton)
     dirs::home_dir()
         .unwrap_or_else(|| {
-            eprintln!(
-                "warning: could not determine home directory, \
+            tracing::warn!(
+                "could not determine home directory, \
                  using current directory for config"
             );
             PathBuf::from(".")
@@ -84,8 +84,8 @@ pub async fn warn_alternative_config_dirs() {
                 }
             }
             if has_profiles {
-                eprintln!(
-                    "Warning: profiles also found in {}, but using {}",
+                tracing::warn!(
+                    "profiles also found in {}, but using {}",
                     alt.display(),
                     active.display()
                 );

@@ -350,15 +350,12 @@ async fn build_root_cert_store() -> rustls::RootCertStore {
     }
 
     // 3. Fall back to bundled Mozilla roots
-    eprintln!(
-        "\
-warning: no native root certificates found; using bundled Mozilla roots
-
-  If you need to trust additional CAs (e.g., a self-signed certificate),
-  point the TLS library at your certificate store:
-
-    export SSL_CERT_FILE=/path/to/ca-bundle.pem
-    export SSL_CERT_DIR=/path/to/certs/directory"
+    tracing::warn!(
+        "no native root certificates found; using bundled Mozilla roots\n\n  \
+         If you need to trust additional CAs (e.g., a self-signed certificate),\n  \
+         point the TLS library at your certificate store:\n\n    \
+         export SSL_CERT_FILE=/path/to/ca-bundle.pem\n    \
+         export SSL_CERT_DIR=/path/to/certs/directory"
     );
     root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
@@ -526,15 +523,20 @@ async fn main() {
 async fn try_main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Set up logging: always show warnings/errors, verbose adds debug
+    let filter = if cli.verbose {
+        "triton=debug"
+    } else {
+        "triton=warn"
+    };
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .without_time()
+        .with_target(false)
+        .init();
+
     // Warn if profiles exist in an alternative config directory
     config::paths::warn_alternative_config_dirs().await;
-
-    // Set up logging
-    if cli.verbose {
-        tracing_subscriber::fmt()
-            .with_env_filter("triton=debug")
-            .init();
-    }
 
     match &cli.command {
         Commands::Profile { command } => command.clone().run().await,

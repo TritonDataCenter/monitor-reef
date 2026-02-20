@@ -147,10 +147,7 @@ pub async fn run(args: CloudApiArgs, client: &TypedClient) -> Result<()> {
         if let Some((key, value)) = header.split_once(':') {
             request = request.header(key.trim(), value.trim());
         } else {
-            eprintln!(
-                "Warning: Invalid header format '{}', expected 'Key: Value'",
-                header
-            );
+            tracing::warn!("invalid header format '{}', expected 'Key: Value'", header);
         }
     }
 
