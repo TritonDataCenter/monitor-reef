@@ -802,4 +802,76 @@ mod tests {
         // This will panic if there are any argument conflicts or invalid configurations
         Cli::command().debug_assert();
     }
+
+    /// Regression test: build_http_client(insecure=true) must accept
+    /// self-signed certificates.
+    ///
+    /// The custom TLS config (use_preconfigured_tls) previously overrode
+    /// reqwest's danger_accept_invalid_certs handling, causing connections
+    /// to fail even when insecure=true. Fixed in 1d0349f.
+    #[tokio::test]
+    async fn insecure_mode_accepts_self_signed_cert() {
+        use std::sync::Arc;
+        use tokio::net::TcpListener;
+        use tokio_rustls::TlsAcceptor;
+
+        // Generate a self-signed certificate for localhost
+        let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()])
+            .expect("cert generation failed");
+        let cert_der = rustls::pki_types::CertificateDer::from(cert.cert);
+        let key_der = rustls::pki_types::PrivateKeyDer::try_from(cert.signing_key.serialize_der())
+            .expect("key conversion failed");
+
+        let server_config = rustls::ServerConfig::builder()
+            .with_no_client_auth()
+            .with_single_cert(vec![cert_der], key_der)
+            .expect("server config failed");
+
+        let acceptor = TlsAcceptor::from(Arc::new(server_config));
+
+        // Bind to a random port
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let url = format!("https://localhost:{port}/");
+
+        // Spawn a minimal HTTPS server that returns "ok" for each connection
+        let acceptor_clone = acceptor.clone();
+        let server = tokio::spawn(async move {
+            // Accept up to 2 connections (one for insecure=true, one for insecure=false)
+            for _ in 0..2 {
+                let Ok((stream, _)) = listener.accept().await else {
+                    break;
+                };
+                let acc = acceptor_clone.clone();
+                tokio::spawn(async move {
+                    let Ok(mut tls) = acc.accept(stream).await else {
+                        return;
+                    };
+                    // Read the HTTP request (we don't care about the content)
+                    let mut buf = vec![0u8; 4096];
+                    let _ = tokio::io::AsyncReadExt::read(&mut tls, &mut buf).await;
+                    // Write a minimal HTTP response
+                    let response = b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok";
+                    let _ = tokio::io::AsyncWriteExt::write_all(&mut tls, response).await;
+                });
+            }
+        });
+
+        // insecure=true must succeed against a self-signed cert
+        let client = build_http_client(true)
+            .await
+            .expect("build insecure client");
+        let resp = client.get(&url).send().await;
+        assert!(resp.is_ok(), "insecure=true should accept self-signed cert");
+
+        // insecure=false must fail (cert is not in any trust store)
+        let client = build_http_client(false).await.expect("build secure client");
+        let resp = client.get(&url).send().await;
+        assert!(
+            resp.is_err(),
+            "insecure=false should reject self-signed cert"
+        );
+
+        server.abort();
+    }
 }
