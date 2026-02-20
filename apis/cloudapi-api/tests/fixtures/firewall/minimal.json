@@ -1,0 +1,5 @@
+{
+    "id": "c8cec95e-5f49-4a52-b850-0f40c8b90a65",
+    "rule": "FROM tag \"role\" = \"web\" TO tag \"role\" = \"db\" ALLOW tcp PORT 5432",
+    "enabled": false
+}

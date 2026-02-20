@@ -414,6 +414,62 @@ mod tests {
         assert!(package.disks.is_some());
     }
 
+    /// Test that `role-tag` and `flexible_disk` use their explicit renames,
+    /// not the struct-level `rename_all = "camelCase"`.
+    #[test]
+    fn test_package_special_field_wire_format() {
+        let json = r#"{
+            "id": "a50fa089-2bb6-47d5-9a68-dc71c7b0cd03",
+            "name": "test-pkg",
+            "memory": 1024,
+            "disk": 25600,
+            "swap": 4096,
+            "vcpus": 1,
+            "flexible_disk": true,
+            "role-tag": ["admin"]
+        }"#;
+
+        let package: Package = serde_json::from_str(json).expect("should deserialize");
+        assert_eq!(package.flexible_disk, Some(true));
+        assert_eq!(
+            package.role_tag.as_deref(),
+            Some(&["admin".to_string()][..])
+        );
+
+        // Round-trip: verify wire format uses hyphenated/snake_case names
+        let serialized = serde_json::to_value(&package).unwrap();
+        assert!(
+            serialized.get("role-tag").is_some(),
+            "should serialize as 'role-tag'"
+        );
+        assert!(
+            serialized.get("flexible_disk").is_some(),
+            "should serialize as 'flexible_disk'"
+        );
+        assert!(
+            serialized.get("roleTag").is_none(),
+            "should not serialize as camelCase 'roleTag'"
+        );
+        assert!(
+            serialized.get("flexibleDisk").is_none(),
+            "should not serialize as camelCase 'flexibleDisk'"
+        );
+    }
+
+    /// Test that DiskSize untagged enum handles both numeric and string values.
+    #[test]
+    fn test_disk_size_untagged_variants() {
+        let numeric: DiskSize = serde_json::from_str("10240").unwrap();
+        assert!(matches!(numeric, DiskSize::Megabytes(10240)));
+
+        let named: DiskSize = serde_json::from_str(r#""remaining""#).unwrap();
+        assert!(matches!(named, DiskSize::Named(ref s) if s == "remaining"));
+
+        // Round-trip
+        assert_eq!(serde_json::to_string(&numeric).unwrap(), "10240");
+        assert_eq!(serde_json::to_string(&named).unwrap(), r#""remaining""#);
+    }
+
     /// Test that the full package list response from CloudAPI can be deserialized.
     ///
     /// This test uses the exact JSON payload that caused the "Invalid Response Payload"
