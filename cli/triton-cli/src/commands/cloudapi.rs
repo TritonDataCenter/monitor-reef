@@ -159,7 +159,7 @@ pub async fn run(args: CloudApiArgs, client: &TypedClient) -> Result<()> {
 
     // Show headers if requested
     if args.show_headers {
-        println!("HTTP/{:?} {}", response.version(), response.status());
+        println!("{:?} {}", response.version(), response.status());
         for (key, value) in response.headers() {
             println!("{}: {}", key, value.to_str().unwrap_or("<binary>"));
         }
