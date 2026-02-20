@@ -429,14 +429,21 @@ async fn load_extra_cert_paths(root_store: &mut rustls::RootCertStore) {
 /// Build a reqwest HTTP client with CA cert fallback for platforms where
 /// the default certificate store isn't found (e.g., SmartOS/illumos).
 async fn build_http_client(insecure: bool) -> Result<reqwest::Client> {
-    let root_store = build_root_cert_store().await;
-    let tls_config = rustls::ClientConfig::builder()
-        .with_root_certificates(root_store)
-        .with_no_client_auth();
+    let mut builder = reqwest::Client::builder().danger_accept_invalid_certs(insecure);
 
-    reqwest::Client::builder()
-        .danger_accept_invalid_certs(insecure)
-        .use_preconfigured_tls(tls_config)
+    // Only apply custom root cert store when we actually need to verify
+    // certificates. When insecure=true, reqwest's built-in handling of
+    // danger_accept_invalid_certs is sufficient — adding a preconfigured
+    // TLS config would override it and re-enable chain validation.
+    if !insecure {
+        let root_store = build_root_cert_store().await;
+        let tls_config = rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth();
+        builder = builder.use_preconfigured_tls(tls_config);
+    }
+
+    builder
         .build()
         .map_err(|e| anyhow::anyhow!("failed to build HTTP client: {e}"))
 }
