@@ -248,7 +248,10 @@ async fn fetch_image_default_user(
             }
             "root".to_string()
         }
-        Err(_) => "root".to_string(),
+        Err(e) => {
+            tracing::debug!("Failed to fetch image for default user, using root: {}", e);
+            "root".to_string()
+        }
     }
 }
 

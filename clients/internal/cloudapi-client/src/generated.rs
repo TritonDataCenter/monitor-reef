@@ -4925,7 +4925,11 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"phase\": {"]
     #[doc = "      \"description\": \"Phase this entry belongs to\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/MigrationPhase\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"started_timestamp\": {"]
     #[doc = "      \"description\": \"When this phase started\","]
@@ -4936,7 +4940,11 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"state\": {"]
     #[doc = "      \"description\": \"State of this phase\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/MigrationState\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"total_progress\": {"]
     #[doc = "      \"description\": \"Total progress value\","]
@@ -4961,12 +4969,12 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub message: ::std::option::Option<::std::string::String>,
         #[doc = "Phase this entry belongs to"]
-        pub phase: ::std::string::String,
+        pub phase: MigrationPhase,
         #[doc = "When this phase started"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub started_timestamp: ::std::option::Option<::std::string::String>,
         #[doc = "State of this phase"]
-        pub state: ::std::string::String,
+        pub state: MigrationState,
         #[doc = "Total progress value"]
         pub total_progress: u64,
     }
@@ -12372,12 +12380,12 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
-            phase: ::std::result::Result<::std::string::String, ::std::string::String>,
+            phase: ::std::result::Result<super::MigrationPhase, ::std::string::String>,
             started_timestamp: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
-            state: ::std::result::Result<::std::string::String, ::std::string::String>,
+            state: ::std::result::Result<super::MigrationState, ::std::string::String>,
             total_progress: ::std::result::Result<u64, ::std::string::String>,
         }
 
@@ -12428,7 +12436,7 @@ pub mod types {
             }
             pub fn phase<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<super::MigrationPhase>,
                 T::Error: ::std::fmt::Display,
             {
                 self.phase = value
@@ -12448,7 +12456,7 @@ pub mod types {
             }
             pub fn state<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<super::MigrationState>,
                 T::Error: ::std::fmt::Display,
             {
                 self.state = value

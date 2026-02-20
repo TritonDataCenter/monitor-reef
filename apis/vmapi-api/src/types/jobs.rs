@@ -41,9 +41,9 @@ pub struct ListJobsQuery {
     /// Filter by VM UUID
     #[serde(default)]
     pub vm_uuid: Option<Uuid>,
-    /// Filter by execution state (e.g., "succeeded", "failed", "running")
+    /// Filter by execution state
     #[serde(default)]
-    pub execution: Option<String>,
+    pub execution: Option<JobExecution>,
     /// Filter by task (job type)
     #[serde(default)]
     pub task: Option<String>,

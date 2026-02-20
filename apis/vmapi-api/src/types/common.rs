@@ -130,7 +130,7 @@ impl std::str::FromStr for VmState {
             "ready" => Ok(VmState::Ready),
             "receiving" => Ok(VmState::Receiving),
             "unknown" => Ok(VmState::Unknown),
-            _ => Err(format!("unknown VM state: {}", s)),
+            _ => Ok(VmState::Unknown),
         }
     }
 }

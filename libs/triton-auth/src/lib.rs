@@ -215,7 +215,8 @@ pub async fn sign_request(
                         agent::sign_with_agent(fingerprint, signing_string.as_bytes()).await?;
                     (key_type, encode_signature(&sig_bytes), md5_fp)
                 }
-                Err(_) => {
+                Err(e) => {
+                    tracing::debug!("SSH agent key lookup failed, falling back to file: {}", e);
                     // Fall back to file-based key loading (supports all key formats)
                     let legacy_key = KeyLoader::load_legacy_from_common_paths(fingerprint).await?;
                     let key_type = legacy_key.key_type()?;

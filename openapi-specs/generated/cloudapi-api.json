@@ -11337,7 +11337,11 @@
           },
           "phase": {
             "description": "Phase this entry belongs to",
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationPhase"
+              }
+            ]
           },
           "started_timestamp": {
             "nullable": true,
@@ -11346,7 +11350,11 @@
           },
           "state": {
             "description": "State of this phase",
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationState"
+              }
+            ]
           },
           "total_progress": {
             "description": "Total progress value",

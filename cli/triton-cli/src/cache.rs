@@ -47,13 +47,18 @@ impl ImageCache {
         self.load_if_fresh(LIST_TTL).await
     }
 
-    /// Save the image list to the cache file.
+    /// Save the image list to the cache file (best-effort).
     pub async fn save_list(&self, images: &[Image]) {
-        let _ = tokio::fs::write(
-            &self.cache_path,
-            serde_json::to_string(images).unwrap_or_default(),
-        )
-        .await;
+        let Some(json) = serde_json::to_string(images)
+            .inspect_err(|e| tracing::debug!("Failed to serialize image cache: {}", e))
+            .ok()
+        else {
+            return;
+        };
+        tokio::fs::write(&self.cache_path, json)
+            .await
+            .inspect_err(|e| tracing::debug!("Failed to write image cache: {}", e))
+            .ok();
     }
 
     /// Look up a single image by UUID from the cache (uses longer TTL).
@@ -71,9 +76,12 @@ impl ImageCache {
         let data = tokio::fs::read_to_string(&self.cache_path).await.ok()?;
         match serde_json::from_str(&data) {
             Ok(images) => Some(images),
-            Err(_) => {
-                // Corrupt cache — delete it
-                let _ = tokio::fs::remove_file(&self.cache_path).await;
+            Err(e) => {
+                tracing::debug!("Corrupt image cache, removing: {}", e);
+                tokio::fs::remove_file(&self.cache_path)
+                    .await
+                    .inspect_err(|e| tracing::debug!("Failed to remove corrupt image cache: {}", e))
+                    .ok();
                 None
             }
         }

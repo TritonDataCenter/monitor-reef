@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Changefeed command for real-time VM updates
 //!
@@ -51,7 +51,15 @@ pub async fn run(args: ChangefeedArgs, client: &TypedClient, use_json: bool) -> 
     let vms = if args.instances.is_empty() {
         None
     } else {
-        Some(args.instances.clone())
+        let parsed: Vec<uuid::Uuid> = args
+            .instances
+            .iter()
+            .map(|s| {
+                s.parse()
+                    .map_err(|_| anyhow!("Invalid instance UUID: {}", s))
+            })
+            .collect::<Result<_>>()?;
+        Some(parsed)
     };
     let subscription = ChangefeedSubscription {
         resource: ChangefeedResource::Vm,
@@ -136,7 +144,8 @@ fn handle_message(text: &str, use_json: bool) -> Result<()> {
             .map(|dt| dt.to_rfc3339())
             .unwrap_or_else(|| msg.published.clone());
 
-        let short_id = &msg.changed_resource_id[..8.min(msg.changed_resource_id.len())];
+        let id_str = msg.changed_resource_id.to_string();
+        let short_id = &id_str[..8];
 
         let sub_resources: Vec<String> = msg
             .change_kind

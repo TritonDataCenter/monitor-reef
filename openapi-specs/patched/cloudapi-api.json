@@ -1941,8 +1941,12 @@
             "type": "string"
           },
           "phase": {
-            "description": "Phase this entry belongs to",
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationPhase"
+              }
+            ],
+            "description": "Phase this entry belongs to"
           },
           "started_timestamp": {
             "description": "When this phase started",
@@ -1950,8 +1954,12 @@
             "type": "string"
           },
           "state": {
-            "description": "State of this phase",
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationState"
+              }
+            ],
+            "description": "State of this phase"
           },
           "total_progress": {
             "description": "Total progress value",

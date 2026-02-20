@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Miscellaneous types (packages, datacenters, services, migrations)
 
@@ -253,9 +253,9 @@ pub struct MigrationProgressEntry {
     /// Total progress value
     pub total_progress: u64,
     /// Phase this entry belongs to
-    pub phase: String,
+    pub phase: MigrationPhase,
     /// State of this phase
-    pub state: String,
+    pub state: MigrationState,
     /// Progress message
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,

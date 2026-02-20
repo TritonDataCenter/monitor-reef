@@ -315,7 +315,10 @@ pub async fn run(
                     .map(|img| (img.id, format!("{}@{}", img.name, img.version)))
                     .collect()
             }
-            Err(_) => HashMap::new(),
+            Err(e) => {
+                eprintln!("warning: failed to fetch images: {}", e);
+                HashMap::new()
+            }
         };
         (machines, map)
     };

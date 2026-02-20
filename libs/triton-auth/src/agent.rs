@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! SSH agent integration for key-based authentication
 //!
@@ -80,7 +80,9 @@ fn list_agent_keys_sync() -> Result<Vec<(PublicKey, String)>, AuthError> {
 
     let mut keys = Vec::new();
     for ident in identities {
-        if let Ok(pub_key) = parse_public_key_from_bytes(&ident.raw_key) {
+        if let Ok(pub_key) = parse_public_key_from_bytes(&ident.raw_key)
+            .inspect_err(|e| tracing::debug!("Skipping unparseable agent key: {}", e))
+        {
             keys.push((pub_key, ident.md5_fp));
         }
     }
@@ -90,9 +92,13 @@ fn list_agent_keys_sync() -> Result<Vec<(PublicKey, String)>, AuthError> {
 
 /// Check if the SSH agent is available and accessible
 pub async fn is_agent_available() -> bool {
-    tokio::task::spawn_blocking(|| SshAgentClient::connect_env().is_ok())
-        .await
-        .unwrap_or(false)
+    match tokio::task::spawn_blocking(|| SshAgentClient::connect_env().is_ok()).await {
+        Ok(result) => result,
+        Err(e) => {
+            tracing::debug!("Failed to check SSH agent availability: {}", e);
+            false
+        }
+    }
 }
 
 /// Parse an ssh_key::PublicKey from raw SSH wire format bytes

@@ -44,6 +44,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::Machine;
+use super::common::Uuid;
 
 /// Resource types supported by the changefeed.
 ///
@@ -116,7 +117,7 @@ pub enum ChangefeedSubResource {
 /// let filtered = ChangefeedSubscription {
 ///     resource: ChangefeedResource::Vm,
 ///     sub_resources: vec![ChangefeedSubResource::State, ChangefeedSubResource::Tags],
-///     vms: Some(vec!["uuid-1".to_string(), "uuid-2".to_string()]),
+///     vms: Some(vec![uuid::Uuid::nil()]),
 /// };
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
@@ -131,7 +132,7 @@ pub struct ChangefeedSubscription {
     /// Optional list of VM UUIDs to filter notifications.
     /// If not provided or empty, notifications for all VMs are received.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub vms: Option<Vec<String>>,
+    pub vms: Option<Vec<Uuid>>,
 }
 
 /// Describes what kind of change occurred.
@@ -164,7 +165,7 @@ pub struct ChangefeedChangeKind {
 #[serde(rename_all = "camelCase")]
 pub struct ChangefeedMessage {
     /// UUID of the changed resource (the machine UUID)
-    pub changed_resource_id: String,
+    pub changed_resource_id: Uuid,
 
     /// Timestamp when the change was published.
     ///
@@ -206,16 +207,17 @@ mod tests {
 
     #[test]
     fn test_subscription_serialization() {
+        let vm_uuid = uuid::Uuid::parse_str("28faa36c-2031-4632-a819-f7defa1299a3").unwrap();
         let sub = ChangefeedSubscription {
             resource: ChangefeedResource::Vm,
             sub_resources: vec![ChangefeedSubResource::State],
-            vms: Some(vec!["test-uuid".to_string()]),
+            vms: Some(vec![vm_uuid]),
         };
 
         let json = serde_json::to_string(&sub).expect("serialize");
         assert!(json.contains("\"resource\":\"vm\""));
         assert!(json.contains("\"subResources\":[\"state\"]"));
-        assert!(json.contains("\"vms\":[\"test-uuid\"]"));
+        assert!(json.contains("\"vms\":[\"28faa36c-2031-4632-a819-f7defa1299a3\"]"));
     }
 
     #[test]
@@ -253,7 +255,7 @@ mod tests {
         assert_eq!(msg.resource_state, "running");
         assert_eq!(
             msg.changed_resource_id,
-            "28faa36c-2031-4632-a819-f7defa1299a3"
+            uuid::Uuid::parse_str("28faa36c-2031-4632-a819-f7defa1299a3").unwrap()
         );
         assert!(msg.resource_object.is_none());
     }

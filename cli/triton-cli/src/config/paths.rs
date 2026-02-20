@@ -30,7 +30,13 @@ pub fn config_dir() -> PathBuf {
 
     // Default: ~/.triton (matches node-triton)
     dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
+        .unwrap_or_else(|| {
+            eprintln!(
+                "warning: could not determine home directory, \
+                 using current directory for config"
+            );
+            PathBuf::from(".")
+        })
         .join(".triton")
 }
 

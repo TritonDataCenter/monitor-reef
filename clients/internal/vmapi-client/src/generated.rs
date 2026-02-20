@@ -6948,7 +6948,7 @@ impl Client {
         builder::PostJobResults::new(self)
     }
 
-    #[doc = "List jobs\n\nReturns an array of workflow jobs.\n\nSends a `GET` request to `/jobs`\n\nArguments:\n- `execution`: Filter by execution state (e.g., \"succeeded\", \"failed\", \"running\")\n- `limit`: Pagination limit\n- `offset`: Pagination offset\n- `task`: Filter by task (job type)\n- `vm_uuid`: Filter by VM UUID\n```ignore\nlet response = client.list_jobs()\n    .execution(execution)\n    .limit(limit)\n    .offset(offset)\n    .task(task)\n    .vm_uuid(vm_uuid)\n    .send()\n    .await;\n```"]
+    #[doc = "List jobs\n\nReturns an array of workflow jobs.\n\nSends a `GET` request to `/jobs`\n\nArguments:\n- `execution`: Filter by execution state\n- `limit`: Pagination limit\n- `offset`: Pagination offset\n- `task`: Filter by task (job type)\n- `vm_uuid`: Filter by VM UUID\n```ignore\nlet response = client.list_jobs()\n    .execution(execution)\n    .limit(limit)\n    .offset(offset)\n    .task(task)\n    .vm_uuid(vm_uuid)\n    .send()\n    .await;\n```"]
     pub fn list_jobs(&self) -> builder::ListJobs<'_> {
         builder::ListJobs::new(self)
     }
@@ -7113,7 +7113,7 @@ impl Client {
         builder::DeleteInternalMetadata::new(self)
     }
 
-    #[doc = "List jobs for a VM\n\nReturns jobs associated with a specific VM.\n\nSends a `GET` request to `/vms/{uuid}/jobs`\n\nArguments:\n- `uuid`: VM UUID\n- `execution`: Filter by execution state (e.g., \"succeeded\", \"failed\", \"running\")\n- `limit`: Pagination limit\n- `offset`: Pagination offset\n- `task`: Filter by task (job type)\n- `vm_uuid`: Filter by VM UUID\n```ignore\nlet response = client.list_vm_jobs()\n    .uuid(uuid)\n    .execution(execution)\n    .limit(limit)\n    .offset(offset)\n    .task(task)\n    .vm_uuid(vm_uuid)\n    .send()\n    .await;\n```"]
+    #[doc = "List jobs for a VM\n\nReturns jobs associated with a specific VM.\n\nSends a `GET` request to `/vms/{uuid}/jobs`\n\nArguments:\n- `uuid`: VM UUID\n- `execution`: Filter by execution state\n- `limit`: Pagination limit\n- `offset`: Pagination offset\n- `task`: Filter by task (job type)\n- `vm_uuid`: Filter by VM UUID\n```ignore\nlet response = client.list_vm_jobs()\n    .uuid(uuid)\n    .execution(execution)\n    .limit(limit)\n    .offset(offset)\n    .task(task)\n    .vm_uuid(vm_uuid)\n    .send()\n    .await;\n```"]
     pub fn list_vm_jobs(&self) -> builder::ListVmJobs<'_> {
         builder::ListVmJobs::new(self)
     }
@@ -7269,7 +7269,7 @@ pub mod builder {
     #[derive(Debug, Clone)]
     pub struct ListJobs<'a> {
         client: &'a super::Client,
-        execution: Result<Option<::std::string::String>, String>,
+        execution: Result<Option<types::JobExecution>, String>,
         limit: Result<Option<u64>, String>,
         offset: Result<Option<u64>, String>,
         task: Result<Option<::std::string::String>, String>,
@@ -7290,11 +7290,12 @@ pub mod builder {
 
         pub fn execution<V>(mut self, value: V) -> Self
         where
-            V: std::convert::TryInto<::std::string::String>,
+            V: std::convert::TryInto<types::JobExecution>,
         {
-            self.execution = value.try_into().map(Some).map_err(|_| {
-                "conversion to `:: std :: string :: String` for execution failed".to_string()
-            });
+            self.execution = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `JobExecution` for execution failed".to_string());
             self
         }
 
@@ -10375,7 +10376,7 @@ pub mod builder {
     pub struct ListVmJobs<'a> {
         client: &'a super::Client,
         uuid: Result<::uuid::Uuid, String>,
-        execution: Result<Option<::std::string::String>, String>,
+        execution: Result<Option<types::JobExecution>, String>,
         limit: Result<Option<u64>, String>,
         offset: Result<Option<u64>, String>,
         task: Result<Option<::std::string::String>, String>,
@@ -10407,11 +10408,12 @@ pub mod builder {
 
         pub fn execution<V>(mut self, value: V) -> Self
         where
-            V: std::convert::TryInto<::std::string::String>,
+            V: std::convert::TryInto<types::JobExecution>,
         {
-            self.execution = value.try_into().map(Some).map_err(|_| {
-                "conversion to `:: std :: string :: String` for execution failed".to_string()
-            });
+            self.execution = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `JobExecution` for execution failed".to_string());
             self
         }
 

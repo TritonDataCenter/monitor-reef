@@ -246,7 +246,8 @@ fn test_vm_state_display() {
 fn test_vm_state_from_str() {
     assert_eq!("running".parse::<VmState>().unwrap(), VmState::Running);
     assert_eq!("STOPPED".parse::<VmState>().unwrap(), VmState::Stopped);
-    assert!("invalid".parse::<VmState>().is_err());
+    // Unknown strings parse as Unknown, consistent with serde(other) behavior
+    assert_eq!("invalid".parse::<VmState>().unwrap(), VmState::Unknown);
 }
 
 /// Test VmState helper methods.

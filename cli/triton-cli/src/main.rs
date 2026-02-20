@@ -323,8 +323,21 @@ async fn build_root_cert_store() -> rustls::RootCertStore {
     let mut root_store = rustls::RootCertStore::empty();
 
     // 1. Try native certs (respects SSL_CERT_FILE / SSL_CERT_DIR)
+    let mut loaded = 0u32;
+    let mut skipped = 0u32;
     for cert in rustls_native_certs::load_native_certs().certs {
-        let _ = root_store.add(cert);
+        if root_store.add(cert).is_ok() {
+            loaded += 1;
+        } else {
+            skipped += 1;
+        }
+    }
+    if skipped > 0 {
+        tracing::debug!(
+            "Loaded {} native root certs, skipped {} invalid",
+            loaded,
+            skipped
+        );
     }
     if !root_store.is_empty() {
         return root_store;
@@ -359,8 +372,22 @@ async fn load_extra_cert_paths(root_store: &mut rustls::RootCertStore) {
     for path in EXTRA_CERT_FILES {
         if let Ok(data) = tokio::fs::read(path).await {
             let mut cursor = std::io::Cursor::new(data);
+            let mut loaded = 0u32;
+            let mut skipped = 0u32;
             for cert in rustls_pemfile::certs(&mut cursor).flatten() {
-                let _ = root_store.add(cert);
+                if root_store.add(cert).is_ok() {
+                    loaded += 1;
+                } else {
+                    skipped += 1;
+                }
+            }
+            if skipped > 0 {
+                tracing::debug!(
+                    "Loaded {} root certs, skipped {} invalid from {}",
+                    loaded,
+                    skipped,
+                    path,
+                );
             }
             if !root_store.is_empty() {
                 return;
@@ -373,14 +400,28 @@ async fn load_extra_cert_paths(root_store: &mut rustls::RootCertStore) {
         let Ok(mut entries) = tokio::fs::read_dir(dir_path).await else {
             continue;
         };
+        let mut loaded = 0u32;
+        let mut skipped = 0u32;
         while let Ok(Some(entry)) = entries.next_entry().await {
             let path = entry.path();
             if let Ok(data) = tokio::fs::read(&path).await {
                 let mut cursor = std::io::Cursor::new(data);
                 for cert in rustls_pemfile::certs(&mut cursor).flatten() {
-                    let _ = root_store.add(cert);
+                    if root_store.add(cert).is_ok() {
+                        loaded += 1;
+                    } else {
+                        skipped += 1;
+                    }
                 }
             }
+        }
+        if skipped > 0 {
+            tracing::debug!(
+                "Loaded {} root certs, skipped {} invalid from {}",
+                loaded,
+                skipped,
+                dir_path,
+            );
         }
         if !root_store.is_empty() {
             return;

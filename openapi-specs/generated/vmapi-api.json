@@ -54,10 +54,9 @@
           {
             "in": "query",
             "name": "execution",
-            "description": "Filter by execution state (e.g., \"succeeded\", \"failed\", \"running\")",
+            "description": "Filter by execution state",
             "schema": {
-              "nullable": true,
-              "type": "string"
+              "$ref": "#/components/schemas/JobExecution"
             }
           },
           {
@@ -1821,10 +1820,9 @@
           {
             "in": "query",
             "name": "execution",
-            "description": "Filter by execution state (e.g., \"succeeded\", \"failed\", \"running\")",
+            "description": "Filter by execution state",
             "schema": {
-              "nullable": true,
-              "type": "string"
+              "$ref": "#/components/schemas/JobExecution"
             }
           },
           {
