@@ -10,4 +10,3 @@ image-get           monitor-reef-4o4  JSON key ordering
 network-get         monitor-reef-4o4  JSON key ordering
 account-get         monitor-reef-lfi  missing address fields
 info                monitor-reef-0sl  totalDisk rounding difference
-key-get             monitor-reef-exc  output format differs (raw key vs structured)

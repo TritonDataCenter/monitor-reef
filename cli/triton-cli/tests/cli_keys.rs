@@ -171,6 +171,60 @@ fn triton_with_profile() -> Command {
 
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
+fn test_key_get() {
+    if !common::config::has_integration_config() {
+        eprintln!("Skipping: no test config found");
+        return;
+    }
+
+    // First, list keys in JSON to get a key name
+    let list_output = triton_with_profile()
+        .args(["key", "list", "-j"])
+        .output()
+        .expect("Failed to execute command");
+
+    assert!(list_output.status.success(), "key list -j should succeed");
+
+    let stdout = String::from_utf8_lossy(&list_output.stdout);
+    let keys: Vec<serde_json::Value> = common::json_stream_parse(&stdout);
+    assert!(!keys.is_empty(), "Should have at least one key");
+
+    let key_name = keys[0]["name"].as_str().expect("key should have name");
+
+    // Now get that key by name
+    let output = triton_with_profile()
+        .args(["key", "get", key_name])
+        .output()
+        .expect("Failed to execute command");
+
+    assert!(
+        output.status.success(),
+        "key get should succeed.\nstdout: {}\nstderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let get_stdout = String::from_utf8_lossy(&output.stdout);
+    let trimmed = get_stdout.trim();
+
+    // Output should be just the raw SSH key, not structured format
+    assert!(
+        trimmed.starts_with("ssh-"),
+        "key get output should be raw SSH key starting with ssh- prefix, got: {}",
+        trimmed
+    );
+    assert!(
+        !trimmed.contains("Name:"),
+        "key get output should not contain 'Name:' label"
+    );
+    assert!(
+        !trimmed.contains("Fingerprint:"),
+        "key get output should not contain 'Fingerprint:' label"
+    );
+}
+
+#[test]
+#[ignore = "requires API access - run with make triton-test-api"]
 fn test_key_list() {
     if !common::config::has_integration_config() {
         eprintln!("Skipping: no test config found");

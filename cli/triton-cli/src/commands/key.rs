@@ -126,9 +126,7 @@ async fn get_key(args: KeyGetArgs, client: &TypedClient, use_json: bool) -> Resu
     if use_json {
         json::print_json(&key)?;
     } else {
-        println!("Name:        {}", key.name);
-        println!("Fingerprint: {}", key.fingerprint);
-        println!("Key:         {}", key.key);
+        println!("{}", key.key.trim());
     }
 
     Ok(())
