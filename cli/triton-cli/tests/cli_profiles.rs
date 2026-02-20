@@ -461,6 +461,8 @@ fn test_profile_set_alias() {
 fn test_profile_set_current_env() {
     let tmp_dir = tempfile::tempdir().expect("Failed to create temp dir");
 
+    let config_dir = tmp_dir.path().join(".triton");
+
     let output = triton_cmd()
         .args(["profile", "set-current", "env"])
         .env("TRITON_URL", "https://cloudapi.test.example.com")
@@ -470,6 +472,11 @@ fn test_profile_set_current_env() {
             "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
         )
         .env("HOME", tmp_dir.path())
+        .env("TRITON_CONFIG_DIR", &config_dir)
+        .env_remove("SDC_URL")
+        .env_remove("SDC_ACCOUNT")
+        .env_remove("SDC_KEY_ID")
+        .env_remove("TRITON_PROFILE")
         .output()
         .expect("Failed to run command");
 
@@ -495,6 +502,7 @@ fn test_profile_set_current_env() {
 #[test]
 fn test_profile_set_current_already_current() {
     let tmp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let config_dir = tmp_dir.path().join(".triton");
 
     // First, set env as current profile
     triton_cmd()
@@ -506,6 +514,11 @@ fn test_profile_set_current_already_current() {
             "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
         )
         .env("HOME", tmp_dir.path())
+        .env("TRITON_CONFIG_DIR", &config_dir)
+        .env_remove("SDC_URL")
+        .env_remove("SDC_ACCOUNT")
+        .env_remove("SDC_KEY_ID")
+        .env_remove("TRITON_PROFILE")
         .assert()
         .success();
 
@@ -519,6 +532,11 @@ fn test_profile_set_current_already_current() {
             "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
         )
         .env("HOME", tmp_dir.path())
+        .env("TRITON_CONFIG_DIR", &config_dir)
+        .env_remove("SDC_URL")
+        .env_remove("SDC_ACCOUNT")
+        .env_remove("SDC_KEY_ID")
+        .env_remove("TRITON_PROFILE")
         .output()
         .expect("Failed to run command");
 
@@ -546,6 +564,7 @@ fn test_profile_set_current_env_missing_vars() {
     triton_cmd()
         .args(["profile", "set-current", "env"])
         .env("HOME", tmp_dir.path())
+        .env("TRITON_CONFIG_DIR", tmp_dir.path().join(".triton"))
         .env_remove("TRITON_URL")
         .env_remove("SDC_URL")
         .env_remove("TRITON_ACCOUNT")
