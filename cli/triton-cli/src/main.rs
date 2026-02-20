@@ -29,6 +29,10 @@ fn version_string() -> &'static str {
     concat!(
         "Triton CLI ",
         env!("CARGO_PKG_VERSION"),
+        " (",
+        env!("GIT_COMMIT_SHORT"),
+        env!("GIT_DIRTY_SUFFIX"),
+        ")",
         "\nhttps://github.com/TritonDataCenter/monitor-reef"
     )
 }
@@ -286,6 +290,9 @@ enum Commands {
         #[arg(value_enum)]
         shell: Shell,
     },
+
+    /// Print version information
+    Version,
 
     /// Badger don't care
     #[command(hide = true)]
@@ -702,6 +709,10 @@ async fn try_main() -> Result<()> {
             let mut cmd = Cli::command();
             let name = cmd.get_name().to_string();
             generate(*shell, &mut cmd, name, &mut std::io::stdout());
+            Ok(())
+        }
+        Commands::Version => {
+            println!("{}", version_string());
             Ok(())
         }
         Commands::Badger => {

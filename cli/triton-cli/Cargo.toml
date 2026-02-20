@@ -53,6 +53,9 @@ http = "1.0"
 axum = { version = "0.8", features = ["ws"] }
 tempfile = { workspace = true }
 
+[build-dependencies]
+build-data = { workspace = true }
+
 [dev-dependencies]
 assert_cmd = "2.0"        # CLI testing with command assertions
 predicates = "3.0"        # Fluent assertions for stdout/stderr
