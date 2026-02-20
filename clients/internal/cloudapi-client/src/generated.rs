@@ -7443,7 +7443,7 @@ pub mod types {
     #[doc = "    \"created\","]
     #[doc = "    \"id\","]
     #[doc = "    \"name\","]
-    #[doc = "    \"ownerUuid\","]
+    #[doc = "    \"owner_uuid\","]
     #[doc = "    \"size\","]
     #[doc = "    \"state\","]
     #[doc = "    \"type\""]
@@ -7453,8 +7453,8 @@ pub mod types {
     #[doc = "      \"description\": \"Creation timestamp\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
-    #[doc = "    \"filesystemPath\": {"]
-    #[doc = "      \"description\": \"Filesystem path\","]
+    #[doc = "    \"filesystem_path\": {"]
+    #[doc = "      \"description\": \"Filesystem path Note: CloudAPI returns this as snake_case despite other fields being camelCase\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -7478,8 +7478,8 @@ pub mod types {
     #[doc = "        \"format\": \"uuid\""]
     #[doc = "      }"]
     #[doc = "    },"]
-    #[doc = "    \"ownerUuid\": {"]
-    #[doc = "      \"description\": \"Owner UUID\","]
+    #[doc = "    \"owner_uuid\": {"]
+    #[doc = "      \"description\": \"Owner UUID Note: CloudAPI returns this as snake_case despite other fields being camelCase\","]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
@@ -7526,12 +7526,8 @@ pub mod types {
     pub struct Volume {
         #[doc = "Creation timestamp"]
         pub created: ::std::string::String,
-        #[doc = "Filesystem path"]
-        #[serde(
-            rename = "filesystemPath",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[doc = "Filesystem path Note: CloudAPI returns this as snake_case despite other fields being camelCase"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub filesystem_path: ::std::option::Option<::std::string::String>,
         #[doc = "Volume UUID"]
         pub id: ::uuid::Uuid,
@@ -7540,8 +7536,7 @@ pub mod types {
         #[doc = "Networks (array of UUIDs)"]
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
         pub networks: ::std::vec::Vec<::uuid::Uuid>,
-        #[doc = "Owner UUID"]
-        #[serde(rename = "ownerUuid")]
+        #[doc = "Owner UUID Note: CloudAPI returns this as snake_case despite other fields being camelCase"]
         pub owner_uuid: ::uuid::Uuid,
         #[doc = "References (machines using this volume)"]
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]

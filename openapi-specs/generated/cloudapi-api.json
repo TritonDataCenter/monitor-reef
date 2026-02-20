@@ -12353,9 +12353,9 @@
             "description": "Creation timestamp",
             "type": "string"
           },
-          "filesystemPath": {
+          "filesystem_path": {
             "nullable": true,
-            "description": "Filesystem path",
+            "description": "Filesystem path Note: CloudAPI returns this as snake_case despite other fields being camelCase",
             "type": "string"
           },
           "id": {
@@ -12376,8 +12376,8 @@
               "format": "uuid"
             }
           },
-          "ownerUuid": {
-            "description": "Owner UUID",
+          "owner_uuid": {
+            "description": "Owner UUID Note: CloudAPI returns this as snake_case despite other fields being camelCase",
             "type": "string",
             "format": "uuid"
           },
@@ -12419,7 +12419,7 @@
           "created",
           "id",
           "name",
-          "ownerUuid",
+          "owner_uuid",
           "size",
           "state",
           "type"

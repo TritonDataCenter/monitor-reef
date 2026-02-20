@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Volume-related types
 
@@ -42,6 +42,8 @@ pub struct Volume {
     /// Volume name
     pub name: String,
     /// Owner UUID
+    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+    #[serde(rename = "owner_uuid")]
     pub owner_uuid: Uuid,
     /// Volume type
     #[serde(rename = "type")]
@@ -54,7 +56,12 @@ pub struct Volume {
     #[serde(default)]
     pub networks: Vec<Uuid>,
     /// Filesystem path
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+    #[serde(
+        rename = "filesystem_path",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub filesystem_path: Option<String>,
     /// Creation timestamp
     pub created: Timestamp,
