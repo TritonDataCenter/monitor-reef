@@ -249,7 +249,7 @@ async fn list_volumes(
             tbl.add_row(vec![
                 vol.id.to_string()[..8].to_string(),
                 vol.name.clone(),
-                format!("{} MiB", vol.size),
+                format_volume_size(vol.size),
                 vol.type_.clone(),
                 enum_to_display(&vol.state),
                 output::format_age(&vol.created.to_string()),
@@ -284,6 +284,12 @@ async fn get_volume(args: VolumeGetArgs, client: &TypedClient, use_json: bool) -
     }
 
     Ok(())
+}
+
+/// Format volume size from MiB to GiB display string (e.g., 10240 → "10G").
+/// Matches Node.js triton: `volume.size / 1024 + 'G'`
+fn format_volume_size(mib: u64) -> String {
+    format!("{}G", mib / 1024)
 }
 
 /// Parse volume size from string, supporting GiB format ("20G") or plain MB
@@ -567,7 +573,7 @@ async fn list_volume_sizes(
     } else {
         let mut tbl = TableBuilder::new(&["SIZE"]);
         for size in &sizes {
-            tbl.add_row(vec![format!("{} MiB", size.size)]);
+            tbl.add_row(vec![format_volume_size(size.size)]);
         }
         tbl.print(&args.table);
     }
@@ -655,6 +661,29 @@ async fn wait_for_volume_deletion(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ===== format_volume_size tests =====
+
+    #[test]
+    fn test_format_volume_size_10g() {
+        assert_eq!(format_volume_size(10240), "10G");
+    }
+
+    #[test]
+    fn test_format_volume_size_1g() {
+        assert_eq!(format_volume_size(1024), "1G");
+    }
+
+    #[test]
+    fn test_format_volume_size_truncates() {
+        // Non-exact GiB values get truncated (integer division)
+        assert_eq!(format_volume_size(1500), "1G");
+    }
+
+    #[test]
+    fn test_format_volume_size_zero() {
+        assert_eq!(format_volume_size(0), "0G");
+    }
 
     // ===== parse_volume_size tests =====
     // Ported from node-triton test/unit/parseVolumeSize.test.js

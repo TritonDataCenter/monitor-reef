@@ -9,7 +9,4 @@
 image-get           monitor-reef-4o4  JSON key ordering
 instance-get        monitor-reef-4o4  JSON key ordering
 network-get         monitor-reef-4o4  JSON key ordering
-volume-get          monitor-reef-4o4  JSON key ordering (+ missing tags in monitor-reef-dsr)
-volume-list         monitor-reef-4qe  Size formatting (10G vs 10240 MiB)
-volume-list-json    monitor-reef-dsr  Missing empty tags field
-volume-get-json     monitor-reef-dsr  Missing empty tags field
+volume-get          monitor-reef-4o4  JSON key ordering

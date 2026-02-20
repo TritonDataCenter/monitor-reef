@@ -66,7 +66,6 @@ pub struct Volume {
     /// Creation timestamp
     pub created: Timestamp,
     /// Tags
-    #[serde(default)]
     pub tags: Tags,
     /// References (machines using this volume)
     #[serde(default)]
