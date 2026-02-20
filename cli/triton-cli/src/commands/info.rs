@@ -101,5 +101,22 @@ fn human_size_from_bytes(bytes: u64) -> String {
     let i = (bytes as f64).log(1024.0).floor() as usize;
     let i = i.min(SIZES.len() - 1);
     let size = bytes as f64 / 1024_f64.powi(i as i32);
-    format!("{:.1} {}", size, SIZES[i])
+    // Truncate (not round) to 1 decimal place, matching Node.js behavior
+    let truncated = (size * 10.0).floor() / 10.0;
+    format!("{:.1} {}", truncated, SIZES[i])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_human_size_from_bytes_truncates() {
+        // 102400000000 bytes = 95.367... GiB → truncated to 95.3
+        assert_eq!(human_size_from_bytes(102_400_000_000), "95.3 GiB");
+        // 8192000000 bytes = 7.629... GiB → truncated to 7.6
+        assert_eq!(human_size_from_bytes(8_192_000_000), "7.6 GiB");
+        assert_eq!(human_size_from_bytes(0), "0 B");
+        assert_eq!(human_size_from_bytes(1024), "1.0 KiB");
+    }
 }
