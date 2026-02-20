@@ -92,7 +92,12 @@ fn read_string(buf: &[u8], offset: usize, len: usize) -> Result<String, AuthErro
             buf.len()
         ))
     })?;
-    Ok(String::from_utf8(slice.to_vec()).unwrap_or_default())
+    String::from_utf8(slice.to_vec()).map_err(|e| {
+        AuthError::AgentError(format!(
+            "SSH agent returned non-UTF-8 string at offset {}: {}",
+            offset, e
+        ))
+    })
 }
 
 /// Check that a wire-protocol length field does not exceed the safety cap.
@@ -535,5 +540,22 @@ mod tests {
         assert_eq!(ident.key_type, "ssh-rsa");
         assert_eq!(ident.comment, "test comment");
         assert!(ident.is_rsa());
+    }
+
+    #[test]
+    fn test_read_string_rejects_invalid_utf8() {
+        // 4-byte length header pointing to 3 bytes of invalid UTF-8
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&3u32.to_be_bytes());
+        bytes.extend_from_slice(&[0xff, 0xfe, 0xfd]);
+        let err = SshIdentity::new(&bytes, "test")
+            .err()
+            .expect("should fail on invalid UTF-8");
+        let err = err.to_string();
+        assert!(
+            err.contains("non-UTF-8"),
+            "Error should mention non-UTF-8, got: {}",
+            err
+        );
     }
 }
