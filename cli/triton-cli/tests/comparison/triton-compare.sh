@@ -45,7 +45,7 @@ Compare Node.js triton and Rust triton CLI output.
 Options:
   --node-triton PATH   Path to Node.js triton (default: $(which triton))
   --rust-triton PATH   Path to Rust triton (default: target/debug/triton)
-  --tier TIER          "offline", "api", or "all" (default: offline)
+  --tier TIER          "offline", "api", "payload", or "all" (default: offline)
   --profile NAME       Profile name for API tests
   --output-dir DIR     Directory for diff artifacts (default: mktemp -d)
   --verbose            Show each command as it runs
@@ -54,7 +54,8 @@ Options:
 Tiers:
   offline   Commands that need no API (help, profiles, env, completion)
   api       Read-only API commands (list, get) — requires working auth
-  all       Both offline and api
+  payload   Mutating operations — compares request payloads (fully offline)
+  all       offline + api + payload
 
 Examples:
   # Quick offline comparison
@@ -84,8 +85,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---------- validation ----------
-if [[ ! "$TIER" =~ ^(offline|api|all)$ ]]; then
-    echo "Error: --tier must be 'offline', 'api', or 'all'" >&2
+if [[ ! "$TIER" =~ ^(offline|api|payload|all)$ ]]; then
+    echo "Error: --tier must be 'offline', 'api', 'payload', or 'all'" >&2
     exit 2
 fi
 
@@ -720,12 +721,243 @@ run_api_tests() {
     echo ""
 }
 
+# ---------- Tier 3: Payload tests (mutating operations, fully offline) ----------
+
+# Run a single payload comparison test.
+# Both CLIs emit a JSON envelope via emit-payload mode; we normalize and diff.
+# Args: test_id description cli_args...
+run_payload_test() {
+    local test_id="$1"; shift
+    local description="$1"; shift
+    # Remaining args are the triton subcommand + flags
+
+    # Check ignored list first
+    if is_ignored "$test_id"; then
+        printf "SKIP     %-30s %s (intentional: %s)\n" \
+            "$test_id" "$description" "${IGNORED_DIFFS[$test_id]}"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        return 0
+    fi
+
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "  Running: triton $*"
+    fi
+
+    local node_out="$OUTPUT_DIR/node/$test_id.out"
+    local node_err="$OUTPUT_DIR/node/$test_id.err"
+    local rust_out="$OUTPUT_DIR/rust/$test_id.out"
+    local rust_err="$OUTPUT_DIR/rust/$test_id.err"
+    local node_norm="$OUTPUT_DIR/node/$test_id.norm"
+    local rust_norm="$OUTPUT_DIR/rust/$test_id.norm"
+
+    local node_exit=0
+    local rust_exit=0
+
+    # Node.js: use TRITON_EMIT_PAYLOAD env var
+    HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
+        TRITON_EMIT_PAYLOAD=1 \
+        "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
+
+    # Rust: use --emit-payload flag
+    HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
+        "$RUST_TRITON" --emit-payload "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
+
+    # Normalize: sort keys, strip null values
+    jq -S 'del(.body.origin) | if .body == null then . else .body |= with_entries(select(.value != null)) end' \
+        "$node_out" > "$node_norm" 2>/dev/null || cp "$node_out" "$node_norm"
+    jq -S 'del(.body.origin) | if .body == null then . else .body |= with_entries(select(.value != null)) end' \
+        "$rust_out" > "$rust_norm" 2>/dev/null || cp "$rust_out" "$rust_norm"
+
+    compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
+}
+
+# Run a payload test where each CLI uses different invocation syntax.
+# Args: test_id description node_args... --- rust_args...
+# The "---" separator divides node-triton args from Rust triton args.
+run_payload_test_split() {
+    local test_id="$1"; shift
+    local description="$1"; shift
+
+    # Split args at "---"
+    local node_args=()
+    local rust_args=()
+    local in_rust=0
+    for arg in "$@"; do
+        if [[ "$arg" == "---" ]]; then
+            in_rust=1
+            continue
+        fi
+        if [[ $in_rust -eq 0 ]]; then
+            node_args+=("$arg")
+        else
+            rust_args+=("$arg")
+        fi
+    done
+
+    # Check ignored list first
+    if is_ignored "$test_id"; then
+        printf "SKIP     %-30s %s (intentional: %s)\n" \
+            "$test_id" "$description" "${IGNORED_DIFFS[$test_id]}"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        return 0
+    fi
+
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "  Running node: triton ${node_args[*]}"
+        echo "  Running rust: triton ${rust_args[*]}"
+    fi
+
+    local node_out="$OUTPUT_DIR/node/$test_id.out"
+    local node_err="$OUTPUT_DIR/node/$test_id.err"
+    local rust_out="$OUTPUT_DIR/rust/$test_id.out"
+    local rust_err="$OUTPUT_DIR/rust/$test_id.err"
+    local node_norm="$OUTPUT_DIR/node/$test_id.norm"
+    local rust_norm="$OUTPUT_DIR/rust/$test_id.norm"
+
+    local node_exit=0
+    local rust_exit=0
+
+    HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
+        TRITON_EMIT_PAYLOAD=1 \
+        "$NODE_TRITON" "${node_args[@]}" > "$node_out" 2> "$node_err" || node_exit=$?
+
+    HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
+        "$RUST_TRITON" --emit-payload "${rust_args[@]}" > "$rust_out" 2> "$rust_err" || rust_exit=$?
+
+    jq -S 'del(.body.origin) | if .body == null then . else .body |= with_entries(select(.value != null)) end' \
+        "$node_out" > "$node_norm" 2>/dev/null || cp "$node_out" "$node_norm"
+    jq -S 'del(.body.origin) | if .body == null then . else .body |= with_entries(select(.value != null)) end' \
+        "$rust_out" > "$rust_norm" 2>/dev/null || cp "$rust_out" "$rust_norm"
+
+    compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
+}
+
+run_payload_tests() {
+    echo "--- Payload Tests (mutating operations, offline) ---"
+    echo ""
+    printf "%-8s %-30s %s\n" "RESULT" "TEST ID" "DESCRIPTION"
+    printf "%-8s %-30s %s\n" "------" "-------" "-----------"
+
+    # Dummy UUIDs for testing (no API contact needed)
+    local IMAGE_UUID="00000000-0000-0000-0000-000000000001"
+    local PKG_UUID="00000000-0000-0000-0000-000000000002"
+    local INST_UUID="00000000-0000-0000-0000-000000000003"
+    local NET_UUID="00000000-0000-0000-0000-000000000004"
+
+    # --- Instance ---
+
+    # Instance create (basic)
+    run_payload_test "payload-create-basic" "instance create (basic)" \
+        instance create "$IMAGE_UUID" "$PKG_UUID" --name test-instance
+
+    # Instance create with tags (exercises Rust tag flattening transform)
+    run_payload_test "payload-create-tags" "instance create (with tags)" \
+        instance create "$IMAGE_UUID" "$PKG_UUID" --name test-tags \
+        -t env=test -t role=web
+
+    # Instance create with metadata
+    run_payload_test "payload-create-metadata" "instance create (with metadata)" \
+        instance create "$IMAGE_UUID" "$PKG_UUID" --name test-meta \
+        -m greeting=hello
+
+    # Instance start (action-dispatch: ?action=start)
+    run_payload_test "payload-start" "instance start" \
+        instance start "$INST_UUID"
+
+    # Instance stop (action-dispatch: ?action=stop)
+    run_payload_test "payload-stop" "instance stop" \
+        instance stop "$INST_UUID"
+
+    # Instance reboot (action-dispatch: ?action=reboot)
+    run_payload_test "payload-reboot" "instance reboot" \
+        instance reboot "$INST_UUID"
+
+    # Instance delete
+    run_payload_test "payload-delete" "instance delete" \
+        instance delete --force "$INST_UUID"
+
+    # --- Firewall rule ---
+
+    run_payload_test "payload-fwrule-create" "fwrule create" \
+        fwrule create "FROM any TO vm $INST_UUID ALLOW tcp PORT 22"
+
+    # --- VLAN ---
+
+    run_payload_test "payload-vlan-create" "vlan create" \
+        vlan create 100 --name test-vlan
+
+    run_payload_test "payload-vlan-create-desc" "vlan create (with description)" \
+        vlan create 200 --name test-vlan-2 --description "A test VLAN"
+
+    # --- Network ---
+
+    run_payload_test "payload-network-create" "network create" \
+        network create 100 --name test-net \
+        --subnet 10.0.0.0/24 --start-ip 10.0.0.1 --end-ip 10.0.0.254
+
+    run_payload_test "payload-network-create-gw" "network create (with gateway)" \
+        network create 100 --name test-net-gw \
+        --subnet 10.0.0.0/24 --start-ip 10.0.0.1 --end-ip 10.0.0.254 \
+        --gateway 10.0.0.1
+
+    # --- Volume ---
+
+    run_payload_test "payload-volume-create" "volume create" \
+        volume create --name test-vol --size 10240
+
+    run_payload_test "payload-volume-create-net" "volume create (with network)" \
+        volume create --name test-vol-net --size 10240 --network "$NET_UUID"
+
+    # --- Image ---
+
+    run_payload_test "payload-image-create" "image create" \
+        image create "$INST_UUID" --name test-image --version 1.0.0
+
+    # --- RBAC ---
+    # Node.js triton uses "rbac user -a FILE" (JSON file input), while Rust
+    # uses "rbac user create LOGIN --email ...". We use run_payload_test_split
+    # to invoke each CLI with its own syntax.
+
+    # RBAC user create
+    local user_json="$ISOLATED_HOME/rbac-user.json"
+    cat > "$user_json" <<'USERJSON'
+{"login": "testuser", "email": "test@example.com", "password": "secret123"}
+USERJSON
+    run_payload_test_split "payload-rbac-user-create" "rbac user create" \
+        rbac user -a "$user_json" \
+        --- \
+        rbac user create testuser --email test@example.com --password secret123
+
+    # RBAC role create
+    local role_json="$ISOLATED_HOME/rbac-role.json"
+    cat > "$role_json" <<'ROLEJSON'
+{"name": "testrole", "members": [{"type": "subuser", "id": "testuser", "default": false}], "policies": [{"name": "testpolicy"}]}
+ROLEJSON
+    run_payload_test_split "payload-rbac-role-create" "rbac role create" \
+        rbac role -a "$role_json" \
+        --- \
+        rbac role create testrole --member testuser --policy testpolicy
+
+    # RBAC policy create
+    local policy_json="$ISOLATED_HOME/rbac-policy.json"
+    cat > "$policy_json" <<'POLICYJSON'
+{"name": "testpolicy", "rules": ["can getmachine"], "description": "A test policy"}
+POLICYJSON
+    run_payload_test_split "payload-rbac-policy-create" "rbac policy create" \
+        rbac policy -a "$policy_json" \
+        --- \
+        rbac policy create testpolicy --rule "can getmachine" --description "A test policy"
+
+    echo ""
+}
+
 # ---------- main ----------
 
 case "$TIER" in
     offline) run_offline_tests ;;
     api)     run_api_tests ;;
-    all)     run_offline_tests; run_api_tests ;;
+    payload) run_payload_tests ;;
+    all)     run_offline_tests; run_api_tests; run_payload_tests ;;
 esac
 
 echo "=== Summary ==="

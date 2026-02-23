@@ -1,0 +1,23 @@
+diff --git a/lib/cloudapi2.js b/lib/cloudapi2.js
+index 605b257..7f00fbb 100644
+--- a/lib/cloudapi2.js
++++ b/lib/cloudapi2.js
+@@ -287,6 +287,18 @@ CloudApi.prototype._request = function _request(opts, cb) {
+         }
+     }
+
++    // Emit-payload mode: print request envelope and return without sending
++    if (process.env.TRITON_EMIT_PAYLOAD) {
++        var envelope = {
++            method: method.toUpperCase(),
++            path: opts.path,
++            body: opts.data || null
++        };
++        console.log(JSON.stringify(envelope, null, 2));
++        cb(null, null, { statusCode: 200 }, {});
++        return;
++    }
++
+     self._getAuthHeaders(method, opts.path, function (err, headers) {
+         if (err) {
+             cb(err);

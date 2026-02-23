@@ -89,6 +89,10 @@ struct Cli {
     #[arg(long = "accept-version", hide = true)]
     accept_version: Option<String>,
 
+    /// Emit the HTTP request payload as JSON instead of sending it
+    #[arg(long, hide = true, env = "TRITON_EMIT_PAYLOAD")]
+    emit_payload: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -512,6 +516,13 @@ async fn main() {
     if let Err(e) = try_main().await {
         // Format with alternate display to include the full error chain.
         let msg = format!("{e:#}");
+
+        // Emit-payload mode uses a sentinel error to abort the request
+        // after printing the payload. Treat it as a successful exit.
+        if msg.contains(cloudapi_client::EMIT_PAYLOAD_SENTINEL) {
+            return;
+        }
+
         // Progenitor's Error::Custom Display prepends "Error: ", which
         // duplicates the prefix we add here. Strip it to avoid
         // "triton: error: Error: ...".
@@ -529,6 +540,12 @@ async fn main() {
 
 async fn try_main() -> Result<()> {
     let cli = Cli::parse();
+
+    // Enable emit-payload mode if requested (captures HTTP payloads for
+    // comparison testing without sending requests)
+    if cli.emit_payload {
+        cloudapi_client::set_emit_payload_mode(true);
+    }
 
     // Set up logging: always show warnings/errors, verbose adds debug
     let filter = if cli.verbose {

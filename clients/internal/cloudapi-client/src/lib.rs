@@ -63,6 +63,8 @@ pub mod auth;
 mod generated;
 pub use generated::*;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use progenitor_client::{ClientHooks, OperationInfo};
 
 // Re-export triton-auth types for convenience
@@ -220,6 +222,61 @@ pub use cloudapi_api::{
 };
 
 // =============================================================================
+// Emit-payload mode: capture request payloads without sending
+// =============================================================================
+
+static EMIT_PAYLOAD_MODE: AtomicBool = AtomicBool::new(false);
+
+/// Enable or disable emit-payload mode.
+///
+/// When enabled, the `ClientHooks::pre()` hook will print the HTTP method,
+/// path, and body as a JSON envelope to stdout and abort the request with a
+/// sentinel error instead of sending it. This allows comparison testing of
+/// mutating operations without contacting the API.
+pub fn set_emit_payload_mode(enabled: bool) {
+    EMIT_PAYLOAD_MODE.store(enabled, Ordering::Relaxed);
+}
+
+/// Sentinel error message used to signal that emit-payload mode intercepted
+/// the request. Callers (e.g., the CLI) should detect this and exit cleanly.
+pub const EMIT_PAYLOAD_SENTINEL: &str = "__payload_emitted__";
+
+/// Print a JSON envelope capturing the request's method, path, and body,
+/// then return a sentinel error to abort the request.
+#[allow(clippy::result_large_err)]
+fn emit_request_payload<E>(request: &reqwest::Request) -> Result<(), Error<E>> {
+    let method = request.method().to_string();
+    let url = request.url();
+
+    // Build path + query, excluding the host/scheme
+    let mut path = url.path().to_string();
+    if let Some(query) = url.query() {
+        path.push('?');
+        path.push_str(query);
+    }
+
+    // Extract body as JSON value (or null if no body)
+    let body = request
+        .body()
+        .and_then(|b| b.as_bytes())
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(bytes).ok())
+        .unwrap_or(serde_json::Value::Null);
+
+    let envelope = serde_json::json!({
+        "method": method,
+        "path": path,
+        "body": body,
+    });
+
+    #[allow(clippy::expect_used)]
+    let output =
+        serde_json::to_string_pretty(&envelope).expect("JSON serialization should not fail");
+    println!("{output}");
+
+    Err(Error::Custom(EMIT_PAYLOAD_SENTINEL.to_string()))
+}
+
+// =============================================================================
 // ClientHooks: intercept create_machine to transform body to legacy format
 // =============================================================================
 
@@ -236,6 +293,11 @@ impl ClientHooks<triton_auth::AuthConfig> for Client {
         if info.operation_id == "create_machine" {
             transform_create_machine_body(request);
         }
+
+        if EMIT_PAYLOAD_MODE.load(Ordering::Relaxed) {
+            return emit_request_payload(request);
+        }
+
         Ok(())
     }
 }

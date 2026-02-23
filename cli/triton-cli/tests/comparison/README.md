@@ -42,6 +42,12 @@ reports whether outputs match or differ.
 - **API** — Read-only commands that hit the live API: `instance list`,
   `image list`, `account get`, etc. Requires a `--profile` with working auth.
 
+- **Payload** — Mutating operations (`instance create`, `start`, `stop`,
+  `reboot`) compared by capturing the HTTP request payload each CLI *would*
+  send, without actually sending it. Fully offline — uses dummy UUIDs so no
+  name resolution or API contact is needed. Requires patching `node-triton`
+  (see [Node-triton patch](#node-triton-patch) below).
+
 ### Output
 
 ```
@@ -182,7 +188,28 @@ comparing.
 |------|-------------|---------|
 | `--node-triton PATH` | Path to Node.js triton binary | `$(which triton)` |
 | `--rust-triton PATH` | Path to Rust triton binary | `target/debug/triton` |
-| `--tier TIER` | `offline`, `api`, or `all` | `offline` |
+| `--tier TIER` | `offline`, `api`, `payload`, or `all` | `offline` |
 | `--profile NAME` | Profile name for API tests | (required for api) |
 | `--output-dir DIR` | Where to save diffs and raw output | `mktemp` |
 | `--verbose` | Print each command before running | off |
+
+## Node-triton Patch
+
+The **payload** tier requires a small patch to `node-triton` so it can emit
+request payloads without sending them. The patch is stored at
+`patches/node-triton-emit-payload.patch`.
+
+To apply it to your local `node-triton` checkout:
+
+```bash
+cd target/node-triton   # or wherever your node-triton lives
+git apply /path/to/monitor-reef/cli/triton-cli/tests/comparison/patches/node-triton-emit-payload.patch
+```
+
+The patch adds a `TRITON_EMIT_PAYLOAD` env var check to
+`CloudApi.prototype._request()` in `lib/cloudapi2.js`. When set, instead of
+signing and sending the HTTP request, it prints a JSON envelope
+(`{ method, path, body }`) to stdout and returns a synthetic 200 response.
+
+The Rust CLI has the equivalent built in via the `--emit-payload` flag (also
+settable via `TRITON_EMIT_PAYLOAD` env var).
