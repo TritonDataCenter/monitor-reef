@@ -7585,7 +7585,6 @@ pub mod types {
     #[doc = "    \"owner_uuid\","]
     #[doc = "    \"size\","]
     #[doc = "    \"state\","]
-    #[doc = "    \"tags\","]
     #[doc = "    \"type\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
@@ -7648,6 +7647,7 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"tags\": {"]
     #[doc = "      \"description\": \"Tags\","]
+    #[doc = "      \"default\": {},"]
     #[doc = "      \"type\": \"object\","]
     #[doc = "      \"additionalProperties\": true"]
     #[doc = "    },"]
@@ -7689,6 +7689,7 @@ pub mod types {
         #[doc = "State"]
         pub state: VolumeState,
         #[doc = "Tags"]
+        #[serde(default, skip_serializing_if = "::serde_json::Map::is_empty")]
         pub tags: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
         #[doc = "Volume type"]
         #[serde(rename = "type")]
@@ -15536,7 +15537,7 @@ pub mod types {
                     refs: Ok(Default::default()),
                     size: Err("no value supplied for size".to_string()),
                     state: Err("no value supplied for state".to_string()),
-                    tags: Err("no value supplied for tags".to_string()),
+                    tags: Ok(Default::default()),
                     type_: Err("no value supplied for type_".to_string()),
                 }
             }

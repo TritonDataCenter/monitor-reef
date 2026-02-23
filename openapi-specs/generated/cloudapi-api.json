@@ -12448,6 +12448,7 @@
           },
           "tags": {
             "description": "Tags",
+            "default": {},
             "type": "object",
             "additionalProperties": true
           },
@@ -12467,7 +12468,6 @@
           "owner_uuid",
           "size",
           "state",
-          "tags",
           "type"
         ]
       },
