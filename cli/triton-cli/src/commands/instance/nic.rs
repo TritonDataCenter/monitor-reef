@@ -123,13 +123,17 @@ impl From<&cloudapi_client::types::Nic> for NicOutput {
     }
 }
 
-/// Convert netmask to CIDR notation
-fn netmask_to_cidr(netmask: &str) -> u8 {
-    netmask
+/// Convert netmask to CIDR notation, returning None for malformed input
+fn netmask_to_cidr(netmask: &str) -> Option<u8> {
+    let octets: Vec<u8> = netmask
         .split('.')
-        .filter_map(|octet| octet.parse::<u8>().ok())
-        .map(|byte| byte.count_ones() as u8)
-        .sum()
+        .map(|s| s.parse::<u8>())
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    if octets.len() != 4 {
+        return None;
+    }
+    Some(octets.iter().map(|b| b.count_ones() as u8).sum())
 }
 
 pub async fn list_nics(args: NicListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
@@ -171,7 +175,9 @@ pub async fn list_nics(args: NicListArgs, client: &TypedClient, use_json: bool) 
         // IP is formatted as IP/CIDR
         let mut tbl = table::create_table(&["IP", "MAC", "STATE", "NETWORK"]);
         for nic in &nics {
-            let cidr = netmask_to_cidr(&nic.netmask);
+            let cidr = netmask_to_cidr(&nic.netmask)
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "?".to_string());
             let ip_cidr = format!("{}/{}", nic.ip, cidr);
             // Network is truncated to short ID in table view
             let short_network = nic.network.split('-').next().unwrap_or(&nic.network);
@@ -322,4 +328,49 @@ async fn remove_nic(args: NicRemoveArgs, client: &TypedClient) -> Result<()> {
     println!("Deleted NIC {}", args.mac);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_netmask_to_cidr_class_c() {
+        assert_eq!(netmask_to_cidr("255.255.255.0"), Some(24));
+    }
+
+    #[test]
+    fn test_netmask_to_cidr_class_b() {
+        assert_eq!(netmask_to_cidr("255.255.0.0"), Some(16));
+    }
+
+    #[test]
+    fn test_netmask_to_cidr_class_a() {
+        assert_eq!(netmask_to_cidr("255.0.0.0"), Some(8));
+    }
+
+    #[test]
+    fn test_netmask_to_cidr_full() {
+        assert_eq!(netmask_to_cidr("255.255.255.255"), Some(32));
+    }
+
+    #[test]
+    fn test_netmask_to_cidr_invalid_octet() {
+        assert_eq!(netmask_to_cidr("255.abc.255.0"), None);
+    }
+
+    #[test]
+    fn test_netmask_to_cidr_too_few_octets() {
+        assert_eq!(netmask_to_cidr("255.255.255"), None);
+    }
+
+    #[test]
+    fn test_netmask_to_cidr_too_many_octets() {
+        assert_eq!(netmask_to_cidr("255.255.255.0.0"), None);
+    }
+
+    #[test]
+    fn test_netmask_to_cidr_empty() {
+        assert_eq!(netmask_to_cidr(""), None);
+    }
 }

@@ -15,6 +15,34 @@ use cloudapi_client::TypedClient;
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
 
+/// Pre-parsed VLAN list filters (CLI-only, not an API type).
+#[derive(Debug, Default)]
+struct VlanFilters {
+    vlan_id: Option<u16>,
+    name: Option<String>,
+    description: Option<String>,
+}
+
+fn parse_vlan_filters(filters: &[String]) -> Result<VlanFilters> {
+    let mut parsed = VlanFilters::default();
+    for filter in filters {
+        if let Some((field, value)) = filter.split_once('=') {
+            match field {
+                "vlan_id" => {
+                    parsed.vlan_id =
+                        Some(value.parse::<u16>().map_err(|_| {
+                            anyhow::anyhow!("invalid vlan_id filter value: {value:?}")
+                        })?);
+                }
+                "name" => parsed.name = Some(value.to_string()),
+                "description" => parsed.description = Some(value.to_string()),
+                _ => {} // Ignore unknown fields
+            }
+        }
+    }
+    Ok(parsed)
+}
+
 #[derive(Args, Clone)]
 pub struct VlanListArgs {
     /// Filters in FIELD=VALUE format (e.g., vlan_id=2, name=myvlan)
@@ -121,34 +149,26 @@ async fn list_vlans(args: VlanListArgs, client: &TypedClient, use_json: bool) ->
 
     let vlans = response.into_inner();
 
+    let filters = parse_vlan_filters(&args.filters)?;
+
     // Apply client-side filters (like node-triton)
     let vlans: Vec<_> = vlans
         .into_iter()
         .filter(|vlan| {
-            for filter in &args.filters {
-                if let Some((field, value)) = filter.split_once('=') {
-                    match field {
-                        "vlan_id" => {
-                            if let Ok(id) = value.parse::<u16>()
-                                && vlan.vlan_id != id
-                            {
-                                return false;
-                            }
-                        }
-                        "name" => {
-                            if vlan.name != value {
-                                return false;
-                            }
-                        }
-                        "description" => {
-                            let desc = vlan.description.as_deref().unwrap_or("");
-                            if desc != value {
-                                return false;
-                            }
-                        }
-                        _ => {} // Ignore unknown fields
-                    }
-                }
+            if let Some(id) = filters.vlan_id
+                && vlan.vlan_id != id
+            {
+                return false;
+            }
+            if let Some(ref name) = filters.name
+                && vlan.name != *name
+            {
+                return false;
+            }
+            if let Some(ref desc_filter) = filters.description
+                && vlan.description.as_deref().unwrap_or("") != desc_filter.as_str()
+            {
+                return false;
             }
             true
         })
@@ -374,4 +394,46 @@ async fn list_vlan_networks(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_vlan_filters_valid_id() {
+        let filters = vec!["vlan_id=42".to_string()];
+        let parsed = parse_vlan_filters(&filters).unwrap();
+        assert_eq!(parsed.vlan_id, Some(42));
+        assert_eq!(parsed.name, None);
+    }
+
+    #[test]
+    fn test_parse_vlan_filters_invalid_id() {
+        let filters = vec!["vlan_id=abc".to_string()];
+        let err = parse_vlan_filters(&filters).unwrap_err();
+        assert!(
+            err.to_string().contains("invalid vlan_id filter value"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_parse_vlan_filters_name_and_description() {
+        let filters = vec![
+            "name=myvlan".to_string(),
+            "description=test vlan".to_string(),
+        ];
+        let parsed = parse_vlan_filters(&filters).unwrap();
+        assert_eq!(parsed.name.as_deref(), Some("myvlan"));
+        assert_eq!(parsed.description.as_deref(), Some("test vlan"));
+    }
+
+    #[test]
+    fn test_parse_vlan_filters_unknown_field_ignored() {
+        let filters = vec!["bogus=whatever".to_string()];
+        let parsed = parse_vlan_filters(&filters).unwrap();
+        assert_eq!(parsed.vlan_id, None);
+        assert_eq!(parsed.name, None);
+    }
 }
