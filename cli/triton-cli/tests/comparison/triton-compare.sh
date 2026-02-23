@@ -667,7 +667,9 @@ run_api_tests() {
             | head -1 | jq -r '.id // .name // .key // empty' 2>/dev/null || echo "")
 
         if [[ -n "$first_id" ]]; then
-            run_test "${resource}-get" "$resource get $first_id" \
+            # Both CLIs output JSON for resource get (even without -j),
+            # so use JSON normalization to sort keys consistently
+            run_json_test "${resource}-get" "$resource get $first_id" \
                 live -p "$PROFILE" "$resource" get "$first_id"
 
             run_json_test "${resource}-get-json" "$resource get -j $first_id" \
