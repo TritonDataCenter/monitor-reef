@@ -58,8 +58,6 @@ mod generated;
 pub use generated::*;
 
 // Re-export types from the API crate for convenience.
-// Note: VmAction is NOT re-exported because Progenitor generates its own type.
-// Use types::VmAction for the generated enum compatible with the client builder API.
 pub use vmapi_api::{
     // Metadata types
     AddMetadataRequest,
@@ -131,6 +129,7 @@ pub use vmapi_api::{
     UpdateVmServerUuidRequest,
     Uuid,
     Vm,
+    VmAction,
     VmActionQuery,
     VmJobsPath,
     VmMetadataKeyPath,
@@ -148,6 +147,19 @@ pub use vmapi_api::{
 #[allow(clippy::expect_used)]
 fn to_json_value<T: serde::Serialize>(value: &T) -> serde_json::Value {
     serde_json::to_value(value).expect("request serialization should not fail")
+}
+
+/// Wraps an action enum + per-action request body into a single JSON object.
+/// Produces `{"action": "<variant>", ...body_fields}` via `#[serde(flatten)]`.
+///
+/// Node.js Restify's `mapParams: true` merges query and body params, so
+/// clients may send `action` in either place. We send it in the body to
+/// match the established wire format.
+#[derive(serde::Serialize)]
+struct ActionBody<A: serde::Serialize, B: serde::Serialize> {
+    action: A,
+    #[serde(flatten)]
+    body: B,
 }
 
 /// Typed client wrapper for action-based endpoints
@@ -200,13 +212,15 @@ impl TypedClient {
         uuid: &Uuid,
         idempotent: bool,
     ) -> Result<types::JobResponse, Error<types::Error>> {
-        let body = StartVmRequest {
-            idempotent: if idempotent { Some(true) } else { None },
+        let body = ActionBody {
+            action: VmAction::Start,
+            body: StartVmRequest {
+                idempotent: if idempotent { Some(true) } else { None },
+            },
         };
         self.inner
             .vm_action()
             .uuid(*uuid)
-            .action(types::VmAction::Start)
             .body(to_json_value(&body))
             .send()
             .await
@@ -223,13 +237,15 @@ impl TypedClient {
         uuid: &Uuid,
         idempotent: bool,
     ) -> Result<types::JobResponse, Error<types::Error>> {
-        let body = StopVmRequest {
-            idempotent: if idempotent { Some(true) } else { None },
+        let body = ActionBody {
+            action: VmAction::Stop,
+            body: StopVmRequest {
+                idempotent: if idempotent { Some(true) } else { None },
+            },
         };
         self.inner
             .vm_action()
             .uuid(*uuid)
-            .action(types::VmAction::Stop)
             .body(to_json_value(&body))
             .send()
             .await
@@ -248,14 +264,16 @@ impl TypedClient {
         signal: Option<String>,
         idempotent: bool,
     ) -> Result<types::JobResponse, Error<types::Error>> {
-        let body = KillVmRequest {
-            signal,
-            idempotent: if idempotent { Some(true) } else { None },
+        let body = ActionBody {
+            action: VmAction::Kill,
+            body: KillVmRequest {
+                signal,
+                idempotent: if idempotent { Some(true) } else { None },
+            },
         };
         self.inner
             .vm_action()
             .uuid(*uuid)
-            .action(types::VmAction::Kill)
             .body(to_json_value(&body))
             .send()
             .await
@@ -272,13 +290,15 @@ impl TypedClient {
         uuid: &Uuid,
         idempotent: bool,
     ) -> Result<types::JobResponse, Error<types::Error>> {
-        let body = RebootVmRequest {
-            idempotent: if idempotent { Some(true) } else { None },
+        let body = ActionBody {
+            action: VmAction::Reboot,
+            body: RebootVmRequest {
+                idempotent: if idempotent { Some(true) } else { None },
+            },
         };
         self.inner
             .vm_action()
             .uuid(*uuid)
-            .action(types::VmAction::Reboot)
             .body(to_json_value(&body))
             .send()
             .await
@@ -295,11 +315,13 @@ impl TypedClient {
         uuid: &Uuid,
         image_uuid: Uuid,
     ) -> Result<types::JobResponse, Error<types::Error>> {
-        let body = ReprovisionVmRequest { image_uuid };
+        let body = ActionBody {
+            action: VmAction::Reprovision,
+            body: ReprovisionVmRequest { image_uuid },
+        };
         self.inner
             .vm_action()
             .uuid(*uuid)
-            .action(types::VmAction::Reprovision)
             .body(to_json_value(&body))
             .send()
             .await
@@ -316,11 +338,14 @@ impl TypedClient {
         uuid: &Uuid,
         request: &UpdateVmRequest,
     ) -> Result<types::JobResponse, Error<types::Error>> {
+        let body = ActionBody {
+            action: VmAction::Update,
+            body: request,
+        };
         self.inner
             .vm_action()
             .uuid(*uuid)
-            .action(types::VmAction::Update)
-            .body(to_json_value(request))
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -336,11 +361,14 @@ impl TypedClient {
         uuid: &Uuid,
         request: &AddNicsRequest,
     ) -> Result<types::JobResponse, Error<types::Error>> {
+        let body = ActionBody {
+            action: VmAction::AddNics,
+            body: request,
+        };
         self.inner
             .vm_action()
             .uuid(*uuid)
-            .action(types::VmAction::AddNics)
-            .body(to_json_value(request))
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -356,11 +384,14 @@ impl TypedClient {
         uuid: &Uuid,
         request: &UpdateNicsRequest,
     ) -> Result<types::JobResponse, Error<types::Error>> {
+        let body = ActionBody {
+            action: VmAction::UpdateNics,
+            body: request,
+        };
         self.inner
             .vm_action()
             .uuid(*uuid)
-            .action(types::VmAction::UpdateNics)
-            .body(to_json_value(request))
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -376,11 +407,13 @@ impl TypedClient {
         uuid: &Uuid,
         macs: Vec<String>,
     ) -> Result<types::JobResponse, Error<types::Error>> {
-        let body = RemoveNicsRequest { macs };
+        let body = ActionBody {
+            action: VmAction::RemoveNics,
+            body: RemoveNicsRequest { macs },
+        };
         self.inner
             .vm_action()
             .uuid(*uuid)
-            .action(types::VmAction::RemoveNics)
             .body(to_json_value(&body))
             .send()
             .await
@@ -397,11 +430,13 @@ impl TypedClient {
         uuid: &Uuid,
         snapshot_name: Option<String>,
     ) -> Result<types::JobResponse, Error<types::Error>> {
-        let body = CreateSnapshotRequest { snapshot_name };
+        let body = ActionBody {
+            action: VmAction::CreateSnapshot,
+            body: CreateSnapshotRequest { snapshot_name },
+        };
         self.inner
             .vm_action()
             .uuid(*uuid)
-            .action(types::VmAction::CreateSnapshot)
             .body(to_json_value(&body))
             .send()
             .await
@@ -418,11 +453,13 @@ impl TypedClient {
         uuid: &Uuid,
         snapshot_name: String,
     ) -> Result<types::JobResponse, Error<types::Error>> {
-        let body = RollbackSnapshotRequest { snapshot_name };
+        let body = ActionBody {
+            action: VmAction::RollbackSnapshot,
+            body: RollbackSnapshotRequest { snapshot_name },
+        };
         self.inner
             .vm_action()
             .uuid(*uuid)
-            .action(types::VmAction::RollbackSnapshot)
             .body(to_json_value(&body))
             .send()
             .await
@@ -439,11 +476,13 @@ impl TypedClient {
         uuid: &Uuid,
         snapshot_name: String,
     ) -> Result<types::JobResponse, Error<types::Error>> {
-        let body = DeleteSnapshotRequest { snapshot_name };
+        let body = ActionBody {
+            action: VmAction::DeleteSnapshot,
+            body: DeleteSnapshotRequest { snapshot_name },
+        };
         self.inner
             .vm_action()
             .uuid(*uuid)
-            .action(types::VmAction::DeleteSnapshot)
             .body(to_json_value(&body))
             .send()
             .await
@@ -460,11 +499,14 @@ impl TypedClient {
         uuid: &Uuid,
         request: &CreateDiskRequest,
     ) -> Result<types::JobResponse, Error<types::Error>> {
+        let body = ActionBody {
+            action: VmAction::CreateDisk,
+            body: request,
+        };
         self.inner
             .vm_action()
             .uuid(*uuid)
-            .action(types::VmAction::CreateDisk)
-            .body(to_json_value(request))
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -480,11 +522,14 @@ impl TypedClient {
         uuid: &Uuid,
         request: &ResizeDiskRequest,
     ) -> Result<types::JobResponse, Error<types::Error>> {
+        let body = ActionBody {
+            action: VmAction::ResizeDisk,
+            body: request,
+        };
         self.inner
             .vm_action()
             .uuid(*uuid)
-            .action(types::VmAction::ResizeDisk)
-            .body(to_json_value(request))
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -500,11 +545,13 @@ impl TypedClient {
         uuid: &Uuid,
         pci_slot: String,
     ) -> Result<types::JobResponse, Error<types::Error>> {
-        let body = DeleteDiskRequest { pci_slot };
+        let body = ActionBody {
+            action: VmAction::DeleteDisk,
+            body: DeleteDiskRequest { pci_slot },
+        };
         self.inner
             .vm_action()
             .uuid(*uuid)
-            .action(types::VmAction::DeleteDisk)
             .body(to_json_value(&body))
             .send()
             .await
@@ -521,11 +568,14 @@ impl TypedClient {
         uuid: &Uuid,
         request: &MigrateVmRequest,
     ) -> Result<types::JobResponse, Error<types::Error>> {
+        let body = ActionBody {
+            action: VmAction::Migrate,
+            body: request,
+        };
         self.inner
             .vm_action()
             .uuid(*uuid)
-            .action(types::VmAction::Migrate)
-            .body(to_json_value(request))
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())

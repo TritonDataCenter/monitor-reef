@@ -96,7 +96,11 @@ Run `make help` to see all available targets. Key commands:
 
 ## Action-Dispatch Pattern
 
-Several CloudAPI endpoints use `POST ...?action=<enum>` to dispatch multiple operations from one endpoint (mirrors Node.js Restify routes). Each has: an action enum, a query struct wrapping it, and per-action request body structs. The endpoint uses `TypedBody<serde_json::Value>` and deserializes based on the matched action.
+Several CloudAPI endpoints use a single POST endpoint to dispatch multiple operations (mirrors Node.js Restify routes). Each has: an action enum, an optional query struct, per-action request body structs, and the endpoint uses `TypedBody<serde_json::Value>` to accept the action and fields in the body.
+
+**Body-first precedence**: Node.js Restify's `mapParams: true` merges query and body params, so clients may send `action` in either the query string (`?action=stop`) or the request body (`{"action": "stop"}`). Our Rust client sends it in the body (matching node-triton's wire format). The query parameter is optional (`Option<*Action>`) so both old and new clients work. Service implementations should check the body first, then fall back to the query parameter.
+
+**Client wrapper pattern**: The `ActionBody` struct in `cloudapi-client` uses `#[serde(flatten)]` to merge the action field into the request body, e.g. `{"action": "stop", "origin": null}`.
 
 **Endpoints**: `MachineAction` (start/stop/reboot/resize/rename/firewall/deletion-protection), `ImageAction` (update/export/clone/import/share/unshare), `DiskAction` (resize), `VolumeAction` (update).
 

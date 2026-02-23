@@ -89,8 +89,12 @@ fn test_machine_action_round_trip() {
 fn test_machine_action_query_deserialize() {
     let json = r#"{"action": "enable_firewall"}"#;
     let query: MachineActionQuery = serde_json::from_str(json).unwrap();
-    let serialized = serde_json::to_value(&query.action).unwrap();
-    assert_eq!(serialized, "enable_firewall");
+    assert_eq!(query.action, Some(MachineAction::EnableFirewall));
+
+    // Action is optional (clients may send it in the body instead)
+    let json = r#"{}"#;
+    let query: MachineActionQuery = serde_json::from_str(json).unwrap();
+    assert_eq!(query.action, None);
 }
 
 // --- MachineAction request body tests ---
@@ -219,8 +223,12 @@ fn test_image_action_round_trip() {
 fn test_image_action_query_deserialize() {
     let json = r#"{"action": "import-from-datacenter"}"#;
     let query: ImageActionQuery = serde_json::from_str(json).unwrap();
-    let serialized = serde_json::to_value(&query.action).unwrap();
-    assert_eq!(serialized, "import-from-datacenter");
+    assert_eq!(query.action, Some(ImageAction::ImportFromDatacenter));
+
+    // Action is optional (clients may send it in the body instead)
+    let json = r#"{}"#;
+    let query: ImageActionQuery = serde_json::from_str(json).unwrap();
+    assert_eq!(query.action, None);
 }
 
 // --- ImageAction request body tests ---
@@ -303,8 +311,12 @@ fn test_disk_action_round_trip() {
 fn test_disk_action_query_deserialize() {
     let json = r#"{"action": "resize"}"#;
     let query: DiskActionQuery = serde_json::from_str(json).unwrap();
-    let serialized = serde_json::to_value(&query.action).unwrap();
-    assert_eq!(serialized, "resize");
+    assert_eq!(query.action, Some(DiskAction::Resize));
+
+    // Action is optional (clients may send it in the body instead)
+    let json = r#"{}"#;
+    let query: DiskActionQuery = serde_json::from_str(json).unwrap();
+    assert_eq!(query.action, None);
 }
 
 #[test]
@@ -341,8 +353,12 @@ fn test_volume_action_round_trip() {
 fn test_volume_action_query_deserialize() {
     let json = r#"{"action": "update"}"#;
     let query: VolumeActionQuery = serde_json::from_str(json).unwrap();
-    let serialized = serde_json::to_value(&query.action).unwrap();
-    assert_eq!(serialized, "update");
+    assert_eq!(query.action, Some(VolumeAction::Update));
+
+    // Action is optional (clients may send it in the body instead)
+    let json = r#"{}"#;
+    let query: VolumeActionQuery = serde_json::from_str(json).unwrap();
+    assert_eq!(query.action, None);
 }
 
 #[test]

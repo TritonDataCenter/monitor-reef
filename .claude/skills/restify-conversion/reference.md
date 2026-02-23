@@ -257,26 +257,27 @@ pub struct VmDetails {
 
 ## Action Dispatch Pattern
 
-Some APIs use an action-based pattern where a single endpoint handles multiple operations via a query parameter:
+Some APIs use an action-based pattern where a single endpoint handles multiple operations. Node.js Restify's `mapParams: true` merges query and body params, so clients may send the action in either place:
 
 ```
-POST /vms/:uuid?action=start
-POST /vms/:uuid?action=stop
-POST /vms/:uuid?action=update    (body: {ram: 1024, ...})
-POST /vms/:uuid?action=add_nics  (body: {nics: [...]})
+POST /vms/:uuid?action=start           (action in query)
+POST /vms/:uuid  {"action": "stop"}    (action in body — preferred)
+POST /vms/:uuid?action=update  {"ram": 1024}  (action in query, fields in body)
+POST /vms/:uuid  {"action": "update", "ram": 1024}  (everything in body)
 ```
 
 ### Recommended Approach
 
 1. **API trait uses `serde_json::Value` for the body** - allows any JSON
 2. **Define an Action enum** for the query parameter
-3. **Define typed request structs FOR EVERY ACTION** in the API crate
-4. **Implementation dispatches** based on action and deserializes appropriately
-5. **Client library** depends on API crate and provides typed wrapper methods
+3. **Query struct action field is `Option`** - clients may send action in the body instead
+4. **Define typed request structs FOR EVERY ACTION** in the API crate
+5. **Service implementations check body first, fall back to query parameter**
+6. **Client library sends action in the body** using an `ActionBody` wrapper with `#[serde(flatten)]`
 
 ```rust
 // In API trait
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, PartialEq, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum VmAction {
     Start,
@@ -286,9 +287,11 @@ pub enum VmAction {
     // ... all actions
 }
 
+// Query parameter is optional — action may come from body instead
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct VmActionQuery {
-    pub action: VmAction,
+    #[serde(default)]
+    pub action: Option<VmAction>,
 }
 
 // Typed request structs (exported for client use)
@@ -299,7 +302,7 @@ pub struct UpdateVmRequest {
     pub cpu_cap: Option<u32>,
 }
 
-// The endpoint accepts generic JSON body
+// The endpoint accepts optional query param + generic JSON body
 #[endpoint {
     method = POST,
     path = "/vms/{uuid}",
@@ -431,10 +434,13 @@ impl TypedClient {
     }
 
     pub async fn start_vm(&self, uuid: &str) -> Result<types::AsyncJobResponse, Error<types::Error>> {
+        let body = ActionBody {
+            action: vmapi_api::VmAction::Start,
+            body: serde_json::json!({}),
+        };
         self.inner.vm_action()
             .uuid(uuid)
-            .action(vmapi_api::VmAction::Start)
-            .body(serde_json::json!({}))
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())  // Unwrap ResponseValue<T>
@@ -445,10 +451,13 @@ impl TypedClient {
         uuid: &str,
         request: &vmapi_api::UpdateVmRequest,
     ) -> Result<types::AsyncJobResponse, Error<types::Error>> {
+        let body = ActionBody {
+            action: vmapi_api::VmAction::Update,
+            body: request,
+        };
         self.inner.vm_action()
             .uuid(uuid)
-            .action(vmapi_api::VmAction::Update)
-            .body(serde_json::to_value(request).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())

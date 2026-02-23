@@ -146,7 +146,11 @@ pub trait VmApi {
 
     /// Perform VM action
     ///
-    /// Dispatches an action on the VM based on the `action` query parameter.
+    /// Dispatches an action on the VM. The action may be specified in the
+    /// request body (`{"action": "start", ...}`) or as a query parameter
+    /// (`?action=start`). Body takes precedence (matching Restify's
+    /// `mapParams` behavior).
+    ///
     /// Available actions: start, stop, kill, reboot, reprovision, update,
     /// add_nics, update_nics, remove_nics, create_snapshot, rollback_snapshot,
     /// delete_snapshot, create_disk, resize_disk, delete_disk, migrate.

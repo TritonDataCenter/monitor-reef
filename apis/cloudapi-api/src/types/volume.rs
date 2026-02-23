@@ -115,7 +115,7 @@ pub struct CreateVolumeRequest {
 }
 
 /// Volume action for action dispatch
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum VolumeAction {
     Update,
@@ -124,7 +124,12 @@ pub enum VolumeAction {
 /// Query parameter for volume actions
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct VolumeActionQuery {
-    pub action: VolumeAction,
+    /// Action to perform. Optional in the query string because clients may
+    /// send it in the request body instead (matching Restify's mapParams
+    /// behavior). Service implementations should check the body first,
+    /// then fall back to this query parameter.
+    #[serde(default)]
+    pub action: Option<VolumeAction>,
 }
 
 /// Request to update volume

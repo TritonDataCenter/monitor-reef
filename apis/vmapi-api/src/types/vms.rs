@@ -76,16 +76,23 @@ pub struct ListVmsQuery {
 }
 
 /// Query parameters for VM action dispatch
+///
+/// The `action` field is optional in the query string because clients may
+/// send it in the request body instead (matching Restify's `mapParams`
+/// behavior). Service implementations should check the body first,
+/// then fall back to this query parameter.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct VmActionQuery {
-    /// The action to perform on the VM
-    pub action: VmAction,
+    /// Action to perform. Optional in the query string because clients may
+    /// send it in the request body instead.
+    #[serde(default)]
+    pub action: Option<VmAction>,
     /// If true, wait for job completion before returning (default: false)
     #[serde(default)]
     pub sync: Option<bool>,
 }
 
-/// VM actions available via POST /vms/:uuid?action=<action>
+/// VM actions available via POST /vms/:uuid
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum VmAction {

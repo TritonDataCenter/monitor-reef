@@ -196,7 +196,12 @@ pub trait CloudApi {
 
     /// Update a machine (action dispatch)
     ///
-    /// This endpoint handles multiple actions via the action query parameter:
+    /// This endpoint handles multiple actions. The action can be specified
+    /// either in the request body (`{"action": "stop"}`) or as a query
+    /// parameter (`?action=stop`). Body takes precedence, matching Restify's
+    /// `mapParams` behavior. Service implementations should check both.
+    ///
+    /// Actions:
     /// - start: Start a stopped machine
     /// - stop: Stop a running machine
     /// - reboot: Reboot a running machine
@@ -645,6 +650,10 @@ pub trait CloudApi {
     ) -> Result<HttpResponseOk<Disk>, HttpError>;
 
     /// Resize machine disk (action dispatch)
+    ///
+    /// The action can be specified in the request body or as a query
+    /// parameter. Body takes precedence, matching Restify's `mapParams`
+    /// behavior.
     #[endpoint {
         method = POST,
         path = "/{account}/machines/{machine}/disks/{disk}",
@@ -732,7 +741,11 @@ pub trait CloudApi {
 
     /// Update image (action dispatch)
     ///
-    /// This endpoint handles multiple actions via the action query parameter:
+    /// This endpoint handles multiple actions. The action can be specified
+    /// either in the request body or as a query parameter. Body takes
+    /// precedence, matching Restify's `mapParams` behavior.
+    ///
+    /// Actions:
     /// - update: Update image metadata
     /// - export: Export image to Manta
     /// - clone: Clone image to account
@@ -1969,6 +1982,10 @@ pub trait CloudApi {
     ) -> Result<HttpResponseDeleted, HttpError>;
 
     /// Update volume (action dispatch)
+    ///
+    /// The action can be specified in the request body or as a query
+    /// parameter. Body takes precedence, matching Restify's `mapParams`
+    /// behavior.
     #[endpoint {
         method = POST,
         path = "/{account}/volumes/{id}",

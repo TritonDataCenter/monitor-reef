@@ -2602,7 +2602,7 @@
           "images"
         ],
         "summary": "Update image (action dispatch)",
-        "description": "This endpoint handles multiple actions via the action query parameter: - update: Update image metadata - export: Export image to Manta - clone: Clone image to account - import-from-datacenter: Import image from another datacenter",
+        "description": "This endpoint handles multiple actions. The action can be specified either in the request body or as a query parameter. Body takes precedence, matching Restify's `mapParams` behavior.\n\nActions: - update: Update image metadata - export: Export image to Manta - clone: Clone image to account - import-from-datacenter: Import image from another datacenter",
         "operationId": "update_image",
         "parameters": [
           {
@@ -2627,7 +2627,7 @@
           {
             "in": "query",
             "name": "action",
-            "required": true,
+            "description": "Action to perform. Optional in the query string because clients may send it in the request body instead (matching Restify's mapParams behavior). Service implementations should check the body first, then fall back to this query parameter.",
             "schema": {
               "$ref": "#/components/schemas/ImageAction"
             }
@@ -3605,7 +3605,7 @@
           "machines"
         ],
         "summary": "Update a machine (action dispatch)",
-        "description": "This endpoint handles multiple actions via the action query parameter: - start: Start a stopped machine - stop: Stop a running machine - reboot: Reboot a running machine - resize: Resize to a different package - rename: Change machine name/alias - enable_firewall: Enable firewall - disable_firewall: Disable firewall - enable_deletion_protection: Enable deletion protection - disable_deletion_protection: Disable deletion protection",
+        "description": "This endpoint handles multiple actions. The action can be specified either in the request body (`{\"action\": \"stop\"}`) or as a query parameter (`?action=stop`). Body takes precedence, matching Restify's `mapParams` behavior. Service implementations should check both.\n\nActions: - start: Start a stopped machine - stop: Stop a running machine - reboot: Reboot a running machine - resize: Resize to a different package - rename: Change machine name/alias - enable_firewall: Enable firewall - disable_firewall: Disable firewall - enable_deletion_protection: Enable deletion protection - disable_deletion_protection: Disable deletion protection",
         "operationId": "update_machine",
         "parameters": [
           {
@@ -3630,7 +3630,7 @@
           {
             "in": "query",
             "name": "action",
-            "required": true,
+            "description": "Action to perform. Optional in the query string because clients may send it in the request body instead (matching Restify's mapParams behavior). Service implementations should check the body first, then fall back to this query parameter.",
             "schema": {
               "$ref": "#/components/schemas/MachineAction"
             }
@@ -4076,6 +4076,7 @@
           "disks"
         ],
         "summary": "Resize machine disk (action dispatch)",
+        "description": "The action can be specified in the request body or as a query parameter. Body takes precedence, matching Restify's `mapParams` behavior.",
         "operationId": "resize_machine_disk",
         "parameters": [
           {
@@ -4110,7 +4111,7 @@
           {
             "in": "query",
             "name": "action",
-            "required": true,
+            "description": "Action to perform. Optional in the query string because clients may send it in the request body instead (matching Restify's mapParams behavior). Service implementations should check the body first, then fall back to this query parameter.",
             "schema": {
               "$ref": "#/components/schemas/DiskAction"
             }
@@ -9317,6 +9318,7 @@
           "volumes"
         ],
         "summary": "Update volume (action dispatch)",
+        "description": "The action can be specified in the request body or as a query parameter. Body takes precedence, matching Restify's `mapParams` behavior.",
         "operationId": "update_volume",
         "parameters": [
           {
@@ -9341,7 +9343,7 @@
           {
             "in": "query",
             "name": "action",
-            "required": true,
+            "description": "Action to perform. Optional in the query string because clients may send it in the request body instead (matching Restify's mapParams behavior). Service implementations should check the body first, then fall back to this query parameter.",
             "schema": {
               "$ref": "#/components/schemas/VolumeAction"
             }

@@ -3224,13 +3224,13 @@ pub mod types {
         }
     }
 
-    #[doc = "VM actions available via POST /vms/:uuid?action=<action>"]
+    #[doc = "VM actions available via POST /vms/:uuid"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"VM actions available via POST /vms/:uuid?action=<action>\","]
+    #[doc = "  \"description\": \"VM actions available via POST /vms/:uuid\","]
     #[doc = "  \"oneOf\": ["]
     #[doc = "    {"]
     #[doc = "      \"type\": \"string\","]
@@ -7038,7 +7038,7 @@ impl Client {
         builder::PutVm::new(self)
     }
 
-    #[doc = "Perform VM action\n\nDispatches an action on the VM based on the `action` query parameter. Available actions: start, stop, kill, reboot, reprovision, update, add_nics, update_nics, remove_nics, create_snapshot, rollback_snapshot, delete_snapshot, create_disk, resize_disk, delete_disk, migrate.\n\nThe request body varies by action type. Use serde_json::Value to accept any action-specific body.\n\nSends a `POST` request to `/vms/{uuid}`\n\nArguments:\n- `uuid`: VM UUID\n- `action`: The action to perform on the VM\n- `sync`: If true, wait for job completion before returning (default: false)\n- `body`\n```ignore\nlet response = client.vm_action()\n    .uuid(uuid)\n    .action(action)\n    .sync(sync)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Perform VM action\n\nDispatches an action on the VM. The action may be specified in the request body (`{\"action\": \"start\", ...}`) or as a query parameter (`?action=start`). Body takes precedence (matching Restify's `mapParams` behavior).\n\nAvailable actions: start, stop, kill, reboot, reprovision, update, add_nics, update_nics, remove_nics, create_snapshot, rollback_snapshot, delete_snapshot, create_disk, resize_disk, delete_disk, migrate.\n\nThe request body varies by action type. Use serde_json::Value to accept any action-specific body.\n\nSends a `POST` request to `/vms/{uuid}`\n\nArguments:\n- `uuid`: VM UUID\n- `action`: Action to perform. Optional in the query string because clients may send it in the request body instead.\n- `sync`: If true, wait for job completion before returning (default: false)\n- `body`\n```ignore\nlet response = client.vm_action()\n    .uuid(uuid)\n    .action(action)\n    .sync(sync)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn vm_action(&self) -> builder::VmAction<'_> {
         builder::VmAction::new(self)
     }
@@ -9182,7 +9182,7 @@ pub mod builder {
     pub struct VmAction<'a> {
         client: &'a super::Client,
         uuid: Result<::uuid::Uuid, String>,
-        action: Result<types::VmAction, String>,
+        action: Result<Option<types::VmAction>, String>,
         sync: Result<Option<bool>, String>,
         body: Result<::serde_json::Value, String>,
     }
@@ -9192,7 +9192,7 @@ pub mod builder {
             Self {
                 client: client,
                 uuid: Err("uuid was not initialized".to_string()),
-                action: Err("action was not initialized".to_string()),
+                action: Ok(None),
                 sync: Ok(None),
                 body: Err("body was not initialized".to_string()),
             }
@@ -9214,6 +9214,7 @@ pub mod builder {
         {
             self.action = value
                 .try_into()
+                .map(Some)
                 .map_err(|_| "conversion to `VmAction` for action failed".to_string());
             self
         }

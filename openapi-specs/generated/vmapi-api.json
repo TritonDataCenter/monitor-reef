@@ -1109,7 +1109,7 @@
           "vms"
         ],
         "summary": "Perform VM action",
-        "description": "Dispatches an action on the VM based on the `action` query parameter. Available actions: start, stop, kill, reboot, reprovision, update, add_nics, update_nics, remove_nics, create_snapshot, rollback_snapshot, delete_snapshot, create_disk, resize_disk, delete_disk, migrate.\n\nThe request body varies by action type. Use serde_json::Value to accept any action-specific body.",
+        "description": "Dispatches an action on the VM. The action may be specified in the request body (`{\"action\": \"start\", ...}`) or as a query parameter (`?action=start`). Body takes precedence (matching Restify's `mapParams` behavior).\n\nAvailable actions: start, stop, kill, reboot, reprovision, update, add_nics, update_nics, remove_nics, create_snapshot, rollback_snapshot, delete_snapshot, create_disk, resize_disk, delete_disk, migrate.\n\nThe request body varies by action type. Use serde_json::Value to accept any action-specific body.",
         "operationId": "vm_action",
         "parameters": [
           {
@@ -1125,8 +1125,7 @@
           {
             "in": "query",
             "name": "action",
-            "description": "The action to perform on the VM",
-            "required": true,
+            "description": "Action to perform. Optional in the query string because clients may send it in the request body instead.",
             "schema": {
               "$ref": "#/components/schemas/VmAction"
             }
@@ -3817,7 +3816,7 @@
         ]
       },
       "VmAction": {
-        "description": "VM actions available via POST /vms/:uuid?action=<action>",
+        "description": "VM actions available via POST /vms/:uuid",
         "oneOf": [
           {
             "type": "string",

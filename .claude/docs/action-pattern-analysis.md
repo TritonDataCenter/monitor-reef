@@ -227,6 +227,19 @@ pub use vmapi_api::{
     VmAction, UpdateVmRequest, AddNicsRequest, CreateSnapshotRequest, ...
 };
 
+/// Wraps an action enum + per-action request body into a single JSON object.
+/// Produces `{"action": "<variant>", ...body_fields}` via `#[serde(flatten)]`.
+#[derive(serde::Serialize)]
+struct ActionBody<A: serde::Serialize, B: serde::Serialize> {
+    action: A,
+    #[serde(flatten)]
+    body: B,
+}
+
+fn to_json_value<T: serde::Serialize>(val: &T) -> serde_json::Value {
+    serde_json::to_value(val).expect("serialization should not fail")
+}
+
 // Wrapper struct - cannot impl on Progenitor's Client directly
 pub struct TypedClient {
     inner: Client,
@@ -239,10 +252,13 @@ impl TypedClient {
 
     /// Start a VM
     pub async fn start_vm(&self, uuid: &Uuid) -> Result<VmActionResponse, Error> {
+        let body = ActionBody {
+            action: VmAction::Start,
+            body: serde_json::json!({}),
+        };
         self.inner.vm_action()
             .uuid(uuid)
-            .action(VmAction::Start)
-            .body(serde_json::json!({}))
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -254,10 +270,13 @@ impl TypedClient {
         uuid: &Uuid,
         request: &UpdateVmRequest,
     ) -> Result<VmActionResponse, Error> {
+        let body = ActionBody {
+            action: VmAction::Update,
+            body: request,
+        };
         self.inner.vm_action()
             .uuid(uuid)
-            .action(VmAction::Update)
-            .body(serde_json::to_value(request)?)
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -269,10 +288,13 @@ impl TypedClient {
         uuid: &Uuid,
         request: &AddNicsRequest,
     ) -> Result<VmActionResponse, Error> {
+        let body = ActionBody {
+            action: VmAction::AddNics,
+            body: request,
+        };
         self.inner.vm_action()
             .uuid(uuid)
-            .action(VmAction::AddNics)
-            .body(serde_json::to_value(request)?)
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())

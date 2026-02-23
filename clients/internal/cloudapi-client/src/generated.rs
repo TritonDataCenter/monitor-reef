@@ -16186,7 +16186,7 @@ impl Client {
         builder::ReplaceImageRoleTags::new(self)
     }
 
-    #[doc = "Update image (action dispatch)\n\nThis endpoint handles multiple actions via the action query parameter: - update: Update image metadata - export: Export image to Manta - clone: Clone image to account - import-from-datacenter: Import image from another datacenter\n\nSends a `POST` request to `/{account}/images/{dataset}`\n\nArguments:\n- `account`: Account login name\n- `dataset`: Image UUID\n- `action`\n- `body`\n```ignore\nlet response = client.update_image()\n    .account(account)\n    .dataset(dataset)\n    .action(action)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Update image (action dispatch)\n\nThis endpoint handles multiple actions. The action can be specified either in the request body or as a query parameter. Body takes precedence, matching Restify's `mapParams` behavior.\n\nActions: - update: Update image metadata - export: Export image to Manta - clone: Clone image to account - import-from-datacenter: Import image from another datacenter\n\nSends a `POST` request to `/{account}/images/{dataset}`\n\nArguments:\n- `account`: Account login name\n- `dataset`: Image UUID\n- `action`: Action to perform. Optional in the query string because clients may send it in the request body instead (matching Restify's mapParams behavior). Service implementations should check the body first, then fall back to this query parameter.\n- `body`\n```ignore\nlet response = client.update_image()\n    .account(account)\n    .dataset(dataset)\n    .action(action)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn update_image(&self) -> builder::UpdateImage<'_> {
         builder::UpdateImage::new(self)
     }
@@ -16271,7 +16271,7 @@ impl Client {
         builder::ReplaceMachineRoleTags::new(self)
     }
 
-    #[doc = "Update a machine (action dispatch)\n\nThis endpoint handles multiple actions via the action query parameter: - start: Start a stopped machine - stop: Stop a running machine - reboot: Reboot a running machine - resize: Resize to a different package - rename: Change machine name/alias - enable_firewall: Enable firewall - disable_firewall: Disable firewall - enable_deletion_protection: Enable deletion protection - disable_deletion_protection: Disable deletion protection\n\nSends a `POST` request to `/{account}/machines/{machine}`\n\nArguments:\n- `account`: Account login name\n- `machine`: Machine UUID\n- `action`\n- `body`\n```ignore\nlet response = client.update_machine()\n    .account(account)\n    .machine(machine)\n    .action(action)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Update a machine (action dispatch)\n\nThis endpoint handles multiple actions. The action can be specified either in the request body (`{\"action\": \"stop\"}`) or as a query parameter (`?action=stop`). Body takes precedence, matching Restify's `mapParams` behavior. Service implementations should check both.\n\nActions: - start: Start a stopped machine - stop: Stop a running machine - reboot: Reboot a running machine - resize: Resize to a different package - rename: Change machine name/alias - enable_firewall: Enable firewall - disable_firewall: Disable firewall - enable_deletion_protection: Enable deletion protection - disable_deletion_protection: Disable deletion protection\n\nSends a `POST` request to `/{account}/machines/{machine}`\n\nArguments:\n- `account`: Account login name\n- `machine`: Machine UUID\n- `action`: Action to perform. Optional in the query string because clients may send it in the request body instead (matching Restify's mapParams behavior). Service implementations should check the body first, then fall back to this query parameter.\n- `body`\n```ignore\nlet response = client.update_machine()\n    .account(account)\n    .machine(machine)\n    .action(action)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn update_machine(&self) -> builder::UpdateMachine<'_> {
         builder::UpdateMachine::new(self)
     }
@@ -16316,7 +16316,7 @@ impl Client {
         builder::GetMachineDisk::new(self)
     }
 
-    #[doc = "Resize machine disk (action dispatch)\n\nSends a `POST` request to `/{account}/machines/{machine}/disks/{disk}`\n\nArguments:\n- `account`: Account login name\n- `machine`: Machine UUID\n- `disk`: Disk UUID\n- `action`\n- `body`\n```ignore\nlet response = client.resize_machine_disk()\n    .account(account)\n    .machine(machine)\n    .disk(disk)\n    .action(action)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Resize machine disk (action dispatch)\n\nThe action can be specified in the request body or as a query parameter. Body takes precedence, matching Restify's `mapParams` behavior.\n\nSends a `POST` request to `/{account}/machines/{machine}/disks/{disk}`\n\nArguments:\n- `account`: Account login name\n- `machine`: Machine UUID\n- `disk`: Disk UUID\n- `action`: Action to perform. Optional in the query string because clients may send it in the request body instead (matching Restify's mapParams behavior). Service implementations should check the body first, then fall back to this query parameter.\n- `body`\n```ignore\nlet response = client.resize_machine_disk()\n    .account(account)\n    .machine(machine)\n    .disk(disk)\n    .action(action)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn resize_machine_disk(&self) -> builder::ResizeMachineDisk<'_> {
         builder::ResizeMachineDisk::new(self)
     }
@@ -16850,7 +16850,7 @@ impl Client {
         builder::GetVolume::new(self)
     }
 
-    #[doc = "Update volume (action dispatch)\n\nSends a `POST` request to `/{account}/volumes/{id}`\n\nArguments:\n- `account`: Account login name\n- `id`: Volume UUID\n- `action`\n- `body`\n```ignore\nlet response = client.update_volume()\n    .account(account)\n    .id(id)\n    .action(action)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Update volume (action dispatch)\n\nThe action can be specified in the request body or as a query parameter. Body takes precedence, matching Restify's `mapParams` behavior.\n\nSends a `POST` request to `/{account}/volumes/{id}`\n\nArguments:\n- `account`: Account login name\n- `id`: Volume UUID\n- `action`: Action to perform. Optional in the query string because clients may send it in the request body instead (matching Restify's mapParams behavior). Service implementations should check the body first, then fall back to this query parameter.\n- `body`\n```ignore\nlet response = client.update_volume()\n    .account(account)\n    .id(id)\n    .action(action)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn update_volume(&self) -> builder::UpdateVolume<'_> {
         builder::UpdateVolume::new(self)
     }
@@ -22171,7 +22171,7 @@ pub mod builder {
         client: &'a super::Client,
         account: Result<::std::string::String, String>,
         dataset: Result<::uuid::Uuid, String>,
-        action: Result<types::ImageAction, String>,
+        action: Result<Option<types::ImageAction>, String>,
         body: Result<::serde_json::Value, String>,
     }
 
@@ -22181,7 +22181,7 @@ pub mod builder {
                 client: client,
                 account: Err("account was not initialized".to_string()),
                 dataset: Err("dataset was not initialized".to_string()),
-                action: Err("action was not initialized".to_string()),
+                action: Ok(None),
                 body: Err("body was not initialized".to_string()),
             }
         }
@@ -22212,6 +22212,7 @@ pub mod builder {
         {
             self.action = value
                 .try_into()
+                .map(Some)
                 .map_err(|_| "conversion to `ImageAction` for action failed".to_string());
             self
         }
@@ -24174,7 +24175,7 @@ pub mod builder {
         client: &'a super::Client,
         account: Result<::std::string::String, String>,
         machine: Result<::uuid::Uuid, String>,
-        action: Result<types::MachineAction, String>,
+        action: Result<Option<types::MachineAction>, String>,
         body: Result<::serde_json::Value, String>,
     }
 
@@ -24184,7 +24185,7 @@ pub mod builder {
                 client: client,
                 account: Err("account was not initialized".to_string()),
                 machine: Err("machine was not initialized".to_string()),
-                action: Err("action was not initialized".to_string()),
+                action: Ok(None),
                 body: Err("body was not initialized".to_string()),
             }
         }
@@ -24215,6 +24216,7 @@ pub mod builder {
         {
             self.action = value
                 .try_into()
+                .map(Some)
                 .map_err(|_| "conversion to `MachineAction` for action failed".to_string());
             self
         }
@@ -25078,7 +25080,7 @@ pub mod builder {
         account: Result<::std::string::String, String>,
         machine: Result<::uuid::Uuid, String>,
         disk: Result<::uuid::Uuid, String>,
-        action: Result<types::DiskAction, String>,
+        action: Result<Option<types::DiskAction>, String>,
         body: Result<::serde_json::Value, String>,
     }
 
@@ -25089,7 +25091,7 @@ pub mod builder {
                 account: Err("account was not initialized".to_string()),
                 machine: Err("machine was not initialized".to_string()),
                 disk: Err("disk was not initialized".to_string()),
-                action: Err("action was not initialized".to_string()),
+                action: Ok(None),
                 body: Err("body was not initialized".to_string()),
             }
         }
@@ -25130,6 +25132,7 @@ pub mod builder {
         {
             self.action = value
                 .try_into()
+                .map(Some)
                 .map_err(|_| "conversion to `DiskAction` for action failed".to_string());
             self
         }
@@ -35623,7 +35626,7 @@ pub mod builder {
         client: &'a super::Client,
         account: Result<::std::string::String, String>,
         id: Result<::uuid::Uuid, String>,
-        action: Result<types::VolumeAction, String>,
+        action: Result<Option<types::VolumeAction>, String>,
         body: Result<::serde_json::Value, String>,
     }
 
@@ -35633,7 +35636,7 @@ pub mod builder {
                 client: client,
                 account: Err("account was not initialized".to_string()),
                 id: Err("id was not initialized".to_string()),
-                action: Err("action was not initialized".to_string()),
+                action: Ok(None),
                 body: Err("body was not initialized".to_string()),
             }
         }
@@ -35664,6 +35667,7 @@ pub mod builder {
         {
             self.action = value
                 .try_into()
+                .map(Some)
                 .map_err(|_| "conversion to `VolumeAction` for action failed".to_string());
             self
         }

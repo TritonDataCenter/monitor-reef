@@ -139,7 +139,7 @@ pub struct CreateDiskRequest {
 }
 
 /// Disk action for action dispatch
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum DiskAction {
     Resize,
@@ -148,7 +148,12 @@ pub enum DiskAction {
 /// Query parameter for disk actions
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct DiskActionQuery {
-    pub action: DiskAction,
+    /// Action to perform. Optional in the query string because clients may
+    /// send it in the request body instead (matching Restify's mapParams
+    /// behavior). Service implementations should check the body first,
+    /// then fall back to this query parameter.
+    #[serde(default)]
+    pub action: Option<DiskAction>,
 }
 
 /// Request to resize disk

@@ -250,6 +250,10 @@ fn emit_request_payload<E>(request: &reqwest::Request) -> Result<(), Error<E>> {
 
     // Build path + query, excluding the host/scheme
     let mut path = url.path().to_string();
+    // Strip double-leading-slash from baseurl + format string join
+    if path.starts_with("//") {
+        path = path[1..].to_string();
+    }
     if let Some(query) = url.query() {
         path.push('?');
         path.push_str(query);
@@ -658,12 +662,14 @@ impl TypedClient {
         machine: &Uuid,
         origin: Option<String>,
     ) -> Result<(), Error<types::Error>> {
-        let body = StartMachineRequest { origin };
+        let body = ActionBody {
+            action: MachineAction::Start,
+            body: StartMachineRequest { origin },
+        };
         self.inner
             .update_machine()
             .account(account)
             .machine(machine.to_string())
-            .action(types::MachineAction::Start)
             .body(to_json_value(&body))
             .send()
             .await
@@ -682,12 +688,14 @@ impl TypedClient {
         machine: &Uuid,
         origin: Option<String>,
     ) -> Result<(), Error<types::Error>> {
-        let body = StopMachineRequest { origin };
+        let body = ActionBody {
+            action: MachineAction::Stop,
+            body: StopMachineRequest { origin },
+        };
         self.inner
             .update_machine()
             .account(account)
             .machine(machine.to_string())
-            .action(types::MachineAction::Stop)
             .body(to_json_value(&body))
             .send()
             .await
@@ -706,12 +714,14 @@ impl TypedClient {
         machine: &Uuid,
         origin: Option<String>,
     ) -> Result<(), Error<types::Error>> {
-        let body = RebootMachineRequest { origin };
+        let body = ActionBody {
+            action: MachineAction::Reboot,
+            body: RebootMachineRequest { origin },
+        };
         self.inner
             .update_machine()
             .account(account)
             .machine(machine.to_string())
-            .action(types::MachineAction::Reboot)
             .body(to_json_value(&body))
             .send()
             .await
@@ -732,12 +742,14 @@ impl TypedClient {
         package: String,
         origin: Option<String>,
     ) -> Result<(), Error<types::Error>> {
-        let body = ResizeMachineRequest { package, origin };
+        let body = ActionBody {
+            action: MachineAction::Resize,
+            body: ResizeMachineRequest { package, origin },
+        };
         self.inner
             .update_machine()
             .account(account)
             .machine(machine.to_string())
-            .action(types::MachineAction::Resize)
             .body(to_json_value(&body))
             .send()
             .await
@@ -758,12 +770,14 @@ impl TypedClient {
         name: String,
         origin: Option<String>,
     ) -> Result<(), Error<types::Error>> {
-        let body = RenameMachineRequest { name, origin };
+        let body = ActionBody {
+            action: MachineAction::Rename,
+            body: RenameMachineRequest { name, origin },
+        };
         self.inner
             .update_machine()
             .account(account)
             .machine(machine.to_string())
-            .action(types::MachineAction::Rename)
             .body(to_json_value(&body))
             .send()
             .await
@@ -782,12 +796,14 @@ impl TypedClient {
         machine: &Uuid,
         origin: Option<String>,
     ) -> Result<(), Error<types::Error>> {
-        let body = EnableFirewallRequest { origin };
+        let body = ActionBody {
+            action: MachineAction::EnableFirewall,
+            body: EnableFirewallRequest { origin },
+        };
         self.inner
             .update_machine()
             .account(account)
             .machine(machine.to_string())
-            .action(types::MachineAction::EnableFirewall)
             .body(to_json_value(&body))
             .send()
             .await
@@ -806,12 +822,14 @@ impl TypedClient {
         machine: &Uuid,
         origin: Option<String>,
     ) -> Result<(), Error<types::Error>> {
-        let body = DisableFirewallRequest { origin };
+        let body = ActionBody {
+            action: MachineAction::DisableFirewall,
+            body: DisableFirewallRequest { origin },
+        };
         self.inner
             .update_machine()
             .account(account)
             .machine(machine.to_string())
-            .action(types::MachineAction::DisableFirewall)
             .body(to_json_value(&body))
             .send()
             .await
@@ -830,12 +848,14 @@ impl TypedClient {
         machine: &Uuid,
         origin: Option<String>,
     ) -> Result<(), Error<types::Error>> {
-        let body = EnableDeletionProtectionRequest { origin };
+        let body = ActionBody {
+            action: MachineAction::EnableDeletionProtection,
+            body: EnableDeletionProtectionRequest { origin },
+        };
         self.inner
             .update_machine()
             .account(account)
             .machine(machine.to_string())
-            .action(types::MachineAction::EnableDeletionProtection)
             .body(to_json_value(&body))
             .send()
             .await
@@ -854,12 +874,14 @@ impl TypedClient {
         machine: &Uuid,
         origin: Option<String>,
     ) -> Result<(), Error<types::Error>> {
-        let body = DisableDeletionProtectionRequest { origin };
+        let body = ActionBody {
+            action: MachineAction::DisableDeletionProtection,
+            body: DisableDeletionProtectionRequest { origin },
+        };
         self.inner
             .update_machine()
             .account(account)
             .machine(machine.to_string())
-            .action(types::MachineAction::DisableDeletionProtection)
             .body(to_json_value(&body))
             .send()
             .await
@@ -882,12 +904,15 @@ impl TypedClient {
         dataset: &Uuid,
         request: &UpdateImageRequest,
     ) -> Result<types::Image, Error<types::Error>> {
+        let body = ActionBody {
+            action: ImageAction::Update,
+            body: request,
+        };
         self.inner
             .update_image()
             .account(account)
             .dataset(dataset.to_string())
-            .action(types::ImageAction::Update)
-            .body(to_json_value(request))
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -905,12 +930,14 @@ impl TypedClient {
         dataset: &Uuid,
         manta_path: String,
     ) -> Result<types::Image, Error<types::Error>> {
-        let body = ExportImageRequest { manta_path };
+        let body = ActionBody {
+            action: ImageAction::Export,
+            body: ExportImageRequest { manta_path },
+        };
         self.inner
             .update_image()
             .account(account)
             .dataset(dataset.to_string())
-            .action(types::ImageAction::Export)
             .body(to_json_value(&body))
             .send()
             .await
@@ -927,12 +954,14 @@ impl TypedClient {
         account: &str,
         dataset: &Uuid,
     ) -> Result<types::Image, Error<types::Error>> {
-        let body = CloneImageRequest {};
+        let body = ActionBody {
+            action: ImageAction::Clone,
+            body: CloneImageRequest {},
+        };
         self.inner
             .update_image()
             .account(account)
             .dataset(dataset.to_string())
-            .action(types::ImageAction::Clone)
             .body(to_json_value(&body))
             .send()
             .await
@@ -953,12 +982,14 @@ impl TypedClient {
         datacenter: String,
         id: Uuid,
     ) -> Result<types::Image, Error<types::Error>> {
-        let body = ImportImageRequest { datacenter, id };
+        let body = ActionBody {
+            action: ImageAction::ImportFromDatacenter,
+            body: ImportImageRequest { datacenter, id },
+        };
         self.inner
             .update_image()
             .account(account)
             .dataset(dataset.to_string())
-            .action(types::ImageAction::ImportFromDatacenter)
             .body(to_json_value(&body))
             .send()
             .await
@@ -977,14 +1008,16 @@ impl TypedClient {
         dataset: &Uuid,
         target_account: Uuid,
     ) -> Result<types::Image, Error<types::Error>> {
-        let body = ShareImageRequest {
-            account: target_account,
+        let body = ActionBody {
+            action: ImageAction::Share,
+            body: ShareImageRequest {
+                account: target_account,
+            },
         };
         self.inner
             .update_image()
             .account(account)
             .dataset(dataset.to_string())
-            .action(types::ImageAction::Share)
             .body(to_json_value(&body))
             .send()
             .await
@@ -1003,14 +1036,16 @@ impl TypedClient {
         dataset: &Uuid,
         target_account: Uuid,
     ) -> Result<types::Image, Error<types::Error>> {
-        let body = UnshareImageRequest {
-            account: target_account,
+        let body = ActionBody {
+            action: ImageAction::Unshare,
+            body: UnshareImageRequest {
+                account: target_account,
+            },
         };
         self.inner
             .update_image()
             .account(account)
             .dataset(dataset.to_string())
-            .action(types::ImageAction::Unshare)
             .body(to_json_value(&body))
             .send()
             .await
@@ -1033,12 +1068,15 @@ impl TypedClient {
         id: &Uuid,
         request: &UpdateVolumeRequest,
     ) -> Result<types::Volume, Error<types::Error>> {
+        let body = ActionBody {
+            action: VolumeAction::Update,
+            body: request,
+        };
         self.inner
             .update_volume()
             .account(account)
             .id(id.to_string())
-            .action(types::VolumeAction::Update)
-            .body(to_json_value(request))
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -1062,13 +1100,16 @@ impl TypedClient {
         disk: &Uuid,
         request: &ResizeDiskRequest,
     ) -> Result<types::Disk, Error<types::Error>> {
+        let body = ActionBody {
+            action: DiskAction::Resize,
+            body: request,
+        };
         self.inner
             .resize_machine_disk()
             .account(account)
             .machine(machine.to_string())
             .disk(disk.to_string())
-            .action(types::DiskAction::Resize)
-            .body(to_json_value(request))
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -1113,4 +1154,13 @@ pub enum GetMachineError {
 #[allow(clippy::expect_used)]
 fn to_json_value<T: serde::Serialize>(value: &T) -> serde_json::Value {
     serde_json::to_value(value).expect("request serialization should not fail")
+}
+
+/// Wrapper that adds an `action` field to a request body for action-dispatch
+/// endpoints. Node.js CloudAPI expects action in the body: `{"action": "stop"}`.
+#[derive(serde::Serialize)]
+struct ActionBody<A: serde::Serialize, B: serde::Serialize> {
+    action: A,
+    #[serde(flatten)]
+    body: B,
 }

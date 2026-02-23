@@ -140,15 +140,29 @@ pub use <service>_api::{
 
 ### 6. Add Typed Wrapper Methods (REQUIRED for action-dispatch pattern)
 
-**If the API uses `?action=` query parameters, you MUST add typed wrapper methods.**
+**If the API uses action-dispatch endpoints, you MUST add typed wrapper methods.**
 
 This is critical for usability - without wrappers, callers must manually construct JSON bodies and remember action names.
 
 **Read the API crate's action types file** (e.g., `apis/<service>-api/src/types/actions.rs`) to enumerate all actions and their request types.
 
-**Template for typed client wrapper:**
+**ActionBody pattern**: The client sends `action` in the request body (matching Node.js Restify wire format). Use an `ActionBody<A, B>` struct with `#[serde(flatten)]` to merge the action field into the request body JSON:
 
 ```rust
+/// Helper to serialize a value to JSON for TypedBody endpoints.
+fn to_json_value<T: serde::Serialize>(val: &T) -> serde_json::Value {
+    serde_json::to_value(val).expect("serialization should not fail")
+}
+
+/// Wraps an action enum + per-action request body into a single JSON object.
+/// Produces `{"action": "<variant>", ...body_fields}` via `#[serde(flatten)]`.
+#[derive(serde::Serialize)]
+struct ActionBody<A: serde::Serialize, B: serde::Serialize> {
+    action: A,
+    #[serde(flatten)]
+    body: B,
+}
+
 // Wrapper struct - required because we cannot impl on Progenitor's Client directly
 pub struct TypedClient {
     inner: Client,
@@ -177,13 +191,15 @@ impl TypedClient {
         uuid: &str,
         idempotent: bool,
     ) -> Result<types::AsyncJobResponse, Error<types::Error>> {
-        let body = <service>_api::StartVmRequest {
-            idempotent: if idempotent { Some(true) } else { None },
+        let body = ActionBody {
+            action: <service>_api::VmAction::Start,
+            body: <service>_api::StartVmRequest {
+                idempotent: if idempotent { Some(true) } else { None },
+            },
         };
         self.inner.vm_action()
             .uuid(uuid)
-            .action(<service>_api::VmAction::Start)
-            .body(serde_json::to_value(&body).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -195,7 +211,8 @@ impl TypedClient {
 
 **Wrapper requirements:**
 - One method per action enum variant (no exceptions)
-- Use the typed request struct from the API crate
+- Use `ActionBody` to combine the action enum with the typed request struct
+- Use `to_json_value()` (not `serde_json::to_value().unwrap_or_default()`)
 - Include doc comments with parameter descriptions
 - Common parameters (like `idempotent`) should be explicit function parameters
 - Complex requests (like `update`) should take the full request struct
