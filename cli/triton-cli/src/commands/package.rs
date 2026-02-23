@@ -269,8 +269,8 @@ async fn get_package(args: PackageGetArgs, client: &TypedClient, use_json: bool)
 
 /// Resolve package name or short ID to full UUID
 pub async fn resolve_package(id_or_name: &str, client: &TypedClient) -> Result<String> {
-    if uuid::Uuid::parse_str(id_or_name).is_ok() {
-        return Ok(id_or_name.to_string());
+    if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
+        return Ok(uuid.to_string());
     }
 
     let account = &client.auth_config().account;

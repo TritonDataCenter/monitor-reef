@@ -400,8 +400,8 @@ async fn resolve_resource_id(
     match resource_type {
         RoleTagResource::Instance => {
             // Resolve instance name to UUID if needed
-            if uuid::Uuid::parse_str(resource).is_ok() {
-                Ok(resource.to_string())
+            if let Ok(uuid) = uuid::Uuid::parse_str(resource) {
+                Ok(uuid.to_string())
             } else {
                 // Search for instance by name
                 let response = client
@@ -434,8 +434,8 @@ async fn resolve_resource_id(
         }
         RoleTagResource::Network => {
             // Network can be UUID or name
-            if uuid::Uuid::parse_str(resource).is_ok() {
-                Ok(resource.to_string())
+            if let Ok(uuid) = uuid::Uuid::parse_str(resource) {
+                Ok(uuid.to_string())
             } else {
                 // Search for network by name
                 let response = client
@@ -466,8 +466,12 @@ async fn resolve_resource_id(
             Ok(resource.to_string())
         }
         RoleTagResource::Fwrule => {
-            // Firewall rule is by UUID
-            Ok(resource.to_string())
+            // Firewall rule is by UUID - normalize casing
+            if let Ok(uuid) = uuid::Uuid::parse_str(resource) {
+                Ok(uuid.to_string())
+            } else {
+                Ok(resource.to_string())
+            }
         }
         RoleTagResource::User => {
             // User can be login or UUID

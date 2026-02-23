@@ -640,9 +640,9 @@ async fn parse_nic_spec(
 }
 
 async fn resolve_package(id_or_name: &str, client: &TypedClient) -> Result<String> {
-    // First try as full UUID
-    if uuid::Uuid::parse_str(id_or_name).is_ok() {
-        return Ok(id_or_name.to_string());
+    // First try as full UUID - use parsed form to normalize to lowercase
+    if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
+        return Ok(uuid.to_string());
     }
 
     let account = &client.auth_config().account;

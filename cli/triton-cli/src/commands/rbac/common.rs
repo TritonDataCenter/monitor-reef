@@ -11,8 +11,8 @@ use cloudapi_client::TypedClient;
 
 /// Resolve a user login name or UUID to a UUID string
 pub async fn resolve_user(id_or_login: &str, client: &TypedClient) -> Result<String> {
-    if uuid::Uuid::parse_str(id_or_login).is_ok() {
-        return Ok(id_or_login.to_string());
+    if let Ok(uuid) = uuid::Uuid::parse_str(id_or_login) {
+        return Ok(uuid.to_string());
     }
 
     let account = &client.auth_config().account;
