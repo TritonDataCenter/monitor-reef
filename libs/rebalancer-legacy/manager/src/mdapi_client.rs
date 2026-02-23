@@ -890,10 +890,6 @@ fn batch_update_internal(
 /// ```json
 /// {
 ///   "results": [
-///     { "id": "uuid", "name": "...", "success": true, ... },
-///     { "id": "uuid", "name": "...", "success": false,
-///       "object": { ... } }
-///   ],
 ///   "failed_vnodes": [
 ///     { "vnode": V,
 ///       "error": { ... },
@@ -901,30 +897,15 @@ fn batch_update_internal(
 ///   ]
 /// }
 /// ```
-/// Each entry in `failed_vnodes[].objects` is the full
-/// original request payload, so callers can resubmit
-/// directly.
+/// An empty `failed_vnodes` array means all objects
+/// succeeded.  Each entry in `failed_vnodes[].objects` is
+/// the full original request payload, so callers can
+/// resubmit directly.
 fn parse_batch_response(
     response: Value,
     object_ids: &[String],
 ) -> Result<BatchUpdateResult, Error> {
-    let mut successful_objects = Vec::new();
     let mut errors: Vec<(String, Error)> = Vec::new();
-
-    // Collect succeeded object IDs.
-    if let Some(arr) = response
-        .get("succeeded")
-        .and_then(|v| v.as_array())
-    {
-        for item in arr {
-            let id = item
-                .get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            successful_objects.push(id);
-        }
-    }
 
     // Collect per-vnode failures.
     if let Some(vnodes) = response
@@ -966,6 +947,15 @@ fn parse_batch_response(
             }
         }
     }
+
+    // Everything not in failed_vnodes succeeded.
+    let failed_ids: std::collections::HashSet<&str> =
+        errors.iter().map(|(id, _)| id.as_str()).collect();
+    let successful_objects: Vec<String> = object_ids
+        .iter()
+        .filter(|id| !failed_ids.contains(id.as_str()))
+        .cloned()
+        .collect();
 
     let successful = successful_objects.len();
     let failed = errors.len();
@@ -1210,21 +1200,87 @@ pub fn list_buckets(
 ) -> Result<Vec<BucketInfo>, Error> {
     debug!("Discovering buckets for owner {} via mdapi", owner);
 
-    // Call rust-libmanta's list_buckets
-    // Query vnode 0 for buckets - in a complete implementation, we would
-    // query all vnodes and aggregate results
-    match client.list_buckets(owner, 0, None, 1000) {
-        Ok(buckets) => {
-            debug!("Discovered {} buckets", buckets.len());
-            let bucket_infos = buckets
-                .into_iter()
-                .map(|b| BucketInfo {
-                    id: b.id,
-                    name: b.name,
-                    owner: b.owner,
-                })
-                .collect();
-            Ok(bucket_infos)
+    // Discover all vnodes, then query each for this owner's buckets.
+    // Dedup by bucket id since the same bucket may appear on
+    // multiple vnodes.
+    let vnodes = list_vnodes(client)?;
+
+    // If no vnodes discovered (server doesn't support the RPC),
+    // fall back to querying vnode 0 only.
+    let query_vnodes: Vec<u64> = if vnodes.is_empty() {
+        vec![0]
+    } else {
+        vnodes
+    };
+
+    let mut seen = std::collections::HashSet::new();
+    let mut all_buckets = Vec::new();
+
+    for vnode in &query_vnodes {
+        match client.list_buckets(owner, *vnode, None, 1000) {
+            Ok(buckets) => {
+                for b in buckets {
+                    if seen.insert(b.id) {
+                        all_buckets.push(BucketInfo {
+                            id: b.id,
+                            name: b.name,
+                            owner: b.owner,
+                        });
+                    }
+                }
+            }
+            Err(MdapiError::RpcError(ref msg))
+                if msg.contains("Not implemented")
+                    || msg.contains("not implemented")
+                    || msg.contains("Unsupported") =>
+            {
+                debug!(
+                    "Mdapi listBuckets RPC not supported, \
+                     returning empty list"
+                );
+                return Ok(Vec::new());
+            }
+            Err(e) => {
+                error!(
+                    "Failed to list buckets on vnode {}: {}",
+                    vnode, e
+                );
+                return Err(Error::from(e));
+            }
+        }
+    }
+
+    debug!(
+        "Discovered {} buckets across {} vnodes",
+        all_buckets.len(),
+        query_vnodes.len()
+    );
+    Ok(all_buckets)
+}
+
+/// List all vnodes present on the mdapi instance.
+///
+/// Returns the vnode numbers from the `listvnodes` RPC. If the
+/// server does not support this RPC, returns an empty vector
+/// so callers can fall back to a default.
+///
+/// # Arguments
+/// * `client` - The mdapi client instance
+///
+/// # Returns
+/// * `Result<Vec<u64>, Error>` - Vnode numbers or error
+///
+/// # Algorithmic cost
+/// O(1) single RPC round-trip.
+pub fn list_vnodes(
+    client: &MdapiClient,
+) -> Result<Vec<u64>, Error> {
+    debug!("Discovering vnodes via listvnodes RPC");
+
+    match client.list_vnodes() {
+        Ok(resp) => {
+            debug!("Discovered {} vnodes", resp.vnodes.len());
+            Ok(resp.vnodes)
         }
         Err(MdapiError::RpcError(ref msg))
             if msg.contains("Not implemented")
@@ -1232,13 +1288,67 @@ pub fn list_buckets(
                 || msg.contains("Unsupported") =>
         {
             debug!(
-                "Mdapi listBuckets RPC not supported by server, returning empty list"
+                "listvnodes RPC not supported, \
+                 returning empty list"
             );
-            // Return empty list - evacuation will use default_bucket_id
             Ok(Vec::new())
         }
         Err(e) => {
-            error!("Failed to list buckets: {}", e);
+            error!("listvnodes RPC failed: {}", e);
+            Err(Error::from(e))
+        }
+    }
+}
+
+/// List distinct owners on a specific vnode.
+///
+/// Returns owner UUIDs from the `listowners` RPC. If the server
+/// does not support this RPC, returns an empty vector so callers
+/// can fall back to configured owners.
+///
+/// # Arguments
+/// * `client` - The mdapi client instance
+/// * `vnode` - Vnode number to query
+///
+/// # Returns
+/// * `Result<Vec<Uuid>, Error>` - Owner UUIDs or error
+///
+/// # Algorithmic cost
+/// O(1) single RPC round-trip.
+pub fn list_owners(
+    client: &MdapiClient,
+    vnode: u64,
+) -> Result<Vec<Uuid>, Error> {
+    debug!(
+        "Discovering owners on vnode {} via listowners RPC",
+        vnode
+    );
+
+    match client.list_owners(vnode) {
+        Ok(resp) => {
+            debug!(
+                "Discovered {} owners on vnode {}",
+                resp.owners.len(),
+                vnode
+            );
+            Ok(resp.owners)
+        }
+        Err(MdapiError::RpcError(ref msg))
+            if msg.contains("Not implemented")
+                || msg.contains("not implemented")
+                || msg.contains("Unsupported") =>
+        {
+            debug!(
+                "listowners RPC not supported, \
+                 returning empty list"
+            );
+            Ok(Vec::new())
+        }
+        Err(e) => {
+            error!(
+                "listowners RPC failed for vnode {}: {}",
+                vnode, e
+            );
             Err(Error::from(e))
         }
     }

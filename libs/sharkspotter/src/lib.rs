@@ -708,6 +708,104 @@ fn run_direct_db_shard_thread(
     });
 }
 
+/// Auto-discover vnodes from mdapi via the listvnodes RPC.
+///
+/// Returns a `Vec<u32>` of vnode numbers. If the server does not
+/// support the RPC, returns an error so callers can fall back.
+///
+/// # Algorithmic cost
+///
+/// O(1) single RPC round-trip.
+fn auto_discover_vnodes(
+    client: &libmanta::mdapi::MdapiClient,
+    log: &slog::Logger,
+) -> Result<Vec<u32>, Error> {
+    use slog::debug;
+
+    debug!(log, "Auto-discovering vnodes via listvnodes RPC");
+
+    let resp = client.list_vnodes().map_err(|e| {
+        Error::new(
+            ErrorKind::Other,
+            format!("listvnodes RPC failed: {}", e),
+        )
+    })?;
+
+    // Convert u64 vnodes to u32 (vnode numbers fit in u32)
+    use std::convert::TryFrom;
+    let vnodes: Vec<u32> = resp
+        .vnodes
+        .iter()
+        .filter_map(|&v| {
+            u32::try_from(v).ok().or_else(|| {
+                slog::warn!(
+                    log,
+                    "Vnode {} exceeds u32::MAX, skipping", v
+                );
+                None
+            })
+        })
+        .collect();
+
+    debug!(log, "Discovered {} vnodes", vnodes.len());
+    Ok(vnodes)
+}
+
+/// Auto-discover owners across all vnodes via the listowners RPC.
+///
+/// For each vnode, calls `listowners` and collects the union of all
+/// distinct owner UUIDs.
+///
+/// # Algorithmic cost
+///
+/// O(V) RPC calls where V is the number of vnodes, plus O(N log N)
+/// for deduplication where N is total owners across all vnodes.
+fn auto_discover_owners(
+    client: &libmanta::mdapi::MdapiClient,
+    vnodes: &[u32],
+    log: &slog::Logger,
+) -> Result<Vec<uuid::Uuid>, Error> {
+    use slog::debug;
+    use std::collections::HashSet;
+
+    debug!(
+        log,
+        "Auto-discovering owners across {} vnodes via listowners RPC",
+        vnodes.len()
+    );
+
+    let mut owner_set: HashSet<uuid::Uuid> = HashSet::new();
+
+    for &vnode in vnodes {
+        match client.list_owners(vnode as u64) {
+            Ok(resp) => {
+                for owner in &resp.owners {
+                    owner_set.insert(*owner);
+                }
+                debug!(
+                    log,
+                    "Vnode {}: {} owners (running total: {})",
+                    vnode,
+                    resp.owners.len(),
+                    owner_set.len()
+                );
+            }
+            Err(e) => {
+                // If any single vnode fails, log and continue.
+                // This is best-effort discovery.
+                slog::warn!(
+                    log,
+                    "listowners failed for vnode {}: {}", vnode, e
+                );
+            }
+        }
+    }
+
+    let owners: Vec<uuid::Uuid> = owner_set.into_iter().collect();
+    debug!(log, "Discovered {} distinct owners", owners.len());
+    Ok(owners)
+}
+
 /// Same as the regular `run` method, but instead we spawn a new thread per
 /// shard and send the information back to the caller via a crossbeam
 /// mpmc channel.
@@ -747,44 +845,89 @@ pub fn run_multithreaded(
             Error::new(ErrorKind::Other, msg)
         })?;
 
-        // Get owners to query
+        // Determine vnodes: explicit config > auto-discovery > fallback
+        let vnodes: Vec<u32> = match &conf.mdapi_vnodes {
+            Some(v) => {
+                info!(
+                    log,
+                    "Using configured mdapi_vnodes: {:?} ({} vnodes)",
+                    v,
+                    v.len()
+                );
+                v.clone()
+            }
+            None => {
+                match auto_discover_vnodes(&mdapi_client, &log) {
+                    Ok(v) if !v.is_empty() => {
+                        info!(
+                            log,
+                            "Auto-discovered {} vnodes via listvnodes RPC",
+                            v.len()
+                        );
+                        v
+                    }
+                    Ok(_) => {
+                        warn!(
+                            log,
+                            "listvnodes returned empty, falling back to \
+                             shard range {}..={}",
+                            conf.min_shard,
+                            conf.max_shard
+                        );
+                        (conf.min_shard..=conf.max_shard).collect()
+                    }
+                    Err(e) => {
+                        warn!(
+                            log,
+                            "listvnodes RPC failed ({}), falling back to \
+                             shard range {}..={}",
+                            e,
+                            conf.min_shard,
+                            conf.max_shard
+                        );
+                        (conf.min_shard..=conf.max_shard).collect()
+                    }
+                }
+            }
+        };
+
+        // Determine owners: explicit config > auto-discovery > skip
         let owners = match &conf.owners {
             Some(o) => o.clone(),
             None => {
-                warn!(
-                    log,
-                    "No owners configured for mdapi discovery, skipping mdapi"
-                );
-                vec![]
+                match auto_discover_owners(
+                    &mdapi_client, &vnodes, &log,
+                ) {
+                    Ok(o) if !o.is_empty() => {
+                        info!(
+                            log,
+                            "Auto-discovered {} owners via listowners RPC",
+                            o.len()
+                        );
+                        o
+                    }
+                    Ok(_) => {
+                        warn!(
+                            log,
+                            "listowners returned no owners, \
+                             skipping mdapi discovery"
+                        );
+                        vec![]
+                    }
+                    Err(e) => {
+                        warn!(
+                            log,
+                            "listowners RPC failed ({}), \
+                             skipping mdapi discovery",
+                            e
+                        );
+                        vec![]
+                    }
+                }
             }
         };
 
         if !owners.is_empty() {
-            // Determine which vnodes to query for mdapi discovery.
-            // If mdapi_vnodes is configured, use those (correct behavior).
-            // Otherwise fall back to min_shard..=max_shard (legacy behavior,
-            // which is incorrect but preserved for backward compatibility).
-            let vnodes: Vec<u32> = match &conf.mdapi_vnodes {
-                Some(v) => {
-                    info!(
-                        log,
-                        "Using configured mdapi_vnodes: {:?} ({} vnodes)",
-                        v,
-                        v.len()
-                    );
-                    v.clone()
-                }
-                None => {
-                    warn!(
-                        log,
-                        "mdapi_vnodes not configured, falling back to moray shard \
-                         range {}..={} (this may miss buckets on other vnodes)",
-                        conf.min_shard,
-                        conf.max_shard
-                    );
-                    (conf.min_shard..=conf.max_shard).collect()
-                }
-            };
 
             // Spawn mdapi discovery threads for each vnode
             for vnode in vnodes {

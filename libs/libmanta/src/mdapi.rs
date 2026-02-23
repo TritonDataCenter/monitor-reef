@@ -490,6 +490,37 @@ struct DeleteGCBatchPayload {
     request_id: Uuid,
 }
 
+/// Request payload for ListVnodes operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ListVnodesPayload {
+    request_id: Uuid,
+}
+
+/// Response from the listvnodes RPC
+///
+/// Contains all vnode schema numbers present on the mdapi instance.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ListVnodesResponse {
+    /// Vnode numbers with schemas on this instance
+    pub vnodes: Vec<u64>,
+}
+
+/// Request payload for ListOwners operation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ListOwnersPayload {
+    vnode: u64,
+    request_id: Uuid,
+}
+
+/// Response from the listowners RPC
+///
+/// Contains distinct owner UUIDs for a given vnode.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ListOwnersResponse {
+    /// Distinct owner account UUIDs on this vnode
+    pub owners: Vec<Uuid>,
+}
+
 /// Client for manta-buckets-mdapi Fast RPC service
 ///
 /// This client provides methods for bucket and object metadata operations.
@@ -1135,6 +1166,78 @@ impl MdapiClient {
         // deletegcbatch returns empty response on success
         self.call("deletegcbatch", &payload)?;
         Ok(())
+    }
+
+    /// List all vnode schemas present on this mdapi instance
+    ///
+    /// Calls the `listvnodes` RPC to discover which vnodes
+    /// have schemas on the connected mdapi server.
+    ///
+    /// # Returns
+    ///
+    /// Result containing ListVnodesResponse or error
+    ///
+    /// # Errors
+    ///
+    /// Returns `MdapiError::RpcError` if the server does not
+    /// support the listvnodes RPC or the call fails
+    pub fn list_vnodes(
+        &self,
+    ) -> Result<ListVnodesResponse, MdapiError> {
+        let payload = ListVnodesPayload {
+            request_id: Self::generate_request_id(),
+        };
+
+        let response = self.call("listvnodes", &payload)?;
+
+        let result: ListVnodesResponse =
+            serde_json::from_value(response).map_err(|e| {
+                MdapiError::SerializationError(format!(
+                    "Failed to parse listvnodes response: {}",
+                    e
+                ))
+            })?;
+
+        Ok(result)
+    }
+
+    /// List distinct owners on a specific vnode
+    ///
+    /// Calls the `listowners` RPC to discover which owner
+    /// accounts have data on the specified vnode.
+    ///
+    /// # Arguments
+    ///
+    /// * `vnode` - Virtual node number to query
+    ///
+    /// # Returns
+    ///
+    /// Result containing ListOwnersResponse or error
+    ///
+    /// # Errors
+    ///
+    /// Returns `MdapiError::RpcError` if the server does not
+    /// support the listowners RPC or the call fails
+    pub fn list_owners(
+        &self,
+        vnode: u64,
+    ) -> Result<ListOwnersResponse, MdapiError> {
+        let payload = ListOwnersPayload {
+            vnode,
+            request_id: Self::generate_request_id(),
+        };
+
+        let response = self.call("listowners", &payload)?;
+
+        let result: ListOwnersResponse =
+            serde_json::from_value(response).map_err(|e| {
+                MdapiError::SerializationError(format!(
+                    "Failed to parse listowners response: {}",
+                    e
+                ))
+            })?;
+
+        Ok(result)
     }
 }
 
@@ -1995,5 +2098,126 @@ mod tests {
         // Verify marker is included when Some
         let json = serde_json::to_value(&payload).unwrap();
         assert_eq!(json["marker"], "bucket-100");
+    }
+
+    #[test]
+    fn test_list_vnodes_payload_serialization() {
+        let request_id =
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")
+                .unwrap();
+
+        let payload = ListVnodesPayload { request_id };
+
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["request_id"], request_id.to_string());
+    }
+
+    #[test]
+    fn test_list_vnodes_response_roundtrip() {
+        let response = ListVnodesResponse {
+            vnodes: vec![0, 100, 200, 500, 1023],
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let deserialized: ListVnodesResponse =
+            serde_json::from_str(&json).unwrap();
+
+        assert_eq!(response, deserialized);
+        assert_eq!(deserialized.vnodes.len(), 5);
+        assert_eq!(deserialized.vnodes[0], 0);
+        assert_eq!(deserialized.vnodes[4], 1023);
+    }
+
+    #[test]
+    fn test_list_vnodes_response_empty() {
+        let response = ListVnodesResponse { vnodes: vec![] };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let deserialized: ListVnodesResponse =
+            serde_json::from_str(&json).unwrap();
+
+        assert_eq!(response, deserialized);
+        assert!(deserialized.vnodes.is_empty());
+    }
+
+    #[test]
+    fn test_list_vnodes_response_from_json() {
+        let json = serde_json::json!({"vnodes": [0, 42, 99]});
+        let response: ListVnodesResponse =
+            serde_json::from_value(json).unwrap();
+
+        assert_eq!(response.vnodes, vec![0, 42, 99]);
+    }
+
+    #[test]
+    fn test_list_owners_payload_serialization() {
+        let request_id =
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")
+                .unwrap();
+
+        let payload = ListOwnersPayload {
+            vnode: 42,
+            request_id,
+        };
+
+        let json = serde_json::to_value(&payload).unwrap();
+        assert_eq!(json["vnode"], 42);
+        assert_eq!(json["request_id"], request_id.to_string());
+    }
+
+    #[test]
+    fn test_list_owners_response_roundtrip() {
+        let owner1 =
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")
+                .unwrap();
+        let owner2 =
+            Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001")
+                .unwrap();
+
+        let response = ListOwnersResponse {
+            owners: vec![owner1, owner2],
+        };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let deserialized: ListOwnersResponse =
+            serde_json::from_str(&json).unwrap();
+
+        assert_eq!(response, deserialized);
+        assert_eq!(deserialized.owners.len(), 2);
+        assert_eq!(deserialized.owners[0], owner1);
+        assert_eq!(deserialized.owners[1], owner2);
+    }
+
+    #[test]
+    fn test_list_owners_response_empty() {
+        let response = ListOwnersResponse { owners: vec![] };
+
+        let json = serde_json::to_string(&response).unwrap();
+        let deserialized: ListOwnersResponse =
+            serde_json::from_str(&json).unwrap();
+
+        assert_eq!(response, deserialized);
+        assert!(deserialized.owners.is_empty());
+    }
+
+    #[test]
+    fn test_list_owners_response_from_json() {
+        let json = serde_json::json!({
+            "owners": [
+                "550e8400-e29b-41d4-a716-446655440000",
+                "660e8400-e29b-41d4-a716-446655440001"
+            ]
+        });
+        let response: ListOwnersResponse =
+            serde_json::from_value(json).unwrap();
+
+        assert_eq!(response.owners.len(), 2);
+        assert_eq!(
+            response.owners[0],
+            Uuid::parse_str(
+                "550e8400-e29b-41d4-a716-446655440000"
+            )
+            .unwrap()
+        );
     }
 }
