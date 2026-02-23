@@ -143,6 +143,8 @@ fn test_image_type_variants() {
         ("zone-dataset", ImageType::ZoneDataset),
         ("lx-dataset", ImageType::LxDataset),
         ("zvol", ImageType::Zvol),
+        ("docker", ImageType::Docker),
+        ("lxd", ImageType::Lxd),
         ("other", ImageType::Other),
     ];
 

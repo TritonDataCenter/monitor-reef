@@ -3505,6 +3505,8 @@ pub mod types {
     #[doc = "        \"zone-dataset\","]
     #[doc = "        \"lx-dataset\","]
     #[doc = "        \"zvol\","]
+    #[doc = "        \"docker\","]
+    #[doc = "        \"lxd\","]
     #[doc = "        \"other\""]
     #[doc = "      ]"]
     #[doc = "    },"]
@@ -3540,6 +3542,10 @@ pub mod types {
         LxDataset,
         #[serde(rename = "zvol")]
         Zvol,
+        #[serde(rename = "docker")]
+        Docker,
+        #[serde(rename = "lxd")]
+        Lxd,
         #[serde(rename = "other")]
         Other,
         #[doc = "Unknown type (forward compatibility)"]
@@ -3553,6 +3559,8 @@ pub mod types {
                 Self::ZoneDataset => f.write_str("zone-dataset"),
                 Self::LxDataset => f.write_str("lx-dataset"),
                 Self::Zvol => f.write_str("zvol"),
+                Self::Docker => f.write_str("docker"),
+                Self::Lxd => f.write_str("lxd"),
                 Self::Other => f.write_str("other"),
                 Self::Unknown => f.write_str("unknown"),
             }
@@ -3566,6 +3574,8 @@ pub mod types {
                 "zone-dataset" => Ok(Self::ZoneDataset),
                 "lx-dataset" => Ok(Self::LxDataset),
                 "zvol" => Ok(Self::Zvol),
+                "docker" => Ok(Self::Docker),
+                "lxd" => Ok(Self::Lxd),
                 "other" => Ok(Self::Other),
                 "unknown" => Ok(Self::Unknown),
                 _ => Err("invalid value".into()),

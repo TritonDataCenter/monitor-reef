@@ -47,6 +47,10 @@ pub enum ImageType {
     LxDataset,
     #[serde(rename = "zvol")]
     Zvol,
+    #[serde(rename = "docker")]
+    Docker,
+    #[serde(rename = "lxd")]
+    Lxd,
     #[serde(rename = "other")]
     Other,
     /// Unknown type (forward compatibility)

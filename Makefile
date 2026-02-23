@@ -179,14 +179,14 @@ triton-test-file: | $(CARGO_EXEC) ## Run specific triton-cli test file (usage: m
 	$(CARGO) test -p triton-cli --test $(TEST)
 
 # Triton CLI comparison tests (Node.js vs Rust)
-triton-compare: build-release ## Compare Node.js vs Rust triton (offline tests)
+triton-compare: build ## Compare Node.js vs Rust triton (offline tests)
 	cli/triton-cli/tests/comparison/triton-compare.sh --tier offline
 
-triton-compare-api: build-release ## Compare Node.js vs Rust triton (API tests, needs PROFILE=name)
+triton-compare-api: build ## Compare Node.js vs Rust triton (API tests, needs PROFILE=name)
 	@if [ -z "$(PROFILE)" ]; then echo "Usage: make triton-compare-api PROFILE=demo"; exit 1; fi
 	cli/triton-cli/tests/comparison/triton-compare.sh --tier api --profile $(PROFILE)
 
-triton-compare-all: build-release ## Compare Node.js vs Rust triton (all tests, needs PROFILE=name)
+triton-compare-all: build ## Compare Node.js vs Rust triton (all tests, needs PROFILE=name)
 	@if [ -z "$(PROFILE)" ]; then echo "Usage: make triton-compare-all PROFILE=demo"; exit 1; fi
 	cli/triton-cli/tests/comparison/triton-compare.sh --tier all --profile $(PROFILE)
 

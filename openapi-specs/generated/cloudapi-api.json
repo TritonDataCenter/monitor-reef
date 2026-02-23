@@ -10822,6 +10822,8 @@
               "zone-dataset",
               "lx-dataset",
               "zvol",
+              "docker",
+              "lxd",
               "other"
             ]
           },

@@ -15,7 +15,7 @@ compatibility as the Rust implementation matures.
 
 ```bash
 # Build the Rust CLI first
-make build-release
+make build
 
 # Run offline tests (no API access needed)
 make triton-compare
@@ -181,7 +181,7 @@ comparing.
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--node-triton PATH` | Path to Node.js triton binary | `$(which triton)` |
-| `--rust-triton PATH` | Path to Rust triton binary | `target/release/triton` |
+| `--rust-triton PATH` | Path to Rust triton binary | `target/debug/triton` |
 | `--tier TIER` | `offline`, `api`, or `all` | `offline` |
 | `--profile NAME` | Profile name for API tests | (required for api) |
 | `--output-dir DIR` | Where to save diffs and raw output | `mktemp` |
