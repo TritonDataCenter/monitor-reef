@@ -832,6 +832,35 @@ run_payload_test_split() {
     compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
 }
 
+# Check if node-triton has the emit-payload patch applied.
+# Resolves the cloudapi2.js path from the NODE_TRITON binary and greps
+# for the TRITON_EMIT_PAYLOAD marker. Returns 0 if patched, 1 if not.
+check_payload_patch() {
+    local triton_real
+    triton_real="$(readlink -f "$NODE_TRITON" 2>/dev/null || echo "$NODE_TRITON")"
+    local prefix
+    prefix="$(dirname "$(dirname "$triton_real")")"
+
+    # Try two common layouts:
+    #   npm/nix: <prefix>/lib/node_modules/triton/lib/cloudapi2.js
+    #   git checkout: <prefix>/lib/cloudapi2.js
+    local cloudapi=""
+    for candidate in \
+        "$prefix/lib/node_modules/triton/lib/cloudapi2.js" \
+        "$prefix/lib/cloudapi2.js"; do
+        if [[ -f "$candidate" ]]; then
+            cloudapi="$candidate"
+            break
+        fi
+    done
+
+    if [[ -z "$cloudapi" ]]; then
+        return 1
+    fi
+
+    grep -q 'TRITON_EMIT_PAYLOAD' "$cloudapi" 2>/dev/null
+}
+
 run_payload_tests() {
     echo "--- Payload Tests (mutating operations, offline) ---"
     echo ""
@@ -956,8 +985,30 @@ POLICYJSON
 case "$TIER" in
     offline) run_offline_tests ;;
     api)     run_api_tests ;;
-    payload) run_payload_tests ;;
-    all)     run_offline_tests; run_api_tests; run_payload_tests ;;
+    payload)
+        if ! check_payload_patch; then
+            echo "Error: node-triton does not have the emit-payload patch applied." >&2
+            echo "  Apply it with:" >&2
+            echo "    cd \$(dirname \$(dirname \$(readlink -f $NODE_TRITON)))" >&2
+            echo "    git apply $SCRIPT_DIR/patches/node-triton-emit-payload.patch" >&2
+            exit 2
+        fi
+        run_payload_tests
+        ;;
+    all)
+        run_offline_tests
+        run_api_tests
+        if check_payload_patch; then
+            run_payload_tests
+        else
+            echo ""
+            echo "--- Payload Tests (skipped: node-triton emit-payload patch not applied) ---"
+            echo "  Apply it with:"
+            echo "    cd \$(dirname \$(dirname \$(readlink -f $NODE_TRITON)))"
+            echo "    git apply $SCRIPT_DIR/patches/node-triton-emit-payload.patch"
+            echo ""
+        fi
+        ;;
 esac
 
 echo "=== Summary ==="
