@@ -47,26 +47,34 @@ pub fn opt_enum_to_display<T: serde::Serialize + std::fmt::Debug>(val: Option<&T
 /// Format megabytes as human-readable size (matches node-triton format)
 ///
 /// node-triton uses `humanSizeFromBytes` with `narrow: true` and `precision: 1`.
-/// This converts MB to bytes, then formats with units like G, M, K.
-/// When the value is a whole number (no decimal needed), the `.0` is omitted.
+/// This converts MiB to bytes, then picks the best unit from B/K/M/G/T/P using
+/// `floor(log(bytes) / log(1024))`. The fractional part is **truncated** (not
+/// rounded) to 1 decimal place, matching node-triton's string-slice behavior.
+/// When the value has no fractional part, the `.0` is omitted.
 ///
 /// Examples:
-/// - 512 MB -> "512M"
-/// - 1024 MB -> "1G"
-/// - 1536 MB -> "1.5G"
-/// - 4096 MB -> "4G"
-/// - 25600 MB -> "25G"
+/// - 512 MiB -> "512M"
+/// - 1024 MiB -> "1G"
+/// - 1536 MiB -> "1.5G"
+/// - 4096 MiB -> "4G"
+/// - 25600 MiB -> "25G"
+/// - 1048576 MiB -> "1T"
+/// - 1638400 MiB -> "1.5T" (truncated, not rounded to 1.6T)
 pub fn format_mb(mb: u64) -> String {
-    if mb >= 1024 {
-        let gb = mb as f64 / 1024.0;
-        if gb.fract() == 0.0 {
-            format!("{}G", gb as u64)
-        } else {
-            format!("{:.1}G", gb)
-        }
-    } else {
-        format!("{}M", mb)
+    let bytes = mb as f64 * 1024.0 * 1024.0;
+    if bytes == 0.0 {
+        return "0M".to_string();
     }
+    let units = ['B', 'K', 'M', 'G', 'T', 'P'];
+    let i = (bytes.ln() / 1024_f64.ln()).floor() as usize;
+    let i = i.min(units.len() - 1);
+    let val = bytes / 1024_f64.powi(i as i32);
+    // node-triton truncates to 1 decimal place (string slice, not rounding)
+    let truncated = (val * 10.0).floor() / 10.0;
+    let s = format!("{:.1}", truncated);
+    // In narrow mode, node-triton omits trailing ".0" for whole numbers
+    let s = s.strip_suffix(".0").unwrap_or(&s);
+    format!("{}{}", s, units[i])
 }
 
 /// Format a timestamp as human-readable age (matches node-triton format)
@@ -125,5 +133,59 @@ pub fn format_age(timestamp: &str) -> String {
         "0s".to_string()
     } else {
         "-".to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_mb_megabytes() {
+        assert_eq!(format_mb(512), "512M");
+        assert_eq!(format_mb(256), "256M");
+        assert_eq!(format_mb(1), "1M");
+    }
+
+    #[test]
+    fn test_format_mb_gigabytes() {
+        assert_eq!(format_mb(1024), "1G");
+        assert_eq!(format_mb(2048), "2G");
+        assert_eq!(format_mb(4096), "4G");
+        assert_eq!(format_mb(25600), "25G");
+    }
+
+    #[test]
+    fn test_format_mb_gigabytes_fractional() {
+        assert_eq!(format_mb(1536), "1.5G");
+        assert_eq!(format_mb(3584), "3.5G");
+    }
+
+    #[test]
+    fn test_format_mb_terabytes() {
+        // 1 TiB = 1024 GiB = 1048576 MiB
+        assert_eq!(format_mb(1_048_576), "1T");
+        // 1.5 TiB = 1536 GiB = 1572864 MiB
+        assert_eq!(format_mb(1_572_864), "1.5T");
+    }
+
+    #[test]
+    fn test_format_mb_truncates_not_rounds() {
+        // 1638400 MiB = 1600 GiB = 1.5625 TiB
+        // node-triton truncates to "1.5T", not rounds to "1.6T"
+        assert_eq!(format_mb(1_638_400), "1.5T");
+    }
+
+    #[test]
+    fn test_format_mb_travis_sample_package() {
+        // sample-64G package: memory=65536, swap=262144, disk=1638400
+        assert_eq!(format_mb(65_536), "64G");
+        assert_eq!(format_mb(262_144), "256G");
+        assert_eq!(format_mb(1_638_400), "1.5T");
+    }
+
+    #[test]
+    fn test_format_mb_zero() {
+        assert_eq!(format_mb(0), "0M");
     }
 }
