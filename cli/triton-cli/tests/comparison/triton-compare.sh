@@ -253,6 +253,13 @@ normalize_text() {
     strip_ansi | normalize_version | normalize_cli_name
 }
 
+# Extract the last JSON object from output that may contain non-JSON text
+# (e.g., status messages before/after the emit-payload envelope).
+# Prints from the first '{' to the matching '}', ignoring surrounding text.
+extract_json_object() {
+    sed -n '/^{/,/^}/p'
+}
+
 # Extract sorted subcommand names from help output (either Node.js or Rust format)
 # Produces one "command-name" per line, sorted. Filters out "help".
 # Also extracts aliases:
@@ -762,11 +769,12 @@ run_payload_test() {
     HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
         "$RUST_TRITON" --emit-payload "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
 
-    # Normalize: sort keys, strip null values
-    jq -S 'del(.body.origin) | if .body == null then . else .body |= with_entries(select(.value != null)) end' \
-        "$node_out" > "$node_norm" 2>/dev/null || cp "$node_out" "$node_norm"
-    jq -S 'del(.body.origin) | if .body == null then . else .body |= with_entries(select(.value != null)) end' \
-        "$rust_out" > "$rust_norm" 2>/dev/null || cp "$rust_out" "$rust_norm"
+    # Normalize: extract JSON object (strip status messages), sort keys, strip null values
+    local jq_filter='del(.body.origin) | if .body == null then . else .body |= with_entries(select(.value != null)) end'
+    extract_json_object < "$node_out" | jq -S "$jq_filter" > "$node_norm" 2>/dev/null \
+        || cp "$node_out" "$node_norm"
+    extract_json_object < "$rust_out" | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \
+        || cp "$rust_out" "$rust_norm"
 
     compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
 }
@@ -824,10 +832,11 @@ run_payload_test_split() {
     HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
         "$RUST_TRITON" --emit-payload "${rust_args[@]}" > "$rust_out" 2> "$rust_err" || rust_exit=$?
 
-    jq -S 'del(.body.origin) | if .body == null then . else .body |= with_entries(select(.value != null)) end' \
-        "$node_out" > "$node_norm" 2>/dev/null || cp "$node_out" "$node_norm"
-    jq -S 'del(.body.origin) | if .body == null then . else .body |= with_entries(select(.value != null)) end' \
-        "$rust_out" > "$rust_norm" 2>/dev/null || cp "$rust_out" "$rust_norm"
+    local jq_filter='del(.body.origin) | if .body == null then . else .body |= with_entries(select(.value != null)) end'
+    extract_json_object < "$node_out" | jq -S "$jq_filter" > "$node_norm" 2>/dev/null \
+        || cp "$node_out" "$node_norm"
+    extract_json_object < "$rust_out" | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \
+        || cp "$rust_out" "$rust_norm"
 
     compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
 }
