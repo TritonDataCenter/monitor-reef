@@ -12,5 +12,9 @@ fn main() {
     let suffix = if dirty { "-dirty" } else { "" };
     println!("cargo:rustc-env=GIT_DIRTY_SUFFIX={suffix}");
 
+    // Re-run build.rs when git state changes (commits, branch switches)
+    // so the version string stays accurate.
+    build_data::rerun_if_git_commit_or_branch_changed().ok();
+
     build_data::no_debug_rebuilds();
 }
