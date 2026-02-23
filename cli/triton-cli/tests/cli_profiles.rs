@@ -283,7 +283,7 @@ fn test_profile_get_help() {
 ///
 /// Regression: `triton profile get` with no name used to fail when no
 /// saved profile existed, even if TRITON_* env vars were set. It now
-/// uses `resolve_profile()` which checks env vars at step 3.
+/// uses `resolve_profile()` which checks env vars at step 4.
 #[test]
 fn test_profile_get_default_uses_env_vars() {
     let test_url = "https://cloudapi.test.example.com";
@@ -553,6 +553,146 @@ fn test_profile_set_current_already_current() {
         stdout.contains("\"env\" is already the current profile"),
         "Should print 'already current' message.\nstdout: {}",
         stdout
+    );
+}
+
+/// Test that a saved profile set as current in config.json takes precedence
+/// over the implicit "env" profile from environment variables.
+///
+/// Regression: `resolve_profile()` previously checked env vars (step 3)
+/// before config.json (step 4), so `trs profile set-current mycloud`
+/// followed by `trs profile get` would still resolve to "env".
+#[test]
+fn test_saved_profile_takes_precedence_over_env() {
+    let tmp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let config_dir = tmp_dir.path().join(".triton");
+    let profiles_dir = config_dir.join("profiles.d");
+    std::fs::create_dir_all(&profiles_dir).expect("create profiles.d");
+
+    // Write a saved profile
+    std::fs::write(
+        profiles_dir.join("mycloud.json"),
+        r#"{
+            "url": "https://saved.example.com",
+            "account": "saved-account",
+            "keyId": "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
+        }"#,
+    )
+    .expect("write profile");
+
+    // Set mycloud as the current profile in config.json
+    std::fs::write(config_dir.join("config.json"), r#"{"profile": "mycloud"}"#)
+        .expect("write config.json");
+
+    // Run with env vars also set (different URL/account)
+    let output = triton_cmd()
+        .args(["profile", "get", "-j"])
+        .env("HOME", tmp_dir.path())
+        .env("TRITON_CONFIG_DIR", &config_dir)
+        .env("TRITON_URL", "https://env.example.com")
+        .env("TRITON_ACCOUNT", "env-account")
+        .env(
+            "TRITON_KEY_ID",
+            "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
+        )
+        .env_remove("TRITON_PROFILE")
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        output.status.success(),
+        "profile get should succeed.\nstdout: {}\nstderr: {}",
+        stdout,
+        stderr
+    );
+
+    let profile: Value =
+        serde_json::from_str(&stdout).unwrap_or_else(|_| panic!("Should parse JSON: {}", stdout));
+
+    assert_eq!(
+        profile["name"], "mycloud",
+        "Saved profile should take precedence over env. Got: {}",
+        stdout
+    );
+    assert_eq!(profile["url"], "https://saved.example.com");
+    assert_eq!(profile["account"], "saved-account");
+}
+
+/// Test that `profile list` marks the saved current profile (not env) as current.
+///
+/// Regression: same root cause as test_saved_profile_takes_precedence_over_env.
+#[test]
+fn test_profile_list_saved_current_over_env() {
+    let tmp_dir = tempfile::tempdir().expect("Failed to create temp dir");
+    let config_dir = tmp_dir.path().join(".triton");
+    let profiles_dir = config_dir.join("profiles.d");
+    std::fs::create_dir_all(&profiles_dir).expect("create profiles.d");
+
+    // Write a saved profile
+    std::fs::write(
+        profiles_dir.join("mycloud.json"),
+        r#"{
+            "url": "https://saved.example.com",
+            "account": "saved-account",
+            "keyId": "aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99"
+        }"#,
+    )
+    .expect("write profile");
+
+    // Set mycloud as the current profile in config.json
+    std::fs::write(config_dir.join("config.json"), r#"{"profile": "mycloud"}"#)
+        .expect("write config.json");
+
+    // Run with env vars also set
+    let output = triton_cmd()
+        .args(["profile", "list", "-j"])
+        .env("HOME", tmp_dir.path())
+        .env("TRITON_CONFIG_DIR", &config_dir)
+        .env("TRITON_URL", "https://env.example.com")
+        .env("TRITON_ACCOUNT", "env-account")
+        .env(
+            "TRITON_KEY_ID",
+            "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
+        )
+        .env_remove("TRITON_PROFILE")
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    assert!(
+        output.status.success(),
+        "profile list should succeed.\nstdout: {}\nstderr: {}",
+        stdout,
+        stderr
+    );
+
+    let profiles: Vec<Value> = stdout
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(|line| serde_json::from_str(line).expect("Should parse JSON line"))
+        .collect();
+
+    let mycloud = profiles
+        .iter()
+        .find(|p| p["name"] == "mycloud")
+        .expect("Should include mycloud profile");
+    assert_eq!(
+        mycloud["curr"], true,
+        "Saved current profile should have curr: true"
+    );
+
+    let env_profile = profiles
+        .iter()
+        .find(|p| p["name"] == "env")
+        .expect("Should include env profile");
+    assert_eq!(
+        env_profile["curr"], false,
+        "env profile should have curr: false when a saved profile is current"
     );
 }
 

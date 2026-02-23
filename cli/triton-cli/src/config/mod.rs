@@ -69,9 +69,9 @@ fn env_profile_available() -> bool {
 /// Priority:
 /// 1. CLI --profile argument
 /// 2. TRITON_PROFILE environment variable
-/// 3. "env" if all required env vars are set (TRITON_URL/SDC_URL,
+/// 3. Current profile from config.json
+/// 4. "env" if all required env vars are set (TRITON_URL/SDC_URL,
 ///    TRITON_ACCOUNT/SDC_ACCOUNT, TRITON_KEY_ID/SDC_KEY_ID)
-/// 4. Current profile from config.json
 pub async fn resolve_profile(cli_profile: Option<&str>) -> Result<Profile> {
     // 1. CLI argument
     if let Some(name) = cli_profile {
@@ -89,18 +89,18 @@ pub async fn resolve_profile(cli_profile: Option<&str>) -> Result<Profile> {
         return Profile::load(&name).await;
     }
 
-    // 3. Check if all required env vars are set (implicit "env" profile)
-    if env_profile_available() {
-        return env_profile();
-    }
-
-    // 4. Current profile from config
+    // 3. Current profile from config
     let config = Config::load().await?;
     if let Some(name) = config.current_profile() {
         if name == "env" {
             return env_profile();
         }
         return Profile::load(name).await;
+    }
+
+    // 4. Check if all required env vars are set (implicit "env" profile)
+    if env_profile_available() {
+        return env_profile();
     }
 
     Err(anyhow::anyhow!(
