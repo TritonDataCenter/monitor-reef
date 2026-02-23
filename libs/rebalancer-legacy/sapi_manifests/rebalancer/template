@@ -86,45 +86,18 @@
     {{/SNAPLINK_CLEANUP_REQUIRED}}
 
     "mdapi": {
-        {{#MDAPI_ENABLED}}
-        "enabled": {{MDAPI_ENABLED}},
-        {{/MDAPI_ENABLED}}
-        {{^MDAPI_ENABLED}}
-        "enabled": false,
-        {{/MDAPI_ENABLED}}
-
-        {{#MDAPI_ENDPOINT}}
-        "endpoint": "{{MDAPI_ENDPOINT}}",
-        {{/MDAPI_ENDPOINT}}
-        {{^MDAPI_ENDPOINT}}
-        "endpoint": "buckets-mdapi.{{DOMAIN_NAME}}:2030",
-        {{/MDAPI_ENDPOINT}}
-
-        {{#MDAPI_DEFAULT_BUCKET_ID}}
-        "default_bucket_id": "{{MDAPI_DEFAULT_BUCKET_ID}}",
-        {{/MDAPI_DEFAULT_BUCKET_ID}}
-
-        {{#MDAPI_CONNECTION_TIMEOUT_MS}}
-        "connection_timeout_ms": {{MDAPI_CONNECTION_TIMEOUT_MS}},
-        {{/MDAPI_CONNECTION_TIMEOUT_MS}}
-        {{^MDAPI_CONNECTION_TIMEOUT_MS}}
-        "connection_timeout_ms": 5000,
-        {{/MDAPI_CONNECTION_TIMEOUT_MS}}
-
-        {{#MDAPI_SINGLE_BUCKET_MODE}}
-        "single_bucket_mode": {{MDAPI_SINGLE_BUCKET_MODE}},
-        {{/MDAPI_SINGLE_BUCKET_MODE}}
-        {{^MDAPI_SINGLE_BUCKET_MODE}}
-        "single_bucket_mode": false,
-        {{/MDAPI_SINGLE_BUCKET_MODE}}
-
-        "owners": [{{#MDAPI_OWNERS}}
-            "{{uuid}}"{{^last}},{{/last}}{{/MDAPI_OWNERS}}
+        "shards": [{{#BUCKETS_MDAPI_ENDPOINTS}}
+            {
+                "host": "{{host}}"
+            }{{^last}},{{/last}}{{/BUCKETS_MDAPI_ENDPOINTS}}
         ],
 
-        "mdapi_vnodes": [{{#MDAPI_VNODES}}
-            {{vnode}}{{^last}},{{/last}}{{/MDAPI_VNODES}}
-        ]
+        {{#MDAPI_CONNECTION_TIMEOUT_MS}}
+        "connection_timeout_ms": {{MDAPI_CONNECTION_TIMEOUT_MS}}
+        {{/MDAPI_CONNECTION_TIMEOUT_MS}}
+        {{^MDAPI_CONNECTION_TIMEOUT_MS}}
+        "connection_timeout_ms": 5000
+        {{/MDAPI_CONNECTION_TIMEOUT_MS}}
     },
 
     "shards": [{{#INDEX_MORAY_SHARDS}}

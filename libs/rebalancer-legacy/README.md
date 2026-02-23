@@ -87,21 +87,11 @@ tables. This provides:
 
 #### Enabling MDAPI Backend
 
-To use the mdapi backend instead of moray, add the following to your rebalancer
-manager configuration file:
-
-```toml
-[mdapi]
-enabled = true
-endpoint = "mdapi.example.com:2030"
-default_bucket_id = "550e8400-e29b-41d4-a716-446655440000"
-connection_timeout_ms = 5000
-```
+The mdapi backend is enabled by populating `BUCKETS_MDAPI_ENDPOINTS` in the manta
+application SAPI metadata. Each entry corresponds to one buckets-mdapi instance.
 
 Configuration fields:
-- `enabled` (bool): Set to `true` to use mdapi, `false` for moray (default)
-- `endpoint` (string): The mdapi service endpoint (host:port format)
-- `default_bucket_id` (UUID, optional): Default bucket for object operations
+- `shards` (array of `{host: string}`): Mdapi shard endpoints. When non-empty, mdapi is used.
 - `connection_timeout_ms` (number): Connection timeout in milliseconds
 
 #### Schema Translation
@@ -121,10 +111,10 @@ between moray's JSON format and mdapi's structured format:
 
 #### Backend Selection
 
-By default, the rebalancer uses moray (backward compatible). To switch to mdapi:
+By default, the rebalancer uses moray (backward compatible). To add mdapi:
 
-1. Set `mdapi.enabled = true` in the configuration
-2. The manager will automatically use mdapi client functions instead of moray
+1. Populate `BUCKETS_MDAPI_ENDPOINTS` in SAPI metadata (see below)
+2. The manager will automatically use mdapi client functions in addition to moray
 3. All schema translation happens transparently
 
 #### Job Execution Integration
@@ -135,8 +125,8 @@ The mdapi backend is fully integrated into the job execution pipeline:
   transparently handles both moray and mdapi clients
 - **Automatic selection**: Backend is chosen at client creation time based on
   configuration (`should_use_mdapi()`)
-- **Batch operations**: Moray uses native batch updates; mdapi falls back to individual
-  updates (batch optimization planned for future)
+- **Batch operations**: Moray uses native batch updates; mdapi uses native
+  batchupdateobjects RPC with individual fallback
 - **Single updates**: Both backends support individual object metadata updates with
   etag-based conditional updates
 - **Error handling**: Unified error handling regardless of backend choice
@@ -159,30 +149,20 @@ The following SAPI metadata variables control mdapi configuration:
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `MDAPI_ENABLED` | Boolean | false | Enable mdapi client integration |
-| `MDAPI_ENDPOINT` | String | "localhost:2030" | Mdapi service endpoint (host:port) |
-| `MDAPI_DEFAULT_BUCKET_ID` | String (UUID) | None | Optional bucket ID for single-bucket mode |
+| `BUCKETS_MDAPI_ENDPOINTS` | JSON array | `[]` | Mdapi shard endpoints (application-level). Each entry: `{"host": "N.buckets-mdapi.DOMAIN"}`. When non-empty, mdapi is used. |
 | `MDAPI_CONNECTION_TIMEOUT_MS` | Integer | 5000 | Connection timeout in milliseconds |
-| `MDAPI_SINGLE_BUCKET_MODE` | Boolean | false | Single-bucket mode (testing/phased migration) |
 
-#### Setting SAPI Metadata
+`BUCKETS_MDAPI_ENDPOINTS` follows the same pattern as `INDEX_MORAY_SHARDS` and
+`BUCKETS_MORAY_SHARDS` — it is set as application-level SAPI metadata on the
+manta application by the sdc-manta deployment tooling when mdapi instances are
+provisioned.
 
-To enable mdapi for a rebalancer service instance:
-
-```bash
-# Enable mdapi with default settings
-sapiadm update <rebalancer-uuid> \
-  metadata.MDAPI_ENABLED=true \
-  metadata.MDAPI_ENDPOINT="buckets-mdapi.east.joyent.us:2030"
-
-# Optional: Enable single-bucket testing mode
-sapiadm update <rebalancer-uuid> \
-  metadata.MDAPI_SINGLE_BUCKET_MODE=true \
-  metadata.MDAPI_DEFAULT_BUCKET_ID="550e8400-e29b-41d4-a716-446655440000"
-
-# Optional: Adjust connection timeout
-sapiadm update <rebalancer-uuid> \
-  metadata.MDAPI_CONNECTION_TIMEOUT_MS=10000
+Format:
+```json
+[
+  {"host": "1.buckets-mdapi.coal.joyent.us"},
+  {"host": "2.buckets-mdapi.coal.joyent.us", "last": true}
+]
 ```
 
 After updating SAPI metadata, the config-agent will automatically regenerate
@@ -193,48 +173,21 @@ reload (no service restart required).
 
 **Scenario 1: Moray-Only (Default)**
 - No SAPI metadata changes required
-- Backward compatible with existing deployments
+- Empty `BUCKETS_MDAPI_ENDPOINTS` (or not set) — backward compatible
 - Only moray metadata tier is used
 
-**Scenario 2: Mdapi-Only (Bucket Objects Only)**
-```bash
-sapiadm update <rebalancer-uuid> \
-  metadata.MDAPI_ENABLED=true \
-  metadata.MDAPI_ENDPOINT="buckets-mdapi.east.joyent.us:2030" \
-  metadata.DOMAIN_NAME=""
-```
-- Only mdapi is used
-- Evacuates bucket objects only
-- Traditional Manta objects are not evacuated
-
-**Scenario 3: Hybrid Mode (Complete Evacuation - Production)**
-```bash
-sapiadm update <rebalancer-uuid> \
-  metadata.MDAPI_ENABLED=true \
-  metadata.MDAPI_ENDPOINT="buckets-mdapi.east.joyent.us:2030"
-```
+**Scenario 2: Hybrid Mode (Complete Evacuation - Production)**
+- Populate `BUCKETS_MDAPI_ENDPOINTS` via sdc-manta provisioning
 - Both moray and mdapi are used
 - Complete shark evacuation (traditional + bucket objects)
 - Recommended for production deployments
-
-**Scenario 4: Single-Bucket Testing (Phased Migration)**
-```bash
-sapiadm update <rebalancer-uuid> \
-  metadata.MDAPI_ENABLED=true \
-  metadata.MDAPI_ENDPOINT="buckets-mdapi.east.joyent.us:2030" \
-  metadata.MDAPI_SINGLE_BUCKET_MODE=true \
-  metadata.MDAPI_DEFAULT_BUCKET_ID="550e8400-e29b-41d4-a716-446655440000"
-```
-- Only evacuates one specific bucket
-- Safe testing before full deployment
-- Useful for phased migration strategies
 
 #### Troubleshooting
 
 **Connection Issues**
 ```bash
-# Check mdapi endpoint is reachable from rebalancer zone
-ping buckets-mdapi.east.joyent.us
+# Check mdapi shard is reachable from rebalancer zone
+ping 1.buckets-mdapi.east.joyent.us
 
 # Verify mdapi service is running
 svcs -Z <mdapi-zone> buckets-mdapi

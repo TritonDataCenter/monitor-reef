@@ -104,34 +104,24 @@ impl Default for ConfigOptions {
     }
 }
 
+/// A single mdapi shard endpoint, mirroring the existing `Shard` struct.
+///
+/// Populated from `BUCKETS_MDAPI_ENDPOINTS` SAPI metadata, which contains
+/// entries like `{"host": "1.buckets-mdapi.coal.joyent.us"}`.
+#[derive(Deserialize, Default, Debug, Clone)]
+pub struct MdapiShard {
+    pub host: String,
+}
+
 /// Configuration for manta-buckets-mdapi client integration
 #[derive(Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct MdapiConfig {
-    /// Enable mdapi client for bucket-based metadata operations
-    pub enabled: bool,
-    /// Mdapi service endpoint (host:port)
-    pub endpoint: String,
-    /// Default bucket ID for operations (optional for multi-bucket mode)
-    ///
-    /// In multi-bucket mode (single_bucket_mode=false), this is used as a
-    /// fallback if bucket discovery fails.
-    ///
-    /// In single-bucket mode (single_bucket_mode=true), this is required and
-    /// only this bucket will be evacuated.
-    pub default_bucket_id: Option<uuid::Uuid>,
+    /// Mdapi shard endpoints. Each entry corresponds to one mdapi instance.
+    /// When non-empty, mdapi is used for bucket object discovery and updates.
+    pub shards: Vec<MdapiShard>,
     /// Connection timeout in milliseconds
     pub connection_timeout_ms: u64,
-    /// Single-bucket mode for testing/phased migration
-    ///
-    /// If true, only evacuate objects from default_bucket_id.
-    /// If false (default), auto-discover and evacuate all buckets.
-    ///
-    /// Single-bucket mode is useful for:
-    /// - Testing mdapi integration with a single bucket
-    /// - Phased migration (evacuate one bucket at a time)
-    /// - Limited deployments with only one bucket
-    pub single_bucket_mode: bool,
     /// Maximum number of objects to process in a single batch update.
     ///
     /// Large batches can overload the mdapi server and cause timeouts.
@@ -180,11 +170,8 @@ pub const DEFAULT_MDAPI_MAX_BACKOFF_MS: u64 = 5000;
 impl Default for MdapiConfig {
     fn default() -> Self {
         MdapiConfig {
-            enabled: false,
-            endpoint: "localhost:2030".to_string(),
-            default_bucket_id: None,
+            shards: vec![],
             connection_timeout_ms: 5000,
-            single_bucket_mode: false, // Default to multi-bucket discovery
             max_batch_size: DEFAULT_MDAPI_MAX_BATCH_SIZE,
             operation_timeout_ms: DEFAULT_MDAPI_OPERATION_TIMEOUT_MS,
             max_retries: DEFAULT_MDAPI_MAX_RETRIES,
@@ -678,11 +665,8 @@ mod tests {
     #[test]
     fn mdapi_config_defaults() {
         let config = MdapiConfig::default();
-        assert_eq!(config.enabled, false);
-        assert_eq!(config.endpoint, "localhost:2030");
-        assert!(config.default_bucket_id.is_none());
+        assert!(config.shards.is_empty());
         assert_eq!(config.connection_timeout_ms, 5000);
-        assert_eq!(config.single_bucket_mode, false);
         assert_eq!(config.max_batch_size, DEFAULT_MDAPI_MAX_BATCH_SIZE);
         assert_eq!(config.operation_timeout_ms, DEFAULT_MDAPI_OPERATION_TIMEOUT_MS);
         assert_eq!(config.max_retries, DEFAULT_MDAPI_MAX_RETRIES);
@@ -693,40 +677,26 @@ mod tests {
     #[test]
     fn mdapi_config_deserialization() {
         let json = r#"{
-            "enabled": true,
-            "endpoint": "mdapi.us-east.joyent.us:2030",
-            "connection_timeout_ms": 10000,
-            "single_bucket_mode": true
+            "shards": [
+                {"host": "1.buckets-mdapi.us-east.joyent.us"},
+                {"host": "2.buckets-mdapi.us-east.joyent.us"}
+            ],
+            "connection_timeout_ms": 10000
         }"#;
         let config: MdapiConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.enabled, true);
-        assert_eq!(config.endpoint, "mdapi.us-east.joyent.us:2030");
-        assert_eq!(config.connection_timeout_ms, 10000);
-        assert_eq!(config.single_bucket_mode, true);
-        assert!(config.default_bucket_id.is_none());
-    }
-
-    #[test]
-    fn mdapi_config_with_bucket_id() {
-        let json = r#"{
-            "enabled": true,
-            "endpoint": "mdapi.host:2030",
-            "default_bucket_id": "550e8400-e29b-41d4-a716-446655440000"
-        }"#;
-        let config: MdapiConfig = serde_json::from_str(json).unwrap();
-        assert!(config.default_bucket_id.is_some());
+        assert_eq!(config.shards.len(), 2);
         assert_eq!(
-            config.default_bucket_id.unwrap().to_string(),
-            "550e8400-e29b-41d4-a716-446655440000"
+            config.shards[0].host,
+            "1.buckets-mdapi.us-east.joyent.us"
         );
+        assert_eq!(config.connection_timeout_ms, 10000);
     }
 
     #[test]
     fn mdapi_config_empty_json_uses_defaults() {
         let json = "{}";
         let config: MdapiConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.enabled, false);
-        assert_eq!(config.endpoint, "localhost:2030");
+        assert!(config.shards.is_empty());
         assert_eq!(config.max_batch_size, DEFAULT_MDAPI_MAX_BATCH_SIZE);
         assert_eq!(config.operation_timeout_ms, DEFAULT_MDAPI_OPERATION_TIMEOUT_MS);
         assert_eq!(config.max_retries, DEFAULT_MDAPI_MAX_RETRIES);
@@ -737,8 +707,7 @@ mod tests {
     #[test]
     fn mdapi_config_batch_and_timeout_override() {
         let json = r#"{
-            "enabled": true,
-            "endpoint": "mdapi.host:2030",
+            "shards": [{"host": "1.buckets-mdapi.host"}],
             "max_batch_size": 50,
             "operation_timeout_ms": 60000
         }"#;
@@ -750,8 +719,7 @@ mod tests {
     #[test]
     fn mdapi_config_retry_override() {
         let json = r#"{
-            "enabled": true,
-            "endpoint": "mdapi.host:2030",
+            "shards": [{"host": "1.buckets-mdapi.host"}],
             "max_retries": 5,
             "initial_backoff_ms": 200,
             "max_backoff_ms": 10000
@@ -765,8 +733,7 @@ mod tests {
     #[test]
     fn mdapi_config_disable_retries() {
         let json = r#"{
-            "enabled": true,
-            "endpoint": "mdapi.host:2030",
+            "shards": [{"host": "1.buckets-mdapi.host"}],
             "max_retries": 0
         }"#;
         let config: MdapiConfig = serde_json::from_str(json).unwrap();
@@ -869,7 +836,7 @@ mod tests {
         assert_eq!(config.max_fill_percentage, 100);
         assert_eq!(config.log_level, Level::Debug);
         assert_eq!(config.snaplink_cleanup_required, false);
-        assert_eq!(config.mdapi.enabled, false);
+        assert!(config.mdapi.shards.is_empty());
     }
 
     #[test]
@@ -887,8 +854,9 @@ mod tests {
             "max_fill_percentage": 90,
             "log_level": "info",
             "mdapi": {
-                "enabled": true,
-                "endpoint": "mdapi.us-east:2030"
+                "shards": [
+                    {"host": "1.buckets-mdapi.us-east.joyent.us"}
+                ]
             },
             "options": {
                 "max_sharks": 10,
@@ -902,8 +870,11 @@ mod tests {
         assert_eq!(test_config.config.max_fill_percentage, 90);
         assert_eq!(test_config.config.log_level, Level::Info);
         assert_eq!(test_config.config.snaplink_cleanup_required, true);
-        assert_eq!(test_config.config.mdapi.enabled, true);
-        assert_eq!(test_config.config.mdapi.endpoint, "mdapi.us-east:2030");
+        assert_eq!(test_config.config.mdapi.shards.len(), 1);
+        assert_eq!(
+            test_config.config.mdapi.shards[0].host,
+            "1.buckets-mdapi.us-east.joyent.us"
+        );
         assert_eq!(test_config.config.options.max_sharks, 10);
         assert_eq!(test_config.config.options.max_tasks_per_assignment, 100);
     }

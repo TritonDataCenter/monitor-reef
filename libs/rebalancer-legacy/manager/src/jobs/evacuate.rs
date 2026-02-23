@@ -197,6 +197,22 @@ fn finalize_mpu_updates(
     Ok(())
 }
 
+/// Create mdapi clients for all configured shards.
+///
+/// Each shard host has `:2030` appended to form the endpoint string
+/// expected by `mdapi_client::create_client`.
+fn create_mdapi_clients_from_shards(
+    shards: &[crate::config::MdapiShard],
+) -> Result<Vec<MdapiClient>, Error> {
+    let mut clients = Vec::with_capacity(shards.len());
+    for shard in shards {
+        let endpoint = format!("{}:2030", shard.host);
+        let client = mdapi_client::create_client(&endpoint)?;
+        clients.push(client);
+    }
+    Ok(clients)
+}
+
 /// Abstraction over metadata backends (Moray, Mdapi, or Hybrid)
 ///
 /// This enum allows the job execution code to work with:
@@ -208,10 +224,10 @@ fn finalize_mpu_updates(
 /// objects from both metadata backends.
 enum MetadataBackend {
     Moray(MorayClient),
-    Mdapi(MdapiClient),
+    Mdapi(Vec<MdapiClient>),
     Hybrid {
         moray: MorayClient,
-        mdapi: MdapiClient,
+        mdapi: Vec<MdapiClient>,
     },
 }
 
@@ -219,8 +235,8 @@ impl MetadataBackend {
     /// Create a metadata backend based on configuration
     ///
     /// Creates one of three backend types based on configuration:
-    /// - Hybrid: Both domain_name and mdapi enabled → complete evacuation support
-    /// - Mdapi: Only mdapi enabled → bucket objects only
+    /// - Hybrid: Both domain_name and mdapi shards set → complete evacuation
+    /// - Mdapi: Only mdapi shards set → bucket objects only
     /// - Moray: Only domain_name configured → traditional objects only
     ///
     /// Returns error if neither backend is configured.
@@ -236,19 +252,27 @@ impl MetadataBackend {
                 // HYBRID: Both backends enabled for complete evacuation
                 let moray =
                     moray_client::create_client(shard, &config.domain_name)?;
-                let mdapi =
-                    mdapi_client::create_client(&config.mdapi.endpoint)?;
+                let mdapi = create_mdapi_clients_from_shards(
+                    &config.mdapi.shards,
+                )?;
                 debug!(
-                    "Created hybrid backend (moray + mdapi) for shard {}",
+                    "Created hybrid backend (moray + {} mdapi shard(s)) \
+                     for shard {}",
+                    mdapi.len(),
                     shard
                 );
                 Ok(MetadataBackend::Hybrid { moray, mdapi })
             }
             (false, true) => {
                 // Mdapi only - bucket objects
-                let mdapi =
-                    mdapi_client::create_client(&config.mdapi.endpoint)?;
-                debug!("Created mdapi backend for shard {}", shard);
+                let mdapi = create_mdapi_clients_from_shards(
+                    &config.mdapi.shards,
+                )?;
+                debug!(
+                    "Created mdapi backend ({} shard(s)) for shard {}",
+                    mdapi.len(),
+                    shard
+                );
                 Ok(MetadataBackend::Mdapi(mdapi))
             }
             (true, false) => {
@@ -263,7 +287,7 @@ impl MetadataBackend {
                 Err(InternalError::new(
                     Some(InternalErrorCode::InvalidState),
                     "No metadata backend configured: \
-                     either domain_name or mdapi.enabled must be set"
+                     either domain_name or mdapi.shards must be set"
                         .to_string(),
                 )
                 .into())
@@ -274,7 +298,7 @@ impl MetadataBackend {
     /// Perform batch update operation
     ///
     /// For Moray: uses native batch operation
-    /// For Mdapi: converts to individual updates (mdapi batch not implemented yet)
+    /// For Mdapi: uses native batchupdateobjects RPC with individual fallback
     /// For Hybrid: partitions requests by object type and routes to appropriate backend
     fn batch_update<F>(
         &mut self,
@@ -307,7 +331,14 @@ impl MetadataBackend {
                         .into()
                     })
             }
-            MetadataBackend::Mdapi(client) => {
+            MetadataBackend::Mdapi(clients) => {
+                let client = clients.first().ok_or_else(|| {
+                    InternalError::new(
+                        Some(InternalErrorCode::InvalidState),
+                        "No mdapi clients available".to_string(),
+                    )
+                })?;
+
                 // Extract objects from batch requests
                 let mut manta_objects = Vec::new();
                 let mut values_for_callback = Vec::new();
@@ -444,6 +475,13 @@ impl MetadataBackend {
                 Ok(())
             }
             MetadataBackend::Hybrid { moray, mdapi } => {
+                let mdapi_client = mdapi.first().ok_or_else(|| {
+                    InternalError::new(
+                        Some(InternalErrorCode::InvalidState),
+                        "No mdapi clients available".to_string(),
+                    )
+                })?;
+
                 // Partition requests by object type
                 let mut moray_requests = Vec::new();
                 let mut mdapi_requests = Vec::new();
@@ -539,7 +577,9 @@ impl MetadataBackend {
                             .map(|(obj, bid, etag)| (obj, *bid, *etag))
                             .collect();
 
-                    let result = mdapi_client::batch_update(mdapi, mdapi_refs)?;
+                    let result = mdapi_client::batch_update(
+                        mdapi_client, mdapi_refs,
+                    )?;
 
                     // Handle partial success: mark successful mdapi objects as
                     // complete even if some failed. This prevents re-updating
@@ -575,7 +615,7 @@ impl MetadataBackend {
                         // Finalize MPU for successful objects
                         if !successful_mdapi_objects.is_empty() {
                             finalize_mpu_updates(
-                                mdapi,
+                                mdapi_client,
                                 &successful_mdapi_objects,
                                 from_shark,
                                 dest_shark,
@@ -672,7 +712,7 @@ impl MetadataBackend {
             MetadataBackend::Moray(client) => {
                 moray_client::put_object(client, object, etag)
             }
-            MetadataBackend::Mdapi(client) => {
+            MetadataBackend::Mdapi(clients) => {
                 // Deserialize Value to MantaObject
                 let manta_object: MantaObject =
                     serde_json::from_value(object.clone()).map_err(|e| {
@@ -706,13 +746,33 @@ impl MetadataBackend {
                     manta_object.name, bucket_id
                 );
 
-                // Call mdapi put_object
-                mdapi_client::put_object(
-                    client,
-                    &manta_object,
-                    bucket_id,
-                    Some(etag),
-                )
+                // Try each mdapi shard until one accepts the vnode
+                let mut last_err = None;
+                for client in clients.iter() {
+                    match mdapi_client::put_object(
+                        client,
+                        &manta_object,
+                        bucket_id,
+                        Some(etag),
+                    ) {
+                        Ok(()) => return Ok(()),
+                        Err(e) => {
+                            debug!(
+                                "mdapi put_object failed on shard, \
+                                 trying next: {}",
+                                e
+                            );
+                            last_err = Some(e);
+                        }
+                    }
+                }
+                Err(last_err.unwrap_or_else(|| {
+                    InternalError::new(
+                        Some(InternalErrorCode::InvalidState),
+                        "No mdapi clients available".to_string(),
+                    )
+                    .into()
+                }))
             }
             MetadataBackend::Hybrid { moray, mdapi } => {
                 // Route based on object type
@@ -754,12 +814,33 @@ impl MetadataBackend {
                         "Hybrid: routing bucket object {} to mdapi",
                         manta_object.name
                     );
-                    mdapi_client::put_object(
-                        mdapi,
-                        &manta_object,
-                        bucket_id,
-                        Some(etag),
-                    )
+                    // Try each mdapi shard until one accepts
+                    let mut last_err = None;
+                    for mc in mdapi.iter() {
+                        match mdapi_client::put_object(
+                            mc,
+                            &manta_object,
+                            bucket_id,
+                            Some(etag),
+                        ) {
+                            Ok(()) => return Ok(()),
+                            Err(e) => {
+                                debug!(
+                                    "Hybrid mdapi put_object failed on \
+                                     shard, trying next: {}",
+                                    e
+                                );
+                                last_err = Some(e);
+                            }
+                        }
+                    }
+                    Err(last_err.unwrap_or_else(|| {
+                        InternalError::new(
+                            Some(InternalErrorCode::InvalidState),
+                            "No mdapi clients available".to_string(),
+                        )
+                        .into()
+                    }))
                 } else {
                     // Traditional Manta object - use moray
                     debug!("Hybrid: routing traditional object to moray");
@@ -3173,6 +3254,13 @@ fn start_sharkspotter(
         chunk_size: job_action.config.options.md_read_chunk_size as u64,
         direct_db: true,
         max_threads: job_action.config.options.max_md_read_threads,
+        mdapi_endpoints: job_action
+            .config
+            .mdapi
+            .shards
+            .iter()
+            .map(|s| format!("{}:2030", s.host))
+            .collect(),
         ..Default::default()
     };
 
@@ -6506,17 +6594,18 @@ mod tests {
 
     #[test]
     fn test_hybrid_backend_creation() {
-        use crate::config::{Config, MdapiConfig};
+        use crate::config::{Config, MdapiConfig, MdapiShard};
 
-        // Config with both moray and mdapi enabled
+        // Config with both moray and mdapi shards set
         let mut config = Config::default();
         config.domain_name = "us-east.joyent.us".to_string();
         config.mdapi = MdapiConfig {
-            enabled: true,
-            endpoint: "mdapi.example.com:2030".to_string(),
-            default_bucket_id: None,
+            shards: vec![
+                MdapiShard {
+                    host: "1.buckets-mdapi.example.com".to_string(),
+                },
+            ],
             connection_timeout_ms: 5000,
-            single_bucket_mode: false,
             max_batch_size: 100,
             operation_timeout_ms: 30000,
             max_retries: 3,
@@ -6537,12 +6626,12 @@ mod tests {
 
     #[test]
     fn test_moray_only_backend() {
-        use crate::config::{Config, MdapiConfig};
+        use crate::config::Config;
 
-        // Config with only moray
+        // Config with only moray (no mdapi shards)
         let mut config = Config::default();
         config.domain_name = "us-east.joyent.us".to_string();
-        config.mdapi.enabled = false;
+        // Default MdapiConfig has empty shards vec
 
         let use_mdapi = mdapi_client::should_use_mdapi(&config.mdapi);
         let use_moray = !config.domain_name.is_empty();
@@ -6554,17 +6643,18 @@ mod tests {
 
     #[test]
     fn test_mdapi_only_backend() {
-        use crate::config::{Config, MdapiConfig};
+        use crate::config::{Config, MdapiConfig, MdapiShard};
 
-        // Config with only mdapi
+        // Config with only mdapi shards set
         let mut config = Config::default();
         config.domain_name = String::new();
         config.mdapi = MdapiConfig {
-            enabled: true,
-            endpoint: "mdapi.example.com:2030".to_string(),
-            default_bucket_id: None,
+            shards: vec![
+                MdapiShard {
+                    host: "1.buckets-mdapi.example.com".to_string(),
+                },
+            ],
             connection_timeout_ms: 5000,
-            single_bucket_mode: false,
             max_batch_size: 100,
             operation_timeout_ms: 30000,
             max_retries: 3,
@@ -6582,12 +6672,12 @@ mod tests {
 
     #[test]
     fn test_no_backend_configured() {
-        use crate::config::{Config, MdapiConfig};
+        use crate::config::Config;
 
-        // Config with neither backend
+        // Config with neither backend (empty domain and no shards)
         let mut config = Config::default();
         config.domain_name = String::new();
-        config.mdapi.enabled = false;
+        // Default MdapiConfig has empty shards vec
 
         let use_mdapi = mdapi_client::should_use_mdapi(&config.mdapi);
         let use_moray = !config.domain_name.is_empty();

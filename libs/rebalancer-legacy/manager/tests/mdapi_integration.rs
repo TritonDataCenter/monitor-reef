@@ -407,11 +407,10 @@ fn test_hybrid_mode_config() {
     }
 
     let mdapi_config = manager::config::MdapiConfig {
-        enabled: true,
-        endpoint: config.mdapi_endpoint.unwrap(),
-        default_bucket_id: config.mdapi_bucket,
+        shards: vec![manager::config::MdapiShard {
+            host: config.mdapi_endpoint.unwrap(),
+        }],
         connection_timeout_ms: 5000,
-        single_bucket_mode: false,
         max_batch_size: 100,
         operation_timeout_ms: 30000,
         max_retries: 3,

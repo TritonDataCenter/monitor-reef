@@ -32,8 +32,9 @@ pub struct Config {
     pub max_threads: usize,
     pub direct_db: bool,
     pub log_level: Level,
-    /// Mdapi endpoint for bucket object discovery (e.g., "mdapi.domain.com:2030")
-    pub mdapi_endpoint: Option<String>,
+    /// Mdapi endpoints for bucket object discovery (one per shard).
+    /// Each entry is a "host:port" string (e.g., "1.buckets-mdapi.domain:2030").
+    pub mdapi_endpoints: Vec<String>,
     /// Owners to query for bucket objects (required for mdapi discovery)
     pub owners: Option<Vec<Uuid>>,
     /// Mdapi vnodes to query for bucket discovery. These are the virtual node
@@ -59,7 +60,7 @@ impl Default for Config {
             max_threads: 50,
             direct_db: false,
             log_level: Level::Debug,
-            mdapi_endpoint: None,
+            mdapi_endpoints: vec![],
             owners: None,
             mdapi_vnodes: None,
         }
@@ -178,7 +179,9 @@ impl<'a, 'b> Config {
             .arg(Arg::with_name("mdapi_endpoint")
                 .long("mdapi-endpoint")
                 .value_name("ENDPOINT")
-                .help("Mdapi endpoint for bucket object discovery (e.g., mdapi.domain:2030)")
+                .help("Mdapi endpoint(s) for bucket object discovery (e.g., 1.buckets-mdapi.domain:2030)")
+                .number_of_values(1)
+                .multiple(true)
                 .takes_value(true))
             .arg(Arg::with_name("owners")
                 .long("owners")
@@ -257,9 +260,10 @@ impl<'a, 'b> Config {
             .map(String::from)
             .collect();
 
-        // Parse mdapi endpoint
-        if let Some(endpoint) = matches.value_of("mdapi_endpoint") {
-            config.mdapi_endpoint = Some(endpoint.to_string());
+        // Parse mdapi endpoints (may be specified multiple times)
+        if let Some(endpoints) = matches.values_of("mdapi_endpoint") {
+            config.mdapi_endpoints =
+                endpoints.map(String::from).collect();
         }
 
         // Parse owner UUIDs
@@ -388,7 +392,9 @@ mod test {
             "--shark",
             "1.stor",
             "--mdapi-endpoint",
-            "mdapi.east.joyent.us:2030",
+            "1.buckets-mdapi.east.joyent.us:2030",
+            "--mdapi-endpoint",
+            "2.buckets-mdapi.east.joyent.us:2030",
             "--owners",
             "550e8400-e29b-41d4-a716-446655440000",
             "--owners",
@@ -398,9 +404,14 @@ mod test {
         let matches = Config::get_app().get_matches_from(args);
         let config = Config::config_from_matches(matches).expect("config");
 
+        assert_eq!(config.mdapi_endpoints.len(), 2);
         assert_eq!(
-            config.mdapi_endpoint,
-            Some(String::from("mdapi.east.joyent.us:2030"))
+            config.mdapi_endpoints[0],
+            "1.buckets-mdapi.east.joyent.us:2030"
+        );
+        assert_eq!(
+            config.mdapi_endpoints[1],
+            "2.buckets-mdapi.east.joyent.us:2030"
         );
 
         let owners = config.owners.expect("owners should be set");
@@ -488,7 +499,7 @@ mod test {
         assert!(!config.multithreaded);
         assert_eq!(config.max_threads, 50);
         assert!(!config.direct_db);
-        assert!(config.mdapi_endpoint.is_none());
+        assert!(config.mdapi_endpoints.is_empty());
         assert!(config.owners.is_none());
         assert!(config.mdapi_vnodes.is_none());
     }
@@ -502,7 +513,7 @@ mod test {
             "--shark",
             "1.stor",
             "--mdapi-endpoint",
-            "mdapi.east.joyent.us:2030",
+            "1.buckets-mdapi.east.joyent.us:2030",
             "--owners",
             "550e8400-e29b-41d4-a716-446655440000",
             "--mdapi-vnodes",

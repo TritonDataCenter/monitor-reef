@@ -7,9 +7,7 @@
       }
    ],
   "mdapi": {
-    "enabled": true,
-    "endpoint": "localhost:2030",
-    "connection_timeout_ms": 5000,
-    "single_bucket_mode": false
+    "shards": [],
+    "connection_timeout_ms": 5000
   }
 }

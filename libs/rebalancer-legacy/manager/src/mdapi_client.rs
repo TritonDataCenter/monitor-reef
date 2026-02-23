@@ -22,19 +22,21 @@
 //!
 //! To use mdapi instead of moray in evacuate jobs:
 //!
-//! 1. Enable mdapi in config:
-//!    ```toml
-//!    [mdapi]
-//!    enabled = true
-//!    endpoint = "mdapi.example.com:2030"
-//!    default_bucket_id = "550e8400-e29b-41d4-a716-446655440000"
+//! 1. Configure mdapi shards (populated via BUCKETS_MDAPI_ENDPOINTS SAPI metadata):
+//!    ```json
+//!    "mdapi": {
+//!        "shards": [
+//!            {"host": "1.buckets-mdapi.coal.joyent.us"},
+//!            {"host": "2.buckets-mdapi.coal.joyent.us"}
+//!        ]
+//!    }
 //!    ```
 //!
 //! 2. In evacuate.rs, check config and use appropriate client:
 //!    ```rust,ignore
-//!    if job_config.mdapi.enabled {
-//!        let mclient = mdapi_client::create_client(&job_config.mdapi.endpoint)?;
-//!        let bucket_id = job_config.mdapi.default_bucket_id.unwrap();
+//!    if mdapi_client::should_use_mdapi(&job_config.mdapi) {
+//!        // Create client per shard; route updates by vnode
+//!        let mclient = mdapi_client::create_client(&shard_host)?;
 //!        mdapi_client::put_object(&mclient, &object, bucket_id, Some(&etag))?;
 //!    } else {
 //!        let mut mclient = moray_client::create_client(shard, &domain)?;
@@ -55,7 +57,7 @@ use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
 
-use crate::config::MdapiConfig;
+use crate::config::{MdapiConfig, MdapiShard};
 
 // Vnode hash algorithm constants
 // These match the buckets-mdapi vnode distribution algorithm
@@ -1116,8 +1118,8 @@ pub fn verify_vnode(object: &MantaObject, bucket: &str) -> Result<bool, Error> {
 
 /// Check if mdapi backend should be used based on configuration.
 ///
-/// This helper function encapsulates the logic for determining which
-/// metadata backend (moray vs mdapi) should be used for operations.
+/// Returns true when the `shards` vec in `MdapiConfig` is non-empty,
+/// meaning at least one `BUCKETS_MDAPI_ENDPOINTS` entry was configured.
 ///
 /// # Arguments
 /// * `config` - The MdapiConfig to check
@@ -1127,14 +1129,13 @@ pub fn verify_vnode(object: &MantaObject, bucket: &str) -> Result<bool, Error> {
 ///
 /// # Example
 /// ```rust,ignore
-/// use crate::config::MdapiConfig;
+/// use crate::config::{MdapiConfig, MdapiShard};
 /// use crate::mdapi_client;
 ///
 /// let config = MdapiConfig {
-///     enabled: true,
-///     endpoint: "mdapi.example.com:2030".to_string(),
-///     default_bucket_id: Some(uuid::Uuid::new_v4()),
+///     shards: vec![MdapiShard { host: "1.buckets-mdapi.domain:2030".into() }],
 ///     connection_timeout_ms: 5000,
+///     ..Default::default()
 /// };
 ///
 /// if mdapi_client::should_use_mdapi(&config) {
@@ -1144,7 +1145,7 @@ pub fn verify_vnode(object: &MantaObject, bucket: &str) -> Result<bool, Error> {
 /// }
 /// ```
 pub fn should_use_mdapi(config: &MdapiConfig) -> bool {
-    config.enabled && !config.endpoint.is_empty()
+    !config.shards.is_empty()
 }
 
 /// Information about a bucket returned by list_buckets
@@ -1181,8 +1182,7 @@ pub struct BucketInfo {
 /// # Notes
 /// The underlying rust-libmanta list_buckets is fully implemented.
 /// Returns bucket data from the mdapi service. Older servers that don't
-/// support listBuckets RPC will return empty list as fallback, in which
-/// case evacuation will use the configured default_bucket_id.
+/// support listBuckets RPC will return empty list as fallback.
 ///
 /// # Example
 /// ```rust,ignore
@@ -1779,14 +1779,13 @@ mod tests {
         let owner = "550e8400-e29b-41d4-a716-446655440000";
         let bucket = "test-bucket";
         let key = "test-object.txt";
-            // Calculate vnode multiple times - should be consistent
-            let vnode1 = calculate_vnode(owner, bucket, key);
-            let vnode2 = calculate_vnode(owner, bucket, key);
-            let vnode3 = calculate_vnode(owner, bucket, key);
+        // Calculate vnode multiple times - should be consistent
+        let vnode1 = calculate_vnode(owner, bucket, key);
+        let vnode2 = calculate_vnode(owner, bucket, key);
+        let vnode3 = calculate_vnode(owner, bucket, key);
 
-            assert_eq!(vnode1, vnode2);
-            assert_eq!(vnode2, vnode3);
-        });
+        assert_eq!(vnode1, vnode2);
+        assert_eq!(vnode2, vnode3);
     }
 
     #[test]
@@ -2110,13 +2109,14 @@ mod tests {
     }
 
     #[test]
-    fn test_should_use_mdapi_enabled() {
+    fn test_should_use_mdapi_with_shards() {
         let config = MdapiConfig {
-            enabled: true,
-            endpoint: "mdapi.example.com:2030".to_string(),
-            default_bucket_id: Some(Uuid::new_v4()),
+            shards: vec![
+                MdapiShard {
+                    host: "1.buckets-mdapi.example.com".to_string(),
+                },
+            ],
             connection_timeout_ms: 5000,
-            single_bucket_mode: false,
             max_batch_size: 100,
             operation_timeout_ms: 30000,
             max_retries: 3,
@@ -2128,31 +2128,10 @@ mod tests {
     }
 
     #[test]
-    fn test_should_use_mdapi_disabled() {
+    fn test_should_use_mdapi_empty_shards() {
         let config = MdapiConfig {
-            enabled: false,
-            endpoint: "mdapi.example.com:2030".to_string(),
-            default_bucket_id: Some(Uuid::new_v4()),
+            shards: vec![],
             connection_timeout_ms: 5000,
-            single_bucket_mode: false,
-            max_batch_size: 100,
-            operation_timeout_ms: 30000,
-            max_retries: 3,
-            initial_backoff_ms: 100,
-            max_backoff_ms: 5000,
-        };
-
-        assert_eq!(should_use_mdapi(&config), false);
-    }
-
-    #[test]
-    fn test_should_use_mdapi_empty_endpoint() {
-        let config = MdapiConfig {
-            enabled: true,
-            endpoint: String::new(),
-            default_bucket_id: Some(Uuid::new_v4()),
-            connection_timeout_ms: 5000,
-            single_bucket_mode: false,
             max_batch_size: 100,
             operation_timeout_ms: 30000,
             max_retries: 3,
@@ -2166,7 +2145,7 @@ mod tests {
     #[test]
     fn test_should_use_mdapi_default_config() {
         let config = MdapiConfig::default();
-        // Default config should prefer moray (enabled = false)
+        // Default config has empty shards so should_use_mdapi is false
         assert_eq!(should_use_mdapi(&config), false);
     }
 
@@ -2554,11 +2533,8 @@ mod tests {
     #[test]
     fn test_retry_config_from_mdapi_config() {
         let mdapi_config = MdapiConfig {
-            enabled: true,
             endpoint: "localhost:2030".to_string(),
-            default_bucket_id: None,
             connection_timeout_ms: 5000,
-            single_bucket_mode: false,
             max_batch_size: 100,
             operation_timeout_ms: 30000,
             max_retries: 5,

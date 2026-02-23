@@ -54,16 +54,16 @@ clean:: | $(CARGO_EXEC) ## Clean build artifacts
 	$(CARGO) clean
 
 # Legacy workspace commands (rebalancer, cueball, moray, etc.)
-# These use system Rust and require swapping Cargo.toml files
+# These use the project-local Rust toolchain and require swapping Cargo.toml files
 
-build-legacy: ## Build legacy crates (rebalancer, cueball, etc.)
+build-legacy: | $(CARGO_EXEC) ## Build legacy crates (rebalancer, cueball, etc.)
 	@echo "Switching to legacy workspace..."
 	@mv Cargo.toml Cargo.toml.modern
 	@mv Cargo.toml.legacy Cargo.toml
 	@if [ -f Cargo.lock ]; then mv Cargo.lock Cargo.lock.modern; fi
 	@cp Cargo.lock.legacy Cargo.lock
-	@echo "Building legacy crates with system Rust..."
-	cargo build --workspace || { \
+	@echo "Building legacy crates..."
+	$(CARGO) build --workspace || { \
 		echo "Build failed, restoring modern workspace..."; \
 		mv Cargo.toml Cargo.toml.legacy; \
 		mv Cargo.toml.modern Cargo.toml; \
@@ -78,14 +78,14 @@ build-legacy: ## Build legacy crates (rebalancer, cueball, etc.)
 	@if [ -f Cargo.lock.modern ]; then mv Cargo.lock.modern Cargo.lock; fi
 	@echo "Legacy build complete."
 
-test-legacy: ## Test legacy crates (rebalancer, cueball, etc.)
+test-legacy: | $(CARGO_EXEC) ## Test legacy crates (rebalancer, cueball, etc.)
 	@echo "Switching to legacy workspace..."
 	@mv Cargo.toml Cargo.toml.modern
 	@mv Cargo.toml.legacy Cargo.toml
 	@if [ -f Cargo.lock ]; then mv Cargo.lock Cargo.lock.modern; fi
 	@cp Cargo.lock.legacy Cargo.lock
-	@echo "Testing legacy crates with system Rust..."
-	cargo test --workspace -- --test-threads=1 || { \
+	@echo "Testing legacy crates..."
+	$(CARGO) test --workspace -- --test-threads=1 || { \
 		echo "Tests failed, restoring modern workspace..."; \
 		mv Cargo.toml Cargo.toml.legacy; \
 		mv Cargo.toml.modern Cargo.toml; \
@@ -100,13 +100,13 @@ test-legacy: ## Test legacy crates (rebalancer, cueball, etc.)
 	@if [ -f Cargo.lock.modern ]; then mv Cargo.lock.modern Cargo.lock; fi
 	@echo "Legacy tests complete."
 
-clean-legacy: ## Clean legacy build artifacts
+clean-legacy: | $(CARGO_EXEC) ## Clean legacy build artifacts
 	@echo "Switching to legacy workspace..."
 	@mv Cargo.toml Cargo.toml.modern
 	@mv Cargo.toml.legacy Cargo.toml
 	@if [ -f Cargo.lock ]; then mv Cargo.lock Cargo.lock.modern; fi
 	@cp Cargo.lock.legacy Cargo.lock
-	cargo clean
+	$(CARGO) clean
 	@echo "Restoring modern workspace..."
 	@mv Cargo.toml Cargo.toml.legacy
 	@mv Cargo.toml.modern Cargo.toml
@@ -307,18 +307,18 @@ coverage: | $(CARGO_EXEC) ## Run code coverage check (line >= 40%)
 	@echo "Running code coverage analysis..."
 	$(CARGO) tarpaulin
 
-coverage-legacy: ## Run code coverage for legacy crates
-	@if ! cargo tarpaulin --version >/dev/null 2>&1; then \
+coverage-legacy: | $(CARGO_EXEC) ## Run code coverage for legacy crates
+	@if ! $(CARGO) tarpaulin --version >/dev/null 2>&1; then \
 		echo "cargo-tarpaulin not found, installing..."; \
-		cargo install --features vendored-openssl cargo-tarpaulin; \
+		$(CARGO) install --features vendored-openssl cargo-tarpaulin; \
 	fi
 	@echo "Switching to legacy workspace..."
 	@mv Cargo.toml Cargo.toml.modern
 	@mv Cargo.toml.legacy Cargo.toml
 	@if [ -f Cargo.lock ]; then mv Cargo.lock Cargo.lock.modern; fi
 	@cp Cargo.lock.legacy Cargo.lock
-	@echo "Running legacy code coverage with system Rust..."
-	cargo tarpaulin || { \
+	@echo "Running legacy code coverage..."
+	$(CARGO) tarpaulin || { \
 		echo "Coverage failed, restoring modern workspace..."; \
 		mv Cargo.toml Cargo.toml.legacy; \
 		mv Cargo.toml.modern Cargo.toml; \
