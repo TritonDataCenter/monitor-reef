@@ -12,7 +12,9 @@
 
 mod common;
 
-use cloudapi_api::types::{FabricVlan, Network, NetworkIp, Nic, NicState};
+use cloudapi_api::types::{
+    CreateFabricNetworkRequest, FabricVlan, Network, NetworkIp, Nic, NicState,
+};
 use uuid::Uuid;
 
 #[test]
@@ -209,6 +211,59 @@ fn test_network_ip_deserialize() {
     assert_eq!(ip.managed, Some(false));
     assert!(ip.owner_uuid.is_some());
     assert_eq!(ip.belongs_to_type.as_deref(), Some("zone"));
+}
+
+/// Test that CreateFabricNetworkRequest serializes field names as snake_case,
+/// matching the CloudAPI wire format.
+#[test]
+fn test_create_fabric_network_request_snake_case() {
+    let req = CreateFabricNetworkRequest {
+        name: "my-network".to_string(),
+        description: None,
+        subnet: "192.168.128.0/22".to_string(),
+        provision_start_ip: "192.168.128.5".to_string(),
+        provision_end_ip: "192.168.131.250".to_string(),
+        gateway: Some("192.168.128.1".to_string()),
+        resolvers: Some(vec!["8.8.8.8".to_string()]),
+        routes: None,
+        internet_nat: Some(true),
+    };
+
+    let json = serde_json::to_value(&req).unwrap();
+    let obj = json.as_object().unwrap();
+
+    // Verify snake_case field names (not camelCase)
+    assert!(
+        obj.contains_key("provision_start_ip"),
+        "expected snake_case 'provision_start_ip'"
+    );
+    assert!(
+        obj.contains_key("provision_end_ip"),
+        "expected snake_case 'provision_end_ip'"
+    );
+    assert!(
+        obj.contains_key("internet_nat"),
+        "expected snake_case 'internet_nat'"
+    );
+
+    // Verify camelCase is NOT present
+    assert!(
+        !obj.contains_key("provisionStartIp"),
+        "unexpected camelCase 'provisionStartIp'"
+    );
+    assert!(
+        !obj.contains_key("provisionEndIp"),
+        "unexpected camelCase 'provisionEndIp'"
+    );
+    assert!(
+        !obj.contains_key("internetNat"),
+        "unexpected camelCase 'internetNat'"
+    );
+
+    // Verify values
+    assert_eq!(obj["provision_start_ip"], "192.168.128.5");
+    assert_eq!(obj["provision_end_ip"], "192.168.131.250");
+    assert_eq!(obj["internet_nat"], true);
 }
 
 /// Test round-trip serialization/deserialization preserves data.

@@ -410,7 +410,7 @@
             "nullable": true,
             "type": "string"
           },
-          "internetNat": {
+          "internet_nat": {
             "default": null,
             "description": "Internet NAT",
             "nullable": true,
@@ -420,11 +420,11 @@
             "description": "Network name",
             "type": "string"
           },
-          "provisionEndIp": {
+          "provision_end_ip": {
             "description": "Provision end IP",
             "type": "string"
           },
-          "provisionStartIp": {
+          "provision_start_ip": {
             "description": "Provision start IP",
             "type": "string"
           },
@@ -449,8 +449,8 @@
         },
         "required": [
           "name",
-          "provisionEndIp",
-          "provisionStartIp",
+          "provision_end_ip",
+          "provision_start_ip",
           "subnet"
         ],
         "type": "object"
@@ -2788,13 +2788,13 @@
             "nullable": true,
             "type": "string"
           },
-          "provisionEndIp": {
+          "provision_end_ip": {
             "default": null,
             "description": "Provision end IP",
             "nullable": true,
             "type": "string"
           },
-          "provisionStartIp": {
+          "provision_start_ip": {
             "default": null,
             "description": "Provision start IP",
             "nullable": true,

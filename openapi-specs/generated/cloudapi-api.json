@@ -9859,7 +9859,7 @@
             "default": null,
             "type": "string"
           },
-          "internetNat": {
+          "internet_nat": {
             "nullable": true,
             "description": "Internet NAT",
             "default": null,
@@ -9869,11 +9869,11 @@
             "description": "Network name",
             "type": "string"
           },
-          "provisionEndIp": {
+          "provision_end_ip": {
             "description": "Provision end IP",
             "type": "string"
           },
-          "provisionStartIp": {
+          "provision_start_ip": {
             "description": "Provision start IP",
             "type": "string"
           },
@@ -9898,8 +9898,8 @@
         },
         "required": [
           "name",
-          "provisionEndIp",
-          "provisionStartIp",
+          "provision_end_ip",
+          "provision_start_ip",
           "subnet"
         ]
       },
@@ -12185,13 +12185,13 @@
             "default": null,
             "type": "string"
           },
-          "provisionEndIp": {
+          "provision_end_ip": {
             "nullable": true,
             "description": "Provision end IP",
             "default": null,
             "type": "string"
           },
-          "provisionStartIp": {
+          "provision_start_ip": {
             "nullable": true,
             "description": "Provision start IP",
             "default": null,

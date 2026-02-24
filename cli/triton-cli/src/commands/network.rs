@@ -366,26 +366,31 @@ async fn create_network(
 ) -> Result<()> {
     let account = &client.auth_config().account;
 
-    // Build resolvers from comma-separated or multiple flags
-    let resolvers = args.resolver.map(|r| {
-        r.iter()
+    // Build resolvers from comma-separated or multiple flags (default to empty)
+    let resolvers = Some(match args.resolver {
+        Some(r) => r
+            .iter()
             .flat_map(|s| s.split(','))
             .map(|s| s.trim().to_string())
-            .collect()
+            .collect(),
+        None => vec![],
     });
 
-    // Parse routes from SUBNET=IP format into a JSON object
-    let routes = args.route.map(|route_list| {
-        let mut route_map = serde_json::Map::new();
-        for route in route_list {
-            if let Some((subnet, gateway)) = route.split_once('=') {
-                route_map.insert(
-                    subnet.to_string(),
-                    serde_json::Value::String(gateway.to_string()),
-                );
+    // Parse routes from SUBNET=IP format into a JSON object (default to empty)
+    let routes = Some(match args.route {
+        Some(route_list) => {
+            let mut route_map = serde_json::Map::new();
+            for route in route_list {
+                if let Some((subnet, gateway)) = route.split_once('=') {
+                    route_map.insert(
+                        subnet.to_string(),
+                        serde_json::Value::String(gateway.to_string()),
+                    );
+                }
             }
+            serde_json::Value::Object(route_map)
         }
-        serde_json::Value::Object(route_map)
+        None => serde_json::Value::Object(serde_json::Map::new()),
     });
 
     let request = cloudapi_client::types::CreateFabricNetworkRequest {

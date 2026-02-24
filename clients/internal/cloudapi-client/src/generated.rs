@@ -1105,8 +1105,8 @@ pub mod types {
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"name\","]
-    #[doc = "    \"provisionEndIp\","]
-    #[doc = "    \"provisionStartIp\","]
+    #[doc = "    \"provision_end_ip\","]
+    #[doc = "    \"provision_start_ip\","]
     #[doc = "    \"subnet\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
@@ -1124,7 +1124,7 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
-    #[doc = "    \"internetNat\": {"]
+    #[doc = "    \"internet_nat\": {"]
     #[doc = "      \"description\": \"Internet NAT\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"boolean\","]
@@ -1135,11 +1135,11 @@ pub mod types {
     #[doc = "      \"description\": \"Network name\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
-    #[doc = "    \"provisionEndIp\": {"]
+    #[doc = "    \"provision_end_ip\": {"]
     #[doc = "      \"description\": \"Provision end IP\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
-    #[doc = "    \"provisionStartIp\": {"]
+    #[doc = "    \"provision_start_ip\": {"]
     #[doc = "      \"description\": \"Provision start IP\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
@@ -1175,19 +1175,13 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub gateway: ::std::option::Option<::std::string::String>,
         #[doc = "Internet NAT"]
-        #[serde(
-            rename = "internetNat",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub internet_nat: ::std::option::Option<bool>,
         #[doc = "Network name"]
         pub name: ::std::string::String,
         #[doc = "Provision end IP"]
-        #[serde(rename = "provisionEndIp")]
         pub provision_end_ip: ::std::string::String,
         #[doc = "Provision start IP"]
-        #[serde(rename = "provisionStartIp")]
         pub provision_start_ip: ::std::string::String,
         #[doc = "Resolvers"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -7120,14 +7114,14 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
-    #[doc = "    \"provisionEndIp\": {"]
+    #[doc = "    \"provision_end_ip\": {"]
     #[doc = "      \"description\": \"Provision end IP\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
-    #[doc = "    \"provisionStartIp\": {"]
+    #[doc = "    \"provision_start_ip\": {"]
     #[doc = "      \"description\": \"Provision start IP\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
@@ -7165,18 +7159,10 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub name: ::std::option::Option<::std::string::String>,
         #[doc = "Provision end IP"]
-        #[serde(
-            rename = "provisionEndIp",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub provision_end_ip: ::std::option::Option<::std::string::String>,
         #[doc = "Provision start IP"]
-        #[serde(
-            rename = "provisionStartIp",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub provision_start_ip: ::std::option::Option<::std::string::String>,
         #[doc = "Resolvers"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]

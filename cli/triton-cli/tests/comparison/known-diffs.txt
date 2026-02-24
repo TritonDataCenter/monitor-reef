@@ -7,4 +7,3 @@
 # as "fixed?" so you know to close the bead and remove the line.
 
 payload-network-create      monitor-reef-9zft  missing --gateway/--no-nat validation
-payload-network-create-gw   monitor-reef-8x2l  camelCase vs snake_case field names
