@@ -199,6 +199,119 @@ fn test_fwrule_insts_alias() {
 }
 
 // =============================================================================
+// Payload tests - verify field=value parsing (offline, uses --emit-payload)
+// =============================================================================
+
+/// Test `triton fwrule update UUID rule="..."` produces correct payload
+#[test]
+fn test_fwrule_update_field_value_parsing() {
+    let output = triton_cmd()
+        .args([
+            "--emit-payload",
+            "fwrule",
+            "update",
+            "00000000-0000-0000-0000-000000000006",
+            "rule=FROM any TO vm 00000000-0000-0000-0000-000000000003 ALLOW tcp PORT 80",
+        ])
+        .output()
+        .expect("Failed to run command");
+
+    assert!(output.status.success(), "command should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let envelopes: Vec<serde_json::Value> = stdout
+        .lines()
+        .collect::<Vec<_>>()
+        .join("\n")
+        .split("\n}\n")
+        .filter_map(|chunk| {
+            let trimmed = chunk.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let json_str = if trimmed.ends_with('}') {
+                trimmed.to_string()
+            } else {
+                format!("{trimmed}\n}}")
+            };
+            serde_json::from_str(&json_str).ok()
+        })
+        .collect();
+
+    let post = envelopes
+        .iter()
+        .find(|e| e["method"] == "POST")
+        .expect("should have a POST envelope");
+
+    assert_eq!(
+        post["body"]["rule"],
+        "FROM any TO vm 00000000-0000-0000-0000-000000000003 ALLOW tcp PORT 80"
+    );
+}
+
+/// Test that boolean field=value pairs work for fwrule update
+#[test]
+fn test_fwrule_update_boolean_fields() {
+    let output = triton_cmd()
+        .args([
+            "--emit-payload",
+            "fwrule",
+            "update",
+            "00000000-0000-0000-0000-000000000006",
+            "enabled=true",
+            "log=false",
+        ])
+        .output()
+        .expect("Failed to run command");
+
+    assert!(output.status.success(), "command should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let envelopes: Vec<serde_json::Value> = stdout
+        .lines()
+        .collect::<Vec<_>>()
+        .join("\n")
+        .split("\n}\n")
+        .filter_map(|chunk| {
+            let trimmed = chunk.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let json_str = if trimmed.ends_with('}') {
+                trimmed.to_string()
+            } else {
+                format!("{trimmed}\n}}")
+            };
+            serde_json::from_str(&json_str).ok()
+        })
+        .collect();
+
+    let post = envelopes
+        .iter()
+        .find(|e| e["method"] == "POST")
+        .expect("should have a POST envelope");
+
+    assert_eq!(post["body"]["enabled"], true);
+    assert_eq!(post["body"]["log"], false);
+}
+
+/// Test that unknown fields produce an error
+#[test]
+fn test_fwrule_update_unknown_field() {
+    triton_cmd()
+        .args([
+            "--emit-payload",
+            "fwrule",
+            "update",
+            "00000000-0000-0000-0000-000000000006",
+            "badfield=value",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unknown field"));
+}
+
+// =============================================================================
 // API tests - require config.json with valid profile
 // These tests are ignored by default and run with `make triton-test-api`
 // =============================================================================

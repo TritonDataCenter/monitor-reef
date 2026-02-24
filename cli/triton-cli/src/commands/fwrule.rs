@@ -98,6 +98,9 @@ pub struct FwruleUpdateArgs {
     /// Enable TCP connection logging for this rule
     #[arg(long = "log")]
     pub enable_log: Option<bool>,
+    /// field=value pairs (e.g. rule="FROM any TO ..." description="my rule")
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    pub fields: Vec<String>,
 }
 
 #[derive(Args, Clone)]
@@ -320,11 +323,69 @@ async fn update_rule(args: FwruleUpdateArgs, client: &TypedClient, use_json: boo
     let account = &client.auth_config().account;
     let rule_id = resolve_rule(&args.id, client).await?;
 
+    // Start with --flag values
+    let mut rule = args.rule.clone();
+    let mut description = args.description.clone();
+    let mut log = args.enable_log;
+    let mut enabled: Option<bool> = None;
+    let mut updated_fields = Vec::new();
+
+    // Parse positional field=value pairs (flags take precedence)
+    for field_arg in &args.fields {
+        let (key, value) = field_arg
+            .split_once('=')
+            .ok_or_else(|| anyhow::anyhow!("invalid field=value pair: {field_arg}"))?;
+        match key {
+            "rule" => {
+                if rule.is_none() {
+                    rule = Some(value.to_string());
+                }
+                updated_fields.push("rule");
+            }
+            "description" => {
+                if description.is_none() {
+                    description = Some(value.to_string());
+                }
+                updated_fields.push("description");
+            }
+            "log" => {
+                let parsed: bool = value
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("invalid boolean for log: {value}"))?;
+                if log.is_none() {
+                    log = Some(parsed);
+                }
+                updated_fields.push("log");
+            }
+            "enabled" => {
+                let parsed: bool = value
+                    .parse()
+                    .map_err(|_| anyhow::anyhow!("invalid boolean for enabled: {value}"))?;
+                if enabled.is_none() {
+                    enabled = Some(parsed);
+                }
+                updated_fields.push("enabled");
+            }
+            _ => anyhow::bail!("unknown field: {key}"),
+        }
+    }
+
+    // Also track fields set via --flags
+    if args.rule.is_some() && !updated_fields.contains(&"rule") {
+        updated_fields.push("rule");
+    }
+    if args.description.is_some() && !updated_fields.contains(&"description") {
+        updated_fields.push("description");
+    }
+    if args.enable_log.is_some() && !updated_fields.contains(&"log") {
+        updated_fields.push("log");
+    }
+
     let request = cloudapi_client::types::UpdateFirewallRuleRequest {
-        rule: args.rule.clone(),
-        enabled: None,
-        log: args.enable_log,
-        description: args.description.clone(),
+        rule,
+        enabled,
+        log,
+        description,
     };
 
     let response = client
@@ -337,7 +398,15 @@ async fn update_rule(args: FwruleUpdateArgs, client: &TypedClient, use_json: boo
         .await?;
     let rule = response.into_inner();
 
-    println!("Updated firewall rule {}", &rule.id.to_string()[..8]);
+    if updated_fields.is_empty() {
+        println!("Updated firewall rule {}", &rule.id.to_string()[..8]);
+    } else {
+        println!(
+            "Updated firewall rule {} (fields: {})",
+            &rule.id.to_string()[..8],
+            updated_fields.join(", ")
+        );
+    }
 
     if use_json {
         json::print_json(&rule)?;

@@ -114,6 +114,9 @@ pub struct VlanUpdateArgs {
     /// Read update data from JSON file (use '-' for stdin)
     #[arg(short = 'f', long = "file")]
     pub file: Option<PathBuf>,
+    /// field=value pairs (e.g. name=updated-vlan description="A VLAN")
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    pub fields: Vec<String>,
 }
 
 #[derive(Args, Clone)]
@@ -308,8 +311,43 @@ async fn update_vlan(args: VlanUpdateArgs, client: &TypedClient, use_json: bool)
     let account = &client.auth_config().account;
     let vlan_id = resolve_vlan(&args.vlan, client).await?;
 
-    // Parse update data from file or command line
-    let (name, description) = if let Some(file_path) = &args.file {
+    // Start with --flag values
+    let mut name = args.name.clone();
+    let mut description = args.description.clone();
+    let mut updated_fields = Vec::new();
+
+    // Parse positional field=value pairs (flags take precedence)
+    for field_arg in &args.fields {
+        let (key, value) = field_arg
+            .split_once('=')
+            .ok_or_else(|| anyhow::anyhow!("invalid field=value pair: {field_arg}"))?;
+        match key {
+            "name" => {
+                if name.is_none() {
+                    name = Some(value.to_string());
+                }
+                updated_fields.push("name");
+            }
+            "description" => {
+                if description.is_none() {
+                    description = Some(value.to_string());
+                }
+                updated_fields.push("description");
+            }
+            _ => anyhow::bail!("unknown field: {key}"),
+        }
+    }
+
+    // Also track fields set via --flags
+    if args.name.is_some() && !updated_fields.contains(&"name") {
+        updated_fields.push("name");
+    }
+    if args.description.is_some() && !updated_fields.contains(&"description") {
+        updated_fields.push("description");
+    }
+
+    // Parse update data from file (file values fill in remaining None fields)
+    if let Some(file_path) = &args.file {
         let content = if file_path.as_os_str() == "-" {
             use std::io::Read;
             let mut buffer = String::new();
@@ -319,20 +357,19 @@ async fn update_vlan(args: VlanUpdateArgs, client: &TypedClient, use_json: bool)
             tokio::fs::read_to_string(file_path).await?
         };
         let data: serde_json::Value = serde_json::from_str(&content)?;
-        let name = data
-            .get("name")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .or(args.name.clone());
-        let description = data
-            .get("description")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .or(args.description.clone());
-        (name, description)
-    } else {
-        (args.name.clone(), args.description.clone())
-    };
+        if name.is_none() {
+            name = data
+                .get("name")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+        }
+        if description.is_none() {
+            description = data
+                .get("description")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+        }
+    }
 
     let request = cloudapi_client::types::UpdateFabricVlanRequest { name, description };
 
@@ -346,7 +383,15 @@ async fn update_vlan(args: VlanUpdateArgs, client: &TypedClient, use_json: bool)
         .await?;
     let vlan = response.into_inner();
 
-    println!("Updated VLAN {}", vlan.vlan_id);
+    if updated_fields.is_empty() {
+        println!("Updated VLAN {}", vlan.vlan_id);
+    } else {
+        println!(
+            "Updated VLAN {} (fields: {})",
+            vlan.vlan_id,
+            updated_fields.join(", ")
+        );
+    }
 
     if use_json {
         json::print_json(&vlan)?;

@@ -6,11 +6,6 @@
 # When a diff is fixed and the test flips to PASS, the script flags it
 # as "fixed?" so you know to close the bead and remove the line.
 
-# field=value syntax for update commands
-payload-image-update  monitor-reef-wlu3
-payload-fwrule-update  monitor-reef-wlu3
-payload-vlan-update  monitor-reef-wlu3
-
 # positional arg mismatches + not-implemented subcommands
 payload-image-export  monitor-reef-39s2
 payload-disk-add  monitor-reef-39s2

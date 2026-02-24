@@ -162,6 +162,121 @@ fn test_image_delete_help() {
 }
 
 // =============================================================================
+// Payload tests - verify field=value parsing (offline, uses --emit-payload)
+// =============================================================================
+
+/// Test `triton image update UUID name=val version=val` produces correct payload
+#[test]
+fn test_image_update_field_value_parsing() {
+    let output = triton_cmd()
+        .args([
+            "--emit-payload",
+            "image",
+            "update",
+            "00000000-0000-0000-0000-000000000001",
+            "name=new-name",
+            "version=2.0.0",
+        ])
+        .output()
+        .expect("Failed to run command");
+
+    assert!(output.status.success(), "command should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Parse the JSON envelopes (there may be a GET + POST)
+    let envelopes: Vec<Value> = stdout
+        .lines()
+        .collect::<Vec<_>>()
+        .join("\n")
+        .split("\n}\n")
+        .filter_map(|chunk| {
+            let trimmed = chunk.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let json_str = if trimmed.ends_with('}') {
+                trimmed.to_string()
+            } else {
+                format!("{trimmed}\n}}")
+            };
+            serde_json::from_str(&json_str).ok()
+        })
+        .collect();
+
+    // Find the POST envelope (the actual update)
+    let post = envelopes
+        .iter()
+        .find(|e| e["method"] == "POST")
+        .expect("should have a POST envelope");
+
+    assert_eq!(post["body"]["name"], "new-name");
+    assert_eq!(post["body"]["version"], "2.0.0");
+}
+
+/// Test that --flag values take precedence over positional field=value
+#[test]
+fn test_image_update_flag_precedence() {
+    let output = triton_cmd()
+        .args([
+            "--emit-payload",
+            "image",
+            "update",
+            "00000000-0000-0000-0000-000000000001",
+            "--name",
+            "from-flag",
+            "name=from-positional",
+        ])
+        .output()
+        .expect("Failed to run command");
+
+    assert!(output.status.success(), "command should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let envelopes: Vec<Value> = stdout
+        .lines()
+        .collect::<Vec<_>>()
+        .join("\n")
+        .split("\n}\n")
+        .filter_map(|chunk| {
+            let trimmed = chunk.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let json_str = if trimmed.ends_with('}') {
+                trimmed.to_string()
+            } else {
+                format!("{trimmed}\n}}")
+            };
+            serde_json::from_str(&json_str).ok()
+        })
+        .collect();
+
+    let post = envelopes
+        .iter()
+        .find(|e| e["method"] == "POST")
+        .expect("should have a POST envelope");
+
+    // --name flag should win over name=from-positional
+    assert_eq!(post["body"]["name"], "from-flag");
+}
+
+/// Test that unknown fields produce an error
+#[test]
+fn test_image_update_unknown_field() {
+    triton_cmd()
+        .args([
+            "--emit-payload",
+            "image",
+            "update",
+            "00000000-0000-0000-0000-000000000001",
+            "badfield=value",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("unknown field"));
+}
+
+// =============================================================================
 // API tests - require config.json with valid profile
 // These tests are ignored by default and run with `make triton-test-api`
 // =============================================================================

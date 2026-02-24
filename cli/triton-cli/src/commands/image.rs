@@ -211,6 +211,9 @@ pub struct ImageUpdateArgs {
     /// New EULA URL
     #[arg(long)]
     pub eula: Option<String>,
+    /// field=value pairs (e.g. name=new-name version=2.0.0)
+    #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+    pub fields: Vec<String>,
 }
 
 #[derive(Args, Clone)]
@@ -948,12 +951,77 @@ async fn update_image(
     let account = &client.auth_config().account;
     let image_uuid = resolve_image(&args.image, client, cache).await?;
 
+    // Start with --flag values
+    let mut name = args.name.clone();
+    let mut version = args.version.clone();
+    let mut description = args.description.clone();
+    let mut homepage = args.homepage.clone();
+    let mut eula = args.eula.clone();
+    let mut updated_fields = Vec::new();
+
+    // Parse positional field=value pairs (flags take precedence)
+    for field_arg in &args.fields {
+        let (key, value) = field_arg
+            .split_once('=')
+            .ok_or_else(|| anyhow::anyhow!("invalid field=value pair: {field_arg}"))?;
+        match key {
+            "name" => {
+                if name.is_none() {
+                    name = Some(value.to_string());
+                }
+                updated_fields.push("name");
+            }
+            "version" => {
+                if version.is_none() {
+                    version = Some(value.to_string());
+                }
+                updated_fields.push("version");
+            }
+            "description" => {
+                if description.is_none() {
+                    description = Some(value.to_string());
+                }
+                updated_fields.push("description");
+            }
+            "homepage" => {
+                if homepage.is_none() {
+                    homepage = Some(value.to_string());
+                }
+                updated_fields.push("homepage");
+            }
+            "eula" => {
+                if eula.is_none() {
+                    eula = Some(value.to_string());
+                }
+                updated_fields.push("eula");
+            }
+            _ => anyhow::bail!("unknown field: {key}"),
+        }
+    }
+
+    // Also track fields set via --flags
+    if args.name.is_some() && !updated_fields.contains(&"name") {
+        updated_fields.push("name");
+    }
+    if args.version.is_some() && !updated_fields.contains(&"version") {
+        updated_fields.push("version");
+    }
+    if args.description.is_some() && !updated_fields.contains(&"description") {
+        updated_fields.push("description");
+    }
+    if args.homepage.is_some() && !updated_fields.contains(&"homepage") {
+        updated_fields.push("homepage");
+    }
+    if args.eula.is_some() && !updated_fields.contains(&"eula") {
+        updated_fields.push("eula");
+    }
+
     let request = cloudapi_client::UpdateImageRequest {
-        name: args.name.clone(),
-        version: args.version.clone(),
-        description: args.description.clone(),
-        homepage: args.homepage.clone(),
-        eula: args.eula.clone(),
+        name,
+        version,
+        description,
+        homepage,
+        eula,
         acl: None,
         tags: None,
     };
@@ -961,7 +1029,16 @@ async fn update_image(
     let image = client
         .update_image_metadata(account, &image_uuid, &request)
         .await?;
-    println!("Updated image {}", image.name);
+
+    if updated_fields.is_empty() {
+        println!("Updated image {}", image.name);
+    } else {
+        println!(
+            "Updated image {} (fields: {})",
+            image.name,
+            updated_fields.join(", ")
+        );
+    }
 
     if use_json {
         json::print_json(&image)?;
