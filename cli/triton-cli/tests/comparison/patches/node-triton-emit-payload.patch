@@ -2,7 +2,7 @@ diff --git a/lib/cloudapi2.js b/lib/cloudapi2.js
 index 605b257..f1df353 100644
 --- a/lib/cloudapi2.js
 +++ b/lib/cloudapi2.js
-@@ -287,6 +287,30 @@ CloudApi.prototype._request = function _request(opts, cb) {
+@@ -287,6 +287,36 @@ CloudApi.prototype._request = function _request(opts, cb) {
          }
      }
  
@@ -11,8 +11,14 @@ index 605b257..f1df353 100644
 +        var m = method.toUpperCase();
 +        if (m === 'GET' || m === 'HEAD') {
 +            // Validation/lookup request (e.g., getImage before createMachine):
-+            // return a minimal fake response so execution continues to the
-+            // actual mutation request.
++            // emit the envelope so it can be compared, then return a minimal
++            // fake response so execution continues to the actual mutation.
++            var getEnvelope = {
++                method: m,
++                path: opts.path,
++                body: null
++            };
++            console.log(JSON.stringify(getEnvelope, null, 2));
 +            var pathParts = opts.path.split('/');
 +            var lastSeg = pathParts[pathParts.length - 1];
 +            var fakeBody = {id: lastSeg, name: lastSeg};

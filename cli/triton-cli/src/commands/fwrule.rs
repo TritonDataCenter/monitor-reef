@@ -391,6 +391,7 @@ async fn list_rule_instances(
 /// Resolve firewall rule short ID to full UUID
 async fn resolve_rule(id_or_short: &str, client: &TypedClient) -> Result<uuid::Uuid> {
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_short) {
+        // TODO: should we add verification here that node-triton didn't have?
         return Ok(uuid);
     }
 

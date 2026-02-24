@@ -769,11 +769,12 @@ run_payload_test() {
     HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
         "$RUST_TRITON" --emit-payload "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
 
-    # Normalize: extract JSON object (strip status messages), sort keys, strip null values
-    local jq_filter='del(.body.origin) | if .body == null then . else .body |= with_entries(select(.value != null)) end'
-    extract_json_object < "$node_out" | jq -S "$jq_filter" > "$node_norm" 2>/dev/null \
+    # Normalize: extract JSON objects (strip status messages), slurp into array,
+    # sort keys, strip null values and .body.origin
+    local jq_filter='[.[] | del(.body.origin) | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
+    extract_json_object < "$node_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$node_norm" 2>/dev/null \
         || cp "$node_out" "$node_norm"
-    extract_json_object < "$rust_out" | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \
+    extract_json_object < "$rust_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \
         || cp "$rust_out" "$rust_norm"
 
     compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
@@ -832,10 +833,10 @@ run_payload_test_split() {
     HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
         "$RUST_TRITON" --emit-payload "${rust_args[@]}" > "$rust_out" 2> "$rust_err" || rust_exit=$?
 
-    local jq_filter='del(.body.origin) | if .body == null then . else .body |= with_entries(select(.value != null)) end'
-    extract_json_object < "$node_out" | jq -S "$jq_filter" > "$node_norm" 2>/dev/null \
+    local jq_filter='[.[] | del(.body.origin) | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
+    extract_json_object < "$node_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$node_norm" 2>/dev/null \
         || cp "$node_out" "$node_norm"
-    extract_json_object < "$rust_out" | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \
+    extract_json_object < "$rust_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \
         || cp "$rust_out" "$rust_norm"
 
     compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"

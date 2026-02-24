@@ -642,6 +642,7 @@ async fn parse_nic_spec(
 async fn resolve_package(id_or_name: &str, client: &TypedClient) -> Result<String> {
     // First try as full UUID - use parsed form to normalize to lowercase
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
+        // TODO: should we add verification here that node-triton didn't have?
         return Ok(uuid.to_string());
     }
 

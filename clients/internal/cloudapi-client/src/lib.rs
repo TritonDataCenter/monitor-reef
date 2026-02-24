@@ -237,6 +237,28 @@ pub fn set_emit_payload_mode(enabled: bool) {
     EMIT_PAYLOAD_MODE.store(enabled, Ordering::Relaxed);
 }
 
+/// Check whether emit-payload mode is currently enabled.
+pub fn is_emit_payload_mode() -> bool {
+    EMIT_PAYLOAD_MODE.load(Ordering::Relaxed)
+}
+
+/// Print a JSON envelope capturing an HTTP request's method, path, and body.
+///
+/// This is used both by `ClientHooks::pre()` (for real requests) and by
+/// resolve functions (for verification GETs that the Rust CLI skips).
+pub fn emit_payload_envelope(method: &str, path: &str, body: serde_json::Value) {
+    let envelope = serde_json::json!({
+        "method": method,
+        "path": path,
+        "body": body,
+    });
+
+    #[allow(clippy::expect_used)]
+    let output =
+        serde_json::to_string_pretty(&envelope).expect("JSON serialization should not fail");
+    println!("{output}");
+}
+
 /// Sentinel error message used to signal that emit-payload mode intercepted
 /// the request. Callers (e.g., the CLI) should detect this and exit cleanly.
 pub const EMIT_PAYLOAD_SENTINEL: &str = "__payload_emitted__";
@@ -266,16 +288,7 @@ fn emit_request_payload<E>(request: &reqwest::Request) -> Result<(), Error<E>> {
         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(bytes).ok())
         .unwrap_or(serde_json::Value::Null);
 
-    let envelope = serde_json::json!({
-        "method": method,
-        "path": path,
-        "body": body,
-    });
-
-    #[allow(clippy::expect_used)]
-    let output =
-        serde_json::to_string_pretty(&envelope).expect("JSON serialization should not fail");
-    println!("{output}");
+    emit_payload_envelope(&method, &path, body);
 
     Err(Error::Custom(EMIT_PAYLOAD_SENTINEL.to_string()))
 }

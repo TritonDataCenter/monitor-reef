@@ -12,6 +12,7 @@ use cloudapi_client::TypedClient;
 /// Resolve a user login name or UUID to a UUID string
 pub async fn resolve_user(id_or_login: &str, client: &TypedClient) -> Result<String> {
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_login) {
+        // TODO: should we add verification here that node-triton didn't have?
         return Ok(uuid.to_string());
     }
 

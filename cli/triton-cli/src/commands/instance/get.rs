@@ -58,6 +58,7 @@ pub async fn ip(args: IpArgs, client: &TypedClient) -> Result<()> {
 pub async fn resolve_instance(id_or_name: &str, client: &TypedClient) -> Result<uuid::Uuid> {
     // First try as UUID
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
+        // TODO: should we add verification here that node-triton didn't have?
         return Ok(uuid);
     }
 

@@ -1092,8 +1092,24 @@ pub async fn resolve_image(
     client: &TypedClient,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<uuid::Uuid> {
-    // UUID check - call API directly
+    // UUID check — verify the image exists (matches node-triton's getImage call)
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
+        let account = &client.auth_config().account;
+        if cloudapi_client::is_emit_payload_mode() {
+            cloudapi_client::emit_payload_envelope(
+                "GET",
+                &format!("/{account}/images/{id_or_name}"),
+                serde_json::Value::Null,
+            );
+        } else {
+            client
+                .inner()
+                .get_image()
+                .account(account)
+                .dataset(uuid.to_string())
+                .send()
+                .await?;
+        }
         return Ok(uuid);
     }
 
