@@ -248,9 +248,17 @@ fn test_update_image_request() {
 
 #[test]
 fn test_export_image_request() {
-    let json = r#"{"mantaPath": "/user/stor/images/export"}"#;
+    // CloudAPI uses snake_case "manta_path" despite the struct having camelCase rename_all
+    let json = r#"{"manta_path": "/user/stor/images/export"}"#;
     let req: ExportImageRequest = serde_json::from_str(json).unwrap();
     assert_eq!(req.manta_path, "/user/stor/images/export");
+
+    // Verify round-trip serializes as snake_case too
+    let serialized = serde_json::to_string(&req).unwrap();
+    assert!(
+        serialized.contains("manta_path"),
+        "should serialize as snake_case, got: {serialized}"
+    );
 }
 
 #[test]

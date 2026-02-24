@@ -133,6 +133,56 @@ fn test_instance_snapshots_alias() {
 }
 
 // =============================================================================
+// Payload tests - verify wire format via --emit-payload
+// =============================================================================
+
+/// Test `triton instance snapshot create INST -n NAME` accepts -n short flag
+#[test]
+fn test_snapshot_create_short_flag_payload() {
+    let output = triton_cmd()
+        .args([
+            "--emit-payload",
+            "instance",
+            "snapshot",
+            "create",
+            "00000000-0000-0000-0000-000000000001",
+            "-n",
+            "snap1",
+        ])
+        .output()
+        .expect("Failed to run command");
+
+    assert!(output.status.success(), "command should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let envelopes: Vec<serde_json::Value> = stdout
+        .lines()
+        .collect::<Vec<_>>()
+        .join("\n")
+        .split("\n}\n")
+        .filter_map(|chunk| {
+            let trimmed = chunk.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let json_str = if trimmed.ends_with('}') {
+                trimmed.to_string()
+            } else {
+                format!("{trimmed}\n}}")
+            };
+            serde_json::from_str(&json_str).ok()
+        })
+        .collect();
+
+    let post = envelopes
+        .iter()
+        .find(|e| e["method"] == "POST")
+        .expect("should have a POST envelope");
+
+    assert_eq!(post["body"]["name"], "snap1");
+}
+
+// =============================================================================
 // API write tests - require config.json with allowWriteActions: true
 // These tests are ignored by default and run with `make triton-test-api`
 // =============================================================================

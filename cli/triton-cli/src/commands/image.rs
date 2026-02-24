@@ -221,7 +221,6 @@ pub struct ImageExportArgs {
     /// Image ID or name[@version]
     pub image: String,
     /// Manta path for export
-    #[arg(long)]
     pub manta_path: String,
     /// Dry run - show what would be exported without exporting
     #[arg(long)]

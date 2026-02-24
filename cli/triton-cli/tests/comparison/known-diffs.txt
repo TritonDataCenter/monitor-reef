@@ -6,11 +6,6 @@
 # When a diff is fixed and the test flips to PASS, the script flags it
 # as "fixed?" so you know to close the bead and remove the line.
 
-# positional arg mismatches + not-implemented subcommands
-payload-image-export  monitor-reef-39s2
-payload-disk-add  monitor-reef-39s2
-payload-snap-create  monitor-reef-39s2
-
 # image action wire format (clone, share, unshare)
 payload-image-clone  monitor-reef-8bv8
 payload-image-share  monitor-reef-8bv8

@@ -55,7 +55,7 @@ pub struct SnapshotCreateArgs {
     pub instance: String,
 
     /// Snapshot name
-    #[arg(long)]
+    #[arg(long, short = 'n')]
     pub name: String,
 
     /// Wait for snapshot creation to complete

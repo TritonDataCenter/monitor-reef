@@ -267,6 +267,8 @@ pub struct UpdateImageRequest {
 #[serde(rename_all = "camelCase")]
 pub struct ExportImageRequest {
     /// Manta path for export destination
+    /// Note: CloudAPI accepts this as snake_case despite the struct using camelCase
+    #[serde(rename = "manta_path")]
     pub manta_path: String,
 }
 

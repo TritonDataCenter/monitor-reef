@@ -333,6 +333,60 @@ fn test_image_delete_payload() {
     );
 }
 
+/// Test `triton image export UUID /manta/path` accepts positional manta path
+/// and serializes manta_path as snake_case in the wire format
+#[test]
+fn test_image_export_positional_manta_path() {
+    let output = triton_cmd()
+        .args([
+            "--emit-payload",
+            "image",
+            "export",
+            "00000000-0000-0000-0000-000000000001",
+            "/user/stor/export",
+        ])
+        .output()
+        .expect("Failed to run command");
+
+    assert!(output.status.success(), "command should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let envelopes: Vec<Value> = stdout
+        .lines()
+        .collect::<Vec<_>>()
+        .join("\n")
+        .split("\n}\n")
+        .filter_map(|chunk| {
+            let trimmed = chunk.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let json_str = if trimmed.ends_with('}') {
+                trimmed.to_string()
+            } else {
+                format!("{trimmed}\n}}")
+            };
+            serde_json::from_str(&json_str).ok()
+        })
+        .collect();
+
+    let post = envelopes
+        .iter()
+        .find(|e| e["method"] == "POST")
+        .expect("should have a POST envelope");
+
+    // Verify manta_path is snake_case (not camelCase "mantaPath")
+    assert_eq!(
+        post["body"]["manta_path"], "/user/stor/export",
+        "body should contain 'manta_path' (snake_case), got: {}",
+        post["body"]
+    );
+    assert!(
+        post["body"]["mantaPath"].is_null(),
+        "body should NOT contain 'mantaPath' (camelCase)"
+    );
+}
+
 // =============================================================================
 // API tests - require config.json with valid profile
 // These tests are ignored by default and run with `make triton-test-api`

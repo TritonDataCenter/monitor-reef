@@ -54,7 +54,6 @@ pub struct DiskAddArgs {
     pub instance: String,
 
     /// Disk size in MiB
-    #[arg(long)]
     pub size: i64,
 
     /// Disk name (optional, must be unique per instance)
