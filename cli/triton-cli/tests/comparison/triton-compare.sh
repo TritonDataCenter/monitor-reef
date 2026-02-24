@@ -949,7 +949,7 @@ run_payload_tests() {
     # --- Image ---
 
     run_payload_test "payload-image-create" "image create" \
-        image create "$INST_UUID" --name test-image --version 1.0.0
+        image create "$INST_UUID" test-image 1.0.0
 
     # --- RBAC ---
     # Node.js triton uses "rbac user -a FILE" (JSON file input), while Rust

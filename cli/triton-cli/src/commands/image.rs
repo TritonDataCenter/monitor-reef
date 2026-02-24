@@ -133,13 +133,11 @@ pub struct ImageCreateArgs {
     /// Instance ID or name
     pub instance: String,
     /// Image name
-    #[arg(long)]
     pub name: String,
     /// Image version
-    #[arg(long)]
     pub version: Option<String>,
     /// Image description
-    #[arg(long)]
+    #[arg(long, short = 'd')]
     pub description: Option<String>,
     /// Image homepage URL
     #[arg(long)]
