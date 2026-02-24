@@ -178,6 +178,15 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
     let account = &client.auth_config().account;
     let id_str = machine_id.to_string();
 
+    // List existing disks before adding (baseline for --wait)
+    let _existing_disks = client
+        .inner()
+        .list_machine_disks()
+        .account(account)
+        .machine(machine_id)
+        .send()
+        .await?;
+
     let request = cloudapi_client::types::CreateDiskRequest {
         size: args.size as u64,
         pci_slot: None,

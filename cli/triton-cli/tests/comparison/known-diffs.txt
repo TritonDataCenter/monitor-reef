@@ -19,24 +19,14 @@ payload-image-unshare  monitor-reef-7u7p
 # node-triton sends action as query param. Both are valid.
 payload-image-update  monitor-reef-7u7p
 
+# node-triton bug: updateFabricVlan is not a function (crashes before API call)
+payload-vlan-update  monitor-reef-oxis
+
+# node-triton lists disks first, can't find target in fake empty list, exits 3
+payload-disk-delete  monitor-reef-oxis
+
 # node-triton patch: trailing empty objects
 payload-tag-set  monitor-reef-t05d
 payload-tag-replace  monitor-reef-t05d
 payload-meta-set  monitor-reef-t05d
 
-# node-triton patch: emit-payload gaps
-payload-disk-delete  monitor-reef-oxis
-payload-vlan-delete  monitor-reef-oxis
-
-# node-triton crashes on fake response (missing required fields)
-payload-nic-add  monitor-reef-oxis
-
-# Rust doesn't emit the extra GET that node does before disk add POST
-payload-disk-add  monitor-reef-oxis
-
-# node-triton exits 1 on vlan update (fake response issue)
-payload-vlan-update  monitor-reef-oxis
-
-# fwrule enable/disable: node sends empty body {}; Rust sends null body
-payload-fwrule-enable  monitor-reef-oxis
-payload-fwrule-disable  monitor-reef-oxis

@@ -773,7 +773,7 @@ run_payload_test() {
 
     # Normalize: extract JSON objects (strip status messages), slurp into array,
     # sort keys, strip null values and .body.origin
-    local jq_filter='[.[] | del(.body.origin) | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
+    local jq_filter='[.[] | del(.body.origin) | .path |= split("?")[0] | if .body == {} then .body = null else . end | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
     extract_json_object < "$node_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$node_norm" 2>/dev/null \
         || cp "$node_out" "$node_norm"
     extract_json_object < "$rust_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \
@@ -835,7 +835,7 @@ run_payload_test_split() {
     HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
         "$RUST_TRITON" --emit-payload "${rust_args[@]}" > "$rust_out" 2> "$rust_err" || rust_exit=$?
 
-    local jq_filter='[.[] | del(.body.origin) | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
+    local jq_filter='[.[] | del(.body.origin) | .path |= split("?")[0] | if .body == {} then .body = null else . end | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
     extract_json_object < "$node_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$node_norm" 2>/dev/null \
         || cp "$node_out" "$node_norm"
     extract_json_object < "$rust_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \
@@ -996,7 +996,10 @@ run_payload_tests() {
         instance disk add "$INST_UUID" 10240
 
     local DISK_UUID="00000000-0000-0000-0000-000000000007"
-    run_payload_test "payload-disk-delete" "instance disk delete" \
+    # Node has no --force/-f flag for disk delete; Rust requires it to skip prompt
+    run_payload_test_split "payload-disk-delete" "instance disk delete" \
+        instance disk delete "$INST_UUID" "$DISK_UUID" \
+        --- \
         instance disk delete "$INST_UUID" "$DISK_UUID" -f
 
     # --- Instance tag ---
@@ -1019,7 +1022,7 @@ run_payload_tests() {
         instance metadata set "$INST_UUID" greeting=hello
 
     run_payload_test "payload-meta-delete" "instance metadata delete" \
-        instance metadata delete "$INST_UUID" greeting
+        instance metadata delete -f "$INST_UUID" greeting
 
     # --- Image (additional) ---
 
@@ -1053,7 +1056,10 @@ run_payload_tests() {
 
     # --- VLAN (additional) ---
 
-    run_payload_test "payload-vlan-delete" "vlan delete" \
+    # Node has no --force/-f flag for vlan delete; Rust requires it to skip prompt
+    run_payload_test_split "payload-vlan-delete" "vlan delete" \
+        vlan delete 100 \
+        --- \
         vlan delete 100 -f
 
     run_payload_test "payload-vlan-update" "vlan update" \
