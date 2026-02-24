@@ -6,13 +6,18 @@
 # When a diff is fixed and the test flips to PASS, the script flags it
 # as "fixed?" so you know to close the bead and remove the line.
 
-# image action wire format (clone, share, unshare)
-payload-image-clone  monitor-reef-8bv8
-payload-image-share  monitor-reef-8bv8
-payload-image-unshare  monitor-reef-8bv8
-
-# image copy semantics
+# image copy: node-triton exits before POST; Rust emits correct POST
 payload-image-copy  monitor-reef-7u7p
+
+# image share/unshare: Rust emits extra GET from resolve_image UUID verification
+# before share_image's own GET. Node-triton doesn't verify UUIDs first.
+# Also node-triton unshare exits 1 (fake response has no ACL to remove from).
+payload-image-share  monitor-reef-7u7p
+payload-image-unshare  monitor-reef-7u7p
+
+# image update: Rust sends action in body (ActionBody pattern);
+# node-triton sends action as query param. Both are valid.
+payload-image-update  monitor-reef-7u7p
 
 # node-triton patch: trailing empty objects
 payload-tag-set  monitor-reef-t05d
@@ -22,3 +27,16 @@ payload-meta-set  monitor-reef-t05d
 # node-triton patch: emit-payload gaps
 payload-disk-delete  monitor-reef-oxis
 payload-vlan-delete  monitor-reef-oxis
+
+# node-triton crashes on fake response (missing required fields)
+payload-nic-add  monitor-reef-oxis
+
+# Rust doesn't emit the extra GET that node does before disk add POST
+payload-disk-add  monitor-reef-oxis
+
+# node-triton exits 1 on vlan update (fake response issue)
+payload-vlan-update  monitor-reef-oxis
+
+# fwrule enable/disable: node sends empty body {}; Rust sends null body
+payload-fwrule-enable  monitor-reef-oxis
+payload-fwrule-disable  monitor-reef-oxis

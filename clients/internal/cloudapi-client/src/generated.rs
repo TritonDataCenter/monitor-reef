@@ -1316,114 +1316,6 @@ pub mod types {
         }
     }
 
-    #[doc = "Request to create image from machine"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"description\": \"Request to create image from machine\","]
-    #[doc = "  \"type\": \"object\","]
-    #[doc = "  \"required\": ["]
-    #[doc = "    \"machine\","]
-    #[doc = "    \"name\""]
-    #[doc = "  ],"]
-    #[doc = "  \"properties\": {"]
-    #[doc = "    \"acl\": {"]
-    #[doc = "      \"description\": \"ACL\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\","]
-    #[doc = "        \"format\": \"uuid\""]
-    #[doc = "      }"]
-    #[doc = "    },"]
-    #[doc = "    \"description\": {"]
-    #[doc = "      \"description\": \"Description\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"string\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ]"]
-    #[doc = "    },"]
-    #[doc = "    \"eula\": {"]
-    #[doc = "      \"description\": \"EULA URL\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"string\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ]"]
-    #[doc = "    },"]
-    #[doc = "    \"homepage\": {"]
-    #[doc = "      \"description\": \"Homepage URL\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"string\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ]"]
-    #[doc = "    },"]
-    #[doc = "    \"machine\": {"]
-    #[doc = "      \"description\": \"Machine UUID to create image from\","]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"format\": \"uuid\""]
-    #[doc = "    },"]
-    #[doc = "    \"name\": {"]
-    #[doc = "      \"description\": \"Image name\","]
-    #[doc = "      \"type\": \"string\""]
-    #[doc = "    },"]
-    #[doc = "    \"tags\": {"]
-    #[doc = "      \"description\": \"Tags\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
-    #[doc = "    },"]
-    #[doc = "    \"version\": {"]
-    #[doc = "      \"description\": \"Image version\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"string\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ]"]
-    #[doc = "    }"]
-    #[doc = "  }"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(
-        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
-    )]
-    pub struct CreateImageRequest {
-        #[doc = "ACL"]
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub acl: ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
-        #[doc = "Description"]
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub description: ::std::option::Option<::std::string::String>,
-        #[doc = "EULA URL"]
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub eula: ::std::option::Option<::std::string::String>,
-        #[doc = "Homepage URL"]
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub homepage: ::std::option::Option<::std::string::String>,
-        #[doc = "Machine UUID to create image from"]
-        pub machine: ::uuid::Uuid,
-        #[doc = "Image name"]
-        pub name: ::std::string::String,
-        #[doc = "Tags"]
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub tags:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-        #[doc = "Image version"]
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub version: ::std::option::Option<::std::string::String>,
-    }
-
-    impl CreateImageRequest {
-        pub fn builder() -> builder::CreateImageRequest {
-            Default::default()
-        }
-    }
-
     #[doc = "Request to create a machine\n\nThis struct supports both the modern nested format and the legacy flattened format:\n\n**Modern format (Rust clients):** ```json {\"image\": \"...\", \"tags\": {\"foo\": \"bar\"}, \"metadata\": {\"key\": \"value\"}} ```\n\n**Legacy format (Node.js clients):** ```json {\"image\": \"...\", \"tag.foo\": \"bar\", \"metadata.key\": \"value\"} ```\n\nUse the `tags()` and `metadata()` methods to get the merged result from both formats."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -3048,30 +2940,12 @@ pub mod types {
     #[doc = r" ```json"]
     #[doc = "{"]
     #[doc = "  \"description\": \"Image action for action dispatch\","]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {"]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"enum\": ["]
-    #[doc = "        \"update\","]
-    #[doc = "        \"export\","]
-    #[doc = "        \"clone\","]
-    #[doc = "        \"import-from-datacenter\""]
-    #[doc = "      ]"]
-    #[doc = "    },"]
-    #[doc = "    {"]
-    #[doc = "      \"description\": \"Share image with another account\","]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"enum\": ["]
-    #[doc = "        \"share\""]
-    #[doc = "      ]"]
-    #[doc = "    },"]
-    #[doc = "    {"]
-    #[doc = "      \"description\": \"Unshare image from another account\","]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"enum\": ["]
-    #[doc = "        \"unshare\""]
-    #[doc = "      ]"]
-    #[doc = "    }"]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"update\","]
+    #[doc = "    \"export\","]
+    #[doc = "    \"clone\","]
+    #[doc = "    \"import-from-datacenter\""]
     #[doc = "  ]"]
     #[doc = "}"]
     #[doc = r" ```"]
@@ -3098,12 +2972,6 @@ pub mod types {
         Clone,
         #[serde(rename = "import-from-datacenter")]
         ImportFromDatacenter,
-        #[doc = "Share image with another account"]
-        #[serde(rename = "share")]
-        Share,
-        #[doc = "Unshare image from another account"]
-        #[serde(rename = "unshare")]
-        Unshare,
     }
 
     impl ::std::fmt::Display for ImageAction {
@@ -3113,8 +2981,6 @@ pub mod types {
                 Self::Export => f.write_str("export"),
                 Self::Clone => f.write_str("clone"),
                 Self::ImportFromDatacenter => f.write_str("import-from-datacenter"),
-                Self::Share => f.write_str("share"),
-                Self::Unshare => f.write_str("unshare"),
             }
         }
     }
@@ -3127,8 +2993,6 @@ pub mod types {
                 "export" => Ok(Self::Export),
                 "clone" => Ok(Self::Clone),
                 "import-from-datacenter" => Ok(Self::ImportFromDatacenter),
-                "share" => Ok(Self::Share),
-                "unshare" => Ok(Self::Unshare),
                 _ => Err("invalid value".into()),
             }
         }
@@ -9569,173 +9433,6 @@ pub mod types {
                     enabled: Ok(value.enabled),
                     log: Ok(value.log),
                     rule: Ok(value.rule),
-                }
-            }
-        }
-
-        #[derive(Clone, Debug)]
-        pub struct CreateImageRequest {
-            acl: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
-                ::std::string::String,
-            >,
-            description: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
-                ::std::string::String,
-            >,
-            eula: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
-                ::std::string::String,
-            >,
-            homepage: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
-                ::std::string::String,
-            >,
-            machine: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
-            name: ::std::result::Result<::std::string::String, ::std::string::String>,
-            tags: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
-                ::std::string::String,
-            >,
-            version: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
-                ::std::string::String,
-            >,
-        }
-
-        impl ::std::default::Default for CreateImageRequest {
-            fn default() -> Self {
-                Self {
-                    acl: Ok(Default::default()),
-                    description: Ok(Default::default()),
-                    eula: Ok(Default::default()),
-                    homepage: Ok(Default::default()),
-                    machine: Err("no value supplied for machine".to_string()),
-                    name: Err("no value supplied for name".to_string()),
-                    tags: Ok(Default::default()),
-                    version: Ok(Default::default()),
-                }
-            }
-        }
-
-        impl CreateImageRequest {
-            pub fn acl<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::option::Option<::std::vec::Vec<::uuid::Uuid>>>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.acl = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for acl: {e}"));
-                self
-            }
-            pub fn description<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.description = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for description: {e}"));
-                self
-            }
-            pub fn eula<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.eula = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for eula: {e}"));
-                self
-            }
-            pub fn homepage<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.homepage = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for homepage: {e}"));
-                self
-            }
-            pub fn machine<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::uuid::Uuid>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.machine = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for machine: {e}"));
-                self
-            }
-            pub fn name<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::string::String>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.name = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for name: {e}"));
-                self
-            }
-            pub fn tags<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
-                T::Error: ::std::fmt::Display,
-            {
-                self.tags = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for tags: {e}"));
-                self
-            }
-            pub fn version<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.version = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for version: {e}"));
-                self
-            }
-        }
-
-        impl ::std::convert::TryFrom<CreateImageRequest> for super::CreateImageRequest {
-            type Error = super::error::ConversionError;
-            fn try_from(
-                value: CreateImageRequest,
-            ) -> ::std::result::Result<Self, super::error::ConversionError> {
-                Ok(Self {
-                    acl: value.acl?,
-                    description: value.description?,
-                    eula: value.eula?,
-                    homepage: value.homepage?,
-                    machine: value.machine?,
-                    name: value.name?,
-                    tags: value.tags?,
-                    version: value.version?,
-                })
-            }
-        }
-
-        impl ::std::convert::From<super::CreateImageRequest> for CreateImageRequest {
-            fn from(value: super::CreateImageRequest) -> Self {
-                Self {
-                    acl: Ok(value.acl),
-                    description: Ok(value.description),
-                    eula: Ok(value.eula),
-                    homepage: Ok(value.homepage),
-                    machine: Ok(value.machine),
-                    name: Ok(value.name),
-                    tags: Ok(value.tags),
-                    version: Ok(value.version),
                 }
             }
         }
@@ -16436,9 +16133,9 @@ impl Client {
         builder::ReplaceImagesCollectionRoleTags::new(self)
     }
 
-    #[doc = "Create image from machine\n\nSends a `POST` request to `/{account}/images`\n\nArguments:\n- `account`: Account login name\n- `body`\n```ignore\nlet response = client.create_image_from_machine()\n    .account(account)\n    .body(body)\n    .send()\n    .await;\n```"]
-    pub fn create_image_from_machine(&self) -> builder::CreateImageFromMachine<'_> {
-        builder::CreateImageFromMachine::new(self)
+    #[doc = "Create or import image (action dispatch)\n\nThis endpoint handles multiple operations on the images collection: - (no action): Create image from machine (body contains machine UUID, name, etc.) - import-from-datacenter: Import image from another datacenter (query params: `?action=import-from-datacenter&datacenter=X&id=Y`)\n\nSends a `POST` request to `/{account}/images`\n\nArguments:\n- `account`: Account login name\n- `action`: Action to perform (e.g., import-from-datacenter). When absent, the endpoint behaves as create-image-from-machine.\n- `datacenter`: Source datacenter name (for import-from-datacenter)\n- `id`: Image UUID in the source datacenter (for import-from-datacenter)\n- `body`\n```ignore\nlet response = client.create_or_import_image()\n    .account(account)\n    .action(action)\n    .datacenter(datacenter)\n    .id(id)\n    .body(body)\n    .send()\n    .await;\n```"]
+    pub fn create_or_import_image(&self) -> builder::CreateOrImportImage<'_> {
+        builder::CreateOrImportImage::new(self)
     }
 
     #[doc = "Head images\n\nSends a `HEAD` request to `/{account}/images`\n\nArguments:\n- `account`: Account login name\n- `name`: Filter by image name\n- `os`: Filter by OS\n- `owner`: Filter by owner\n- `public`: Filter by public/private\n- `state`: Filter by state\n- `type_`: Filter by type\n- `version`: Filter by version\n```ignore\nlet response = client.head_images()\n    .account(account)\n    .name(name)\n    .os(os)\n    .owner(owner)\n    .public(public)\n    .state(state)\n    .type_(type_)\n    .version(version)\n    .send()\n    .await;\n```"]
@@ -21928,20 +21625,26 @@ pub mod builder {
         }
     }
 
-    #[doc = "Builder for [`Client::create_image_from_machine`]\n\n[`Client::create_image_from_machine`]: super::Client::create_image_from_machine"]
+    #[doc = "Builder for [`Client::create_or_import_image`]\n\n[`Client::create_or_import_image`]: super::Client::create_or_import_image"]
     #[derive(Debug, Clone)]
-    pub struct CreateImageFromMachine<'a> {
+    pub struct CreateOrImportImage<'a> {
         client: &'a super::Client,
         account: Result<::std::string::String, String>,
-        body: Result<types::builder::CreateImageRequest, String>,
+        action: Result<Option<types::ImageAction>, String>,
+        datacenter: Result<Option<::std::string::String>, String>,
+        id: Result<Option<::uuid::Uuid>, String>,
+        body: Result<::serde_json::Value, String>,
     }
 
-    impl<'a> CreateImageFromMachine<'a> {
+    impl<'a> CreateOrImportImage<'a> {
         pub fn new(client: &'a super::Client) -> Self {
             Self {
                 client: client,
                 account: Err("account was not initialized".to_string()),
-                body: Ok(::std::default::Default::default()),
+                action: Ok(None),
+                datacenter: Ok(None),
+                id: Ok(None),
+                body: Err("body was not initialized".to_string()),
             }
         }
 
@@ -21955,25 +21658,45 @@ pub mod builder {
             self
         }
 
-        pub fn body<V>(mut self, value: V) -> Self
+        pub fn action<V>(mut self, value: V) -> Self
         where
-            V: std::convert::TryInto<types::CreateImageRequest>,
-            <V as std::convert::TryInto<types::CreateImageRequest>>::Error: std::fmt::Display,
+            V: std::convert::TryInto<types::ImageAction>,
         {
-            self.body = value
+            self.action = value
                 .try_into()
-                .map(From::from)
-                .map_err(|s| format!("conversion to `CreateImageRequest` for body failed: {}", s));
+                .map(Some)
+                .map_err(|_| "conversion to `ImageAction` for action failed".to_string());
             self
         }
 
-        pub fn body_map<F>(mut self, f: F) -> Self
+        pub fn datacenter<V>(mut self, value: V) -> Self
         where
-            F: std::ops::FnOnce(
-                    types::builder::CreateImageRequest,
-                ) -> types::builder::CreateImageRequest,
+            V: std::convert::TryInto<::std::string::String>,
         {
-            self.body = self.body.map(f);
+            self.datacenter = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for datacenter failed".to_string()
+            });
+            self
+        }
+
+        pub fn id<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::uuid::Uuid>,
+        {
+            self.id = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `:: uuid :: Uuid` for id failed".to_string());
+            self
+        }
+
+        pub fn body<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::serde_json::Value>,
+        {
+            self.body = value
+                .try_into()
+                .map_err(|_| "conversion to `:: serde_json :: Value` for body failed".to_string());
             self
         }
 
@@ -21982,12 +21705,16 @@ pub mod builder {
             let Self {
                 client,
                 account,
+                action,
+                datacenter,
+                id,
                 body,
             } = self;
             let account = account.map_err(Error::InvalidRequest)?;
-            let body = body
-                .and_then(|v| types::CreateImageRequest::try_from(v).map_err(|e| e.to_string()))
-                .map_err(Error::InvalidRequest)?;
+            let action = action.map_err(Error::InvalidRequest)?;
+            let datacenter = datacenter.map_err(Error::InvalidRequest)?;
+            let id = id.map_err(Error::InvalidRequest)?;
+            let body = body.map_err(Error::InvalidRequest)?;
             let url = format!(
                 "{}/{}/images",
                 client.baseurl,
@@ -22007,10 +21734,16 @@ pub mod builder {
                     ::reqwest::header::HeaderValue::from_static("application/json"),
                 )
                 .json(&body)
+                .query(&progenitor_client::QueryParam::new("action", &action))
+                .query(&progenitor_client::QueryParam::new(
+                    "datacenter",
+                    &datacenter,
+                ))
+                .query(&progenitor_client::QueryParam::new("id", &id))
                 .headers(header_map)
                 .build()?;
             let info = OperationInfo {
-                operation_id: "create_image_from_machine",
+                operation_id: "create_or_import_image",
             };
             match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
                 Ok(_) => (),

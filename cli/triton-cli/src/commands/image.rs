@@ -15,7 +15,7 @@ use cloudapi_client::TypedClient;
 use cloudapi_client::types::{Image, ImageState};
 use dialoguer::Confirm;
 use serde::de::DeserializeOwned;
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 use crate::output::{enum_to_display, json, opt_enum_to_display, table};
 
@@ -735,9 +735,9 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
         None
     };
 
-    // Parse tags into serde_json::Map
+    // Parse tags into HashMap (matches the Tags type alias)
     let tags = if let Some(tag_strings) = &args.tags {
-        let mut tag_map: Map<String, Value> = Map::new();
+        let mut tag_map = HashMap::new();
         for tag in tag_strings {
             if let Some((key, value)) = tag.split_once('=') {
                 tag_map.insert(key.to_string(), Value::String(value.to_string()));
@@ -753,7 +753,7 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
         None
     };
 
-    let request = cloudapi_client::types::CreateImageRequest {
+    let request = cloudapi_client::CreateImageRequest {
         machine: machine_id,
         name: args.name.clone(),
         version: args.version.clone(),
@@ -798,9 +798,9 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
 
     let response = client
         .inner()
-        .create_image_from_machine()
+        .create_or_import_image()
         .account(account)
-        .body(request)
+        .body(serde_json::to_value(&request)?)
         .send()
         .await?;
     let image = response.into_inner();
@@ -920,11 +920,8 @@ async fn copy_image(args: ImageCopyArgs, client: &TypedClient, use_json: bool) -
         return Ok(());
     }
 
-    // Create a placeholder UUID for the local image - the API will create a new one
-    let local_uuid = source_image_uuid;
-
     let image = client
-        .import_image_from_datacenter(account, &local_uuid, source_dc.clone(), source_image_uuid)
+        .import_image_from_datacenter(account, &source_dc, source_image_uuid)
         .await?;
 
     println!(
@@ -1190,22 +1187,15 @@ async fn resolve_image_inner(
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
         if verify_uuid {
             // Verify the image exists (matches node-triton's getImage call)
+            // In emit-payload mode, the exec hook returns a fake response
             let account = &client.auth_config().account;
-            if cloudapi_client::is_emit_payload_mode() {
-                cloudapi_client::emit_payload_envelope(
-                    "GET",
-                    &format!("/{account}/images/{id_or_name}"),
-                    serde_json::Value::Null,
-                );
-            } else {
-                client
-                    .inner()
-                    .get_image()
-                    .account(account)
-                    .dataset(uuid.to_string())
-                    .send()
-                    .await?;
-            }
+            client
+                .inner()
+                .get_image()
+                .account(account)
+                .dataset(uuid.to_string())
+                .send()
+                .await?;
         }
         return Ok(uuid);
     }

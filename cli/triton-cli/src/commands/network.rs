@@ -669,22 +669,15 @@ async fn update_network_ip(
 pub async fn resolve_network(id_or_name: &str, client: &TypedClient) -> Result<uuid::Uuid> {
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
         // Verify the network exists (matches node-triton's getNetwork call)
+        // In emit-payload mode, the exec hook returns a fake response
         let account = &client.auth_config().account;
-        if cloudapi_client::is_emit_payload_mode() {
-            cloudapi_client::emit_payload_envelope(
-                "GET",
-                &format!("/{account}/networks/{id_or_name}"),
-                serde_json::Value::Null,
-            );
-        } else {
-            client
-                .inner()
-                .get_network()
-                .account(account)
-                .network(uuid.to_string())
-                .send()
-                .await?;
-        }
+        client
+            .inner()
+            .get_network()
+            .account(account)
+            .network(uuid.to_string())
+            .send()
+            .await?;
         return Ok(uuid);
     }
 

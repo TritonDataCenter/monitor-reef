@@ -12,8 +12,8 @@
 //! enums serialize to the correct wire-format strings.
 
 use cloudapi_api::types::{
-    CloneImageRequest, ExportImageRequest, ImportImageRequest, ShareImageRequest,
-    UnshareImageRequest, UpdateImageRequest,
+    CloneImageRequest, ExportImageRequest, ImageCollectionActionQuery, ImportImageRequest,
+    UpdateImageRequest,
 };
 use cloudapi_api::types::{
     DisableDeletionProtectionRequest, DisableFirewallRequest, DiskAction, DiskActionQuery,
@@ -180,8 +180,6 @@ fn test_image_action_wire_format() {
         (ImageAction::Export, "export"),
         (ImageAction::Clone, "clone"),
         (ImageAction::ImportFromDatacenter, "import-from-datacenter"),
-        (ImageAction::Share, "share"),
-        (ImageAction::Unshare, "unshare"),
     ];
 
     for (variant, expected_wire) in cases {
@@ -203,8 +201,6 @@ fn test_image_action_round_trip() {
         ImageAction::Export,
         ImageAction::Clone,
         ImageAction::ImportFromDatacenter,
-        ImageAction::Share,
-        ImageAction::Unshare,
     ];
 
     for action in actions {
@@ -279,23 +275,22 @@ fn test_import_image_request() {
 }
 
 #[test]
-fn test_share_image_request() {
-    let json = r#"{"account": "b1234567-1234-1234-1234-123456789012"}"#;
-    let req: ShareImageRequest = serde_json::from_str(json).unwrap();
+fn test_image_collection_action_query() {
+    let json = r#"{"action": "import-from-datacenter", "datacenter": "us-east-1", "id": "a1234567-1234-1234-1234-123456789012"}"#;
+    let query: ImageCollectionActionQuery = serde_json::from_str(json).unwrap();
+    assert_eq!(query.action, Some(ImageAction::ImportFromDatacenter));
+    assert_eq!(query.datacenter.as_deref(), Some("us-east-1"));
     assert_eq!(
-        req.account,
-        Uuid::parse_str("b1234567-1234-1234-1234-123456789012").unwrap()
+        query.id,
+        Some(Uuid::parse_str("a1234567-1234-1234-1234-123456789012").unwrap())
     );
-}
 
-#[test]
-fn test_unshare_image_request() {
-    let json = r#"{"account": "b1234567-1234-1234-1234-123456789012"}"#;
-    let req: UnshareImageRequest = serde_json::from_str(json).unwrap();
-    assert_eq!(
-        req.account,
-        Uuid::parse_str("b1234567-1234-1234-1234-123456789012").unwrap()
-    );
+    // All fields optional
+    let json = r#"{}"#;
+    let query: ImageCollectionActionQuery = serde_json::from_str(json).unwrap();
+    assert_eq!(query.action, None);
+    assert_eq!(query.datacenter, None);
+    assert_eq!(query.id, None);
 }
 
 // --- DiskAction tests ---

@@ -183,7 +183,7 @@ pub struct Image {
 }
 
 /// Request to create image from machine
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateImageRequest {
     /// Machine UUID to create image from
@@ -218,10 +218,6 @@ pub enum ImageAction {
     Export,
     Clone,
     ImportFromDatacenter,
-    /// Share image with another account
-    Share,
-    /// Unshare image from another account
-    Unshare,
 }
 
 /// Query parameter for image actions
@@ -287,20 +283,23 @@ pub struct ImportImageRequest {
     pub id: Uuid,
 }
 
-/// Request to share an image with another account
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct ShareImageRequest {
-    /// Account UUID to share the image with
-    pub account: Uuid,
-}
-
-/// Request to unshare an image from an account
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
-pub struct UnshareImageRequest {
-    /// Account UUID to unshare the image from
-    pub account: Uuid,
+/// Query parameters for image collection actions (POST /{account}/images)
+///
+/// The real sdc-cloudapi routes both "create from machine" and
+/// "import-from-datacenter" through the same `POST /{account}/images`
+/// endpoint, distinguished by query params.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ImageCollectionActionQuery {
+    /// Action to perform (e.g., import-from-datacenter). When absent,
+    /// the endpoint behaves as create-image-from-machine.
+    #[serde(default)]
+    pub action: Option<ImageAction>,
+    /// Source datacenter name (for import-from-datacenter)
+    #[serde(default)]
+    pub datacenter: Option<String>,
+    /// Image UUID in the source datacenter (for import-from-datacenter)
+    #[serde(default)]
+    pub id: Option<Uuid>,
 }
 
 /// Query parameters for listing images

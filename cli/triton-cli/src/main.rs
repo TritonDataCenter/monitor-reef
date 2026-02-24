@@ -90,6 +90,7 @@ struct Cli {
     accept_version: Option<String>,
 
     /// Emit the HTTP request payload as JSON instead of sending it
+    #[cfg(debug_assertions)]
     #[arg(long, hide = true, env = "TRITON_EMIT_PAYLOAD")]
     emit_payload: bool,
 
@@ -519,6 +520,7 @@ async fn main() {
 
         // Emit-payload mode uses a sentinel error to abort the request
         // after printing the payload. Treat it as a successful exit.
+        #[cfg(debug_assertions)]
         if msg.contains(cloudapi_client::EMIT_PAYLOAD_SENTINEL) {
             return;
         }
@@ -543,6 +545,7 @@ async fn try_main() -> Result<()> {
 
     // Enable emit-payload mode if requested (captures HTTP payloads for
     // comparison testing without sending requests)
+    #[cfg(debug_assertions)]
     if cli.emit_payload {
         cloudapi_client::set_emit_payload_mode(true);
     }

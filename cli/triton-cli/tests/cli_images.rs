@@ -162,11 +162,15 @@ fn test_image_delete_help() {
 }
 
 // =============================================================================
-// Payload tests - verify field=value parsing (offline, uses --emit-payload)
+// Payload tests - verify wire format (offline, uses --emit-payload)
+//
+// These tests use --emit-payload which only exists in debug builds, so they
+// are gated with #[cfg(debug_assertions)] to avoid failures in --release.
 // =============================================================================
 
 /// Test `triton image update UUID name=val version=val` produces correct payload
 #[test]
+#[cfg(debug_assertions)]
 fn test_image_update_field_value_parsing() {
     let output = triton_cmd()
         .args([
@@ -182,26 +186,7 @@ fn test_image_update_field_value_parsing() {
 
     assert!(output.status.success(), "command should succeed");
     let stdout = String::from_utf8_lossy(&output.stdout);
-
-    // Parse the JSON envelopes (there may be a GET + POST)
-    let envelopes: Vec<Value> = stdout
-        .lines()
-        .collect::<Vec<_>>()
-        .join("\n")
-        .split("\n}\n")
-        .filter_map(|chunk| {
-            let trimmed = chunk.trim();
-            if trimmed.is_empty() {
-                return None;
-            }
-            let json_str = if trimmed.ends_with('}') {
-                trimmed.to_string()
-            } else {
-                format!("{trimmed}\n}}")
-            };
-            serde_json::from_str(&json_str).ok()
-        })
-        .collect();
+    let envelopes = parse_envelopes(&stdout);
 
     // Find the POST envelope (the actual update)
     let post = envelopes
@@ -215,6 +200,7 @@ fn test_image_update_field_value_parsing() {
 
 /// Test that --flag values take precedence over positional field=value
 #[test]
+#[cfg(debug_assertions)]
 fn test_image_update_flag_precedence() {
     let output = triton_cmd()
         .args([
@@ -231,25 +217,7 @@ fn test_image_update_flag_precedence() {
 
     assert!(output.status.success(), "command should succeed");
     let stdout = String::from_utf8_lossy(&output.stdout);
-
-    let envelopes: Vec<Value> = stdout
-        .lines()
-        .collect::<Vec<_>>()
-        .join("\n")
-        .split("\n}\n")
-        .filter_map(|chunk| {
-            let trimmed = chunk.trim();
-            if trimmed.is_empty() {
-                return None;
-            }
-            let json_str = if trimmed.ends_with('}') {
-                trimmed.to_string()
-            } else {
-                format!("{trimmed}\n}}")
-            };
-            serde_json::from_str(&json_str).ok()
-        })
-        .collect();
+    let envelopes = parse_envelopes(&stdout);
 
     let post = envelopes
         .iter()
@@ -262,6 +230,7 @@ fn test_image_update_flag_precedence() {
 
 /// Test that unknown fields produce an error
 #[test]
+#[cfg(debug_assertions)]
 fn test_image_update_unknown_field() {
     triton_cmd()
         .args([
@@ -278,6 +247,7 @@ fn test_image_update_unknown_field() {
 
 /// Test `triton image delete UUID -f` emits only a DELETE (no preceding GET)
 #[test]
+#[cfg(debug_assertions)]
 fn test_image_delete_payload() {
     let output = triton_cmd()
         .args([
@@ -292,25 +262,7 @@ fn test_image_delete_payload() {
 
     assert!(output.status.success(), "command should succeed");
     let stdout = String::from_utf8_lossy(&output.stdout);
-
-    let envelopes: Vec<Value> = stdout
-        .lines()
-        .collect::<Vec<_>>()
-        .join("\n")
-        .split("\n}\n")
-        .filter_map(|chunk| {
-            let trimmed = chunk.trim();
-            if trimmed.is_empty() {
-                return None;
-            }
-            let json_str = if trimmed.ends_with('}') {
-                trimmed.to_string()
-            } else {
-                format!("{trimmed}\n}}")
-            };
-            serde_json::from_str(&json_str).ok()
-        })
-        .collect();
+    let envelopes = parse_envelopes(&stdout);
 
     // Should have a DELETE envelope
     let delete = envelopes
@@ -336,6 +288,7 @@ fn test_image_delete_payload() {
 /// Test `triton image export UUID /manta/path` accepts positional manta path
 /// and serializes manta_path as snake_case in the wire format
 #[test]
+#[cfg(debug_assertions)]
 fn test_image_export_positional_manta_path() {
     let output = triton_cmd()
         .args([
@@ -350,8 +303,32 @@ fn test_image_export_positional_manta_path() {
 
     assert!(output.status.success(), "command should succeed");
     let stdout = String::from_utf8_lossy(&output.stdout);
+    let envelopes = parse_envelopes(&stdout);
 
-    let envelopes: Vec<Value> = stdout
+    let post = envelopes
+        .iter()
+        .find(|e| e["method"] == "POST")
+        .expect("should have a POST envelope");
+
+    // Verify manta_path is snake_case (not camelCase "mantaPath")
+    assert_eq!(
+        post["body"]["manta_path"], "/user/stor/export",
+        "body should contain 'manta_path' (snake_case), got: {}",
+        post["body"]
+    );
+    assert!(
+        post["body"]["mantaPath"].is_null(),
+        "body should NOT contain 'mantaPath' (camelCase)"
+    );
+}
+
+/// Parse emit-payload JSON envelopes from CLI stdout.
+///
+/// The output contains one or more pretty-printed JSON objects separated by
+/// newlines. We split on `\n}\n` boundaries and reconstruct complete objects.
+#[cfg(debug_assertions)]
+fn parse_envelopes(stdout: &str) -> Vec<Value> {
+    stdout
         .lines()
         .collect::<Vec<_>>()
         .join("\n")
@@ -368,22 +345,148 @@ fn test_image_export_positional_manta_path() {
             };
             serde_json::from_str(&json_str).ok()
         })
-        .collect();
+        .collect()
+}
+
+/// Test `triton image clone UUID` emits GET (verification) + POST (?action=clone)
+#[test]
+#[cfg(debug_assertions)]
+fn test_image_clone_payload() {
+    let output = triton_cmd()
+        .args([
+            "--emit-payload",
+            "image",
+            "clone",
+            "00000000-0000-0000-0000-000000000001",
+        ])
+        .output()
+        .expect("Failed to run command");
+
+    assert!(output.status.success(), "command should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let envelopes = parse_envelopes(&stdout);
+
+    // Should have a GET (verification) followed by a POST (clone action)
+    let get = envelopes
+        .iter()
+        .find(|e| e["method"] == "GET")
+        .expect("should have a GET envelope for verification");
+    let get_path = get["path"].as_str().unwrap();
+    assert!(
+        get_path.contains("/images/00000000-0000-0000-0000-000000000001"),
+        "GET path should target the image, got: {get_path}"
+    );
 
     let post = envelopes
         .iter()
         .find(|e| e["method"] == "POST")
-        .expect("should have a POST envelope");
-
-    // Verify manta_path is snake_case (not camelCase "mantaPath")
-    assert_eq!(
-        post["body"]["manta_path"], "/user/stor/export",
-        "body should contain 'manta_path' (snake_case), got: {}",
-        post["body"]
+        .expect("should have a POST envelope for clone");
+    let post_path = post["path"].as_str().unwrap();
+    assert!(
+        post_path.contains("/images/00000000-0000-0000-0000-000000000001"),
+        "POST path should target the image, got: {post_path}"
     );
     assert!(
-        post["body"]["mantaPath"].is_null(),
-        "body should NOT contain 'mantaPath' (camelCase)"
+        post_path.contains("action=clone"),
+        "POST path should have action=clone query param, got: {post_path}"
+    );
+}
+
+/// Test `triton image share UUID TARGET` emits GET (verification) + GET (image) +
+/// POST (?action=update with ACL)
+#[test]
+#[cfg(debug_assertions)]
+fn test_image_share_payload() {
+    let output = triton_cmd()
+        .args([
+            "--emit-payload",
+            "image",
+            "share",
+            "00000000-0000-0000-0000-000000000001",
+            "00000000-0000-0000-0000-000000000008",
+        ])
+        .output()
+        .expect("Failed to run command");
+
+    assert!(output.status.success(), "command should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let envelopes = parse_envelopes(&stdout);
+
+    // Should have GET(s) and a POST
+    let post = envelopes
+        .iter()
+        .find(|e| e["method"] == "POST")
+        .expect("should have a POST envelope for share");
+
+    let post_path = post["path"].as_str().unwrap();
+    assert!(
+        post_path.contains("/images/00000000-0000-0000-0000-000000000001"),
+        "POST path should target the image, got: {post_path}"
+    );
+    assert!(
+        post_path.contains("action=update"),
+        "POST path should have action=update query param, got: {post_path}"
+    );
+
+    // The ACL should contain the target account
+    let acl = post["body"]["acl"]
+        .as_array()
+        .expect("body should have acl array");
+    assert!(
+        !acl.is_empty(),
+        "ACL should contain the target account UUID"
+    );
+    assert_eq!(
+        acl[0].as_str().unwrap(),
+        "00000000-0000-0000-0000-000000000008",
+        "ACL should contain the target account"
+    );
+}
+
+/// Test `triton image unshare UUID TARGET` emits GET (verification) + GET (image) +
+/// POST (?action=update with empty ACL)
+#[test]
+#[cfg(debug_assertions)]
+fn test_image_unshare_payload() {
+    let output = triton_cmd()
+        .args([
+            "--emit-payload",
+            "image",
+            "unshare",
+            "00000000-0000-0000-0000-000000000001",
+            "00000000-0000-0000-0000-000000000008",
+        ])
+        .output()
+        .expect("Failed to run command");
+
+    assert!(output.status.success(), "command should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let envelopes = parse_envelopes(&stdout);
+
+    // Should have GET(s) and a POST
+    let post = envelopes
+        .iter()
+        .find(|e| e["method"] == "POST")
+        .expect("should have a POST envelope for unshare");
+
+    let post_path = post["path"].as_str().unwrap();
+    assert!(
+        post_path.contains("/images/00000000-0000-0000-0000-000000000001"),
+        "POST path should target the image, got: {post_path}"
+    );
+    assert!(
+        post_path.contains("action=update"),
+        "POST path should have action=update query param, got: {post_path}"
+    );
+
+    // The ACL should be empty (fake GET returns no ACL, retain removes nothing)
+    let acl = post["body"]["acl"]
+        .as_array()
+        .expect("body should have acl array");
+    assert!(
+        acl.is_empty(),
+        "ACL should be empty after unshare from fake image, got: {:?}",
+        acl
     );
 }
 

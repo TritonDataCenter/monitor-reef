@@ -727,16 +727,22 @@ pub trait CloudApi {
         path: Path<ImagePath>,
     ) -> Result<HttpResponseOk<Image>, HttpError>;
 
-    /// Create image from machine
+    /// Create or import image (action dispatch)
+    ///
+    /// This endpoint handles multiple operations on the images collection:
+    /// - (no action): Create image from machine (body contains machine UUID, name, etc.)
+    /// - import-from-datacenter: Import image from another datacenter
+    ///   (query params: `?action=import-from-datacenter&datacenter=X&id=Y`)
     #[endpoint {
         method = POST,
         path = "/{account}/images",
         tags = ["images"],
     }]
-    async fn create_image_from_machine(
+    async fn create_or_import_image(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
-        body: TypedBody<CreateImageRequest>,
+        query: Query<ImageCollectionActionQuery>,
+        body: TypedBody<serde_json::Value>,
     ) -> Result<HttpResponseCreated<Image>, HttpError>;
 
     /// Update image (action dispatch)

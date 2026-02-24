@@ -2349,8 +2349,9 @@
         "tags": [
           "images"
         ],
-        "summary": "Create image from machine",
-        "operationId": "create_image_from_machine",
+        "summary": "Create or import image (action dispatch)",
+        "description": "This endpoint handles multiple operations on the images collection: - (no action): Create image from machine (body contains machine UUID, name, etc.) - import-from-datacenter: Import image from another datacenter (query params: `?action=import-from-datacenter&datacenter=X&id=Y`)",
+        "operationId": "create_or_import_image",
         "parameters": [
           {
             "in": "path",
@@ -2360,14 +2361,39 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "description": "Action to perform (e.g., import-from-datacenter). When absent, the endpoint behaves as create-image-from-machine.",
+            "schema": {
+              "$ref": "#/components/schemas/ImageAction"
+            }
+          },
+          {
+            "in": "query",
+            "name": "datacenter",
+            "description": "Source datacenter name (for import-from-datacenter)",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "id",
+            "description": "Image UUID in the source datacenter (for import-from-datacenter)",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
           }
         ],
         "requestBody": {
           "content": {
             "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateImageRequest"
-              }
+              "schema": {}
             }
           },
           "required": true
@@ -9960,66 +9986,6 @@
           "rule"
         ]
       },
-      "CreateImageRequest": {
-        "description": "Request to create image from machine",
-        "type": "object",
-        "properties": {
-          "acl": {
-            "nullable": true,
-            "description": "ACL",
-            "default": null,
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          "description": {
-            "nullable": true,
-            "description": "Description",
-            "default": null,
-            "type": "string"
-          },
-          "eula": {
-            "nullable": true,
-            "description": "EULA URL",
-            "default": null,
-            "type": "string"
-          },
-          "homepage": {
-            "nullable": true,
-            "description": "Homepage URL",
-            "default": null,
-            "type": "string"
-          },
-          "machine": {
-            "description": "Machine UUID to create image from",
-            "type": "string",
-            "format": "uuid"
-          },
-          "name": {
-            "description": "Image name",
-            "type": "string"
-          },
-          "tags": {
-            "nullable": true,
-            "description": "Tags",
-            "default": null,
-            "type": "object",
-            "additionalProperties": true
-          },
-          "version": {
-            "nullable": true,
-            "description": "Image version",
-            "default": null,
-            "type": "string"
-          }
-        },
-        "required": [
-          "machine",
-          "name"
-        ]
-      },
       "CreateMachineRequest": {
         "description": "Request to create a machine\n\nThis struct supports both the modern nested format and the legacy flattened format:\n\n**Modern format (Rust clients):** ```json {\"image\": \"...\", \"tags\": {\"foo\": \"bar\"}, \"metadata\": {\"key\": \"value\"}} ```\n\n**Legacy format (Node.js clients):** ```json {\"image\": \"...\", \"tag.foo\": \"bar\", \"metadata.key\": \"value\"} ```\n\nUse the `tags()` and `metadata()` methods to get the merged result from both formats.",
         "type": "object",
@@ -12595,30 +12561,12 @@
       },
       "ImageAction": {
         "description": "Image action for action dispatch",
-        "oneOf": [
-          {
-            "type": "string",
-            "enum": [
-              "update",
-              "export",
-              "clone",
-              "import-from-datacenter"
-            ]
-          },
-          {
-            "description": "Share image with another account",
-            "type": "string",
-            "enum": [
-              "share"
-            ]
-          },
-          {
-            "description": "Unshare image from another account",
-            "type": "string",
-            "enum": [
-              "unshare"
-            ]
-          }
+        "type": "string",
+        "enum": [
+          "update",
+          "export",
+          "clone",
+          "import-from-datacenter"
         ]
       },
       "MachineAction": {

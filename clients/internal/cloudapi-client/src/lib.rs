@@ -63,6 +63,7 @@ pub mod auth;
 mod generated;
 pub use generated::*;
 
+#[cfg(debug_assertions)]
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use progenitor_client::{ClientHooks, OperationInfo};
@@ -136,6 +137,7 @@ pub use cloudapi_api::{
     Image,
     ImageAction,
     ImageActionQuery,
+    ImageCollectionActionQuery,
     ImagePath,
     ImageState,
     ImageType,
@@ -181,7 +183,7 @@ pub use cloudapi_api::{
     RolePath,
     Service,
     Services,
-    ShareImageRequest,
+    // Share/Unshare: client-side ACL logic (no dedicated request types)
     Snapshot,
     SnapshotPath,
     SnapshotState,
@@ -192,7 +194,6 @@ pub use cloudapi_api::{
     Tags,
     TagsRequest,
     Timestamp,
-    UnshareImageRequest,
     UpdateAccessKeyRequest,
     UpdateAccountRequest,
     UpdateConfigRequest,
@@ -223,30 +224,28 @@ pub use cloudapi_api::{
 
 // =============================================================================
 // Emit-payload mode: capture request payloads without sending
+//
+// All emit-payload code is compiled only in debug builds (cfg(debug_assertions)).
+// Release builds contain none of the fake-response machinery.
 // =============================================================================
 
+#[cfg(debug_assertions)]
 static EMIT_PAYLOAD_MODE: AtomicBool = AtomicBool::new(false);
 
 /// Enable or disable emit-payload mode.
 ///
-/// When enabled, the `ClientHooks::pre()` hook will print the HTTP method,
-/// path, and body as a JSON envelope to stdout and abort the request with a
-/// sentinel error instead of sending it. This allows comparison testing of
-/// mutating operations without contacting the API.
+/// When enabled, mutating requests (POST/PUT/DELETE) are intercepted in the
+/// `pre` hook, which prints a JSON envelope and aborts with a sentinel error.
+/// GET/HEAD requests flow through the `exec` hook, which prints the envelope
+/// and returns a fake response so calling code can continue.
+#[cfg(debug_assertions)]
 pub fn set_emit_payload_mode(enabled: bool) {
     EMIT_PAYLOAD_MODE.store(enabled, Ordering::Relaxed);
 }
 
-/// Check whether emit-payload mode is currently enabled.
-pub fn is_emit_payload_mode() -> bool {
-    EMIT_PAYLOAD_MODE.load(Ordering::Relaxed)
-}
-
 /// Print a JSON envelope capturing an HTTP request's method, path, and body.
-///
-/// This is used both by `ClientHooks::pre()` (for real requests) and by
-/// resolve functions (for verification GETs that the Rust CLI skips).
-pub fn emit_payload_envelope(method: &str, path: &str, body: serde_json::Value) {
+#[cfg(debug_assertions)]
+fn emit_payload_envelope(method: &str, path: &str, body: serde_json::Value) {
     let envelope = serde_json::json!({
         "method": method,
         "path": path,
@@ -261,13 +260,14 @@ pub fn emit_payload_envelope(method: &str, path: &str, body: serde_json::Value) 
 
 /// Sentinel error message used to signal that emit-payload mode intercepted
 /// the request. Callers (e.g., the CLI) should detect this and exit cleanly.
+#[cfg(debug_assertions)]
 pub const EMIT_PAYLOAD_SENTINEL: &str = "__payload_emitted__";
 
 /// Print a JSON envelope capturing the request's method, path, and body,
 /// then return a sentinel error to abort the request.
+#[cfg(debug_assertions)]
 #[allow(clippy::result_large_err)]
 fn emit_request_payload<E>(request: &reqwest::Request) -> Result<(), Error<E>> {
-    let method = request.method().to_string();
     let url = request.url();
 
     // Build path + query, excluding the host/scheme
@@ -288,9 +288,264 @@ fn emit_request_payload<E>(request: &reqwest::Request) -> Result<(), Error<E>> {
         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(bytes).ok())
         .unwrap_or(serde_json::Value::Null);
 
-    emit_payload_envelope(&method, &path, body);
+    emit_payload_envelope(request.method().as_str(), &path, body);
 
     Err(Error::Custom(EMIT_PAYLOAD_SENTINEL.to_string()))
+}
+
+/// In emit-payload mode, emit the GET envelope and return a fake HTTP
+/// response so calling code can continue (e.g., share_image does GET →
+/// modify ACL → POST).
+///
+/// Mirrors node-triton's approach: returns `{id: lastSeg, name: lastSeg}`
+/// for single-resource GETs. List operations (operation_id starts with
+/// `list_`) get `[]` so resolve-by-name fails gracefully.
+///
+/// Each operation_id is matched to the correct response type, using proper
+/// typed structs so the compiler enforces valid enum values. Unknown
+/// operations fall back to a minimal JSON object.
+#[cfg(debug_assertions)]
+fn emit_and_fake_get_response(
+    request: &reqwest::Request,
+    info: &OperationInfo,
+) -> reqwest::Result<reqwest::Response> {
+    let url = request.url();
+    let mut path = url.path().to_string();
+    if path.starts_with("//") {
+        path = path[1..].to_string();
+    }
+    if let Some(query) = url.query() {
+        path.push('?');
+        path.push_str(query);
+    }
+    emit_payload_envelope(request.method().as_str(), &path, serde_json::Value::Null);
+
+    let body_bytes = if info.operation_id.starts_with("list_") {
+        // List endpoints return an empty array
+        b"[]".to_vec()
+    } else {
+        let last_seg = url
+            .path_segments()
+            .and_then(|mut s| s.next_back())
+            .unwrap_or("unknown");
+        let last_seg_uuid = uuid::Uuid::try_parse(last_seg).unwrap_or(uuid::Uuid::nil());
+        let fake_ts = "2025-01-01T00:00:00.000Z".to_string();
+
+        fake_response_body(info.operation_id, last_seg, last_seg_uuid, &fake_ts)
+    };
+
+    #[allow(clippy::expect_used)]
+    let http_response = http::Response::builder()
+        .status(200)
+        .header("content-type", "application/json")
+        .body(body_bytes)
+        .expect("fake HTTP response construction should not fail");
+    Ok(reqwest::Response::from(http_response))
+}
+
+/// Build a fake response body for a single-resource GET based on operation_id.
+///
+/// Uses proper typed structs so enum values are compiler-checked.
+/// None of the response types use `deny_unknown_fields`, so extra fields
+/// from the fallback case are silently ignored.
+#[cfg(debug_assertions)]
+#[allow(clippy::expect_used)]
+fn fake_response_body(
+    operation_id: &str,
+    last_seg: &str,
+    last_seg_uuid: uuid::Uuid,
+    fake_ts: &str,
+) -> Vec<u8> {
+    use cloudapi_api::ImageRequirements;
+
+    match operation_id {
+        "get_image" | "head_image" => {
+            let fake = Image {
+                id: last_seg_uuid,
+                name: last_seg.to_string(),
+                version: "0.0.0".to_string(),
+                os: "other".to_string(),
+                image_type: ImageType::Other,
+                requirements: ImageRequirements::default(),
+                description: None,
+                homepage: None,
+                published_at: None,
+                owner: None,
+                public: None,
+                state: None,
+                tags: None,
+                eula: None,
+                acl: None,
+                origin: None,
+                image_size: None,
+                files: None,
+                error: None,
+                role_tag: None,
+            };
+            serde_json::to_vec(&fake).expect("Image serialization should not fail")
+        }
+        "get_machine" | "head_machine" => {
+            let fake = Machine {
+                id: last_seg_uuid,
+                name: last_seg.to_string(),
+                machine_type: cloudapi_api::MachineType::Virtualmachine,
+                brand: cloudapi_api::VmapiBrand::Bhyve,
+                state: MachineState::Running,
+                image: uuid::Uuid::nil(),
+                package: "emit-payload-fake".to_string(),
+                memory: None,
+                disk: 0,
+                ips: vec![],
+                metadata: Default::default(),
+                tags: Default::default(),
+                created: fake_ts.to_string(),
+                updated: fake_ts.to_string(),
+                networks: None,
+                primary_ip: None,
+                nics: vec![],
+                docker: None,
+                firewall_enabled: None,
+                deletion_protection: None,
+                compute_node: None,
+                dns_names: None,
+                free_space: None,
+                disks: None,
+                encrypted: None,
+                flexible: None,
+                delegate_dataset: None,
+                role_tag: None,
+            };
+            serde_json::to_vec(&fake).expect("Machine serialization should not fail")
+        }
+        "get_package" | "head_package" => {
+            let fake = Package {
+                id: last_seg_uuid,
+                name: last_seg.to_string(),
+                memory: 0,
+                disk: 0,
+                swap: 0,
+                vcpus: 0,
+                lwps: None,
+                version: None,
+                group: None,
+                description: None,
+                default: false,
+                brand: None,
+                flexible_disk: None,
+                disks: None,
+                role_tag: None,
+            };
+            serde_json::to_vec(&fake).expect("Package serialization should not fail")
+        }
+        "get_network" | "head_network" | "get_fabric_network" | "head_fabric_network" => {
+            let fake = Network {
+                id: last_seg_uuid,
+                name: last_seg.to_string(),
+                public: false,
+                fabric: None,
+                description: None,
+                gateway: None,
+                internet_nat: None,
+                provision_start_ip: None,
+                provision_end_ip: None,
+                subnet: None,
+                netmask: None,
+                vlan_id: None,
+                suffixes: None,
+                resolvers: None,
+                routes: None,
+                role_tag: None,
+            };
+            serde_json::to_vec(&fake).expect("Network serialization should not fail")
+        }
+        "get_firewall_rule" | "head_firewall_rule" => {
+            let fake = FirewallRule {
+                id: last_seg_uuid,
+                rule: String::new(),
+                enabled: false,
+                log: false,
+                global: None,
+                description: None,
+                created: None,
+                updated: None,
+                role_tag: None,
+            };
+            serde_json::to_vec(&fake).expect("FirewallRule serialization should not fail")
+        }
+        "get_volume" => {
+            let fake = Volume {
+                id: last_seg_uuid,
+                name: last_seg.to_string(),
+                owner_uuid: uuid::Uuid::nil(),
+                volume_type: cloudapi_api::VolumeType::Tritonnfs,
+                size: 0,
+                state: cloudapi_api::VolumeState::Ready,
+                networks: vec![],
+                filesystem_path: None,
+                created: fake_ts.to_string(),
+                tags: Default::default(),
+                refs: vec![],
+            };
+            serde_json::to_vec(&fake).expect("Volume serialization should not fail")
+        }
+        "get_key" | "head_key" | "get_user_key" | "head_user_key" => {
+            let fake = SshKey {
+                name: last_seg.to_string(),
+                key: String::new(),
+                fingerprint: String::new(),
+                created: None,
+                role_tag: None,
+            };
+            serde_json::to_vec(&fake).expect("SshKey serialization should not fail")
+        }
+        "get_nic" | "head_nic" => {
+            let fake = Nic {
+                mac: "00:00:00:00:00:00".to_string(),
+                primary: false,
+                ip: "0.0.0.0".to_string(),
+                netmask: "0.0.0.0".to_string(),
+                gateway: None,
+                network: uuid::Uuid::nil(),
+                state: None,
+            };
+            serde_json::to_vec(&fake).expect("Nic serialization should not fail")
+        }
+        "get_machine_snapshot" | "head_machine_snapshot" => {
+            let fake = Snapshot {
+                name: last_seg.to_string(),
+                state: cloudapi_api::SnapshotState::Created,
+                created: fake_ts.to_string(),
+                updated: None,
+            };
+            serde_json::to_vec(&fake).expect("Snapshot serialization should not fail")
+        }
+        "get_machine_disk" | "head_machine_disk" => {
+            let fake = Disk {
+                id: last_seg_uuid,
+                size: 0,
+                pci_slot: None,
+                boot: None,
+                state: None,
+            };
+            serde_json::to_vec(&fake).expect("Disk serialization should not fail")
+        }
+        "get_fabric_vlan" | "head_fabric_vlan" => {
+            let fake = FabricVlan {
+                vlan_id: 0,
+                name: last_seg.to_string(),
+                description: None,
+            };
+            serde_json::to_vec(&fake).expect("FabricVlan serialization should not fail")
+        }
+        _ => {
+            // Fallback: minimal JSON for unhandled operations
+            let fake = serde_json::json!({
+                "id": last_seg,
+                "name": last_seg,
+            });
+            serde_json::to_vec(&fake).expect("fallback serialization should not fail")
+        }
+    }
 }
 
 // =============================================================================
@@ -311,11 +566,35 @@ impl ClientHooks<triton_auth::AuthConfig> for Client {
             transform_create_machine_body(request);
         }
 
-        if EMIT_PAYLOAD_MODE.load(Ordering::Relaxed) {
+        // Emit-payload mode: intercept mutations (POST/PUT/DELETE/PATCH) here.
+        // GETs/HEADs pass through to the `exec` hook which returns fake responses.
+        #[cfg(debug_assertions)]
+        if EMIT_PAYLOAD_MODE.load(Ordering::Relaxed)
+            && request.method() != reqwest::Method::GET
+            && request.method() != reqwest::Method::HEAD
+        {
             return emit_request_payload(request);
         }
 
         Ok(())
+    }
+
+    // Override exec to return fake responses for GETs in emit-payload mode
+    #[cfg(debug_assertions)]
+    async fn exec(
+        &self,
+        request: reqwest::Request,
+        info: &OperationInfo,
+    ) -> reqwest::Result<reqwest::Response> {
+        if EMIT_PAYLOAD_MODE.load(Ordering::Relaxed)
+            && (request.method() == reqwest::Method::GET
+                || request.method() == reqwest::Method::HEAD)
+        {
+            return emit_and_fake_get_response(&request, info);
+        }
+        progenitor_client::ClientInfo::client(self)
+            .execute(request)
+            .await
     }
 }
 
@@ -959,6 +1238,9 @@ impl TypedClient {
 
     /// Clone image to account
     ///
+    /// Node-triton sends `?action=clone` as a query parameter with an empty
+    /// body. We match that wire format here.
+    ///
     /// # Arguments
     /// * `account` - Account login name
     /// * `dataset` - Image UUID
@@ -967,15 +1249,12 @@ impl TypedClient {
         account: &str,
         dataset: &Uuid,
     ) -> Result<types::Image, Error<types::Error>> {
-        let body = ActionBody {
-            action: ImageAction::Clone,
-            body: CloneImageRequest {},
-        };
         self.inner
             .update_image()
             .account(account)
             .dataset(dataset.to_string())
-            .body(to_json_value(&body))
+            .action(types::ImageAction::Clone)
+            .body(serde_json::json!({}))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -983,33 +1262,35 @@ impl TypedClient {
 
     /// Import image from another datacenter
     ///
+    /// Node-triton sends `POST /{account}/images?action=import-from-datacenter&datacenter=X&id=Y`
+    /// to the collection endpoint with an empty body. We match that wire format.
+    ///
     /// # Arguments
     /// * `account` - Account login name
-    /// * `dataset` - Image UUID (in current datacenter)
     /// * `datacenter` - Source datacenter name
     /// * `id` - Image UUID in source datacenter
     pub async fn import_image_from_datacenter(
         &self,
         account: &str,
-        dataset: &Uuid,
-        datacenter: String,
+        datacenter: &str,
         id: Uuid,
     ) -> Result<types::Image, Error<types::Error>> {
-        let body = ActionBody {
-            action: ImageAction::ImportFromDatacenter,
-            body: ImportImageRequest { datacenter, id },
-        };
         self.inner
-            .update_image()
+            .create_or_import_image()
             .account(account)
-            .dataset(dataset.to_string())
-            .body(to_json_value(&body))
+            .action(types::ImageAction::ImportFromDatacenter)
+            .datacenter(datacenter)
+            .id(id)
+            .body(serde_json::json!({}))
             .send()
             .await
             .map(|r| r.into_inner())
     }
 
     /// Share image with another account
+    ///
+    /// Matches node-triton's pattern: GET the image to read its current ACL,
+    /// add the target account, then POST an `update` action with the full ACL.
     ///
     /// # Arguments
     /// * `account` - Account login name
@@ -1021,23 +1302,40 @@ impl TypedClient {
         dataset: &Uuid,
         target_account: Uuid,
     ) -> Result<types::Image, Error<types::Error>> {
-        let body = ActionBody {
-            action: ImageAction::Share,
-            body: ShareImageRequest {
-                account: target_account,
-            },
-        };
+        // 1. GET image to read current ACL
+        // (in emit-payload mode, the exec hook returns a fake Image with acl: None)
+        let image = self
+            .inner
+            .get_image()
+            .account(account)
+            .dataset(dataset.to_string())
+            .send()
+            .await?
+            .into_inner();
+
+        // 2. Add target to ACL (if not already present)
+        let mut acl: Vec<Uuid> = image.acl.unwrap_or_default();
+        if !acl.contains(&target_account) {
+            acl.push(target_account);
+        }
+
+        // 3. POST update with modified ACL
+        // (in emit-payload mode the pre hook emits this and returns sentinel)
         self.inner
             .update_image()
             .account(account)
             .dataset(dataset.to_string())
-            .body(to_json_value(&body))
+            .action(types::ImageAction::Update)
+            .body(serde_json::json!({"acl": acl}))
             .send()
             .await
             .map(|r| r.into_inner())
     }
 
     /// Unshare image from another account
+    ///
+    /// Matches node-triton's pattern: GET the image to read its current ACL,
+    /// remove the target account, then POST an `update` action with the modified ACL.
     ///
     /// # Arguments
     /// * `account` - Account login name
@@ -1049,17 +1347,29 @@ impl TypedClient {
         dataset: &Uuid,
         target_account: Uuid,
     ) -> Result<types::Image, Error<types::Error>> {
-        let body = ActionBody {
-            action: ImageAction::Unshare,
-            body: UnshareImageRequest {
-                account: target_account,
-            },
-        };
+        // 1. GET image to read current ACL
+        // (in emit-payload mode, the exec hook returns a fake Image with acl: None)
+        let image = self
+            .inner
+            .get_image()
+            .account(account)
+            .dataset(dataset.to_string())
+            .send()
+            .await?
+            .into_inner();
+
+        // 2. Remove target from ACL
+        let mut acl: Vec<Uuid> = image.acl.unwrap_or_default();
+        acl.retain(|a| a != &target_account);
+
+        // 3. POST update with modified ACL
+        // (in emit-payload mode the pre hook emits this and returns sentinel)
         self.inner
             .update_image()
             .account(account)
             .dataset(dataset.to_string())
-            .body(to_json_value(&body))
+            .action(types::ImageAction::Update)
+            .body(serde_json::json!({"acl": acl}))
             .send()
             .await
             .map(|r| r.into_inner())

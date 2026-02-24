@@ -711,6 +711,7 @@ dependencies = [
  "base64",
  "clap",
  "cloudapi-api",
+ "http",
  "progenitor-client",
  "rand 0.9.2",
  "reqwest",
