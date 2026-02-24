@@ -941,10 +941,10 @@ run_payload_tests() {
     # --- Volume ---
 
     run_payload_test "payload-volume-create" "volume create" \
-        volume create --name test-vol --size 10240
+        volume create --name test-vol --size 10G
 
     run_payload_test "payload-volume-create-net" "volume create (with network)" \
-        volume create --name test-vol-net --size 10240 --network "$NET_UUID"
+        volume create --name test-vol-net --size 10G --network "$NET_UUID"
 
     # --- Image ---
 

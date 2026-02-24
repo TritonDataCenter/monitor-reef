@@ -8,5 +8,3 @@
 
 payload-network-create      monitor-reef-9zft  missing --gateway/--no-nat validation
 payload-network-create-gw   monitor-reef-8x2l  camelCase vs snake_case field names
-payload-volume-create       monitor-reef-8vob  node rejects size 10240 client-side
-payload-volume-create-net   monitor-reef-8vob  node rejects size 10240 client-side
