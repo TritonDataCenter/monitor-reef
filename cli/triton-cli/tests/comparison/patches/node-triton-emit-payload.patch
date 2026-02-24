@@ -1,20 +1,32 @@
 diff --git a/lib/cloudapi2.js b/lib/cloudapi2.js
-index 605b257..7f00fbb 100644
+index 605b257..f1df353 100644
 --- a/lib/cloudapi2.js
 +++ b/lib/cloudapi2.js
-@@ -287,6 +287,18 @@ CloudApi.prototype._request = function _request(opts, cb) {
+@@ -287,6 +287,30 @@ CloudApi.prototype._request = function _request(opts, cb) {
          }
      }
-
-+    // Emit-payload mode: print request envelope and return without sending
+ 
++    // Emit-payload mode: intercept API requests without sending them
 +    if (process.env.TRITON_EMIT_PAYLOAD) {
-+        var envelope = {
-+            method: method.toUpperCase(),
-+            path: opts.path,
-+            body: opts.data || null
-+        };
-+        console.log(JSON.stringify(envelope, null, 2));
-+        cb(null, null, { statusCode: 200 }, {});
++        var m = method.toUpperCase();
++        if (m === 'GET' || m === 'HEAD') {
++            // Validation/lookup request (e.g., getImage before createMachine):
++            // return a minimal fake response so execution continues to the
++            // actual mutation request.
++            var pathParts = opts.path.split('/');
++            var lastSeg = pathParts[pathParts.length - 1];
++            var fakeBody = {id: lastSeg, name: lastSeg};
++            cb(null, null, { statusCode: 200 }, fakeBody);
++        } else {
++            // Mutation request (POST, PUT, DELETE, PATCH): emit the envelope
++            var envelope = {
++                method: m,
++                path: opts.path,
++                body: opts.data || null
++            };
++            console.log(JSON.stringify(envelope, null, 2));
++            cb(null, null, { statusCode: 200 }, {});
++        }
 +        return;
 +    }
 +

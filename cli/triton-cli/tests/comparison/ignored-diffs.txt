@@ -23,3 +23,9 @@ env-fish            Rust adds fish shell support that Node.js lacks
 # Bash completion: completely different systems (node-dashdash 2K lines
 # vs clap_complete 13K lines). clap_complete is the standard for clap CLIs.
 completion-bash     clap_complete vs node-dashdash is by design
+
+# Volume refs field: VOLAPI always returns "refs": [] but Node.js triton
+# strips it from output. Rust matches the real API response.
+volume-list-json    Rust matches VOLAPI response; Node strips refs field
+volume-get          Rust matches VOLAPI response; Node strips refs field
+volume-get-json     Rust matches VOLAPI response; Node strips refs field

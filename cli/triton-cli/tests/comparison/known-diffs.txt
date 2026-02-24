@@ -6,3 +6,9 @@
 # When a diff is fixed and the test flips to PASS, the script flags it
 # as "fixed?" so you know to close the bead and remove the line.
 
+payload-network-create      monitor-reef-9zft  missing --gateway/--no-nat validation
+payload-network-create-gw   monitor-reef-8x2l  camelCase vs snake_case field names
+payload-volume-create       monitor-reef-8vob  node rejects size 10240 client-side
+payload-volume-create-net   monitor-reef-8vob  node rejects size 10240 client-side
+payload-image-create        monitor-reef-264l  different CLI syntax from node-triton
+payload-rbac-role-create    monitor-reef-teix  member/policy format differs
