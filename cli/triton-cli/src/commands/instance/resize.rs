@@ -29,11 +29,12 @@ pub struct ResizeArgs {
 
 pub async fn run(args: ResizeArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
+    let package_id = crate::commands::package::resolve_package(&args.package, client).await?;
     let account = &client.auth_config().account;
     let id_str = machine_id.to_string();
 
     client
-        .resize_machine(account, &machine_id, args.package.clone(), None)
+        .resize_machine(account, &machine_id, package_id, None)
         .await?;
 
     println!(

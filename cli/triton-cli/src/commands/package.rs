@@ -270,7 +270,22 @@ async fn get_package(args: PackageGetArgs, client: &TypedClient, use_json: bool)
 /// Resolve package name or short ID to full UUID
 pub async fn resolve_package(id_or_name: &str, client: &TypedClient) -> Result<String> {
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
-        // TODO: should we add verification here that node-triton didn't have?
+        let account = &client.auth_config().account;
+        if cloudapi_client::is_emit_payload_mode() {
+            cloudapi_client::emit_payload_envelope(
+                "GET",
+                &format!("/{account}/packages/{id_or_name}"),
+                serde_json::Value::Null,
+            );
+        } else {
+            client
+                .inner()
+                .get_package()
+                .account(account)
+                .package(uuid.to_string())
+                .send()
+                .await?;
+        }
         return Ok(uuid.to_string());
     }
 

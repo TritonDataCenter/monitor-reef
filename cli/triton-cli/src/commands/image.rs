@@ -837,7 +837,7 @@ async fn delete_images(
     let account = &client.auth_config().account;
 
     for image_name in &args.images {
-        let image_uuid = resolve_image(image_name, client, cache).await?;
+        let image_uuid = resolve_image_no_verify(image_name, client, cache).await?;
 
         if !args.force {
             use dialoguer::Confirm;
@@ -1161,7 +1161,7 @@ async fn wait_image(
 /// Resolve image name[@version] or short ID to full UUID
 ///
 /// Matches node-triton behavior (lib/tritonapi.js getImage):
-/// - If full UUID, use directly
+/// - If full UUID, verify it exists with a GET then use directly
 /// - Otherwise, list all images and match by name or short ID
 /// - Short ID is the first segment of UUID (before first dash)
 pub async fn resolve_image(
@@ -1169,23 +1169,44 @@ pub async fn resolve_image(
     client: &TypedClient,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<uuid::Uuid> {
-    // UUID check — verify the image exists (matches node-triton's getImage call)
+    resolve_image_inner(id_or_name, client, cache, true).await
+}
+
+/// Resolve image without verification GET for UUID inputs.
+/// Used by delete paths where node-triton skips the verification.
+async fn resolve_image_no_verify(
+    id_or_name: &str,
+    client: &TypedClient,
+    cache: Option<&crate::cache::ImageCache>,
+) -> Result<uuid::Uuid> {
+    resolve_image_inner(id_or_name, client, cache, false).await
+}
+
+async fn resolve_image_inner(
+    id_or_name: &str,
+    client: &TypedClient,
+    cache: Option<&crate::cache::ImageCache>,
+    verify_uuid: bool,
+) -> Result<uuid::Uuid> {
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
-        let account = &client.auth_config().account;
-        if cloudapi_client::is_emit_payload_mode() {
-            cloudapi_client::emit_payload_envelope(
-                "GET",
-                &format!("/{account}/images/{id_or_name}"),
-                serde_json::Value::Null,
-            );
-        } else {
-            client
-                .inner()
-                .get_image()
-                .account(account)
-                .dataset(uuid.to_string())
-                .send()
-                .await?;
+        if verify_uuid {
+            // Verify the image exists (matches node-triton's getImage call)
+            let account = &client.auth_config().account;
+            if cloudapi_client::is_emit_payload_mode() {
+                cloudapi_client::emit_payload_envelope(
+                    "GET",
+                    &format!("/{account}/images/{id_or_name}"),
+                    serde_json::Value::Null,
+                );
+            } else {
+                client
+                    .inner()
+                    .get_image()
+                    .account(account)
+                    .dataset(uuid.to_string())
+                    .send()
+                    .await?;
+            }
         }
         return Ok(uuid);
     }

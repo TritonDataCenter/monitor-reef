@@ -276,6 +276,63 @@ fn test_image_update_unknown_field() {
         .stderr(predicate::str::contains("unknown field"));
 }
 
+/// Test `triton image delete UUID -f` emits only a DELETE (no preceding GET)
+#[test]
+fn test_image_delete_payload() {
+    let output = triton_cmd()
+        .args([
+            "--emit-payload",
+            "image",
+            "delete",
+            "00000000-0000-0000-0000-000000000001",
+            "-f",
+        ])
+        .output()
+        .expect("Failed to run command");
+
+    assert!(output.status.success(), "command should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let envelopes: Vec<Value> = stdout
+        .lines()
+        .collect::<Vec<_>>()
+        .join("\n")
+        .split("\n}\n")
+        .filter_map(|chunk| {
+            let trimmed = chunk.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let json_str = if trimmed.ends_with('}') {
+                trimmed.to_string()
+            } else {
+                format!("{trimmed}\n}}")
+            };
+            serde_json::from_str(&json_str).ok()
+        })
+        .collect();
+
+    // Should have a DELETE envelope
+    let delete = envelopes
+        .iter()
+        .find(|e| e["method"] == "DELETE")
+        .expect("should have a DELETE envelope");
+
+    let path = delete["path"].as_str().expect("path should be a string");
+    assert!(
+        path.contains("/images/00000000-0000-0000-0000-000000000001"),
+        "DELETE path should be for the image, got: {path}"
+    );
+
+    // Should NOT have a GET envelope (no verification before delete)
+    let get = envelopes.iter().find(|e| e["method"] == "GET");
+    assert!(
+        get.is_none(),
+        "should NOT have a GET envelope before delete, but found: {:?}",
+        get
+    );
+}
+
 // =============================================================================
 // API tests - require config.json with valid profile
 // These tests are ignored by default and run with `make triton-test-api`

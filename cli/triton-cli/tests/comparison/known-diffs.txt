@@ -19,10 +19,6 @@ payload-image-unshare  monitor-reef-8bv8
 # image copy semantics
 payload-image-copy  monitor-reef-7u7p
 
-# verification GET consistency
-payload-resize  monitor-reef-69jd
-payload-image-delete  monitor-reef-69jd
-
 # node-triton patch: trailing empty objects
 payload-tag-set  monitor-reef-t05d
 payload-tag-replace  monitor-reef-t05d
