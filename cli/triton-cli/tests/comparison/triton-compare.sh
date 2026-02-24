@@ -145,7 +145,7 @@ load_tracking_files
 
 # ---------- setup ----------
 if [[ -z "$OUTPUT_DIR" ]]; then
-    OUTPUT_DIR="$(mktemp -d "${TMPDIR:-/tmp}/triton-compare.XXXXXX")"
+    OUTPUT_DIR="$(mktemp -d "${OUTPUT_DIR:-./target}/triton-compare.XXXXXX")"
 fi
 mkdir -p "$OUTPUT_DIR/diffs" "$OUTPUT_DIR/node" "$OUTPUT_DIR/rust"
 
@@ -213,6 +213,8 @@ echo "Node: $NODE_TRITON ($NODE_VERSION)"
 echo "Rust: $RUST_TRITON ($RUST_VERSION)"
 echo "Tier: $TIER"
 echo ""
+
+export > $OUTPUT_DIR/env
 
 # ---------- normalization functions ----------
 
