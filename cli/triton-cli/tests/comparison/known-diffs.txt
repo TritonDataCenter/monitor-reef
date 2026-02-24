@@ -19,10 +19,6 @@ payload-image-unshare  monitor-reef-8bv8
 # image copy semantics
 payload-image-copy  monitor-reef-7u7p
 
-# NIC add/remove wire format
-payload-nic-add  monitor-reef-njnh
-payload-nic-remove  monitor-reef-njnh
-
 # verification GET consistency
 payload-resize  monitor-reef-69jd
 payload-image-delete  monitor-reef-69jd

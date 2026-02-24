@@ -142,6 +142,114 @@ fn test_instance_nic_delete_alias() {
 }
 
 // =============================================================================
+// Payload tests - verify wire format via --emit-payload
+// =============================================================================
+
+/// Test `triton instance nic create` payload includes `"primary": false`
+#[test]
+fn test_nic_add_payload() {
+    let output = triton_cmd()
+        .args([
+            "--emit-payload",
+            "instance",
+            "nic",
+            "create",
+            "00000000-0000-0000-0000-000000000001",
+            "00000000-0000-0000-0000-000000000099",
+        ])
+        .output()
+        .expect("Failed to run command");
+
+    assert!(output.status.success(), "command should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let envelopes: Vec<serde_json::Value> = stdout
+        .lines()
+        .collect::<Vec<_>>()
+        .join("\n")
+        .split("\n}\n")
+        .filter_map(|chunk| {
+            let trimmed = chunk.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let json_str = if trimmed.ends_with('}') {
+                trimmed.to_string()
+            } else {
+                format!("{trimmed}\n}}")
+            };
+            serde_json::from_str(&json_str).ok()
+        })
+        .collect();
+
+    let post = envelopes
+        .iter()
+        .find(|e| e["method"] == "POST")
+        .expect("should have a POST envelope");
+
+    let body = &post["body"];
+    assert_eq!(
+        body["primary"],
+        serde_json::Value::Bool(false),
+        "body should include 'primary': false, got: {body}"
+    );
+}
+
+/// Test `triton instance nic delete` strips colons from MAC in URL path
+#[test]
+fn test_nic_remove_payload() {
+    let output = triton_cmd()
+        .args([
+            "--emit-payload",
+            "instance",
+            "nic",
+            "delete",
+            "00000000-0000-0000-0000-000000000001",
+            "aa:bb:cc:dd:ee:ff",
+            "-f",
+        ])
+        .output()
+        .expect("Failed to run command");
+
+    assert!(output.status.success(), "command should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let envelopes: Vec<serde_json::Value> = stdout
+        .lines()
+        .collect::<Vec<_>>()
+        .join("\n")
+        .split("\n}\n")
+        .filter_map(|chunk| {
+            let trimmed = chunk.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let json_str = if trimmed.ends_with('}') {
+                trimmed.to_string()
+            } else {
+                format!("{trimmed}\n}}")
+            };
+            serde_json::from_str(&json_str).ok()
+        })
+        .collect();
+
+    let delete = envelopes
+        .iter()
+        .find(|e| e["method"] == "DELETE")
+        .expect("should have a DELETE envelope");
+
+    let path = delete["path"].as_str().expect("path should be a string");
+    assert!(
+        path.contains("/nics/aabbccddeeff"),
+        "path should contain MAC without colons, got: {path}"
+    );
+    assert!(
+        !path.contains("aa:bb") && !path.contains("aa%3A"),
+        "path should not contain colons or percent-encoded colons, got: {path}"
+    );
+}
+
+// =============================================================================
 // API write tests - require config.json with allowWriteActions: true
 // These tests are ignored by default and run with `make triton-test-api`
 // =============================================================================

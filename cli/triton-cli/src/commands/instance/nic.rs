@@ -263,7 +263,7 @@ async fn add_nic(args: NicAddArgs, client: &TypedClient, use_json: bool) -> Resu
 
     let request = cloudapi_client::types::AddNicRequest {
         network,
-        primary: if args.primary { Some(true) } else { None },
+        primary: Some(args.primary),
     };
 
     let response = client
@@ -320,7 +320,7 @@ async fn remove_nic(args: NicRemoveArgs, client: &TypedClient) -> Result<()> {
         .remove_nic()
         .account(account)
         .machine(machine_id)
-        .mac(&args.mac)
+        .mac(args.mac.replace(':', ""))
         .send()
         .await?;
 
