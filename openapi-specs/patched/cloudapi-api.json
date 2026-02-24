@@ -734,20 +734,11 @@
       "CreateRoleRequest": {
         "description": "Request to create role",
         "properties": {
-          "defaultMembers": {
-            "default": null,
-            "description": "Default members (user UUIDs or logins)",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
-          },
           "members": {
             "default": null,
-            "description": "Members (user UUIDs or logins)",
+            "description": "Members (structured references)",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/MemberRef"
             },
             "nullable": true,
             "type": "array"
@@ -758,9 +749,9 @@
           },
           "policies": {
             "default": null,
-            "description": "Policies (policy UUIDs or names)",
+            "description": "Policies (structured references)",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/PolicyRef"
             },
             "nullable": true,
             "type": "array"
@@ -1752,6 +1743,47 @@
           }
         ]
       },
+      "MemberRef": {
+        "description": "A structured member reference for role create/update requests.\n\nCloudAPI v9.0.0+ requires members as structured objects rather than plain strings. Default membership is expressed via the `default` field.",
+        "properties": {
+          "default": {
+            "description": "Whether this member is a default member",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "id": {
+            "description": "Member UUID",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "login": {
+            "description": "Member login name",
+            "nullable": true,
+            "type": "string"
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MemberType"
+              }
+            ],
+            "description": "Member type (subuser or account)"
+          }
+        },
+        "required": [
+          "type"
+        ],
+        "type": "object"
+      },
+      "MemberType": {
+        "description": "Member type for role membership references",
+        "enum": [
+          "subuser",
+          "account"
+        ],
+        "type": "string"
+      },
       "MigrateRequest": {
         "description": "Migration request\n\nUsed to perform migration actions on an instance. The `action` field specifies which migration operation to perform.\n\n# Examples\n\nStart a new migration: ```json {\"action\": \"begin\"} ```\n\nStart migration with affinity rules: ```json {\"action\": \"begin\", \"affinity\": [\"instance!=web-*\"]} ```\n\nSwitch to the new server: ```json {\"action\": \"switch\"} ```\n\nAbort an in-progress migration: ```json {\"action\": \"abort\"} ```",
         "properties": {
@@ -2418,6 +2450,23 @@
         ],
         "type": "object"
       },
+      "PolicyRef": {
+        "description": "A structured policy reference for role create/update requests.\n\nCloudAPI v9.0.0+ requires policies as structured objects rather than plain strings.",
+        "properties": {
+          "id": {
+            "description": "Policy UUID",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "Policy name",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "ProvisioningLimits": {
         "description": "Provisioning limits for an account",
         "properties": {
@@ -2859,20 +2908,11 @@
       "UpdateRoleRequest": {
         "description": "Request to update role",
         "properties": {
-          "defaultMembers": {
-            "default": null,
-            "description": "Default members (user UUIDs or logins)",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
-          },
           "members": {
             "default": null,
-            "description": "Members (user UUIDs or logins)",
+            "description": "Members (structured references)",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/MemberRef"
             },
             "nullable": true,
             "type": "array"
@@ -2885,9 +2925,9 @@
           },
           "policies": {
             "default": null,
-            "description": "Policies (policy UUIDs or names)",
+            "description": "Policies (structured references)",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/PolicyRef"
             },
             "nullable": true,
             "type": "array"

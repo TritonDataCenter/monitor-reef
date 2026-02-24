@@ -1731,24 +1731,14 @@ pub mod types {
     #[doc = "    \"name\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"defaultMembers\": {"]
-    #[doc = "      \"description\": \"Default members (user UUIDs or logins)\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
-    #[doc = "    },"]
     #[doc = "    \"members\": {"]
-    #[doc = "      \"description\": \"Members (user UUIDs or logins)\","]
+    #[doc = "      \"description\": \"Members (structured references)\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"array\","]
     #[doc = "        \"null\""]
     #[doc = "      ],"]
     #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
+    #[doc = "        \"$ref\": \"#/components/schemas/MemberRef\""]
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
@@ -1756,13 +1746,13 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"policies\": {"]
-    #[doc = "      \"description\": \"Policies (policy UUIDs or names)\","]
+    #[doc = "      \"description\": \"Policies (structured references)\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"array\","]
     #[doc = "        \"null\""]
     #[doc = "      ],"]
     #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
+    #[doc = "        \"$ref\": \"#/components/schemas/PolicyRef\""]
     #[doc = "      }"]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -1773,21 +1763,14 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct CreateRoleRequest {
-        #[doc = "Default members (user UUIDs or logins)"]
-        #[serde(
-            rename = "defaultMembers",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
-        pub default_members: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-        #[doc = "Members (user UUIDs or logins)"]
+        #[doc = "Members (structured references)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub members: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub members: ::std::option::Option<::std::vec::Vec<MemberRef>>,
         #[doc = "Role name"]
         pub name: ::std::string::String,
-        #[doc = "Policies (policy UUIDs or names)"]
+        #[doc = "Policies (structured references)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub policies: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub policies: ::std::option::Option<::std::vec::Vec<PolicyRef>>,
     }
 
     impl CreateRoleRequest {
@@ -4435,6 +4418,156 @@ pub mod types {
         }
     }
 
+    #[doc = "A structured member reference for role create/update requests.\n\nCloudAPI v9.0.0+ requires members as structured objects rather than plain strings. Default membership is expressed via the `default` field."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A structured member reference for role create/update requests.\\n\\nCloudAPI v9.0.0+ requires members as structured objects rather than plain strings. Default membership is expressed via the `default` field.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"type\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"default\": {"]
+    #[doc = "      \"description\": \"Whether this member is a default member\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"boolean\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"description\": \"Member UUID\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"login\": {"]
+    #[doc = "      \"description\": \"Member login name\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"type\": {"]
+    #[doc = "      \"description\": \"Member type (subuser or account)\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/MemberType\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct MemberRef {
+        #[doc = "Whether this member is a default member"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub default: ::std::option::Option<bool>,
+        #[doc = "Member UUID"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub id: ::std::option::Option<::uuid::Uuid>,
+        #[doc = "Member login name"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub login: ::std::option::Option<::std::string::String>,
+        #[doc = "Member type (subuser or account)"]
+        #[serde(rename = "type")]
+        pub type_: MemberType,
+    }
+
+    impl MemberRef {
+        pub fn builder() -> builder::MemberRef {
+            Default::default()
+        }
+    }
+
+    #[doc = "Member type for role membership references"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Member type for role membership references\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"subuser\","]
+    #[doc = "    \"account\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum MemberType {
+        #[serde(rename = "subuser")]
+        Subuser,
+        #[serde(rename = "account")]
+        Account,
+    }
+
+    impl ::std::fmt::Display for MemberType {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Subuser => f.write_str("subuser"),
+                Self::Account => f.write_str("account"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for MemberType {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "subuser" => Ok(Self::Subuser),
+                "account" => Ok(Self::Account),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for MemberType {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for MemberType {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for MemberType {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
     #[doc = "Migration request\n\nUsed to perform migration actions on an instance. The `action` field specifies which migration operation to perform.\n\n# Examples\n\nStart a new migration: ```json {\"action\": \"begin\"} ```\n\nStart migration with affinity rules: ```json {\"action\": \"begin\", \"affinity\": [\"instance!=web-*\"]} ```\n\nSwitch to the new server: ```json {\"action\": \"switch\"} ```\n\nAbort an in-progress migration: ```json {\"action\": \"abort\"} ```"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -6088,6 +6221,61 @@ pub mod types {
         }
     }
 
+    #[doc = "A structured policy reference for role create/update requests.\n\nCloudAPI v9.0.0+ requires policies as structured objects rather than plain strings."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"A structured policy reference for role create/update requests.\\n\\nCloudAPI v9.0.0+ requires policies as structured objects rather than plain strings.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"description\": \"Policy UUID\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"description\": \"Policy name\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct PolicyRef {
+        #[doc = "Policy UUID"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub id: ::std::option::Option<::uuid::Uuid>,
+        #[doc = "Policy name"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub name: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for PolicyRef {
+        fn default() -> Self {
+            Self {
+                id: Default::default(),
+                name: Default::default(),
+            }
+        }
+    }
+
+    impl PolicyRef {
+        pub fn builder() -> builder::PolicyRef {
+            Default::default()
+        }
+    }
+
     #[doc = "Provisioning limits for an account"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -7259,24 +7447,14 @@ pub mod types {
     #[doc = "  \"description\": \"Request to update role\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"defaultMembers\": {"]
-    #[doc = "      \"description\": \"Default members (user UUIDs or logins)\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
-    #[doc = "    },"]
     #[doc = "    \"members\": {"]
-    #[doc = "      \"description\": \"Members (user UUIDs or logins)\","]
+    #[doc = "      \"description\": \"Members (structured references)\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"array\","]
     #[doc = "        \"null\""]
     #[doc = "      ],"]
     #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
+    #[doc = "        \"$ref\": \"#/components/schemas/MemberRef\""]
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
@@ -7287,13 +7465,13 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"policies\": {"]
-    #[doc = "      \"description\": \"Policies (policy UUIDs or names)\","]
+    #[doc = "      \"description\": \"Policies (structured references)\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"array\","]
     #[doc = "        \"null\""]
     #[doc = "      ],"]
     #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
+    #[doc = "        \"$ref\": \"#/components/schemas/PolicyRef\""]
     #[doc = "      }"]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -7304,28 +7482,20 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct UpdateRoleRequest {
-        #[doc = "Default members (user UUIDs or logins)"]
-        #[serde(
-            rename = "defaultMembers",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
-        pub default_members: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-        #[doc = "Members (user UUIDs or logins)"]
+        #[doc = "Members (structured references)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub members: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub members: ::std::option::Option<::std::vec::Vec<MemberRef>>,
         #[doc = "Role name"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub name: ::std::option::Option<::std::string::String>,
-        #[doc = "Policies (policy UUIDs or names)"]
+        #[doc = "Policies (structured references)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub policies: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub policies: ::std::option::Option<::std::vec::Vec<PolicyRef>>,
     }
 
     impl ::std::default::Default for UpdateRoleRequest {
         fn default() -> Self {
             Self {
-                default_members: Default::default(),
                 members: Default::default(),
                 name: Default::default(),
                 policies: Default::default(),
@@ -9985,17 +10155,13 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct CreateRoleRequest {
-            default_members: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                ::std::string::String,
-            >,
             members: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<::std::vec::Vec<super::MemberRef>>,
                 ::std::string::String,
             >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             policies: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<::std::vec::Vec<super::PolicyRef>>,
                 ::std::string::String,
             >,
         }
@@ -10003,7 +10169,6 @@ pub mod types {
         impl ::std::default::Default for CreateRoleRequest {
             fn default() -> Self {
                 Self {
-                    default_members: Ok(Default::default()),
                     members: Ok(Default::default()),
                     name: Err("no value supplied for name".to_string()),
                     policies: Ok(Default::default()),
@@ -10012,22 +10177,10 @@ pub mod types {
         }
 
         impl CreateRoleRequest {
-            pub fn default_members<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
-                T::Error: ::std::fmt::Display,
-            {
-                self.default_members = value.try_into().map_err(|e| {
-                    format!("error converting supplied value for default_members: {e}")
-                });
-                self
-            }
             pub fn members<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                        ::std::option::Option<::std::vec::Vec<super::MemberRef>>,
                     >,
                 T::Error: ::std::fmt::Display,
             {
@@ -10049,7 +10202,7 @@ pub mod types {
             pub fn policies<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                        ::std::option::Option<::std::vec::Vec<super::PolicyRef>>,
                     >,
                 T::Error: ::std::fmt::Display,
             {
@@ -10066,7 +10219,6 @@ pub mod types {
                 value: CreateRoleRequest,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
-                    default_members: value.default_members?,
                     members: value.members?,
                     name: value.name?,
                     policies: value.policies?,
@@ -10077,7 +10229,6 @@ pub mod types {
         impl ::std::convert::From<super::CreateRoleRequest> for CreateRoleRequest {
             fn from(value: super::CreateRoleRequest) -> Self {
                 Self {
-                    default_members: Ok(value.default_members),
                     members: Ok(value.members),
                     name: Ok(value.name),
                     policies: Ok(value.policies),
@@ -12320,6 +12471,96 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct MemberRef {
+            default: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
+            id: ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
+            login: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            type_: ::std::result::Result<super::MemberType, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for MemberRef {
+            fn default() -> Self {
+                Self {
+                    default: Ok(Default::default()),
+                    id: Ok(Default::default()),
+                    login: Ok(Default::default()),
+                    type_: Err("no value supplied for type_".to_string()),
+                }
+            }
+        }
+
+        impl MemberRef {
+            pub fn default<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.default = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for default: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn login<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.login = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for login: {e}"));
+                self
+            }
+            pub fn type_<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::MemberType>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.type_ = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for type_: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<MemberRef> for super::MemberRef {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: MemberRef,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    default: value.default?,
+                    id: value.id?,
+                    login: value.login?,
+                    type_: value.type_?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::MemberRef> for MemberRef {
+            fn from(value: super::MemberRef) -> Self {
+                Self {
+                    default: Ok(value.default),
+                    id: Ok(value.id),
+                    login: Ok(value.login),
+                    type_: Ok(value.type_),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct MigrateRequest {
             action: ::std::result::Result<super::MigrationAction, ::std::string::String>,
             affinity: ::std::result::Result<
@@ -13823,6 +14064,68 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct PolicyRef {
+            id: ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
+            name: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for PolicyRef {
+            fn default() -> Self {
+                Self {
+                    id: Ok(Default::default()),
+                    name: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl PolicyRef {
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<PolicyRef> for super::PolicyRef {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: PolicyRef,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    id: value.id?,
+                    name: value.name?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::PolicyRef> for PolicyRef {
+            fn from(value: super::PolicyRef) -> Self {
+                Self {
+                    id: Ok(value.id),
+                    name: Ok(value.name),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct ProvisioningLimits {
             disk: ::std::result::Result<::std::option::Option<i64>, ::std::string::String>,
             machines: ::std::result::Result<::std::option::Option<i64>, ::std::string::String>,
@@ -15099,12 +15402,8 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct UpdateRoleRequest {
-            default_members: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                ::std::string::String,
-            >,
             members: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<::std::vec::Vec<super::MemberRef>>,
                 ::std::string::String,
             >,
             name: ::std::result::Result<
@@ -15112,7 +15411,7 @@ pub mod types {
                 ::std::string::String,
             >,
             policies: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<::std::vec::Vec<super::PolicyRef>>,
                 ::std::string::String,
             >,
         }
@@ -15120,7 +15419,6 @@ pub mod types {
         impl ::std::default::Default for UpdateRoleRequest {
             fn default() -> Self {
                 Self {
-                    default_members: Ok(Default::default()),
                     members: Ok(Default::default()),
                     name: Ok(Default::default()),
                     policies: Ok(Default::default()),
@@ -15129,22 +15427,10 @@ pub mod types {
         }
 
         impl UpdateRoleRequest {
-            pub fn default_members<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
-                T::Error: ::std::fmt::Display,
-            {
-                self.default_members = value.try_into().map_err(|e| {
-                    format!("error converting supplied value for default_members: {e}")
-                });
-                self
-            }
             pub fn members<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                        ::std::option::Option<::std::vec::Vec<super::MemberRef>>,
                     >,
                 T::Error: ::std::fmt::Display,
             {
@@ -15166,7 +15452,7 @@ pub mod types {
             pub fn policies<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                        ::std::option::Option<::std::vec::Vec<super::PolicyRef>>,
                     >,
                 T::Error: ::std::fmt::Display,
             {
@@ -15183,7 +15469,6 @@ pub mod types {
                 value: UpdateRoleRequest,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
-                    default_members: value.default_members?,
                     members: value.members?,
                     name: value.name?,
                     policies: value.policies?,
@@ -15194,7 +15479,6 @@ pub mod types {
         impl ::std::convert::From<super::UpdateRoleRequest> for UpdateRoleRequest {
             fn from(value: super::UpdateRoleRequest) -> Self {
                 Self {
-                    default_members: Ok(value.default_members),
                     members: Ok(value.members),
                     name: Ok(value.name),
                     policies: Ok(value.policies),

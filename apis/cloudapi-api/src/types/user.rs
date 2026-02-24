@@ -156,21 +156,60 @@ pub struct Role {
     pub role_tag: Option<RoleTags>,
 }
 
+/// Member type for role membership references
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum MemberType {
+    Subuser,
+    Account,
+}
+
+/// A structured member reference for role create/update requests.
+///
+/// CloudAPI v9.0.0+ requires members as structured objects rather than
+/// plain strings. Default membership is expressed via the `default` field.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct MemberRef {
+    /// Member type (subuser or account)
+    #[serde(rename = "type")]
+    pub member_type: MemberType,
+    /// Member login name
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub login: Option<String>,
+    /// Member UUID
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<Uuid>,
+    /// Whether this member is a default member
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default: Option<bool>,
+}
+
+/// A structured policy reference for role create/update requests.
+///
+/// CloudAPI v9.0.0+ requires policies as structured objects rather than
+/// plain strings.
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct PolicyRef {
+    /// Policy name
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    /// Policy UUID
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<Uuid>,
+}
+
 /// Request to create role
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateRoleRequest {
     /// Role name
     pub name: String,
-    /// Members (user UUIDs or logins)
+    /// Members (structured references)
     #[serde(default)]
-    pub members: Option<Vec<String>>,
-    /// Default members (user UUIDs or logins)
+    pub members: Option<Vec<MemberRef>>,
+    /// Policies (structured references)
     #[serde(default)]
-    pub default_members: Option<Vec<String>>,
-    /// Policies (policy UUIDs or names)
-    #[serde(default)]
-    pub policies: Option<Vec<String>>,
+    pub policies: Option<Vec<PolicyRef>>,
 }
 
 /// Request to update role
@@ -180,15 +219,12 @@ pub struct UpdateRoleRequest {
     /// Role name
     #[serde(default)]
     pub name: Option<String>,
-    /// Members (user UUIDs or logins)
+    /// Members (structured references)
     #[serde(default)]
-    pub members: Option<Vec<String>>,
-    /// Default members (user UUIDs or logins)
+    pub members: Option<Vec<MemberRef>>,
+    /// Policies (structured references)
     #[serde(default)]
-    pub default_members: Option<Vec<String>>,
-    /// Policies (policy UUIDs or names)
-    #[serde(default)]
-    pub policies: Option<Vec<String>>,
+    pub policies: Option<Vec<PolicyRef>>,
 }
 
 /// Policy information

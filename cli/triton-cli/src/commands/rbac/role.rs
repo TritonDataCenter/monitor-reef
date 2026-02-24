@@ -9,6 +9,7 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
+use cloudapi_client::types::{MemberRef, MemberType, PolicyRef};
 use serde::Deserialize;
 
 use crate::output::{json, table};
@@ -251,25 +252,43 @@ async fn get_role(args: RoleGetArgs, client: &TypedClient, use_json: bool) -> Re
     Ok(())
 }
 
+/// Build a MemberRef from a login string
+fn member_ref(login: &str, is_default: bool) -> MemberRef {
+    MemberRef {
+        type_: MemberType::Subuser,
+        login: Some(login.to_string()),
+        id: None,
+        default: Some(is_default),
+    }
+}
+
+/// Build a PolicyRef from a policy name
+fn policy_ref(name: &str) -> PolicyRef {
+    PolicyRef {
+        name: Some(name.to_string()),
+        id: None,
+    }
+}
+
 async fn create_role(args: RoleCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
+
+    // Merge --member (default=false) and --default-member (default=true) into MemberRef vec
+    let mut member_refs: Vec<MemberRef> =
+        args.member.iter().map(|m| member_ref(m, false)).collect();
+    member_refs.extend(args.default_member.iter().map(|m| member_ref(m, true)));
 
     let request = cloudapi_client::types::CreateRoleRequest {
         name: args.name.clone(),
         policies: if args.policy.is_empty() {
             None
         } else {
-            Some(args.policy)
+            Some(args.policy.iter().map(|p| policy_ref(p)).collect())
         },
-        members: if args.member.is_empty() {
+        members: if member_refs.is_empty() {
             None
         } else {
-            Some(args.member)
-        },
-        default_members: if args.default_member.is_empty() {
-            None
-        } else {
-            Some(args.default_member)
+            Some(member_refs)
         },
     };
 
@@ -294,22 +313,22 @@ async fn create_role(args: RoleCreateArgs, client: &TypedClient, use_json: bool)
 async fn update_role(args: RoleUpdateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
 
+    // Merge --member (default=false) and --default-member (default=true) into MemberRef vec
+    let mut member_refs: Vec<MemberRef> =
+        args.member.iter().map(|m| member_ref(m, false)).collect();
+    member_refs.extend(args.default_member.iter().map(|m| member_ref(m, true)));
+
     let request = cloudapi_client::types::UpdateRoleRequest {
         name: args.name,
         policies: if args.policy.is_empty() {
             None
         } else {
-            Some(args.policy)
+            Some(args.policy.iter().map(|p| policy_ref(p)).collect())
         },
-        members: if args.member.is_empty() {
+        members: if member_refs.is_empty() {
             None
         } else {
-            Some(args.member)
-        },
-        default_members: if args.default_member.is_empty() {
-            None
-        } else {
-            Some(args.default_member)
+            Some(member_refs)
         },
     };
 
@@ -455,37 +474,65 @@ async fn add_role_from_file(
         .ok_or_else(|| anyhow::anyhow!("missing required field: name"))?
         .to_string();
 
-    // Extract optional arrays (support both naming conventions)
-    let policies: Option<Vec<String>> = json_data
+    // Extract policies: support both string array and object array formats
+    let policies: Option<Vec<PolicyRef>> = json_data
         .get("policies")
         .and_then(|v| v.as_array())
         .map(|arr| {
             arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .filter_map(|v| {
+                    if let Some(s) = v.as_str() {
+                        // Old format: plain string
+                        Some(policy_ref(s))
+                    } else if v.is_object() {
+                        // New format: {"name": "...", "id": "..."}
+                        serde_json::from_value::<PolicyRef>(v.clone()).ok()
+                    } else {
+                        None
+                    }
+                })
                 .collect()
         })
-        .filter(|v: &Vec<String>| !v.is_empty());
+        .filter(|v: &Vec<PolicyRef>| !v.is_empty());
 
-    let members: Option<Vec<String>> = json_data
+    // Extract members: support both string array and object array formats
+    let mut member_refs: Vec<MemberRef> = json_data
         .get("members")
         .and_then(|v| v.as_array())
         .map(|arr| {
             arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .filter_map(|v| {
+                    if let Some(s) = v.as_str() {
+                        // Old format: plain string login
+                        Some(member_ref(s, false))
+                    } else if v.is_object() {
+                        // New format: {"type": "subuser", "login": "..."}
+                        serde_json::from_value::<MemberRef>(v.clone()).ok()
+                    } else {
+                        None
+                    }
+                })
                 .collect()
         })
-        .filter(|v: &Vec<String>| !v.is_empty());
+        .unwrap_or_default();
 
-    let default_members: Option<Vec<String>> = json_data
+    // Handle default_members / defaultMembers from old format: merge as default=true
+    let default_members_val = json_data
         .get("default_members")
-        .or_else(|| json_data.get("defaultMembers"))
-        .and_then(|v| v.as_array())
-        .map(|arr| {
-            arr.iter()
-                .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                .collect()
-        })
-        .filter(|v: &Vec<String>| !v.is_empty());
+        .or_else(|| json_data.get("defaultMembers"));
+    if let Some(arr) = default_members_val.and_then(|v| v.as_array()) {
+        for v in arr {
+            if let Some(s) = v.as_str() {
+                member_refs.push(member_ref(s, true));
+            }
+        }
+    }
+
+    let members: Option<Vec<MemberRef>> = if member_refs.is_empty() {
+        None
+    } else {
+        Some(member_refs)
+    };
 
     // Create the role
     let account = &client.auth_config().account;
@@ -493,7 +540,6 @@ async fn add_role_from_file(
         name: name.clone(),
         policies,
         members,
-        default_members,
     };
 
     let response = client
@@ -594,23 +640,26 @@ async fn edit_role_in_editor(role_ref: &str, client: &TypedClient) -> Result<()>
 
         match serde_yaml::from_str::<RoleEdit>(&result.content) {
             Ok(edited) => {
+                // Merge members and default_members into MemberRef vec
+                let mut member_refs: Vec<MemberRef> = edited
+                    .members
+                    .iter()
+                    .map(|m| member_ref(m, false))
+                    .collect();
+                member_refs.extend(edited.default_members.iter().map(|m| member_ref(m, true)));
+
                 // Build update request
                 let request = cloudapi_client::types::UpdateRoleRequest {
                     name: Some(edited.name.clone()),
-                    members: if edited.members.is_empty() {
+                    members: if member_refs.is_empty() {
                         None
                     } else {
-                        Some(edited.members)
+                        Some(member_refs)
                     },
                     policies: if edited.policies.is_empty() {
                         None
                     } else {
-                        Some(edited.policies)
-                    },
-                    default_members: if edited.default_members.is_empty() {
-                        None
-                    } else {
-                        Some(edited.default_members)
+                        Some(edited.policies.iter().map(|p| policy_ref(p)).collect())
                     },
                 };
 

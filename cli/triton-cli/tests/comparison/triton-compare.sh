@@ -969,7 +969,7 @@ USERJSON
     # RBAC role create
     local role_json="$ISOLATED_HOME/rbac-role.json"
     cat > "$role_json" <<'ROLEJSON'
-{"name": "testrole", "members": [{"type": "subuser", "id": "testuser", "default": false}], "policies": [{"name": "testpolicy"}]}
+{"name": "testrole", "members": [{"type": "subuser", "login": "testuser", "default": false}], "policies": [{"name": "testpolicy"}]}
 ROLEJSON
     run_payload_test_split "payload-rbac-role-create" "rbac role create" \
         rbac role -a "$role_json" \

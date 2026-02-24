@@ -997,22 +997,46 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             default_members,
             policies,
         } => {
+            // Merge members (default=false) and default_members (default=true)
+            let mut member_refs: Vec<cloudapi_client::types::MemberRef> = members
+                .iter()
+                .map(|m| cloudapi_client::types::MemberRef {
+                    type_: cloudapi_client::types::MemberType::Subuser,
+                    login: Some(m.clone()),
+                    id: None,
+                    default: Some(false),
+                })
+                .collect();
+            member_refs.extend(
+                default_members
+                    .iter()
+                    .map(|m| cloudapi_client::types::MemberRef {
+                        type_: cloudapi_client::types::MemberType::Subuser,
+                        login: Some(m.clone()),
+                        id: None,
+                        default: Some(true),
+                    }),
+            );
+
             let request = cloudapi_client::types::CreateRoleRequest {
                 name: name.clone(),
                 policies: if policies.is_empty() {
                     None
                 } else {
-                    Some(policies.clone())
+                    Some(
+                        policies
+                            .iter()
+                            .map(|p| cloudapi_client::types::PolicyRef {
+                                name: Some(p.clone()),
+                                id: None,
+                            })
+                            .collect(),
+                    )
                 },
-                members: if members.is_empty() {
+                members: if member_refs.is_empty() {
                     None
                 } else {
-                    Some(members.clone())
-                },
-                default_members: if default_members.is_empty() {
-                    None
-                } else {
-                    Some(default_members.clone())
+                    Some(member_refs)
                 },
             };
             client
@@ -1030,11 +1054,50 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             default_members,
             policies,
         } => {
+            // Convert members + default_members to MemberRef vec
+            let member_refs: Option<Vec<cloudapi_client::types::MemberRef>> =
+                match (members, default_members) {
+                    (None, None) => None,
+                    _ => {
+                        let mut refs: Vec<cloudapi_client::types::MemberRef> = members
+                            .as_ref()
+                            .map(|ms| {
+                                ms.iter()
+                                    .map(|m| cloudapi_client::types::MemberRef {
+                                        type_: cloudapi_client::types::MemberType::Subuser,
+                                        login: Some(m.clone()),
+                                        id: None,
+                                        default: Some(false),
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+                        if let Some(dms) = default_members {
+                            refs.extend(dms.iter().map(|m| cloudapi_client::types::MemberRef {
+                                type_: cloudapi_client::types::MemberType::Subuser,
+                                login: Some(m.clone()),
+                                id: None,
+                                default: Some(true),
+                            }));
+                        }
+                        Some(refs)
+                    }
+                };
+
+            let policy_refs: Option<Vec<cloudapi_client::types::PolicyRef>> =
+                policies.as_ref().map(|ps| {
+                    ps.iter()
+                        .map(|p| cloudapi_client::types::PolicyRef {
+                            name: Some(p.clone()),
+                            id: None,
+                        })
+                        .collect()
+                });
+
             let request = cloudapi_client::types::UpdateRoleRequest {
                 name: None,
-                policies: policies.clone(),
-                members: members.clone(),
-                default_members: default_members.clone(),
+                policies: policy_refs,
+                members: member_refs,
             };
             client
                 .inner()
