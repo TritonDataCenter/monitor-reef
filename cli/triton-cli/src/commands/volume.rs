@@ -10,7 +10,7 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 
-use cloudapi_client::types::{VolumeState, VolumeType};
+use cloudapi_client::{VolumeState, VolumeType};
 
 use crate::output::enum_to_display;
 use crate::output::table::{TableBuilder, TableFormatArgs};
@@ -206,14 +206,7 @@ async fn list_volumes(
 ) -> Result<()> {
     apply_positional_filters(&mut args)?;
     let account = &client.auth_config().account;
-    let response = client
-        .inner()
-        .list_volumes()
-        .account(account)
-        .send()
-        .await?;
-
-    let all_volumes = response.into_inner();
+    let all_volumes = client.list_volumes(account).await?;
 
     // Apply client-side filters
     let volumes: Vec<_> = all_volumes
@@ -235,7 +228,7 @@ async fn list_volumes(
                 return false;
             }
             if let Some(vtype) = args.volume_type
-                && vol.type_ != vtype
+                && vol.volume_type != vtype
             {
                 return false;
             }
@@ -254,7 +247,7 @@ async fn list_volumes(
                 vol.id.to_string()[..8].to_string(),
                 vol.name.clone(),
                 format_volume_size(vol.size),
-                enum_to_display(&vol.type_),
+                enum_to_display(&vol.volume_type),
                 enum_to_display(&vol.state),
                 output::format_age(&vol.created.to_string()),
                 vol.id.to_string(),
@@ -271,15 +264,7 @@ async fn get_volume(args: VolumeGetArgs, client: &TypedClient, use_json: bool) -
     let account = &client.auth_config().account;
     let volume_id = resolve_volume(&args.volume, client).await?;
 
-    let response = client
-        .inner()
-        .get_volume()
-        .account(account)
-        .id(volume_id)
-        .send()
-        .await?;
-
-    let volume = response.into_inner();
+    let volume = client.get_volume(account, &volume_id.to_string()).await?;
 
     if use_json {
         json::print_json(&volume)?;
@@ -421,22 +406,22 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
     // Parse tags
     let tags = args.tags.as_ref().map(|t| parse_tags(t)).transpose()?;
 
+    // The clap arg uses `cloudapi_client::VolumeType` (API type, has ValueEnum)
+    // but `types::CreateVolumeRequest` expects `types::VolumeType` (Progenitor).
+    // These are structurally identical enums from different codegen paths.
+    let progenitor_type = match args.r#type {
+        VolumeType::Tritonnfs => cloudapi_client::types::VolumeType::Tritonnfs,
+        VolumeType::Unknown => cloudapi_client::types::VolumeType::Unknown,
+    };
     let request = cloudapi_client::types::CreateVolumeRequest {
         name: args.name.clone(),
-        type_: Some(args.r#type),
+        type_: Some(progenitor_type),
         size,
         networks,
         tags,
     };
 
-    let response = client
-        .inner()
-        .create_volume()
-        .account(account)
-        .body(request)
-        .send()
-        .await?;
-    let volume = response.into_inner();
+    let volume = client.create_volume_normalized(account, request).await?;
 
     let should_wait = args.wait > 0;
     let wait_timeout = args.wait_timeout.unwrap_or(300); // Default 5 minutes
@@ -487,7 +472,7 @@ async fn wait_for_volume_ready(
     volume_id: &str,
     client: &TypedClient,
     timeout_secs: u64,
-) -> Result<cloudapi_client::types::Volume> {
+) -> Result<cloudapi_client::Volume> {
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
 
@@ -496,15 +481,7 @@ async fn wait_for_volume_ready(
     let timeout = Duration::from_secs(timeout_secs);
 
     loop {
-        let response = client
-            .inner()
-            .get_volume()
-            .account(account)
-            .id(volume_id)
-            .send()
-            .await?;
-
-        let volume = response.into_inner();
+        let volume = client.get_volume(account, volume_id).await?;
 
         if volume.state == VolumeState::Ready || volume.state == VolumeState::Failed {
             return Ok(volume);
@@ -633,17 +610,10 @@ async fn wait_for_volume_deletion(
     let timeout = Duration::from_secs(timeout_secs);
 
     loop {
-        let result = client
-            .inner()
-            .get_volume()
-            .account(account)
-            .id(volume_id)
-            .send()
-            .await;
+        let result = client.get_volume(account, volume_id).await;
 
         match result {
-            Ok(response) => {
-                let volume = response.into_inner();
+            Ok(volume) => {
                 if volume.state == VolumeState::Failed {
                     return Err(anyhow::anyhow!("Volume deletion failed"));
                 }
