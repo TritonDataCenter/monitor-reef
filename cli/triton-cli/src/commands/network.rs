@@ -366,6 +366,11 @@ async fn create_network(
 ) -> Result<()> {
     let account = &client.auth_config().account;
 
+    // Node.js triton requires either --gateway or --no-nat
+    if args.gateway.is_none() && !args.no_nat {
+        anyhow::bail!("without a --gateway (-g), you must specify --no-nat (-x)");
+    }
+
     // Build resolvers from comma-separated or multiple flags (default to empty)
     let resolvers = Some(match args.resolver {
         Some(r) => r

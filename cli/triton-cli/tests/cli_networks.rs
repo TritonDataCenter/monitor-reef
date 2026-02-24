@@ -482,6 +482,30 @@ fn test_networks_filter_public_false() {
     }
 }
 
+/// Test `triton network create` without --gateway or --no-nat returns error
+#[test]
+fn test_network_create_requires_gateway_or_no_nat() {
+    triton_cmd()
+        .args([
+            "network",
+            "create",
+            "100",
+            "--name",
+            "test",
+            "--subnet",
+            "10.0.0.0/24",
+            "--start-ip",
+            "10.0.0.1",
+            "--end-ip",
+            "10.0.0.254",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicates::str::contains(
+            "without a --gateway (-g), you must specify --no-nat (-x)",
+        ));
+}
+
 /// Test `triton networks --public=bogus` returns error
 #[test]
 fn test_networks_filter_public_invalid() {
