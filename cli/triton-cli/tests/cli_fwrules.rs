@@ -311,6 +311,110 @@ fn test_fwrule_update_unknown_field() {
         .stderr(predicate::str::contains("unknown field"));
 }
 
+/// Test `triton fwrule enable UUID` uses POST /{account}/fwrules/{id}/enable with no body
+#[test]
+fn test_fwrule_enable_payload() {
+    let output = triton_cmd()
+        .args([
+            "--emit-payload",
+            "fwrule",
+            "enable",
+            "00000000-0000-0000-0000-000000000006",
+        ])
+        .output()
+        .expect("Failed to run command");
+
+    assert!(output.status.success(), "command should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let envelopes: Vec<serde_json::Value> = stdout
+        .lines()
+        .collect::<Vec<_>>()
+        .join("\n")
+        .split("\n}\n")
+        .filter_map(|chunk| {
+            let trimmed = chunk.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let json_str = if trimmed.ends_with('}') {
+                trimmed.to_string()
+            } else {
+                format!("{trimmed}\n}}")
+            };
+            serde_json::from_str(&json_str).ok()
+        })
+        .collect();
+
+    let post = envelopes
+        .iter()
+        .find(|e| e["method"] == "POST")
+        .expect("should have a POST envelope");
+
+    let path = post["path"].as_str().expect("path should be a string");
+    assert!(
+        path.ends_with("/fwrules/00000000-0000-0000-0000-000000000006/enable"),
+        "path should end with /fwrules/UUID/enable, got: {path}"
+    );
+    assert!(
+        post["body"].is_null(),
+        "enable should have no body, got: {}",
+        post["body"]
+    );
+}
+
+/// Test `triton fwrule disable UUID` uses POST /{account}/fwrules/{id}/disable with no body
+#[test]
+fn test_fwrule_disable_payload() {
+    let output = triton_cmd()
+        .args([
+            "--emit-payload",
+            "fwrule",
+            "disable",
+            "00000000-0000-0000-0000-000000000006",
+        ])
+        .output()
+        .expect("Failed to run command");
+
+    assert!(output.status.success(), "command should succeed");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    let envelopes: Vec<serde_json::Value> = stdout
+        .lines()
+        .collect::<Vec<_>>()
+        .join("\n")
+        .split("\n}\n")
+        .filter_map(|chunk| {
+            let trimmed = chunk.trim();
+            if trimmed.is_empty() {
+                return None;
+            }
+            let json_str = if trimmed.ends_with('}') {
+                trimmed.to_string()
+            } else {
+                format!("{trimmed}\n}}")
+            };
+            serde_json::from_str(&json_str).ok()
+        })
+        .collect();
+
+    let post = envelopes
+        .iter()
+        .find(|e| e["method"] == "POST")
+        .expect("should have a POST envelope");
+
+    let path = post["path"].as_str().expect("path should be a string");
+    assert!(
+        path.ends_with("/fwrules/00000000-0000-0000-0000-000000000006/disable"),
+        "path should end with /fwrules/UUID/disable, got: {path}"
+    );
+    assert!(
+        post["body"].is_null(),
+        "disable should have no body, got: {}",
+        post["body"]
+    );
+}
+
 // =============================================================================
 // API tests - require config.json with valid profile
 // These tests are ignored by default and run with `make triton-test-api`

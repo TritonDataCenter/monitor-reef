@@ -11,10 +11,6 @@ payload-image-export  monitor-reef-39s2
 payload-disk-add  monitor-reef-39s2
 payload-snap-create  monitor-reef-39s2
 
-# fwrule enable/disable wire format
-payload-fwrule-enable  monitor-reef-mm4y
-payload-fwrule-disable  monitor-reef-mm4y
-
 # image action wire format (clone, share, unshare)
 payload-image-clone  monitor-reef-8bv8
 payload-image-share  monitor-reef-8bv8

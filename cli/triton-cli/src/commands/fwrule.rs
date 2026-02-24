@@ -269,19 +269,11 @@ async fn enable_rules(args: FwruleEnableArgs, client: &TypedClient) -> Result<()
     for rule_id in &args.ids {
         let resolved_id = resolve_rule(rule_id, client).await?;
 
-        let request = cloudapi_client::types::UpdateFirewallRuleRequest {
-            rule: None,
-            enabled: Some(true),
-            log: None,
-            description: None,
-        };
-
         client
             .inner()
-            .update_firewall_rule()
+            .enable_firewall_rule()
             .account(account)
             .id(resolved_id)
-            .body(request)
             .send()
             .await?;
 
@@ -297,19 +289,11 @@ async fn disable_rules(args: FwruleDisableArgs, client: &TypedClient) -> Result<
     for rule_id in &args.ids {
         let resolved_id = resolve_rule(rule_id, client).await?;
 
-        let request = cloudapi_client::types::UpdateFirewallRuleRequest {
-            rule: None,
-            enabled: Some(false),
-            log: None,
-            description: None,
-        };
-
         client
             .inner()
-            .update_firewall_rule()
+            .disable_firewall_rule()
             .account(account)
             .id(resolved_id)
-            .body(request)
             .send()
             .await?;
 
