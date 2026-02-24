@@ -952,6 +952,131 @@ run_payload_tests() {
     run_payload_test "payload-image-create" "image create" \
         image create "$INST_UUID" test-image 1.0.0
 
+    # --- Instance actions (remaining) ---
+
+    run_payload_test "payload-rename" "instance rename" \
+        instance rename "$INST_UUID" new-name
+
+    run_payload_test "payload-resize" "instance resize" \
+        instance resize "$INST_UUID" "$PKG_UUID"
+
+    run_payload_test "payload-enable-fw" "instance enable-firewall" \
+        instance enable-firewall "$INST_UUID"
+
+    run_payload_test "payload-disable-fw" "instance disable-firewall" \
+        instance disable-firewall "$INST_UUID"
+
+    run_payload_test "payload-enable-delprot" "instance enable-deletion-protection" \
+        instance enable-deletion-protection "$INST_UUID"
+
+    run_payload_test "payload-disable-delprot" "instance disable-deletion-protection" \
+        instance disable-deletion-protection "$INST_UUID"
+
+    # --- Instance snapshot ---
+
+    run_payload_test "payload-snap-create" "instance snapshot create" \
+        instance snapshot create "$INST_UUID" -n snap1
+
+    run_payload_test "payload-snap-delete" "instance snapshot delete" \
+        instance snapshot delete "$INST_UUID" snap1 -f
+
+    # --- Instance NIC ---
+
+    run_payload_test "payload-nic-add" "instance nic create" \
+        instance nic create "$INST_UUID" "$NET_UUID"
+
+    run_payload_test "payload-nic-remove" "instance nic delete" \
+        instance nic delete "$INST_UUID" aa:bb:cc:dd:ee:ff -f
+
+    # --- Instance disk ---
+
+    run_payload_test "payload-disk-add" "instance disk add" \
+        instance disk add "$INST_UUID" 10240
+
+    local DISK_UUID="00000000-0000-0000-0000-000000000007"
+    run_payload_test "payload-disk-delete" "instance disk delete" \
+        instance disk delete "$INST_UUID" "$DISK_UUID" -f
+
+    # --- Instance tag ---
+
+    run_payload_test "payload-tag-set" "instance tag set" \
+        instance tag set "$INST_UUID" env=prod role=web
+
+    run_payload_test "payload-tag-delete" "instance tag delete" \
+        instance tag delete "$INST_UUID" env
+
+    run_payload_test "payload-tag-replace" "instance tag replace-all" \
+        instance tag replace-all "$INST_UUID" env=staging
+
+    run_payload_test "payload-tag-delete-all" "instance tag delete --all" \
+        instance tag delete "$INST_UUID" --all
+
+    # --- Instance metadata ---
+
+    run_payload_test "payload-meta-set" "instance metadata set" \
+        instance metadata set "$INST_UUID" greeting=hello
+
+    run_payload_test "payload-meta-delete" "instance metadata delete" \
+        instance metadata delete "$INST_UUID" greeting
+
+    # --- Image (additional) ---
+
+    run_payload_test "payload-image-delete" "image delete" \
+        image delete "$IMAGE_UUID" -f
+
+    run_payload_test "payload-image-clone" "image clone" \
+        image clone "$IMAGE_UUID"
+
+    local ACCT_UUID="00000000-0000-0000-0000-000000000008"
+    run_payload_test "payload-image-share" "image share" \
+        image share "$IMAGE_UUID" "$ACCT_UUID"
+
+    run_payload_test "payload-image-unshare" "image unshare" \
+        image unshare "$IMAGE_UUID" "$ACCT_UUID"
+
+    run_payload_test "payload-image-update" "image update" \
+        image update "$IMAGE_UUID" name=new-name version=2.0.0
+
+    run_payload_test "payload-image-export" "image export" \
+        image export "$IMAGE_UUID" /user/stor/export
+
+    run_payload_test "payload-image-copy" "image copy" \
+        image copy "$IMAGE_UUID" us-west-1
+
+    # --- Volume (additional) ---
+
+    local VOL_UUID="00000000-0000-0000-0000-000000000005"
+    run_payload_test "payload-volume-delete" "volume delete" \
+        volume delete "$VOL_UUID" -f
+
+    # --- VLAN (additional) ---
+
+    run_payload_test "payload-vlan-delete" "vlan delete" \
+        vlan delete 100 -f
+
+    run_payload_test "payload-vlan-update" "vlan update" \
+        vlan update 100 name=updated-vlan
+
+    # --- Firewall rule (additional) ---
+
+    local FWRULE_UUID="00000000-0000-0000-0000-000000000006"
+    run_payload_test "payload-fwrule-delete" "fwrule delete" \
+        fwrule delete "$FWRULE_UUID" -f
+
+    run_payload_test "payload-fwrule-enable" "fwrule enable" \
+        fwrule enable "$FWRULE_UUID"
+
+    run_payload_test "payload-fwrule-disable" "fwrule disable" \
+        fwrule disable "$FWRULE_UUID"
+
+    run_payload_test "payload-fwrule-update" "fwrule update" \
+        fwrule update "$FWRULE_UUID" rule="FROM any TO vm $INST_UUID ALLOW tcp PORT 80"
+
+    # --- Key ---
+
+    run_payload_test "payload-key-delete" "key delete" \
+        key delete test-key -f
+
     # --- RBAC ---
     # Node.js triton uses "rbac user -a FILE" (JSON file input), while Rust
     # uses "rbac user create LOGIN --email ...". We use run_payload_test_split

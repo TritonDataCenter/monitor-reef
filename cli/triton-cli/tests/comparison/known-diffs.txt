@@ -6,3 +6,41 @@
 # When a diff is fixed and the test flips to PASS, the script flags it
 # as "fixed?" so you know to close the bead and remove the line.
 
+# field=value syntax for update commands
+payload-image-update  monitor-reef-wlu3
+payload-fwrule-update  monitor-reef-wlu3
+payload-vlan-update  monitor-reef-wlu3
+
+# positional arg mismatches + not-implemented subcommands
+payload-image-export  monitor-reef-39s2
+payload-disk-add  monitor-reef-39s2
+payload-snap-create  monitor-reef-39s2
+
+# fwrule enable/disable wire format
+payload-fwrule-enable  monitor-reef-mm4y
+payload-fwrule-disable  monitor-reef-mm4y
+
+# image action wire format (clone, share, unshare)
+payload-image-clone  monitor-reef-8bv8
+payload-image-share  monitor-reef-8bv8
+payload-image-unshare  monitor-reef-8bv8
+
+# image copy semantics
+payload-image-copy  monitor-reef-7u7p
+
+# NIC add/remove wire format
+payload-nic-add  monitor-reef-njnh
+payload-nic-remove  monitor-reef-njnh
+
+# verification GET consistency
+payload-resize  monitor-reef-69jd
+payload-image-delete  monitor-reef-69jd
+
+# node-triton patch: trailing empty objects
+payload-tag-set  monitor-reef-t05d
+payload-tag-replace  monitor-reef-t05d
+payload-meta-set  monitor-reef-t05d
+
+# node-triton patch: emit-payload gaps
+payload-disk-delete  monitor-reef-oxis
+payload-vlan-delete  monitor-reef-oxis
