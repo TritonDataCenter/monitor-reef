@@ -9,8 +9,10 @@
 use anyhow::Result;
 use clap::Args;
 use cloudapi_client::TypedClient;
+use cloudapi_client::types::FirewallRule;
 
-use crate::output::{json, table};
+use crate::output::json;
+use crate::output::table::{TableBuilder, TableFormatArgs};
 
 #[derive(Args, Clone)]
 pub struct EnableFirewallArgs {
@@ -28,6 +30,9 @@ pub struct DisableFirewallArgs {
 pub struct FwrulesArgs {
     /// Instance ID or name
     pub instance: String,
+
+    #[command(flatten)]
+    pub table: TableFormatArgs,
 }
 
 pub async fn enable(args: EnableFirewallArgs, client: &TypedClient) -> Result<()> {
@@ -77,17 +82,40 @@ pub async fn list_rules(args: FwrulesArgs, client: &TypedClient, use_json: bool)
     if use_json {
         json::print_json_stream(&rules)?;
     } else {
-        let mut tbl = table::create_table(&["SHORTID", "ENABLED", "RULE"]);
+        let short_cols = ["shortid", "enabled", "global", "log", "rule"];
+        let long_cols = ["id", "description"];
 
+        let mut tbl = TableBuilder::new(&["SHORTID", "ENABLED", "GLOBAL", "LOG", "RULE"])
+            .with_long_headers(&["ID", "DESCRIPTION"]);
+
+        let all_cols: Vec<&str> = short_cols.iter().chain(long_cols.iter()).copied().collect();
         for rule in &rules {
-            let short_id = &rule.id.to_string()[..8];
-            let enabled = if rule.enabled { "yes" } else { "no" };
-
-            tbl.add_row(vec![short_id, enabled, &rule.rule]);
+            let row = all_cols
+                .iter()
+                .map(|col| get_instance_fwrule_field_value(rule, col))
+                .collect();
+            tbl.add_row(row);
         }
 
-        table::print_table(tbl);
+        tbl.print(&args.table);
     }
 
     Ok(())
+}
+
+fn get_instance_fwrule_field_value(rule: &FirewallRule, field: &str) -> String {
+    match field.to_lowercase().as_str() {
+        "id" => rule.id.to_string(),
+        "shortid" => rule.id.to_string()[..8].to_string(),
+        "enabled" => if rule.enabled { "yes" } else { "no" }.to_string(),
+        "global" => rule
+            .global
+            .map(|g| if g { "yes" } else { "no" })
+            .unwrap_or("-")
+            .to_string(),
+        "log" => if rule.log { "yes" } else { "no" }.to_string(),
+        "rule" => rule.rule.clone(),
+        "description" | "desc" => rule.description.clone().unwrap_or_else(|| "-".to_string()),
+        _ => "-".to_string(),
+    }
 }

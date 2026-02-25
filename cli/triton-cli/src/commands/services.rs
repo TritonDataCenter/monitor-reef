@@ -2,17 +2,25 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Services listing command
 
 use anyhow::Result;
+use clap::Args;
 use cloudapi_client::TypedClient;
 
-use crate::output::{json, table};
+use crate::output::json;
+use crate::output::table::{TableBuilder, TableFormatArgs};
+
+#[derive(Args, Clone)]
+pub struct ServiceListArgs {
+    #[command(flatten)]
+    pub table: TableFormatArgs,
+}
 
 /// List available service endpoints
-pub async fn run(client: &TypedClient, use_json: bool) -> Result<()> {
+pub async fn run(args: ServiceListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = &client.auth_config().account;
     let response = client
         .inner()
@@ -30,12 +38,25 @@ pub async fn run(client: &TypedClient, use_json: bool) -> Result<()> {
         let mut entries: Vec<_> = services.iter().collect();
         entries.sort_by_key(|(name, _)| name.as_str());
 
-        let mut tbl = table::create_table(&["NAME", "ENDPOINT"]);
-        for (name, url) in entries {
-            tbl.add_row(vec![name, url]);
+        let short_cols = ["name", "endpoint"];
+        let mut tbl = TableBuilder::new(&["NAME", "ENDPOINT"]);
+        for (name, url) in &entries {
+            let row = short_cols
+                .iter()
+                .map(|col| get_service_field_value(name, url, col))
+                .collect();
+            tbl.add_row(row);
         }
-        table::print_table(tbl);
+        tbl.print(&args.table);
     }
 
     Ok(())
+}
+
+fn get_service_field_value(name: &str, endpoint: &str, field: &str) -> String {
+    match field.to_lowercase().as_str() {
+        "name" => name.to_string(),
+        "endpoint" => endpoint.to_string(),
+        _ => "-".to_string(),
+    }
 }

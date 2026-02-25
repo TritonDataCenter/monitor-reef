@@ -203,11 +203,11 @@ enum Commands {
 
     /// List datacenters
     #[command(alias = "dcs")]
-    Datacenters,
+    Datacenters(commands::datacenters::DatacenterListArgs),
 
     /// List service endpoints
     #[command(alias = "svcs")]
-    Services,
+    Services(commands::services::ServiceListArgs),
 
     /// Subscribe to VM change events
     Changefeed(commands::changefeed::ChangefeedArgs),
@@ -639,13 +639,13 @@ async fn try_main() -> Result<()> {
             let (client, _profile) = cli.build_client().await?;
             commands::info::run(&client, cli.json).await
         }
-        Commands::Datacenters => {
+        Commands::Datacenters(args) => {
             let (client, _profile) = cli.build_client().await?;
-            commands::datacenters::run(&client, cli.json).await
+            commands::datacenters::run(args.clone(), &client, cli.json).await
         }
-        Commands::Services => {
+        Commands::Services(args) => {
             let (client, _profile) = cli.build_client().await?;
-            commands::services::run(&client, cli.json).await
+            commands::services::run(args.clone(), &client, cli.json).await
         }
         Commands::Changefeed(args) => {
             let (client, _profile) = cli.build_client().await?;

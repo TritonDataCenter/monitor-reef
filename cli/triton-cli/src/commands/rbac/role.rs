@@ -12,7 +12,8 @@ use cloudapi_client::TypedClient;
 use cloudapi_client::types::{MemberRef, MemberType, PolicyRef};
 use serde::Deserialize;
 
-use crate::output::{json, table};
+use crate::output::json;
+use crate::output::table::{TableBuilder, TableFormatArgs};
 
 use super::editor;
 
@@ -21,7 +22,7 @@ use super::editor;
 pub enum RoleSubcommand {
     /// List RBAC roles
     #[command(visible_alias = "ls")]
-    List,
+    List(RoleListArgs),
     /// Get role details
     Get(RoleGetArgs),
     /// Create role
@@ -31,6 +32,12 @@ pub enum RoleSubcommand {
     /// Delete role(s)
     #[command(visible_alias = "rm")]
     Delete(RoleDeleteArgs),
+}
+
+#[derive(Args, Clone)]
+pub struct RoleListArgs {
+    #[command(flatten)]
+    pub table: TableFormatArgs,
 }
 
 /// RBAC role command supporting both subcommands and action flags
@@ -132,7 +139,7 @@ impl RbacRoleCommand {
         // If a subcommand is provided, use the modern pattern
         if let Some(cmd) = self.command {
             return match cmd {
-                RoleSubcommand::List => list_roles(client, use_json).await,
+                RoleSubcommand::List(args) => list_roles(&args.table, client, use_json).await,
                 RoleSubcommand::Get(args) => get_role(args, client, use_json).await,
                 RoleSubcommand::Create(args) => create_role(args, client, use_json).await,
                 RoleSubcommand::Update(args) => update_role(args, client, use_json).await,
@@ -181,7 +188,11 @@ impl RbacRoleCommand {
     }
 }
 
-pub async fn list_roles(client: &TypedClient, use_json: bool) -> Result<()> {
+pub async fn list_roles(
+    table_args: &TableFormatArgs,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
     let account = &client.auth_config().account;
     let response = client.inner().list_roles().account(account).send().await?;
 
@@ -190,19 +201,34 @@ pub async fn list_roles(client: &TypedClient, use_json: bool) -> Result<()> {
     if use_json {
         json::print_json_stream(&roles)?;
     } else {
-        // node-triton columns: NAME, POLICIES, MEMBERS (no SHORTID)
-        let mut tbl = table::create_table(&["NAME", "POLICIES", "MEMBERS"]);
+        let short_cols = ["name", "policies", "members"];
+        let long_cols = ["id"];
+
+        let mut tbl =
+            TableBuilder::new(&["NAME", "POLICIES", "MEMBERS"]).with_long_headers(&["ID"]);
+
+        let all_cols: Vec<&str> = short_cols.iter().chain(long_cols.iter()).copied().collect();
         for role in &roles {
-            tbl.add_row(vec![
-                &role.name,
-                &role.policies.join(", "),
-                &role.members.join(", "),
-            ]);
+            let row = all_cols
+                .iter()
+                .map(|col| get_role_field_value(role, col))
+                .collect();
+            tbl.add_row(row);
         }
-        table::print_table(tbl);
+        tbl.print(table_args);
     }
 
     Ok(())
+}
+
+fn get_role_field_value(role: &cloudapi_client::types::Role, field: &str) -> String {
+    match field.to_lowercase().as_str() {
+        "id" => role.id.to_string(),
+        "name" => role.name.clone(),
+        "policies" => role.policies.join(", "),
+        "members" => role.members.join(", "),
+        _ => "-".to_string(),
+    }
 }
 
 async fn get_role(args: RoleGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {

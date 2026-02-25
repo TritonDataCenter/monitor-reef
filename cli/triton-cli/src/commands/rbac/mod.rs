@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! RBAC (Role-Based Access Control) management commands
 
@@ -19,6 +19,8 @@ mod user;
 use anyhow::Result;
 use clap::Subcommand;
 use cloudapi_client::TypedClient;
+
+use crate::output::table::TableFormatArgs;
 
 pub use accesskeys::{RbacAccesskeyCommand, UserAccesskeysArgs};
 pub use apply::{ApplyArgs, ResetArgs};
@@ -80,11 +82,13 @@ impl RbacCommand {
             Self::Apply(args) => apply::rbac_apply(args, client, use_json).await,
             Self::Reset(args) => apply::rbac_reset(args, client).await,
             Self::User(command) => command.run(client, use_json).await,
-            Self::Users => user::list_users(client, use_json).await,
+            Self::Users => user::list_users(&TableFormatArgs::default(), client, use_json).await,
             Self::Role(command) => command.run(client, use_json).await,
-            Self::Roles => role::list_roles(client, use_json).await,
+            Self::Roles => role::list_roles(&TableFormatArgs::default(), client, use_json).await,
             Self::Policy(command) => command.run(client, use_json).await,
-            Self::Policies => policy::list_policies(client, use_json).await,
+            Self::Policies => {
+                policy::list_policies(&TableFormatArgs::default(), client, use_json).await
+            }
             Self::Keys(args) => keys::list_user_keys(args, client, use_json).await,
             Self::Key(command) => command.run(client, use_json).await,
             Self::Accesskeys(args) => {

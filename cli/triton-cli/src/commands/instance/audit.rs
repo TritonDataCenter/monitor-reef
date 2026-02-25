@@ -9,8 +9,10 @@
 use anyhow::Result;
 use clap::Args;
 use cloudapi_client::TypedClient;
+use cloudapi_client::types::AuditEntry;
 
-use crate::output::{json, table};
+use crate::output::json;
+use crate::output::table::{TableBuilder, TableFormatArgs};
 
 #[derive(Args, Clone)]
 pub struct AuditArgs {
@@ -20,6 +22,9 @@ pub struct AuditArgs {
     /// Maximum results
     #[arg(long)]
     pub limit: Option<i64>,
+
+    #[command(flatten)]
+    pub table: TableFormatArgs,
 }
 
 pub async fn run(args: AuditArgs, client: &TypedClient, use_json: bool) -> Result<()> {
@@ -39,22 +44,47 @@ pub async fn run(args: AuditArgs, client: &TypedClient, use_json: bool) -> Resul
     if use_json {
         json::print_json_stream(&audits)?;
     } else {
-        let mut tbl = table::create_table(&["TIME", "ACTION", "SUCCESS", "CALLER"]);
+        let short_cols = ["time", "action", "success"];
+        let long_cols = ["caller"];
 
+        let mut tbl =
+            TableBuilder::new(&["TIME", "ACTION", "SUCCESS"]).with_long_headers(&["CALLER"]);
+
+        let all_cols: Vec<&str> = short_cols.iter().chain(long_cols.iter()).copied().collect();
         for audit in &audits {
-            let time = &audit.time;
-            let action = &audit.action;
-            let success = audit
-                .success
-                .map(|s| if s { "yes" } else { "no" })
-                .unwrap_or("-");
-            let caller = "-"; // caller is optional complex type
-
-            tbl.add_row(vec![time, action, success, caller]);
+            let row = all_cols
+                .iter()
+                .map(|col| get_audit_field_value(audit, col))
+                .collect();
+            tbl.add_row(row);
         }
-
-        table::print_table(tbl);
+        tbl.print(&args.table);
     }
 
     Ok(())
+}
+
+fn get_audit_field_value(audit: &AuditEntry, field: &str) -> String {
+    match field.to_lowercase().as_str() {
+        "time" => audit.time.clone(),
+        "action" => audit.action.clone(),
+        "success" => audit
+            .success
+            .map(|s| if s { "yes" } else { "no" })
+            .unwrap_or("-")
+            .to_string(),
+        "caller" => audit
+            .caller
+            .as_ref()
+            .map(|c| {
+                if let Some(obj) = c.as_object()
+                    && let Some(login) = obj.get("login").and_then(|v| v.as_str())
+                {
+                    return login.to_string();
+                }
+                c.to_string()
+            })
+            .unwrap_or_else(|| "-".to_string()),
+        _ => "-".to_string(),
+    }
 }

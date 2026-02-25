@@ -11,7 +11,8 @@ use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 use serde::Deserialize;
 
-use crate::output::{json, table};
+use crate::output::json;
+use crate::output::table::{TableBuilder, TableFormatArgs};
 
 use super::editor;
 
@@ -20,7 +21,7 @@ use super::editor;
 pub enum PolicySubcommand {
     /// List RBAC policies
     #[command(visible_alias = "ls")]
-    List,
+    List(PolicyListArgs),
     /// Get policy details
     Get(PolicyGetArgs),
     /// Create policy
@@ -30,6 +31,12 @@ pub enum PolicySubcommand {
     /// Delete policy(s)
     #[command(visible_alias = "rm")]
     Delete(PolicyDeleteArgs),
+}
+
+#[derive(Args, Clone)]
+pub struct PolicyListArgs {
+    #[command(flatten)]
+    pub table: TableFormatArgs,
 }
 
 /// RBAC policy command supporting both subcommands and action flags
@@ -125,7 +132,7 @@ impl RbacPolicyCommand {
         // If a subcommand is provided, use the modern pattern
         if let Some(cmd) = self.command {
             return match cmd {
-                PolicySubcommand::List => list_policies(client, use_json).await,
+                PolicySubcommand::List(args) => list_policies(&args.table, client, use_json).await,
                 PolicySubcommand::Get(args) => get_policy(args, client, use_json).await,
                 PolicySubcommand::Create(args) => create_policy(args, client, use_json).await,
                 PolicySubcommand::Update(args) => update_policy(args, client, use_json).await,
@@ -174,7 +181,11 @@ impl RbacPolicyCommand {
     }
 }
 
-pub async fn list_policies(client: &TypedClient, use_json: bool) -> Result<()> {
+pub async fn list_policies(
+    table_args: &TableFormatArgs,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
     let account = &client.auth_config().account;
     let response = client
         .inner()
@@ -188,20 +199,38 @@ pub async fn list_policies(client: &TypedClient, use_json: bool) -> Result<()> {
     if use_json {
         json::print_json_stream(&policies)?;
     } else {
-        // node-triton columns: NAME, DESCRIPTION, NRULES (no SHORTID)
-        let mut tbl = table::create_table(&["NAME", "DESCRIPTION", "NRULES"]);
+        let short_cols = ["name", "description", "nrules"];
+        let long_cols = ["id"];
+
+        let mut tbl = TableBuilder::new(&["NAME", "DESCRIPTION", "NRULES"])
+            .with_long_headers(&["ID"])
+            .with_right_aligned(&["NRULES"]);
+
+        let all_cols: Vec<&str> = short_cols.iter().chain(long_cols.iter()).copied().collect();
         for policy in &policies {
-            let nrules = policy.rules.len().to_string();
-            tbl.add_row(vec![
-                &policy.name,
-                policy.description.as_deref().unwrap_or("-"),
-                &nrules,
-            ]);
+            let row = all_cols
+                .iter()
+                .map(|col| get_policy_field_value(policy, col))
+                .collect();
+            tbl.add_row(row);
         }
-        table::print_table(tbl);
+        tbl.print(table_args);
     }
 
     Ok(())
+}
+
+fn get_policy_field_value(policy: &cloudapi_client::types::Policy, field: &str) -> String {
+    match field.to_lowercase().as_str() {
+        "id" => policy.id.to_string(),
+        "name" => policy.name.clone(),
+        "description" | "desc" => policy
+            .description
+            .clone()
+            .unwrap_or_else(|| "-".to_string()),
+        "nrules" => policy.rules.len().to_string(),
+        _ => "-".to_string(),
+    }
 }
 
 async fn get_policy(args: PolicyGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {

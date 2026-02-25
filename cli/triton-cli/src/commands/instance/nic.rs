@@ -12,7 +12,8 @@ use cloudapi_client::TypedClient;
 use dialoguer::Confirm;
 use serde::{Deserialize, Serialize};
 
-use crate::output::{enum_to_display, json, table};
+use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::output::{enum_to_display, json};
 
 #[derive(Subcommand, Clone)]
 pub enum NicCommand {
@@ -36,6 +37,9 @@ pub enum NicCommand {
 pub struct NicListArgs {
     /// Instance ID or name
     pub instance: String,
+
+    #[command(flatten)]
+    pub table: TableFormatArgs,
 
     /// Filter by field (e.g., mac=XX:XX:XX:XX:XX:XX)
     #[arg(trailing_var_arg = true)]
@@ -136,6 +140,34 @@ fn netmask_to_cidr(netmask: &str) -> Option<u8> {
     Some(octets.iter().map(|b| b.count_ones() as u8).sum())
 }
 
+fn get_nic_field_value(nic: &NicOutput) -> impl Fn(&str) -> String + '_ {
+    move |field: &str| match field.to_lowercase().as_str() {
+        "ip" => {
+            let cidr = netmask_to_cidr(&nic.netmask)
+                .map(|c| c.to_string())
+                .unwrap_or_else(|| "?".to_string());
+            format!("{}/{}", nic.ip, cidr)
+        }
+        "mac" => nic.mac.clone(),
+        "state" => nic.state.clone(),
+        "network" => nic
+            .network
+            .split('-')
+            .next()
+            .unwrap_or(&nic.network)
+            .to_string(),
+        "primary" => if nic.primary { "yes" } else { "no" }.to_string(),
+        "gateway" => {
+            if nic.gateway.is_empty() {
+                "-".to_string()
+            } else {
+                nic.gateway.clone()
+            }
+        }
+        _ => "-".to_string(),
+    }
+}
+
 pub async fn list_nics(args: NicListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = &client.auth_config().account;
@@ -171,19 +203,19 @@ pub async fn list_nics(args: NicListArgs, client: &TypedClient, use_json: bool) 
             println!("{}", serde_json::to_string(nic)?);
         }
     } else {
-        // node-triton columns: IP MAC STATE NETWORK
-        // IP is formatted as IP/CIDR
-        let mut tbl = table::create_table(&["IP", "MAC", "STATE", "NETWORK"]);
+        let short_cols = ["ip", "mac", "state", "network"];
+        let long_cols = ["primary", "gateway"];
+
+        let mut tbl = TableBuilder::new(&["IP", "MAC", "STATE", "NETWORK"])
+            .with_long_headers(&["PRIMARY", "GATEWAY"]);
+
+        let all_cols: Vec<&str> = short_cols.iter().chain(long_cols.iter()).copied().collect();
         for nic in &nics {
-            let cidr = netmask_to_cidr(&nic.netmask)
-                .map(|c| c.to_string())
-                .unwrap_or_else(|| "?".to_string());
-            let ip_cidr = format!("{}/{}", nic.ip, cidr);
-            // Network is truncated to short ID in table view
-            let short_network = nic.network.split('-').next().unwrap_or(&nic.network);
-            tbl.add_row(vec![&ip_cidr, &nic.mac, &nic.state, short_network]);
+            let field_fn = get_nic_field_value(nic);
+            let row = all_cols.iter().map(|col| field_fn(col)).collect();
+            tbl.add_row(row);
         }
-        table::print_table(tbl);
+        tbl.print(&args.table);
     }
 
     Ok(())

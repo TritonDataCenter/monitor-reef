@@ -9,9 +9,11 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
+use cloudapi_client::types::Disk;
 use dialoguer::Confirm;
 
-use crate::output::{json, opt_enum_to_display, table};
+use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::output::{json, opt_enum_to_display};
 
 #[derive(Subcommand, Clone)]
 pub enum DiskCommand {
@@ -37,6 +39,9 @@ pub enum DiskCommand {
 pub struct DiskListArgs {
     /// Instance ID or name
     pub instance: String,
+
+    #[command(flatten)]
+    pub table: TableFormatArgs,
 }
 
 #[derive(Args, Clone)]
@@ -128,24 +133,43 @@ pub async fn list_disks(args: DiskListArgs, client: &TypedClient, use_json: bool
     if use_json {
         json::print_json_stream(&disks)?;
     } else {
-        let mut tbl = table::create_table(&["SHORTID", "SIZE_MB", "BOOT", "STATE"]);
+        let short_cols = ["shortid", "size", "pci_slot"];
+        let long_cols = ["id", "boot", "state"];
+
+        let mut tbl = TableBuilder::new(&["SHORTID", "SIZE", "PCI_SLOT"])
+            .with_long_headers(&["ID", "BOOT", "STATE"])
+            .with_right_aligned(&["SIZE"]);
+
+        let all_cols: Vec<&str> = short_cols.iter().chain(long_cols.iter()).copied().collect();
         for disk in &disks {
-            let short_id = &disk.id.to_string()[..8];
-            tbl.add_row(vec![
-                short_id,
-                &disk.size.to_string(),
-                if disk.boot.unwrap_or(false) {
-                    "yes"
-                } else {
-                    "no"
-                },
-                &opt_enum_to_display(disk.state.as_ref()),
-            ]);
+            let row = all_cols
+                .iter()
+                .map(|col| get_disk_field_value(disk, col))
+                .collect();
+            tbl.add_row(row);
         }
-        table::print_table(tbl);
+        tbl.print(&args.table);
     }
 
     Ok(())
+}
+
+fn get_disk_field_value(disk: &Disk, field: &str) -> String {
+    match field.to_lowercase().as_str() {
+        "id" => disk.id.to_string(),
+        "shortid" => disk.id.to_string()[..8].to_string(),
+        "size" => disk.size.to_string(),
+        "pci_slot" | "pci slot" => disk.pci_slot.clone().unwrap_or_else(|| "-".to_string()),
+        "boot" => {
+            if disk.boot.unwrap_or(false) {
+                "yes".to_string()
+            } else {
+                "no".to_string()
+            }
+        }
+        "state" => opt_enum_to_display(disk.state.as_ref()),
+        _ => "-".to_string(),
+    }
 }
 
 async fn get_disk(args: DiskGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {

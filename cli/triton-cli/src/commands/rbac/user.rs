@@ -11,7 +11,8 @@ use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 use serde::Deserialize;
 
-use crate::output::{json, table};
+use crate::output::json;
+use crate::output::table::{TableBuilder, TableFormatArgs};
 
 use super::common::resolve_user;
 use super::editor;
@@ -21,7 +22,7 @@ use super::editor;
 pub enum UserSubcommand {
     /// List RBAC users
     #[command(visible_alias = "ls")]
-    List,
+    List(UserListArgs),
     /// Get user details
     Get(UserGetArgs),
     /// Create user
@@ -31,6 +32,12 @@ pub enum UserSubcommand {
     /// Delete user(s)
     #[command(visible_alias = "rm")]
     Delete(UserDeleteArgs),
+}
+
+#[derive(Args, Clone)]
+pub struct UserListArgs {
+    #[command(flatten)]
+    pub table: TableFormatArgs,
 }
 
 /// RBAC user command supporting both subcommands and action flags
@@ -153,7 +160,7 @@ impl RbacUserCommand {
         // If a subcommand is provided, use the modern pattern
         if let Some(cmd) = self.command {
             return match cmd {
-                UserSubcommand::List => list_users(client, use_json).await,
+                UserSubcommand::List(args) => list_users(&args.table, client, use_json).await,
                 UserSubcommand::Get(args) => get_user(args, client, use_json).await,
                 UserSubcommand::Create(args) => create_user(args, client, use_json).await,
                 UserSubcommand::Update(args) => update_user(args, client, use_json).await,
@@ -204,7 +211,11 @@ impl RbacUserCommand {
     }
 }
 
-pub async fn list_users(client: &TypedClient, use_json: bool) -> Result<()> {
+pub async fn list_users(
+    table_args: &TableFormatArgs,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
     let account = &client.auth_config().account;
     let response = client.inner().list_users().account(account).send().await?;
 
@@ -213,26 +224,45 @@ pub async fn list_users(client: &TypedClient, use_json: bool) -> Result<()> {
     if use_json {
         json::print_json_stream(&users)?;
     } else {
-        // node-triton columns: LOGIN, EMAIL, NAME, CDATE (no SHORTID)
-        let mut tbl = table::create_table(&["LOGIN", "EMAIL", "NAME", "CDATE"]);
+        let short_cols = ["login", "email", "name", "cdate"];
+        let long_cols = ["id", "firstname", "lastname"];
+
+        let mut tbl = TableBuilder::new(&["LOGIN", "EMAIL", "NAME", "CDATE"]).with_long_headers(&[
+            "ID",
+            "FIRSTNAME",
+            "LASTNAME",
+        ]);
+
+        let all_cols: Vec<&str> = short_cols.iter().chain(long_cols.iter()).copied().collect();
         for user in &users {
-            let name = match (&user.first_name, &user.last_name) {
-                (Some(f), Some(l)) => format!("{} {}", f, l),
-                (Some(f), None) => f.clone(),
-                (None, Some(l)) => l.clone(),
-                (None, None) => "-".to_string(),
-            };
-            tbl.add_row(vec![
-                &user.login,
-                &user.email,
-                &name,
-                &user.created.to_string(),
-            ]);
+            let row = all_cols
+                .iter()
+                .map(|col| get_user_field_value(user, col))
+                .collect();
+            tbl.add_row(row);
         }
-        table::print_table(tbl);
+        tbl.print(table_args);
     }
 
     Ok(())
+}
+
+fn get_user_field_value(user: &cloudapi_client::types::User, field: &str) -> String {
+    match field.to_lowercase().as_str() {
+        "id" => user.id.to_string(),
+        "login" => user.login.clone(),
+        "email" => user.email.clone(),
+        "name" => match (&user.first_name, &user.last_name) {
+            (Some(f), Some(l)) => format!("{} {}", f, l),
+            (Some(f), None) => f.clone(),
+            (None, Some(l)) => l.clone(),
+            (None, None) => "-".to_string(),
+        },
+        "firstname" => user.first_name.clone().unwrap_or_else(|| "-".to_string()),
+        "lastname" => user.last_name.clone().unwrap_or_else(|| "-".to_string()),
+        "cdate" | "created" => user.created.to_string(),
+        _ => "-".to_string(),
+    }
 }
 
 async fn get_user(args: UserGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
