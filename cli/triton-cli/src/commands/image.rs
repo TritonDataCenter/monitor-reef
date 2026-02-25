@@ -1325,7 +1325,7 @@ async fn share_image(
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_uuid = resolve_image(&args.image, client, cache).await?;
+    let image_uuid = resolve_image_no_verify(&args.image, client, cache).await?;
     let target_account: cloudapi_client::Uuid = args
         .account
         .parse()
@@ -1359,7 +1359,7 @@ async fn unshare_image(
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
     let account = &client.auth_config().account;
-    let image_uuid = resolve_image(&args.image, client, cache).await?;
+    let image_uuid = resolve_image_no_verify(&args.image, client, cache).await?;
     let target_account: cloudapi_client::Uuid = args
         .account
         .parse()

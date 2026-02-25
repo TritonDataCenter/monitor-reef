@@ -773,7 +773,7 @@ run_payload_test() {
 
     # Normalize: extract JSON objects (strip status messages), slurp into array,
     # sort keys, strip null values and .body.origin
-    local jq_filter='[.[] | del(.body.origin) | .path |= split("?")[0] | if .body == {} then .body = null else . end | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
+    local jq_filter='[.[] | select(.method) | del(.body.origin) | .path |= split("?")[0] | if .body == {} then .body = null else . end | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
     extract_json_object < "$node_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$node_norm" 2>/dev/null \
         || cp "$node_out" "$node_norm"
     extract_json_object < "$rust_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \
@@ -835,7 +835,7 @@ run_payload_test_split() {
     HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
         "$RUST_TRITON" --emit-payload "${rust_args[@]}" > "$rust_out" 2> "$rust_err" || rust_exit=$?
 
-    local jq_filter='[.[] | del(.body.origin) | .path |= split("?")[0] | if .body == {} then .body = null else . end | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
+    local jq_filter='[.[] | select(.method) | del(.body.origin) | .path |= split("?")[0] | if .body == {} then .body = null else . end | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
     extract_json_object < "$node_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$node_norm" 2>/dev/null \
         || cp "$node_out" "$node_norm"
     extract_json_object < "$rust_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \

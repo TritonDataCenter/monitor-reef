@@ -9,24 +9,6 @@
 # image copy: node-triton exits before POST; Rust emits correct POST
 payload-image-copy  monitor-reef-7u7p
 
-# image share/unshare: Rust emits extra GET from resolve_image UUID verification
-# before share_image's own GET. Node-triton doesn't verify UUIDs first.
-# Also node-triton unshare exits 1 (fake response has no ACL to remove from).
-payload-image-share  monitor-reef-7u7p
-payload-image-unshare  monitor-reef-7u7p
-
-# image update: Rust sends action in body (ActionBody pattern);
-# node-triton sends action as query param. Both are valid.
-payload-image-update  monitor-reef-7u7p
-
 # node-triton bug: updateFabricVlan is not a function (crashes before API call)
 payload-vlan-update  monitor-reef-oxis
-
-# node-triton lists disks first, can't find target in fake empty list, exits 3
-payload-disk-delete  monitor-reef-oxis
-
-# node-triton patch: trailing empty objects
-payload-tag-set  monitor-reef-t05d
-payload-tag-replace  monitor-reef-t05d
-payload-meta-set  monitor-reef-t05d
 

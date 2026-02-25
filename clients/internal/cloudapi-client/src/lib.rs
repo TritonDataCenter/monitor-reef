@@ -1196,15 +1196,12 @@ impl TypedClient {
         dataset: &Uuid,
         request: &UpdateImageRequest,
     ) -> Result<types::Image, Error<types::Error>> {
-        let body = ActionBody {
-            action: ImageAction::Update,
-            body: request,
-        };
         self.inner
             .update_image()
             .account(account)
             .dataset(dataset.to_string())
-            .body(to_json_value(&body))
+            .action(types::ImageAction::Update)
+            .body(to_json_value(request))
             .send()
             .await
             .map(|r| r.into_inner())

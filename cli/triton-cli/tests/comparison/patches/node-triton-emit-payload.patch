@@ -1,8 +1,8 @@
 diff --git a/lib/cloudapi2.js b/lib/cloudapi2.js
-index 605b257..f1df353 100644
+index 605b257..772af88 100644
 --- a/lib/cloudapi2.js
 +++ b/lib/cloudapi2.js
-@@ -287,6 +287,41 @@ CloudApi.prototype._request = function _request(opts, cb) {
+@@ -287,6 +287,45 @@ CloudApi.prototype._request = function _request(opts, cb) {
          }
      }
  
@@ -22,6 +22,10 @@ index 605b257..f1df353 100644
 +            var isListEndpoint = /\/(disks|nics|vlans|networks|snapshots|fwrules|keys|images|machines|packages)(\?|$)/.test(opts.path);
 +            if (isListEndpoint) {
 +                cb(null, null, { statusCode: 200 }, []);
++            } else if (/\/images\/[0-9a-f-]+$/.test(opts.path)) {
++                var pathParts = opts.path.split('/');
++                var lastSeg = pathParts[pathParts.length - 1];
++                cb(null, null, { statusCode: 200 }, {id: lastSeg, name: lastSeg, acl: ['00000000-0000-0000-0000-000000000008']});
 +            } else {
 +                var pathParts = opts.path.split('/');
 +                var lastSeg = pathParts[pathParts.length - 1];
@@ -44,3 +48,20 @@ index 605b257..f1df353 100644
      self._getAuthHeaders(method, opts.path, function (err, headers) {
          if (err) {
              cb(err);
+diff --git a/lib/tritonapi.js b/lib/tritonapi.js
+index a40bfbc..1c7d125 100644
+--- a/lib/tritonapi.js
++++ b/lib/tritonapi.js
+@@ -4401,6 +4401,12 @@ function getInstanceDisk(opts, cb) {
+     assert.string(opts.diskId, 'opts.diskId');
+     assert.func(cb, 'cb');
+ 
++    // Emit-payload mode: return a fake disk so deleteInstanceDisk can proceed
++    if (process.env.TRITON_EMIT_PAYLOAD) {
++        cb(null, {id: opts.diskId, size: 0, boot: false, state: 'ready'});
++        return;
++    }
++
+     var self = this;
+     var diskId = opts.diskId;
+     var disks;
