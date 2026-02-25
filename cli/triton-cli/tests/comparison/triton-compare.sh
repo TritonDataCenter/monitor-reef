@@ -1090,8 +1090,17 @@ run_payload_tests() {
 
     # --- Key ---
 
+    # Key add (uses temp SSH key from $ISOLATED_SSH)
+    run_payload_test "payload-key-add" "key add" \
+        key add --name test-key "$ISOLATED_SSH/id_ed25519.pub"
+
     run_payload_test "payload-key-delete" "key delete" \
         key delete test-key -f
+
+    # --- Account ---
+
+    run_payload_test "payload-account-update" "account update" \
+        account update companyName=TestCorp
 
     # --- RBAC ---
     # Node.js triton uses "rbac user -a FILE" (JSON file input), while Rust
@@ -1127,6 +1136,69 @@ POLICYJSON
         rbac policy -a "$policy_json" \
         --- \
         rbac policy create testpolicy --rule "can getmachine" --description "A test policy"
+
+    # RBAC deletes — Node has no --force/-f; Rust requires it to skip prompt.
+    # Use UUID for user so Rust's resolve_user() returns immediately.
+    local USER_UUID="00000000-0000-0000-0000-000000000009"
+
+    run_payload_test_split "payload-rbac-user-delete" "rbac user delete" \
+        rbac user -d "$USER_UUID" \
+        --- \
+        rbac user delete "$USER_UUID" --force
+
+    run_payload_test_split "payload-rbac-role-delete" "rbac role delete" \
+        rbac role -d testrole \
+        --- \
+        rbac role delete testrole --force
+
+    run_payload_test_split "payload-rbac-policy-delete" "rbac policy delete" \
+        rbac policy -d testpolicy \
+        --- \
+        rbac policy delete testpolicy --force
+
+    # RBAC key add/delete
+    run_payload_test "payload-rbac-key-add" "rbac key add" \
+        rbac key -a --name test-key "$USER_UUID" "$ISOLATED_SSH/id_ed25519.pub"
+
+    # Node has no -y for rbac key delete; Rust requires -y to skip prompt
+    run_payload_test_split "payload-rbac-key-delete" "rbac key delete" \
+        rbac key -d "$USER_UUID" test-key \
+        --- \
+        rbac key -d "$USER_UUID" test-key -y
+
+    # --- Accesskey (account-level) ---
+
+    run_payload_test "payload-accesskey-create" "accesskey create" \
+        accesskey create --status Active --description "test key"
+
+    run_payload_test "payload-accesskey-update" "accesskey update" \
+        accesskey update fake-key-id --status Inactive
+
+    # Node may not have --force for accesskey delete; Rust requires it
+    run_payload_test_split "payload-accesskey-delete" "accesskey delete" \
+        accesskey delete fake-key-id \
+        --- \
+        accesskey delete fake-key-id --force
+
+    # --- RBAC Accesskey ---
+
+    run_payload_test "payload-rbac-accesskey-create" "rbac accesskey create" \
+        rbac accesskey -c "$USER_UUID" --status Active
+
+    run_payload_test "payload-rbac-accesskey-update" "rbac accesskey update" \
+        rbac accesskey -u "$USER_UUID" fake-key-id --status Inactive
+
+    run_payload_test_split "payload-rbac-accesskey-delete" "rbac accesskey delete" \
+        rbac accesskey -d "$USER_UUID" fake-key-id \
+        --- \
+        rbac accesskey -d "$USER_UUID" fake-key-id -f
+
+    # --- Network IP ---
+
+    run_payload_test_split "payload-network-ip-update" "network ip update" \
+        network ip update "$NET_UUID" 10.0.0.5 --reserved true \
+        --- \
+        network ip update "$NET_UUID" 10.0.0.5 --reserve true
 
     echo ""
 }

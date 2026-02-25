@@ -1,11 +1,11 @@
 diff --git a/lib/cloudapi2.js b/lib/cloudapi2.js
-index 605b257..fixture 100644
+index 605b257..aa62532 100644
 --- a/lib/cloudapi2.js
 +++ b/lib/cloudapi2.js
-@@ -287,6 +287,62 @@ CloudApi.prototype._request = function _request(opts, cb) {
+@@ -287,6 +287,77 @@ CloudApi.prototype._request = function _request(opts, cb) {
          }
      }
-
+ 
 +    // Emit-payload mode: intercept API requests without sending them
 +    if (process.env.TRITON_EMIT_PAYLOAD) {
 +        var m = method.toUpperCase();
@@ -87,7 +87,7 @@ index a40bfbc..1c7d125 100644
 @@ -4401,6 +4401,12 @@ function getInstanceDisk(opts, cb) {
      assert.string(opts.diskId, 'opts.diskId');
      assert.func(cb, 'cb');
-
+ 
 +    // Emit-payload mode: return a fake disk so deleteInstanceDisk can proceed
 +    if (process.env.TRITON_EMIT_PAYLOAD) {
 +        cb(null, {id: opts.diskId, size: 0, boot: false, state: 'ready'});
