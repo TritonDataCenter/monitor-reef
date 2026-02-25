@@ -178,11 +178,10 @@ impl NetworkCommand {
     /// reported even when no profile is configured.
     pub fn pre_validate(&self) -> Result<()> {
         if let Self::Create(args) = self
-            && args.gateway.is_none() && !args.no_nat
+            && args.gateway.is_none()
+            && !args.no_nat
         {
-            anyhow::bail!(
-                "without a --gateway (-g), you must specify --no-nat (-x)"
-            );
+            anyhow::bail!("without a --gateway (-g), you must specify --no-nat (-x)");
         }
         Ok(())
     }
