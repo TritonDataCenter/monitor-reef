@@ -64,6 +64,8 @@ mod generated;
 pub use generated::*;
 
 #[cfg(debug_assertions)]
+use std::sync::OnceLock;
+#[cfg(debug_assertions)]
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use progenitor_client::{ClientHooks, OperationInfo};
@@ -321,8 +323,12 @@ fn emit_and_fake_get_response(
     emit_payload_envelope(request.method().as_str(), &path, serde_json::Value::Null);
 
     let body_bytes = if info.operation_id.starts_with("list_") {
-        // List endpoints return an empty array
-        b"[]".to_vec()
+        // List endpoints: use fixture's list_default or fall back to empty array
+        load_fixture()
+            .as_ref()
+            .and_then(|f| f.get("list_default"))
+            .and_then(|v| serde_json::to_vec(v).ok())
+            .unwrap_or_else(|| b"[]".to_vec())
     } else {
         let last_seg = url
             .path_segments()
@@ -331,7 +337,7 @@ fn emit_and_fake_get_response(
         let last_seg_uuid = uuid::Uuid::try_parse(last_seg).unwrap_or(uuid::Uuid::nil());
         let fake_ts = "2025-01-01T00:00:00.000Z".to_string();
 
-        fake_response_body(info.operation_id, last_seg, last_seg_uuid, &fake_ts)
+        fake_response_body(info.operation_id, last_seg, last_seg_uuid, &fake_ts, url)
     };
 
     #[allow(clippy::expect_used)]
@@ -343,11 +349,73 @@ fn emit_and_fake_get_response(
     Ok(reqwest::Response::from(http_response))
 }
 
+/// Cached parsed fixture from `TRITON_EMIT_PAYLOAD_FIXTURES` env var.
+/// `None` means the env var is unset or the file could not be loaded.
+#[cfg(debug_assertions)]
+static FIXTURE_CACHE: OnceLock<Option<serde_json::Value>> = OnceLock::new();
+
+/// Load the emit-payload fixture file if `TRITON_EMIT_PAYLOAD_FIXTURES` is set.
+#[cfg(debug_assertions)]
+fn load_fixture() -> &'static Option<serde_json::Value> {
+    FIXTURE_CACHE.get_or_init(|| {
+        let path = std::env::var("TRITON_EMIT_PAYLOAD_FIXTURES").ok()?;
+        // arch-lint: allow(no-sync-io) reason="One-shot cache init in debug-only emit-payload mode"
+        let data = std::fs::read_to_string(&path).ok()?;
+        serde_json::from_str(&data).ok()
+    })
+}
+
+/// Try to build a fake response body from the shared fixture file.
+/// Returns `Some(bytes)` if the fixture has a matching entry, `None` otherwise.
+#[cfg(debug_assertions)]
+fn fixture_response_body(
+    operation_id: &str,
+    last_seg: &str,
+    last_seg_uuid: uuid::Uuid,
+    url: &reqwest::Url,
+) -> Option<Vec<u8>> {
+    let fixture = load_fixture().as_ref()?;
+    let responses = fixture.get("responses")?;
+
+    // Try exact operation_id, then strip head_ → get_ prefix
+    let template = responses.get(operation_id).or_else(|| {
+        let rest = operation_id.strip_prefix("head_")?;
+        let key = format!("get_{rest}");
+        responses.get(&key)
+    })?;
+
+    // Interpolate placeholders on the raw JSON string
+    let mut json_str = serde_json::to_string(template).ok()?;
+
+    // Extract VLAN ID from URL path (e.g., /fabrics/.../vlans/100)
+    let vlan_id: u64 = url
+        .path_segments()
+        .and_then(|segs| {
+            let parts: Vec<_> = segs.collect();
+            // Find "vlans" segment and take the next one
+            parts
+                .iter()
+                .position(|&s| s == "vlans")
+                .and_then(|i| parts.get(i + 1))
+                .and_then(|s| s.parse().ok())
+        })
+        .unwrap_or(0);
+
+    // Order matters: replace $LAST_SEG_UUID before $LAST_SEG to avoid partial match
+    json_str = json_str.replace("$LAST_SEG_UUID", &last_seg_uuid.to_string());
+    json_str = json_str.replace("$LAST_SEG", last_seg);
+    // $VLAN_ID: replace quoted string with bare integer
+    json_str = json_str.replace("\"$VLAN_ID\"", &vlan_id.to_string());
+
+    Some(json_str.into_bytes())
+}
+
 /// Build a fake response body for a single-resource GET based on operation_id.
 ///
-/// Uses proper typed structs so enum values are compiler-checked.
-/// None of the response types use `deny_unknown_fields`, so extra fields
-/// from the fallback case are silently ignored.
+/// If `TRITON_EMIT_PAYLOAD_FIXTURES` is set, loads from the shared fixture file.
+/// Otherwise falls back to hardcoded typed structs so enum values are
+/// compiler-checked. None of the response types use `deny_unknown_fields`,
+/// so extra fields from the fallback case are silently ignored.
 #[cfg(debug_assertions)]
 #[allow(clippy::expect_used)]
 fn fake_response_body(
@@ -355,7 +423,13 @@ fn fake_response_body(
     last_seg: &str,
     last_seg_uuid: uuid::Uuid,
     fake_ts: &str,
+    url: &reqwest::Url,
 ) -> Vec<u8> {
+    // Try shared fixture file first
+    if let Some(bytes) = fixture_response_body(operation_id, last_seg, last_seg_uuid, url) {
+        return bytes;
+    }
+
     use cloudapi_api::ImageRequirements;
 
     match operation_id {
@@ -1559,4 +1633,92 @@ struct ActionBody<A: serde::Serialize, B: serde::Serialize> {
     action: A,
     #[serde(flatten)]
     body: B,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Validate that the shared emit-payload fixture file deserializes into the
+    /// expected Rust types. This catches drift between the fixture JSON and the
+    /// API type definitions at `cargo test` time.
+    #[test]
+    fn emit_payload_fixture_matches_rust_types() {
+        let fixture_path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../cli/triton-cli/tests/comparison/fixtures/emit-payload-fakes.json"
+        );
+        // arch-lint: allow(no-sync-io) reason="Synchronous test function"
+        let data = std::fs::read_to_string(fixture_path).expect("fixture file should be readable");
+        let fixture: serde_json::Value =
+            serde_json::from_str(&data).expect("fixture should be valid JSON");
+        let responses = fixture
+            .get("responses")
+            .expect("fixture should have 'responses' key");
+
+        // Concrete values for placeholder interpolation
+        let test_uuid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+        let test_seg = "test-name";
+        let test_vlan_id = 42;
+
+        // Helper: interpolate a fixture template with concrete values
+        let interp = |v: &serde_json::Value| -> String {
+            let s = serde_json::to_string(v).unwrap();
+            let s = s.replace("$LAST_SEG_UUID", test_uuid);
+            let s = s.replace("$LAST_SEG", test_seg);
+            s.replace("\"$VLAN_ID\"", &test_vlan_id.to_string())
+        };
+
+        // Each (operation_id, type) pair to validate
+        let image_json = interp(&responses["get_image"]);
+        serde_json::from_str::<Image>(&image_json)
+            .expect("get_image fixture should deserialize as Image");
+
+        let machine_json = interp(&responses["get_machine"]);
+        serde_json::from_str::<Machine>(&machine_json)
+            .expect("get_machine fixture should deserialize as Machine");
+
+        let package_json = interp(&responses["get_package"]);
+        serde_json::from_str::<Package>(&package_json)
+            .expect("get_package fixture should deserialize as Package");
+
+        let network_json = interp(&responses["get_network"]);
+        serde_json::from_str::<Network>(&network_json)
+            .expect("get_network fixture should deserialize as Network");
+
+        let fabric_network_json = interp(&responses["get_fabric_network"]);
+        serde_json::from_str::<Network>(&fabric_network_json)
+            .expect("get_fabric_network fixture should deserialize as Network");
+
+        let fwrule_json = interp(&responses["get_firewall_rule"]);
+        serde_json::from_str::<FirewallRule>(&fwrule_json)
+            .expect("get_firewall_rule fixture should deserialize as FirewallRule");
+
+        let volume_json = interp(&responses["get_volume"]);
+        serde_json::from_str::<Volume>(&volume_json)
+            .expect("get_volume fixture should deserialize as Volume");
+
+        let key_json = interp(&responses["get_key"]);
+        serde_json::from_str::<SshKey>(&key_json)
+            .expect("get_key fixture should deserialize as SshKey");
+
+        let nic_json = interp(&responses["get_nic"]);
+        serde_json::from_str::<Nic>(&nic_json).expect("get_nic fixture should deserialize as Nic");
+
+        let snapshot_json = interp(&responses["get_machine_snapshot"]);
+        serde_json::from_str::<Snapshot>(&snapshot_json)
+            .expect("get_machine_snapshot fixture should deserialize as Snapshot");
+
+        let disk_json = interp(&responses["get_machine_disk"]);
+        serde_json::from_str::<Disk>(&disk_json)
+            .expect("get_machine_disk fixture should deserialize as Disk");
+
+        let vlan_json = interp(&responses["get_fabric_vlan"]);
+        serde_json::from_str::<FabricVlan>(&vlan_json)
+            .expect("get_fabric_vlan fixture should deserialize as FabricVlan");
+
+        let update_vlan_json = interp(&responses["update_fabric_vlan"]);
+        serde_json::from_str::<FabricVlan>(&update_vlan_json)
+            .expect("update_fabric_vlan fixture should deserialize as FabricVlan");
+    }
 }

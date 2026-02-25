@@ -762,13 +762,17 @@ run_payload_test() {
     local node_exit=0
     local rust_exit=0
 
+    local fixtures="$SCRIPT_DIR/fixtures/emit-payload-fakes.json"
+
     # Node.js: use TRITON_EMIT_PAYLOAD env var
     HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
         TRITON_EMIT_PAYLOAD=1 \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
         "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
 
     # Rust: use --emit-payload flag
     HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
         "$RUST_TRITON" --emit-payload "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
 
     # Normalize: extract JSON objects (strip status messages), slurp into array,
@@ -828,11 +832,15 @@ run_payload_test_split() {
     local node_exit=0
     local rust_exit=0
 
+    local fixtures="$SCRIPT_DIR/fixtures/emit-payload-fakes.json"
+
     HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
         TRITON_EMIT_PAYLOAD=1 \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
         "$NODE_TRITON" "${node_args[@]}" > "$node_out" 2> "$node_err" || node_exit=$?
 
     HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
         "$RUST_TRITON" --emit-payload "${rust_args[@]}" > "$rust_out" 2> "$rust_err" || rust_exit=$?
 
     local jq_filter='[.[] | select(.method) | del(.body.origin) | .path |= split("?")[0] | if .body == {} then .body = null else . end | if .body == null then . else .body |= with_entries(select(.value != null)) end]'

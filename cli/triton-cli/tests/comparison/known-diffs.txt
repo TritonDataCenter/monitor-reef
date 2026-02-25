@@ -5,10 +5,3 @@
 #
 # When a diff is fixed and the test flips to PASS, the script flags it
 # as "fixed?" so you know to close the bead and remove the line.
-
-# image copy: node-triton exits before POST; Rust emits correct POST
-payload-image-copy  monitor-reef-7u7p
-
-# node-triton bug: updateFabricVlan is not a function (crashes before API call)
-payload-vlan-update  monitor-reef-oxis
-

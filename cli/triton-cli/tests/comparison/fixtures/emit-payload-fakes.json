@@ -1,0 +1,108 @@
+{
+    "list_default": [],
+    "get_default": { "id": "$LAST_SEG", "name": "$LAST_SEG" },
+    "mutation_default": {},
+    "responses": {
+        "get_image": {
+            "id": "$LAST_SEG_UUID",
+            "name": "$LAST_SEG",
+            "version": "0.0.0",
+            "os": "other",
+            "type": "other",
+            "requirements": {},
+            "acl": ["00000000-0000-0000-0000-000000000008"]
+        },
+        "get_machine": {
+            "id": "$LAST_SEG_UUID",
+            "name": "$LAST_SEG",
+            "type": "virtualmachine",
+            "brand": "bhyve",
+            "state": "running",
+            "image": "00000000-0000-0000-0000-000000000000",
+            "package": "emit-payload-fake",
+            "memory": null,
+            "disk": 0,
+            "ips": [],
+            "metadata": {},
+            "tags": {},
+            "created": "2025-01-01T00:00:00.000Z",
+            "updated": "2025-01-01T00:00:00.000Z"
+        },
+        "get_package": {
+            "id": "$LAST_SEG_UUID",
+            "name": "$LAST_SEG",
+            "memory": 0,
+            "disk": 0,
+            "swap": 0,
+            "vcpus": 0,
+            "default": false
+        },
+        "get_network": {
+            "id": "$LAST_SEG_UUID",
+            "name": "$LAST_SEG",
+            "public": false
+        },
+        "get_fabric_network": {
+            "id": "$LAST_SEG_UUID",
+            "name": "$LAST_SEG",
+            "public": false
+        },
+        "get_firewall_rule": {
+            "id": "$LAST_SEG_UUID",
+            "rule": "",
+            "enabled": false,
+            "log": false,
+            "global": null
+        },
+        "get_volume": {
+            "id": "$LAST_SEG_UUID",
+            "name": "$LAST_SEG",
+            "owner_uuid": "00000000-0000-0000-0000-000000000000",
+            "type": "tritonnfs",
+            "size": 0,
+            "state": "ready",
+            "networks": [],
+            "created": "2025-01-01T00:00:00.000Z",
+            "tags": {},
+            "refs": []
+        },
+        "get_key": {
+            "name": "$LAST_SEG",
+            "key": "",
+            "fingerprint": ""
+        },
+        "get_nic": {
+            "mac": "00:00:00:00:00:00",
+            "primary": false,
+            "ip": "0.0.0.0",
+            "netmask": "0.0.0.0",
+            "network": "00000000-0000-0000-0000-000000000000"
+        },
+        "get_machine_snapshot": {
+            "name": "$LAST_SEG",
+            "state": "created",
+            "created": "2025-01-01T00:00:00.000Z"
+        },
+        "get_machine_disk": {
+            "id": "$LAST_SEG_UUID",
+            "size": 0,
+            "boot": null
+        },
+        "get_fabric_vlan": {
+            "vlan_id": 0,
+            "name": "$LAST_SEG"
+        },
+        "create_nic": {
+            "mac": "00:00:00:00:00:00",
+            "primary": false,
+            "ip": "0.0.0.0",
+            "state": "running",
+            "network": "fake"
+        },
+        "update_fabric_vlan": {
+            "vlan_id": "$VLAN_ID",
+            "name": "fake",
+            "description": ""
+        }
+    }
+}

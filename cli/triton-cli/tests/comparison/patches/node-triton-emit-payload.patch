@@ -1,11 +1,11 @@
 diff --git a/lib/cloudapi2.js b/lib/cloudapi2.js
-index 605b257..772af88 100644
+index 605b257..fixture 100644
 --- a/lib/cloudapi2.js
 +++ b/lib/cloudapi2.js
-@@ -287,6 +287,45 @@ CloudApi.prototype._request = function _request(opts, cb) {
+@@ -287,6 +287,62 @@ CloudApi.prototype._request = function _request(opts, cb) {
          }
      }
- 
+
 +    // Emit-payload mode: intercept API requests without sending them
 +    if (process.env.TRITON_EMIT_PAYLOAD) {
 +        var m = method.toUpperCase();
@@ -16,32 +16,64 @@ index 605b257..772af88 100644
 +        };
 +        console.log(JSON.stringify(envelope, null, 2));
 +
-+        // Return typed fake responses so downstream code doesn't crash
-+        if (m === 'GET' || m === 'HEAD') {
-+            // List endpoints return arrays; node code calls .filter() etc.
-+            var isListEndpoint = /\/(disks|nics|vlans|networks|snapshots|fwrules|keys|images|machines|packages)(\?|$)/.test(opts.path);
-+            if (isListEndpoint) {
-+                cb(null, null, { statusCode: 200 }, []);
-+            } else if (/\/images\/[0-9a-f-]+$/.test(opts.path)) {
-+                var pathParts = opts.path.split('/');
-+                var lastSeg = pathParts[pathParts.length - 1];
-+                cb(null, null, { statusCode: 200 }, {id: lastSeg, name: lastSeg, acl: ['00000000-0000-0000-0000-000000000008']});
-+            } else {
-+                var pathParts = opts.path.split('/');
-+                var lastSeg = pathParts[pathParts.length - 1];
-+                cb(null, null, { statusCode: 200 }, {id: lastSeg, name: lastSeg});
-+            }
-+        } else if (/\/nics$/.test(opts.path) && m === 'POST') {
-+            // NIC create: node accesses nic.mac
-+            cb(null, null, { statusCode: 200 }, {mac: '00:00:00:00:00:00', primary: false, ip: '0.0.0.0', state: 'running', network: 'fake'});
-+        } else if (/\/vlans\/\d+$/.test(opts.path) && (m === 'PUT' || m === 'POST')) {
-+            // VLAN update: node expects vlan-shaped response
-+            var vlanMatch = opts.path.match(/\/vlans\/(\d+)$/);
-+            var vlanId = vlanMatch ? parseInt(vlanMatch[1], 10) : 0;
-+            cb(null, null, { statusCode: 200 }, {vlan_id: vlanId, name: 'fake', description: ''});
-+        } else {
-+            cb(null, null, { statusCode: 200 }, {});
++        // Load shared fixture file (cached on constructor)
++        if (!CloudApi._fixtures && process.env.TRITON_EMIT_PAYLOAD_FIXTURES) {
++            try {
++                CloudApi._fixtures = JSON.parse(
++                    require('fs').readFileSync(
++                        process.env.TRITON_EMIT_PAYLOAD_FIXTURES, 'utf8'));
++            } catch (_e) { /* ignore load errors */ }
 +        }
++        var fix = CloudApi._fixtures || {};
++        var resps = fix.responses || {};
++
++        // Derive operation_id from method + URL path
++        var segs = opts.path.replace(/\?.*$/, '').split('/').filter(Boolean);
++        var rMap = {machines:'machine', images:'image', packages:'package',
++            networks:'network', volumes:'volume', keys:'key',
++            fwrules:'firewall_rule', vlans:'fabric_vlan',
++            nics:'nic', snapshots:'machine_snapshot', disks:'machine_disk'};
++        var opId = null;
++        for (var i = segs.length - 1; i >= 0; i--) {
++            var r = rMap[segs[i]];
++            if (!r) continue;
++            if (segs[i] === 'networks' && opts.path.indexOf('/fabrics/') !== -1)
++                r = 'fabric_network';
++            var hasId = i < segs.length - 1;
++            if (m === 'GET' || m === 'HEAD') opId = hasId ? 'get_' + r : 'list_' + r;
++            else if (m === 'POST') opId = hasId ? 'update_' + r : 'create_' + r;
++            else if (m === 'PUT') opId = 'update_' + r;
++            else if (m === 'DELETE') opId = 'delete_' + r;
++            break;
++        }
++
++        // Interpolate placeholders in fixture template
++        var lastSeg = segs[segs.length - 1] || 'unknown';
++        var lastSegUuid = /^[0-9a-f]{8}-/.test(lastSeg) ? lastSeg
++            : '00000000-0000-0000-0000-000000000000';
++        var vlanMatch = opts.path.match(/\/vlans\/(\d+)/);
++        var vlanId = vlanMatch ? parseInt(vlanMatch[1], 10) : 0;
++        function interp(o) {
++            var s = JSON.stringify(o);
++            s = s.replace(/\$LAST_SEG_UUID/g, lastSegUuid);
++            s = s.replace(/\$LAST_SEG/g, lastSeg);
++            s = s.replace(/"\$VLAN_ID"/g, String(vlanId));
++            return JSON.parse(s);
++        }
++
++        // Look up fixture response, with fallback defaults
++        var resp;
++        if (opId && resps[opId]) {
++            resp = interp(resps[opId]);
++        } else if (m === 'GET' || m === 'HEAD') {
++            resp = opId && opId.indexOf('list_') === 0
++                ? (fix.list_default || [])
++                : interp(fix.get_default || {id: '$LAST_SEG', name: '$LAST_SEG'});
++        } else {
++            resp = fix.mutation_default || {};
++        }
++
++        cb(null, null, { statusCode: 200 }, resp);
 +        return;
 +    }
 +
@@ -55,7 +87,7 @@ index a40bfbc..1c7d125 100644
 @@ -4401,6 +4401,12 @@ function getInstanceDisk(opts, cb) {
      assert.string(opts.diskId, 'opts.diskId');
      assert.func(cb, 'cb');
- 
+
 +    // Emit-payload mode: return a fake disk so deleteInstanceDisk can proceed
 +    if (process.env.TRITON_EMIT_PAYLOAD) {
 +        cb(null, {id: opts.diskId, size: 0, boot: false, state: 'ready'});
