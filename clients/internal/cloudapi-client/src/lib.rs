@@ -685,28 +685,25 @@ impl ClientHooks<triton_auth::AuthConfig> for Client {
 /// the server ignores the redundant fields.
 #[cfg(debug_assertions)]
 fn inject_map_params(request: &mut reqwest::Request, info: &OperationInfo) {
-    match info.operation_id {
-        // POST /{account}/users/{uuid}/accesskeys
-        // Node includes userId in body due to mapParams
-        "create_user_access_key" => {
-            let uuid = {
-                let segments: Vec<&str> = request
-                    .url()
-                    .path()
-                    .split('/')
-                    .filter(|s| !s.is_empty())
-                    .collect();
-                // segments: [account, "users", uuid, "accesskeys"]
-                segments
-                    .iter()
-                    .position(|&s| s == "users")
-                    .and_then(|pos| segments.get(pos + 1).map(|s| s.to_string()))
-            };
-            if let Some(uuid) = uuid {
-                inject_body_field(request, "userId", &uuid);
-            }
+    // POST /{account}/users/{uuid}/accesskeys
+    // Node includes userId in body due to mapParams
+    if info.operation_id == "create_user_access_key" {
+        let uuid = {
+            let segments: Vec<&str> = request
+                .url()
+                .path()
+                .split('/')
+                .filter(|s| !s.is_empty())
+                .collect();
+            // segments: [account, "users", uuid, "accesskeys"]
+            segments
+                .iter()
+                .position(|&s| s == "users")
+                .and_then(|pos| segments.get(pos + 1).map(|s| s.to_string()))
+        };
+        if let Some(uuid) = uuid {
+            inject_body_field(request, "userId", &uuid);
         }
-        _ => {}
     }
 }
 
@@ -716,8 +713,7 @@ fn inject_body_field(request: &mut reqwest::Request, key: &str, value: &str) {
     let Some(bytes) = request.body().and_then(|b| b.as_bytes()) else {
         return;
     };
-    let Ok(mut obj) =
-        serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(bytes)
+    let Ok(mut obj) = serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(bytes)
     else {
         return;
     };
