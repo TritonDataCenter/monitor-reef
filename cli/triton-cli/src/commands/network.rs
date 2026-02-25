@@ -177,12 +177,12 @@ impl NetworkCommand {
     /// Call this before building the client so validation errors are
     /// reported even when no profile is configured.
     pub fn pre_validate(&self) -> Result<()> {
-        if let Self::Create(args) = self {
-            if args.gateway.is_none() && !args.no_nat {
-                anyhow::bail!(
-                    "without a --gateway (-g), you must specify --no-nat (-x)"
-                );
-            }
+        if let Self::Create(args) = self
+            && args.gateway.is_none() && !args.no_nat
+        {
+            anyhow::bail!(
+                "without a --gateway (-g), you must specify --no-nat (-x)"
+            );
         }
         Ok(())
     }
