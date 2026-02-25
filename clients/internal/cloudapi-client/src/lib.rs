@@ -299,13 +299,11 @@ fn emit_request_payload<E>(request: &reqwest::Request) -> Result<(), Error<E>> {
 /// response so calling code can continue (e.g., share_image does GET →
 /// modify ACL → POST).
 ///
-/// Mirrors node-triton's approach: returns `{id: lastSeg, name: lastSeg}`
-/// for single-resource GETs. List operations (operation_id starts with
-/// `list_`) get `[]` so resolve-by-name fails gracefully.
-///
-/// Each operation_id is matched to the correct response type, using proper
-/// typed structs so the compiler enforces valid enum values. Unknown
-/// operations fall back to a minimal JSON object.
+/// Dispatches to typed fake response builders per `operation_id`, using
+/// proper typed structs so the compiler enforces valid enum values.
+/// List operations (operation_id starts with `list_`) get `[]` so
+/// resolve-by-name fails gracefully. Unknown operations fall back to
+/// a minimal `{id: lastSeg, name: lastSeg}` JSON object.
 #[cfg(debug_assertions)]
 fn emit_and_fake_get_response(
     request: &reqwest::Request,
@@ -837,11 +835,13 @@ pub struct ListMachinesFilter {
     pub tag: Option<(String, String)>,
 }
 
-/// Typed client wrapper for action-based endpoints
+/// Typed client wrapper for endpoints requiring special handling
 ///
-/// This wrapper provides ergonomic methods for CloudAPI's action-based endpoints
-/// (machines, images, volumes, disks) while still allowing access to the underlying
-/// Progenitor-generated client for all other operations.
+/// This wrapper provides ergonomic methods for CloudAPI endpoints that need
+/// logic beyond the Progenitor-generated client, including action-dispatch
+/// endpoints (machines, images, volumes, disks), legacy request formats,
+/// tag query encoding, error recovery, and multi-step operations like
+/// share/unshare.
 ///
 /// This client is authenticated and will automatically sign all requests.
 pub struct TypedClient {
@@ -1653,7 +1653,7 @@ pub enum GetMachineError {
 }
 
 // =============================================================================
-// Infallible serialization helper
+// Serialization helper
 // =============================================================================
 
 /// Serialize a request type to JSON Value, panicking on failure.

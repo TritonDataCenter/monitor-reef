@@ -194,8 +194,9 @@ pub struct ChangefeedMessage {
 impl ChangefeedMessage {
     /// Get the resource state as a typed `VmState` enum.
     ///
-    /// Returns `None` if the state string cannot be parsed as a known `VmState`.
-    /// This can happen for unknown or future states not yet in our enum.
+    /// Currently always returns `Some` because `VmState::FromStr` maps
+    /// unrecognized strings to `VmState::Unknown`. The `Option` is preserved
+    /// for forward compatibility in case parsing rules change.
     pub fn resource_state_typed(&self) -> Option<vmapi_api::VmState> {
         self.resource_state.parse().ok()
     }

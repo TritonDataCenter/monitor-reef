@@ -2628,7 +2628,7 @@
           "images"
         ],
         "summary": "Update image (action dispatch)",
-        "description": "This endpoint handles multiple actions. The action can be specified either in the request body or as a query parameter. Body takes precedence, matching Restify's `mapParams` behavior.\n\nActions: - update: Update image metadata - export: Export image to Manta - clone: Clone image to account - import-from-datacenter: Import image from another datacenter",
+        "description": "This endpoint handles multiple actions. The action can be specified either in the request body or as a query parameter. Body takes precedence, matching Restify's `mapParams` behavior.\n\nActions: - update: Update image metadata - export: Export image to Manta - clone: Clone image to account - import-from-datacenter: Import image from another datacenter\n\nNote: share/unshare operations are implemented client-side using the `update` action to modify the ACL (see `TypedClient::share_image` / `TypedClient::unshare_image` in `cloudapi-client`).",
         "operationId": "update_image",
         "parameters": [
           {

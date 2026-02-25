@@ -756,6 +756,10 @@ pub trait CloudApi {
     /// - export: Export image to Manta
     /// - clone: Clone image to account
     /// - import-from-datacenter: Import image from another datacenter
+    ///
+    /// Note: share/unshare operations are implemented client-side using the
+    /// `update` action to modify the ACL (see `TypedClient::share_image` /
+    /// `TypedClient::unshare_image` in `cloudapi-client`).
     #[endpoint {
         method = POST,
         path = "/{account}/images/{dataset}",

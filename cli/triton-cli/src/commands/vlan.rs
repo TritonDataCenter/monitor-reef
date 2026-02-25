@@ -225,7 +225,7 @@ async fn get_vlan(args: VlanGetArgs, client: &TypedClient, use_json: bool) -> Re
 async fn resolve_vlan(id_or_name: &str, client: &TypedClient) -> Result<u16> {
     // Try parsing as numeric ID first
     if let Ok(vlan_id) = id_or_name.parse::<u16>() {
-        // TODO: should we add verification here that node-triton didn't have?
+        // NOTE: We accept the parsed ID without verifying it exists server-side, matching node-triton's behavior.
         return Ok(vlan_id);
     }
 
