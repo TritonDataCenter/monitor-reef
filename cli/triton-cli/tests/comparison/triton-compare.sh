@@ -1076,11 +1076,8 @@ run_payload_tests() {
     run_payload_test "payload-image-export" "image export" \
         image export "$IMAGE_UUID" /user/stor/export
 
-    # Disabled: node-triton creates a separate CloudAPI client to the target
-    # datacenter, so emit-payload can't capture the actual import request.
-    # Rust sends POST to the current datacenter (correct modern CloudAPI behavior).
-    # run_payload_test "payload-image-copy" "image copy" \
-    #     image copy "$IMAGE_UUID" us-west-1
+    run_payload_test "payload-image-copy" "image copy" \
+        image copy "$IMAGE_UUID" us-west-1
 
     # --- Volume (additional) ---
 
@@ -1093,9 +1090,8 @@ run_payload_tests() {
     run_payload_test "payload-vlan-delete" "vlan delete" \
         vlan delete 100
 
-    # Disabled: node-triton's tritonapi.updateFabricVlan is not a function (node bug)
-    # run_payload_test "payload-vlan-update" "vlan update" \
-    #     vlan update 100 name=updated-vlan
+    run_payload_test "payload-vlan-update" "vlan update" \
+        vlan update 100 name=updated-vlan
 
     # --- Firewall rule (additional) ---
 
