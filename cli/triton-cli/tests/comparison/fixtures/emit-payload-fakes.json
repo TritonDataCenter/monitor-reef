@@ -116,6 +116,118 @@
             "name": "$LAST_SEG",
             "rules": []
         },
+        "list_machines": [
+            {
+                "id": "00000000-0000-0000-0000-000000000000",
+                "name": "test-instance",
+                "type": "virtualmachine",
+                "brand": "bhyve",
+                "state": "running",
+                "image": "00000000-0000-0000-0000-000000000000",
+                "package": "emit-payload-fake",
+                "memory": 0,
+                "disk": 0,
+                "ips": [],
+                "metadata": {},
+                "tags": {},
+                "created": "2025-01-01T00:00:00.000Z",
+                "updated": "2025-01-01T00:00:00.000Z"
+            }
+        ],
+        "list_machine": [
+            {
+                "id": "00000000-0000-0000-0000-000000000000",
+                "name": "test-instance",
+                "type": "virtualmachine",
+                "brand": "bhyve",
+                "state": "running",
+                "image": "00000000-0000-0000-0000-000000000000",
+                "package": "emit-payload-fake",
+                "memory": 0,
+                "disk": 0,
+                "ips": [],
+                "metadata": {},
+                "tags": {},
+                "created": "2025-01-01T00:00:00.000Z",
+                "updated": "2025-01-01T00:00:00.000Z"
+            }
+        ],
+        "list_images": [
+            {
+                "id": "00000000-0000-0000-0000-000000000000",
+                "name": "test-image",
+                "version": "0.0.0",
+                "os": "other",
+                "type": "other",
+                "requirements": {},
+                "acl": [],
+                "state": "active",
+                "published_at": "2025-01-01T00:00:00.000Z"
+            }
+        ],
+        "list_image": [
+            {
+                "id": "00000000-0000-0000-0000-000000000000",
+                "name": "test-image",
+                "version": "0.0.0",
+                "os": "other",
+                "type": "other",
+                "requirements": {},
+                "acl": [],
+                "state": "active",
+                "published_at": "2025-01-01T00:00:00.000Z"
+            }
+        ],
+        "list_packages": [
+            {
+                "id": "00000000-0000-0000-0000-000000000000",
+                "name": "test-package",
+                "memory": 0,
+                "disk": 0,
+                "swap": 0,
+                "vcpus": 0,
+                "default": false
+            }
+        ],
+        "list_package": [
+            {
+                "id": "00000000-0000-0000-0000-000000000000",
+                "name": "test-package",
+                "memory": 0,
+                "disk": 0,
+                "swap": 0,
+                "vcpus": 0,
+                "default": false
+            }
+        ],
+        "list_volumes": [
+            {
+                "id": "00000000-0000-0000-0000-000000000000",
+                "name": "test-volume",
+                "owner_uuid": "00000000-0000-0000-0000-000000000000",
+                "type": "tritonnfs",
+                "size": 0,
+                "state": "ready",
+                "networks": [],
+                "created": "2025-01-01T00:00:00.000Z",
+                "tags": {},
+                "refs": []
+            }
+        ],
+        "list_volume": [
+            {
+                "id": "00000000-0000-0000-0000-000000000000",
+                "name": "test-volume",
+                "owner_uuid": "00000000-0000-0000-0000-000000000000",
+                "type": "tritonnfs",
+                "size": 0,
+                "state": "ready",
+                "networks": [],
+                "created": "2025-01-01T00:00:00.000Z",
+                "tags": {},
+                "refs": []
+            }
+        ],
         "list_networks": [
             {
                 "id": "00000000-0000-0000-0000-000000000004",

@@ -812,6 +812,56 @@ run_payload_test() {
     compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
 }
 
+# Run a payload test comparing only mutation envelopes (POST/PUT/DELETE/PATCH).
+# Resolution GETs are filtered out so that differences in name-resolution
+# strategy (e.g., GET-by-name vs LIST+filter) don't cause false diffs.
+# Args: test_id description cli_args...
+run_payload_test_mutations() {
+    local test_id="$1"; shift
+    local description="$1"; shift
+
+    if is_ignored "$test_id"; then
+        printf "SKIP     %-30s %s (intentional: %s)\n" \
+            "$test_id" "$description" "${IGNORED_DIFFS[$test_id]}"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        return 0
+    fi
+
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "  Running: triton $*"
+    fi
+
+    local node_out="$OUTPUT_DIR/node/$test_id.out"
+    local node_err="$OUTPUT_DIR/node/$test_id.err"
+    local rust_out="$OUTPUT_DIR/rust/$test_id.out"
+    local rust_err="$OUTPUT_DIR/rust/$test_id.err"
+    local node_norm="$OUTPUT_DIR/node/$test_id.norm"
+    local rust_norm="$OUTPUT_DIR/rust/$test_id.norm"
+
+    local node_exit=0
+    local rust_exit=0
+
+    local fixtures="$SCRIPT_DIR/fixtures/emit-payload-fakes.json"
+
+    run_isolated \
+        TRITON_EMIT_PAYLOAD=1 \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
+        "$NODE_TRITON" "$@" < /dev/null > "$node_out" 2> "$node_err" || node_exit=$?
+
+    run_isolated \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
+        "$RUST_TRITON" --emit-payload "$@" < /dev/null > "$rust_out" 2> "$rust_err" || rust_exit=$?
+
+    # Like run_payload_test but also filter to mutations only (no GET/HEAD)
+    local jq_filter='[.[] | select(.method) | select(.method != "GET" and .method != "HEAD") | del(.body.origin) | .path |= split("?")[0] | if .body == {} then .body = null else . end | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
+    extract_json_object < "$node_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$node_norm" 2>/dev/null \
+        || cp "$node_out" "$node_norm"
+    extract_json_object < "$rust_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \
+        || cp "$rust_out" "$rust_norm"
+
+    compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
+}
+
 # Run a payload test where each CLI uses different invocation syntax.
 # Args: test_id description node_args... --- rust_args...
 # The "---" separator divides node-triton args from Rust triton args.
@@ -1201,6 +1251,52 @@ POLICYJSON
     # Name-based lookup: both CLIs should list_networks to resolve, then update
     run_payload_test "payload-network-ip-update-name" "network ip update (by name)" \
         network ip update test-network 10.0.0.5 -f "$SCRIPT_DIR/fixtures/network-ip-update.json"
+
+    # --- Name-based resolution tests ---
+    #
+    # These use resource names instead of UUIDs to exercise client-side
+    # name-resolution codepaths (list + client-side filter).  Both CLIs
+    # resolve names via different strategies (node-triton typically does
+    # GET-by-name; Rust does LIST + client-side match), so we compare
+    # only the final mutation envelope (filtering out resolution GETs).
+    # The list_* fixture entries return nil UUIDs, matching the
+    # $LAST_SEG_UUID that node-triton's GET fixtures produce for
+    # non-UUID inputs.
+
+    # Instance create with image name + package name
+    run_payload_test_mutations "payload-create-by-name" "instance create (by name)" \
+        instance create test-image test-package --name test-by-name
+
+    # Instance lifecycle by name
+    run_payload_test_mutations "payload-start-by-name" "instance start (by name)" \
+        instance start test-instance
+
+    run_payload_test_mutations "payload-stop-by-name" "instance stop (by name)" \
+        instance stop test-instance
+
+    run_payload_test_mutations "payload-reboot-by-name" "instance reboot (by name)" \
+        instance reboot test-instance
+
+    run_payload_test_mutations "payload-delete-by-name" "instance delete (by name)" \
+        instance delete --force test-instance
+
+    # Instance rename + resize by name (resize also resolves package name)
+    run_payload_test_mutations "payload-rename-by-name" "instance rename (by name)" \
+        instance rename test-instance renamed-inst
+
+    run_payload_test_mutations "payload-resize-by-name" "instance resize (by name)" \
+        instance resize test-instance test-package
+
+    # Image operations by name
+    run_payload_test_mutations "payload-image-clone-by-name" "image clone (by name)" \
+        image clone test-image
+
+    run_payload_test_mutations "payload-image-delete-by-name" "image delete (by name)" \
+        image delete test-image -f
+
+    # Volume delete by name
+    run_payload_test_mutations "payload-volume-delete-by-name" "volume delete (by name)" \
+        volume delete test-volume -f
 
     echo ""
 }

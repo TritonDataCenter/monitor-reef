@@ -2,7 +2,7 @@ diff --git a/lib/cloudapi2.js b/lib/cloudapi2.js
 index 605b257..aa62532 100644
 --- a/lib/cloudapi2.js
 +++ b/lib/cloudapi2.js
-@@ -287,6 +287,77 @@ CloudApi.prototype._request = function _request(opts, cb) {
+@@ -287,6 +287,81 @@ CloudApi.prototype._request = function _request(opts, cb) {
          }
      }
  
@@ -73,7 +73,11 @@ index 605b257..aa62532 100644
 +            resp = fix.mutation_default || {};
 +        }
 +
-+        cb(null, null, { statusCode: 200 }, resp);
++        var fakeRes = { statusCode: 200, headers: {} };
++        if (Array.isArray(resp)) {
++            fakeRes.headers['x-resource-count'] = String(resp.length);
++        }
++        cb(null, null, fakeRes, resp);
 +        return;
 +    }
 +
