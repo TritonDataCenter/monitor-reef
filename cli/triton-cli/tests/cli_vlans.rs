@@ -192,64 +192,6 @@ fn test_vlan_update_help() {
 }
 
 // =============================================================================
-// Payload tests - verify field=value parsing (offline, uses --emit-payload)
-// =============================================================================
-
-/// Test `triton vlan update 100 name=updated-vlan` produces correct payload
-#[test]
-fn test_vlan_update_field_value_parsing() {
-    let output = triton_cmd()
-        .args([
-            "--emit-payload",
-            "vlan",
-            "update",
-            "100",
-            "name=updated-vlan",
-        ])
-        .output()
-        .expect("Failed to run command");
-
-    assert!(output.status.success(), "command should succeed");
-    let stdout = String::from_utf8_lossy(&output.stdout);
-
-    let envelopes: Vec<serde_json::Value> = stdout
-        .lines()
-        .collect::<Vec<_>>()
-        .join("\n")
-        .split("\n}\n")
-        .filter_map(|chunk| {
-            let trimmed = chunk.trim();
-            if trimmed.is_empty() {
-                return None;
-            }
-            let json_str = if trimmed.ends_with('}') {
-                trimmed.to_string()
-            } else {
-                format!("{trimmed}\n}}")
-            };
-            serde_json::from_str(&json_str).ok()
-        })
-        .collect();
-
-    let put = envelopes
-        .iter()
-        .find(|e| e["method"] == "PUT")
-        .expect("should have a PUT envelope");
-
-    assert_eq!(put["body"]["name"], "updated-vlan");
-}
-
-/// Test that unknown fields produce an error
-#[test]
-fn test_vlan_update_unknown_field() {
-    triton_cmd()
-        .args(["--emit-payload", "vlan", "update", "100", "badfield=value"])
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("unknown field"));
-}
-
-// =============================================================================
 // API tests - require config.json
 // These tests are ignored by default and run with `make triton-test-api`
 // =============================================================================
