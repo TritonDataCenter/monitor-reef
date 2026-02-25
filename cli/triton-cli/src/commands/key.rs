@@ -156,7 +156,7 @@ async fn add_key(args: KeyAddArgs, client: &TypedClient, use_json: bool) -> Resu
 
     let request = cloudapi_client::types::CreateSshKeyRequest {
         name: name.clone(),
-        key: key_content.trim().to_string(),
+        key: key_content.clone(),
     };
 
     let response = client

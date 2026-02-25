@@ -40,7 +40,6 @@ pub struct RbacKeyCommand {
     pub yes: bool,
 
     /// Arguments: USER KEY (for show), USER FILE (for add), USER KEY... (for delete)
-    #[arg(trailing_var_arg = true)]
     pub args: Vec<String>,
 }
 
@@ -199,8 +198,6 @@ pub async fn add_user_key(
         tokio::fs::read_to_string(path)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to read key file '{}': {}", path, e))?
-            .trim()
-            .to_string()
     } else {
         args.key.clone()
     };
@@ -279,13 +276,11 @@ async fn add_key_from_file(
     let key_data = if file == "-" {
         let mut buffer = String::new();
         io::stdin().read_to_string(&mut buffer)?;
-        buffer.trim().to_string()
+        buffer
     } else {
         tokio::fs::read_to_string(file)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to read key file '{}': {}", file, e))?
-            .trim()
-            .to_string()
     };
 
     // Extract name from key comment if not provided

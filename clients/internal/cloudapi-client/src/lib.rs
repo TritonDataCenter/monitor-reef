@@ -323,10 +323,15 @@ fn emit_and_fake_get_response(
     emit_payload_envelope(request.method().as_str(), &path, serde_json::Value::Null);
 
     let body_bytes = if info.operation_id.starts_with("list_") {
-        // List endpoints: use fixture's list_default or fall back to empty array
+        // List endpoints: check responses for a specific list fixture first,
+        // then fall back to list_default, then empty array
         load_fixture()
             .as_ref()
-            .and_then(|f| f.get("list_default"))
+            .and_then(|f| {
+                f.get("responses")
+                    .and_then(|r| r.get(info.operation_id))
+                    .or_else(|| f.get("list_default"))
+            })
             .and_then(|v| serde_json::to_vec(v).ok())
             .unwrap_or_else(|| b"[]".to_vec())
     } else {
@@ -647,6 +652,8 @@ impl ClientHooks<triton_auth::AuthConfig> for Client {
             && request.method() != reqwest::Method::GET
             && request.method() != reqwest::Method::HEAD
         {
+            // Inject path params into body to match Node.js Restify mapParams
+            inject_map_params(request, info);
             return emit_request_payload(request);
         }
 
@@ -670,6 +677,62 @@ impl ClientHooks<triton_auth::AuthConfig> for Client {
             .execute(request)
             .await
     }
+}
+
+/// In emit-payload mode, inject path parameters into the request body to
+/// match Node.js Restify's `mapParams: true` behavior, which merges URL
+/// path params into the body. This is only needed for test comparison;
+/// the server ignores the redundant fields.
+#[cfg(debug_assertions)]
+fn inject_map_params(request: &mut reqwest::Request, info: &OperationInfo) {
+    match info.operation_id {
+        // POST /{account}/users/{uuid}/accesskeys
+        // Node includes userId in body due to mapParams
+        "create_user_access_key" => {
+            let uuid = {
+                let segments: Vec<&str> = request
+                    .url()
+                    .path()
+                    .split('/')
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                // segments: [account, "users", uuid, "accesskeys"]
+                segments
+                    .iter()
+                    .position(|&s| s == "users")
+                    .and_then(|pos| segments.get(pos + 1).map(|s| s.to_string()))
+            };
+            if let Some(uuid) = uuid {
+                inject_body_field(request, "userId", &uuid);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Insert a string field into a JSON request body.
+#[cfg(debug_assertions)]
+fn inject_body_field(request: &mut reqwest::Request, key: &str, value: &str) {
+    let Some(bytes) = request.body().and_then(|b| b.as_bytes()) else {
+        return;
+    };
+    let Ok(mut obj) =
+        serde_json::from_slice::<serde_json::Map<String, serde_json::Value>>(bytes)
+    else {
+        return;
+    };
+    obj.insert(
+        key.to_string(),
+        serde_json::Value::String(value.to_string()),
+    );
+    #[allow(clippy::expect_used)]
+    let new_bytes = serde_json::to_vec(&obj).expect("re-serialization should not fail");
+    let len = new_bytes.len();
+    *request.body_mut() = Some(reqwest::Body::from(new_bytes));
+    request.headers_mut().insert(
+        reqwest::header::CONTENT_LENGTH,
+        reqwest::header::HeaderValue::from(len),
+    );
 }
 
 /// Transform a create_machine request body from structured to legacy format.

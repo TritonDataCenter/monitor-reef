@@ -62,6 +62,9 @@ pub struct AccesskeyUpdateArgs {
     /// New description
     #[arg(short, long, visible_alias = "desc")]
     pub description: Option<String>,
+    /// Read update data from JSON file (use '-' for stdin)
+    #[arg(short = 'f', long = "file")]
+    pub file: Option<std::path::PathBuf>,
 }
 
 #[derive(Args, Clone)]
@@ -193,12 +196,24 @@ async fn update_access_key(
 ) -> Result<()> {
     let account = &client.auth_config().account;
 
-    let request = cloudapi_client::types::UpdateAccessKeyRequest {
-        status: args
-            .status
-            .map(|s| serde_json::from_value(serde_json::Value::String(s)))
-            .transpose()?,
-        description: args.description,
+    let request = if let Some(file_path) = &args.file {
+        let content = if file_path.as_os_str() == "-" {
+            use std::io::Read;
+            let mut buffer = String::new();
+            std::io::stdin().read_to_string(&mut buffer)?;
+            buffer
+        } else {
+            tokio::fs::read_to_string(file_path).await?
+        };
+        serde_json::from_str(&content)?
+    } else {
+        cloudapi_client::types::UpdateAccessKeyRequest {
+            status: args
+                .status
+                .map(|s| serde_json::from_value(serde_json::Value::String(s)))
+                .transpose()?,
+            description: args.description,
+        }
     };
 
     let response = client

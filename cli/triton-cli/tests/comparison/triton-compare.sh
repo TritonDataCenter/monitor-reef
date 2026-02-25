@@ -149,6 +149,36 @@ if [[ -z "$OUTPUT_DIR" ]]; then
 fi
 mkdir -p "$OUTPUT_DIR/diffs" "$OUTPUT_DIR/node" "$OUTPUT_DIR/rust"
 
+# Environment variables that override profile settings via clap's `env` attribute.
+# These must be unset in isolated mode to prevent the user's real credentials
+# from leaking into the test environment (which would cause tests to silently
+# use real auth instead of the generated test keys, producing false passes
+# when the agent is unreachable and wrong-identity payloads when it is).
+ISOLATED_ENV_UNSET=(
+    TRITON_PROFILE TRITON_URL TRITON_ACCOUNT TRITON_KEY_ID
+    TRITON_RBAC_USER TRITON_RBAC_ROLE TRITON_TLS_INSECURE
+    SDC_URL SDC_ACCOUNT SDC_KEY_ID
+    SSH_AUTH_SOCK
+)
+
+# Run a command in the isolated environment.
+# Usage: run_isolated [VAR=val ...] <binary> [args...]
+# Any leading KEY=VALUE arguments are exported before running the command.
+# Uses a subshell to unset env vars (BSD env on macOS lacks -u support).
+run_isolated() {
+    (
+        unset "${ISOLATED_ENV_UNSET[@]}"
+        export HOME="$ISOLATED_HOME"
+        export TRITON_CONFIG_DIR="$ISOLATED_CONFIG"
+        # Export any VAR=val arguments (name must be a valid shell variable)
+        while [[ "$1" =~ ^[A-Z_][A-Z0-9_]*= ]]; do
+            export "$1"
+            shift
+        done
+        "$@"
+    )
+}
+
 # Create isolated environment for offline tests
 ISOLATED_HOME="$(mktemp -d "${TMPDIR:-/tmp}/triton-compare-home.XXXXXX")"
 ISOLATED_CONFIG="$ISOLATED_HOME/.triton"
@@ -198,7 +228,9 @@ cat > "$ISOLATED_CONFIG/profiles.d/us-west-1.json" <<EOF
 EOF
 
 # Set test-compare as the current profile
+# Node-triton uses a plain-text "profile" file; Rust uses "config.json"
 echo '"test-compare"' > "$ISOLATED_CONFIG/profile"
+echo '{"profile": "test-compare"}' > "$ISOLATED_CONFIG/config.json"
 
 cleanup() {
     rm -rf "$ISOLATED_HOME"
@@ -354,16 +386,14 @@ run_test() {
 
     # Run Node.js triton
     if [[ "$env_mode" == "isolated" ]]; then
-        HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
-            "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
+        run_isolated "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
     else
         "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
     fi
 
     # Run Rust triton
     if [[ "$env_mode" == "isolated" ]]; then
-        HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
-            "$RUST_TRITON" "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
+        run_isolated "$RUST_TRITON" "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
     else
         "$RUST_TRITON" "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
     fi
@@ -401,10 +431,8 @@ run_json_test() {
     local rust_exit=0
 
     if [[ "$env_mode" == "isolated" ]]; then
-        HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
-            "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
-        HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
-            "$RUST_TRITON" "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
+        run_isolated "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
+        run_isolated "$RUST_TRITON" "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
     else
         "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
         "$RUST_TRITON" "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
@@ -519,10 +547,8 @@ run_help_coverage_test() {
 
     # Run both CLIs
     if [[ "$env_mode" == "isolated" ]]; then
-        HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
-            "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
-        HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
-            "$RUST_TRITON" "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
+        run_isolated "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
+        run_isolated "$RUST_TRITON" "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
     else
         "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
         "$RUST_TRITON" "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
@@ -765,13 +791,13 @@ run_payload_test() {
     local fixtures="$SCRIPT_DIR/fixtures/emit-payload-fakes.json"
 
     # Node.js: use TRITON_EMIT_PAYLOAD env var
-    HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
+    run_isolated \
         TRITON_EMIT_PAYLOAD=1 \
         TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
         "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
 
     # Rust: use --emit-payload flag
-    HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
+    run_isolated \
         TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
         "$RUST_TRITON" --emit-payload "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
 
@@ -834,12 +860,12 @@ run_payload_test_split() {
 
     local fixtures="$SCRIPT_DIR/fixtures/emit-payload-fakes.json"
 
-    HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
+    run_isolated \
         TRITON_EMIT_PAYLOAD=1 \
         TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
         "$NODE_TRITON" "${node_args[@]}" > "$node_out" 2> "$node_err" || node_exit=$?
 
-    HOME="$ISOLATED_HOME" TRITON_CONFIG_DIR="$ISOLATED_CONFIG" \
+    run_isolated \
         TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
         "$RUST_TRITON" --emit-payload "${rust_args[@]}" > "$rust_out" 2> "$rust_err" || rust_exit=$?
 
@@ -1004,11 +1030,8 @@ run_payload_tests() {
         instance disk add "$INST_UUID" 10240
 
     local DISK_UUID="00000000-0000-0000-0000-000000000007"
-    # Node has no --force/-f flag for disk delete; Rust requires it to skip prompt
-    run_payload_test_split "payload-disk-delete" "instance disk delete" \
-        instance disk delete "$INST_UUID" "$DISK_UUID" \
-        --- \
-        instance disk delete "$INST_UUID" "$DISK_UUID" -f
+    run_payload_test "payload-disk-delete" "instance disk delete" \
+        instance disk delete "$INST_UUID" "$DISK_UUID"
 
     # --- Instance tag ---
 
@@ -1053,8 +1076,11 @@ run_payload_tests() {
     run_payload_test "payload-image-export" "image export" \
         image export "$IMAGE_UUID" /user/stor/export
 
-    run_payload_test "payload-image-copy" "image copy" \
-        image copy "$IMAGE_UUID" us-west-1
+    # Disabled: node-triton creates a separate CloudAPI client to the target
+    # datacenter, so emit-payload can't capture the actual import request.
+    # Rust sends POST to the current datacenter (correct modern CloudAPI behavior).
+    # run_payload_test "payload-image-copy" "image copy" \
+    #     image copy "$IMAGE_UUID" us-west-1
 
     # --- Volume (additional) ---
 
@@ -1064,14 +1090,12 @@ run_payload_tests() {
 
     # --- VLAN (additional) ---
 
-    # Node has no --force/-f flag for vlan delete; Rust requires it to skip prompt
-    run_payload_test_split "payload-vlan-delete" "vlan delete" \
-        vlan delete 100 \
-        --- \
-        vlan delete 100 -f
+    run_payload_test "payload-vlan-delete" "vlan delete" \
+        vlan delete 100
 
-    run_payload_test "payload-vlan-update" "vlan update" \
-        vlan update 100 name=updated-vlan
+    # Disabled: node-triton's tritonapi.updateFabricVlan is not a function (node bug)
+    # run_payload_test "payload-vlan-update" "vlan update" \
+    #     vlan update 100 name=updated-vlan
 
     # --- Firewall rule (additional) ---
 
@@ -1103,67 +1127,50 @@ run_payload_tests() {
         account update companyName=TestCorp
 
     # --- RBAC ---
-    # Node.js triton uses "rbac user -a FILE" (JSON file input), while Rust
-    # uses "rbac user create LOGIN --email ...". We use run_payload_test_split
-    # to invoke each CLI with its own syntax.
 
     # RBAC user create
     local user_json="$ISOLATED_HOME/rbac-user.json"
     cat > "$user_json" <<'USERJSON'
 {"login": "testuser", "email": "test@example.com", "password": "secret123"}
 USERJSON
-    run_payload_test_split "payload-rbac-user-create" "rbac user create" \
-        rbac user -a "$user_json" \
-        --- \
-        rbac user create testuser --email test@example.com --password secret123
+    run_payload_test "payload-rbac-user-create" "rbac user create" \
+        rbac user -a "$user_json"
 
     # RBAC role create
     local role_json="$ISOLATED_HOME/rbac-role.json"
     cat > "$role_json" <<'ROLEJSON'
 {"name": "testrole", "members": [{"type": "subuser", "login": "testuser", "default": false}], "policies": [{"name": "testpolicy"}]}
 ROLEJSON
-    run_payload_test_split "payload-rbac-role-create" "rbac role create" \
-        rbac role -a "$role_json" \
-        --- \
-        rbac role create testrole --member testuser --policy testpolicy
+    run_payload_test "payload-rbac-role-create" "rbac role create" \
+        rbac role -a "$role_json"
 
     # RBAC policy create
     local policy_json="$ISOLATED_HOME/rbac-policy.json"
     cat > "$policy_json" <<'POLICYJSON'
 {"name": "testpolicy", "rules": ["can getmachine"], "description": "A test policy"}
 POLICYJSON
-    run_payload_test_split "payload-rbac-policy-create" "rbac policy create" \
-        rbac policy -a "$policy_json" \
-        --- \
-        rbac policy create testpolicy --rule "can getmachine" --description "A test policy"
+    run_payload_test "payload-rbac-policy-create" "rbac policy create" \
+        rbac policy -a "$policy_json"
 
-    # RBAC deletes — Node has no --force/-f; Rust requires it to skip prompt.
+    # RBAC deletes — both Node and Rust support -y to skip confirmation prompt.
     # Use UUID for user so Rust's resolve_user() returns immediately.
     local USER_UUID="00000000-0000-0000-0000-000000000009"
 
-    run_payload_test_split "payload-rbac-user-delete" "rbac user delete" \
-        rbac user -d "$USER_UUID" \
-        --- \
-        rbac user delete "$USER_UUID" --force
+    run_payload_test "payload-rbac-user-delete" "rbac user delete" \
+        rbac user -d "$USER_UUID" -y
 
-    run_payload_test_split "payload-rbac-role-delete" "rbac role delete" \
-        rbac role -d testrole \
-        --- \
-        rbac role delete testrole --force
+    run_payload_test "payload-rbac-role-delete" "rbac role delete" \
+        rbac role -d testrole -y
 
-    run_payload_test_split "payload-rbac-policy-delete" "rbac policy delete" \
-        rbac policy -d testpolicy \
-        --- \
-        rbac policy delete testpolicy --force
+    run_payload_test "payload-rbac-policy-delete" "rbac policy delete" \
+        rbac policy -d testpolicy -y
 
     # RBAC key add/delete
     run_payload_test "payload-rbac-key-add" "rbac key add" \
         rbac key -a --name test-key "$USER_UUID" "$ISOLATED_SSH/id_ed25519.pub"
 
-    # Node has no -y for rbac key delete; Rust requires -y to skip prompt
-    run_payload_test_split "payload-rbac-key-delete" "rbac key delete" \
-        rbac key -d "$USER_UUID" test-key \
-        --- \
+    # Both Node and Rust support -y to skip confirmation prompt
+    run_payload_test "payload-rbac-key-delete" "rbac key delete" \
         rbac key -d "$USER_UUID" test-key -y
 
     # --- Accesskey (account-level) ---
@@ -1172,13 +1179,11 @@ POLICYJSON
         accesskey create --status Active --description "test key"
 
     run_payload_test "payload-accesskey-update" "accesskey update" \
-        accesskey update fake-key-id --status Inactive
+        accesskey update fake-key-id -f "$SCRIPT_DIR/fixtures/accesskey-update.json"
 
-    # Node may not have --force for accesskey delete; Rust requires it
-    run_payload_test_split "payload-accesskey-delete" "accesskey delete" \
-        accesskey delete fake-key-id \
-        --- \
-        accesskey delete fake-key-id --force
+    # Both Node and Rust support --force/-f to skip confirmation prompt
+    run_payload_test "payload-accesskey-delete" "accesskey delete" \
+        accesskey delete fake-key-id -f
 
     # --- RBAC Accesskey ---
 
@@ -1188,17 +1193,18 @@ POLICYJSON
     run_payload_test "payload-rbac-accesskey-update" "rbac accesskey update" \
         rbac accesskey -u "$USER_UUID" fake-key-id --status Inactive
 
-    run_payload_test_split "payload-rbac-accesskey-delete" "rbac accesskey delete" \
-        rbac accesskey -d "$USER_UUID" fake-key-id \
-        --- \
+    # Both Node and Rust support -f/--force to skip confirmation prompt
+    run_payload_test "payload-rbac-accesskey-delete" "rbac accesskey delete" \
         rbac accesskey -d "$USER_UUID" fake-key-id -f
 
     # --- Network IP ---
 
-    run_payload_test_split "payload-network-ip-update" "network ip update" \
-        network ip update "$NET_UUID" 10.0.0.5 --reserved true \
-        --- \
-        network ip update "$NET_UUID" 10.0.0.5 --reserve true
+    run_payload_test "payload-network-ip-update" "network ip update" \
+        network ip update "$NET_UUID" 10.0.0.5 -f "$SCRIPT_DIR/fixtures/network-ip-update.json"
+
+    # Name-based lookup: both CLIs should list_networks to resolve, then update
+    run_payload_test "payload-network-ip-update-name" "network ip update (by name)" \
+        network ip update test-network 10.0.0.5 -f "$SCRIPT_DIR/fixtures/network-ip-update.json"
 
     echo ""
 }

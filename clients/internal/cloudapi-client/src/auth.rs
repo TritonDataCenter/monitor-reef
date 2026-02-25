@@ -26,6 +26,12 @@ pub async fn add_auth_headers(
     auth_config: &AuthConfig,
     request: &mut reqwest::Request,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // In emit-payload mode, skip signing — we only need the method/path/body
+    #[cfg(debug_assertions)]
+    if crate::EMIT_PAYLOAD_MODE.load(std::sync::atomic::Ordering::Relaxed) {
+        return Ok(());
+    }
+
     let method = request.method().as_str().to_string();
 
     // Add RBAC roles as query parameter BEFORE signing so the signature

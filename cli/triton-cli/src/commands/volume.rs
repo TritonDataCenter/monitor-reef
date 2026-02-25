@@ -395,9 +395,10 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
         sizes.iter().map(|s| s.size).min().unwrap_or(10240) // Fallback: 10 GiB in MiB
     };
 
-    // Handle network - resolve name/shortid to UUID if provided
+    // Handle network - resolve name/shortid to UUID if provided.
+    // Always validate via GET (matches node-triton's getNetwork call in createVolume).
     let networks = if let Some(net) = &args.network {
-        let network_id = crate::commands::network::resolve_network(net, client).await?;
+        let network_id = crate::commands::network::resolve_network_with_get(net, client).await?;
         Some(vec![network_id])
     } else {
         None

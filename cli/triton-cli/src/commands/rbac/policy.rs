@@ -81,7 +81,6 @@ pub struct RbacPolicyCommand {
     /// For add: optional FILE path (or "-" for stdin)
     /// For edit: POLICY name/uuid
     /// For delete: one or more POLICY name/uuid
-    #[arg(trailing_var_arg = true)]
     pub args: Vec<String>,
 }
 
@@ -343,6 +342,18 @@ pub async fn delete_policies(args: PolicyDeleteArgs, client: &TypedClient) -> Re
         }
 
         let account = &client.auth_config().account;
+
+        // Verify policy exists via GET first (matches node-triton's getPolicy call),
+        // then delete using the original reference (name or UUID).
+        if uuid::Uuid::parse_str(policy_ref).is_err() {
+            client
+                .inner()
+                .get_policy()
+                .account(account)
+                .policy(policy_ref)
+                .send()
+                .await?;
+        }
 
         client
             .inner()

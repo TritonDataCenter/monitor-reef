@@ -103,6 +103,32 @@
             "vlan_id": "$VLAN_ID",
             "name": "fake",
             "description": ""
-        }
+        },
+        "get_role": {
+            "id": "00000000-0000-0000-0000-000000000000",
+            "name": "$LAST_SEG",
+            "members": [],
+            "default_members": [],
+            "policies": []
+        },
+        "get_policy": {
+            "id": "00000000-0000-0000-0000-000000000000",
+            "name": "$LAST_SEG",
+            "rules": []
+        },
+        "list_networks": [
+            {
+                "id": "00000000-0000-0000-0000-000000000004",
+                "name": "test-network",
+                "public": false
+            }
+        ],
+        "list_network": [
+            {
+                "id": "00000000-0000-0000-0000-000000000004",
+                "name": "test-network",
+                "public": false
+            }
+        ]
     }
 }

@@ -59,7 +59,6 @@ pub struct RbacAccesskeyCommand {
     pub force: bool,
 
     /// Arguments: USER [ACCESSKEYID...]
-    #[arg(trailing_var_arg = true)]
     pub args: Vec<String>,
 }
 

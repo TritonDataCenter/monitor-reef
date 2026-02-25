@@ -679,16 +679,8 @@ async fn update_network_ip(
 /// Resolve network name or short ID to full UUID
 pub async fn resolve_network(id_or_name: &str, client: &TypedClient) -> Result<uuid::Uuid> {
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
-        // Verify the network exists (matches node-triton's getNetwork call)
-        // In emit-payload mode, the exec hook returns a fake response
-        let account = &client.auth_config().account;
-        client
-            .inner()
-            .get_network()
-            .account(account)
-            .network(uuid.to_string())
-            .send()
-            .await?;
+        // If already a UUID, use it directly (matches node-triton's _stepNetId
+        // which short-circuits on UUID input without a GET call)
         return Ok(uuid);
     }
 
@@ -719,4 +711,29 @@ pub async fn resolve_network(id_or_name: &str, client: &TypedClient) -> Result<u
     }
 
     Err(crate::errors::ResourceNotFoundError(format!("Network not found: {}", id_or_name)).into())
+}
+
+/// Resolve network, always validating via GET even for UUIDs.
+/// Matches node-triton's `getNetwork` which does a GET for UUIDs
+/// (unlike `_stepNetId` which short-circuits).
+pub async fn resolve_network_with_get(
+    id_or_name: &str,
+    client: &TypedClient,
+) -> Result<uuid::Uuid> {
+    let account = &client.auth_config().account;
+
+    if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
+        // Validate the network exists via GET
+        client
+            .inner()
+            .get_network()
+            .account(account)
+            .network(uuid.to_string())
+            .send()
+            .await?;
+        return Ok(uuid);
+    }
+
+    // For names/short IDs, list and match
+    resolve_network(id_or_name, client).await
 }

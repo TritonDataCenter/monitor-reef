@@ -91,7 +91,6 @@ pub struct RbacUserCommand {
     /// For add: optional FILE path (or "-" for stdin)
     /// For edit: USER login/uuid
     /// For delete: one or more USER login/uuid
-    #[arg(trailing_var_arg = true)]
     pub args: Vec<String>,
 }
 

@@ -11,6 +11,7 @@ use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 use cloudapi_client::types::Disk;
 use dialoguer::Confirm;
+use std::io::IsTerminal;
 
 use crate::output::table::{TableBuilder, TableFormatArgs};
 use crate::output::{json, opt_enum_to_display};
@@ -271,7 +272,7 @@ async fn resize_disk(args: DiskResizeArgs, client: &TypedClient) -> Result<()> {
 }
 
 async fn delete_disk(args: DiskDeleteArgs, client: &TypedClient) -> Result<()> {
-    if !args.force
+    if !args.force && std::io::stdin().is_terminal()
         && !Confirm::new()
             .with_prompt(format!("Delete disk {}?", &args.disk))
             .default(false)

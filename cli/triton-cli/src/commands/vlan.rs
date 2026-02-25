@@ -6,6 +6,7 @@
 
 //! Fabric VLAN management commands
 
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -282,7 +283,7 @@ async fn delete_vlans(args: VlanDeleteArgs, client: &TypedClient) -> Result<()> 
     for vlan in &args.vlans {
         let vlan_id = resolve_vlan(vlan, client).await?;
 
-        if !args.force {
+        if !args.force && std::io::stdin().is_terminal() {
             use dialoguer::Confirm;
             if !Confirm::new()
                 .with_prompt(format!("Delete VLAN {}?", vlan_id))

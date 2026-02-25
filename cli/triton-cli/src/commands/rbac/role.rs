@@ -82,7 +82,6 @@ pub struct RbacRoleCommand {
     /// For add: optional FILE path (or "-" for stdin)
     /// For edit: ROLE name/uuid
     /// For delete: one or more ROLE name/uuid
-    #[arg(trailing_var_arg = true)]
     pub args: Vec<String>,
 }
 
@@ -391,6 +390,18 @@ pub async fn delete_roles(args: RoleDeleteArgs, client: &TypedClient) -> Result<
         }
 
         let account = &client.auth_config().account;
+
+        // Verify role exists via GET first (matches node-triton's getRole call),
+        // then delete using the original reference (name or UUID).
+        if uuid::Uuid::parse_str(role_ref).is_err() {
+            client
+                .inner()
+                .get_role()
+                .account(account)
+                .role(role_ref)
+                .send()
+                .await?;
+        }
 
         client
             .inner()
