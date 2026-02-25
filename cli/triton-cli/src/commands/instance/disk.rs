@@ -272,7 +272,8 @@ async fn resize_disk(args: DiskResizeArgs, client: &TypedClient) -> Result<()> {
 }
 
 async fn delete_disk(args: DiskDeleteArgs, client: &TypedClient) -> Result<()> {
-    if !args.force && std::io::stdin().is_terminal()
+    if !args.force
+        && std::io::stdin().is_terminal()
         && !Confirm::new()
             .with_prompt(format!("Delete disk {}?", &args.disk))
             .default(false)
