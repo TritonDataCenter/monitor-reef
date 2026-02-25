@@ -173,6 +173,20 @@ pub struct NetworkDeleteArgs {
 }
 
 impl NetworkCommand {
+    /// Validate arguments that don't require a client/profile.
+    /// Call this before building the client so validation errors are
+    /// reported even when no profile is configured.
+    pub fn pre_validate(&self) -> Result<()> {
+        if let Self::Create(args) = self {
+            if args.gateway.is_none() && !args.no_nat {
+                anyhow::bail!(
+                    "without a --gateway (-g), you must specify --no-nat (-x)"
+                );
+            }
+        }
+        Ok(())
+    }
+
     pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
             Self::List(args) => list_networks(args, client, use_json).await,
@@ -366,10 +380,8 @@ async fn create_network(
 ) -> Result<()> {
     let account = &client.auth_config().account;
 
-    // Node.js triton requires either --gateway or --no-nat
-    if args.gateway.is_none() && !args.no_nat {
-        anyhow::bail!("without a --gateway (-g), you must specify --no-nat (-x)");
-    }
+    // Note: gateway/no-nat validation is in NetworkCommand::pre_validate()
+    // which runs before client creation, so it works even without a profile.
 
     // Build resolvers from comma-separated or multiple flags (default to empty)
     let resolvers = Some(match args.resolver {

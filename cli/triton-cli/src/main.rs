@@ -606,6 +606,7 @@ async fn try_main() -> Result<()> {
             command.clone().run(&client, cli.json).await
         }
         Commands::Network { command } => {
+            command.pre_validate()?;
             let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }

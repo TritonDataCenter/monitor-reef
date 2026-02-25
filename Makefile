@@ -57,7 +57,7 @@ build-release: | $(CARGO_EXEC) ## Build all APIs, services and clients
 	$(CARGO) build --release
 
 test: | $(CARGO_EXEC) ## Run all tests
-	$(CARGO) test
+	TRITON_CONFIG_DIR=/nonexistent $(CARGO) test
 
 clean:: | $(CARGO_EXEC) ## Clean build artifacts
 	$(CARGO) clean
@@ -158,7 +158,7 @@ package-test: | $(CARGO_EXEC) ## Test specific package (usage: make package-test
 
 # Triton CLI test commands
 triton-test: | $(CARGO_EXEC) ## Run triton-cli offline tests (no API required)
-	$(CARGO) test -p triton-cli
+	TRITON_CONFIG_DIR=/nonexistent $(CARGO) test -p triton-cli
 
 triton-test-api: | $(CARGO_EXEC) ## Run triton-cli API tests (requires tests/config.json)
 	@if [ ! -f cli/triton-cli/tests/config.json ]; then \
@@ -281,7 +281,7 @@ check:: | $(CARGO_EXEC) ## Run all validation checks (CI-ready)
 	$(MAKE) arch-lint
 	$(MAKE) openapi-check
 	$(MAKE) clients-check
-	$(CARGO) test --workspace
+	TRITON_CONFIG_DIR=/nonexistent $(CARGO) test --workspace
 	@echo ""
 	@echo "All validation checks passed!"
 
