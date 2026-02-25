@@ -9,8 +9,10 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
+use cloudapi_client::types::Package;
 
-use crate::output::{format_mb, json, table};
+use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::output::{format_mb, json};
 
 /// Valid filter keys for positional key=value arguments
 const VALID_FILTERS: &[&str] = &[
@@ -52,6 +54,9 @@ pub struct PackageListArgs {
     /// Filter by group
     #[arg(long)]
     pub group: Option<String>,
+
+    #[command(flatten)]
+    pub table: TableFormatArgs,
 
     /// Filters in key=value format (e.g., name=base, memory=1024, group=g4)
     ///
@@ -217,28 +222,22 @@ async fn list_packages(
     if use_json {
         json::print_json_stream(&packages)?;
     } else {
-        // Columns: SHORTID(0), NAME(1), MEMORY(2), SWAP(3), DISK(4), VCPUS(5)
-        // Right-align numeric columns to match node-triton
-        let mut tbl = table::create_table_with_alignment(
-            &["SHORTID", "NAME", "MEMORY", "SWAP", "DISK", "VCPUS"],
-            &[2, 3, 4, 5], // MEMORY, SWAP, DISK, VCPUS
-        );
+        let short_cols = ["shortid", "name", "memory", "swap", "disk", "vcpus"];
+        let long_cols = ["id", "description", "version", "group", "lwps", "default"];
+
+        let mut tbl = TableBuilder::new(&["SHORTID", "NAME", "MEMORY", "SWAP", "DISK", "VCPUS"])
+            .with_long_headers(&["ID", "DESCRIPTION", "VERSION", "GROUP", "LWPS", "DEFAULT"])
+            .with_right_aligned(&["MEMORY", "SWAP", "DISK", "VCPUS", "LWPS"]);
+
+        let all_cols: Vec<&str> = short_cols.iter().chain(long_cols.iter()).copied().collect();
         for pkg in &packages {
-            let vcpus_str = if pkg.vcpus > 0 {
-                pkg.vcpus.to_string()
-            } else {
-                "-".to_string()
-            };
-            tbl.add_row(vec![
-                &pkg.id.to_string()[..8],
-                &pkg.name,
-                &format_mb(pkg.memory),
-                &format_mb(pkg.swap),
-                &format_mb(pkg.disk),
-                &vcpus_str,
-            ]);
+            let row = all_cols
+                .iter()
+                .map(|col| get_package_field_value(pkg, col))
+                .collect();
+            tbl.add_row(row);
         }
-        table::print_table(tbl);
+        tbl.print(&args.table);
     }
 
     Ok(())
@@ -265,6 +264,34 @@ async fn get_package(args: PackageGetArgs, client: &TypedClient, use_json: bool)
     }
 
     Ok(())
+}
+
+/// Get a field value from a Package by field name
+fn get_package_field_value(pkg: &Package, field: &str) -> String {
+    match field.to_lowercase().as_str() {
+        "id" => pkg.id.to_string(),
+        "shortid" => {
+            let id_str = pkg.id.to_string();
+            id_str[..8.min(id_str.len())].to_string()
+        }
+        "name" => pkg.name.clone(),
+        "memory" => format_mb(pkg.memory),
+        "swap" => format_mb(pkg.swap),
+        "disk" => format_mb(pkg.disk),
+        "vcpus" => {
+            if pkg.vcpus > 0 {
+                pkg.vcpus.to_string()
+            } else {
+                "-".to_string()
+            }
+        }
+        "lwps" => pkg.lwps.map_or("-".to_string(), |v| v.to_string()),
+        "version" => pkg.version.clone().unwrap_or_else(|| "-".to_string()),
+        "group" => pkg.group.clone().unwrap_or_else(|| "-".to_string()),
+        "description" | "desc" => pkg.description.clone().unwrap_or_else(|| "-".to_string()),
+        "default" => pkg.default.to_string(),
+        _ => "-".to_string(),
+    }
 }
 
 /// Resolve package name or short ID to full UUID

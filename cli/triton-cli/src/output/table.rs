@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Table output formatting
 
@@ -46,6 +46,7 @@ impl TableFormatArgs {
 pub struct TableBuilder {
     headers: Vec<String>,
     long_headers: Option<Vec<String>>,
+    right_aligned: Vec<String>,
     rows: Vec<Vec<String>>,
 }
 
@@ -54,6 +55,7 @@ impl TableBuilder {
         Self {
             headers: headers.iter().map(|s| s.to_string()).collect(),
             long_headers: None,
+            right_aligned: Vec::new(),
             rows: Vec::new(),
         }
     }
@@ -66,22 +68,31 @@ impl TableBuilder {
         self
     }
 
+    /// Set columns that should be right-aligned (matched by header name, case-insensitive)
+    pub fn with_right_aligned(mut self, columns: &[&str]) -> Self {
+        self.right_aligned = columns.iter().map(|s| s.to_lowercase()).collect();
+        self
+    }
+
     pub fn add_row(&mut self, row: Vec<String>) {
         self.rows.push(row);
     }
 
     /// Print the table with the given formatting options
     pub fn print(self, opts: &TableFormatArgs) {
+        let all_headers = self.long_headers.as_ref().unwrap_or(&self.headers);
         let headers = if opts.long {
-            self.long_headers.as_ref().unwrap_or(&self.headers)
+            all_headers
         } else {
             &self.headers
         };
 
         // Determine which columns to display
+        // When -o is specified, search all known headers (including long-only ones)
+        // so that any field can be selected without requiring -l
         let column_indices: Vec<usize> = if let Some(ref cols) = opts.columns {
             cols.iter()
-                .filter_map(|col| headers.iter().position(|h| h.eq_ignore_ascii_case(col)))
+                .filter_map(|col| all_headers.iter().position(|h| h.eq_ignore_ascii_case(col)))
                 .collect()
         } else if opts.long {
             (0..headers.len()).collect()
@@ -89,10 +100,12 @@ impl TableBuilder {
             (0..self.headers.len()).collect()
         };
 
-        // Sort rows if requested
+        // Sort rows if requested (resolve field against all known headers)
         let mut rows = self.rows;
         if let Some((field, descending)) = opts.parse_sort()
-            && let Some(idx) = headers.iter().position(|h| h.eq_ignore_ascii_case(&field))
+            && let Some(idx) = all_headers
+                .iter()
+                .position(|h| h.eq_ignore_ascii_case(&field))
         {
             rows.sort_by(|a, b| {
                 let a_val = a.get(idx).map(|s| s.as_str()).unwrap_or("");
@@ -110,23 +123,10 @@ impl TableBuilder {
         table.load_preset(NOTHING);
         table.set_content_arrangement(comfy_table::ContentArrangement::Disabled);
 
-        // Set padding on all columns: no left padding, 2 spaces right (for column spacing)
-        let num_cols = column_indices.len();
-        for col_idx in 0..num_cols {
-            if let Some(column) = table.column_mut(col_idx) {
-                if col_idx == num_cols - 1 {
-                    // Last column should have no right padding
-                    column.set_padding((0, 0));
-                } else {
-                    column.set_padding((0, 2));
-                }
-            }
-        }
-
         if !opts.no_header {
             let header_row: Vec<&str> = column_indices
                 .iter()
-                .filter_map(|&i| headers.get(i).map(|s| s.as_str()))
+                .filter_map(|&i| all_headers.get(i).map(|s| s.as_str()))
                 .collect();
             table.set_header(header_row);
         }
@@ -137,6 +137,28 @@ impl TableBuilder {
                 .filter_map(|&i| row.get(i).map(|s| s.as_str()))
                 .collect();
             table.add_row(display_row);
+        }
+
+        // Set padding and alignment now that columns exist
+        let num_cols = column_indices.len();
+        for col_idx in 0..num_cols {
+            if let Some(column) = table.column_mut(col_idx) {
+                if col_idx == num_cols - 1 {
+                    column.set_padding((0, 0));
+                } else {
+                    column.set_padding((0, 2));
+                }
+            }
+        }
+        if !self.right_aligned.is_empty() {
+            for (display_idx, &header_idx) in column_indices.iter().enumerate() {
+                if let Some(header_name) = all_headers.get(header_idx)
+                    && self.right_aligned.contains(&header_name.to_lowercase())
+                    && let Some(column) = table.column_mut(display_idx)
+                {
+                    column.set_cell_alignment(CellAlignment::Right);
+                }
+            }
         }
 
         // Trim leading/trailing whitespace from each line
@@ -154,26 +176,6 @@ pub fn create_table(headers: &[&str]) -> Table {
     table.load_preset(NOTHING);
     table.set_content_arrangement(comfy_table::ContentArrangement::Disabled);
     table.set_header(headers);
-
-    table
-}
-
-/// Create a new table with headers and right-aligned columns
-///
-/// `right_aligned` specifies which column indices should be right-aligned
-/// (matching node-triton's behavior for numeric columns)
-pub fn create_table_with_alignment(headers: &[&str], right_aligned: &[usize]) -> Table {
-    let mut table = Table::new();
-    table.load_preset(NOTHING);
-    table.set_content_arrangement(comfy_table::ContentArrangement::Disabled);
-    table.set_header(headers);
-
-    // Set alignment on specified columns
-    for &col_idx in right_aligned {
-        if let Some(column) = table.column_mut(col_idx) {
-            column.set_cell_alignment(CellAlignment::Right);
-        }
-    }
 
     table
 }
