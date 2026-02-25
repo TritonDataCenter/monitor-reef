@@ -794,12 +794,12 @@ run_payload_test() {
     run_isolated \
         TRITON_EMIT_PAYLOAD=1 \
         TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
-        "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
+        "$NODE_TRITON" "$@" < /dev/null > "$node_out" 2> "$node_err" || node_exit=$?
 
     # Rust: use --emit-payload flag
     run_isolated \
         TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
-        "$RUST_TRITON" --emit-payload "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
+        "$RUST_TRITON" --emit-payload "$@" < /dev/null > "$rust_out" 2> "$rust_err" || rust_exit=$?
 
     # Normalize: extract JSON objects (strip status messages), slurp into array,
     # sort keys, strip null values and .body.origin
