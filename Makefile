@@ -62,10 +62,12 @@ test: | $(CARGO_NEXTEST_EXEC) ## Run all tests
 clean:: | $(CARGO_EXEC) ## Clean build artifacts
 	$(CARGO) clean
 
-lint: | $(CARGO_EXEC) ## Run clippy linter
+lint:: arch-lint clippy
+
+clippy: | $(CARGO_EXEC) ## Run clippy linter
 	$(CARGO) clippy $(RUST_CLIPPY_ARGS)
 
-lint-fix: | $(CARGO_EXEC) ## Run clippy linter
+clippy-fix: | $(CARGO_EXEC) ## Run clippy linter
 	$(CARGO) clippy --fix --allow-dirty $(RUST_CLIPPY_ARGS)
 
 format: | $(CARGO_EXEC) ## Format all code
