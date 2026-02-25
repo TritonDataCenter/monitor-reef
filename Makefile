@@ -56,8 +56,8 @@ build: | $(CARGO_EXEC) ## Build all APIs, services and clients
 build-release: | $(CARGO_EXEC) ## Build all APIs, services and clients
 	$(CARGO) build --release
 
-test: | $(CARGO_EXEC) ## Run all tests
-	TRITON_CONFIG_DIR=/nonexistent $(CARGO) test
+test: | $(CARGO_NEXTEST_EXEC) ## Run all tests
+	TRITON_CONFIG_DIR=/nonexistent $(CARGO) nextest run
 
 clean:: | $(CARGO_EXEC) ## Clean build artifacts
 	$(CARGO) clean
