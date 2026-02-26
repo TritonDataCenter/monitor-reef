@@ -283,7 +283,7 @@ check:: | $(CARGO_EXEC) ## Run all validation checks (CI-ready)
 	$(MAKE) arch-lint
 	$(MAKE) openapi-check
 	$(MAKE) clients-check
-	TRITON_CONFIG_DIR=/nonexistent $(CARGO) test --workspace
+	TRITON_CONFIG_DIR=/nonexistent $(CARGO) nextest run --workspace
 	@echo ""
 	@echo "All validation checks passed!"
 
