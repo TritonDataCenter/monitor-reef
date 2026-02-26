@@ -26,10 +26,8 @@
 mod common;
 
 use assert_cmd::Command;
-use cloudapi_client::{ImageState, MachineState};
+use cloudapi_client::{Image, ImageState, Machine, MachineState};
 use predicates::prelude::*;
-use serde::Deserialize;
-use serde_json::Value;
 
 use common::{
     allow_image_create, allow_write_actions, get_test_image, get_test_package, json_stream_parse,
@@ -46,33 +44,6 @@ fn get_test_config() -> Option<()> {
         return None;
     }
     Some(())
-}
-
-#[derive(Debug, Deserialize)]
-struct ImageInfo {
-    id: String,
-    name: String,
-    version: String,
-    state: ImageState,
-    #[serde(default)]
-    public: bool,
-    #[serde(default)]
-    origin: Option<String>,
-    #[serde(default)]
-    acl: Option<Vec<String>>,
-    #[serde(default)]
-    description: Option<String>,
-    #[serde(default)]
-    tags: Option<Value>,
-}
-
-#[derive(Debug, Deserialize)]
-struct InstanceCreateOutput {
-    id: String,
-    #[serde(default)]
-    image: Option<String>,
-    #[serde(default)]
-    state: Option<MachineState>,
 }
 
 /// Helper to run triton command with profile env and assert success
@@ -136,21 +107,20 @@ fn test_image_create_workflow() {
         &pkg_id,
     ]);
 
-    let lines: Vec<InstanceCreateOutput> = json_stream_parse(&output);
+    let lines: Vec<Machine> = json_stream_parse(&output);
     assert!(
         lines.len() >= 2,
         "Expected at least 2 JSON objects in output"
     );
     let origin_inst = &lines[lines.len() - 1]; // Last line is final state
-    assert!(!origin_inst.id.is_empty(), "Origin instance should have ID");
     assert_eq!(
         origin_inst.state,
-        Some(MachineState::Running),
+        MachineState::Running,
         "Origin instance should be running"
     );
 
-    let origin_inst_id = origin_inst.id.clone();
-    let origin_image = origin_inst.image.clone();
+    let origin_inst_id = origin_inst.id.to_string();
+    let origin_image = origin_inst.image;
 
     // Create image from instance
     let output = safe_triton(&[
@@ -165,63 +135,63 @@ fn test_image_create_workflow() {
         image_version,
     ]);
 
-    let lines: Vec<ImageInfo> = json_stream_parse(&output);
+    let lines: Vec<Image> = json_stream_parse(&output);
     assert!(!lines.is_empty(), "Expected image output");
     let img = &lines[lines.len() - 1];
     assert_eq!(img.name, image_name, "Image name should match");
     assert_eq!(img.version, image_version, "Image version should match");
-    assert!(!img.public, "Image should not be public");
-    assert_eq!(img.state, ImageState::Active, "Image should be active");
-    if let Some(origin) = &origin_image {
-        assert_eq!(
-            img.origin.as_ref(),
-            Some(origin),
-            "Image origin should match instance's image"
-        );
-    }
+    assert!(img.public != Some(true), "Image should not be public");
+    assert_eq!(
+        img.state,
+        Some(ImageState::Active),
+        "Image should be active"
+    );
+    assert_eq!(
+        img.origin,
+        Some(origin_image),
+        "Image origin should match instance's image"
+    );
 
-    let img_id = img.id.clone();
+    let img_id = img.id.to_string();
 
     // Create derived instance from the new image
     let output = safe_triton(&["create", "-wj", "-n", &derived_alias, &img_id, &pkg_id]);
 
-    let lines: Vec<InstanceCreateOutput> = json_stream_parse(&output);
+    let lines: Vec<Machine> = json_stream_parse(&output);
     assert!(!lines.is_empty(), "Expected instance output");
     let derived_inst = &lines[lines.len() - 1];
-    assert!(
-        !derived_inst.id.is_empty(),
-        "Derived instance should have ID"
-    );
     assert_eq!(
         derived_inst.state,
-        Some(MachineState::Running),
+        MachineState::Running,
         "Derived instance should be running"
     );
 
-    let derived_inst_id = derived_inst.id.clone();
+    let derived_inst_id = derived_inst.id.to_string();
 
     // Test image share
-    let dummy_uuid = "12345678-1234-1234-1234-123456789abc";
-    safe_triton(&["image", "share", &img_id, dummy_uuid]);
+    let dummy_uuid_str = "12345678-1234-1234-1234-123456789abc";
+    let dummy_uuid: cloudapi_client::Uuid =
+        dummy_uuid_str.parse().expect("dummy UUID should parse");
+    safe_triton(&["image", "share", &img_id, dummy_uuid_str]);
 
     let output = safe_triton(&["image", "get", "-j", &img_id]);
-    let img: ImageInfo = serde_json::from_str(&output).expect("Failed to parse image JSON");
+    let img: Image = serde_json::from_str(&output).expect("Failed to parse image JSON");
     assert!(
         img.acl
             .as_ref()
-            .is_some_and(|acl| acl.contains(&dummy_uuid.to_string())),
+            .is_some_and(|acl| acl.contains(&dummy_uuid)),
         "Image ACL should contain the shared UUID"
     );
 
     // Test image unshare
-    safe_triton(&["image", "unshare", &img_id, dummy_uuid]);
+    safe_triton(&["image", "unshare", &img_id, dummy_uuid_str]);
 
     let output = safe_triton(&["image", "get", "-j", &img_id]);
-    let img: ImageInfo = serde_json::from_str(&output).expect("Failed to parse image JSON");
+    let img: Image = serde_json::from_str(&output).expect("Failed to parse image JSON");
     assert!(
         img.acl
             .as_ref()
-            .is_none_or(|acl| !acl.contains(&dummy_uuid.to_string())),
+            .is_none_or(|acl| !acl.contains(&dummy_uuid)),
         "Image ACL should not contain the unshared UUID"
     );
 
@@ -235,7 +205,7 @@ fn test_image_create_workflow() {
     ]);
 
     let output = safe_triton(&["image", "get", "-j", &img_id]);
-    let img: ImageInfo = serde_json::from_str(&output).expect("Failed to parse image JSON");
+    let img: Image = serde_json::from_str(&output).expect("Failed to parse image JSON");
     assert_eq!(
         img.description.as_deref(),
         Some(description),
@@ -246,11 +216,11 @@ fn test_image_create_workflow() {
     safe_triton(&["image", "tag", &img_id, "foo=bar", "bool=true", "num=42"]);
 
     let output = safe_triton(&["image", "get", "-j", &img_id]);
-    let img: ImageInfo = serde_json::from_str(&output).expect("Failed to parse image JSON");
+    let img: Image = serde_json::from_str(&output).expect("Failed to parse image JSON");
     let tags = img.tags.expect("Image should have tags");
-    assert!(tags.get("foo").is_some(), "Image should have 'foo' tag");
-    assert!(tags.get("bool").is_some(), "Image should have 'bool' tag");
-    assert!(tags.get("num").is_some(), "Image should have 'num' tag");
+    assert!(tags.contains_key("foo"), "Image should have 'foo' tag");
+    assert!(tags.contains_key("bool"), "Image should have 'bool' tag");
+    assert!(tags.contains_key("num"), "Image should have 'num' tag");
 
     // Cleanup: Delete instances
     safe_triton(&["rm", "-f", "-w", &origin_inst_id, &derived_inst_id]);

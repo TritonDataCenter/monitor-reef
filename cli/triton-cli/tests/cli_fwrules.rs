@@ -283,20 +283,8 @@ fn test_fwrule_list_json() {
 // Write operation tests - require config.json with allowWriteActions: true
 // =============================================================================
 
+use cloudapi_client::FirewallRule;
 use regex::Regex;
-
-/// Firewall rule info returned from `triton fwrule get`
-#[derive(Debug, serde::Deserialize)]
-#[allow(dead_code)]
-struct FwruleInfo {
-    id: String,
-    rule: String,
-    enabled: bool,
-    #[serde(default)]
-    log: bool,
-    #[serde(default)]
-    description: Option<String>,
-}
 
 /// Extract rule ID from "Created firewall rule <uuid>" message
 fn extract_rule_id(stdout: &str) -> Option<String> {
@@ -348,16 +336,17 @@ fn test_fwrule_workflow() {
         }
     };
 
-    eprintln!("Created instance {} ({})", inst.name, inst.id);
-    let rule_text = format!("FROM any TO vm {} ALLOW tcp PORT 80", inst.id);
-    let rule_text_2 = format!("FROM any TO vm {} BLOCK tcp port 25", inst.id);
+    let inst_id = inst.id.to_string();
+    eprintln!("Created instance {} ({})", inst.name, inst_id);
+    let rule_text = format!("FROM any TO vm {} ALLOW tcp PORT 80", inst_id);
+    let rule_text_2 = format!("FROM any TO vm {} BLOCK tcp port 25", inst_id);
 
     // Test: Create firewall rule (disabled)
     eprintln!("Test: triton fwrule create -d \"{}\"", rule_text);
     let (stdout, stderr, success) = run_triton_with_profile(["fwrule", "create", "-d", &rule_text]);
     if !success {
         eprintln!("Failed to create fwrule: stderr={}", stderr);
-        delete_test_instance(&inst.id);
+        delete_test_instance(&inst_id);
         return;
     }
     assert!(
@@ -370,7 +359,7 @@ fn test_fwrule_workflow() {
         Some(id) => id,
         None => {
             eprintln!("Failed to extract rule ID from: {}", stdout);
-            delete_test_instance(&inst.id);
+            delete_test_instance(&inst_id);
             return;
         }
     };
@@ -381,7 +370,7 @@ fn test_fwrule_workflow() {
     eprintln!("Test: triton fwrule get {}", disabled_rule_short);
     let (stdout, _, success) = run_triton_with_profile(["fwrule", "get", &disabled_rule_short]);
     assert!(success, "fwrule get should succeed");
-    let rule_info: FwruleInfo = serde_json::from_str(&stdout).expect("should parse JSON");
+    let rule_info: FirewallRule = serde_json::from_str(&stdout).expect("should parse JSON");
     assert_eq!(rule_info.rule, rule_text);
     assert!(!rule_info.enabled, "rule should be disabled");
     assert!(!rule_info.log, "rule should not be logging");
@@ -405,7 +394,7 @@ fn test_fwrule_workflow() {
         None => {
             eprintln!("Failed to extract rule ID");
             delete_fwrule(&disabled_rule_id);
-            delete_test_instance(&inst.id);
+            delete_test_instance(&inst_id);
             return;
         }
     };
@@ -416,7 +405,7 @@ fn test_fwrule_workflow() {
     eprintln!("Test: triton fwrule get {}", rule_short_id);
     let (stdout, _, success) = run_triton_with_profile(["fwrule", "get", &rule_short_id]);
     assert!(success, "fwrule get should succeed");
-    let rule_info: FwruleInfo = serde_json::from_str(&stdout).expect("should parse JSON");
+    let rule_info: FirewallRule = serde_json::from_str(&stdout).expect("should parse JSON");
     assert_eq!(rule_info.rule, rule_text);
     assert_eq!(rule_info.description, Some(desc.to_string()));
     assert!(rule_info.enabled, "rule should be enabled");
@@ -497,7 +486,7 @@ fn test_fwrule_workflow() {
         run_triton_with_profile(["fwrule", "instances", "-l", &rule_short_id]);
     assert!(success, "fwrule instances should succeed");
     // Should show our instance in the list
-    let inst_short_id = short_id(&inst.id);
+    let inst_short_id = short_id(&inst_id);
     // The instance may or may not appear depending on rule state
     if stdout.contains("ID") && stdout.contains("NAME") {
         eprintln!("Instances output: {}", stdout);
@@ -566,6 +555,6 @@ fn test_fwrule_workflow() {
     );
 
     // Cleanup: delete test instance
-    eprintln!("Cleanup: deleting test instance {}", inst.id);
-    delete_test_instance(&inst.id);
+    eprintln!("Cleanup: deleting test instance {}", inst_id);
+    delete_test_instance(&inst_id);
 }

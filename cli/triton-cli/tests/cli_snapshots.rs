@@ -21,7 +21,7 @@
 mod common;
 
 use assert_cmd::Command;
-use cloudapi_client::SnapshotState;
+use cloudapi_client::{Snapshot, SnapshotState};
 use predicates::prelude::*;
 
 fn triton_cmd() -> Command {
@@ -137,13 +137,6 @@ fn test_instance_snapshots_alias() {
 // These tests are ignored by default and run with `make triton-test-api`
 // =============================================================================
 
-/// Snapshot info returned from `triton instance snapshot get`
-#[derive(Debug, serde::Deserialize)]
-struct SnapshotInfo {
-    name: String,
-    state: SnapshotState,
-}
-
 /// Full instance snapshot workflow test
 /// This test creates an instance, creates/lists/deletes snapshots, and cleans up.
 ///
@@ -181,8 +174,9 @@ fn test_instance_snapshot_workflow() {
         }
     };
 
-    eprintln!("Created instance {} ({})", inst.name, inst.id);
-    let inst_short_id = short_id(&inst.id);
+    let inst_id = inst.id.to_string();
+    eprintln!("Created instance {} ({})", inst.name, inst_id);
+    let inst_short_id = short_id(&inst_id);
 
     // Test: Create snapshot 2 first (for deletion testing before boot from snapshot)
     // Per node-triton comments: Testing snapshot deletion after rolling back a VM
@@ -202,7 +196,7 @@ fn test_instance_snapshot_workflow() {
     ]);
     if !success {
         eprintln!("Failed to create snapshot: stderr={}", stderr);
-        delete_test_instance(&inst.id);
+        delete_test_instance(&inst_id);
         panic!("snapshot create failed");
     }
     assert!(
@@ -219,7 +213,7 @@ fn test_instance_snapshot_workflow() {
     let (stdout, _, success) =
         run_triton_with_profile(["instance", "snapshot", "get", &inst_short_id, snap_name_2]);
     assert!(success, "snapshot get should succeed");
-    let snap: SnapshotInfo = serde_json::from_str(&stdout).expect("should parse JSON");
+    let snap: Snapshot = serde_json::from_str(&stdout).expect("should parse JSON");
     assert_eq!(snap.name, snap_name_2);
     assert_eq!(snap.state, SnapshotState::Created);
 
@@ -275,7 +269,7 @@ fn test_instance_snapshot_workflow() {
     let (stdout, _, success) =
         run_triton_with_profile(["instance", "snapshot", "get", &inst_short_id, snap_name]);
     assert!(success, "snapshot get should succeed");
-    let snap: SnapshotInfo = serde_json::from_str(&stdout).expect("should parse JSON");
+    let snap: Snapshot = serde_json::from_str(&stdout).expect("should parse JSON");
     assert_eq!(snap.name, snap_name);
     assert_eq!(snap.state, SnapshotState::Created);
 
@@ -314,8 +308,8 @@ fn test_instance_snapshot_workflow() {
     );
 
     // Cleanup: delete test instance
-    eprintln!("Cleanup: deleting test instance {}", inst.id);
-    delete_test_instance(&inst.id);
+    eprintln!("Cleanup: deleting test instance {}", inst_id);
+    delete_test_instance(&inst_id);
 }
 
 /// Test snapshot list on instance with no snapshots
@@ -342,6 +336,7 @@ fn test_instance_snapshot_list_empty() {
             return;
         }
     };
+    let inst_id = inst.id.to_string();
 
     // List snapshots on instance with no snapshots
     let (stdout, _, success) =
@@ -353,5 +348,5 @@ fn test_instance_snapshot_list_empty() {
         "list output should have header"
     );
 
-    delete_test_instance(&inst.id);
+    delete_test_instance(&inst_id);
 }

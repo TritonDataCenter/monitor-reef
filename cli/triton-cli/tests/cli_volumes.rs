@@ -293,15 +293,7 @@ fn test_volume_sizes() {
 // and allowVolumesTests: true (default)
 // =============================================================================
 
-use cloudapi_client::Volume;
-
-/// Network info for finding fabric networks
-#[derive(Debug, serde::Deserialize)]
-struct NetworkInfo {
-    id: String,
-    #[serde(default)]
-    fabric: bool,
-}
+use cloudapi_client::{Network, Volume};
 
 /// Delete a volume by name (doesn't error if not found)
 fn delete_test_volume(name: &str) {
@@ -502,16 +494,17 @@ fn test_volume_create_on_fabric_network() {
         return;
     }
 
-    let networks: Vec<NetworkInfo> = json_stream_parse(&stdout);
-    let fabric_network = networks.iter().find(|n| n.fabric);
+    let networks: Vec<Network> = json_stream_parse(&stdout);
+    let fabric_network = networks.iter().find(|n| n.fabric == Some(true));
 
-    let fabric_network_id = match fabric_network {
-        Some(n) => n.id.clone(),
+    let fabric_network_uuid = match fabric_network {
+        Some(n) => n.id,
         None => {
             eprintln!("No fabric network found, skipping test");
             return;
         }
     };
+    let fabric_network_id = fabric_network_uuid.to_string();
 
     eprintln!("Found fabric network: {}", fabric_network_id);
 
@@ -548,11 +541,8 @@ fn test_volume_create_on_fabric_network() {
     let (stdout, _, success) = run_triton_with_profile(["volume", "get", &volume_name]);
     assert!(success, "volume get should succeed");
     let vol: Volume = serde_json::from_str(&stdout).expect("should parse JSON");
-    let fabric_uuid: uuid::Uuid = fabric_network_id
-        .parse()
-        .expect("fabric network id should be a valid UUID");
     assert!(
-        vol.networks.contains(&fabric_uuid),
+        vol.networks.contains(&fabric_network_uuid),
         "volume should be on fabric network"
     );
 

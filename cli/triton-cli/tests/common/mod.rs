@@ -116,35 +116,7 @@ pub fn fixture_path(name: &str) -> std::path::PathBuf {
 // Write operation test helpers
 // =============================================================================
 
-use serde::Deserialize;
-
-/// Image info returned from `triton images -j`
-#[derive(Debug, Clone, Deserialize)]
-pub struct ImageInfo {
-    pub id: String,
-    pub name: String,
-    pub version: String,
-    #[serde(default)]
-    pub published_at: Option<String>,
-}
-
-/// Package info returned from `triton packages -j`
-#[derive(Debug, Clone, Deserialize)]
-pub struct PackageInfo {
-    pub id: String,
-    pub name: String,
-    pub memory: u64,
-}
-
-/// Instance info returned from `triton instance create -wj`
-#[derive(Debug, Clone, Deserialize)]
-pub struct InstanceInfo {
-    pub id: String,
-    pub name: String,
-    pub state: String,
-    #[serde(default)]
-    pub tags: std::collections::HashMap<String, serde_json::Value>,
-}
+use cloudapi_client::{Image, Machine, Package};
 
 /// Run triton with profile environment and return (stdout, stderr, success)
 pub fn run_triton_with_profile<I, S>(args: I) -> (String, String, bool)
@@ -195,7 +167,7 @@ pub fn get_test_image() -> Option<String> {
         return None;
     }
 
-    let images: Vec<ImageInfo> = json_stream_parse(&stdout);
+    let images: Vec<Image> = json_stream_parse(&stdout);
 
     // Candidate image names in order of preference
     let candidates = [
@@ -212,12 +184,12 @@ pub fn get_test_image() -> Option<String> {
     // Find the first matching image (images are typically sorted by published_at desc)
     for candidate in &candidates {
         if let Some(img) = images.iter().find(|i| i.name == *candidate) {
-            return Some(img.id.clone());
+            return Some(img.id.to_string());
         }
     }
 
     // If no candidate found, return the first image if any exist
-    images.first().map(|i| i.id.clone())
+    images.first().map(|i| i.id.to_string())
 }
 
 /// Find the smallest available test package (non-KVM)
@@ -236,7 +208,7 @@ pub fn get_test_package() -> Option<String> {
         return None;
     }
 
-    let mut packages: Vec<PackageInfo> = json_stream_parse(&stdout);
+    let mut packages: Vec<Package> = json_stream_parse(&stdout);
 
     // Filter out KVM packages
     packages.retain(|p| !p.name.contains("kvm"));
@@ -244,7 +216,7 @@ pub fn get_test_package() -> Option<String> {
     // Sort by memory (smallest first)
     packages.sort_by_key(|p| p.memory);
 
-    packages.first().map(|p| p.id.clone())
+    packages.first().map(|p| p.id.to_string())
 }
 
 /// Find a package suitable for resize testing (different from the base test package)
@@ -263,7 +235,7 @@ pub fn get_resize_test_package() -> Option<String> {
         return None;
     }
 
-    let mut packages: Vec<PackageInfo> = json_stream_parse(&stdout);
+    let mut packages: Vec<Package> = json_stream_parse(&stdout);
 
     // Filter out KVM packages
     packages.retain(|p| !p.name.contains("kvm"));
@@ -278,13 +250,13 @@ pub fn get_resize_test_package() -> Option<String> {
     // Prefer the second smallest package
     packages
         .iter()
-        .find(|p| p.id != base_pkg_id)
+        .find(|p| p.id.to_string() != base_pkg_id)
         .map(|p| p.name.clone())
 }
 
 /// Create a test instance with the given alias and optional extra flags
 /// Returns the instance info on success
-pub fn create_test_instance(alias: &str, extra_flags: &[&str]) -> Option<InstanceInfo> {
+pub fn create_test_instance(alias: &str, extra_flags: &[&str]) -> Option<Machine> {
     let img_id = get_test_image()?;
     let pkg_id = get_test_package()?;
 
@@ -311,7 +283,7 @@ pub fn create_test_instance(alias: &str, extra_flags: &[&str]) -> Option<Instanc
     }
 
     // Parse the JSON stream output - the last line should be the final instance state
-    let instances: Vec<InstanceInfo> = json_stream_parse(&stdout);
+    let instances: Vec<Machine> = json_stream_parse(&stdout);
     instances.into_iter().last()
 }
 
@@ -326,9 +298,10 @@ pub fn delete_test_instance(name_or_id: &str) {
     }
 
     // Parse to get the ID
-    if let Ok(inst) = serde_json::from_str::<InstanceInfo>(&stdout) {
+    if let Ok(inst) = serde_json::from_str::<Machine>(&stdout) {
         // Delete with force and wait
-        let _ = run_triton_with_profile(["instance", "rm", "-f", "-w", &inst.id]);
+        let id = inst.id.to_string();
+        let _ = run_triton_with_profile(["instance", "rm", "-f", "-w", &id]);
     }
 }
 

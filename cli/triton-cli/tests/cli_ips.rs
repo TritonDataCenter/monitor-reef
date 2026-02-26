@@ -115,27 +115,10 @@ fn test_net_ip_list_help() {
 // These tests are ignored by default and run with `make triton-test-api`
 // =============================================================================
 
-/// Network info from network list
-#[derive(Debug, serde::Deserialize)]
-struct NetworkInfo {
-    id: String,
-    name: String,
-    #[allow(dead_code)]
-    fabric: Option<bool>,
-}
-
-/// IP info from network ip list
-#[derive(Debug, serde::Deserialize)]
-struct IpInfo {
-    ip: String,
-    #[allow(dead_code)]
-    reserved: bool,
-    #[allow(dead_code)]
-    managed: Option<bool>,
-}
+use cloudapi_client::{Network, NetworkIp};
 
 /// Get a fabric network for testing
-fn get_fabric_network() -> Option<NetworkInfo> {
+fn get_fabric_network() -> Option<Network> {
     use common::{json_stream_parse, run_triton_with_profile};
 
     let (stdout, _, success) = run_triton_with_profile(["networks", "-j"]);
@@ -143,7 +126,7 @@ fn get_fabric_network() -> Option<NetworkInfo> {
         return None;
     }
 
-    let networks: Vec<NetworkInfo> = json_stream_parse(&stdout);
+    let networks: Vec<Network> = json_stream_parse(&stdout);
     // Find a fabric network
     networks.into_iter().find(|n| n.fabric == Some(true))
 }
@@ -161,8 +144,9 @@ fn test_network_ip_list_table() {
             return;
         }
     };
+    let network_id = network.id.to_string();
 
-    let (stdout, _, success) = run_triton_with_profile(["network", "ip", "list", &network.id]);
+    let (stdout, _, success) = run_triton_with_profile(["network", "ip", "list", &network_id]);
     assert!(success, "network ip list should succeed");
 
     // Check for expected columns (node-triton uses IP and MANAGED)
@@ -186,8 +170,9 @@ fn test_network_ip_list_shortid() {
             return;
         }
     };
+    let network_id = network.id.to_string();
 
-    let shortid = short_id(&network.id);
+    let shortid = short_id(&network_id);
     let (stdout, _, success) = run_triton_with_profile(["network", "ip", "list", &shortid]);
     assert!(success, "network ip list with shortid should succeed");
     assert!(stdout.contains("IP"), "output should contain IP header");
@@ -206,12 +191,13 @@ fn test_network_ip_list_json() {
             return;
         }
     };
+    let network_id = network.id.to_string();
 
     let (stdout, _, success) =
-        run_triton_with_profile(["network", "ip", "list", "-j", &network.id]);
+        run_triton_with_profile(["network", "ip", "list", "-j", &network_id]);
     assert!(success, "network ip list -j should succeed");
 
-    let ips: Vec<IpInfo> = json_stream_parse(&stdout);
+    let ips: Vec<NetworkIp> = json_stream_parse(&stdout);
     // May have no IPs, that's OK - but if we have any, check they have ip field
     if !ips.is_empty() {
         assert!(!ips[0].ip.is_empty(), "IP should have ip field");
@@ -231,16 +217,17 @@ fn test_network_ip_get() {
             return;
         }
     };
+    let network_id = network.id.to_string();
 
     // First get the IP list
     let (stdout, _, success) =
-        run_triton_with_profile(["network", "ip", "list", "-j", &network.id]);
+        run_triton_with_profile(["network", "ip", "list", "-j", &network_id]);
     if !success {
         eprintln!("Skipping test: could not list IPs");
         return;
     }
 
-    let ips: Vec<IpInfo> = json_stream_parse(&stdout);
+    let ips: Vec<NetworkIp> = json_stream_parse(&stdout);
     if ips.is_empty() {
         eprintln!("Skipping test: no IPs in network");
         return;
@@ -250,10 +237,10 @@ fn test_network_ip_get() {
 
     // Get by full ID
     let (stdout, _, success) =
-        run_triton_with_profile(["network", "ip", "get", &network.id, &ip.ip]);
+        run_triton_with_profile(["network", "ip", "get", &network_id, &ip.ip]);
     assert!(success, "network ip get should succeed");
 
-    let got_ip: IpInfo = serde_json::from_str(&stdout).expect("should parse IP JSON");
+    let got_ip: NetworkIp = serde_json::from_str(&stdout).expect("should parse IP JSON");
     assert_eq!(got_ip.ip, ip.ip, "IP should match");
 }
 
@@ -270,29 +257,30 @@ fn test_network_ip_get_shortid() {
             return;
         }
     };
+    let network_id = network.id.to_string();
 
     // First get the IP list
     let (stdout, _, success) =
-        run_triton_with_profile(["network", "ip", "list", "-j", &network.id]);
+        run_triton_with_profile(["network", "ip", "list", "-j", &network_id]);
     if !success {
         eprintln!("Skipping test: could not list IPs");
         return;
     }
 
-    let ips: Vec<IpInfo> = json_stream_parse(&stdout);
+    let ips: Vec<NetworkIp> = json_stream_parse(&stdout);
     if ips.is_empty() {
         eprintln!("Skipping test: no IPs in network");
         return;
     }
 
     let ip = &ips[0];
-    let shortid = short_id(&network.id);
+    let shortid = short_id(&network_id);
 
     // Get by short ID
     let (stdout, _, success) = run_triton_with_profile(["network", "ip", "get", &shortid, &ip.ip]);
     assert!(success, "network ip get with shortid should succeed");
 
-    let got_ip: IpInfo = serde_json::from_str(&stdout).expect("should parse IP JSON");
+    let got_ip: NetworkIp = serde_json::from_str(&stdout).expect("should parse IP JSON");
     assert_eq!(got_ip.ip, ip.ip, "IP should match");
 }
 
@@ -309,16 +297,17 @@ fn test_network_ip_get_name() {
             return;
         }
     };
+    let network_id = network.id.to_string();
 
     // First get the IP list
     let (stdout, _, success) =
-        run_triton_with_profile(["network", "ip", "list", "-j", &network.id]);
+        run_triton_with_profile(["network", "ip", "list", "-j", &network_id]);
     if !success {
         eprintln!("Skipping test: could not list IPs");
         return;
     }
 
-    let ips: Vec<IpInfo> = json_stream_parse(&stdout);
+    let ips: Vec<NetworkIp> = json_stream_parse(&stdout);
     if ips.is_empty() {
         eprintln!("Skipping test: no IPs in network");
         return;
@@ -331,6 +320,6 @@ fn test_network_ip_get_name() {
         run_triton_with_profile(["network", "ip", "get", &network.name, &ip.ip]);
     assert!(success, "network ip get with name should succeed");
 
-    let got_ip: IpInfo = serde_json::from_str(&stdout).expect("should parse IP JSON");
+    let got_ip: NetworkIp = serde_json::from_str(&stdout).expect("should parse IP JSON");
     assert_eq!(got_ip.ip, ip.ip, "IP should match");
 }

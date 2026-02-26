@@ -159,6 +159,7 @@ pub use cloudapi_api::{
     MigrateRequest,
     Migration,
     MigrationAction,
+    MigrationEstimate,
     MigrationEstimateRequest,
     MigrationPhase,
     MigrationState,

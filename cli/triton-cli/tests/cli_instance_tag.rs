@@ -171,8 +171,9 @@ fn test_instance_tag_workflow() {
         }
     };
 
-    eprintln!("Created instance {} ({})", inst.name, inst.id);
-    let inst_short_id = short_id(&inst.id);
+    let inst_id = inst.id.to_string();
+    eprintln!("Created instance {} ({})", inst.name, inst_id);
+    let inst_short_id = short_id(&inst_id);
 
     // Test: triton inst tag ls INST
     eprintln!("Test: triton inst tag ls {}", inst.name);
@@ -193,14 +194,14 @@ fn test_instance_tag_workflow() {
     // Test: triton inst tag set -w INST name=value (with type coercion)
     eprintln!(
         "Test: triton inst tag set -w {} foo=bar pi=3.14 really=true",
-        inst.id
+        inst_id
     );
     let (stdout, _, success) = run_triton_with_profile([
         "inst",
         "tag",
         "set",
         "-w",
-        &inst.id,
+        &inst_id,
         "foo=bar",
         "pi=3.14",
         "really=true",
@@ -221,9 +222,9 @@ fn test_instance_tag_workflow() {
     assert_eq!(stdout.trim(), "bar");
 
     // Test: triton inst tag get INST foo -j
-    eprintln!("Test: triton inst tag get {} foo -j", inst.id);
+    eprintln!("Test: triton inst tag get {} foo -j", inst_id);
     let (stdout, _, success) =
-        run_triton_with_profile(["inst", "tag", "get", &inst.id, "foo", "-j"]);
+        run_triton_with_profile(["inst", "tag", "get", &inst_id, "foo", "-j"]);
     assert!(success, "tag get -j should succeed");
     assert_eq!(stdout.trim(), "\"bar\"");
 
@@ -340,8 +341,8 @@ fn test_instance_tag_workflow() {
     assert_eq!(stdout.trim(), "{}", "tags should be empty object");
 
     // Cleanup: delete test instance
-    eprintln!("Cleanup: deleting test instance {}", inst.id);
-    delete_test_instance(&inst.id);
+    eprintln!("Cleanup: deleting test instance {}", inst_id);
+    delete_test_instance(&inst_id);
 }
 
 /// Test tag get with non-existent key
@@ -378,5 +379,6 @@ fn test_instance_tag_get_nonexistent() {
         "error should mention not found"
     );
 
-    delete_test_instance(&inst.id);
+    let inst_id = inst.id.to_string();
+    delete_test_instance(&inst_id);
 }

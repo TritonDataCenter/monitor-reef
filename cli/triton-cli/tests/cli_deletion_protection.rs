@@ -117,17 +117,7 @@ fn test_disable_deletion_protection_wait_flag() {
 // These tests are ignored by default and run with `make triton-test-api`
 // =============================================================================
 
-/// Instance info returned from JSON output
-#[derive(Debug, serde::Deserialize)]
-struct InstanceInfo {
-    #[allow(dead_code)]
-    id: String,
-    #[allow(dead_code)]
-    name: String,
-    #[allow(dead_code)]
-    state: String,
-    deletion_protection: Option<bool>,
-}
+use cloudapi_client::Machine;
 
 /// Full deletion protection workflow test
 /// This test creates an instance with deletion protection, tries to delete it
@@ -169,13 +159,14 @@ fn test_deletion_protection_workflow() {
         }
     };
 
-    eprintln!("Created instance {} ({})", inst.name, inst.id);
+    let inst_id = inst.id.to_string();
+    eprintln!("Created instance {} ({})", inst.name, inst_id);
 
     // Verify deletion protection is enabled
     eprintln!("Test: verify deletion protection is enabled");
-    let (stdout, _, success) = run_triton_with_profile(["instance", "get", "-j", &inst.id]);
+    let (stdout, _, success) = run_triton_with_profile(["instance", "get", "-j", &inst_id]);
     assert!(success, "instance get should succeed");
-    let got_inst: InstanceInfo = serde_json::from_str(&stdout).expect("should parse instance JSON");
+    let got_inst: Machine = serde_json::from_str(&stdout).expect("should parse instance JSON");
     assert_eq!(
         got_inst.deletion_protection,
         Some(true),
@@ -184,7 +175,7 @@ fn test_deletion_protection_workflow() {
 
     // Attempt to delete deletion-protected instance (should fail)
     eprintln!("Test: attempt to delete deletion-protected instance");
-    let (_, stderr, success) = run_triton_with_profile(["instance", "rm", &inst.id, "-w", "-f"]);
+    let (_, stderr, success) = run_triton_with_profile(["instance", "rm", &inst_id, "-w", "-f"]);
     assert!(
         !success,
         "delete should fail with deletion protection enabled"
@@ -198,7 +189,7 @@ fn test_deletion_protection_workflow() {
     // Disable deletion protection
     eprintln!("Test: triton instance disable-deletion-protection");
     let (stdout, _, success) =
-        run_triton_with_profile(["instance", "disable-deletion-protection", &inst.id, "-w"]);
+        run_triton_with_profile(["instance", "disable-deletion-protection", &inst_id, "-w"]);
     assert!(success, "disable-deletion-protection should succeed");
     assert!(
         stdout.contains(&format!(
@@ -210,9 +201,9 @@ fn test_deletion_protection_workflow() {
     );
 
     // Verify deletion protection is disabled
-    let (stdout, _, success) = run_triton_with_profile(["instance", "get", "-j", &inst.id]);
+    let (stdout, _, success) = run_triton_with_profile(["instance", "get", "-j", &inst_id]);
     assert!(success, "instance get should succeed");
-    let got_inst: InstanceInfo = serde_json::from_str(&stdout).expect("should parse instance JSON");
+    let got_inst: Machine = serde_json::from_str(&stdout).expect("should parse instance JSON");
     assert!(
         got_inst.deletion_protection != Some(true),
         "deletion_protection should be disabled"
@@ -221,7 +212,7 @@ fn test_deletion_protection_workflow() {
     // Disable again (idempotent - should still succeed)
     eprintln!("Test: triton instance disable-deletion-protection (already disabled)");
     let (stdout, _, success) =
-        run_triton_with_profile(["instance", "disable-deletion-protection", &inst.id, "-w"]);
+        run_triton_with_profile(["instance", "disable-deletion-protection", &inst_id, "-w"]);
     assert!(
         success,
         "disable-deletion-protection should succeed even when already disabled"
@@ -237,7 +228,7 @@ fn test_deletion_protection_workflow() {
     // Enable deletion protection
     eprintln!("Test: triton instance enable-deletion-protection");
     let (stdout, _, success) =
-        run_triton_with_profile(["instance", "enable-deletion-protection", &inst.id, "-w"]);
+        run_triton_with_profile(["instance", "enable-deletion-protection", &inst_id, "-w"]);
     assert!(success, "enable-deletion-protection should succeed");
     assert!(
         stdout.contains(&format!(
@@ -249,9 +240,9 @@ fn test_deletion_protection_workflow() {
     );
 
     // Verify deletion protection is enabled again
-    let (stdout, _, success) = run_triton_with_profile(["instance", "get", "-j", &inst.id]);
+    let (stdout, _, success) = run_triton_with_profile(["instance", "get", "-j", &inst_id]);
     assert!(success, "instance get should succeed");
-    let got_inst: InstanceInfo = serde_json::from_str(&stdout).expect("should parse instance JSON");
+    let got_inst: Machine = serde_json::from_str(&stdout).expect("should parse instance JSON");
     assert_eq!(
         got_inst.deletion_protection,
         Some(true),
@@ -261,7 +252,7 @@ fn test_deletion_protection_workflow() {
     // Enable again (idempotent - should still succeed)
     eprintln!("Test: triton instance enable-deletion-protection (already enabled)");
     let (stdout, _, success) =
-        run_triton_with_profile(["instance", "enable-deletion-protection", &inst.id, "-w"]);
+        run_triton_with_profile(["instance", "enable-deletion-protection", &inst_id, "-w"]);
     assert!(
         success,
         "enable-deletion-protection should succeed even when already enabled"
@@ -276,8 +267,8 @@ fn test_deletion_protection_workflow() {
 
     // Cleanup: disable deletion protection and delete instance
     eprintln!("Cleanup: disabling deletion protection and deleting instance");
-    let _ = run_triton_with_profile(["instance", "disable-deletion-protection", &inst.id, "-w"]);
-    delete_test_instance(&inst.id);
+    let _ = run_triton_with_profile(["instance", "disable-deletion-protection", &inst_id, "-w"]);
+    delete_test_instance(&inst_id);
 }
 
 /// Test that `triton create --deletion-protection` creates instance with protection enabled
@@ -311,10 +302,12 @@ fn test_create_with_deletion_protection() {
         }
     };
 
+    let inst_id = inst.id.to_string();
+
     // Verify deletion protection is enabled
-    let (stdout, _, success) = run_triton_with_profile(["instance", "get", "-j", &inst.id]);
+    let (stdout, _, success) = run_triton_with_profile(["instance", "get", "-j", &inst_id]);
     assert!(success, "instance get should succeed");
-    let got_inst: InstanceInfo = serde_json::from_str(&stdout).expect("should parse instance JSON");
+    let got_inst: Machine = serde_json::from_str(&stdout).expect("should parse instance JSON");
     assert_eq!(
         got_inst.deletion_protection,
         Some(true),
@@ -322,6 +315,6 @@ fn test_create_with_deletion_protection() {
     );
 
     // Cleanup
-    let _ = run_triton_with_profile(["instance", "disable-deletion-protection", &inst.id, "-w"]);
-    delete_test_instance(&inst.id);
+    let _ = run_triton_with_profile(["instance", "disable-deletion-protection", &inst_id, "-w"]);
+    delete_test_instance(&inst_id);
 }

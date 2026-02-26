@@ -196,14 +196,7 @@ fn test_vlan_update_help() {
 // These tests are ignored by default and run with `make triton-test-api`
 // =============================================================================
 
-/// VLAN info returned from JSON output
-#[derive(Debug, serde::Deserialize)]
-struct VlanInfo {
-    vlan_id: u16,
-    name: String,
-    #[allow(dead_code)]
-    description: Option<String>,
-}
+use cloudapi_client::FabricVlan;
 
 /// Test `triton vlan list` returns table output
 #[test]
@@ -231,7 +224,7 @@ fn test_vlan_list_json() {
     let (stdout, _, success) = run_triton_with_profile(["vlan", "list", "-j"]);
     assert!(success, "vlan list -j should succeed");
 
-    let vlans: Vec<VlanInfo> = json_stream_parse(&stdout);
+    let vlans: Vec<FabricVlan> = json_stream_parse(&stdout);
     // May have no VLANs, that's OK
     if !vlans.is_empty() {
         let vlan = &vlans[0];
@@ -253,7 +246,7 @@ fn test_vlan_get_by_id() {
         return;
     }
 
-    let vlans: Vec<VlanInfo> = json_stream_parse(&stdout);
+    let vlans: Vec<FabricVlan> = json_stream_parse(&stdout);
     if vlans.is_empty() {
         eprintln!("Skipping test: no VLANs available");
         return;
@@ -266,7 +259,7 @@ fn test_vlan_get_by_id() {
     let (stdout, _, success) = run_triton_with_profile(["vlan", "get", &vlan_id_str]);
     assert!(success, "vlan get should succeed");
 
-    let got_vlan: VlanInfo = serde_json::from_str(&stdout).expect("should parse VLAN JSON");
+    let got_vlan: FabricVlan = serde_json::from_str(&stdout).expect("should parse VLAN JSON");
     assert_eq!(got_vlan.vlan_id, vlan.vlan_id, "VLAN ID should match");
 }
 
@@ -283,7 +276,7 @@ fn test_vlan_get_by_name() {
         return;
     }
 
-    let vlans: Vec<VlanInfo> = json_stream_parse(&stdout);
+    let vlans: Vec<FabricVlan> = json_stream_parse(&stdout);
     if vlans.is_empty() {
         eprintln!("Skipping test: no VLANs available");
         return;
@@ -295,7 +288,7 @@ fn test_vlan_get_by_name() {
     let (stdout, _, success) = run_triton_with_profile(["vlan", "get", &vlan.name]);
     assert!(success, "vlan get by name should succeed");
 
-    let got_vlan: VlanInfo = serde_json::from_str(&stdout).expect("should parse VLAN JSON");
+    let got_vlan: FabricVlan = serde_json::from_str(&stdout).expect("should parse VLAN JSON");
     assert_eq!(got_vlan.vlan_id, vlan.vlan_id, "VLAN ID should match");
 }
 
@@ -312,7 +305,7 @@ fn test_vlan_networks() {
         return;
     }
 
-    let vlans: Vec<VlanInfo> = json_stream_parse(&stdout);
+    let vlans: Vec<FabricVlan> = json_stream_parse(&stdout);
     if vlans.is_empty() {
         eprintln!("Skipping test: no VLANs available");
         return;
@@ -359,7 +352,7 @@ fn test_vlan_networks_by_name() {
         return;
     }
 
-    let vlans: Vec<VlanInfo> = json_stream_parse(&stdout);
+    let vlans: Vec<FabricVlan> = json_stream_parse(&stdout);
     if vlans.is_empty() {
         eprintln!("Skipping test: no VLANs available");
         return;
@@ -401,7 +394,7 @@ fn test_vlan_list_with_filters() {
         return;
     }
 
-    let vlans: Vec<VlanInfo> = json_stream_parse(&stdout);
+    let vlans: Vec<FabricVlan> = json_stream_parse(&stdout);
     if vlans.is_empty() {
         eprintln!("Skipping test: no VLANs available");
         return;
@@ -414,7 +407,7 @@ fn test_vlan_list_with_filters() {
     let (stdout, _, success) = run_triton_with_profile(["vlan", "list", "-j", &vlan_id_filter]);
     assert!(success, "vlan list with filter should succeed");
 
-    let filtered: Vec<VlanInfo> = json_stream_parse(&stdout);
+    let filtered: Vec<FabricVlan> = json_stream_parse(&stdout);
     assert_eq!(filtered.len(), 1, "filter should return exactly one VLAN");
     assert_eq!(
         filtered[0].vlan_id, vlan.vlan_id,
@@ -470,7 +463,7 @@ fn test_vlan_create_delete_workflow() {
     }
 
     // Parse created VLAN
-    let vlan: VlanInfo = serde_json::from_str(stdout.trim()).expect("should parse VLAN JSON");
+    let vlan: FabricVlan = serde_json::from_str(stdout.trim()).expect("should parse VLAN JSON");
     assert_eq!(vlan.name, vlan_name, "created VLAN name should match");
     assert_eq!(
         vlan.vlan_id.to_string(),
@@ -529,7 +522,7 @@ fn test_vlan_delete_by_name() {
         panic!("vlan create failed: {}", stderr);
     }
 
-    let vlan: VlanInfo = serde_json::from_str(stdout.trim()).expect("should parse VLAN JSON");
+    let vlan: FabricVlan = serde_json::from_str(stdout.trim()).expect("should parse VLAN JSON");
 
     // Delete by name
     eprintln!("Test: triton vlan delete --force {}", vlan.name);

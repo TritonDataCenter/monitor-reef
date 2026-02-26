@@ -146,25 +146,7 @@ fn test_instance_nic_delete_alias() {
 // These tests are ignored by default and run with `make triton-test-api`
 // =============================================================================
 
-/// NIC info returned from JSON output
-#[derive(Debug, serde::Deserialize)]
-struct NicInfo {
-    ip: String,
-    mac: String,
-    network: String,
-    #[allow(dead_code)]
-    state: Option<String>,
-    #[allow(dead_code)]
-    primary: bool,
-}
-
-/// Network info from network list
-#[derive(Debug, serde::Deserialize)]
-struct NetworkInfo {
-    id: String,
-    #[allow(dead_code)]
-    name: String,
-}
+use cloudapi_client::{Network, Nic};
 
 /// Full instance NIC workflow test
 /// This test creates an instance, adds/lists/deletes NICs, and cleans up.
@@ -201,34 +183,36 @@ fn test_instance_nic_workflow() {
         }
     };
 
-    eprintln!("Created instance {} ({})", inst.name, inst.id);
-    let inst_short_id = short_id(&inst.id);
+    let inst_id = inst.id.to_string();
+    eprintln!("Created instance {} ({})", inst.name, inst_id);
+    let inst_short_id = short_id(&inst_id);
 
     // Get a network for tests
     eprintln!("Setup: finding network for tests");
     let (stdout, _, success) = run_triton_with_profile(["network", "list", "-j"]);
     if !success {
-        delete_test_instance(&inst.id);
+        delete_test_instance(&inst_id);
         panic!("network list failed");
     }
 
-    let networks: Vec<NetworkInfo> = stdout
+    let networks: Vec<Network> = stdout
         .lines()
         .filter(|l| !l.is_empty())
         .filter_map(|line| serde_json::from_str(line).ok())
         .collect();
 
     if networks.is_empty() {
-        delete_test_instance(&inst.id);
+        delete_test_instance(&inst_id);
         panic!("no networks available for test");
     }
     let network = &networks[0];
-    eprintln!("Using network {} ({})", network.name, network.id);
+    let network_id = network.id.to_string();
+    eprintln!("Using network {} ({})", network.name, network_id);
 
     // Test: triton instance nic create (add)
     eprintln!(
         "Test: triton instance nic create -j -w {} {}",
-        inst_short_id, network.id
+        inst_short_id, network_id
     );
     let (stdout, stderr, success) = run_triton_with_profile([
         "instance",
@@ -237,15 +221,15 @@ fn test_instance_nic_workflow() {
         "-j",
         "-w",
         &inst_short_id,
-        &network.id,
+        &network_id,
     ]);
     if !success {
         eprintln!("Failed to create NIC: stderr={}", stderr);
-        delete_test_instance(&inst.id);
+        delete_test_instance(&inst_id);
         panic!("nic create failed");
     }
 
-    let nic: NicInfo = serde_json::from_str(stdout.trim()).expect("should parse NIC JSON");
+    let nic: Nic = serde_json::from_str(stdout.trim()).expect("should parse NIC JSON");
     eprintln!("Created NIC: {} ({})", nic.mac, nic.ip);
 
     // Test: triton instance nic get
@@ -256,7 +240,7 @@ fn test_instance_nic_workflow() {
     let (stdout, _, success) =
         run_triton_with_profile(["instance", "nic", "get", &inst_short_id, &nic.mac]);
     assert!(success, "nic get should succeed");
-    let got_nic: NicInfo = serde_json::from_str(stdout.trim()).expect("should parse NIC JSON");
+    let got_nic: Nic = serde_json::from_str(stdout.trim()).expect("should parse NIC JSON");
     assert_eq!(got_nic.mac, nic.mac, "NIC MAC should match");
     assert_eq!(got_nic.ip, nic.ip, "NIC IP should match");
     assert_eq!(got_nic.network, nic.network, "NIC network should match");
@@ -283,7 +267,7 @@ fn test_instance_nic_workflow() {
         run_triton_with_profile(["instance", "nic", "list", "-j", &inst_short_id]);
     assert!(success, "nic list -j should succeed");
     // Should be NDJSON (one JSON per line)
-    let nics: Vec<NicInfo> = stdout
+    let nics: Vec<Nic> = stdout
         .lines()
         .filter(|l| !l.is_empty())
         .filter_map(|line| serde_json::from_str(line).ok())
@@ -306,7 +290,7 @@ fn test_instance_nic_workflow() {
         &format!("mac={}", nic.mac),
     ]);
     assert!(success, "nic list with filter should succeed");
-    let filtered_nics: Vec<NicInfo> = stdout
+    let filtered_nics: Vec<Nic> = stdout
         .lines()
         .filter(|l| !l.is_empty())
         .filter_map(|line| serde_json::from_str(line).ok())
@@ -346,7 +330,7 @@ fn test_instance_nic_workflow() {
     // Test: triton instance nic create with NICOPTS (ipv4_uuid=...)
     eprintln!(
         "Test: triton instance nic create -j -w {} ipv4_uuid={}",
-        inst_short_id, network.id
+        inst_short_id, network_id
     );
     let (stdout, stderr, success) = run_triton_with_profile([
         "instance",
@@ -355,15 +339,15 @@ fn test_instance_nic_workflow() {
         "-j",
         "-w",
         &inst_short_id,
-        &format!("ipv4_uuid={}", network.id),
+        &format!("ipv4_uuid={}", network_id),
     ]);
     if !success {
         eprintln!("Failed to create NIC with NICOPTS: stderr={}", stderr);
-        delete_test_instance(&inst.id);
+        delete_test_instance(&inst_id);
         panic!("nic create with NICOPTS failed");
     }
 
-    let nic2: NicInfo = serde_json::from_str(stdout.trim()).expect("should parse NIC JSON");
+    let nic2: Nic = serde_json::from_str(stdout.trim()).expect("should parse NIC JSON");
     eprintln!("Created NIC with NICOPTS: {} ({})", nic2.mac, nic2.ip);
 
     // Test: Get the NIC created with NICOPTS
@@ -374,7 +358,7 @@ fn test_instance_nic_workflow() {
     let (stdout, _, success) =
         run_triton_with_profile(["instance", "nic", "get", &inst_short_id, &nic2.mac]);
     assert!(success, "nic get should succeed");
-    let got_nic2: NicInfo = serde_json::from_str(stdout.trim()).expect("should parse NIC JSON");
+    let got_nic2: Nic = serde_json::from_str(stdout.trim()).expect("should parse NIC JSON");
     assert_eq!(got_nic2.mac, nic2.mac, "NIC MAC should match");
     assert_eq!(got_nic2.ip, nic2.ip, "NIC IP should match");
     assert_eq!(got_nic2.network, nic2.network, "NIC network should match");
@@ -399,6 +383,6 @@ fn test_instance_nic_workflow() {
     );
 
     // Cleanup: delete test instance
-    eprintln!("Cleanup: deleting test instance {}", inst.id);
-    delete_test_instance(&inst.id);
+    eprintln!("Cleanup: deleting test instance {}", inst_id);
+    delete_test_instance(&inst_id);
 }

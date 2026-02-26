@@ -229,16 +229,7 @@ fn test_instance_migration_estimate_no_args() {
 // test. These tests verify the CLI interface and output format work correctly.
 // =============================================================================
 
-/// Migration info returned from JSON output
-#[derive(Debug, serde::Deserialize)]
-#[allow(dead_code)]
-struct MigrationInfo {
-    vm_uuid: String,
-    state: String,
-    phase: String,
-    progress_percent: Option<f64>,
-    automatic: Option<bool>,
-}
+use cloudapi_client::Migration;
 
 /// Test `triton instance migration get ID` returns migration status
 /// This test verifies the command runs and handles "no migration" case gracefully
@@ -271,12 +262,13 @@ fn test_instance_migration_get() {
         }
     };
 
-    eprintln!("Created instance {} ({})", inst.name, inst.id);
+    let inst_id = inst.id.to_string();
+    eprintln!("Created instance {} ({})", inst.name, inst_id);
 
     // Get migration status - should return either status or error (no migration)
-    eprintln!("Test: triton instance migration get {}", inst.id);
+    eprintln!("Test: triton instance migration get {}", inst_id);
     let (stdout, stderr, success) =
-        run_triton_with_profile(["instance", "migration", "get", &inst.id]);
+        run_triton_with_profile(["instance", "migration", "get", &inst_id]);
 
     // Either succeeds with migration info, or fails with "no migration" error
     if success {
@@ -297,7 +289,7 @@ fn test_instance_migration_get() {
     }
 
     // Cleanup
-    delete_test_instance(&inst.id);
+    delete_test_instance(&inst_id);
 }
 
 /// Test `triton instance migration get -j ID` returns JSON
@@ -325,18 +317,19 @@ fn test_instance_migration_get_json() {
             return;
         }
     };
+    let inst_id = inst.id.to_string();
 
     // Get migration status with JSON output
     let (stdout, _, success) =
-        run_triton_with_profile(["instance", "migration", "get", "-j", &inst.id]);
+        run_triton_with_profile(["instance", "migration", "get", "-j", &inst_id]);
 
     if success {
         // Should be valid JSON if migration exists
-        let _migration: MigrationInfo =
+        let _migration: Migration =
             serde_json::from_str(&stdout).expect("should parse migration JSON");
     }
 
-    delete_test_instance(&inst.id);
+    delete_test_instance(&inst_id);
 }
 
 /// Test `triton instance migration begin` (without actually performing migration)
@@ -365,11 +358,12 @@ fn test_instance_migration_begin_command() {
             return;
         }
     };
+    let inst_id = inst.id.to_string();
 
     // Try to begin migration - may fail if no target CN available
-    eprintln!("Test: triton instance migration begin {}", inst.id);
+    eprintln!("Test: triton instance migration begin {}", inst_id);
     let (stdout, stderr, success) =
-        run_triton_with_profile(["instance", "migration", "begin", &inst.id]);
+        run_triton_with_profile(["instance", "migration", "begin", &inst_id]);
 
     if success {
         // Migration started
@@ -382,13 +376,13 @@ fn test_instance_migration_begin_command() {
         );
 
         // Abort the migration to clean up
-        let _ = run_triton_with_profile(["instance", "migration", "abort", "-w", &inst.id]);
+        let _ = run_triton_with_profile(["instance", "migration", "abort", "-w", &inst_id]);
     } else {
         // Expected on single-CN setup - no target available
         eprintln!("Migration begin failed (expected on single-CN): {}", stderr);
     }
 
-    delete_test_instance(&inst.id);
+    delete_test_instance(&inst_id);
 }
 
 /// Test `triton instance migration estimate ID` returns size estimate
@@ -416,11 +410,12 @@ fn test_instance_migration_estimate() {
             return;
         }
     };
+    let inst_id = inst.id.to_string();
 
     // Get migration estimate
-    eprintln!("Test: triton instance migration estimate {}", inst.id);
+    eprintln!("Test: triton instance migration estimate {}", inst_id);
     let (stdout, _, success) =
-        run_triton_with_profile(["instance", "migration", "estimate", &inst.id]);
+        run_triton_with_profile(["instance", "migration", "estimate", &inst_id]);
 
     if success {
         // Should contain size info
@@ -431,7 +426,7 @@ fn test_instance_migration_estimate() {
         );
     }
 
-    delete_test_instance(&inst.id);
+    delete_test_instance(&inst_id);
 }
 
 /// Test `triton instance migration estimate -j ID` returns JSON
@@ -459,21 +454,18 @@ fn test_instance_migration_estimate_json() {
             return;
         }
     };
+    let inst_id = inst.id.to_string();
 
     // Get migration estimate as JSON
     let (stdout, _, success) =
-        run_triton_with_profile(["instance", "migration", "estimate", "-j", &inst.id]);
+        run_triton_with_profile(["instance", "migration", "estimate", "-j", &inst_id]);
 
     if success {
         // Should be valid JSON with size field
-        #[derive(Debug, serde::Deserialize)]
-        struct EstimateInfo {
-            size: u64,
-        }
-        let estimate: EstimateInfo =
+        let estimate: cloudapi_client::MigrationEstimate =
             serde_json::from_str(&stdout).expect("should parse estimate JSON");
         assert!(estimate.size > 0, "size should be positive");
     }
 
-    delete_test_instance(&inst.id);
+    delete_test_instance(&inst_id);
 }

@@ -21,7 +21,7 @@
 mod common;
 
 use assert_cmd::Command;
-use cloudapi_client::MachineState;
+use cloudapi_client::{Machine, MachineState};
 use predicates::prelude::*;
 
 fn triton_cmd() -> Command {
@@ -187,20 +187,6 @@ fn test_delete_alias() {
 // These tests are ignored by default and run with `make triton-test-api`
 // =============================================================================
 
-/// Instance info from create/get output
-#[derive(Debug, serde::Deserialize)]
-struct InstanceInfo {
-    id: String,
-    name: String,
-    state: MachineState,
-    #[serde(default)]
-    metadata: Option<serde_json::Value>,
-    #[serde(default)]
-    tags: Option<serde_json::Value>,
-    #[serde(default)]
-    package: Option<String>,
-}
-
 /// Full instance lifecycle workflow test
 /// This test covers create, get, stop, start, reboot, resize, rename, delete
 ///
@@ -287,16 +273,16 @@ fn test_instance_manage_workflow() {
     }
 
     // Parse JSON stream output (node-triton outputs two JSON objects)
-    let instances: Vec<InstanceInfo> = json_stream_parse(&stdout);
+    let instances: Vec<Machine> = json_stream_parse(&stdout);
     assert!(
         !instances.is_empty(),
         "should have at least one JSON object in output"
     );
 
     let instance = instances.last().expect("should have at least one instance");
-    eprintln!("Created instance {} ({})", instance.name, instance.id);
-    let inst_id = &instance.id;
-    let inst_short_id = short_id(inst_id);
+    let inst_id = instance.id.to_string();
+    eprintln!("Created instance {} ({})", instance.name, inst_id);
+    let inst_short_id = short_id(&inst_id);
 
     // Verify initial state
     assert_eq!(
@@ -306,25 +292,17 @@ fn test_instance_manage_workflow() {
     );
 
     // Verify metadata was set
-    if let Some(metadata) = &instance.metadata {
-        if let Some(foo) = metadata.get("foo") {
-            assert_eq!(
-                foo.as_str(),
-                Some("bar"),
-                "foo metadata should be set to 'bar'"
-            );
-        }
-        // Verify user-script from --script option was set
-        assert!(
-            metadata.get("user-script").is_some(),
-            "user-script metadata should be set from --script option"
-        );
+    if let Some(foo) = instance.metadata.get("foo") {
+        assert_eq!(foo, "bar", "foo metadata should be set to 'bar'");
     }
+    // Verify user-script from --script option was set
+    assert!(
+        instance.metadata.contains_key("user-script"),
+        "user-script metadata should be set from --script option"
+    );
 
     // Verify tags were set
-    if let Some(tags) = &instance.tags
-        && let Some(blah) = tags.get("blah")
-    {
+    if let Some(blah) = instance.tags.get("blah") {
         assert_eq!(blah.as_str(), Some("bling"), "blah tag should be 'bling'");
     }
 
@@ -334,7 +312,7 @@ fn test_instance_manage_workflow() {
     assert!(success1, "get by alias should succeed");
 
     eprintln!("Test: triton instance get -j {}", inst_id);
-    let (stdout2, _, success2) = run_triton_with_profile(["instance", "get", "-j", inst_id]);
+    let (stdout2, _, success2) = run_triton_with_profile(["instance", "get", "-j", &inst_id]);
     assert!(success2, "get by UUID should succeed");
 
     eprintln!("Test: triton instance get -j {}", inst_short_id);
@@ -342,18 +320,16 @@ fn test_instance_manage_workflow() {
     assert!(success3, "get by short ID should succeed");
 
     // Verify all return the same data
-    let get1: InstanceInfo = serde_json::from_str(&stdout1).expect("should parse JSON");
-    let get2: InstanceInfo = serde_json::from_str(&stdout2).expect("should parse JSON");
-    let get3: InstanceInfo = serde_json::from_str(&stdout3).expect("should parse JSON");
+    let get1: Machine = serde_json::from_str(&stdout1).expect("should parse JSON");
+    let get2: Machine = serde_json::from_str(&stdout2).expect("should parse JSON");
+    let get3: Machine = serde_json::from_str(&stdout3).expect("should parse JSON");
 
     assert_eq!(get1.id, get2.id, "UUIDs should match");
     assert_eq!(get2.id, get3.id, "UUIDs should match");
 
     // Check metadata on retrieved instance
-    if let Some(metadata) = &get1.metadata
-        && let Some(foo) = metadata.get("foo")
-    {
-        assert_eq!(foo.as_str(), Some("bar"), "foo metadata should be 'bar'");
+    if let Some(foo) = get1.metadata.get("foo") {
+        assert_eq!(foo, "bar", "foo metadata should be 'bar'");
     }
 
     // Test: triton stop with wait
@@ -368,7 +344,7 @@ fn test_instance_manage_workflow() {
     // Confirm stopped
     let (stdout, _, success) = run_triton_with_profile(["instance", "get", "-j", &inst_alias]);
     assert!(success, "get should succeed");
-    let instance: InstanceInfo = serde_json::from_str(&stdout).expect("should parse JSON");
+    let instance: Machine = serde_json::from_str(&stdout).expect("should parse JSON");
     assert_eq!(
         instance.state,
         MachineState::Stopped,
@@ -387,7 +363,7 @@ fn test_instance_manage_workflow() {
     // Confirm running
     let (stdout, _, success) = run_triton_with_profile(["instance", "get", "-j", &inst_alias]);
     assert!(success, "get should succeed");
-    let instance: InstanceInfo = serde_json::from_str(&stdout).expect("should parse JSON");
+    let instance: Machine = serde_json::from_str(&stdout).expect("should parse JSON");
     assert_eq!(
         instance.state,
         MachineState::Running,
@@ -410,7 +386,7 @@ fn test_instance_manage_workflow() {
     // Confirm still running
     let (stdout, _, success) = run_triton_with_profile(["instance", "get", "-j", &inst_alias]);
     assert!(success, "get should succeed");
-    let instance: InstanceInfo = serde_json::from_str(&stdout).expect("should parse JSON");
+    let instance: Machine = serde_json::from_str(&stdout).expect("should parse JSON");
     assert_eq!(
         instance.state,
         MachineState::Running,
@@ -424,7 +400,7 @@ fn test_instance_manage_workflow() {
             inst_id, resize_pkg_name
         );
         let (stdout, _, success) =
-            run_triton_with_profile(["inst", "resize", "-w", inst_id, &resize_pkg_name]);
+            run_triton_with_profile(["inst", "resize", "-w", &inst_id, &resize_pkg_name]);
         assert!(success, "resize should succeed");
         assert!(
             stdout.contains("Resizing instance"),
@@ -438,13 +414,11 @@ fn test_instance_manage_workflow() {
         // Confirm resized
         let (stdout, _, success) = run_triton_with_profile(["instance", "get", "-j", &inst_alias]);
         assert!(success, "get should succeed");
-        let instance: InstanceInfo = serde_json::from_str(&stdout).expect("should parse JSON");
-        if let Some(package) = &instance.package {
-            assert_eq!(
-                package, &resize_pkg_name,
-                "instance package should be updated"
-            );
-        }
+        let instance: Machine = serde_json::from_str(&stdout).expect("should parse JSON");
+        assert_eq!(
+            instance.package, resize_pkg_name,
+            "instance package should be updated"
+        );
     }
 
     // Test: triton inst rename
@@ -453,7 +427,7 @@ fn test_instance_manage_workflow() {
         inst_id, inst_alias_newname
     );
     let (stdout, _, success) =
-        run_triton_with_profile(["inst", "rename", "-w", inst_id, &inst_alias_newname]);
+        run_triton_with_profile(["inst", "rename", "-w", &inst_id, &inst_alias_newname]);
     assert!(success, "rename should succeed");
     assert!(
         stdout.contains("Renaming instance"),
@@ -468,7 +442,7 @@ fn test_instance_manage_workflow() {
     let (stdout, _, success) =
         run_triton_with_profile(["instance", "get", "-j", &inst_alias_newname]);
     assert!(success, "get by new name should succeed");
-    let instance: InstanceInfo = serde_json::from_str(&stdout).expect("should parse JSON");
+    let instance: Machine = serde_json::from_str(&stdout).expect("should parse JSON");
     assert_eq!(
         instance.name, inst_alias_newname,
         "instance name should be updated"
@@ -476,7 +450,7 @@ fn test_instance_manage_workflow() {
 
     // Cleanup: triton delete with wait and force
     eprintln!("Cleanup: triton delete -f -w {}", inst_id);
-    let (_stdout, _, success) = run_triton_with_profile(["delete", "-f", "-w", inst_id]);
+    let (_stdout, _, success) = run_triton_with_profile(["delete", "-f", "-w", &inst_id]);
     assert!(success, "delete should succeed");
 }
 
@@ -519,16 +493,20 @@ fn test_instance_get_deleted() {
         return;
     }
 
-    let instances: Vec<InstanceInfo> = json_stream_parse(&stdout);
-    let inst_id = &instances.last().expect("should have instance").id;
+    let instances: Vec<Machine> = json_stream_parse(&stdout);
+    let inst_id = instances
+        .last()
+        .expect("should have instance")
+        .id
+        .to_string();
 
     // Delete with wait
-    let (_stdout, _, success) = run_triton_with_profile(["delete", "-w", "-f", inst_id]);
+    let (_stdout, _, success) = run_triton_with_profile(["delete", "-w", "-f", &inst_id]);
     assert!(success, "delete should succeed");
 
     // Get deleted instance - should return deleted state
     // node-triton returns exit code 3 for InstanceDeleted error
-    let (stdout, stderr, success) = run_triton_with_profile(["inst", "get", inst_id]);
+    let (stdout, stderr, success) = run_triton_with_profile(["inst", "get", &inst_id]);
 
     // The CLI may or may not succeed depending on implementation
     // node-triton outputs JSON to stdout and error to stderr, exit code 3
@@ -539,7 +517,7 @@ fn test_instance_get_deleted() {
 
     // If stdout has JSON, check state is deleted
     if !stdout.trim().is_empty()
-        && let Ok(instance) = serde_json::from_str::<InstanceInfo>(&stdout)
+        && let Ok(instance) = serde_json::from_str::<Machine>(&stdout)
     {
         assert_eq!(
             instance.state,
@@ -593,9 +571,9 @@ fn test_instance_wait() {
         return;
     }
 
-    let instances: Vec<InstanceInfo> = json_stream_parse(&stdout);
+    let instances: Vec<Machine> = json_stream_parse(&stdout);
     let instance = instances.last().expect("should have instance");
-    let inst_id = &instance.id;
+    let inst_id = instance.id.to_string();
     eprintln!("Created instance {} in state {:?}", inst_id, instance.state);
 
     // Instance should be in provisioning state
@@ -607,7 +585,7 @@ fn test_instance_wait() {
 
     // Test: triton inst wait
     eprintln!("Test: triton inst wait {}", inst_id);
-    let (stdout, _, success) = run_triton_with_profile(["inst", "wait", inst_id]);
+    let (stdout, _, success) = run_triton_with_profile(["inst", "wait", &inst_id]);
     assert!(success, "wait should succeed");
 
     // node-triton wait outputs two lines:
@@ -620,5 +598,5 @@ fn test_instance_wait() {
     assert!(stdout.contains("running"), "should mention final state");
 
     // Cleanup
-    delete_test_instance(inst_id);
+    delete_test_instance(&inst_id);
 }
