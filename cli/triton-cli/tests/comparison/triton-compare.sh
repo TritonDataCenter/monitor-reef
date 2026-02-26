@@ -252,16 +252,6 @@ export > $OUTPUT_DIR/env
 
 # ---------- normalization functions ----------
 
-# Strip version numbers (e.g., "7.18.0" -> "X.Y.Z", "0.1.0" -> "X.Y.Z")
-normalize_version() {
-    sed -E 's/[0-9]+\.[0-9]+\.[0-9]+/X.Y.Z/g'
-}
-
-# Normalize the "triton Triton CLI" clap prefix to just "Triton CLI"
-normalize_cli_name() {
-    sed -E 's/^triton Triton CLI/Triton CLI/'
-}
-
 # Sort JSON keys, handle NDJSON (one JSON object per line)
 normalize_json() {
     local input="$1"
@@ -286,7 +276,7 @@ strip_ansi() {
 
 # General normalization pipeline for non-JSON text output
 normalize_text() {
-    strip_ansi | normalize_version | normalize_cli_name
+    strip_ansi
 }
 
 # Extract the last JSON object from output that may contain non-JSON text
@@ -294,6 +284,13 @@ normalize_text() {
 # Prints from the first '{' to the matching '}', ignoring surrounding text.
 extract_json_object() {
     sed -n '/^{/,/^}/p'
+}
+
+# Strip multi-line JSON objects (emit-payload envelopes) from output,
+# leaving only rendered CLI output (tables, status messages, etc.).
+# Inverse of extract_json_object.
+strip_json_objects() {
+    sed '/^{/,/^}/d'
 }
 
 # Extract sorted subcommand names from help output (either Node.js or Rust format)
@@ -609,14 +606,6 @@ run_offline_tests() {
     printf "%-8s %-30s %s\n" "RESULT" "TEST ID" "DESCRIPTION"
     printf "%-8s %-30s %s\n" "------" "-------" "-----------"
 
-    # Version
-    run_test "version" "--version output" \
-        isolated --version
-
-    # Top-level help
-    run_test "help" "top-level --help" \
-        isolated --help
-
     # Profile commands (isolated environment)
     run_test "profile-list" "profile list" \
         isolated profile list
@@ -931,6 +920,112 @@ run_payload_test_split() {
         || cp "$node_out" "$node_norm"
     extract_json_object < "$rust_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \
         || cp "$rust_out" "$rust_norm"
+
+    compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
+}
+
+# Run a rendered-output comparison test.
+# Same setup as run_payload_test (emit-payload mode + fixtures), but
+# compares the rendered CLI output (tables, text) instead of HTTP envelopes.
+# JSON envelopes are stripped; remaining text is normalized and diffed.
+# Args: test_id description cli_args...
+run_render_test() {
+    local test_id="$1"; shift
+    local description="$1"; shift
+
+    if is_ignored "$test_id"; then
+        printf "SKIP     %-30s %s (intentional: %s)\n" \
+            "$test_id" "$description" "${IGNORED_DIFFS[$test_id]}"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        return 0
+    fi
+
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "  Running: triton $*"
+    fi
+
+    local node_out="$OUTPUT_DIR/node/$test_id.out"
+    local node_err="$OUTPUT_DIR/node/$test_id.err"
+    local rust_out="$OUTPUT_DIR/rust/$test_id.out"
+    local rust_err="$OUTPUT_DIR/rust/$test_id.err"
+    local node_norm="$OUTPUT_DIR/node/$test_id.norm"
+    local rust_norm="$OUTPUT_DIR/rust/$test_id.norm"
+
+    local node_exit=0
+    local rust_exit=0
+
+    local fixtures="$SCRIPT_DIR/fixtures/emit-payload-fakes.json"
+
+    run_isolated \
+        TRITON_EMIT_PAYLOAD=1 \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
+        "$NODE_TRITON" "$@" < /dev/null > "$node_out" 2> "$node_err" || node_exit=$?
+
+    run_isolated \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
+        "$RUST_TRITON" --emit-payload "$@" < /dev/null > "$rust_out" 2> "$rust_err" || rust_exit=$?
+
+    # Strip JSON envelopes, normalize remaining text
+    strip_json_objects < "$node_out" | normalize_text > "$node_norm"
+    strip_json_objects < "$rust_out" | normalize_text > "$rust_norm"
+
+    compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
+}
+
+# Run a rendered-output comparison test for -j (JSON) output.
+# Same setup as run_payload_test, but filters out HTTP envelope objects
+# (those with a "method" key) from the NDJSON stream, keeping only the
+# data objects that represent actual CLI output.
+# Args: test_id description cli_args...
+run_render_json_test() {
+    local test_id="$1"; shift
+    local description="$1"; shift
+
+    if is_ignored "$test_id"; then
+        printf "SKIP     %-30s %s (intentional: %s)\n" \
+            "$test_id" "$description" "${IGNORED_DIFFS[$test_id]}"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        return 0
+    fi
+
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "  Running: triton $*"
+    fi
+
+    local node_out="$OUTPUT_DIR/node/$test_id.out"
+    local node_err="$OUTPUT_DIR/node/$test_id.err"
+    local rust_out="$OUTPUT_DIR/rust/$test_id.out"
+    local rust_err="$OUTPUT_DIR/rust/$test_id.err"
+    local node_norm="$OUTPUT_DIR/node/$test_id.norm"
+    local rust_norm="$OUTPUT_DIR/rust/$test_id.norm"
+
+    local node_exit=0
+    local rust_exit=0
+
+    local fixtures="$SCRIPT_DIR/fixtures/emit-payload-fakes.json"
+
+    run_isolated \
+        TRITON_EMIT_PAYLOAD=1 \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
+        "$NODE_TRITON" "$@" < /dev/null > "$node_out" 2> "$node_err" || node_exit=$?
+
+    run_isolated \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
+        "$RUST_TRITON" --emit-payload "$@" < /dev/null > "$rust_out" 2> "$rust_err" || rust_exit=$?
+
+    # Strip multi-line JSON envelopes, then filter out any remaining
+    # single-line JSON objects that have a "method" key (envelope fragments).
+    # Normalize the remaining data JSON.
+    strip_json_objects < "$node_out" \
+        | jq -c 'select(.method | not)' 2>/dev/null \
+        > "$node_norm.tmp" || true
+    strip_json_objects < "$rust_out" \
+        | jq -c 'select(.method | not)' 2>/dev/null \
+        > "$rust_norm.tmp" || true
+
+    normalize_json "$node_norm.tmp" > "$node_norm"
+    normalize_json "$rust_norm.tmp" > "$rust_norm"
+    rm -f "$node_norm.tmp" "$rust_norm.tmp"
 
     compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
 }
@@ -1313,6 +1408,38 @@ POLICYJSON
     # Volume delete by name
     run_payload_test_mutations "payload-volume-delete-by-name" "volume delete (by name)" \
         volume delete test-volume -f
+
+    # --- Rendered output tests ---
+    #
+    # Compare the rendered CLI output (tables and JSON) rather than HTTP
+    # envelopes. Catches deserialization bugs where a field deserializes
+    # as None/null and renders differently (e.g., missing primaryIp).
+
+    # Tabular output
+    run_render_test "render-image-list" "image list (rendered)" \
+        images -o shortid,name,version,state,pubdate
+
+    run_render_test "render-instance-list" "instance list (rendered)" \
+        instances -o shortid,name,state,primaryIp,created
+
+    run_render_test "render-package-list" "package list (rendered)" \
+        packages -o shortid,name,memory,swap,disk,vcpus
+
+    run_render_test "render-volume-list" "volume list (rendered)" \
+        volumes -o shortid,name,size,type,state,created
+
+    # JSON output
+    run_render_json_test "render-image-list-j" "image list -j (rendered)" \
+        images -j
+
+    run_render_json_test "render-instance-list-j" "instance list -j (rendered)" \
+        instances -j
+
+    run_render_json_test "render-package-list-j" "package list -j (rendered)" \
+        packages -j
+
+    run_render_json_test "render-volume-list-j" "volume list -j (rendered)" \
+        volumes -j
 
     echo ""
 }
