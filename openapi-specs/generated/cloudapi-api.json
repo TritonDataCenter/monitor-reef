@@ -4417,11 +4417,9 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_String",
+                  "title": "Map_of_AnyValue",
                   "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
+                  "additionalProperties": true
                 }
               }
             }
@@ -4478,11 +4476,9 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_String",
+                  "title": "Map_of_AnyValue",
                   "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
+                  "additionalProperties": true
                 }
               }
             }
@@ -4569,11 +4565,9 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_String",
+                  "title": "Map_of_AnyValue",
                   "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
+                  "additionalProperties": true
                 }
               }
             }
@@ -9653,7 +9647,8 @@
       },
       "AddMetadataRequest": {
         "description": "Request to add machine metadata",
-        "type": "object"
+        "type": "object",
+        "additionalProperties": true
       },
       "AddNicRequest": {
         "description": "Request to add NIC",
@@ -10063,9 +10058,7 @@
             "description": "Metadata (modern format - nested object)",
             "default": null,
             "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
+            "additionalProperties": true
           },
           "name": {
             "nullable": true,
@@ -10910,9 +10903,7 @@
           "metadata": {
             "description": "Metadata",
             "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            }
+            "additionalProperties": true
           },
           "name": {
             "description": "Machine alias/name",

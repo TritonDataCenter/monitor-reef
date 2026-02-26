@@ -40,8 +40,8 @@ pub type Timestamp = String;
 /// Key-value tags (values can be strings, booleans, or numbers)
 pub type Tags = HashMap<String, Value>;
 
-/// Key-value metadata
-pub type Metadata = HashMap<String, String>;
+/// Key-value metadata (values can be strings, booleans, or numbers)
+pub type Metadata = vmapi_api::MetadataObject;
 
 /// Role tags for RBAC
 pub type RoleTags = Vec<String>;

@@ -440,7 +440,8 @@ pub mod types {
     #[doc = r" ```json"]
     #[doc = "{"]
     #[doc = "  \"description\": \"Request to add machine metadata\","]
-    #[doc = "  \"type\": \"object\""]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"additionalProperties\": true"]
     #[doc = "}"]
     #[doc = r" ```"]
     #[doc = r" </details>"]
@@ -1409,9 +1410,7 @@ pub mod types {
     #[doc = "        \"object\","]
     #[doc = "        \"null\""]
     #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"additionalProperties\": true"]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"description\": \"Machine alias/name\","]
@@ -1518,9 +1517,8 @@ pub mod types {
         pub locality: ::std::option::Option<::serde_json::Value>,
         #[doc = "Metadata (modern format - nested object)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub metadata: ::std::option::Option<
-            ::std::collections::HashMap<::std::string::String, ::std::string::String>,
-        >,
+        pub metadata:
+            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
         #[doc = "Machine alias/name"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub name: ::std::option::Option<::std::string::String>,
@@ -3635,9 +3633,7 @@ pub mod types {
     #[doc = "    \"metadata\": {"]
     #[doc = "      \"description\": \"Metadata\","]
     #[doc = "      \"type\": \"object\","]
-    #[doc = "      \"additionalProperties\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"additionalProperties\": true"]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"description\": \"Machine alias/name\","]
@@ -3761,7 +3757,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub memory: ::std::option::Option<u64>,
         #[doc = "Metadata"]
-        pub metadata: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+        pub metadata: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
         #[doc = "Machine alias/name"]
         pub name: ::std::string::String,
         #[doc = "Network UUIDs (API version >= 7.1.0)"]
@@ -9537,7 +9533,7 @@ pub mod types {
             >,
             metadata: ::std::result::Result<
                 ::std::option::Option<
-                    ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
                 >,
                 ::std::string::String,
             >,
@@ -9697,10 +9693,7 @@ pub mod types {
             where
                 T: ::std::convert::TryInto<
                         ::std::option::Option<
-                            ::std::collections::HashMap<
-                                ::std::string::String,
-                                ::std::string::String,
-                            >,
+                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
                         >,
                     >,
                 T::Error: ::std::fmt::Display,
@@ -11588,7 +11581,7 @@ pub mod types {
             >,
             memory: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
             metadata: ::std::result::Result<
-                ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+                ::serde_json::Map<::std::string::String, ::serde_json::Value>,
                 ::std::string::String,
             >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -11828,7 +11821,7 @@ pub mod types {
             pub fn metadata<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<
-                        ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+                        ::serde_json::Map<::std::string::String, ::serde_json::Value>,
                     >,
                 T::Error: ::std::fmt::Display,
             {
@@ -25740,9 +25733,7 @@ pub mod builder {
         pub async fn send(
             self,
         ) -> Result<
-            ResponseValue<
-                ::std::collections::HashMap<::std::string::String, ::std::string::String>,
-            >,
+            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
             Error<types::Error>,
         > {
             let Self {
@@ -25850,9 +25841,7 @@ pub mod builder {
         pub async fn send(
             self,
         ) -> Result<
-            ResponseValue<
-                ::std::collections::HashMap<::std::string::String, ::std::string::String>,
-            >,
+            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
             Error<types::Error>,
         > {
             let Self {
@@ -26042,9 +26031,7 @@ pub mod builder {
         pub async fn send(
             self,
         ) -> Result<
-            ResponseValue<
-                ::std::collections::HashMap<::std::string::String, ::std::string::String>,
-            >,
+            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
             Error<types::Error>,
         > {
             let Self {

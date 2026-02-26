@@ -140,13 +140,16 @@ pub async fn list_metadata(
         json::print_json(&metadata)?;
     } else {
         let mut tbl = table::create_table(&["KEY", "VALUE"]);
-        // Metadata is a HashMap<String, String>
         for (key, value) in metadata.iter() {
+            let value_str = match value.as_str() {
+                Some(s) => s.to_string(),
+                None => value.to_string(),
+            };
             // Truncate long values for display
-            let display_value = if value.len() > 60 {
-                format!("{}...", &value[..57])
+            let display_value = if value_str.len() > 60 {
+                format!("{}...", &value_str[..57])
             } else {
-                value.clone()
+                value_str
             };
             tbl.add_row(vec![key, &display_value]);
         }

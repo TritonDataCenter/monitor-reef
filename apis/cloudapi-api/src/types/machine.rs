@@ -412,12 +412,7 @@ impl CreateMachineRequest {
             if let Some(meta_key) = key.strip_prefix("metadata.") {
                 // Skip password fields (handled separately)
                 if !meta_key.ends_with("_pw") {
-                    if let Some(s) = value.as_str() {
-                        result.insert(meta_key.to_string(), s.to_string());
-                    } else {
-                        // Convert non-string values to string
-                        result.insert(meta_key.to_string(), value.to_string());
-                    }
+                    result.insert(meta_key.to_string(), value.clone());
                 }
             }
         }

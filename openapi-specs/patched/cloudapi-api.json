@@ -178,6 +178,7 @@
         "type": "object"
       },
       "AddMetadataRequest": {
+        "additionalProperties": true,
         "description": "Request to add machine metadata",
         "type": "object"
       },
@@ -584,9 +585,7 @@
             "nullable": true
           },
           "metadata": {
-            "additionalProperties": {
-              "type": "string"
-            },
+            "additionalProperties": true,
             "default": null,
             "description": "Metadata (modern format - nested object)",
             "nullable": true,
@@ -1474,9 +1473,7 @@
             "type": "integer"
           },
           "metadata": {
-            "additionalProperties": {
-              "type": "string"
-            },
+            "additionalProperties": true,
             "description": "Metadata",
             "type": "object"
           },
@@ -7662,10 +7659,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Map_of_String",
+                  "additionalProperties": true,
+                  "title": "Map_of_AnyValue",
                   "type": "object"
                 }
               }
@@ -7713,10 +7708,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Map_of_String",
+                  "additionalProperties": true,
+                  "title": "Map_of_AnyValue",
                   "type": "object"
                 }
               }
@@ -7774,10 +7767,8 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Map_of_String",
+                  "additionalProperties": true,
+                  "title": "Map_of_AnyValue",
                   "type": "object"
                 }
               }

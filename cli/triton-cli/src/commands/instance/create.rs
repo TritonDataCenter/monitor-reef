@@ -9,7 +9,6 @@
 use anyhow::Result;
 use clap::Args;
 use cloudapi_client::TypedClient;
-use std::collections::HashMap;
 use std::path::Path;
 
 use crate::output::{enum_to_display, json};
@@ -353,14 +352,14 @@ fn build_tags(args: &CreateArgs) -> Result<serde_json::Map<String, serde_json::V
 }
 
 /// Build metadata from --metadata, --metadata-file, and --script options
-async fn build_metadata(args: &CreateArgs) -> Result<HashMap<String, String>> {
-    let mut metadata: HashMap<String, String> = HashMap::new();
+async fn build_metadata(args: &CreateArgs) -> Result<serde_json::Map<String, serde_json::Value>> {
+    let mut metadata = serde_json::Map::new();
 
     // Parse --metadata key=value pairs
     if let Some(metadata_args) = &args.metadata {
         for item in metadata_args {
             let (key, value) = parse_key_value(item)?;
-            metadata.insert(key, value);
+            metadata.insert(key, serde_json::Value::String(value));
         }
     }
 
@@ -375,7 +374,7 @@ async fn build_metadata(args: &CreateArgs) -> Result<HashMap<String, String>> {
             let content = tokio::fs::read_to_string(path)
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to read {}: {}", filepath, e))?;
-            metadata.insert(key, content);
+            metadata.insert(key, serde_json::Value::String(content));
         }
     }
 
@@ -388,7 +387,10 @@ async fn build_metadata(args: &CreateArgs) -> Result<HashMap<String, String>> {
         let content = tokio::fs::read_to_string(path)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to read {}: {}", script_path, e))?;
-        metadata.insert("user-script".to_string(), content);
+        metadata.insert(
+            "user-script".to_string(),
+            serde_json::Value::String(content),
+        );
     }
 
     // Handle --cloud-config (shortcut for cloud-init user-data)
@@ -405,7 +407,7 @@ async fn build_metadata(args: &CreateArgs) -> Result<HashMap<String, String>> {
             // Use as inline content
             cloud_config.clone()
         };
-        metadata.insert("user-data".to_string(), content);
+        metadata.insert("user-data".to_string(), serde_json::Value::String(content));
     }
 
     Ok(metadata)
