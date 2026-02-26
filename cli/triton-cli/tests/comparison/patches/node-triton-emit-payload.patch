@@ -1,17 +1,18 @@
 diff --git a/lib/cloudapi2.js b/lib/cloudapi2.js
-index 605b257..aa62532 100644
+index 605b257..babb6c1 100644
 --- a/lib/cloudapi2.js
 +++ b/lib/cloudapi2.js
-@@ -287,6 +287,87 @@ CloudApi.prototype._request = function _request(opts, cb) {
+@@ -287,6 +287,88 @@ CloudApi.prototype._request = function _request(opts, cb) {
          }
      }
  
 +    // Emit-payload mode: intercept API requests without sending them
 +    if (process.env.TRITON_EMIT_PAYLOAD) {
 +        var m = method.toUpperCase();
++        var fullUrl = (self.url || '').replace(/\/+$/, '') + opts.path;
 +        var envelope = {
 +            method: m,
-+            path: opts.path,
++            url: fullUrl,
 +            body: (m === 'GET' || m === 'HEAD') ? null : (opts.data || null)
 +        };
 +        console.log(JSON.stringify(envelope, null, 2));

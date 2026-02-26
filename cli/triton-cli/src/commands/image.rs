@@ -424,26 +424,14 @@ async fn list_images(
             Some(c) => match c.load_list().await {
                 Some(cached) => cached,
                 None => {
-                    let response = client
-                        .inner()
-                        .list_images()
-                        .account(account)
-                        .state(cloudapi_client::types::ImageState::Active)
-                        .send()
-                        .await?;
+                    let response = client.inner().list_images().account(account).send().await?;
                     let fetched = response.into_inner();
                     c.save_list(&fetched).await;
                     fetched
                 }
             },
             None => {
-                let response = client
-                    .inner()
-                    .list_images()
-                    .account(account)
-                    .state(cloudapi_client::types::ImageState::Active)
-                    .send()
-                    .await?;
+                let response = client.inner().list_images().account(account).send().await?;
                 response.into_inner()
             }
         }
@@ -460,8 +448,6 @@ async fn list_images(
         }
         if let Some(state) = args.state {
             req = req.state(state);
-        } else if !args.all {
-            req = req.state(cloudapi_client::types::ImageState::Active);
         }
         if args.public {
             req = req.public(true);

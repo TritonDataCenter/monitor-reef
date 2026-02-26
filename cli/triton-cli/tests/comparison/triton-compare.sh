@@ -805,7 +805,7 @@ run_payload_test() {
 
     # Normalize: extract JSON objects (strip status messages), slurp into array,
     # sort keys, strip null values and .body.origin
-    local jq_filter='[.[] | select(.method) | del(.body.origin) | .path |= split("?")[0] | if .body == {} then .body = null else . end | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
+    local jq_filter='[.[] | select(.method) | del(.body.origin) | if .body == {} then .body = null else . end | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
     extract_json_object < "$node_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$node_norm" 2>/dev/null \
         || cp "$node_out" "$node_norm"
     extract_json_object < "$rust_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \
@@ -855,7 +855,7 @@ run_payload_test_mutations() {
         "$RUST_TRITON" --emit-payload "$@" < /dev/null > "$rust_out" 2> "$rust_err" || rust_exit=$?
 
     # Like run_payload_test but also filter to mutations only (no GET/HEAD)
-    local jq_filter='[.[] | select(.method) | select(.method != "GET" and .method != "HEAD") | del(.body.origin) | .path |= split("?")[0] | if .body == {} then .body = null else . end | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
+    local jq_filter='[.[] | select(.method) | select(.method != "GET" and .method != "HEAD") | del(.body.origin) | if .body == {} then .body = null else . end | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
     extract_json_object < "$node_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$node_norm" 2>/dev/null \
         || cp "$node_out" "$node_norm"
     extract_json_object < "$rust_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \
@@ -921,7 +921,7 @@ run_payload_test_split() {
         TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
         "$RUST_TRITON" --emit-payload "${rust_args[@]}" > "$rust_out" 2> "$rust_err" || rust_exit=$?
 
-    local jq_filter='[.[] | select(.method) | del(.body.origin) | .path |= split("?")[0] | if .body == {} then .body = null else . end | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
+    local jq_filter='[.[] | select(.method) | del(.body.origin) | if .body == {} then .body = null else . end | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
     extract_json_object < "$node_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$node_norm" 2>/dev/null \
         || cp "$node_out" "$node_norm"
     extract_json_object < "$rust_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \

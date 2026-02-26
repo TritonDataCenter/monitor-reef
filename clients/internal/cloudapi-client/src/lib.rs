@@ -245,12 +245,14 @@ pub fn set_emit_payload_mode(enabled: bool) {
     EMIT_PAYLOAD_MODE.store(enabled, Ordering::Relaxed);
 }
 
-/// Print a JSON envelope capturing an HTTP request's method, path, and body.
+/// Print a JSON envelope capturing an HTTP request's method, URL, and body.
+/// The URL includes the scheme/host so callers can verify which datacenter a
+/// request targets (e.g., `triton image copy` sends to a different DC).
 #[cfg(debug_assertions)]
-fn emit_payload_envelope(method: &str, path: &str, body: serde_json::Value) {
+fn emit_payload_envelope(method: &str, url: &str, body: serde_json::Value) {
     let envelope = serde_json::json!({
         "method": method,
-        "path": path,
+        "url": url,
         "body": body,
     });
 
@@ -270,19 +272,6 @@ pub const EMIT_PAYLOAD_SENTINEL: &str = "__payload_emitted__";
 #[cfg(debug_assertions)]
 #[allow(clippy::result_large_err)]
 fn emit_request_payload<E>(request: &reqwest::Request) -> Result<(), Error<E>> {
-    let url = request.url();
-
-    // Build path + query, excluding the host/scheme
-    let mut path = url.path().to_string();
-    // Strip double-leading-slash from baseurl + format string join
-    if path.starts_with("//") {
-        path = path[1..].to_string();
-    }
-    if let Some(query) = url.query() {
-        path.push('?');
-        path.push_str(query);
-    }
-
     // Extract body as JSON value (or null if no body)
     let body = request
         .body()
@@ -290,7 +279,7 @@ fn emit_request_payload<E>(request: &reqwest::Request) -> Result<(), Error<E>> {
         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(bytes).ok())
         .unwrap_or(serde_json::Value::Null);
 
-    emit_payload_envelope(request.method().as_str(), &path, body);
+    emit_payload_envelope(request.method().as_str(), request.url().as_str(), body);
 
     Err(Error::Custom(EMIT_PAYLOAD_SENTINEL.to_string()))
 }
@@ -310,15 +299,11 @@ fn emit_and_fake_get_response(
     info: &OperationInfo,
 ) -> reqwest::Result<reqwest::Response> {
     let url = request.url();
-    let mut path = url.path().to_string();
-    if path.starts_with("//") {
-        path = path[1..].to_string();
-    }
-    if let Some(query) = url.query() {
-        path.push('?');
-        path.push_str(query);
-    }
-    emit_payload_envelope(request.method().as_str(), &path, serde_json::Value::Null);
+    emit_payload_envelope(
+        request.method().as_str(),
+        url.as_str(),
+        serde_json::Value::Null,
+    );
 
     let body_bytes = if info.operation_id.starts_with("list_") {
         // List endpoints: check responses for a specific list fixture first,
