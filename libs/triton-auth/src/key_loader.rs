@@ -247,6 +247,13 @@ impl KeyLoader {
     ///
     /// This is the testable core of `load_legacy_from_common_paths`, accepting
     /// an explicit directory path instead of using `~/.ssh/`.
+    ///
+    /// Discovery strategy (mirrors Node.js `smartdc-auth` `kr-homedir.js`):
+    /// 1. Scan all `.pub` files in the directory, match fingerprint
+    /// 2. On match, look for corresponding private key (strip `.pub` suffix)
+    /// 3. If private key loads OK → return it
+    /// 4. If private key is encrypted → return `KeyEncrypted`
+    /// 5. Fallback: try hardcoded `id_*` names without `.pub` companions
     pub async fn scan_ssh_dir_for_key(
         ssh_dir: &Path,
         fingerprint_str: &str,
@@ -254,32 +261,137 @@ impl KeyLoader {
         let fingerprint = Fingerprint::parse(fingerprint_str)
             .map_err(|e| AuthError::KeyLoadError(format!("Invalid fingerprint: {}", e)))?;
 
+        let mut scanned_pub = Vec::new();
+        let mut scanned_private = Vec::new();
+
+        // Phase 1: Scan all .pub files for fingerprint match
+        if let Ok(mut dir) = tokio::fs::read_dir(ssh_dir).await {
+            while let Ok(Some(entry)) = dir.next_entry().await {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("pub") {
+                    continue;
+                }
+                let Ok(pub_data) = tokio::fs::read_to_string(&path).await else {
+                    continue;
+                };
+                scanned_pub.push(path.clone());
+
+                // Parse as OpenSSH public key
+                let Ok(pub_key) = ssh_key::PublicKey::from_openssh(&pub_data) else {
+                    continue;
+                };
+
+                if !fingerprint.matches(&pub_key) {
+                    continue;
+                }
+
+                // Fingerprint matches — look for corresponding private key
+                let priv_path = path.with_extension("");
+                tracing::debug!(
+                    "Public key {} matches fingerprint {}, trying private key {}",
+                    path.display(),
+                    fingerprint_str,
+                    priv_path.display(),
+                );
+
+                if !tokio::fs::try_exists(&priv_path).await.unwrap_or(false) {
+                    continue;
+                }
+
+                // Try loading the private key
+                match Self::load_legacy_from_file(&priv_path, None).await {
+                    Ok(key) => return Ok(key),
+                    Err(AuthError::KeyEncrypted(_)) => {
+                        return Err(AuthError::KeyEncrypted(priv_path.display().to_string()));
+                    }
+                    Err(e) => {
+                        // Check if the error message indicates encryption
+                        let msg = e.to_string();
+                        if msg.contains("encrypted") || msg.contains("Encrypted") {
+                            return Err(AuthError::KeyEncrypted(priv_path.display().to_string()));
+                        }
+                        tracing::debug!(
+                            "Failed to load private key {}: {}",
+                            priv_path.display(),
+                            e,
+                        );
+                    }
+                }
+            }
+        }
+
+        // Phase 2: Fallback — try hardcoded id_* names (for keys without .pub companions)
         let key_files = ["id_ed25519", "id_ecdsa", "id_rsa", "id_dsa"];
 
         for key_file in &key_files {
             let path = ssh_dir.join(key_file);
-            if tokio::fs::try_exists(&path).await.unwrap_or(false)
-                && let Ok(key) = Self::load_legacy_from_file(&path, None).await
-                && let Ok(blob) = key.public_key_blob()
-                && fingerprint.matches_bytes(&blob)
-            {
-                tracing::debug!(
-                    "Found matching key at {} for fingerprint {}",
-                    path.display(),
-                    fingerprint_str
-                );
-                return Ok(key);
+            // Skip if we already tried this via .pub scan
+            let pub_path = ssh_dir.join(format!("{}.pub", key_file));
+            if scanned_pub.contains(&pub_path) {
+                continue;
+            }
+            scanned_private.push(path.clone());
+
+            if !tokio::fs::try_exists(&path).await.unwrap_or(false) {
+                continue;
+            }
+
+            match Self::load_legacy_from_file(&path, None).await {
+                Ok(key) => {
+                    if let Ok(blob) = key.public_key_blob()
+                        && fingerprint.matches_bytes(&blob)
+                    {
+                        tracing::debug!(
+                            "Found matching key at {} for fingerprint {}",
+                            path.display(),
+                            fingerprint_str,
+                        );
+                        return Ok(key);
+                    }
+                }
+                Err(AuthError::KeyEncrypted(_)) => {
+                    // Can't check fingerprint without decrypting — skip
+                    tracing::debug!(
+                        "Skipping encrypted key {} (no .pub companion for fingerprint check)",
+                        path.display(),
+                    );
+                }
+                Err(_) => {}
             }
         }
 
+        // Build a helpful error message listing what was scanned
+        let mut scanned_desc = Vec::new();
+        for p in &scanned_pub {
+            scanned_desc.push(
+                p.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default(),
+            );
+        }
+        for p in &scanned_private {
+            scanned_desc.push(
+                p.file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default(),
+            );
+        }
+
         Err(AuthError::KeyNotFound(format!(
-            "No key with fingerprint {} found in {}",
+            "No key with fingerprint {} found in {} (scanned: {})",
             fingerprint_str,
-            ssh_dir.display()
+            ssh_dir.display(),
+            if scanned_desc.is_empty() {
+                "no key files found".to_string()
+            } else {
+                scanned_desc.join(", ")
+            },
         )))
     }
 
     /// List all available key files in ~/.ssh/
+    ///
+    /// Scans the directory for all `.pub` files and standard `id_*` names.
     pub async fn list_key_files() -> Result<Vec<PathBuf>, AuthError> {
         let home = dirs::home_dir()
             .ok_or_else(|| AuthError::KeyLoadError("Could not determine home directory".into()))?;
@@ -290,11 +402,27 @@ impl KeyLoader {
         }
 
         let mut keys = Vec::new();
-        let key_patterns = ["id_ed25519", "id_ecdsa", "id_rsa", "id_dsa"];
+        let mut seen = std::collections::HashSet::new();
 
+        // Scan .pub files and infer private key paths
+        if let Ok(mut dir) = tokio::fs::read_dir(&ssh_dir).await {
+            while let Ok(Some(entry)) = dir.next_entry().await {
+                let path = entry.path();
+                if path.extension().and_then(|e| e.to_str()) == Some("pub") {
+                    let priv_path = path.with_extension("");
+                    if tokio::fs::try_exists(&priv_path).await.unwrap_or(false) {
+                        seen.insert(priv_path.clone());
+                        keys.push(priv_path);
+                    }
+                }
+            }
+        }
+
+        // Also check standard names without .pub companions
+        let key_patterns = ["id_ed25519", "id_ecdsa", "id_rsa", "id_dsa"];
         for pattern in &key_patterns {
             let path = ssh_dir.join(pattern);
-            if tokio::fs::try_exists(&path).await.unwrap_or(false) {
+            if !seen.contains(&path) && tokio::fs::try_exists(&path).await.unwrap_or(false) {
                 keys.push(path);
             }
         }

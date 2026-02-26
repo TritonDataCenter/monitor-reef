@@ -480,10 +480,48 @@ impl Cli {
             .or_else(|| std::env::var("SDC_KEY_ID").ok())
             .unwrap_or_else(|| profile.key_id.clone());
 
-        let mut auth_config = triton_auth::AuthConfig::new(
-            final_account,
-            triton_auth::KeySource::auto(&final_key_id),
-        );
+        let key_source = triton_auth::KeySource::auto(&final_key_id);
+
+        // Eagerly probe the key to detect encrypted keys and prompt for passphrase
+        let key_source = match triton_auth::probe_key(&key_source).await {
+            Ok(triton_auth::KeyProbeResult::Ready) => key_source,
+            Ok(triton_auth::KeyProbeResult::Encrypted { path }) => {
+                let path_display = path.display().to_string();
+                let mut attempts = 0;
+                loop {
+                    let passphrase = rpassword::prompt_password(format!(
+                        "Enter passphrase for {} key {}: ",
+                        "RSA", path_display,
+                    ))
+                    .map_err(|e| anyhow::anyhow!("Failed to read passphrase: {}", e))?;
+
+                    match triton_auth::KeyLoader::load_legacy_from_file(&path, Some(&passphrase))
+                        .await
+                    {
+                        Ok(_) => {
+                            break triton_auth::KeySource::file_with_passphrase(&path, passphrase);
+                        }
+                        Err(_) => {
+                            attempts += 1;
+                            if attempts >= 3 {
+                                anyhow::bail!(
+                                    "Failed to decrypt key {} after 3 attempts",
+                                    path_display,
+                                );
+                            }
+                            eprintln!("Bad passphrase, try again ({}/3)...", attempts + 1);
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                // Non-fatal: let the request fail later with a clear error
+                tracing::debug!("Key probe failed: {}", e);
+                key_source
+            }
+        };
+
+        let mut auth_config = triton_auth::AuthConfig::new(final_account, key_source);
 
         // Apply RBAC options: CLI overrides profile
         if let Some(user) = self.user.as_ref().or(profile.user.as_ref()) {

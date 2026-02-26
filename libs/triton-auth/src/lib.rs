@@ -88,6 +88,7 @@ pub use fingerprint::{
 pub use key_loader::{KeyLoader, KeySource};
 pub use legacy_pem::{LegacyPrivateKey, PemKeyFormat};
 pub use signature::{KeyType, RequestSigner, encode_signature, sign_with_key};
+use std::path::PathBuf;
 
 /// Authentication configuration for CloudAPI requests
 #[derive(Clone, Debug)]
@@ -145,6 +146,71 @@ impl AuthConfig {
     pub fn with_accept_version(mut self, version: impl Into<String>) -> Self {
         self.accept_version = Some(version.into());
         self
+    }
+}
+
+/// Result of probing a key source to check if it's usable
+#[derive(Debug)]
+pub enum KeyProbeResult {
+    /// Key is ready to use (agent or unencrypted file)
+    Ready,
+    /// Key was found but is encrypted and requires a passphrase
+    Encrypted {
+        /// Path to the encrypted private key file
+        path: PathBuf,
+    },
+}
+
+/// Probe a key source to determine if it's ready or needs a passphrase
+///
+/// This eagerly checks whether the configured key can be loaded:
+/// - For `Agent`: checks if the key is in the agent
+/// - For `File`: checks if the file exists and is loadable
+/// - For `Auto`: tries agent first, then scans `.pub` files in `~/.ssh/`
+///
+/// Returns `Ready` if the key can be used immediately, `Encrypted { path }`
+/// if a passphrase is needed, or an error if the key cannot be found.
+pub async fn probe_key(key_source: &KeySource) -> Result<KeyProbeResult, AuthError> {
+    match key_source {
+        KeySource::Agent { fingerprint } => {
+            agent::find_key_in_agent(fingerprint).await?;
+            Ok(KeyProbeResult::Ready)
+        }
+        KeySource::File { path, passphrase } => {
+            if passphrase.is_some() {
+                return Ok(KeyProbeResult::Ready);
+            }
+            match KeyLoader::load_legacy_from_file(path, None).await {
+                Ok(_) => Ok(KeyProbeResult::Ready),
+                Err(AuthError::KeyEncrypted(_)) => {
+                    Ok(KeyProbeResult::Encrypted { path: path.clone() })
+                }
+                Err(e) => Err(e),
+            }
+        }
+        KeySource::Auto { fingerprint } => {
+            // Try agent first
+            match agent::find_key_in_agent(fingerprint).await {
+                Ok(_) => return Ok(KeyProbeResult::Ready),
+                Err(e) => {
+                    tracing::debug!("SSH agent probe failed, falling back to file: {}", e);
+                }
+            }
+
+            // Fall back to file-based scan
+            let home = dirs::home_dir().ok_or_else(|| {
+                AuthError::KeyLoadError("Could not determine home directory".into())
+            })?;
+            let ssh_dir = home.join(".ssh");
+
+            match KeyLoader::scan_ssh_dir_for_key(&ssh_dir, fingerprint).await {
+                Ok(_) => Ok(KeyProbeResult::Ready),
+                Err(AuthError::KeyEncrypted(path_str)) => Ok(KeyProbeResult::Encrypted {
+                    path: PathBuf::from(path_str),
+                }),
+                Err(e) => Err(e),
+            }
+        }
     }
 }
 

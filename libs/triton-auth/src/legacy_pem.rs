@@ -110,12 +110,13 @@ impl LegacyPrivateKey {
             PemKeyFormat::Dsa => Self::load_dsa(pem_data),
             PemKeyFormat::Pkcs8 => Self::load_pkcs8(pem_data),
             PemKeyFormat::EncryptedPkcs1 => {
-                // Encrypted traditional PEM is complex - for now, suggest converting
-                Err(AuthError::KeyLoadError(
-                    "Encrypted PKCS#1 keys are not yet supported. \
-                     Convert to OpenSSH format: ssh-keygen -p -o -f <keyfile>"
-                        .into(),
-                ))
+                if let Some(pass) = passphrase {
+                    Self::load_encrypted_pkcs1(pem_data, pass)
+                } else {
+                    Err(AuthError::KeyEncrypted(
+                        "Key is encrypted but no passphrase provided".into(),
+                    ))
+                }
             }
             PemKeyFormat::Unknown => Err(AuthError::KeyLoadError(
                 "Unknown key format. Supported formats: OpenSSH, PKCS#1 RSA, SEC1 ECDSA, DSA"
@@ -213,6 +214,43 @@ impl LegacyPrivateKey {
         Err(AuthError::KeyLoadError(
             "Failed to parse PKCS#8 key. Supported algorithms: RSA, ECDSA P-256/P-384".into(),
         ))
+    }
+
+    /// Load an encrypted PKCS#1 PEM key with passphrase
+    ///
+    /// Supports the traditional OpenSSL encrypted PEM format with:
+    /// - AES-128-CBC
+    /// - AES-256-CBC
+    /// - DES-EDE3-CBC (3DES)
+    ///
+    /// Key derivation uses the OpenSSL `EVP_BytesToKey` scheme (MD5-based KDF).
+    fn load_encrypted_pkcs1(pem_data: &str, passphrase: &str) -> Result<Self, AuthError> {
+        // Parse the PEM structure manually to extract DEK-Info and body
+        let (cipher_name, iv_hex, body_b64) = parse_encrypted_pem(pem_data)?;
+
+        // Decode IV from hex
+        let iv = hex_decode(&iv_hex)
+            .map_err(|e| AuthError::KeyLoadError(format!("Invalid IV hex in DEK-Info: {}", e)))?;
+
+        // Decode the base64 body
+        let body = base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &body_b64)
+            .map_err(|e| {
+                AuthError::KeyLoadError(format!("Invalid base64 in encrypted PEM: {}", e))
+            })?;
+
+        // Decrypt using EVP_BytesToKey KDF + the appropriate cipher
+        let decrypted = decrypt_pem_body(&cipher_name, passphrase.as_bytes(), &iv, &body)?;
+
+        // Parse decrypted DER as PKCS#1 RSA
+        use rsa::pkcs1::DecodeRsaPrivateKey;
+        let key = rsa::RsaPrivateKey::from_pkcs1_der(&decrypted).map_err(|e| {
+            AuthError::KeyLoadError(format!(
+                "Failed to parse decrypted PKCS#1 RSA key (wrong passphrase?): {}",
+                e,
+            ))
+        })?;
+
+        Ok(Self::Rsa(key))
     }
 
     /// Get the key type for HTTP Signature algorithm selection
@@ -556,6 +594,137 @@ fn write_ssh_mpint(buf: &mut Vec<u8>, data: &[u8]) {
         buf.extend_from_slice(&(data.len() as u32).to_be_bytes());
         buf.extend_from_slice(data);
     }
+}
+
+/// Parse encrypted PEM to extract cipher name, IV hex, and base64 body
+fn parse_encrypted_pem(pem_data: &str) -> Result<(String, String, String), AuthError> {
+    let mut in_headers = false;
+    let mut cipher_name = String::new();
+    let mut iv_hex = String::new();
+    let mut body_lines = Vec::new();
+    let mut past_headers = false;
+
+    for line in pem_data.lines() {
+        let line = line.trim();
+        if line.starts_with("-----BEGIN") {
+            in_headers = true;
+            continue;
+        }
+        if line.starts_with("-----END") {
+            break;
+        }
+        if in_headers && !past_headers {
+            if line.is_empty() {
+                // Blank line separates headers from body
+                past_headers = true;
+                continue;
+            }
+            if let Some(dek) = line.strip_prefix("DEK-Info:") {
+                let dek = dek.trim();
+                if let Some((cipher, iv)) = dek.split_once(',') {
+                    cipher_name = cipher.trim().to_string();
+                    iv_hex = iv.trim().to_string();
+                }
+            }
+            continue;
+        }
+        if !line.is_empty() {
+            body_lines.push(line);
+        }
+    }
+
+    if cipher_name.is_empty() || iv_hex.is_empty() {
+        return Err(AuthError::KeyLoadError(
+            "Missing DEK-Info header in encrypted PEM".into(),
+        ));
+    }
+
+    Ok((cipher_name, iv_hex, body_lines.join("")))
+}
+
+/// Decode hex string to bytes
+fn hex_decode(hex: &str) -> Result<Vec<u8>, String> {
+    if !hex.len().is_multiple_of(2) {
+        return Err("Odd-length hex string".into());
+    }
+    (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|e| e.to_string()))
+        .collect()
+}
+
+/// Decrypt PEM body using OpenSSL's EVP_BytesToKey KDF + specified cipher
+fn decrypt_pem_body(
+    cipher_name: &str,
+    passphrase: &[u8],
+    iv: &[u8],
+    body: &[u8],
+) -> Result<Vec<u8>, AuthError> {
+    use cbc::cipher::{BlockDecryptMut, KeyIvInit};
+
+    match cipher_name {
+        "AES-128-CBC" => {
+            let key = evp_bytes_to_key::<16>(passphrase, &iv[..8]);
+            type Aes128CbcDec = cbc::Decryptor<aes::Aes128>;
+            let mut buf = body.to_vec();
+            let decrypted = Aes128CbcDec::new_from_slices(&key, iv)
+                .map_err(|e| AuthError::KeyLoadError(format!("Cipher init error: {}", e)))?
+                .decrypt_padded_mut::<cbc::cipher::block_padding::Pkcs7>(&mut buf)
+                .map_err(|e| AuthError::KeyLoadError(format!("Decryption failed: {}", e)))?;
+            Ok(decrypted.to_vec())
+        }
+        "AES-256-CBC" => {
+            let key = evp_bytes_to_key::<32>(passphrase, &iv[..8]);
+            type Aes256CbcDec = cbc::Decryptor<aes::Aes256>;
+            let mut buf = body.to_vec();
+            let decrypted = Aes256CbcDec::new_from_slices(&key, iv)
+                .map_err(|e| AuthError::KeyLoadError(format!("Cipher init error: {}", e)))?
+                .decrypt_padded_mut::<cbc::cipher::block_padding::Pkcs7>(&mut buf)
+                .map_err(|e| AuthError::KeyLoadError(format!("Decryption failed: {}", e)))?;
+            Ok(decrypted.to_vec())
+        }
+        "DES-EDE3-CBC" => {
+            let key = evp_bytes_to_key::<24>(passphrase, &iv[..8]);
+            type Des3CbcDec = cbc::Decryptor<des::TdesEde3>;
+            let mut buf = body.to_vec();
+            let decrypted = Des3CbcDec::new_from_slices(&key, iv)
+                .map_err(|e| AuthError::KeyLoadError(format!("Cipher init error: {}", e)))?
+                .decrypt_padded_mut::<cbc::cipher::block_padding::Pkcs7>(&mut buf)
+                .map_err(|e| AuthError::KeyLoadError(format!("Decryption failed: {}", e)))?;
+            Ok(decrypted.to_vec())
+        }
+        _ => Err(AuthError::KeyLoadError(format!(
+            "Unsupported cipher: {}. Supported: AES-128-CBC, AES-256-CBC, DES-EDE3-CBC",
+            cipher_name
+        ))),
+    }
+}
+
+/// OpenSSL EVP_BytesToKey KDF (MD5-based)
+///
+/// Derives a key of `KEY_LEN` bytes from passphrase + salt using iterated MD5.
+/// This matches the key derivation used by `openssl enc` and traditional PEM encryption.
+fn evp_bytes_to_key<const KEY_LEN: usize>(passphrase: &[u8], salt: &[u8]) -> [u8; KEY_LEN] {
+    use md5::{Digest, Md5};
+
+    let mut key = [0u8; KEY_LEN];
+    let mut d = Vec::new();
+    let mut offset = 0;
+
+    while offset < KEY_LEN {
+        let mut hasher = Md5::new();
+        if !d.is_empty() {
+            hasher.update(&d);
+        }
+        hasher.update(passphrase);
+        hasher.update(salt);
+        d = hasher.finalize().to_vec();
+
+        let copy_len = std::cmp::min(d.len(), KEY_LEN - offset);
+        key[offset..offset + copy_len].copy_from_slice(&d[..copy_len]);
+        offset += copy_len;
+    }
+    key
 }
 
 #[cfg(test)]

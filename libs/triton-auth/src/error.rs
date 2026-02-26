@@ -19,6 +19,10 @@ pub enum AuthError {
     #[error("Key not found: {0}")]
     KeyNotFound(String),
 
+    /// Key was found but is encrypted and requires a passphrase
+    #[error("Key encrypted: {0}")]
+    KeyEncrypted(String),
+
     /// Error communicating with SSH agent
     #[error("SSH agent error: {0}")]
     AgentError(String),
