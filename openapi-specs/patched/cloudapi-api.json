@@ -4202,7 +4202,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
@@ -4210,7 +4210,7 @@
                 }
               }
             },
-            "description": "successful operation"
+            "description": "successfully enqueued operation"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"

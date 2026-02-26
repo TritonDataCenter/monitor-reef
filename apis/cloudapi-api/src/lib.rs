@@ -25,8 +25,8 @@
 //! to patch the Error schema. See `openapi-manager/src/transforms.rs` for details.
 
 use dropshot::{
-    HttpError, HttpResponseCreated, HttpResponseDeleted, HttpResponseOk, Path, Query,
-    RequestContext, TypedBody, WebsocketChannelResult, WebsocketConnection,
+    HttpError, HttpResponseAccepted, HttpResponseCreated, HttpResponseDeleted, HttpResponseOk,
+    Path, Query, RequestContext, TypedBody, WebsocketChannelResult, WebsocketConnection,
 };
 
 pub mod types;
@@ -1009,7 +1009,7 @@ pub trait CloudApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<FabricVlanPath>,
         body: TypedBody<UpdateFabricVlanRequest>,
-    ) -> Result<HttpResponseOk<FabricVlan>, HttpError>;
+    ) -> Result<HttpResponseAccepted<FabricVlan>, HttpError>;
 
     /// Delete fabric VLAN
     #[endpoint {
