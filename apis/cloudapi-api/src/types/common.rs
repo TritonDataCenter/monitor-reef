@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// UUID type
-pub type Uuid = uuid::Uuid;
+pub type Uuid = vmapi_api::Uuid;
 
 /// CloudAPI error response
 ///
@@ -33,7 +33,7 @@ pub struct ErrorResponse {
 }
 
 /// RFC3339 timestamp
-pub type Timestamp = String;
+pub type Timestamp = vmapi_api::Timestamp;
 
 /// Key-value tags (values can be strings, booleans, or numbers)
 pub type Tags = vmapi_api::Tags;
