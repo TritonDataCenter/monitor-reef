@@ -169,6 +169,8 @@ run_isolated() {
     (
         unset "${ISOLATED_ENV_UNSET[@]}"
         export HOME="$ISOLATED_HOME"
+        # Node-triton uses TRITONTEST_CLI_CONFIG_DIR; Rust uses TRITON_CONFIG_DIR
+        export TRITONTEST_CLI_CONFIG_DIR="$ISOLATED_CONFIG"
         export TRITON_CONFIG_DIR="$ISOLATED_CONFIG"
         # Export any VAR=val arguments (name must be a valid shell variable)
         while [[ "$1" =~ ^[A-Z_][A-Z0-9_]*= ]]; do
