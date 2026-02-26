@@ -109,13 +109,18 @@ pub enum DiskState {
 }
 
 /// Disk information
+///
+/// Note: CloudAPI returns all disk fields in snake_case, matching the
+/// VMAPI wire format passed through the `translate()` function.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct Disk {
     /// Disk UUID
     pub id: Uuid,
     /// Size in MB
     pub size: u64,
+    /// Block size in bytes
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub block_size: Option<u64>,
     /// PCI slot
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pci_slot: Option<String>,
@@ -129,7 +134,6 @@ pub struct Disk {
 
 /// Request to create disk
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct CreateDiskRequest {
     /// Size in MB
     pub size: u64,

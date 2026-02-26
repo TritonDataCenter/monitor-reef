@@ -585,6 +585,7 @@ fn fake_response_body(
             let fake = Disk {
                 id: last_seg_uuid,
                 size: 0,
+                block_size: None,
                 pci_slot: None,
                 boot: None,
                 state: None,

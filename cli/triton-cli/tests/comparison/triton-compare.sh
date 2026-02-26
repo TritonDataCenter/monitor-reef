@@ -811,6 +811,11 @@ run_payload_test() {
     extract_json_object < "$rust_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \
         || cp "$rust_out" "$rust_norm"
 
+    # Apply per-test node-side fixup if set (for filtering known client quirks)
+    if [[ -n "${PAYLOAD_NODE_JQ_FIXUP:-}" ]]; then
+        jq "$PAYLOAD_NODE_JQ_FIXUP" "$node_norm" > "$node_norm.tmp" && mv "$node_norm.tmp" "$node_norm"
+    fi
+
     compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
 }
 
@@ -1081,6 +1086,9 @@ run_payload_tests() {
 
     # --- Instance disk ---
 
+    # Node-triton's mapParams leaks the machine id as ?id=<uuid> on the
+    # GET list-disks request.  The server ignores it, so strip it here.
+    PAYLOAD_NODE_JQ_FIXUP='[.[] | .url |= split("?")[0]]' \
     run_payload_test "payload-disk-add" "instance disk add" \
         instance disk add "$INST_UUID" 10240
 

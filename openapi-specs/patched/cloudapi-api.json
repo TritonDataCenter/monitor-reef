@@ -377,7 +377,7 @@
       "CreateDiskRequest": {
         "description": "Request to create disk",
         "properties": {
-          "pciSlot": {
+          "pci_slot": {
             "default": null,
             "description": "PCI slot (optional)",
             "nullable": true,
@@ -855,8 +855,15 @@
         "type": "object"
       },
       "Disk": {
-        "description": "Disk information",
+        "description": "Disk information\n\nNote: CloudAPI returns all disk fields in snake_case, matching the VMAPI wire format passed through the `translate()` function.",
         "properties": {
+          "block_size": {
+            "description": "Block size in bytes",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
           "boot": {
             "default": null,
             "description": "Boot disk",
@@ -868,7 +875,7 @@
             "format": "uuid",
             "type": "string"
           },
-          "pciSlot": {
+          "pci_slot": {
             "description": "PCI slot",
             "nullable": true,
             "type": "string"

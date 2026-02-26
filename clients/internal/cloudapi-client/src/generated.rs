@@ -1057,7 +1057,7 @@ pub mod types {
     #[doc = "    \"size\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"pciSlot\": {"]
+    #[doc = "    \"pci_slot\": {"]
     #[doc = "      \"description\": \"PCI slot (optional)\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
@@ -1079,11 +1079,7 @@ pub mod types {
     )]
     pub struct CreateDiskRequest {
         #[doc = "PCI slot (optional)"]
-        #[serde(
-            rename = "pciSlot",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub pci_slot: ::std::option::Option<::std::string::String>,
         #[doc = "Size in MB"]
         pub size: u64,
@@ -2069,19 +2065,28 @@ pub mod types {
         }
     }
 
-    #[doc = "Disk information"]
+    #[doc = "Disk information\n\nNote: CloudAPI returns all disk fields in snake_case, matching the VMAPI wire format passed through the `translate()` function."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Disk information\","]
+    #[doc = "  \"description\": \"Disk information\\n\\nNote: CloudAPI returns all disk fields in snake_case, matching the VMAPI wire format passed through the `translate()` function.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"id\","]
     #[doc = "    \"size\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"block_size\": {"]
+    #[doc = "      \"description\": \"Block size in bytes\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    },"]
     #[doc = "    \"boot\": {"]
     #[doc = "      \"description\": \"Boot disk\","]
     #[doc = "      \"type\": ["]
@@ -2094,7 +2099,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
-    #[doc = "    \"pciSlot\": {"]
+    #[doc = "    \"pci_slot\": {"]
     #[doc = "      \"description\": \"PCI slot\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
@@ -2130,17 +2135,16 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct Disk {
+        #[doc = "Block size in bytes"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub block_size: ::std::option::Option<u64>,
         #[doc = "Boot disk"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub boot: ::std::option::Option<bool>,
         #[doc = "Disk UUID"]
         pub id: ::uuid::Uuid,
         #[doc = "PCI slot"]
-        #[serde(
-            rename = "pciSlot",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub pci_slot: ::std::option::Option<::std::string::String>,
         #[doc = "Size in MB"]
         pub size: u64,
@@ -10345,6 +10349,7 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct Disk {
+            block_size: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
             boot: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             pci_slot: ::std::result::Result<
@@ -10361,6 +10366,7 @@ pub mod types {
         impl ::std::default::Default for Disk {
             fn default() -> Self {
                 Self {
+                    block_size: Ok(Default::default()),
                     boot: Ok(Default::default()),
                     id: Err("no value supplied for id".to_string()),
                     pci_slot: Ok(Default::default()),
@@ -10371,6 +10377,16 @@ pub mod types {
         }
 
         impl Disk {
+            pub fn block_size<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<u64>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.block_size = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for block_size: {e}"));
+                self
+            }
             pub fn boot<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<bool>>,
@@ -10427,6 +10443,7 @@ pub mod types {
             type Error = super::error::ConversionError;
             fn try_from(value: Disk) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    block_size: value.block_size?,
                     boot: value.boot?,
                     id: value.id?,
                     pci_slot: value.pci_slot?,
@@ -10439,6 +10456,7 @@ pub mod types {
         impl ::std::convert::From<super::Disk> for Disk {
             fn from(value: super::Disk) -> Self {
                 Self {
+                    block_size: Ok(value.block_size),
                     boot: Ok(value.boot),
                     id: Ok(value.id),
                     pci_slot: Ok(value.pci_slot),
