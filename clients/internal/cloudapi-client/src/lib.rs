@@ -1311,6 +1311,9 @@ impl TypedClient {
 
     /// Update image metadata
     ///
+    /// Node-triton sends `?action=update` as a query parameter with the
+    /// update fields in the body. We match that wire format here.
+    ///
     /// # Arguments
     /// * `account` - Account login name
     /// * `dataset` - Image UUID
@@ -1333,6 +1336,9 @@ impl TypedClient {
     }
 
     /// Export image to Manta
+    ///
+    /// Node-triton sends `action` in the request body alongside `manta_path`,
+    /// so we use `ActionBody` here to match that wire format.
     ///
     /// # Arguments
     /// * `account` - Account login name
