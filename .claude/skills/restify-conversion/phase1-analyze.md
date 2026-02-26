@@ -137,7 +137,17 @@ Search for WebSocket or upgrade handling:
 
 Document these separately - they need Dropshot `#[channel]` attributes.
 
-### 8. Review Existing Clients/Tests for Field Accuracy
+### 8. Document Field Casing from translate() Functions
+
+For each endpoint's response handler, examine the `translate()` function (or equivalent response-building code):
+
+1. **Identify which fields are explicitly translated** to camelCase (e.g., `obj.vmUuid = vm.uuid`)
+2. **Identify which fields are passed through** from internal APIs (VMAPI, NAPI, PAPI) without renaming — these stay in snake_case
+3. **Record the wire format** for every multi-word field in the Phase 1 plan under "Field Naming Exceptions"
+
+This is critical because `#[serde(rename_all = "camelCase")]` applied to a struct where fields are actually snake_case will silently cause deserialization to miss those fields (they become `None`/default).
+
+### 9. Review Existing Clients/Tests for Field Accuracy
 
 If an existing client exists (e.g., node-triton for cloudapi), review it for:
 - Field names and types that differ from handler code assumptions
@@ -146,7 +156,7 @@ If an existing client exists (e.g., node-triton for cloudapi), review it for:
 
 Test fixtures in `test/` directories are valuable sources of actual response shapes.
 
-### 9. Write Plan File
+### 10. Write Plan File
 
 Create `conversion-plans/<service>/plan.md`:
 
@@ -252,6 +262,7 @@ Phase 1 is complete when:
 - [ ] Action dispatch endpoints analyzed with field details
 - [ ] WebSocket/channel endpoints identified
 - [ ] Response types verified (array vs map for each list endpoint)
+- [ ] Field casing verified from translate() functions for every multi-word field
 - [ ] Field naming exceptions documented
 - [ ] File structure planned
 - [ ] Plan file written to `conversion-plans/<service>/plan.md`

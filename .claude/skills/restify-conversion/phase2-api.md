@@ -71,7 +71,7 @@ Key patterns:
 - State/status enums: `#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]`
   - Include `PartialEq, Eq` so enums can be compared with `==` in CLI code
   - If the enum will be a CLI `--state`/`--sort` arg, also add `clap::ValueEnum`
-- Use `#[serde(rename_all = "camelCase")]` for JSON compatibility
+- Use `#[serde(rename_all = "camelCase")]` **only if the Node.js translate() function outputs camelCase** — see reference.md "JSON Field Naming" for details
 - Use `#[serde(default)]` for optional fields
 - Use `#[serde(rename = "field-name")]` for fields with hyphens or non-standard casing
 

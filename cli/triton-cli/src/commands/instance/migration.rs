@@ -153,7 +153,7 @@ async fn get_migration(args: MigrationGetArgs, client: &TypedClient, use_json: b
     if use_json {
         json::print_json(&migration)?;
     } else {
-        println!("Instance:   {}", migration.vm_uuid);
+        println!("Instance:   {}", migration.machine);
         println!("State:      {}", enum_to_display(&migration.state));
         println!("Phase:      {}", enum_to_display(&migration.phase));
         if let Some(progress) = migration.progress_percent {

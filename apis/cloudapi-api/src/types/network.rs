@@ -251,6 +251,9 @@ pub struct AddNicRequest {
 }
 
 /// Network IP information
+///
+/// Note: CloudAPI's `translateIp()` (networks.js) copies NAPI fields directly,
+/// so multi-word fields stay in snake_case (owner_uuid, belongs_to_uuid, etc.).
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct NetworkIp {
@@ -262,13 +265,28 @@ pub struct NetworkIp {
     #[serde(default)]
     pub managed: Option<bool>,
     /// Owner UUID
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Note: NAPI field passed through in snake_case by CloudAPI
+    #[serde(
+        rename = "owner_uuid",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub owner_uuid: Option<Uuid>,
     /// Belongs to UUID
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Note: NAPI field passed through in snake_case by CloudAPI
+    #[serde(
+        rename = "belongs_to_uuid",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub belongs_to_uuid: Option<Uuid>,
     /// Belongs to type
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Note: NAPI field passed through in snake_case by CloudAPI
+    #[serde(
+        rename = "belongs_to_type",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub belongs_to_type: Option<String>,
 }
 

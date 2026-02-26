@@ -193,16 +193,18 @@ fn test_nic_state_unknown_variant() {
     assert_eq!(parsed, NicState::Unknown);
 }
 
-/// Test NetworkIp deserialization.
+/// Test NetworkIp deserialization with snake_case wire format.
+///
+/// CloudAPI's translateIp() passes NAPI fields through directly in snake_case.
 #[test]
 fn test_network_ip_deserialize() {
     let json = r#"{
         "ip": "67.158.54.100",
         "reserved": true,
         "managed": false,
-        "ownerUuid": "9dce1460-0c4c-4417-ab8b-25ca478c5a78",
-        "belongsToUuid": "a1234567-1234-1234-1234-123456789012",
-        "belongsToType": "zone"
+        "owner_uuid": "9dce1460-0c4c-4417-ab8b-25ca478c5a78",
+        "belongs_to_uuid": "a1234567-1234-1234-1234-123456789012",
+        "belongs_to_type": "zone"
     }"#;
 
     let ip: NetworkIp = serde_json::from_str(json).unwrap();
@@ -211,6 +213,25 @@ fn test_network_ip_deserialize() {
     assert_eq!(ip.managed, Some(false));
     assert!(ip.owner_uuid.is_some());
     assert_eq!(ip.belongs_to_type.as_deref(), Some("zone"));
+
+    // Verify round-trip uses snake_case wire format
+    let serialized = serde_json::to_value(&ip).unwrap();
+    assert!(
+        serialized.get("owner_uuid").is_some(),
+        "should serialize as 'owner_uuid' (snake_case)"
+    );
+    assert!(
+        serialized.get("ownerUuid").is_none(),
+        "should not serialize as 'ownerUuid' (camelCase)"
+    );
+    assert!(
+        serialized.get("belongs_to_uuid").is_some(),
+        "should serialize as 'belongs_to_uuid' (snake_case)"
+    );
+    assert!(
+        serialized.get("belongs_to_type").is_some(),
+        "should serialize as 'belongs_to_type' (snake_case)"
+    );
 }
 
 /// Test that CreateFabricNetworkRequest serializes field names as snake_case,

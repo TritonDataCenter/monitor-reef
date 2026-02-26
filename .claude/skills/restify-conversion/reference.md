@@ -126,29 +126,52 @@ If the literal endpoint is just a convenience alias for a default value, merge t
 
 ## JSON Field Naming (API Compatibility)
 
-The original Node.js API often uses camelCase in JSON responses, but **not always**. Check actual responses.
+**Do NOT blindly apply `rename_all = "camelCase"`**. The Node.js `translate()` function in each endpoint handler is the ground truth for the wire format. Many internal/VMAPI-passthrough fields stay in snake_case even in CloudAPI responses.
+
+### Determining the correct casing
+
+1. **Read the `translate()` function** (or equivalent response-building code) in the Node.js source
+2. Fields explicitly translated (e.g., `obj.vmUuid = vm.uuid`) → camelCase
+3. Fields passed through from internal APIs (VMAPI, NAPI, PAPI) → usually stay snake_case
+4. When in doubt, check node-triton test fixtures or actual API responses
+
+### Applying serde attributes
 
 1. Use snake_case for Rust field names (idiomatic Rust)
-2. Add `#[serde(rename_all = "camelCase")]` on structs **if** the API uses camelCase
-3. For individual fields that differ, use `#[serde(rename = "originalName")]`
+2. Add `#[serde(rename_all = "camelCase")]` **only if all (or nearly all) fields** use camelCase in the wire format
+3. For individual fields that differ from the struct-level convention, use `#[serde(rename = "wire_name")]`
+4. If most fields are snake_case, **omit `rename_all`** entirely — Rust snake_case matches the wire format
 
 ```rust
+// GOOD: struct where most fields are camelCase, with explicit overrides
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct VmInfo {
-    pub vm_uuid: String,        // Serializes as "vmUuid"
-    pub owner_uuid: String,     // Serializes as "ownerUuid"
-    #[serde(rename = "RAM")]    // Override for specific field
-    pub ram: u64,
+pub struct Machine {
+    pub id: Uuid,
+    pub name: String,
+    // CloudAPI returns this as snake_case despite other fields being camelCase
+    #[serde(rename = "dns_names", default, skip_serializing_if = "Option::is_none")]
+    pub dns_names: Option<Vec<String>>,
+}
+
+// GOOD: struct where fields are snake_case (passthrough from internal API)
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct Migration {
+    #[serde(rename = "machine")]
+    pub vm_uuid: Uuid,
+    pub created_timestamp: Timestamp,  // snake_case matches wire format
 }
 ```
 
 **Common exceptions to watch for:**
 - Fields with hyphens: `role-tag` → `#[serde(rename = "role-tag")]`
-- Fields that stay snake_case: `triton_cns_enabled`, `published_at`
+- VMAPI/NAPI/PAPI passthrough fields: `owner_uuid`, `belongs_to_uuid`, `*_timestamp`
 - All-caps fields: `RAM`, `DNS`
+- Keyword fields: `type` → `#[serde(rename = "type")]` on `machine_type`
 
-Document these in the Phase 1 plan under "Field Naming Exceptions".
+**Cautionary examples:** The `Disk`, `Migration`, and `PackageDisk` structs were all initially given `rename_all = "camelCase"` which caused deserialization failures for snake_case fields like `pci_slot`, `created_timestamp`, and `block_size`.
+
+Document field naming decisions in the Phase 1 plan under "Field Naming Exceptions".
 
 ## UUID Handling (IMPORTANT Behavior Change)
 

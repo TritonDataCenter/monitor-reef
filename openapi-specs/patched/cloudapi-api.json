@@ -1740,7 +1740,7 @@
         "type": "object"
       },
       "Migration": {
-        "description": "Migration information",
+        "description": "Migration information\n\nNote: CloudAPI passes VMAPI migration fields through in snake_case (see migrations.js — `*_timestamp` fields are not translated to camelCase). Only `vm_uuid` is translated to `machine`.",
         "properties": {
           "automatic": {
             "default": null,
@@ -1748,13 +1748,18 @@
             "nullable": true,
             "type": "boolean"
           },
-          "createdTimestamp": {
+          "created_timestamp": {
             "description": "Creation timestamp",
             "type": "string"
           },
-          "finishedTimestamp": {
+          "finished_timestamp": {
             "description": "Finished timestamp",
             "nullable": true,
+            "type": "string"
+          },
+          "machine": {
+            "description": "Machine UUID being migrated\n\nNote: The Node.js CloudAPI translates VMAPI's `vm_uuid` to `machine`.",
+            "format": "uuid",
             "type": "string"
           },
           "phase": {
@@ -1765,7 +1770,7 @@
             ],
             "description": "Migration phase"
           },
-          "progressHistory": {
+          "progress_history": {
             "description": "Progress history for detailed tracking",
             "items": {
               "$ref": "#/components/schemas/MigrationProgressEntry"
@@ -1773,7 +1778,7 @@
             "nullable": true,
             "type": "array"
           },
-          "progressPercent": {
+          "progress_percent": {
             "description": "Progress percentage (0-100)",
             "format": "double",
             "nullable": true,
@@ -1787,22 +1792,17 @@
             ],
             "description": "Migration state"
           },
-          "updatedTimestamp": {
+          "updated_timestamp": {
             "description": "Last update timestamp",
             "nullable": true,
-            "type": "string"
-          },
-          "vmUuid": {
-            "description": "Machine UUID being migrated\n\nNote: The Node.js CloudAPI translates VMAPI's `vm_uuid` to `machine`. We keep `vm_uuid` here for direct VMAPI compatibility, but the field may be renamed to `machine` in the response.",
-            "format": "uuid",
             "type": "string"
           }
         },
         "required": [
-          "createdTimestamp",
+          "created_timestamp",
+          "machine",
           "phase",
-          "state",
-          "vmUuid"
+          "state"
         ],
         "type": "object"
       },
@@ -2086,15 +2086,15 @@
         "type": "object"
       },
       "NetworkIp": {
-        "description": "Network IP information",
+        "description": "Network IP information\n\nNote: CloudAPI's `translateIp()` (networks.js) copies NAPI fields directly, so multi-word fields stay in snake_case (owner_uuid, belongs_to_uuid, etc.).",
         "properties": {
-          "belongsToType": {
-            "description": "Belongs to type",
+          "belongs_to_type": {
+            "description": "Belongs to type Note: NAPI field passed through in snake_case by CloudAPI",
             "nullable": true,
             "type": "string"
           },
-          "belongsToUuid": {
-            "description": "Belongs to UUID",
+          "belongs_to_uuid": {
+            "description": "Belongs to UUID Note: NAPI field passed through in snake_case by CloudAPI",
             "format": "uuid",
             "nullable": true,
             "type": "string"
@@ -2109,8 +2109,8 @@
             "nullable": true,
             "type": "boolean"
           },
-          "ownerUuid": {
-            "description": "Owner UUID",
+          "owner_uuid": {
+            "description": "Owner UUID Note: NAPI field passed through in snake_case by CloudAPI",
             "format": "uuid",
             "nullable": true,
             "type": "string"
@@ -2318,9 +2318,9 @@
         "type": "object"
       },
       "PackageDisk": {
-        "description": "Disk configuration in a package (bhyve only)",
+        "description": "Disk configuration in a package (bhyve only)\n\nNote: PAPI returns package disk fields in snake_case, and CloudAPI passes them through directly (packages.js). No camelCase translation.",
         "properties": {
-          "blockSize": {
+          "block_size": {
             "description": "Block size in bytes",
             "format": "uint64",
             "minimum": 0,

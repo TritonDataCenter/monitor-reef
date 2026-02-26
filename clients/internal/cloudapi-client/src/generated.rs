@@ -4481,19 +4481,19 @@ pub mod types {
         }
     }
 
-    #[doc = "Migration information"]
+    #[doc = "Migration information\n\nNote: CloudAPI passes VMAPI migration fields through in snake_case (see migrations.js — `*_timestamp` fields are not translated to camelCase). Only `vm_uuid` is translated to `machine`."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Migration information\","]
+    #[doc = "  \"description\": \"Migration information\\n\\nNote: CloudAPI passes VMAPI migration fields through in snake_case (see migrations.js — `*_timestamp` fields are not translated to camelCase). Only `vm_uuid` is translated to `machine`.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
-    #[doc = "    \"createdTimestamp\","]
+    #[doc = "    \"created_timestamp\","]
+    #[doc = "    \"machine\","]
     #[doc = "    \"phase\","]
-    #[doc = "    \"state\","]
-    #[doc = "    \"vmUuid\""]
+    #[doc = "    \"state\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"automatic\": {"]
@@ -4503,16 +4503,21 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
-    #[doc = "    \"createdTimestamp\": {"]
+    #[doc = "    \"created_timestamp\": {"]
     #[doc = "      \"description\": \"Creation timestamp\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
-    #[doc = "    \"finishedTimestamp\": {"]
+    #[doc = "    \"finished_timestamp\": {"]
     #[doc = "      \"description\": \"Finished timestamp\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"machine\": {"]
+    #[doc = "      \"description\": \"Machine UUID being migrated\\n\\nNote: The Node.js CloudAPI translates VMAPI's `vm_uuid` to `machine`.\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"phase\": {"]
     #[doc = "      \"description\": \"Migration phase\","]
@@ -4522,7 +4527,7 @@ pub mod types {
     #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    },"]
-    #[doc = "    \"progressHistory\": {"]
+    #[doc = "    \"progress_history\": {"]
     #[doc = "      \"description\": \"Progress history for detailed tracking\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"array\","]
@@ -4532,7 +4537,7 @@ pub mod types {
     #[doc = "        \"$ref\": \"#/components/schemas/MigrationProgressEntry\""]
     #[doc = "      }"]
     #[doc = "    },"]
-    #[doc = "    \"progressPercent\": {"]
+    #[doc = "    \"progress_percent\": {"]
     #[doc = "      \"description\": \"Progress percentage (0-100)\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"number\","]
@@ -4548,17 +4553,12 @@ pub mod types {
     #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    },"]
-    #[doc = "    \"updatedTimestamp\": {"]
+    #[doc = "    \"updated_timestamp\": {"]
     #[doc = "      \"description\": \"Last update timestamp\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
-    #[doc = "    },"]
-    #[doc = "    \"vmUuid\": {"]
-    #[doc = "      \"description\": \"Machine UUID being migrated\\n\\nNote: The Node.js CloudAPI translates VMAPI's `vm_uuid` to `machine`. We keep `vm_uuid` here for direct VMAPI compatibility, but the field may be renamed to `machine` in the response.\","]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"format\": \"uuid\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -4572,43 +4572,25 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub automatic: ::std::option::Option<bool>,
         #[doc = "Creation timestamp"]
-        #[serde(rename = "createdTimestamp")]
         pub created_timestamp: ::std::string::String,
         #[doc = "Finished timestamp"]
-        #[serde(
-            rename = "finishedTimestamp",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub finished_timestamp: ::std::option::Option<::std::string::String>,
+        #[doc = "Machine UUID being migrated\n\nNote: The Node.js CloudAPI translates VMAPI's `vm_uuid` to `machine`."]
+        pub machine: ::uuid::Uuid,
         #[doc = "Migration phase"]
         pub phase: MigrationPhase,
         #[doc = "Progress history for detailed tracking"]
-        #[serde(
-            rename = "progressHistory",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub progress_history: ::std::option::Option<::std::vec::Vec<MigrationProgressEntry>>,
         #[doc = "Progress percentage (0-100)"]
-        #[serde(
-            rename = "progressPercent",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub progress_percent: ::std::option::Option<f64>,
         #[doc = "Migration state"]
         pub state: MigrationState,
         #[doc = "Last update timestamp"]
-        #[serde(
-            rename = "updatedTimestamp",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub updated_timestamp: ::std::option::Option<::std::string::String>,
-        #[doc = "Machine UUID being migrated\n\nNote: The Node.js CloudAPI translates VMAPI's `vm_uuid` to `machine`. We keep `vm_uuid` here for direct VMAPI compatibility, but the field may be renamed to `machine` in the response."]
-        #[serde(rename = "vmUuid")]
-        pub vm_uuid: ::uuid::Uuid,
     }
 
     impl Migration {
@@ -5407,28 +5389,28 @@ pub mod types {
         }
     }
 
-    #[doc = "Network IP information"]
+    #[doc = "Network IP information\n\nNote: CloudAPI's `translateIp()` (networks.js) copies NAPI fields directly, so multi-word fields stay in snake_case (owner_uuid, belongs_to_uuid, etc.)."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Network IP information\","]
+    #[doc = "  \"description\": \"Network IP information\\n\\nNote: CloudAPI's `translateIp()` (networks.js) copies NAPI fields directly, so multi-word fields stay in snake_case (owner_uuid, belongs_to_uuid, etc.).\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"ip\","]
     #[doc = "    \"reserved\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"belongsToType\": {"]
-    #[doc = "      \"description\": \"Belongs to type\","]
+    #[doc = "    \"belongs_to_type\": {"]
+    #[doc = "      \"description\": \"Belongs to type Note: NAPI field passed through in snake_case by CloudAPI\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
-    #[doc = "    \"belongsToUuid\": {"]
-    #[doc = "      \"description\": \"Belongs to UUID\","]
+    #[doc = "    \"belongs_to_uuid\": {"]
+    #[doc = "      \"description\": \"Belongs to UUID Note: NAPI field passed through in snake_case by CloudAPI\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -5446,8 +5428,8 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
-    #[doc = "    \"ownerUuid\": {"]
-    #[doc = "      \"description\": \"Owner UUID\","]
+    #[doc = "    \"owner_uuid\": {"]
+    #[doc = "      \"description\": \"Owner UUID Note: NAPI field passed through in snake_case by CloudAPI\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -5466,31 +5448,19 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct NetworkIp {
-        #[doc = "Belongs to type"]
-        #[serde(
-            rename = "belongsToType",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[doc = "Belongs to type Note: NAPI field passed through in snake_case by CloudAPI"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub belongs_to_type: ::std::option::Option<::std::string::String>,
-        #[doc = "Belongs to UUID"]
-        #[serde(
-            rename = "belongsToUuid",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[doc = "Belongs to UUID Note: NAPI field passed through in snake_case by CloudAPI"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub belongs_to_uuid: ::std::option::Option<::uuid::Uuid>,
         #[doc = "IP address"]
         pub ip: ::std::string::String,
         #[doc = "Managed"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub managed: ::std::option::Option<bool>,
-        #[doc = "Owner UUID"]
-        #[serde(
-            rename = "ownerUuid",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[doc = "Owner UUID Note: NAPI field passed through in snake_case by CloudAPI"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub owner_uuid: ::std::option::Option<::uuid::Uuid>,
         #[doc = "Reserved"]
         pub reserved: bool,
@@ -5936,16 +5906,16 @@ pub mod types {
         }
     }
 
-    #[doc = "Disk configuration in a package (bhyve only)"]
+    #[doc = "Disk configuration in a package (bhyve only)\n\nNote: PAPI returns package disk fields in snake_case, and CloudAPI passes them through directly (packages.js). No camelCase translation."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Disk configuration in a package (bhyve only)\","]
+    #[doc = "  \"description\": \"Disk configuration in a package (bhyve only)\\n\\nNote: PAPI returns package disk fields in snake_case, and CloudAPI passes them through directly (packages.js). No camelCase translation.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"blockSize\": {"]
+    #[doc = "    \"block_size\": {"]
     #[doc = "      \"description\": \"Block size in bytes\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"integer\","]
@@ -5978,11 +5948,7 @@ pub mod types {
     )]
     pub struct PackageDisk {
         #[doc = "Block size in bytes"]
-        #[serde(
-            rename = "blockSize",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub block_size: ::std::option::Option<u64>,
         #[doc = "Disk size in MB or a named value like \"remaining\""]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -12333,6 +12299,7 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            machine: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             phase: ::std::result::Result<super::MigrationPhase, ::std::string::String>,
             progress_history: ::std::result::Result<
                 ::std::option::Option<::std::vec::Vec<super::MigrationProgressEntry>>,
@@ -12345,7 +12312,6 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
-            vm_uuid: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
         }
 
         impl ::std::default::Default for Migration {
@@ -12354,12 +12320,12 @@ pub mod types {
                     automatic: Ok(Default::default()),
                     created_timestamp: Err("no value supplied for created_timestamp".to_string()),
                     finished_timestamp: Ok(Default::default()),
+                    machine: Err("no value supplied for machine".to_string()),
                     phase: Err("no value supplied for phase".to_string()),
                     progress_history: Ok(Default::default()),
                     progress_percent: Ok(Default::default()),
                     state: Err("no value supplied for state".to_string()),
                     updated_timestamp: Ok(Default::default()),
-                    vm_uuid: Err("no value supplied for vm_uuid".to_string()),
                 }
             }
         }
@@ -12393,6 +12359,16 @@ pub mod types {
                 self.finished_timestamp = value.try_into().map_err(|e| {
                     format!("error converting supplied value for finished_timestamp: {e}")
                 });
+                self
+            }
+            pub fn machine<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.machine = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for machine: {e}"));
                 self
             }
             pub fn phase<T>(mut self, value: T) -> Self
@@ -12447,16 +12423,6 @@ pub mod types {
                 });
                 self
             }
-            pub fn vm_uuid<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::uuid::Uuid>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.vm_uuid = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for vm_uuid: {e}"));
-                self
-            }
         }
 
         impl ::std::convert::TryFrom<Migration> for super::Migration {
@@ -12468,12 +12434,12 @@ pub mod types {
                     automatic: value.automatic?,
                     created_timestamp: value.created_timestamp?,
                     finished_timestamp: value.finished_timestamp?,
+                    machine: value.machine?,
                     phase: value.phase?,
                     progress_history: value.progress_history?,
                     progress_percent: value.progress_percent?,
                     state: value.state?,
                     updated_timestamp: value.updated_timestamp?,
-                    vm_uuid: value.vm_uuid?,
                 })
             }
         }
@@ -12484,12 +12450,12 @@ pub mod types {
                     automatic: Ok(value.automatic),
                     created_timestamp: Ok(value.created_timestamp),
                     finished_timestamp: Ok(value.finished_timestamp),
+                    machine: Ok(value.machine),
                     phase: Ok(value.phase),
                     progress_history: Ok(value.progress_history),
                     progress_percent: Ok(value.progress_percent),
                     state: Ok(value.state),
                     updated_timestamp: Ok(value.updated_timestamp),
-                    vm_uuid: Ok(value.vm_uuid),
                 }
             }
         }

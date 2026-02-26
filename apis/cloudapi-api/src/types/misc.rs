@@ -37,8 +37,10 @@ pub enum DiskSize {
 }
 
 /// Disk configuration in a package (bhyve only)
+///
+/// Note: PAPI returns package disk fields in snake_case, and CloudAPI passes
+/// them through directly (packages.js). No camelCase translation.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct PackageDisk {
     /// Disk size in MB or a named value like "remaining"
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -211,15 +213,16 @@ pub enum MigrationAction {
 }
 
 /// Migration information
+///
+/// Note: CloudAPI passes VMAPI migration fields through in snake_case
+/// (see migrations.js — `*_timestamp` fields are not translated to camelCase).
+/// Only `vm_uuid` is translated to `machine`.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct Migration {
     /// Machine UUID being migrated
     ///
     /// Note: The Node.js CloudAPI translates VMAPI's `vm_uuid` to `machine`.
-    /// We keep `vm_uuid` here for direct VMAPI compatibility, but the field
-    /// may be renamed to `machine` in the response.
-    #[serde(alias = "machine")]
+    #[serde(rename = "machine")]
     pub vm_uuid: Uuid,
     /// Migration phase
     pub phase: MigrationPhase,
