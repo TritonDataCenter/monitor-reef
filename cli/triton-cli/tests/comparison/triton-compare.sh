@@ -1040,6 +1040,9 @@ run_payload_tests() {
     run_payload_test "payload-image-create" "image create" \
         image create "$INST_UUID" test-image 1.0.0
 
+    run_payload_test "payload-image-list-o" "image list -o" \
+        images -o shortid,name,version
+
     # --- Instance actions (remaining) ---
 
     run_payload_test "payload-rename" "instance rename" \
@@ -1142,8 +1145,11 @@ run_payload_tests() {
     run_payload_test "payload-vlan-delete" "vlan delete" \
         vlan delete 100
 
-    run_payload_test "payload-vlan-update" "vlan update" \
-        vlan update 100 name=updated-vlan
+    # Disabled: node-triton's tritonapi.updateFabricVlan is not a function
+    # (bug in node-triton), so it emits an empty payload and exits 1.
+    # Rust correctly emits a PUT request. Nothing to compare against.
+    # run_payload_test "payload-vlan-update" "vlan update" \
+    #     vlan update 100 name=updated-vlan
 
     # --- Firewall rule (additional) ---
 
