@@ -88,6 +88,7 @@ pub use fingerprint::{
 pub use key_loader::{KeyLoader, KeySource};
 pub use legacy_pem::{LegacyPrivateKey, PemKeyFormat};
 pub use signature::{KeyType, RequestSigner, encode_signature, sign_with_key};
+use std::path::PathBuf;
 
 /// Authentication configuration for CloudAPI requests
 #[derive(Clone, Debug)]
@@ -148,6 +149,71 @@ impl AuthConfig {
     }
 }
 
+/// Result of probing a key source to check if it's usable
+#[derive(Debug)]
+pub enum KeyProbeResult {
+    /// Key is ready to use (agent or unencrypted file)
+    Ready,
+    /// Key was found but is encrypted and requires a passphrase
+    Encrypted {
+        /// Path to the encrypted private key file
+        path: PathBuf,
+    },
+}
+
+/// Probe a key source to determine if it's ready or needs a passphrase
+///
+/// This eagerly checks whether the configured key can be loaded:
+/// - For `Agent`: checks if the key is in the agent
+/// - For `File`: checks if the file exists and is loadable
+/// - For `Auto`: tries agent first, then scans `.pub` files in `~/.ssh/`
+///
+/// Returns `Ready` if the key can be used immediately, `Encrypted { path }`
+/// if a passphrase is needed, or an error if the key cannot be found.
+pub async fn probe_key(key_source: &KeySource) -> Result<KeyProbeResult, AuthError> {
+    match key_source {
+        KeySource::Agent { fingerprint } => {
+            agent::find_key_in_agent(fingerprint).await?;
+            Ok(KeyProbeResult::Ready)
+        }
+        KeySource::File { path, passphrase } => {
+            if passphrase.is_some() {
+                return Ok(KeyProbeResult::Ready);
+            }
+            match KeyLoader::load_legacy_from_file(path, None).await {
+                Ok(_) => Ok(KeyProbeResult::Ready),
+                Err(AuthError::KeyEncrypted(_)) => {
+                    Ok(KeyProbeResult::Encrypted { path: path.clone() })
+                }
+                Err(e) => Err(e),
+            }
+        }
+        KeySource::Auto { fingerprint } => {
+            // Try agent first
+            match agent::find_key_in_agent(fingerprint).await {
+                Ok(_) => return Ok(KeyProbeResult::Ready),
+                Err(e) => {
+                    tracing::debug!("SSH agent probe failed, falling back to file: {}", e);
+                }
+            }
+
+            // Fall back to file-based scan
+            let home = dirs::home_dir().ok_or_else(|| {
+                AuthError::KeyLoadError("Could not determine home directory".into())
+            })?;
+            let ssh_dir = home.join(".ssh");
+
+            match KeyLoader::scan_ssh_dir_for_key(&ssh_dir, fingerprint).await {
+                Ok(_) => Ok(KeyProbeResult::Ready),
+                Err(AuthError::KeyEncrypted(path_str)) => Ok(KeyProbeResult::Encrypted {
+                    path: PathBuf::from(path_str),
+                }),
+                Err(e) => Err(e),
+            }
+        }
+    }
+}
+
 /// Sign an HTTP request and return the Date and Authorization headers
 ///
 /// # Arguments
@@ -188,18 +254,21 @@ pub async fn sign_request(
             let sig_bytes = agent::sign_with_agent(fingerprint, signing_string.as_bytes()).await?;
             (key_type, encode_signature(&sig_bytes), md5_fp)
         }
-        KeySource::File { .. } => {
-            // Load key from file
-            let key = KeyLoader::load_private_key(&config.key_source).await?;
-            let key_type = KeyType::from_private_key(&key)?;
-            // Always compute MD5 fingerprint for the Authorization header
-            let md5_fp = md5_fingerprint(key.public_key())?;
+        KeySource::File {
+            path: key_path,
+            passphrase,
+        } => {
+            // Load key from file (supports all PEM formats including encrypted)
+            let legacy_key =
+                KeyLoader::load_legacy_from_file(key_path, passphrase.as_deref()).await?;
+            let key_type = legacy_key.key_type()?;
+            let pub_blob = legacy_key.public_key_blob()?;
+            let md5_fp = fingerprint::md5_fingerprint_bytes(&pub_blob);
 
-            // Create signing string and sign
             let signer = create_signer_with_fp(config, key_type, &md5_fp);
             let signing_string = signer.signing_string(method, path, &date);
-            let signature_b64 = sign_with_key(&key, signing_string.as_bytes())?;
-            (key_type, signature_b64, md5_fp)
+            let sig_bytes = legacy_key.sign(signing_string.as_bytes())?;
+            (key_type, encode_signature(&sig_bytes), md5_fp)
         }
         KeySource::Auto { fingerprint } => {
             // Try agent first, fall back to file
