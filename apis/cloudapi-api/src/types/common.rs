@@ -8,8 +8,6 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::HashMap;
 
 /// UUID type
 pub type Uuid = uuid::Uuid;
@@ -38,7 +36,7 @@ pub struct ErrorResponse {
 pub type Timestamp = String;
 
 /// Key-value tags (values can be strings, booleans, or numbers)
-pub type Tags = HashMap<String, Value>;
+pub type Tags = vmapi_api::Tags;
 
 /// Key-value metadata (values can be strings, booleans, or numbers)
 pub type Metadata = vmapi_api::MetadataObject;
