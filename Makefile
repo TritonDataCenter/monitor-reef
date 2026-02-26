@@ -278,7 +278,7 @@ list: ## List all APIs, services and clients
 	@ls -1 openapi-specs/generated/ 2>/dev/null || echo "  No specs generated yet (run: make openapi-generate)"
 
 # Validation and CI commands
-check:: | $(CARGO_EXEC) ## Run all validation checks (CI-ready)
+check:: | $(CARGO_NEXTEST_EXEC) $(CARGO_EXEC) ## Run all validation checks (CI-ready)
 	@echo "Running all validation checks..."
 	$(MAKE) arch-lint
 	$(MAKE) openapi-check
