@@ -199,15 +199,16 @@ fn finalize_mpu_updates(
 
 /// Create mdapi clients for all configured shards.
 ///
-/// Each shard host has `:2030` appended to form the endpoint string
-/// expected by `mdapi_client::create_client`.
+/// Each shard host is resolved via DNS SRV
+/// (`_buckets-mdapi._tcp.{host}`) to discover the
+/// IP and port dynamically.
 fn create_mdapi_clients_from_shards(
     shards: &[crate::config::MdapiShard],
 ) -> Result<Vec<MdapiClient>, Error> {
     let mut clients = Vec::with_capacity(shards.len());
     for shard in shards {
-        let endpoint = format!("{}:2030", shard.host);
-        let client = mdapi_client::create_client(&endpoint)?;
+        let client =
+            mdapi_client::create_client(&shard.host)?;
         clients.push(client);
     }
     Ok(clients)
@@ -3246,6 +3247,22 @@ fn start_sharkspotter(
     max_shard: u32,
 ) -> Result<thread::JoinHandle<Result<(), Error>>, Error> {
     let shark = &job_action.from_shark.manta_storage_id;
+
+    // Resolve mdapi SRV records before building config.
+    let mdapi_endpoints: Vec<String> = job_action
+        .config
+        .mdapi
+        .shards
+        .iter()
+        .map(|s| {
+            let addr =
+                mdapi_client::get_mdapi_srv_sockaddr(
+                    &s.host,
+                )?;
+            Ok(format!("{}:{}", addr.ip(), addr.port()))
+        })
+        .collect::<Result<Vec<String>, Error>>()?;
+
     let config = sharkspotter::config::Config {
         domain: String::from(domain),
         min_shard,
@@ -3254,13 +3271,7 @@ fn start_sharkspotter(
         chunk_size: job_action.config.options.md_read_chunk_size as u64,
         direct_db: true,
         max_threads: job_action.config.options.max_md_read_threads,
-        mdapi_endpoints: job_action
-            .config
-            .mdapi
-            .shards
-            .iter()
-            .map(|s| format!("{}:2030", s.host))
-            .collect(),
+        mdapi_endpoints,
         ..Default::default()
     };
 

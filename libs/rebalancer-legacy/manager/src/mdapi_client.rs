@@ -10,19 +10,28 @@
 
 //! Mdapi Client Module
 //!
-//! This module provides a client wrapper for the buckets-mdapi service,
-//! which uses structured PostgreSQL tables instead of moray's flexible
-//! JSON key-value storage. It handles schema translation between the
-//! rebalancer's MantaObject format and mdapi's ObjectPayload format.
+//! Provides a client wrapper for the buckets-mdapi service,
+//! which uses structured PostgreSQL tables instead of moray's
+//! flexible JSON key-value storage.  Handles schema translation
+//! between the rebalancer's MantaObject format and mdapi's
+//! ObjectPayload format.
 //!
-//! The mdapi client provides equivalent functionality to the moray client
-//! but works with the structured schema used by manta-buckets-api.
+//! The mdapi client provides equivalent functionality to the
+//! moray client but works with the structured schema used by
+//! manta-buckets-api.
+//!
+//! # DNS SRV Discovery
+//!
+//! Like the moray client, mdapi uses DNS SRV records for
+//! service discovery.  The `create_client` function resolves
+//! `_buckets-mdapi._tcp.{host}` to discover the IP and port.
 //!
 //! # Backend Selection
 //!
 //! To use mdapi instead of moray in evacuate jobs:
 //!
-//! 1. Configure mdapi shards (populated via BUCKETS_MDAPI_ENDPOINTS SAPI metadata):
+//! 1. Configure mdapi shards (populated via
+//!    BUCKETS_MDAPI_ENDPOINTS SAPI metadata):
 //!    ```json
 //!    "mdapi": {
 //!        "shards": [
@@ -32,15 +41,21 @@
 //!    }
 //!    ```
 //!
-//! 2. In evacuate.rs, check config and use appropriate client:
+//! 2. In evacuate.rs, check config and use appropriate
+//!    client:
 //!    ```rust,ignore
 //!    if mdapi_client::should_use_mdapi(&job_config.mdapi) {
-//!        // Create client per shard; route updates by vnode
-//!        let mclient = mdapi_client::create_client(&shard_host)?;
-//!        mdapi_client::put_object(&mclient, &object, bucket_id, Some(&etag))?;
+//!        let mclient =
+//!            mdapi_client::create_client(&shard_host)?;
+//!        mdapi_client::put_object(
+//!            &mclient, &object, bucket_id, Some(&etag),
+//!        )?;
 //!    } else {
-//!        let mut mclient = moray_client::create_client(shard, &domain)?;
-//!        moray_client::put_object(&mut mclient, &object_value, &etag)?;
+//!        let mut mclient =
+//!            moray_client::create_client(shard, &domain)?;
+//!        moray_client::put_object(
+//!            &mut mclient, &object_value, &etag,
+//!        )?;
 //!    }
 //!    ```
 
@@ -49,10 +64,14 @@ use libmanta::mdapi::{
     ObjectUpdate, StorageNodeIdentifier,
 };
 use libmanta::moray::{MantaObject, MantaObjectShark};
+use rand::seq::SliceRandom;
 use rebalancer::error::{Error, InternalError, InternalErrorCode};
+use resolve::resolve_host;
+use resolve::{record::Srv, DnsConfig, DnsResolver};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use std::net::{IpAddr, SocketAddr};
 use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
@@ -64,36 +83,86 @@ use crate::config::{MdapiConfig, MdapiShard};
 // Default algorithm uses MD5 hashing with standard interval
 const DEFAULT_VNODE_HASH_INTERVAL: u128 = 0x1000000000000000000000000; // 2^96
 
-/// Creates an mdapi client for the given endpoint.
+/// Resolve a DNS SRV record for a given service, protocol,
+/// and host.  Returns one randomly chosen SRV record.
+fn get_srv_record(
+    svc: &str,
+    proto: &str,
+    host: &str,
+) -> Result<Srv, Error> {
+    let query = format!("{}.{}.{}", svc, proto, host);
+    let r = DnsResolver::new(DnsConfig::load_default()?)?;
+    r.resolve_record::<Srv>(&query)?
+        .choose(&mut rand::thread_rng())
+        .map(|r| r.to_owned())
+        .ok_or_else(|| {
+            InternalError::new(
+                Some(InternalErrorCode::IpLookupError),
+                "SRV Lookup returned success with 0 IPs",
+            )
+            .into()
+        })
+}
+
+/// Resolve a hostname to a single IP address.
+fn lookup_ip(host: &str) -> Result<IpAddr, Error> {
+    match resolve_host(host)?
+        .collect::<Vec<IpAddr>>()
+        .first()
+    {
+        Some(a) => Ok(*a),
+        None => Err(InternalError::new(
+            Some(InternalErrorCode::IpLookupError),
+            "IP Lookup returned success with 0 IPs",
+        )
+        .into()),
+    }
+}
+
+/// Resolve the `_buckets-mdapi._tcp.{host}` SRV record and
+/// return a SocketAddr with the resolved IP and port.
+pub fn get_mdapi_srv_sockaddr(
+    host: &str,
+) -> Result<SocketAddr, Error> {
+    let srv_record =
+        get_srv_record("_buckets-mdapi", "_tcp", host)?;
+    let ip = lookup_ip(&srv_record.target)?;
+
+    Ok(SocketAddr::new(ip, srv_record.port))
+}
+
+/// Creates an mdapi client for the given hostname.
 ///
-/// Unlike moray which uses DNS SRV records, mdapi clients connect directly
-/// to Fast RPC endpoints specified as "host:port" strings.
+/// Resolves `_buckets-mdapi._tcp.{host}` via DNS SRV to
+/// discover the IP and port, then connects to the resolved
+/// endpoint.  This mirrors how moray_client discovers the
+/// moray service via `_moray._tcp`.
 ///
 /// # Arguments
-/// * `endpoint` - The mdapi service endpoint (e.g., "localhost:2030" or "mdapi.domain.com:2030")
+/// * `host` - The mdapi shard hostname
+///   (e.g., "1.buckets-mdapi.coal.joyent.us")
 ///
 /// # Returns
-/// * `Result<MdapiClient, Error>` - The initialized client or error
+/// * `Result<MdapiClient, Error>` - The initialized client
 ///
 /// # Errors
-/// * Returns Error::Mdapi if the endpoint is invalid or connection fails
-pub fn create_client(endpoint: &str) -> Result<MdapiClient, Error> {
-    debug!("Creating mdapi client for endpoint: {}", endpoint);
+/// * Returns error if SRV lookup or connection fails
+pub fn create_client(host: &str) -> Result<MdapiClient, Error> {
+    debug!("Creating mdapi client for host: {}", host);
 
-    // Validate endpoint format (must contain port)
-    if !endpoint.contains(':') {
-        return Err(Error::Internal(InternalError::new(
-            Some(InternalErrorCode::BadMdapiClient),
-            format!(
-                "Invalid mdapi endpoint format (missing port): {}",
-                endpoint
-            ),
-        )));
-    }
+    let sock_addr = get_mdapi_srv_sockaddr(host)?;
+    trace!(
+        "Resolved SRV for mdapi host {}: {}",
+        host,
+        sock_addr
+    );
 
-    // Create the mdapi client
-    MdapiClient::new(endpoint).map_err(|e| {
-        error!("Failed to create mdapi client for {}: {}", endpoint, e);
+    let endpoint = format!("{}:{}", sock_addr.ip(), sock_addr.port());
+    MdapiClient::new(&endpoint).map_err(|e| {
+        error!(
+            "Failed to create mdapi client for {}: {}",
+            host, e
+        );
         Error::from(e)
     })
 }
