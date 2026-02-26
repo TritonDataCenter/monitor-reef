@@ -928,6 +928,12 @@ impl TypedClient {
         &self.http_client
     }
 
+    /// Get the base URL this client is connected to
+    pub fn baseurl(&self) -> &str {
+        use progenitor_client::ClientInfo;
+        self.inner.baseurl()
+    }
+
     // ========================================================================
     // Machine Creation (body transformation handled by ClientHooks pre-hook)
     // ========================================================================

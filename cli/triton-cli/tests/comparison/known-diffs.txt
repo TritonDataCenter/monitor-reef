@@ -6,4 +6,3 @@
 # When a diff is fixed and the test flips to PASS, the script flags it
 # as "fixed?" so you know to close the bead and remove the line.
 payload-vlan-update  monitor-reef-k0io
-payload-image-copy  monitor-reef-y6tm

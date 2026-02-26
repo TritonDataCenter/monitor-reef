@@ -179,14 +179,10 @@ pub struct ImageCloneArgs {
 
 #[derive(Args, Clone)]
 pub struct ImageCopyArgs {
-    /// Image ID or name[@version] in source datacenter
+    /// Image ID or name[@version]
     pub image: String,
-    /// Source datacenter name (positional or --source)
-    #[arg(index = 2)]
-    pub datacenter: Option<String>,
-    /// Source datacenter name (alternative to positional)
-    #[arg(long)]
-    pub source: Option<String>,
+    /// Destination datacenter name
+    pub datacenter: String,
     /// Dry run - show what would be copied without copying
     #[arg(long)]
     pub dry_run: bool,
@@ -310,7 +306,7 @@ impl ImageCommand {
             Self::Create(args) => create_image(args, client, use_json).await,
             Self::Delete(args) => delete_images(args, client, cache).await,
             Self::Clone(args) => clone_image(args, client, use_json, cache).await,
-            Self::Copy(args) => copy_image(args, client, use_json).await,
+            Self::Copy(args) => copy_image(args, client, use_json, cache).await,
             Self::Update(args) => update_image(args, client, use_json, cache).await,
             Self::Export(args) => export_image(args, client, use_json, cache).await,
             Self::Share(args) => share_image(args, client, use_json, cache).await,
@@ -897,38 +893,75 @@ async fn clone_image(
     Ok(())
 }
 
-async fn copy_image(args: ImageCopyArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+async fn copy_image(
+    args: ImageCopyArgs,
+    client: &TypedClient,
+    use_json: bool,
+    cache: Option<&crate::cache::ImageCache>,
+) -> Result<()> {
     let account = &client.auth_config().account;
+    let dest_dc = &args.datacenter;
 
-    // Get source datacenter from either positional arg or --source flag
-    let source_dc = args.datacenter.or(args.source).ok_or_else(|| {
-        anyhow::anyhow!("Source datacenter required (as second argument or --source)")
+    // Resolve the image (supports name@version, shortID, UUID)
+    let image_uuid = resolve_image(&args.image, client, cache).await?;
+
+    // List datacenters to find destination URL and our own DC name
+    let datacenters = client
+        .inner()
+        .list_datacenters()
+        .account(account)
+        .send()
+        .await?
+        .into_inner();
+
+    // Validate the destination datacenter exists
+    let dest_url = datacenters.get(dest_dc).ok_or_else(|| {
+        anyhow::anyhow!(
+            "'{}' is not a valid datacenter name (available: {})",
+            dest_dc,
+            datacenters.keys().cloned().collect::<Vec<_>>().join(", ")
+        )
     })?;
 
-    // For copy from another datacenter, we need to use import_image_from_datacenter
-    // The image ID provided is from the source datacenter
-    let source_image_uuid: cloudapi_client::Uuid = args
-        .image
-        .parse()
-        .map_err(|_| anyhow::anyhow!("Image copy requires a UUID from the source datacenter"))?;
+    // Determine our current DC name by reverse-looking up the base URL
+    let my_url = client.baseurl().trim_end_matches('/');
+    let source_dc = datacenters
+        .iter()
+        .find(|(_, url)| url.trim_end_matches('/') == my_url)
+        .map(|(name, _)| name.clone())
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Could not determine current datacenter name from URL {}",
+                my_url
+            )
+        })?;
 
     // Handle dry-run
     if args.dry_run {
         println!("Dry run - would copy image:");
-        println!("  Source image: {}", args.image);
+        println!("  Image: {} ({})", args.image, &image_uuid.to_string()[..8]);
         println!("  From datacenter: {}", source_dc);
+        println!("  To datacenter: {}", dest_dc);
         return Ok(());
     }
 
-    let image = client
-        .import_image_from_datacenter(account, &source_dc, source_image_uuid)
+    // Create a client for the destination datacenter
+    let dest_client = TypedClient::new_with_http_client(
+        dest_url,
+        client.auth_config().clone(),
+        client.http_client().clone(),
+    );
+
+    let image = dest_client
+        .import_image_from_datacenter(account, &source_dc, image_uuid)
         .await?;
 
     println!(
-        "Copying image from {}: {} ({})",
-        source_dc,
+        "Copied image {}@{} ({}) to datacenter {}",
         image.name,
-        &image.id.to_string()[..8]
+        image.version,
+        &image.id.to_string()[..8],
+        dest_dc
     );
 
     if use_json {

@@ -2,7 +2,7 @@ diff --git a/lib/cloudapi2.js b/lib/cloudapi2.js
 index 605b257..aa62532 100644
 --- a/lib/cloudapi2.js
 +++ b/lib/cloudapi2.js
-@@ -287,6 +287,81 @@ CloudApi.prototype._request = function _request(opts, cb) {
+@@ -287,6 +287,87 @@ CloudApi.prototype._request = function _request(opts, cb) {
          }
      }
  
@@ -32,7 +32,8 @@ index 605b257..aa62532 100644
 +        var rMap = {machines:'machine', images:'image', packages:'package',
 +            networks:'network', volumes:'volume', keys:'key',
 +            fwrules:'firewall_rule', vlans:'fabric_vlan',
-+            nics:'nic', snapshots:'machine_snapshot', disks:'machine_disk'};
++            nics:'nic', snapshots:'machine_snapshot', disks:'machine_disk',
++            datacenters:'datacenter'};
 +        var opId = null;
 +        for (var i = segs.length - 1; i >= 0; i--) {
 +            var r = rMap[segs[i]];
@@ -76,6 +77,11 @@ index 605b257..aa62532 100644
 +        var fakeRes = { statusCode: 200, headers: {} };
 +        if (Array.isArray(resp)) {
 +            fakeRes.headers['x-resource-count'] = String(resp.length);
++        }
++        // Inject triton-datacenter-name header from fixture's datacenter_headers map
++        var dcHeaders = fix.datacenter_headers || {};
++        if (self.url && dcHeaders[self.url.replace(/\/+$/, '')]) {
++            fakeRes.headers['triton-datacenter-name'] = dcHeaders[self.url.replace(/\/+$/, '')];
 +        }
 +        cb(null, null, fakeRes, resp);
 +        return;

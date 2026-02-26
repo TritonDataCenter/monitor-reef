@@ -2,7 +2,19 @@
     "list_default": [],
     "get_default": { "id": "$LAST_SEG", "name": "$LAST_SEG" },
     "mutation_default": {},
+    "datacenter_headers": {
+        "https://cloudapi.us-test-1.example.com": "us-test-1",
+        "https://cloudapi.us-west-1.example.com": "us-west-1"
+    },
     "responses": {
+        "list_datacenters": {
+            "us-test-1": "https://cloudapi.us-test-1.example.com",
+            "us-west-1": "https://cloudapi.us-west-1.example.com"
+        },
+        "list_datacenter": {
+            "us-test-1": "https://cloudapi.us-test-1.example.com",
+            "us-west-1": "https://cloudapi.us-west-1.example.com"
+        },
         "get_image": {
             "id": "$LAST_SEG_UUID",
             "name": "$LAST_SEG",
