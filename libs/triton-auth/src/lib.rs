@@ -190,12 +190,14 @@ pub async fn probe_key(key_source: &KeySource) -> Result<KeyProbeResult, AuthErr
         }
         KeySource::Auto { fingerprint } => {
             // Try agent first
-            match agent::find_key_in_agent(fingerprint).await {
+            let agent_err = match agent::find_key_in_agent(fingerprint).await {
                 Ok(_) => return Ok(KeyProbeResult::Ready),
-                Err(e) => {
-                    tracing::debug!("SSH agent probe failed, falling back to file: {}", e);
-                }
-            }
+                Err(e) => e,
+            };
+            tracing::debug!(
+                "SSH agent probe failed, falling back to file: {}",
+                agent_err
+            );
 
             // Fall back to file-based scan
             let home = dirs::home_dir().ok_or_else(|| {

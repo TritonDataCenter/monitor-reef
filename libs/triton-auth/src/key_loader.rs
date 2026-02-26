@@ -336,27 +336,30 @@ impl KeyLoader {
                 continue;
             }
 
-            match Self::load_legacy_from_file(&path, None).await {
-                Ok(key) => {
-                    if let Ok(blob) = key.public_key_blob()
-                        && fingerprint.matches_bytes(&blob)
-                    {
-                        tracing::debug!(
-                            "Found matching key at {} for fingerprint {}",
-                            path.display(),
-                            fingerprint_str,
-                        );
-                        return Ok(key);
-                    }
-                }
+            let key = match Self::load_legacy_from_file(&path, None).await {
+                Ok(key) => key,
                 Err(AuthError::KeyEncrypted(_)) => {
                     // Can't check fingerprint without decrypting — skip
                     tracing::debug!(
                         "Skipping encrypted key {} (no .pub companion for fingerprint check)",
                         path.display(),
                     );
+                    continue;
                 }
-                Err(_) => {}
+                Err(e) => {
+                    tracing::debug!("Skipping key {} due to load error: {}", path.display(), e,);
+                    continue;
+                }
+            };
+            if let Ok(blob) = key.public_key_blob()
+                && fingerprint.matches_bytes(&blob)
+            {
+                tracing::debug!(
+                    "Found matching key at {} for fingerprint {}",
+                    path.display(),
+                    fingerprint_str,
+                );
+                return Ok(key);
             }
         }
 
