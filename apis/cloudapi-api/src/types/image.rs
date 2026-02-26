@@ -218,6 +218,9 @@ pub enum ImageAction {
     Export,
     Clone,
     ImportFromDatacenter,
+    /// Unknown action (forward compatibility)
+    #[serde(other)]
+    Unknown,
 }
 
 /// Query parameter for image actions

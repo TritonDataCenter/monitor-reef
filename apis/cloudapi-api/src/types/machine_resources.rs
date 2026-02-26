@@ -147,6 +147,9 @@ pub struct CreateDiskRequest {
 #[serde(rename_all = "snake_case")]
 pub enum DiskAction {
     Resize,
+    /// Unknown action (forward compatibility)
+    #[serde(other)]
+    Unknown,
 }
 
 /// Query parameter for disk actions

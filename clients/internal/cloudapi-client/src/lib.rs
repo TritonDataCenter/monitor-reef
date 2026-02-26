@@ -1640,7 +1640,7 @@ pub enum GetMachineError {
     JsonParse { error: String, body: String },
     /// Recovered a Machine from InvalidResponsePayload but state was not Deleted,
     /// meaning this was likely not a 410 Gone response
-    #[error("unexpected machine state during 410 recovery: {state:?}\nResponse body: {body}")]
+    #[error("unexpected machine state during 410 recovery: {state}\nResponse body: {body}")]
     UnexpectedRecovery {
         state: types::MachineState,
         body: String,

@@ -11147,10 +11147,21 @@
       },
       "MemberType": {
         "description": "Member type for role membership references",
-        "type": "string",
-        "enum": [
-          "subuser",
-          "account"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "subuser",
+              "account"
+            ]
+          },
+          {
+            "description": "Unknown type (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
         ]
       },
       "MigrateRequest": {
@@ -12568,41 +12579,85 @@
       },
       "ImageAction": {
         "description": "Image action for action dispatch",
-        "type": "string",
-        "enum": [
-          "update",
-          "export",
-          "clone",
-          "import-from-datacenter"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "update",
+              "export",
+              "clone",
+              "import-from-datacenter"
+            ]
+          },
+          {
+            "description": "Unknown action (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
         ]
       },
       "MachineAction": {
         "description": "Machine action for action dispatch",
-        "type": "string",
-        "enum": [
-          "start",
-          "stop",
-          "reboot",
-          "resize",
-          "rename",
-          "enable_firewall",
-          "disable_firewall",
-          "enable_deletion_protection",
-          "disable_deletion_protection"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "start",
+              "stop",
+              "reboot",
+              "resize",
+              "rename",
+              "enable_firewall",
+              "disable_firewall",
+              "enable_deletion_protection",
+              "disable_deletion_protection"
+            ]
+          },
+          {
+            "description": "Unknown action (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
         ]
       },
       "DiskAction": {
         "description": "Disk action for action dispatch",
-        "type": "string",
-        "enum": [
-          "resize"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "resize"
+            ]
+          },
+          {
+            "description": "Unknown action (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
         ]
       },
       "VolumeAction": {
         "description": "Volume action for action dispatch",
-        "type": "string",
-        "enum": [
-          "update"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "update"
+            ]
+          },
+          {
+            "description": "Unknown action (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
         ]
       }
     },

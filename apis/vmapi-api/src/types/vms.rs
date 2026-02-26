@@ -348,6 +348,9 @@ pub enum MigrationAction {
     Abort,
     Rollback,
     Finalize,
+    /// Unknown action (forward compatibility)
+    #[serde(other)]
+    Unknown,
 }
 
 /// Request body for `migrate` action

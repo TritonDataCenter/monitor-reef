@@ -14,8 +14,11 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 
 /// Sort field for issue lists
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema, clap::ValueEnum)]
+#[derive(
+    Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema, clap::ValueEnum, strum::Display,
+)]
 #[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
 pub enum IssueSort {
     /// Sort by issue key (e.g., OS-1234)
     Key,
@@ -34,12 +37,6 @@ impl IssueSort {
             IssueSort::Created => "created",
             IssueSort::Updated => "updated",
         }
-    }
-}
-
-impl std::fmt::Display for IssueSort {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
     }
 }
 

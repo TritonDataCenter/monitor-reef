@@ -904,10 +904,21 @@
       },
       "DiskAction": {
         "description": "Disk action for action dispatch",
-        "enum": [
-          "resize"
-        ],
-        "type": "string"
+        "oneOf": [
+          {
+            "enum": [
+              "resize"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Unknown action (forward compatibility)",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
       },
       "DiskSize": {
         "anyOf": [
@@ -1213,13 +1224,24 @@
       },
       "ImageAction": {
         "description": "Image action for action dispatch",
-        "enum": [
-          "update",
-          "export",
-          "clone",
-          "import-from-datacenter"
-        ],
-        "type": "string"
+        "oneOf": [
+          {
+            "enum": [
+              "update",
+              "export",
+              "clone",
+              "import-from-datacenter"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Unknown action (forward compatibility)",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
       },
       "ImageErrorInfo": {
         "description": "Image error information (for failed image creation)\n\nNote: Named `ImageErrorInfo` rather than `ImageError` to distinguish this DTO from Rust error types.",
@@ -1540,18 +1562,29 @@
       },
       "MachineAction": {
         "description": "Machine action for action dispatch",
-        "enum": [
-          "start",
-          "stop",
-          "reboot",
-          "resize",
-          "rename",
-          "enable_firewall",
-          "disable_firewall",
-          "enable_deletion_protection",
-          "disable_deletion_protection"
-        ],
-        "type": "string"
+        "oneOf": [
+          {
+            "enum": [
+              "start",
+              "stop",
+              "reboot",
+              "resize",
+              "rename",
+              "enable_firewall",
+              "disable_firewall",
+              "enable_deletion_protection",
+              "disable_deletion_protection"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Unknown action (forward compatibility)",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
       },
       "MachineDisk": {
         "description": "Disk attached to a machine (bhyve VMs)\n\nCloudAPI may omit `size` for the boot disk (which inherits its size from the image) and may return `\"remaining\"` for flexible disks.",
@@ -1707,11 +1740,22 @@
       },
       "MemberType": {
         "description": "Member type for role membership references",
-        "enum": [
-          "subuser",
-          "account"
-        ],
-        "type": "string"
+        "oneOf": [
+          {
+            "enum": [
+              "subuser",
+              "account"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Unknown type (forward compatibility)",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
       },
       "MigrateRequest": {
         "description": "Migration request\n\nUsed to perform migration actions on an instance. The `action` field specifies which migration operation to perform.\n\n# Examples\n\nStart a new migration: ```json {\"action\": \"begin\"} ```\n\nStart migration with affinity rules: ```json {\"action\": \"begin\", \"affinity\": [\"instance!=web-*\"]} ```\n\nSwitch to the new server: ```json {\"action\": \"switch\"} ```\n\nAbort an in-progress migration: ```json {\"action\": \"abort\"} ```",
@@ -3048,10 +3092,21 @@
       },
       "VolumeAction": {
         "description": "Volume action for action dispatch",
-        "enum": [
-          "update"
-        ],
-        "type": "string"
+        "oneOf": [
+          {
+            "enum": [
+              "update"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Unknown action (forward compatibility)",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
       },
       "VolumeMount": {
         "description": "Volume mount specification for instance creation",

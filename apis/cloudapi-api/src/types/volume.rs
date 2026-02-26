@@ -119,6 +119,9 @@ pub struct CreateVolumeRequest {
 #[serde(rename_all = "snake_case")]
 pub enum VolumeAction {
     Update,
+    /// Unknown action (forward compatibility)
+    #[serde(other)]
+    Unknown,
 }
 
 /// Query parameter for volume actions

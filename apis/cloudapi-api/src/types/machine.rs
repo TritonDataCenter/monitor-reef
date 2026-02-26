@@ -38,9 +38,19 @@ pub struct MachinePath {
 /// - `failed`: VM is in a failed state
 /// - `unknown`: VM state cannot be determined
 #[derive(
-    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    PartialEq,
+    Eq,
+    clap::ValueEnum,
+    strum::Display,
 )]
 #[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
 pub enum MachineState {
     Running,
     Stopped,
@@ -447,6 +457,9 @@ pub enum MachineAction {
     DisableFirewall,
     EnableDeletionProtection,
     DisableDeletionProtection,
+    /// Unknown action (forward compatibility)
+    #[serde(other)]
+    Unknown,
 }
 
 /// Query parameter for machine actions

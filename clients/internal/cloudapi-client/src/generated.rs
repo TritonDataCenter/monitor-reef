@@ -2166,9 +2166,20 @@ pub mod types {
     #[doc = r" ```json"]
     #[doc = "{"]
     #[doc = "  \"description\": \"Disk action for action dispatch\","]
-    #[doc = "  \"type\": \"string\","]
-    #[doc = "  \"enum\": ["]
-    #[doc = "    \"resize\""]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"resize\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown action (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
     #[doc = "  ]"]
     #[doc = "}"]
     #[doc = r" ```"]
@@ -2189,12 +2200,16 @@ pub mod types {
     pub enum DiskAction {
         #[serde(rename = "resize")]
         Resize,
+        #[doc = "Unknown action (forward compatibility)"]
+        #[serde(rename = "unknown")]
+        Unknown,
     }
 
     impl ::std::fmt::Display for DiskAction {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
             match *self {
                 Self::Resize => f.write_str("resize"),
+                Self::Unknown => f.write_str("unknown"),
             }
         }
     }
@@ -2204,6 +2219,7 @@ pub mod types {
         fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             match value {
                 "resize" => Ok(Self::Resize),
+                "unknown" => Ok(Self::Unknown),
                 _ => Err("invalid value".into()),
             }
         }
@@ -2944,12 +2960,23 @@ pub mod types {
     #[doc = r" ```json"]
     #[doc = "{"]
     #[doc = "  \"description\": \"Image action for action dispatch\","]
-    #[doc = "  \"type\": \"string\","]
-    #[doc = "  \"enum\": ["]
-    #[doc = "    \"update\","]
-    #[doc = "    \"export\","]
-    #[doc = "    \"clone\","]
-    #[doc = "    \"import-from-datacenter\""]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"update\","]
+    #[doc = "        \"export\","]
+    #[doc = "        \"clone\","]
+    #[doc = "        \"import-from-datacenter\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown action (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
     #[doc = "  ]"]
     #[doc = "}"]
     #[doc = r" ```"]
@@ -2976,6 +3003,9 @@ pub mod types {
         Clone,
         #[serde(rename = "import-from-datacenter")]
         ImportFromDatacenter,
+        #[doc = "Unknown action (forward compatibility)"]
+        #[serde(rename = "unknown")]
+        Unknown,
     }
 
     impl ::std::fmt::Display for ImageAction {
@@ -2985,6 +3015,7 @@ pub mod types {
                 Self::Export => f.write_str("export"),
                 Self::Clone => f.write_str("clone"),
                 Self::ImportFromDatacenter => f.write_str("import-from-datacenter"),
+                Self::Unknown => f.write_str("unknown"),
             }
         }
     }
@@ -2997,6 +3028,7 @@ pub mod types {
                 "export" => Ok(Self::Export),
                 "clone" => Ok(Self::Clone),
                 "import-from-datacenter" => Ok(Self::ImportFromDatacenter),
+                "unknown" => Ok(Self::Unknown),
                 _ => Err("invalid value".into()),
             }
         }
@@ -3778,17 +3810,28 @@ pub mod types {
     #[doc = r" ```json"]
     #[doc = "{"]
     #[doc = "  \"description\": \"Machine action for action dispatch\","]
-    #[doc = "  \"type\": \"string\","]
-    #[doc = "  \"enum\": ["]
-    #[doc = "    \"start\","]
-    #[doc = "    \"stop\","]
-    #[doc = "    \"reboot\","]
-    #[doc = "    \"resize\","]
-    #[doc = "    \"rename\","]
-    #[doc = "    \"enable_firewall\","]
-    #[doc = "    \"disable_firewall\","]
-    #[doc = "    \"enable_deletion_protection\","]
-    #[doc = "    \"disable_deletion_protection\""]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"start\","]
+    #[doc = "        \"stop\","]
+    #[doc = "        \"reboot\","]
+    #[doc = "        \"resize\","]
+    #[doc = "        \"rename\","]
+    #[doc = "        \"enable_firewall\","]
+    #[doc = "        \"disable_firewall\","]
+    #[doc = "        \"enable_deletion_protection\","]
+    #[doc = "        \"disable_deletion_protection\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown action (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
     #[doc = "  ]"]
     #[doc = "}"]
     #[doc = r" ```"]
@@ -3825,6 +3868,9 @@ pub mod types {
         EnableDeletionProtection,
         #[serde(rename = "disable_deletion_protection")]
         DisableDeletionProtection,
+        #[doc = "Unknown action (forward compatibility)"]
+        #[serde(rename = "unknown")]
+        Unknown,
     }
 
     impl ::std::fmt::Display for MachineAction {
@@ -3839,6 +3885,7 @@ pub mod types {
                 Self::DisableFirewall => f.write_str("disable_firewall"),
                 Self::EnableDeletionProtection => f.write_str("enable_deletion_protection"),
                 Self::DisableDeletionProtection => f.write_str("disable_deletion_protection"),
+                Self::Unknown => f.write_str("unknown"),
             }
         }
     }
@@ -3856,6 +3903,7 @@ pub mod types {
                 "disable_firewall" => Ok(Self::DisableFirewall),
                 "enable_deletion_protection" => Ok(Self::EnableDeletionProtection),
                 "disable_deletion_protection" => Ok(Self::DisableDeletionProtection),
+                "unknown" => Ok(Self::Unknown),
                 _ => Err("invalid value".into()),
             }
         }
@@ -4357,10 +4405,21 @@ pub mod types {
     #[doc = r" ```json"]
     #[doc = "{"]
     #[doc = "  \"description\": \"Member type for role membership references\","]
-    #[doc = "  \"type\": \"string\","]
-    #[doc = "  \"enum\": ["]
-    #[doc = "    \"subuser\","]
-    #[doc = "    \"account\""]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"subuser\","]
+    #[doc = "        \"account\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown type (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
     #[doc = "  ]"]
     #[doc = "}"]
     #[doc = r" ```"]
@@ -4383,6 +4442,9 @@ pub mod types {
         Subuser,
         #[serde(rename = "account")]
         Account,
+        #[doc = "Unknown type (forward compatibility)"]
+        #[serde(rename = "unknown")]
+        Unknown,
     }
 
     impl ::std::fmt::Display for MemberType {
@@ -4390,6 +4452,7 @@ pub mod types {
             match *self {
                 Self::Subuser => f.write_str("subuser"),
                 Self::Account => f.write_str("account"),
+                Self::Unknown => f.write_str("unknown"),
             }
         }
     }
@@ -4400,6 +4463,7 @@ pub mod types {
             match value {
                 "subuser" => Ok(Self::Subuser),
                 "account" => Ok(Self::Account),
+                "unknown" => Ok(Self::Unknown),
                 _ => Err("invalid value".into()),
             }
         }
@@ -7699,9 +7763,20 @@ pub mod types {
     #[doc = r" ```json"]
     #[doc = "{"]
     #[doc = "  \"description\": \"Volume action for action dispatch\","]
-    #[doc = "  \"type\": \"string\","]
-    #[doc = "  \"enum\": ["]
-    #[doc = "    \"update\""]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"update\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown action (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
     #[doc = "  ]"]
     #[doc = "}"]
     #[doc = r" ```"]
@@ -7722,12 +7797,16 @@ pub mod types {
     pub enum VolumeAction {
         #[serde(rename = "update")]
         Update,
+        #[doc = "Unknown action (forward compatibility)"]
+        #[serde(rename = "unknown")]
+        Unknown,
     }
 
     impl ::std::fmt::Display for VolumeAction {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
             match *self {
                 Self::Update => f.write_str("update"),
+                Self::Unknown => f.write_str("unknown"),
             }
         }
     }
@@ -7737,6 +7816,7 @@ pub mod types {
         fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             match value {
                 "update" => Ok(Self::Update),
+                "unknown" => Ok(Self::Unknown),
                 _ => Err("invalid value".into()),
             }
         }

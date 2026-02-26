@@ -64,9 +64,19 @@ pub enum Brand {
 ///
 /// These states reflect the possible values returned by VMAPI.
 #[derive(
-    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    PartialEq,
+    Eq,
+    clap::ValueEnum,
+    strum::Display,
 )]
 #[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
 pub enum VmState {
     Running,
     Stopped,
@@ -92,25 +102,6 @@ impl VmState {
     /// Check if this state represents a destroyed VM.
     pub fn is_destroyed(&self) -> bool {
         matches!(self, VmState::Destroyed)
-    }
-}
-
-impl std::fmt::Display for VmState {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let s = match self {
-            VmState::Running => "running",
-            VmState::Stopped => "stopped",
-            VmState::Stopping => "stopping",
-            VmState::Provisioning => "provisioning",
-            VmState::Failed => "failed",
-            VmState::Destroyed => "destroyed",
-            VmState::Incomplete => "incomplete",
-            VmState::Configured => "configured",
-            VmState::Ready => "ready",
-            VmState::Receiving => "receiving",
-            VmState::Unknown => "unknown",
-        };
-        write!(f, "{}", s)
     }
 }
 

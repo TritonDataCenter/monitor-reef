@@ -162,6 +162,9 @@ pub struct Role {
 pub enum MemberType {
     Subuser,
     Account,
+    /// Unknown type (forward compatibility)
+    #[serde(other)]
+    Unknown,
 }
 
 /// A structured member reference for role create/update requests.

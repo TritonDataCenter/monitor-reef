@@ -20,4 +20,5 @@ http = "1.1"
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+strum = { workspace = true }
 uuid = { workspace = true }
