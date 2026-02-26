@@ -293,19 +293,7 @@ fn test_volume_sizes() {
 // and allowVolumesTests: true (default)
 // =============================================================================
 
-/// Volume info returned from `triton volume get --json`
-#[derive(Debug, serde::Deserialize)]
-#[allow(dead_code)]
-struct VolumeInfo {
-    id: String,
-    name: String,
-    #[serde(rename = "type")]
-    volume_type: String,
-    #[serde(default)]
-    networks: Vec<String>,
-    #[serde(default)]
-    tags: std::collections::HashMap<String, String>,
-}
+use cloudapi_client::Volume;
 
 /// Network info for finding fabric networks
 #[derive(Debug, serde::Deserialize)]
@@ -458,12 +446,15 @@ fn test_volume_create_workflow() {
     eprintln!("Test: triton volume get --json {}", volume_name);
     let (stdout, _, success) = run_triton_with_profile(["volume", "get", "--json", &volume_name]);
     assert!(success, "volume get should succeed");
-    let volume: VolumeInfo = serde_json::from_str(&stdout).expect("should parse JSON");
+    let volume: Volume = serde_json::from_str(&stdout).expect("should parse JSON");
     assert_eq!(volume.name, volume_name);
-    assert_eq!(volume.volume_type, "tritonnfs");
+    assert_eq!(volume.volume_type, cloudapi_client::VolumeType::Tritonnfs);
     // Tags may or may not be present depending on CloudAPI version
     if !volume.tags.is_empty() {
-        assert_eq!(volume.tags.get("role"), Some(&"test".to_string()));
+        assert_eq!(
+            volume.tags.get("role"),
+            Some(&serde_json::Value::from("test"))
+        );
     }
 
     // Test: Delete volume
@@ -550,15 +541,18 @@ fn test_volume_create_on_fabric_network() {
         return;
     }
 
-    let volume: VolumeInfo = serde_json::from_str(&stdout).expect("should parse JSON");
+    let volume: Volume = serde_json::from_str(&stdout).expect("should parse JSON");
 
     // Verify volume
     eprintln!("Test: triton volume get {}", volume_name);
     let (stdout, _, success) = run_triton_with_profile(["volume", "get", &volume_name]);
     assert!(success, "volume get should succeed");
-    let vol: VolumeInfo = serde_json::from_str(&stdout).expect("should parse JSON");
+    let vol: Volume = serde_json::from_str(&stdout).expect("should parse JSON");
+    let fabric_uuid: uuid::Uuid = fabric_network_id
+        .parse()
+        .expect("fabric network id should be a valid UUID");
     assert!(
-        vol.networks.contains(&fabric_network_id),
+        vol.networks.contains(&fabric_uuid),
         "volume should be on fabric network"
     );
 
