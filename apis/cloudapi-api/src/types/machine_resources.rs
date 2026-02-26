@@ -54,20 +54,9 @@ pub struct TagPath {
     pub tag: String,
 }
 
-/// Snapshot state
-#[derive(
-    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
-)]
-#[serde(rename_all = "lowercase")]
-pub enum SnapshotState {
-    Queued,
-    Creating,
-    Created,
-    Failed,
-    Deleted,
-    #[serde(other)]
-    Unknown,
-}
+// SnapshotState is defined in vmapi-api and re-exported via cloudapi-api::lib.rs.
+// CloudAPI and VMAPI share the same snapshot state definitions.
+use vmapi_api::SnapshotState;
 
 /// Snapshot information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

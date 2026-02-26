@@ -1131,13 +1131,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Migration phase"]
+    #[doc = "Migration phase\n\nRepresents the current phase of a migration operation."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Migration phase\","]
+    #[doc = "  \"description\": \"Migration phase\\n\\nRepresents the current phase of a migration operation.\","]
     #[doc = "  \"oneOf\": ["]
     #[doc = "    {"]
     #[doc = "      \"type\": \"string\","]

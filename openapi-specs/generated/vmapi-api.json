@@ -2860,7 +2860,7 @@
         ]
       },
       "MigrationPhase": {
-        "description": "Migration phase",
+        "description": "Migration phase\n\nRepresents the current phase of a migration operation.",
         "oneOf": [
           {
             "type": "string",

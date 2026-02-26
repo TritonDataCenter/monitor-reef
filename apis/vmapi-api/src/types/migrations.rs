@@ -84,6 +84,8 @@ pub enum MigrationState {
 }
 
 /// Migration phase
+///
+/// Represents the current phase of a migration operation.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum MigrationPhase {

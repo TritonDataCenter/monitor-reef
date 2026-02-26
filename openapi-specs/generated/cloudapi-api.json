@@ -11335,12 +11335,22 @@
       },
       "MigrationPhase": {
         "description": "Migration phase\n\nRepresents the current phase of a migration operation.",
-        "type": "string",
-        "enum": [
-          "begin",
-          "sync",
-          "switch",
-          "unknown"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "begin",
+              "sync",
+              "switch"
+            ]
+          },
+          {
+            "description": "Unknown phase (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
         ]
       },
       "MigrationProgressEntry": {
@@ -11991,14 +12001,24 @@
       },
       "SnapshotState": {
         "description": "Snapshot state",
-        "type": "string",
-        "enum": [
-          "queued",
-          "creating",
-          "created",
-          "failed",
-          "deleted",
-          "unknown"
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "queued",
+              "creating",
+              "created",
+              "failed",
+              "deleted"
+            ]
+          },
+          {
+            "description": "Unknown state (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
         ]
       },
       "SshKey": {

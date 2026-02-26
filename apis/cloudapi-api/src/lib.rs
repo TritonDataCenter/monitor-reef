@@ -32,13 +32,17 @@ use dropshot::{
 pub mod types;
 pub use types::*;
 
-// Re-export VmState and Brand from vmapi-api for changefeed and output type consumers.
-// The changefeed sends raw VMAPI states/brands, so consumers need these types.
-// Note: CloudAPI's own Brand enum (in types::common) is more restrictive and is used
-// for input validation in provisioning requests. Output types like Machine and Package
-// use VmapiBrand to accurately represent whatever brand a VM actually has.
+// Re-export shared types from vmapi-api.
+// VmState and Brand: The changefeed sends raw VMAPI states/brands, so consumers need
+// these types. Note: CloudAPI's own Brand enum (in types::common) is more restrictive
+// and is used for input validation in provisioning requests. Output types like Machine
+// and Package use VmapiBrand to accurately represent whatever brand a VM actually has.
 pub use vmapi_api::Brand as VmapiBrand;
 pub use vmapi_api::VmState;
+// MigrationPhase and SnapshotState: Identical definitions shared between CloudAPI and
+// VMAPI. Canonical definitions live in vmapi-api to prevent drift.
+pub use vmapi_api::MigrationPhase;
+pub use vmapi_api::SnapshotState;
 
 /// URL for CloudAPI documentation
 ///

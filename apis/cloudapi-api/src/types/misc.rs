@@ -170,18 +170,9 @@ pub enum MigrationState {
     Unknown,
 }
 
-/// Migration phase
-///
-/// Represents the current phase of a migration operation.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(rename_all = "lowercase")]
-pub enum MigrationPhase {
-    Begin,
-    Sync,
-    Switch,
-    #[serde(other)]
-    Unknown,
-}
+// MigrationPhase is defined in vmapi-api and re-exported via cloudapi-api::lib.rs.
+// CloudAPI and VMAPI share the same phase definitions (begin, sync, switch).
+use vmapi_api::MigrationPhase;
 
 /// Migration action to perform
 ///
