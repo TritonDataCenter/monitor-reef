@@ -174,7 +174,7 @@ triton-test-all: | $(CARGO_EXEC) ## Run all triton-cli tests (offline + API)
 	@if [ ! -f cli/triton-cli/tests/config.json ]; then \
 		echo "Warning: No config.json - API tests will fail"; \
 	fi
-	$(CARGO) test -p triton-cli -- --include-ignored
+	$(CARGO) nextest run -p triton-cli -- --include-ignored
 
 triton-test-file: | $(CARGO_EXEC) ## Run specific triton-cli test file (usage: make triton-test-file TEST=cli_vlans)
 	@if [ -z "$(TEST)" ]; then echo "Usage: make triton-test-file TEST=cli_vlans"; exit 1; fi
