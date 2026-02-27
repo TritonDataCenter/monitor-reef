@@ -83,7 +83,7 @@ pub struct VolumeCreateArgs {
     pub size: Option<String>,
 
     /// Volume type (default: tritonnfs)
-    #[arg(long, short = 't', default_value = "tritonnfs")]
+    #[arg(long, short = 't', default_value_t = VolumeType::Tritonnfs)]
     pub r#type: VolumeType,
 
     /// Network ID, name, or short ID (uses default fabric network if not specified)

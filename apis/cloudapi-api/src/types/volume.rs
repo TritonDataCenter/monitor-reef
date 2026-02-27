@@ -21,9 +21,19 @@ pub struct VolumePath {
 
 /// Volume type
 #[derive(
-    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
+    Debug,
+    Clone,
+    Copy,
+    Serialize,
+    Deserialize,
+    JsonSchema,
+    PartialEq,
+    Eq,
+    clap::ValueEnum,
+    strum::Display,
 )]
 #[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
 pub enum VolumeType {
     Tritonnfs,
     /// Unknown type (forward compatibility)
