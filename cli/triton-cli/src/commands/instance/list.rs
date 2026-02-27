@@ -15,7 +15,8 @@ use cloudapi_client::pagination::{DEFAULT_PAGE_SIZE, paginate_all};
 use cloudapi_client::types::{Brand, Machine};
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::output::{self, enum_to_display, json, table};
+use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::output::{self, enum_to_display, json};
 
 /// Augmented machine output with computed fields for node-triton compatibility
 #[derive(Serialize)]
@@ -117,21 +118,8 @@ pub struct ListArgs {
     #[arg(long)]
     pub limit: Option<u64>,
 
-    /// Sort by field (created, name, state, etc.)
-    #[arg(long, short = 's', default_value = "name")]
-    pub sort_by: String,
-
-    /// Custom output fields (comma-separated)
-    #[arg(short = 'o', long)]
-    pub output: Option<String>,
-
-    /// Long output format with more columns
-    #[arg(short = 'l', long)]
-    pub long: bool,
-
-    /// Omit table header
-    #[arg(short = 'H', long = "no-header")]
-    pub no_header: bool,
+    #[command(flatten)]
+    pub table: TableFormatArgs,
 
     /// Show only short ID (one per line)
     #[arg(long)]
@@ -379,45 +367,34 @@ fn print_machines_table(
         return;
     }
 
-    // Determine columns based on --long or --output
-    let columns: Vec<&str> = if let Some(ref output) = args.output {
-        output.split(',').map(|s| s.trim()).collect()
-    } else if args.long {
-        vec![
-            "id",
-            "name",
-            "img",
-            "brand",
-            "package",
-            "state",
-            "flags",
-            "primaryIp",
-            "created",
-        ]
-    } else {
-        vec!["shortid", "name", "img", "state", "flags", "age"]
-    };
+    let mut tbl = TableBuilder::new(&["SHORTID", "NAME", "IMG", "STATE", "FLAGS", "AGE"])
+        .with_long_headers(&["ID", "BRAND", "PACKAGE", "PRIMARYIP", "CREATED"])
+        .with_right_aligned(&["MEMORY"]);
 
-    // Create header (uppercase)
-    let headers: Vec<String> = columns.iter().map(|c| c.to_uppercase()).collect();
-    let header_refs: Vec<&str> = headers.iter().map(|s| s.as_str()).collect();
-
-    let mut tbl = if args.no_header {
-        table::create_table_no_header(columns.len())
-    } else {
-        table::create_table(&header_refs)
-    };
-
-    for m in machines {
-        let row: Vec<String> = columns
-            .iter()
-            .map(|col| get_field_value(m, col, image_map))
-            .collect();
-        let row_refs: Vec<&str> = row.iter().map(|s| s.as_str()).collect();
-        tbl.add_row(row_refs);
+    // Sort by created (descending) by default when no -s flag is provided,
+    // matching node-triton behavior. When -s is provided, TableBuilder handles it.
+    let mut sorted_machines: Vec<&Machine> = machines.iter().collect();
+    if args.table.sort_by.is_none() {
+        sorted_machines.sort_by(|a, b| b.created.cmp(&a.created));
     }
 
-    table::print_table(tbl);
+    for m in &sorted_machines {
+        tbl.add_row(vec![
+            get_field_value(m, "shortid", image_map),
+            get_field_value(m, "name", image_map),
+            get_field_value(m, "img", image_map),
+            get_field_value(m, "state", image_map),
+            get_field_value(m, "flags", image_map),
+            get_field_value(m, "age", image_map),
+            get_field_value(m, "id", image_map),
+            get_field_value(m, "brand", image_map),
+            get_field_value(m, "package", image_map),
+            get_field_value(m, "primaryip", image_map),
+            get_field_value(m, "created", image_map),
+        ]);
+    }
+
+    tbl.print(&args.table);
 }
 
 /// Get a field value from a Machine by field name
@@ -447,7 +424,7 @@ fn get_field_value(m: &Machine, field: &str, image_map: &HashMap<uuid::Uuid, Str
         "disk" => m.disk.to_string(),
         "primaryip" => m.primary_ip.clone().unwrap_or_else(|| "-".to_string()),
         "created" => m.created.clone(),
-        "age" => format_age(&m.created),
+        "age" => output::format_age(&m.created),
         "flags" => {
             let mut flags = Vec::new();
             if m.brand == Brand::Bhyve {
@@ -473,8 +450,4 @@ fn get_field_value(m: &Machine, field: &str, image_map: &HashMap<uuid::Uuid, Str
         }
         _ => "-".to_string(),
     }
-}
-
-fn format_age(created: &str) -> String {
-    output::format_age(created)
 }

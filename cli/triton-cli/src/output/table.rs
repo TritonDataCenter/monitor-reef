@@ -180,21 +180,6 @@ pub fn create_table(headers: &[&str]) -> Table {
     table
 }
 
-/// Create a new table without headers
-///
-/// Uses no-padding format to match node-triton's tabula output
-pub fn create_table_no_header(num_columns: usize) -> Table {
-    let mut table = Table::new();
-    table.load_preset(NOTHING);
-    table.set_content_arrangement(comfy_table::ContentArrangement::Disabled);
-
-    // We need to add a dummy row first to be able to set column padding
-    // The actual rows will be added by the caller
-    // For now, just return the table - padding will be applied when rows are added
-    let _ = num_columns;
-    table
-}
-
 /// Format a table and print it
 ///
 /// Removes leading/trailing whitespace from each line to match node-triton output

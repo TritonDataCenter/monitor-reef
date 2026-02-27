@@ -17,6 +17,7 @@ use dialoguer::Confirm;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
+use crate::output::table::{TableBuilder, TableFormatArgs};
 use crate::output::{enum_to_display, json, opt_enum_to_display, table};
 
 #[derive(Subcommand, Clone)]
@@ -95,25 +96,12 @@ pub struct ImageListArgs {
     #[arg(short = 'a', long)]
     pub all: bool,
 
-    /// Custom output fields (comma-separated)
-    #[arg(short = 'o', long)]
-    pub output: Option<String>,
-
-    /// Long output format with more columns
-    #[arg(short = 'l', long)]
-    pub long: bool,
-
-    /// Omit table header
-    #[arg(short = 'H', long = "no-header")]
-    pub no_header: bool,
+    #[command(flatten)]
+    pub table: TableFormatArgs,
 
     /// Show only short ID (one per line)
     #[arg(long)]
     pub short: bool,
-
-    /// Sort by field (name, version, published_at, etc.)
-    #[arg(short = 's', long)]
-    pub sort_by: Option<String>,
 
     /// Filters in key=value format (e.g., name=base-64, state=active, type=zone-dataset)
     ///
@@ -419,7 +407,7 @@ async fn list_images(
     let is_default_state = args.state.is_none() && !args.all;
 
     // Try cache for unfiltered default queries
-    let mut images = if is_unfiltered && is_default_state {
+    let images = if is_unfiltered && is_default_state {
         match cache {
             Some(c) => match c.load_list().await {
                 Some(cached) => cached,
@@ -462,11 +450,6 @@ async fn list_images(
         response.into_inner()
     };
 
-    // Sort images if requested
-    if let Some(ref sort_field) = args.sort_by {
-        sort_images(&mut images, sort_field);
-    }
-
     if use_json {
         json::print_json_stream(&images)?;
     } else {
@@ -474,34 +457,6 @@ async fn list_images(
     }
 
     Ok(())
-}
-
-fn sort_images(images: &mut [Image], field: &str) {
-    match field.to_lowercase().as_str() {
-        "name" => images.sort_by(|a, b| a.name.cmp(&b.name)),
-        "version" => images.sort_by(|a, b| a.version.cmp(&b.version)),
-        "os" => images.sort_by(|a, b| a.os.cmp(&b.os)),
-        "type" => images.sort_by(|a, b| enum_to_display(&a.type_).cmp(&enum_to_display(&b.type_))),
-        "state" => images.sort_by(|a, b| {
-            let a_state = a.state.as_ref().map(enum_to_display).unwrap_or_default();
-            let b_state = b.state.as_ref().map(enum_to_display).unwrap_or_default();
-            a_state.cmp(&b_state)
-        }),
-        "published_at" | "published" => images.sort_by(|a, b| {
-            let a_pub = a
-                .published_at
-                .as_ref()
-                .map(|t| t.to_string())
-                .unwrap_or_default();
-            let b_pub = b
-                .published_at
-                .as_ref()
-                .map(|t| t.to_string())
-                .unwrap_or_default();
-            a_pub.cmp(&b_pub)
-        }),
-        _ => {} // Unknown field, don't sort
-    }
 }
 
 fn print_images_table(images: &[Image], args: &ImageListArgs) {
@@ -514,40 +469,26 @@ fn print_images_table(images: &[Image], args: &ImageListArgs) {
         return;
     }
 
-    // Determine columns based on --long or --output
-    // Default columns match node-triton: shortid, name, version, flags, os, type, pubdate
-    let columns: Vec<&str> = if let Some(ref output) = args.output {
-        output.split(',').map(|s| s.trim()).collect()
-    } else if args.long {
-        vec![
-            "id", "name", "version", "flags", "os", "type", "public", "pubdate",
-        ]
-    } else {
-        vec![
-            "shortid", "name", "version", "flags", "os", "type", "pubdate",
-        ]
-    };
-
-    // Create header (uppercase)
-    let headers: Vec<String> = columns.iter().map(|c| c.to_uppercase()).collect();
-    let header_refs: Vec<&str> = headers.iter().map(|s| s.as_str()).collect();
-
-    let mut tbl = if args.no_header {
-        table::create_table_no_header(columns.len())
-    } else {
-        table::create_table(&header_refs)
-    };
+    let mut tbl = TableBuilder::new(&[
+        "SHORTID", "NAME", "VERSION", "FLAGS", "OS", "TYPE", "PUBDATE",
+    ])
+    .with_long_headers(&["ID", "PUBLIC"]);
 
     for img in images {
-        let row: Vec<String> = columns
-            .iter()
-            .map(|col| get_image_field_value(img, col))
-            .collect();
-        let row_refs: Vec<&str> = row.iter().map(|s| s.as_str()).collect();
-        tbl.add_row(row_refs);
+        tbl.add_row(vec![
+            get_image_field_value(img, "shortid"),
+            get_image_field_value(img, "name"),
+            get_image_field_value(img, "version"),
+            get_image_field_value(img, "flags"),
+            get_image_field_value(img, "os"),
+            get_image_field_value(img, "type"),
+            get_image_field_value(img, "pubdate"),
+            get_image_field_value(img, "id"),
+            get_image_field_value(img, "public"),
+        ]);
     }
 
-    table::print_table(tbl);
+    tbl.print(&args.table);
 }
 
 /// Get a field value from an Image by field name
