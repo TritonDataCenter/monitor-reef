@@ -57,6 +57,7 @@
 //! ```
 
 pub mod auth;
+pub mod pagination;
 
 // Allow unwrap in generated code - Progenitor uses it in Client::new()
 #[allow(clippy::unwrap_used)]

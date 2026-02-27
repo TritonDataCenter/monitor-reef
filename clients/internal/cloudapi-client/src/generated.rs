@@ -3272,14 +3272,25 @@ pub mod types {
     #[doc = r" ```json"]
     #[doc = "{"]
     #[doc = "  \"description\": \"Image state\","]
-    #[doc = "  \"type\": \"string\","]
-    #[doc = "  \"enum\": ["]
-    #[doc = "    \"active\","]
-    #[doc = "    \"unactivated\","]
-    #[doc = "    \"disabled\","]
-    #[doc = "    \"creating\","]
-    #[doc = "    \"failed\","]
-    #[doc = "    \"unknown\""]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"active\","]
+    #[doc = "        \"unactivated\","]
+    #[doc = "        \"disabled\","]
+    #[doc = "        \"creating\","]
+    #[doc = "        \"failed\","]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Return images in all states (query filter only, not a real state)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"all\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
     #[doc = "  ]"]
     #[doc = "}"]
     #[doc = r" ```"]
@@ -3311,6 +3322,9 @@ pub mod types {
         Failed,
         #[serde(rename = "unknown")]
         Unknown,
+        #[doc = "Return images in all states (query filter only, not a real state)"]
+        #[serde(rename = "all")]
+        All,
     }
 
     impl ::std::fmt::Display for ImageState {
@@ -3322,6 +3336,7 @@ pub mod types {
                 Self::Creating => f.write_str("creating"),
                 Self::Failed => f.write_str("failed"),
                 Self::Unknown => f.write_str("unknown"),
+                Self::All => f.write_str("all"),
             }
         }
     }
@@ -3336,6 +3351,7 @@ pub mod types {
                 "creating" => Ok(Self::Creating),
                 "failed" => Ok(Self::Failed),
                 "unknown" => Ok(Self::Unknown),
+                "all" => Ok(Self::All),
                 _ => Err("invalid value".into()),
             }
         }

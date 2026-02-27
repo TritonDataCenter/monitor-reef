@@ -26,6 +26,8 @@ pub struct ImagePath {
 )]
 #[serde(rename_all = "lowercase")]
 pub enum ImageState {
+    /// Return images in all states (query filter only, not a real state)
+    All,
     Active,
     Unactivated,
     Disabled,

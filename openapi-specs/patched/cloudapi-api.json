@@ -1335,15 +1335,26 @@
       },
       "ImageState": {
         "description": "Image state",
-        "enum": [
-          "active",
-          "unactivated",
-          "disabled",
-          "creating",
-          "failed",
-          "unknown"
-        ],
-        "type": "string"
+        "oneOf": [
+          {
+            "enum": [
+              "active",
+              "unactivated",
+              "disabled",
+              "creating",
+              "failed",
+              "unknown"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Return images in all states (query filter only, not a real state)",
+            "enum": [
+              "all"
+            ],
+            "type": "string"
+          }
+        ]
       },
       "ImageType": {
         "description": "Image type",

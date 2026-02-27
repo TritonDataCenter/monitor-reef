@@ -11,6 +11,7 @@ use std::collections::HashMap;
 use anyhow::Result;
 use clap::Args;
 use cloudapi_client::TypedClient;
+use cloudapi_client::pagination::{DEFAULT_PAGE_SIZE, paginate_all};
 use cloudapi_client::types::{Brand, Machine};
 use serde::{Serialize, de::DeserializeOwned};
 
@@ -114,7 +115,7 @@ pub struct ListArgs {
 
     /// Maximum results
     #[arg(long)]
-    pub limit: Option<i64>,
+    pub limit: Option<u64>,
 
     /// Sort by field (created, name, state, etc.)
     #[arg(long, short = 's', default_value = "name")]
@@ -240,50 +241,72 @@ pub async fn run(
 
     let account = client.effective_account();
 
-    let mut req = client.inner().list_machines().account(account);
+    // Parse image UUID up front so we can report errors before starting pagination
+    let image_uuid = match &args.image {
+        Some(image) => Some(
+            image
+                .parse::<uuid::Uuid>()
+                .map_err(|_| anyhow::anyhow!("Invalid image UUID: {}", image))?,
+        ),
+        None => None,
+    };
 
-    if let Some(name) = &args.name {
-        req = req.name(name);
-    }
-    if let Some(state) = args.state {
-        req = req.state(state);
-    }
-    if let Some(image) = &args.image {
-        let image_uuid: uuid::Uuid = image
-            .parse()
-            .map_err(|_| anyhow::anyhow!("Invalid image UUID: {}", image))?;
-        req = req.image(image_uuid);
-    }
-    // Note: package filter may need to be done client-side if not supported by API
-    // if let Some(pkg) = &args.package {
-    //     req = req.package(pkg);
-    // }
-    if let Some(brand) = args.brand {
-        req = req.brand(brand);
-    }
-    if let Some(memory) = args.memory {
-        req = req.memory(memory as i64);
-    }
-    if let Some(docker) = args.docker {
-        req = req.docker(docker);
-    }
-    if args.credentials {
-        req = req.credentials(true);
-    }
-    if let Some(limit) = args.limit {
-        req = req.limit(limit);
-    }
-    if let Some(mt) = machine_type {
-        req = req.type_(mt);
-    }
-    // Handle tags - CloudAPI uses tag.key=value format
-    if let Some(tags) = &args.tag {
-        for tag in tags {
-            if let Some((key, value)) = tag.split_once('=') {
-                req = req.tag(format!("tag.{}={}", key, value));
+    // Clone filter values that need to move into the pagination closure
+    let name = args.name.clone();
+    let state = args.state;
+    let brand = args.brand;
+    let memory = args.memory;
+    let docker = args.docker;
+    let credentials = args.credentials;
+    let tags = args.tag.clone();
+    let max_results = args.limit;
+
+    let fetch_machines = paginate_all(DEFAULT_PAGE_SIZE, max_results, |limit, offset| {
+        let account = account.to_string();
+        let name = name.clone();
+        let tags = tags.clone();
+        async move {
+            let mut req = client.inner().list_machines().account(&account);
+
+            if let Some(name) = &name {
+                req = req.name(name);
             }
+            if let Some(state) = state {
+                req = req.state(state);
+            }
+            if let Some(image) = image_uuid {
+                req = req.image(image);
+            }
+            if let Some(brand) = brand {
+                req = req.brand(brand);
+            }
+            if let Some(memory) = memory {
+                req = req.memory(memory as i64);
+            }
+            if let Some(docker) = docker {
+                req = req.docker(docker);
+            }
+            if credentials {
+                req = req.credentials(true);
+            }
+            if let Some(mt) = machine_type {
+                req = req.type_(mt);
+            }
+            // Handle tags - CloudAPI uses tag.key=value format
+            if let Some(tags) = &tags {
+                for tag in tags {
+                    if let Some((key, value)) = tag.split_once('=') {
+                        req = req.tag(format!("tag.{}={}", key, value));
+                    }
+                }
+            }
+
+            req = req.limit(limit).offset(offset);
+
+            let resp = req.send().await?;
+            Ok::<_, cloudapi_client::Error<cloudapi_client::types::Error>>(resp.into_inner())
         }
-    }
+    });
 
     // Try loading images from cache first to avoid a parallel API call
     let cached_images = match cache {
@@ -293,7 +316,7 @@ pub async fn run(
 
     let (machines, image_map) = if let Some(images) = cached_images {
         // Cache hit — only fetch machines (skip images API call)
-        let machines = req.send().await?.into_inner();
+        let machines = fetch_machines.await?;
         let map: HashMap<uuid::Uuid, String> = images
             .into_iter()
             .map(|img| (img.id, format!("{}@{}", img.name, img.version)))
@@ -301,9 +324,14 @@ pub async fn run(
         (machines, map)
     } else {
         // Cache miss — fetch machines and images in parallel
-        let images_req = client.inner().list_images().account(account).send();
-        let (machines_response, images_response) = tokio::join!(req.send(), images_req);
-        let machines = machines_response?.into_inner();
+        let images_req = client
+            .inner()
+            .list_images()
+            .account(account)
+            .state(cloudapi_client::types::ImageState::All)
+            .send();
+        let (machines_result, images_response) = tokio::join!(fetch_machines, images_req);
+        let machines = machines_result?;
         let map: HashMap<uuid::Uuid, String> = match images_response {
             Ok(r) => {
                 let images = r.into_inner();

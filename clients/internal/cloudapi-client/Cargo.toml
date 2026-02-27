@@ -37,3 +37,6 @@ clap = { workspace = true }
 urlencoding = "2"
 # Constructing fake HTTP responses in emit-payload mode (debug builds only)
 http = "1"
+
+[dev-dependencies]
+tokio = { workspace = true }
