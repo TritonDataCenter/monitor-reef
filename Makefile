@@ -62,9 +62,19 @@ build-legacy: | $(CARGO_EXEC) ## Build legacy crates (rebalancer, cueball, etc.)
 	@mv Cargo.toml.legacy Cargo.toml
 	@if [ -f Cargo.lock ]; then mv Cargo.lock Cargo.lock.modern; fi
 	@cp Cargo.lock.legacy Cargo.lock
-	@echo "Building legacy crates..."
-	$(CARGO) build --workspace || { \
+	@echo "Building legacy crates (excluding agent)..."
+	$(CARGO) build --workspace --exclude agent || { \
 		echo "Build failed, restoring modern workspace..."; \
+		mv Cargo.toml Cargo.toml.legacy; \
+		mv Cargo.toml.modern Cargo.toml; \
+		rm -f Cargo.lock; \
+		if [ -f Cargo.lock.modern ]; then mv Cargo.lock.modern Cargo.lock; fi; \
+		exit 1; \
+	}
+	@echo "Building agent with isolated target dir..."
+	$(CARGO) build -p agent \
+	    --target-dir=libs/rebalancer-legacy/target-agent || { \
+		echo "Agent build failed, restoring modern workspace..."; \
 		mv Cargo.toml Cargo.toml.legacy; \
 		mv Cargo.toml.modern Cargo.toml; \
 		rm -f Cargo.lock; \
