@@ -205,7 +205,7 @@ async fn list_volumes(
     use_json: bool,
 ) -> Result<()> {
     apply_positional_filters(&mut args)?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let all_volumes = client.list_volumes(account).await?;
 
     // Apply client-side filters
@@ -261,7 +261,7 @@ async fn list_volumes(
 }
 
 async fn get_volume(args: VolumeGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let volume_id = resolve_volume(&args.volume, client).await?;
 
     let volume = client.get_volume(account, &volume_id.to_string()).await?;
@@ -373,7 +373,7 @@ fn parse_tags(tag_list: &[String]) -> Result<serde_json::Map<String, serde_json:
 }
 
 async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Warn about affinity if specified (not currently supported by API)
     if args.affinity.is_some() {
@@ -477,7 +477,7 @@ async fn wait_for_volume_ready(
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let start = Instant::now();
     let timeout = Duration::from_secs(timeout_secs);
 
@@ -499,7 +499,7 @@ async fn wait_for_volume_ready(
 }
 
 async fn delete_volumes(args: VolumeDeleteArgs, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     for volume_name in &args.volumes {
         let volume_id = resolve_volume(volume_name, client).await?;
@@ -540,7 +540,7 @@ async fn list_volume_sizes(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client
         .inner()
         .list_volume_sizes()
@@ -570,7 +570,7 @@ pub async fn resolve_volume(id_or_name: &str, client: &TypedClient) -> Result<uu
         return Ok(uuid);
     }
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client
         .inner()
         .list_volumes()
@@ -607,7 +607,7 @@ async fn wait_for_volume_deletion(
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let start = Instant::now();
     let timeout = Duration::from_secs(timeout_secs);
 

@@ -238,7 +238,7 @@ pub async fn run(
 ) -> Result<()> {
     let machine_type = apply_positional_filters(&mut args)?;
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     let mut req = client.inner().list_machines().account(account);
 

@@ -21,7 +21,7 @@ pub struct DatacenterListArgs {
 
 /// List datacenters
 pub async fn run(args: DatacenterListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client
         .inner()
         .list_datacenters()

@@ -16,7 +16,7 @@ pub async fn resolve_user(id_or_login: &str, client: &TypedClient) -> Result<Str
         return Ok(uuid.to_string());
     }
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client.inner().list_users().account(account).send().await?;
 
     let users = response.into_inner();

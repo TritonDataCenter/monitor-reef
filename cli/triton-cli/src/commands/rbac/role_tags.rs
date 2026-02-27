@@ -131,7 +131,7 @@ impl RoleTagsCommand {
 
 /// Set role tags on a resource (replaces all existing tags)
 async fn role_tags_set(args: RoleTagsSetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let resource_id = resolve_resource_id(&args.resource_type, &args.resource, client).await?;
 
     let request = cloudapi_client::types::ReplaceRoleTagsRequest {
@@ -395,7 +395,7 @@ async fn resolve_resource_id(
     resource: &str,
     client: &TypedClient,
 ) -> Result<String> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     match resource_type {
         RoleTagResource::Instance => {
@@ -494,7 +494,7 @@ async fn get_current_role_tags(
     resource_id: &str,
     client: &TypedClient,
 ) -> Result<Vec<String>> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     match resource_type {
         RoleTagResource::Instance => {

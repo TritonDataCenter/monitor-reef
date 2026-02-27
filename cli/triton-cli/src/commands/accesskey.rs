@@ -93,7 +93,7 @@ async fn list_access_keys(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client
         .inner()
         .list_access_keys()
@@ -132,7 +132,7 @@ async fn get_access_key(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client
         .inner()
         .get_access_key()
@@ -157,7 +157,7 @@ async fn create_access_key(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     let request = cloudapi_client::types::CreateAccessKeyRequest {
         status: args
@@ -194,7 +194,7 @@ async fn update_access_key(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     let request = if let Some(file_path) = &args.file {
         let content = if file_path.as_os_str() == "-" {
@@ -238,7 +238,7 @@ async fn update_access_key(
 }
 
 async fn delete_access_keys(args: AccesskeyDeleteArgs, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     for id in &args.accesskeyids {
         if !args.force {

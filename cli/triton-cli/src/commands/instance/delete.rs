@@ -30,7 +30,7 @@ pub struct DeleteArgs {
 }
 
 pub async fn run(args: DeleteArgs, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     for instance in &args.instances {
         let machine_id = super::get::resolve_instance(instance, client).await?;

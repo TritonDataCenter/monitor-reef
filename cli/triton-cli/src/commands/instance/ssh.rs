@@ -85,7 +85,7 @@ pub async fn run(
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Get instance details
     let machine = client
@@ -166,7 +166,7 @@ async fn resolve_proxy_config(
         None => return Ok(None),
     };
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Look up the proxy instance
     let proxy_id = super::get::resolve_instance(&proxy_ref, client)
@@ -227,7 +227,7 @@ async fn fetch_image_default_user(
         return "root".to_string();
     }
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Cache miss — fetch from API
     let image_result = client

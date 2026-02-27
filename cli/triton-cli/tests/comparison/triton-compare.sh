@@ -1065,6 +1065,14 @@ run_payload_tests() {
     printf "%-8s %-30s %s\n" "RESULT" "TEST ID" "DESCRIPTION"
     printf "%-8s %-30s %s\n" "------" "-------" "-----------"
 
+    # Debug: show any cached files in both CLIs' config dirs
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "  [debug] Rust cache:"
+        find "$ISOLATED_CONFIG/cache" -type f 2>/dev/null | sed 's/^/    /' || echo "    (none)"
+        echo "  [debug] Node cache (HOME=$ISOLATED_HOME):"
+        find "$ISOLATED_HOME/.triton/cache" -type f 2>/dev/null | sed 's/^/    /' || echo "    (none)"
+    fi
+
     # Dummy UUIDs for testing (no API contact needed)
     local IMAGE_UUID="00000000-0000-0000-0000-000000000001"
     local PKG_UUID="00000000-0000-0000-0000-000000000002"
@@ -1409,6 +1417,41 @@ POLICYJSON
     run_payload_test_mutations "payload-volume-delete-by-name" "volume delete (by name)" \
         volume delete test-volume -f
 
+    # --- Act-as tests ---
+    #
+    # The --act-as flag changes the account in the URL path (e.g.,
+    # /other-account/machines instead of /tester/machines). These tests
+    # verify that the Rust CLI handles this correctly across different
+    # HTTP methods and resource types.
+
+    # GET list
+    run_payload_test "payload-act-as-inst-list" "instance list (act-as)" \
+        --act-as other-account instance list
+
+    # POST create
+    run_payload_test "payload-act-as-create" "instance create (act-as)" \
+        --act-as other-account instance create "$IMAGE_UUID" "$PKG_UUID" --name test-actas
+
+    # POST action-dispatch
+    run_payload_test "payload-act-as-stop" "instance stop (act-as)" \
+        --act-as other-account instance stop "$INST_UUID"
+
+    # DELETE
+    run_payload_test "payload-act-as-delete" "instance delete (act-as)" \
+        --act-as other-account instance delete --force "$INST_UUID"
+
+    # GET different resource
+    run_payload_test "payload-act-as-img-list" "image list (act-as)" \
+        --act-as other-account image list
+
+    # POST non-instance resource
+    run_payload_test "payload-act-as-fwrule" "fwrule create (act-as)" \
+        --act-as other-account fwrule create "FROM any TO vm $INST_UUID ALLOW tcp PORT 22"
+
+    # Name resolution + act-as (filter to mutations only)
+    run_payload_test_mutations "payload-act-as-stop-name" "instance stop by name (act-as)" \
+        --act-as other-account instance stop test-instance
+
     # --- Rendered output tests ---
     #
     # Compare the rendered CLI output (tables and JSON) rather than HTTP
@@ -1440,6 +1483,15 @@ POLICYJSON
 
     run_render_json_test "render-volume-list-j" "volume list -j (rendered)" \
         volumes -j
+
+    # Debug: show any cached files created during the run
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo ""
+        echo "  [debug] Rust cache (post-run):"
+        find "$ISOLATED_CONFIG/cache" -type f 2>/dev/null | sed 's/^/    /' || echo "    (none)"
+        echo "  [debug] Node cache (post-run, HOME=$ISOLATED_HOME):"
+        find "$ISOLATED_HOME/.triton/cache" -type f 2>/dev/null | sed 's/^/    /' || echo "    (none)"
+    fi
 
     echo ""
 }

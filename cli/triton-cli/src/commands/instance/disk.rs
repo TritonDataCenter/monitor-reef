@@ -119,7 +119,7 @@ impl DiskCommand {
 
 pub async fn list_disks(args: DiskListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     let response = client
         .inner()
@@ -175,7 +175,7 @@ fn get_disk_field_value(disk: &Disk, field: &str) -> String {
 
 async fn get_disk(args: DiskGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let disk_id: uuid::Uuid = args.disk.parse()?;
 
     let response = client
@@ -200,7 +200,7 @@ async fn get_disk(args: DiskGetArgs, client: &TypedClient, use_json: bool) -> Re
 
 async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let id_str = machine_id.to_string();
 
     // List existing disks before adding (baseline for --wait)
@@ -254,7 +254,7 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
 
 async fn resize_disk(args: DiskResizeArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let disk_id: uuid::Uuid = args.disk.parse()?;
 
     let request = cloudapi_client::ResizeDiskRequest {
@@ -283,7 +283,7 @@ async fn delete_disk(args: DiskDeleteArgs, client: &TypedClient) -> Result<()> {
     }
 
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let disk_id: uuid::Uuid = args.disk.parse()?;
 
     client

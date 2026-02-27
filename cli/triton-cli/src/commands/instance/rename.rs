@@ -21,7 +21,7 @@ pub struct RenameArgs {
 
 pub async fn run(args: RenameArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let id_str = machine_id.to_string();
 
     client

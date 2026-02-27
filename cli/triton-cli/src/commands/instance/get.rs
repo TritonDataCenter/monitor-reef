@@ -25,7 +25,7 @@ pub struct IpArgs {
 }
 
 pub async fn run(args: GetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let machine_uuid = resolve_instance(&args.instance, client).await?;
 
     let machine = client.get_machine(account, &machine_uuid).await?;
@@ -40,7 +40,7 @@ pub async fn run(args: GetArgs, client: &TypedClient, use_json: bool) -> Result<
 }
 
 pub async fn ip(args: IpArgs, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let machine_uuid = resolve_instance(&args.instance, client).await?;
 
     let machine = client.get_machine(account, &machine_uuid).await?;
@@ -62,7 +62,7 @@ pub async fn resolve_instance(id_or_name: &str, client: &TypedClient) -> Result<
         return Ok(uuid);
     }
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Try short ID match (at least 8 hex characters) — requires fetching all machines
     let is_short_uuid = id_or_name.len() >= 8

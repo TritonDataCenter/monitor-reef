@@ -66,7 +66,7 @@ pub async fn wait_for_states(
     timeout_secs: u64,
     client: &TypedClient,
 ) -> Result<Machine> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let start = Instant::now();
     let timeout = Duration::from_secs(timeout_secs);
 

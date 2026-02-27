@@ -56,7 +56,7 @@ pub struct RebootArgs {
 pub async fn start(args: StartArgs, client: &TypedClient) -> Result<()> {
     for instance in &args.instances {
         let machine_id = super::get::resolve_instance(instance, client).await?;
-        let account = &client.auth_config().account;
+        let account = client.effective_account();
         let id_str = machine_id.to_string();
 
         client.start_machine(account, &machine_id, None).await?;
@@ -80,7 +80,7 @@ pub async fn start(args: StartArgs, client: &TypedClient) -> Result<()> {
 pub async fn stop(args: StopArgs, client: &TypedClient) -> Result<()> {
     for instance in &args.instances {
         let machine_id = super::get::resolve_instance(instance, client).await?;
-        let account = &client.auth_config().account;
+        let account = client.effective_account();
         let id_str = machine_id.to_string();
 
         client.stop_machine(account, &machine_id, None).await?;
@@ -104,7 +104,7 @@ pub async fn stop(args: StopArgs, client: &TypedClient) -> Result<()> {
 pub async fn reboot(args: RebootArgs, client: &TypedClient) -> Result<()> {
     for instance in &args.instances {
         let machine_id = super::get::resolve_instance(instance, client).await?;
-        let account = &client.auth_config().account;
+        let account = client.effective_account();
         let id_str = machine_id.to_string();
 
         client.reboot_machine(account, &machine_id, None).await?;

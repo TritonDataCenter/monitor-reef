@@ -33,7 +33,7 @@ pub struct DisableProtectionArgs {
 }
 
 pub async fn enable(args: EnableProtectionArgs, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     for instance in &args.instances {
         let machine_id = super::get::resolve_instance(instance, client).await?;
@@ -53,7 +53,7 @@ pub async fn enable(args: EnableProtectionArgs, client: &TypedClient) -> Result<
 }
 
 pub async fn disable(args: DisableProtectionArgs, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     for instance in &args.instances {
         let machine_id = super::get::resolve_instance(instance, client).await?;

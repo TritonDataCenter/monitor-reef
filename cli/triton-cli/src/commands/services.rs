@@ -21,7 +21,7 @@ pub struct ServiceListArgs {
 
 /// List available service endpoints
 pub async fn run(args: ServiceListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client
         .inner()
         .list_services()

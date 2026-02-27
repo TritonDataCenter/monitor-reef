@@ -111,7 +111,7 @@ pub async fn list_snapshots(
     use_json: bool,
 ) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     let response = client
         .inner()
@@ -158,7 +158,7 @@ fn get_snapshot_field_value(snap: &Snapshot, field: &str) -> String {
 
 async fn get_snapshot(args: SnapshotGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     let response = client
         .inner()
@@ -186,7 +186,7 @@ async fn create_snapshot(
     use_json: bool,
 ) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     let request = cloudapi_client::types::CreateSnapshotRequest {
         name: Some(args.name.clone()),
@@ -235,7 +235,7 @@ async fn wait_for_snapshot_state(
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let start = Instant::now();
     let timeout = Duration::from_secs(timeout_secs);
 
@@ -286,7 +286,7 @@ async fn delete_snapshot(args: SnapshotDeleteArgs, client: &TypedClient) -> Resu
     }
 
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     client
         .inner()
@@ -304,7 +304,7 @@ async fn delete_snapshot(args: SnapshotDeleteArgs, client: &TypedClient) -> Resu
 
 async fn boot_snapshot(args: SnapshotBootArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let id_str = machine_id.to_string();
 
     client

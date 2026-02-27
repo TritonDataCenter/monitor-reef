@@ -246,6 +246,12 @@ pub fn set_emit_payload_mode(enabled: bool) {
     EMIT_PAYLOAD_MODE.store(enabled, Ordering::Relaxed);
 }
 
+/// Check whether emit-payload mode is active.
+#[cfg(debug_assertions)]
+pub fn is_emit_payload_mode() -> bool {
+    EMIT_PAYLOAD_MODE.load(Ordering::Relaxed)
+}
+
 /// Print a JSON envelope capturing an HTTP request's method, URL, and body.
 /// The URL includes the scheme/host so callers can verify which datacenter a
 /// request targets (e.g., `triton image copy` sends to a different DC).
@@ -905,6 +911,14 @@ impl TypedClient {
     /// Get the authentication configuration
     pub fn auth_config(&self) -> &AuthConfig {
         &self.auth_config
+    }
+
+    /// Return the account to use in URL paths.
+    ///
+    /// When `--act-as` is active, this returns the target account so that
+    /// URL segments use `/:target_account/` instead of the signing account.
+    pub fn effective_account(&self) -> &str {
+        self.auth_config.effective_account()
     }
 
     /// Access the underlying reqwest HTTP client

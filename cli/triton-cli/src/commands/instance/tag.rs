@@ -154,7 +154,7 @@ impl TagCommand {
 /// - With -j: compact JSON
 pub async fn list_tags(args: TagListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     let response = client
         .inner()
@@ -184,7 +184,7 @@ pub async fn list_tags(args: TagListArgs, client: &TypedClient, use_json: bool) 
 /// - With -j: JSON-encoded value (e.g., "bar" for string, true for bool)
 async fn get_tag(args: TagGetArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     let response = client
         .inner()
@@ -288,7 +288,7 @@ async fn load_tags_from_file(file_path: &std::path::Path) -> Result<Map<String, 
 /// Set tags and output the resulting tags as JSON
 async fn set_tags(args: TagSetArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Collect tags from files first, then command line args (args win over files)
     let mut tag_map: Map<String, Value> = Map::new();
@@ -380,7 +380,7 @@ async fn delete_tag(args: TagDeleteArgs, client: &TypedClient) -> Result<()> {
     }
 
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Capture current state before tag operation so --wait uses the correct target
     let pre_state = if args.wait {
@@ -437,7 +437,7 @@ async fn delete_tag(args: TagDeleteArgs, client: &TypedClient) -> Result<()> {
 /// Output format matches node-triton: JSON with updated tags
 async fn replace_all_tags(args: TagReplaceAllArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Collect tags from files first, then command line args (args win over files)
     let mut tag_map: Map<String, Value> = Map::new();

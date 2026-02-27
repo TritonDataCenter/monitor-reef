@@ -138,7 +138,7 @@ impl FwruleCommand {
 }
 
 async fn list_rules(args: FwruleListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client
         .inner()
         .list_firewall_rules()
@@ -177,7 +177,7 @@ async fn list_rules(args: FwruleListArgs, client: &TypedClient, use_json: bool) 
 }
 
 async fn get_rule(args: FwruleGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let rule_id = resolve_rule(&args.id, client).await?;
 
     let response = client
@@ -200,7 +200,7 @@ async fn get_rule(args: FwruleGetArgs, client: &TypedClient, use_json: bool) -> 
 }
 
 async fn create_rule(args: FwruleCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     let request = cloudapi_client::types::CreateFirewallRuleRequest {
         rule: args.rule.clone(),
@@ -233,7 +233,7 @@ async fn create_rule(args: FwruleCreateArgs, client: &TypedClient, use_json: boo
 }
 
 async fn delete_rules(args: FwruleDeleteArgs, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     for rule_id in &args.ids {
         let resolved_id = resolve_rule(rule_id, client).await?;
@@ -264,7 +264,7 @@ async fn delete_rules(args: FwruleDeleteArgs, client: &TypedClient) -> Result<()
 }
 
 async fn enable_rules(args: FwruleEnableArgs, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     for rule_id in &args.ids {
         let resolved_id = resolve_rule(rule_id, client).await?;
@@ -284,7 +284,7 @@ async fn enable_rules(args: FwruleEnableArgs, client: &TypedClient) -> Result<()
 }
 
 async fn disable_rules(args: FwruleDisableArgs, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     for rule_id in &args.ids {
         let resolved_id = resolve_rule(rule_id, client).await?;
@@ -304,7 +304,7 @@ async fn disable_rules(args: FwruleDisableArgs, client: &TypedClient) -> Result<
 }
 
 async fn update_rule(args: FwruleUpdateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let rule_id = resolve_rule(&args.id, client).await?;
 
     // Start with --flag values
@@ -404,7 +404,7 @@ async fn list_rule_instances(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let rule_id = resolve_rule(&args.id, client).await?;
 
     let response = client
@@ -448,7 +448,7 @@ async fn resolve_rule(id_or_short: &str, client: &TypedClient) -> Result<uuid::U
         return Ok(uuid);
     }
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client
         .inner()
         .list_firewall_rules()

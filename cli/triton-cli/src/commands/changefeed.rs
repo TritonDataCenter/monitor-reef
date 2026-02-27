@@ -32,7 +32,7 @@ pub struct ChangefeedArgs {
 }
 
 pub async fn run(args: ChangefeedArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Build WebSocket URL
     let base_url = client.inner().baseurl();

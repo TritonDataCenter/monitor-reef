@@ -124,7 +124,7 @@ pub async fn list_user_keys(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let user_id = resolve_user(&args.user, client).await?;
 
     let response = client
@@ -159,7 +159,7 @@ pub async fn get_user_key(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let user_id = resolve_user(&args.user, client).await?;
 
     let response = client
@@ -189,7 +189,7 @@ pub async fn add_user_key(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let user_id = resolve_user(&args.user, client).await?;
 
     // Read key from file if prefixed with @
@@ -242,7 +242,7 @@ pub async fn delete_user_key(args: UserKeyDeleteArgs, client: &TypedClient) -> R
         }
     }
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let user_id = resolve_user(&args.user, client).await?;
 
     client
@@ -269,7 +269,7 @@ async fn add_key_from_file(
 ) -> Result<()> {
     use std::io::{self, Read};
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let user_id = resolve_user(user, client).await?;
 
     // Read key from file or stdin
@@ -331,7 +331,7 @@ async fn add_key_from_file(
 
 /// Delete multiple keys (legacy -d flag support)
 async fn delete_keys(user: &str, keys: Vec<String>, yes: bool, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let user_id = resolve_user(user, client).await?;
 
     for key in &keys {

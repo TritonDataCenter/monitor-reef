@@ -147,6 +147,15 @@ impl AuthConfig {
         self.accept_version = Some(version.into());
         self
     }
+
+    /// Return the account to use in URL paths.
+    ///
+    /// When `act_as` is set (operator masquerading), the target account
+    /// replaces the signing account in URL paths — matching node-triton's
+    /// behaviour of rewriting `/:account/` segments.
+    pub fn effective_account(&self) -> &str {
+        self.act_as.as_deref().unwrap_or(&self.account)
+    }
 }
 
 /// Result of probing a key source to check if it's usable

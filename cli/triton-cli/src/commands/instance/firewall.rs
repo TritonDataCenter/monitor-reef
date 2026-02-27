@@ -36,7 +36,7 @@ pub struct FwrulesArgs {
 }
 
 pub async fn enable(args: EnableFirewallArgs, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     for instance in &args.instances {
         let machine_id = super::get::resolve_instance(instance, client).await?;
@@ -51,7 +51,7 @@ pub async fn enable(args: EnableFirewallArgs, client: &TypedClient) -> Result<()
 }
 
 pub async fn disable(args: DisableFirewallArgs, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     for instance in &args.instances {
         let machine_id = super::get::resolve_instance(instance, client).await?;
@@ -67,7 +67,7 @@ pub async fn disable(args: DisableFirewallArgs, client: &TypedClient) -> Result<
 
 pub async fn list_rules(args: FwrulesArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     let response = client
         .inner()

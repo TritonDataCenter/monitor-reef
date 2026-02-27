@@ -211,7 +211,7 @@ pub struct RbacInfo {
 }
 
 pub async fn rbac_info(args: InfoArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Fetch all RBAC data concurrently
     let (users_result, roles_result, policies_result) = tokio::join!(
@@ -383,7 +383,7 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
         )
     })?;
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Fetch current state
     let (users_result, roles_result, policies_result) = tokio::join!(
@@ -878,7 +878,7 @@ fn generate_password() -> Result<String> {
 }
 
 async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     match change {
         RbacChange::CreateUser {
@@ -1207,7 +1207,7 @@ async fn execute_dev_actions(
     _dry_run: bool,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     if users.is_empty() {
         if !use_json {
@@ -1311,7 +1311,7 @@ async fn execute_dev_actions(
 }
 
 pub async fn rbac_reset(args: ResetArgs, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Fetch current state
     let (users_result, roles_result, policies_result) = tokio::join!(

@@ -143,7 +143,7 @@ impl VlanCommand {
 }
 
 async fn list_vlans(args: VlanListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client
         .inner()
         .list_fabric_vlans()
@@ -199,7 +199,7 @@ async fn list_vlans(args: VlanListArgs, client: &TypedClient, use_json: bool) ->
 }
 
 async fn get_vlan(args: VlanGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let vlan_id = resolve_vlan(&args.vlan, client).await?;
 
     let response = client
@@ -230,7 +230,7 @@ async fn resolve_vlan(id_or_name: &str, client: &TypedClient) -> Result<u16> {
     }
 
     // Otherwise, look up by name
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client
         .inner()
         .list_fabric_vlans()
@@ -250,7 +250,7 @@ async fn resolve_vlan(id_or_name: &str, client: &TypedClient) -> Result<u16> {
 }
 
 async fn create_vlan(args: VlanCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     let request = cloudapi_client::types::CreateFabricVlanRequest {
         vlan_id: args.vlan_id,
@@ -278,7 +278,7 @@ async fn create_vlan(args: VlanCreateArgs, client: &TypedClient, use_json: bool)
 }
 
 async fn delete_vlans(args: VlanDeleteArgs, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     for vlan in &args.vlans {
         let vlan_id = resolve_vlan(vlan, client).await?;
@@ -309,7 +309,7 @@ async fn delete_vlans(args: VlanDeleteArgs, client: &TypedClient) -> Result<()> 
 }
 
 async fn update_vlan(args: VlanUpdateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let vlan_id = resolve_vlan(&args.vlan, client).await?;
 
     // Start with --flag values
@@ -406,7 +406,7 @@ async fn list_vlan_networks(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let vlan_id = resolve_vlan(&args.vlan, client).await?;
 
     let response = client

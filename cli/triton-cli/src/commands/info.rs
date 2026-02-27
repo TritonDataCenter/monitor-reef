@@ -12,7 +12,7 @@ use cloudapi_client::{ClientInfo, TypedClient};
 use crate::output::{enum_to_display, json};
 
 pub async fn run(client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let profile_url = client.inner().baseurl();
 
     // Fetch account details

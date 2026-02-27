@@ -185,7 +185,7 @@ pub async fn list_policies(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client
         .inner()
         .list_policies()
@@ -233,7 +233,7 @@ fn get_policy_field_value(policy: &cloudapi_client::types::Policy, field: &str) 
 }
 
 async fn get_policy(args: PolicyGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     let response = client
         .inner()
@@ -264,7 +264,7 @@ async fn get_policy(args: PolicyGetArgs, client: &TypedClient, use_json: bool) -
 }
 
 async fn create_policy(args: PolicyCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     if args.rule.is_empty() {
         return Err(anyhow::anyhow!(
@@ -297,7 +297,7 @@ async fn create_policy(args: PolicyCreateArgs, client: &TypedClient, use_json: b
 }
 
 async fn update_policy(args: PolicyUpdateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     let request = cloudapi_client::types::UpdatePolicyRequest {
         name: args.name,
@@ -341,7 +341,7 @@ pub async fn delete_policies(args: PolicyDeleteArgs, client: &TypedClient) -> Re
             }
         }
 
-        let account = &client.auth_config().account;
+        let account = client.effective_account();
 
         // Verify policy exists via GET first (matches node-triton's getPolicy call),
         // then delete using the original reference (name or UUID).
@@ -463,7 +463,7 @@ async fn add_policy_from_file(
         .map(|s| s.to_string());
 
     // Create the policy
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let request = cloudapi_client::types::CreatePolicyRequest {
         name: name.clone(),
         rules,
@@ -533,7 +533,7 @@ rules:
 
 /// Edit policy in $EDITOR (legacy -e flag support)
 async fn edit_policy_in_editor(policy_ref: &str, client: &TypedClient) -> Result<()> {
-    let account = client.auth_config().account.clone();
+    let account = client.effective_account().to_owned();
 
     // Fetch current policy
     let response = client

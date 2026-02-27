@@ -192,7 +192,7 @@ pub async fn list_roles(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client.inner().list_roles().account(account).send().await?;
 
     let roles = response.into_inner();
@@ -231,7 +231,7 @@ fn get_role_field_value(role: &cloudapi_client::types::Role, field: &str) -> Str
 }
 
 async fn get_role(args: RoleGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     let response = client
         .inner()
@@ -296,7 +296,7 @@ fn policy_ref(name: &str) -> PolicyRef {
 }
 
 async fn create_role(args: RoleCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Merge --member (default=false) and --default-member (default=true) into MemberRef vec
     let mut member_refs: Vec<MemberRef> =
@@ -336,7 +336,7 @@ async fn create_role(args: RoleCreateArgs, client: &TypedClient, use_json: bool)
 }
 
 async fn update_role(args: RoleUpdateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Merge --member (default=false) and --default-member (default=true) into MemberRef vec
     let mut member_refs: Vec<MemberRef> =
@@ -389,7 +389,7 @@ pub async fn delete_roles(args: RoleDeleteArgs, client: &TypedClient) -> Result<
             }
         }
 
-        let account = &client.auth_config().account;
+        let account = client.effective_account();
 
         // Verify role exists via GET first (matches node-triton's getRole call),
         // then delete using the original reference (name or UUID).
@@ -572,7 +572,7 @@ async fn add_role_from_file(
     };
 
     // Create the role
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let request = cloudapi_client::types::CreateRoleRequest {
         name: name.clone(),
         policies,
@@ -651,7 +651,7 @@ default_members:
 
 /// Edit role in $EDITOR (legacy -e flag support)
 async fn edit_role_in_editor(role_ref: &str, client: &TypedClient) -> Result<()> {
-    let account = client.auth_config().account.clone();
+    let account = client.effective_account().to_owned();
 
     // Fetch current role
     let response = client

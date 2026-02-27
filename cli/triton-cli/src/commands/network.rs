@@ -249,7 +249,7 @@ async fn list_networks(
     use_json: bool,
 ) -> Result<()> {
     apply_positional_filters(&mut args)?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client
         .inner()
         .list_networks()
@@ -312,7 +312,7 @@ async fn list_networks(
 }
 
 async fn get_network(args: NetworkGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let network_uuid = resolve_network(&args.network, client).await?;
 
     let response = client
@@ -335,7 +335,7 @@ async fn get_network(args: NetworkGetArgs, client: &TypedClient, use_json: bool)
 }
 
 async fn get_default_network(client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client.inner().get_config().account(account).send().await?;
 
     let config = response.into_inner();
@@ -352,7 +352,7 @@ async fn get_default_network(client: &TypedClient, use_json: bool) -> Result<()>
 }
 
 async fn set_default_network(args: NetworkSetDefaultArgs, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let network_uuid = resolve_network(&args.network, client).await?;
 
     let request = cloudapi_client::types::UpdateConfigRequest {
@@ -377,7 +377,7 @@ async fn create_network(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Note: gateway/no-nat validation is in NetworkCommand::pre_validate()
     // which runs before client creation, so it works even without a profile.
@@ -447,7 +447,7 @@ async fn create_network(
 }
 
 async fn delete_network(args: NetworkDeleteArgs, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Resolve network and get its details
     let (network_id, network_name, vlan_id) = resolve_fabric_network(&args.network, client).await?;
@@ -491,7 +491,7 @@ async fn resolve_fabric_network(
     id_or_name: &str,
     client: &TypedClient,
 ) -> Result<(String, String, u16)> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // List all fabric VLANs first
     let vlans_response = client
@@ -541,7 +541,7 @@ async fn list_network_ips(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let network_uuid = resolve_network(&args.network, client).await?;
 
     let response = client
@@ -604,7 +604,7 @@ async fn get_network_ip(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let network_uuid = resolve_network(&args.network, client).await?;
 
     let response = client
@@ -632,7 +632,7 @@ async fn update_network_ip(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let network_uuid = resolve_network(&args.network, client).await?;
 
     // Parse update data from file or command line
@@ -684,7 +684,7 @@ pub async fn resolve_network(id_or_name: &str, client: &TypedClient) -> Result<u
         return Ok(uuid);
     }
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client
         .inner()
         .list_networks()
@@ -720,7 +720,7 @@ pub async fn resolve_network_with_get(
     id_or_name: &str,
     client: &TypedClient,
 ) -> Result<uuid::Uuid> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
         // Validate the network exists via GET

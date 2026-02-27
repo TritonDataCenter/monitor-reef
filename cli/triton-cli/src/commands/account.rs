@@ -112,7 +112,7 @@ fn long_ago(when: &str) -> String {
 }
 
 async fn get_account(client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client.inner().get_account().account(account).send().await?;
 
     let acc = response.into_inner();
@@ -145,7 +145,7 @@ async fn get_account(client: &TypedClient, use_json: bool) -> Result<()> {
 }
 
 async fn get_limits(client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client
         .inner()
         .get_provisioning_limits()
@@ -200,7 +200,7 @@ async fn update_account(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Handle file-based input
     if let Some(file_path) = &args.file {

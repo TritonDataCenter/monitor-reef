@@ -122,7 +122,7 @@ pub async fn list_metadata(
     use_json: bool,
 ) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Note: credentials parameter is not currently supported in the API
     let _ = args.credentials; // silence unused warning
@@ -161,7 +161,7 @@ pub async fn list_metadata(
 
 async fn get_metadata(args: MetadataGetArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     let response = client
         .inner()
@@ -180,7 +180,7 @@ async fn get_metadata(args: MetadataGetArgs, client: &TypedClient) -> Result<()>
 
 async fn set_metadata(args: MetadataSetArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Parse metadata from file or command line
     let meta_map: serde_json::Map<String, serde_json::Value> = if let Some(file_path) = &args.file {
@@ -261,7 +261,7 @@ async fn delete_metadata(args: MetadataDeleteArgs, client: &TypedClient) -> Resu
     }
 
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     client
         .inner()
@@ -288,7 +288,7 @@ async fn delete_all_metadata(args: MetadataDeleteAllArgs, client: &TypedClient) 
     }
 
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     client
         .inner()

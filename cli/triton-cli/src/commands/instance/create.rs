@@ -122,7 +122,7 @@ pub async fn run(
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Resolve image (could be name@version or UUID)
     let image_id = crate::commands::image::resolve_image(&args.image, client, cache)
@@ -647,7 +647,7 @@ async fn resolve_package(id_or_name: &str, client: &TypedClient) -> Result<Strin
         return Ok(uuid.to_string());
     }
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client
         .inner()
         .list_packages()

@@ -81,7 +81,7 @@ impl KeyCommand {
 }
 
 async fn list_keys(args: KeyListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client.inner().list_keys().account(account).send().await?;
 
     let mut keys = response.into_inner();
@@ -112,7 +112,7 @@ async fn list_keys(args: KeyListArgs, client: &TypedClient, use_json: bool) -> R
 }
 
 async fn get_key(args: KeyGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client
         .inner()
         .get_key()
@@ -133,7 +133,7 @@ async fn get_key(args: KeyGetArgs, client: &TypedClient, use_json: bool) -> Resu
 }
 
 async fn add_key(args: KeyAddArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Read key from file or stdin
     let key_content = if let Some(file) = &args.file {
@@ -178,7 +178,7 @@ async fn add_key(args: KeyAddArgs, client: &TypedClient, use_json: bool) -> Resu
 }
 
 async fn delete_keys(args: KeyDeleteArgs, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     for key_name in &args.keys {
         if !args.force {

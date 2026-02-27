@@ -32,8 +32,13 @@ impl ImageCache {
     /// Create a new ImageCache for the given profile.
     ///
     /// Creates the cache directory if needed. Returns None if the directory
-    /// cannot be created.
+    /// cannot be created or if emit-payload mode is active (so every
+    /// request is visible in the captured output).
     pub async fn new(profile: &Profile) -> Option<Self> {
+        #[cfg(debug_assertions)]
+        if cloudapi_client::is_emit_payload_mode() {
+            return None;
+        }
         let slug = profile_slug(profile);
         let dir = crate::config::paths::cache_dir(&slug).ok()?;
         tokio::fs::create_dir_all(&dir).await.ok()?;

@@ -81,7 +81,7 @@ struct WsProxyState {
 }
 
 pub async fn run(args: VncArgs, client: &TypedClient, json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let machine_id = resolve_instance(&args.instance, client).await?;
 
     // Build WebSocket URL

@@ -407,7 +407,7 @@ async fn list_images(
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
     let owner = apply_positional_filters(&mut args)?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Determine if this is an unfiltered query that can use/populate cache
     let is_unfiltered = args.name.is_none()
@@ -676,7 +676,7 @@ async fn get_image(
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let image_uuid = resolve_image(&args.image, client, cache).await?;
 
     let response = client
@@ -699,7 +699,7 @@ async fn get_image(
 }
 
 async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let machine_id =
         crate::commands::instance::get::resolve_instance(&args.instance, client).await?;
 
@@ -815,7 +815,7 @@ async fn delete_images(
     client: &TypedClient,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     for image_name in &args.images {
         let image_uuid = resolve_image_no_verify(image_name, client, cache).await?;
@@ -851,7 +851,7 @@ async fn clone_image(
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let image_uuid = resolve_image(&args.image, client, cache).await?;
 
     // Handle dry-run
@@ -885,7 +885,7 @@ async fn copy_image(
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let dest_dc = &args.datacenter;
 
     // Resolve the image (supports name@version, shortID, UUID)
@@ -963,7 +963,7 @@ async fn update_image(
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let image_uuid = resolve_image(&args.image, client, cache).await?;
 
     // Start with --flag values
@@ -1068,7 +1068,7 @@ async fn export_image(
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let image_uuid = resolve_image(&args.image, client, cache).await?;
 
     // Handle dry-run
@@ -1098,7 +1098,7 @@ async fn wait_image(
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let total = args.images.len();
     let state_names: Vec<String> = args.states.iter().map(enum_to_display).collect();
 
@@ -1207,7 +1207,7 @@ async fn resolve_image_inner(
         if verify_uuid {
             // Verify the image exists (matches node-triton's getImage call)
             // In emit-payload mode, the exec hook returns a fake response
-            let account = &client.auth_config().account;
+            let account = client.effective_account();
             client
                 .inner()
                 .get_image()
@@ -1226,7 +1226,7 @@ async fn resolve_image_inner(
         (id_or_name, None)
     };
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // For unfiltered lookups (no version), try cache first
     let images = if let Some(v) = version {
@@ -1302,7 +1302,7 @@ async fn wait_for_image_states(
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let start = Instant::now();
     let timeout = Duration::from_secs(timeout_secs);
 
@@ -1343,7 +1343,7 @@ async fn share_image(
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let image_uuid = resolve_image_no_verify(&args.image, client, cache).await?;
     let target_account: cloudapi_client::Uuid = args
         .account
@@ -1377,7 +1377,7 @@ async fn unshare_image(
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let image_uuid = resolve_image_no_verify(&args.image, client, cache).await?;
     let target_account: cloudapi_client::Uuid = args
         .account
@@ -1418,7 +1418,7 @@ async fn list_image_tags(
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let image_uuid = resolve_image(&args.image, client, cache).await?;
 
     // Get image to retrieve tags
@@ -1457,7 +1457,7 @@ async fn get_image_tag(
     client: &TypedClient,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let image_uuid = resolve_image(&args.image, client, cache).await?;
 
     // Get image to retrieve tags
@@ -1494,7 +1494,7 @@ async fn set_image_tags(
     client: &TypedClient,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let image_uuid = resolve_image(&args.image, client, cache).await?;
 
     // Get existing image to merge tags
@@ -1560,7 +1560,7 @@ async fn delete_image_tag(
         return Ok(());
     }
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let image_uuid = resolve_image(&args.image, client, cache).await?;
 
     // Get existing image to remove tag

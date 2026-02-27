@@ -118,7 +118,7 @@ pub async fn list_user_access_keys(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let user_id = resolve_user(&args.user, client).await?;
 
     let response = client
@@ -158,7 +158,7 @@ async fn get_user_access_key(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let user_id = resolve_user(user, client).await?;
 
     let response = client
@@ -188,7 +188,7 @@ async fn create_user_access_key(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let user_id = resolve_user(user, client).await?;
 
     let request = cloudapi_client::types::CreateAccessKeyRequest {
@@ -229,7 +229,7 @@ async fn update_user_access_key(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let user_id = resolve_user(user, client).await?;
 
     let request = cloudapi_client::types::UpdateAccessKeyRequest {
@@ -267,7 +267,7 @@ async fn delete_user_access_keys(
     force: bool,
     client: &TypedClient,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let user_id = resolve_user(user, client).await?;
 
     for id in &ids {

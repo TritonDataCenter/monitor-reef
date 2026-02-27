@@ -215,7 +215,7 @@ pub async fn list_users(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client.inner().list_users().account(account).send().await?;
 
     let users = response.into_inner();
@@ -265,7 +265,7 @@ fn get_user_field_value(user: &cloudapi_client::types::User, field: &str) -> Str
 }
 
 async fn get_user(args: UserGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let user_id = resolve_user(&args.user, client).await?;
 
     let response = client
@@ -401,7 +401,7 @@ async fn get_user(args: UserGetArgs, client: &TypedClient, use_json: bool) -> Re
 }
 
 async fn create_user(args: UserCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Prompt for password if not provided
     let password = match args.password {
@@ -444,7 +444,7 @@ async fn create_user(args: UserCreateArgs, client: &TypedClient, use_json: bool)
 }
 
 async fn update_user(args: UserUpdateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let user_id = resolve_user(&args.user, client).await?;
 
     let request = cloudapi_client::types::UpdateUserRequest {
@@ -488,7 +488,7 @@ pub async fn delete_users(args: UserDeleteArgs, client: &TypedClient) -> Result<
         }
 
         let user_id = resolve_user(user_ref, client).await?;
-        let account = &client.auth_config().account;
+        let account = client.effective_account();
 
         client
             .inner()
@@ -617,7 +617,7 @@ async fn add_user_from_file(
         .map(|s| s.to_string());
 
     // Create the user
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let request = cloudapi_client::types::CreateUserRequest {
         login: login.clone(),
         email,
@@ -713,7 +713,7 @@ phone: {phone}
 
 /// Edit user in $EDITOR (legacy -e flag support)
 async fn edit_user_in_editor(user_ref: &str, client: &TypedClient) -> Result<()> {
-    let account = client.auth_config().account.clone();
+    let account = client.effective_account().to_owned();
     let user_id = resolve_user(user_ref, client).await?;
 
     // Fetch current user

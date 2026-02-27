@@ -170,7 +170,7 @@ fn get_nic_field_value(nic: &NicOutput) -> impl Fn(&str) -> String + '_ {
 
 pub async fn list_nics(args: NicListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     let response = client
         .inner()
@@ -223,7 +223,7 @@ pub async fn list_nics(args: NicListArgs, client: &TypedClient, use_json: bool) 
 
 async fn get_nic(args: NicGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     let response = client
         .inner()
@@ -269,7 +269,7 @@ fn parse_nic_opts(args: &[String]) -> Result<(String, Option<String>)> {
 
 async fn add_nic(args: NicAddArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     // Determine if we have NICOPTS or a simple network ID
     let has_opts = args
@@ -345,7 +345,7 @@ async fn remove_nic(args: NicRemoveArgs, client: &TypedClient) -> Result<()> {
     }
 
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
 
     client
         .inner()

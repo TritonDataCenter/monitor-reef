@@ -138,7 +138,7 @@ async fn list_packages(
 ) -> Result<()> {
     apply_positional_filters(&mut args)?;
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client
         .inner()
         .list_packages()
@@ -244,7 +244,7 @@ async fn list_packages(
 }
 
 async fn get_package(args: PackageGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let package_id = resolve_package(&args.package, client).await?;
 
     let response = client
@@ -299,7 +299,7 @@ pub async fn resolve_package(id_or_name: &str, client: &TypedClient) -> Result<S
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
         // Verify the package exists (matches node-triton's getPackage call)
         // In emit-payload mode, the exec hook returns a fake response
-        let account = &client.auth_config().account;
+        let account = client.effective_account();
         client
             .inner()
             .get_package()
@@ -310,7 +310,7 @@ pub async fn resolve_package(id_or_name: &str, client: &TypedClient) -> Result<S
         return Ok(uuid.to_string());
     }
 
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let response = client
         .inner()
         .list_packages()

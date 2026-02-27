@@ -137,7 +137,7 @@ impl MigrationCommand {
 }
 
 async fn get_migration(args: MigrationGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
 
     let response = client
@@ -176,7 +176,7 @@ async fn estimate_migration(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
 
     let response = client
@@ -209,7 +209,7 @@ async fn begin_migration(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
     let id_str = instance_id.to_string();
 
@@ -258,7 +258,7 @@ async fn sync_migration(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
 
     let request = cloudapi_client::types::MigrateRequest {
@@ -301,7 +301,7 @@ async fn switch_migration(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
 
     let request = cloudapi_client::types::MigrateRequest {
@@ -346,7 +346,7 @@ async fn wait_for_action(
     timeout_secs: u64,
     client: &TypedClient,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let start = std::time::Instant::now();
     let timeout = std::time::Duration::from_secs(timeout_secs);
     let action_display = crate::output::enum_to_display(&action);
@@ -392,7 +392,7 @@ async fn wait_for_action(
 }
 
 async fn wait_migration(args: MigrationWaitArgs, client: &TypedClient) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
 
     println!("Waiting for migration to complete...");
@@ -452,7 +452,7 @@ async fn abort_migration(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let account = &client.auth_config().account;
+    let account = client.effective_account();
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
     let id_str = instance_id.to_string();
 
