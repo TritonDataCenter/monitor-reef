@@ -223,10 +223,18 @@ pub fn sign_with_key(key: &PrivateKey, data: &[u8]) -> Result<String, AuthError>
         .sign("", hash_alg, data)
         .map_err(|e| AuthError::SigningError(format!("Failed to sign data: {}", e)))?;
 
-    // Encode the signature as base64
-    // signature_bytes() returns the raw serialized signature data
-    let sig_bytes = signature.signature_bytes();
-    Ok(base64::engine::general_purpose::STANDARD.encode(sig_bytes))
+    let raw_bytes = signature.signature_bytes();
+
+    // ECDSA: ssh-key returns SSH wire format (mpint r || mpint s),
+    // but CloudAPI expects ASN.1/DER format
+    let sig_bytes = match key_type {
+        KeyType::Ecdsa256 | KeyType::Ecdsa384 | KeyType::Ecdsa521 => {
+            crate::certgen::ssh_ecdsa_sig_to_der(raw_bytes)?
+        }
+        _ => raw_bytes.to_vec(),
+    };
+
+    Ok(base64::engine::general_purpose::STANDARD.encode(&sig_bytes))
 }
 
 /// Encode raw signature bytes as base64

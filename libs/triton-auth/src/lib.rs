@@ -225,6 +225,20 @@ pub async fn probe_key(key_source: &KeySource) -> Result<KeyProbeResult, AuthErr
     }
 }
 
+/// Convert an SSH agent signature to ASN.1/DER format for ECDSA keys.
+///
+/// SSH agents return ECDSA signatures in SSH wire format (mpint r || mpint s),
+/// but CloudAPI's sshpk library expects ASN.1/DER format.
+/// Non-ECDSA signatures are returned as-is.
+fn convert_agent_sig(sig_bytes: &[u8], key_type: KeyType) -> Result<Vec<u8>, AuthError> {
+    match key_type {
+        KeyType::Ecdsa256 | KeyType::Ecdsa384 | KeyType::Ecdsa521 => {
+            certgen::ssh_ecdsa_sig_to_der(sig_bytes)
+        }
+        _ => Ok(sig_bytes.to_vec()),
+    }
+}
+
 /// Sign an HTTP request and return the Date and Authorization headers
 ///
 /// # Arguments
@@ -262,7 +276,8 @@ pub async fn sign_request(
             // Create signing string using MD5 fingerprint
             let signer = create_signer_with_fp(config, key_type, &md5_fp);
             let signing_string = signer.signing_string(method, path, &date);
-            let sig_bytes = agent::sign_with_agent(fingerprint, signing_string.as_bytes()).await?;
+            let raw_sig = agent::sign_with_agent(fingerprint, signing_string.as_bytes()).await?;
+            let sig_bytes = convert_agent_sig(&raw_sig, key_type)?;
             (key_type, encode_signature(&sig_bytes), md5_fp)
         }
         KeySource::File {
@@ -291,8 +306,9 @@ pub async fn sign_request(
 
                     let signer = create_signer_with_fp(config, key_type, &md5_fp);
                     let signing_string = signer.signing_string(method, path, &date);
-                    let sig_bytes =
+                    let raw_sig =
                         agent::sign_with_agent(fingerprint, signing_string.as_bytes()).await?;
+                    let sig_bytes = convert_agent_sig(&raw_sig, key_type)?;
                     (key_type, encode_signature(&sig_bytes), md5_fp)
                 }
                 Err(e) => {

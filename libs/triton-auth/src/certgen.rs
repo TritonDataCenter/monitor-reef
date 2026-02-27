@@ -338,7 +338,7 @@ impl rcgen::SigningKey for SshSigningKey {
 
 /// Read a big-endian u32 length field from an SSH wire-format buffer,
 /// advancing the offset past it.
-fn read_ssh_u32(buf: &[u8], offset: &mut usize) -> Result<usize, AuthError> {
+pub(crate) fn read_ssh_u32(buf: &[u8], offset: &mut usize) -> Result<usize, AuthError> {
     if *offset + 4 > buf.len() {
         return Err(AuthError::KeyLoadError(
             "SSH key data truncated (expected 4-byte length)".to_string(),
@@ -353,7 +353,7 @@ fn read_ssh_u32(buf: &[u8], offset: &mut usize) -> Result<usize, AuthError> {
 }
 
 /// Read `len` bytes from `buf` at `offset`, advancing the offset.
-fn read_ssh_bytes<'a>(
+pub(crate) fn read_ssh_bytes<'a>(
     buf: &'a [u8],
     offset: &mut usize,
     len: usize,
@@ -422,7 +422,7 @@ fn ssh_ecdsa_pubkey_to_point(raw_key: &[u8]) -> Result<Vec<u8>, AuthError> {
 ///
 /// SSH format: `mpint(r) || mpint(s)` (two length-prefixed big-endian integers)
 /// X.509 DER: `SEQUENCE { INTEGER r, INTEGER s }`
-fn ssh_ecdsa_sig_to_der(sig: &[u8]) -> Result<Vec<u8>, AuthError> {
+pub(crate) fn ssh_ecdsa_sig_to_der(sig: &[u8]) -> Result<Vec<u8>, AuthError> {
     let mut offset = 0;
 
     // Read r
@@ -447,7 +447,7 @@ fn ssh_ecdsa_sig_to_der(sig: &[u8]) -> Result<Vec<u8>, AuthError> {
 /// SSH mpints and DER INTEGERs share the same encoding rules for positive
 /// integers: no unnecessary leading zeros, but a leading 0x00 byte if the
 /// MSB of the value is set (to indicate the number is positive).
-fn der_encode_integer(bytes: &[u8]) -> Vec<u8> {
+pub(crate) fn der_encode_integer(bytes: &[u8]) -> Vec<u8> {
     let mut result = Vec::with_capacity(4 + bytes.len());
     result.push(0x02); // INTEGER tag
     der_encode_length(&mut result, bytes.len());
@@ -456,7 +456,7 @@ fn der_encode_integer(bytes: &[u8]) -> Vec<u8> {
 }
 
 /// DER-encode a byte slice as a SEQUENCE.
-fn der_encode_sequence(contents: &[u8]) -> Vec<u8> {
+pub(crate) fn der_encode_sequence(contents: &[u8]) -> Vec<u8> {
     let mut result = Vec::with_capacity(4 + contents.len());
     result.push(0x30); // SEQUENCE tag
     der_encode_length(&mut result, contents.len());
@@ -465,7 +465,7 @@ fn der_encode_sequence(contents: &[u8]) -> Vec<u8> {
 }
 
 /// Encode a DER length field (supports lengths up to 65535).
-fn der_encode_length(buf: &mut Vec<u8>, len: usize) {
+pub(crate) fn der_encode_length(buf: &mut Vec<u8>, len: usize) {
     if len < 128 {
         buf.push(len as u8);
     } else if len < 256 {

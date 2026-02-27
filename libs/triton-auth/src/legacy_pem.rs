@@ -359,7 +359,16 @@ impl LegacyPrivateKey {
                     .sign("", hash_alg, data)
                     .map_err(|e| AuthError::SigningError(format!("SSH signing failed: {}", e)))?;
 
-                Ok(sig.signature_bytes().to_vec())
+                let sig_bytes = sig.signature_bytes();
+
+                // ECDSA: ssh-key returns SSH wire format (mpint r || mpint s),
+                // but CloudAPI expects ASN.1/DER format
+                match key_type {
+                    KeyType::Ecdsa256 | KeyType::Ecdsa384 | KeyType::Ecdsa521 => {
+                        crate::certgen::ssh_ecdsa_sig_to_der(sig_bytes)
+                    }
+                    _ => Ok(sig_bytes.to_vec()),
+                }
             }
             Self::Rsa(key) => {
                 // RSA-SHA256 signature using PKCS#1 v1.5
@@ -375,24 +384,24 @@ impl LegacyPrivateKey {
                 Ok(signature.to_vec())
             }
             Self::EcdsaP256(key) => {
-                // ECDSA-SHA256 signature
+                // ECDSA-SHA256 signature in ASN.1/DER format (CloudAPI requirement)
                 use p256::ecdsa::signature::Signer;
 
                 let signature: p256::ecdsa::Signature = key
                     .try_sign(data)
                     .map_err(|e| AuthError::SigningError(format!("ECDSA signing failed: {}", e)))?;
 
-                // Return raw r||s format (not DER)
-                Ok(signature.to_bytes().to_vec())
+                Ok(signature.to_der().as_bytes().to_vec())
             }
             Self::EcdsaP384(key) => {
+                // ECDSA-SHA384 signature in ASN.1/DER format (CloudAPI requirement)
                 use p384::ecdsa::signature::Signer;
 
                 let signature: p384::ecdsa::Signature = key
                     .try_sign(data)
                     .map_err(|e| AuthError::SigningError(format!("ECDSA signing failed: {}", e)))?;
 
-                Ok(signature.to_bytes().to_vec())
+                Ok(signature.to_der().as_bytes().to_vec())
             }
             Self::Dsa(key) => {
                 // DSA-SHA1 signature (DSA traditionally uses SHA-1)

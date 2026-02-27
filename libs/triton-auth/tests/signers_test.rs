@@ -153,11 +153,16 @@ async fn test_basic_signer_ecdsa() {
     assert!(!signature.is_empty());
     assert!(base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &signature).is_ok());
 
-    // P-256 ECDSA signatures should be 64 bytes (two 32-byte integers)
+    // P-256 ECDSA signatures should be in ASN.1/DER format:
+    // SEQUENCE { INTEGER r, INTEGER s } — starts with 0x30 tag, typically 68-72 bytes
     assert_eq!(
-        sig_bytes.len(),
-        64,
-        "P-256 ECDSA signature should be 64 bytes"
+        sig_bytes[0], 0x30,
+        "P-256 ECDSA signature should be DER-encoded (start with SEQUENCE tag 0x30)"
+    );
+    assert!(
+        (68..=72).contains(&sig_bytes.len()),
+        "P-256 ECDSA DER signature should be 68-72 bytes, got {}",
+        sig_bytes.len()
     );
 }
 
