@@ -47,7 +47,9 @@ REBALANCER_RPATH=/opt/postgresql/$(PGVER)/lib:$(DEF_RPATH)
 
 ENGBLD_USE_BUILDIMAGE   = true
 
-CLEAN_FILES += rebalancer-agent-*.tar.gz rebalancer-agent-*.manifest
+AGENT_TARGET_DIR = target-agent
+
+CLEAN_FILES += rebalancer-agent-*.tar.gz rebalancer-agent-*.manifest $(AGENT_TARGET_DIR)
 
 ifeq ($(shell uname -s),SunOS)
     include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.agent_prebuilt.defs
@@ -61,7 +63,8 @@ include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.smf.defs
 all: agent manager
 
 debug: | $(CARGO_EXEC)
-	$(CARGO) build --manifest-path=agent/Cargo.toml
+	$(CARGO) build --manifest-path=agent/Cargo.toml \
+	    --target-dir=$(AGENT_TARGET_DIR)
 	LD_LIBRARY_PATH=$(RELSTAGE_DIR)/root/opt/postgresql/$(PGVER)/lib:$(DEF_RPATH) \
 	    $(CARGO) build --manifest-path=manager/Cargo.toml
 	/usr/bin/elfedit -e \
@@ -125,7 +128,8 @@ doc: | $(CARGO_EXEC)
 
 .PHONY: agent
 agent: | $(CARGO_EXEC)
-	STAMP=$(STAMP) $(CARGO) build --manifest-path=agent/Cargo.toml --release
+	STAMP=$(STAMP) $(CARGO) build --manifest-path=agent/Cargo.toml \
+	    --release --target-dir=$(AGENT_TARGET_DIR)
 
 .PHONY: manager
 manager: | $(CARGO_EXEC)
@@ -150,7 +154,7 @@ pkg_agent:
 	    $(TOP)/smf/manifests/rebalancer-agent.xml \
 	    $(RELSTAGEDIR_AGENT)/root/opt/smartdc/$(NAME)-agent/smf/manifests/
 	cp \
-	    target/release/rebalancer-agent \
+	    $(AGENT_TARGET_DIR)/release/rebalancer-agent \
 	    $(RELSTAGEDIR_AGENT)/root/opt/smartdc/$(NAME)-agent/bin/
 	cp -R $(TOP)/sapi_manifests/agent \
 	    $(RELSTAGEDIR_AGENT)/root/opt/smartdc/$(NAME)-agent/sapi_manifests/

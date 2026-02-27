@@ -72,11 +72,18 @@ function sync_agent {
     [[ -n "$insts" ]] || fatal "no running '$alias' instances found"
     echo "$alias instances: $insts"
 
+    # Prefer isolated agent target dir; fall back to workspace target.
+    local AGENT_BIN=${WORKSPACE_ROOT}/target-agent/${PROFILE}/rebalancer-agent
+    if [[ ! -f "$AGENT_BIN" ]]; then
+        AGENT_BIN=${TARGET_DIR}/rebalancer-agent
+    fi
+    [[ -f "$AGENT_BIN" ]] || fatal "rebalancer-agent not found (tried target-agent/ and target/)"
+
     for inst in $insts; do
         local prefix=/zones/$inst/root/opt/smartdc/rebalancer-agent
         echo "==> Syncing agent binary to $inst"
         rsync -av \
-            ${TARGET_DIR}/rebalancer-agent \
+            ${AGENT_BIN} \
             $HEADNODE:$prefix/bin/
         restart_or_clear $inst svc:/manta/application/rebalancer-agent
     done
