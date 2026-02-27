@@ -71,7 +71,10 @@ pub async fn get_objects_from_shard(
         .await
         .map_err(|e| {
             error!(log, "failed to connect to {}: {}", &shard_host_name, e);
-            Error::new(ErrorKind::Other, e)
+            Error::new(
+                ErrorKind::Other,
+                format!("connect to {}: {}", shard_host_name, e),
+            )
         })?;
 
     let task_host_name = shard_host_name.clone();
@@ -83,7 +86,13 @@ pub async fn get_objects_from_shard(
                 task_log,
                 "could not communicate with {}: {}", task_host_name, e
             );
-            Error::new(ErrorKind::Other, e)
+            Error::new(
+                ErrorKind::Other,
+                format!(
+                    "communication with {}: {}",
+                    task_host_name, e
+                ),
+            )
         })?;
         Ok::<(), Error>(())
     });
@@ -93,7 +102,10 @@ pub async fn get_objects_from_shard(
         .await
         .map_err(|e| {
             error!(log, "query error for {}: {}", &shard_host_name, e);
-            Error::new(ErrorKind::Other, e)
+            Error::new(
+                ErrorKind::Other,
+                format!("query on {}: {}", shard_host_name, e),
+            )
         })?;
 
     pin_mut!(rows);
@@ -102,7 +114,12 @@ pub async fn get_objects_from_shard(
     while let Some(row) = rows
         .try_next()
         .await
-        .map_err(|e| Error::new(ErrorKind::Other, e))?
+        .map_err(|e| {
+            Error::new(
+                ErrorKind::Other,
+                format!("row fetch from {}: {}", shard_host_name, e),
+            )
+        })?
     {
         let val_str: &str = row.get("_value");
         let value: Value = serde_json::from_str(val_str)
