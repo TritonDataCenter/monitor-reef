@@ -472,7 +472,7 @@ fn print_images_table(images: &[Image], args: &ImageListArgs) {
     let mut tbl = TableBuilder::new(&[
         "SHORTID", "NAME", "VERSION", "FLAGS", "OS", "TYPE", "PUBDATE",
     ])
-    .with_long_headers(&["ID", "PUBLIC"]);
+    .with_long_headers(&["STATE", "ID", "PUBLIC"]);
 
     for img in images {
         tbl.add_row(vec![
@@ -483,6 +483,7 @@ fn print_images_table(images: &[Image], args: &ImageListArgs) {
             get_image_field_value(img, "os"),
             get_image_field_value(img, "type"),
             get_image_field_value(img, "pubdate"),
+            get_image_field_value(img, "state"),
             get_image_field_value(img, "id"),
             get_image_field_value(img, "public"),
         ]);

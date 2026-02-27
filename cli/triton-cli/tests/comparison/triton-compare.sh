@@ -661,6 +661,35 @@ run_api_tests() {
             live -p "$PROFILE" "$resource" list -j
     done
 
+    # Table formatting flags for instance list
+    run_test "instance-list-sort-name" "instance list -s name" \
+        live -p "$PROFILE" instance list -s name
+
+    run_test "instance-list-sort-name-desc" "instance list -s -name" \
+        live -p "$PROFILE" instance list -s -name
+
+    run_test "instance-list-columns" "instance list -o name,state" \
+        live -p "$PROFILE" instance list -o name,state
+
+    run_test "instance-list-long" "instance list -l" \
+        live -p "$PROFILE" instance list -l
+
+    run_test "instance-list-no-header" "instance list -H" \
+        live -p "$PROFILE" instance list -H
+
+    # Table formatting flags for image list
+    run_test "image-list-sort-name" "image list -s name" \
+        live -p "$PROFILE" image list -s name
+
+    run_test "image-list-columns" "image list -o name,version" \
+        live -p "$PROFILE" image list -o name,version
+
+    run_test "image-list-long" "image list -l" \
+        live -p "$PROFILE" image list -l
+
+    run_test "image-list-no-header" "image list -H" \
+        live -p "$PROFILE" image list -H
+
     # Account and info
     run_test "account-get" "account get" \
         live -p "$PROFILE" account get

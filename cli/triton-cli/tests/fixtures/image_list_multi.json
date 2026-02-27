@@ -1,0 +1,75 @@
+[
+  {
+    "id": "cc112233-4455-6677-8899-aabbccddeeff",
+    "name": "nginx",
+    "version": "1.25.3",
+    "os": "linux",
+    "type": "lx-dataset",
+    "description": "Nginx web server image.",
+    "requirements": {},
+    "homepage": "https://nginx.org",
+    "published_at": "2025-11-15T10:00:00Z",
+    "owner": "9dce1460-0c4c-4417-ab8b-25ca478c5a78",
+    "public": true,
+    "state": "active",
+    "tags": {
+      "role": "web"
+    },
+    "files": [
+      {
+        "compression": "gzip",
+        "sha1": "abc123",
+        "size": 85000000
+      }
+    ]
+  },
+  {
+    "id": "2b683a82-a066-11e3-97ab-2faa44b2e5be",
+    "name": "base-64-lts",
+    "version": "21.4.0",
+    "os": "smartos",
+    "type": "zone-dataset",
+    "description": "A 64-bit SmartOS image with just enough packages.",
+    "requirements": {},
+    "homepage": "https://docs.tritondatacenter.com/public-cloud/instances/infrastructure/images/smartos/base",
+    "published_at": "2021-04-08T14:42:47Z",
+    "owner": "9dce1460-0c4c-4417-ab8b-25ca478c5a78",
+    "public": true,
+    "state": "active",
+    "tags": {
+      "role": "os",
+      "group": "base-64-lts"
+    },
+    "files": [
+      {
+        "compression": "gzip",
+        "sha1": "5dfeb0fba",
+        "size": 110742036
+      }
+    ]
+  },
+  {
+    "id": "8a1b6e3a-00ec-4031-b0a8-8fb0f334c394",
+    "name": "ubuntu-24.04",
+    "version": "20250407",
+    "os": "linux",
+    "type": "lx-dataset",
+    "description": "Ubuntu 24.04 LTS image.",
+    "requirements": {},
+    "homepage": "https://ubuntu.com",
+    "published_at": "2025-04-07T12:00:00Z",
+    "owner": "9dce1460-0c4c-4417-ab8b-25ca478c5a78",
+    "public": true,
+    "state": "active",
+    "tags": {
+      "role": "os"
+    },
+    "files": [
+      {
+        "compression": "gzip",
+        "sha1": "def456",
+        "size": 250000000
+      }
+    ]
+  }
+]

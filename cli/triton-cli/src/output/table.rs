@@ -80,6 +80,11 @@ impl TableBuilder {
 
     /// Print the table with the given formatting options
     pub fn print(self, opts: &TableFormatArgs) {
+        print!("{}", self.render(opts));
+    }
+
+    /// Render the table to a String with the given formatting options
+    pub fn render(self, opts: &TableFormatArgs) -> String {
         let all_headers = self.long_headers.as_ref().unwrap_or(&self.headers);
         let headers = if opts.long {
             all_headers
@@ -162,9 +167,12 @@ impl TableBuilder {
         }
 
         // Trim leading/trailing whitespace from each line
+        let mut output = String::new();
         for line in table.trim_fmt().lines() {
-            println!("{}", line.trim_start());
+            output.push_str(line.trim_start());
+            output.push('\n');
         }
+        output
     }
 }
 
@@ -188,5 +196,171 @@ pub fn print_table(table: Table) {
     // a leading space from the left border placeholder. Trim each line.
     for line in table.trim_fmt().lines() {
         println!("{}", line.trim_start());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Build a 3-row table with NAME, STATE, BRAND headers (+ long-only ID)
+    /// Rows are deliberately out of alphabetical order by NAME.
+    fn sample_builder() -> TableBuilder {
+        let mut tbl = TableBuilder::new(&["NAME", "STATE", "BRAND"]).with_long_headers(&["ID"]);
+        tbl.add_row(vec![
+            "charlie".into(),
+            "running".into(),
+            "lx".into(),
+            "ccc-id".into(),
+        ]);
+        tbl.add_row(vec![
+            "alice".into(),
+            "stopped".into(),
+            "bhyve".into(),
+            "aaa-id".into(),
+        ]);
+        tbl.add_row(vec![
+            "bob".into(),
+            "running".into(),
+            "lx".into(),
+            "bbb-id".into(),
+        ]);
+        tbl
+    }
+
+    fn default_opts() -> TableFormatArgs {
+        TableFormatArgs::default()
+    }
+
+    #[test]
+    fn test_sort_by_ascending() {
+        let tbl = sample_builder();
+        let opts = TableFormatArgs {
+            sort_by: Some("NAME".into()),
+            ..default_opts()
+        };
+        let output = tbl.render(&opts);
+        let lines: Vec<&str> = output.lines().collect();
+        // Line 0 is header, line 1 is first data row
+        assert!(
+            lines[1].starts_with("alice"),
+            "first row should be alice, got: {}",
+            lines[1]
+        );
+        assert!(
+            lines[3].starts_with("charlie"),
+            "last row should be charlie, got: {}",
+            lines[3]
+        );
+    }
+
+    #[test]
+    fn test_sort_by_descending() {
+        let tbl = sample_builder();
+        let opts = TableFormatArgs {
+            sort_by: Some("-NAME".into()),
+            ..default_opts()
+        };
+        let output = tbl.render(&opts);
+        let lines: Vec<&str> = output.lines().collect();
+        assert!(
+            lines[1].starts_with("charlie"),
+            "first row should be charlie, got: {}",
+            lines[1]
+        );
+        assert!(
+            lines[3].starts_with("alice"),
+            "last row should be alice, got: {}",
+            lines[3]
+        );
+    }
+
+    #[test]
+    fn test_sort_by_none_preserves_insertion_order() {
+        let tbl = sample_builder();
+        let output = tbl.render(&default_opts());
+        let lines: Vec<&str> = output.lines().collect();
+        // Insertion order: charlie, alice, bob
+        assert!(
+            lines[1].starts_with("charlie"),
+            "first row should be charlie, got: {}",
+            lines[1]
+        );
+        assert!(
+            lines[2].starts_with("alice"),
+            "second row should be alice, got: {}",
+            lines[2]
+        );
+        assert!(
+            lines[3].starts_with("bob"),
+            "third row should be bob, got: {}",
+            lines[3]
+        );
+    }
+
+    #[test]
+    fn test_columns_selects_subset() {
+        let tbl = sample_builder();
+        let opts = TableFormatArgs {
+            columns: Some(vec!["NAME".into(), "STATE".into()]),
+            ..default_opts()
+        };
+        let output = tbl.render(&opts);
+        let header = output.lines().next().unwrap();
+        assert!(header.contains("NAME"), "header should contain NAME");
+        assert!(header.contains("STATE"), "header should contain STATE");
+        assert!(!header.contains("BRAND"), "header should not contain BRAND");
+    }
+
+    #[test]
+    fn test_columns_can_select_long_headers() {
+        let tbl = sample_builder();
+        let opts = TableFormatArgs {
+            columns: Some(vec!["ID".into()]),
+            ..default_opts()
+        };
+        let output = tbl.render(&opts);
+        let header = output.lines().next().unwrap();
+        assert!(header.contains("ID"), "header should contain ID");
+        // Should not show default columns
+        assert!(!header.contains("NAME"), "header should not contain NAME");
+        // Data should include the ID values
+        assert!(output.contains("aaa-id"), "output should contain aaa-id");
+    }
+
+    #[test]
+    fn test_long_shows_extended_columns() {
+        let tbl = sample_builder();
+        let opts = TableFormatArgs {
+            long: true,
+            ..default_opts()
+        };
+        let output = tbl.render(&opts);
+        let header = output.lines().next().unwrap();
+        assert!(header.contains("ID"), "long header should contain ID");
+        assert!(header.contains("NAME"), "long header should contain NAME");
+    }
+
+    #[test]
+    fn test_no_header_suppresses_header_row() {
+        let tbl = sample_builder();
+        let opts = TableFormatArgs {
+            no_header: true,
+            ..default_opts()
+        };
+        let output = tbl.render(&opts);
+        // First line should be data, not a header
+        let first_line = output.lines().next().unwrap();
+        assert!(
+            !first_line.contains("NAME"),
+            "output should not contain header NAME"
+        );
+        assert!(
+            first_line.starts_with("charlie"),
+            "first line should be data: {}",
+            first_line
+        );
+        // Should have exactly 3 lines (3 data rows)
+        assert_eq!(output.lines().count(), 3);
     }
 }
