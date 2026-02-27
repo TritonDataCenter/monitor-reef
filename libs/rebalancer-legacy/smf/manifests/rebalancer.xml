@@ -23,6 +23,12 @@
             <service_fmri value="svc:/manta/postgresql:default" />
         </dependency>
 
+        <method_context>
+            <method_environment>
+                <envvar name="LD_LIBRARY_PATH" value="/opt/postgresql/12.4/lib" />
+            </method_environment>
+        </method_context>
+
         <exec_method type="method" name="start" exec="/opt/smartdc/rebalancer/bin/rebalancer-manager &amp;" timeout_seconds="30" />
         <exec_method type="method" name="stop" exec=":kill" timeout_seconds="30" />
         <exec_method type="method" name="refresh" exec=":kill -USR1" timeout_seconds="30" />
