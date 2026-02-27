@@ -31,7 +31,7 @@
 //! To use mdapi instead of moray in evacuate jobs:
 //!
 //! 1. Configure mdapi shards (populated via
-//!    BUCKETS_MDAPI_ENDPOINTS SAPI metadata):
+//!    BUCKETS_MORAY_SHARDS SAPI metadata):
 //!    ```json
 //!    "mdapi": {
 //!        "shards": [
@@ -76,7 +76,7 @@ use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
 
-use crate::config::{MdapiConfig, MdapiShard};
+use crate::config::MdapiConfig;
 
 // Vnode hash algorithm constants
 // These match the buckets-mdapi vnode distribution algorithm
@@ -1188,7 +1188,7 @@ pub fn verify_vnode(object: &MantaObject, bucket: &str) -> Result<bool, Error> {
 /// Check if mdapi backend should be used based on configuration.
 ///
 /// Returns true when the `shards` vec in `MdapiConfig` is non-empty,
-/// meaning at least one `BUCKETS_MDAPI_ENDPOINTS` entry was configured.
+/// meaning at least one `BUCKETS_MORAY_SHARDS` entry was configured.
 ///
 /// # Arguments
 /// * `config` - The MdapiConfig to check
@@ -1636,6 +1636,7 @@ pub fn update_object_content(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::MdapiShard;
     use rebalancer::util;
     use serde_json::json;
 
@@ -1653,6 +1654,18 @@ mod tests {
             o!("test" => true),
         );
         slog_scope::set_global_logger(log)
+    }
+
+    /// Create an MdapiClient for testing without DNS SRV lookup.
+    ///
+    /// Uses `MdapiClient::new` directly with a loopback address,
+    /// bypassing `create_client` which requires live DNS.  The
+    /// client is valid for tests that exercise serialization,
+    /// empty-list handling, or batch-chunking logic — none of
+    /// which send RPC traffic.
+    fn create_test_client() -> MdapiClient {
+        MdapiClient::new("127.0.0.1:2030")
+            .expect("test client with loopback address")
     }
 
     // Helper to create a test MantaObject
@@ -1905,34 +1918,31 @@ mod tests {
 
     // Client operation tests
 
+    /// Verify MdapiClient can be created with a valid host:port
+    /// endpoint (bypasses DNS SRV, tests MdapiClient::new directly).
     #[test]
     fn test_create_client_valid_endpoint() {
         let _log_guard = init_test_logger();
-        let result = create_client("localhost:2030");
-        // Should succeed in creating client (even though RPC won't work)
+        let result = MdapiClient::new("127.0.0.1:2030");
         assert!(result.is_ok());
     }
 
+    /// Verify that create_client rejects a hostname with no SRV
+    /// record by returning an appropriate error.
     #[test]
-    fn test_create_client_invalid_endpoint_no_port() {
+    fn test_create_client_unresolvable_host() {
         let _log_guard = init_test_logger();
-        let result = create_client("localhost");
-        // Should fail - missing port
+        let result =
+            create_client("no-such-host.invalid:2030");
         assert!(result.is_err());
-
-        if let Err(Error::Internal(e)) = result {
-            assert_eq!(e.code, InternalErrorCode::BadMdapiClient);
-            let error_msg = format!("{}", Error::Internal(e.clone()));
-            assert!(error_msg.contains("missing port"));
-        } else {
-            panic!("Expected Internal error with BadMdapiClient");
-        }
     }
 
+    /// Verify MdapiClient can be created with a domain:port
+    /// endpoint (bypasses DNS SRV, tests MdapiClient::new directly).
     #[test]
     fn test_create_client_with_domain() {
         let _log_guard = init_test_logger();
-        let result = create_client("mdapi.example.com:2030");
+        let result = MdapiClient::new("mdapi.example.com:2030");
         assert!(result.is_ok());
     }
 
@@ -1968,7 +1978,7 @@ mod tests {
     #[test]
     fn test_batch_update_empty_list() {
         let _log_guard = init_test_logger();
-        let client = create_client("localhost:2030").unwrap();
+        let client = create_test_client();
         let objects: Vec<(&MantaObject, Uuid, Option<&str>)> = vec![];
 
         let result = batch_update(&client, objects);
@@ -2496,7 +2506,7 @@ mod tests {
     #[test]
     fn test_batch_update_with_config_empty_list() {
         let _log_guard = init_test_logger();
-        let client = create_client("localhost:2030").unwrap();
+        let client = create_test_client();
         let objects: Vec<(&MantaObject, Uuid, Option<&str>)> = vec![];
 
         let result = batch_update_with_config(&client, objects, Some(10));
@@ -2510,7 +2520,7 @@ mod tests {
     #[test]
     fn test_batch_update_with_config_within_limit() {
         let _log_guard = init_test_logger();
-        let client = create_client("localhost:2030").unwrap();
+        let client = create_test_client();
         let objects: Vec<(&MantaObject, Uuid, Option<&str>)> = vec![];
 
         // Empty list with max_batch_size of 100
@@ -2579,7 +2589,7 @@ mod tests {
     #[test]
     fn test_batch_update_backward_compatibility() {
         let _log_guard = init_test_logger();
-        let client = create_client("localhost:2030").unwrap();
+        let client = create_test_client();
         let objects: Vec<(&MantaObject, Uuid, Option<&str>)> = vec![];
 
         // Original batch_update should still work
@@ -2602,7 +2612,9 @@ mod tests {
     #[test]
     fn test_retry_config_from_mdapi_config() {
         let mdapi_config = MdapiConfig {
-            endpoint: "localhost:2030".to_string(),
+            shards: vec![MdapiShard {
+                host: "localhost:2030".to_string(),
+            }],
             connection_timeout_ms: 5000,
             max_batch_size: 100,
             operation_timeout_ms: 30000,

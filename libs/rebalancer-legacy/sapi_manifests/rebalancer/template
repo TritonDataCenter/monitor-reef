@@ -86,10 +86,10 @@
     {{/SNAPLINK_CLEANUP_REQUIRED}}
 
     "mdapi": {
-        "shards": [{{#BUCKETS_MDAPI_ENDPOINTS}}
+        "shards": [{{#BUCKETS_MORAY_SHARDS}}
             {
                 "host": "{{host}}"
-            }{{^last}},{{/last}}{{/BUCKETS_MDAPI_ENDPOINTS}}
+            }{{^last}},{{/last}}{{/BUCKETS_MORAY_SHARDS}}
         ],
 
         {{#MDAPI_CONNECTION_TIMEOUT_MS}}

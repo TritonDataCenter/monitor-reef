@@ -87,8 +87,10 @@ tables. This provides:
 
 #### Enabling MDAPI Backend
 
-The mdapi backend is enabled by populating `BUCKETS_MDAPI_ENDPOINTS` in the manta
+The mdapi backend is enabled by populating `BUCKETS_MORAY_SHARDS` in the manta
 application SAPI metadata. Each entry corresponds to one buckets-mdapi instance.
+This is the same variable that the garbage-collector uses (via
+`manta-adm gc gen-shard-assignment`) to create one consumer per shard.
 
 Configuration fields:
 - `shards` (array of `{host: string}`): Mdapi shard endpoints. When non-empty, mdapi is used.
@@ -113,7 +115,7 @@ between moray's JSON format and mdapi's structured format:
 
 By default, the rebalancer uses moray (backward compatible). To add mdapi:
 
-1. Populate `BUCKETS_MDAPI_ENDPOINTS` in SAPI metadata (see below)
+1. Populate `BUCKETS_MORAY_SHARDS` in SAPI metadata (see below)
 2. The manager will automatically use mdapi client functions in addition to moray
 3. All schema translation happens transparently
 
@@ -149,13 +151,12 @@ The following SAPI metadata variables control mdapi configuration:
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `BUCKETS_MDAPI_ENDPOINTS` | JSON array | `[]` | Mdapi shard endpoints (application-level). Each entry: `{"host": "N.buckets-mdapi.DOMAIN"}`. When non-empty, mdapi is used. |
+| `BUCKETS_MORAY_SHARDS` | JSON array | `[]` | Mdapi shard endpoints (application-level). Each entry: `{"host": "N.buckets-mdapi.DOMAIN"}`. When non-empty, mdapi is used. Same variable used by the garbage-collector. |
 | `MDAPI_CONNECTION_TIMEOUT_MS` | Integer | 5000 | Connection timeout in milliseconds |
 
-`BUCKETS_MDAPI_ENDPOINTS` follows the same pattern as `INDEX_MORAY_SHARDS` and
-`BUCKETS_MORAY_SHARDS` — it is set as application-level SAPI metadata on the
-manta application by the sdc-manta deployment tooling when mdapi instances are
-provisioned.
+`BUCKETS_MORAY_SHARDS` is set as application-level SAPI metadata on the
+manta application by `manta-shardadm set -b`. It follows the same
+`[{host, last}]` pattern as `INDEX_MORAY_SHARDS`.
 
 Format:
 ```json
@@ -173,11 +174,11 @@ reload (no service restart required).
 
 **Scenario 1: Moray-Only (Default)**
 - No SAPI metadata changes required
-- Empty `BUCKETS_MDAPI_ENDPOINTS` (or not set) — backward compatible
+- Empty `BUCKETS_MORAY_SHARDS` (or not set) — backward compatible
 - Only moray metadata tier is used
 
 **Scenario 2: Hybrid Mode (Complete Evacuation - Production)**
-- Populate `BUCKETS_MDAPI_ENDPOINTS` via sdc-manta provisioning
+- Populate `BUCKETS_MORAY_SHARDS` via `manta-shardadm set -b`
 - Both moray and mdapi are used
 - Complete shark evacuation (traditional + bucket objects)
 - Recommended for production deployments

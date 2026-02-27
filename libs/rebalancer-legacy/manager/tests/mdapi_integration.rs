@@ -318,17 +318,21 @@ fn test_mdapi_batch_update() {
 // Error Handling Tests
 // =============================================================================
 
-/// Test behavior when mdapi endpoint is unreachable
+/// Test behavior when mdapi endpoint is unreachable.
+///
+/// Uses `MdapiClient::new` directly (bypassing DNS SRV
+/// resolution in `create_client`) so the test exercises
+/// the RPC-level connection failure path.
 #[test]
 #[ignore]
 fn test_mdapi_connection_failure() {
-    // Use an invalid endpoint
-    let result = manager::mdapi_client::create_client("invalid.endpoint:9999");
+    use libmanta::mdapi::MdapiClient;
 
-    // Client creation should succeed (lazy connection)
-    assert!(result.is_ok());
-
-    let client = result.unwrap();
+    // Create client pointing to an unreachable endpoint.
+    // MdapiClient::new is lazy — it stores the address
+    // without connecting.
+    let client = MdapiClient::new("127.0.0.1:9999")
+        .expect("client creation is lazy");
 
     // But operations should fail
     let owner = Uuid::new_v4();

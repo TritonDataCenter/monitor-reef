@@ -106,7 +106,7 @@ impl Default for ConfigOptions {
 
 /// A single mdapi shard endpoint, mirroring the existing `Shard` struct.
 ///
-/// Populated from `BUCKETS_MDAPI_ENDPOINTS` SAPI metadata, which contains
+/// Populated from `BUCKETS_MORAY_SHARDS` SAPI metadata, which contains
 /// entries like `{"host": "1.buckets-mdapi.coal.joyent.us"}`.
 #[derive(Deserialize, Default, Debug, Clone)]
 pub struct MdapiShard {
