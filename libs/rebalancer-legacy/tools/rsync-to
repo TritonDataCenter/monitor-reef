@@ -1,0 +1,96 @@
+#!/bin/bash
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+
+#
+# Copyright 2025 Edgecast Cloud LLC.
+#
+
+#
+# Rsync rebalancer binaries and config to zones for quick dev iteration.
+#
+# Usage:
+#   ./tools/rsync-to HEADNODE-GZ-IP           # sync both manager + agent
+#   ./tools/rsync-to HEADNODE-GZ-IP manager   # sync manager only
+#   ./tools/rsync-to HEADNODE-GZ-IP agent     # sync agent only
+#
+# Set RELEASE=1 to use target/release/ instead of target/debug/.
+#
+
+if [[ -n "$TRACE" ]]; then
+    export PS4='[\D{%FT%TZ}] ${BASH_SOURCE}:${LINENO}: ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
+    set -o xtrace
+fi
+set -o errexit
+set -o pipefail
+
+TOP=$(cd $(dirname $0)/../; pwd)
+SSH_OPTS="-q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+PROFILE=${RELEASE:+release}
+PROFILE=${PROFILE:-debug}
+# Workspace root is two levels above libs/rebalancer-legacy/
+WORKSPACE_ROOT=$(cd ${TOP}/../..; pwd)
+TARGET_DIR=${WORKSPACE_ROOT}/target/${PROFILE}
+
+function fatal {
+    echo "$0: fatal error: $*"
+    exit 1
+}
+
+function restart_or_clear {
+    local inst=$1 fmri=$2
+    state=$(ssh $SSH_OPTS $HEADNODE svcs -z $inst -H -o state $fmri 2>/dev/null || echo "unknown")
+    if echo "$state" | grep "maintenance" >/dev/null; then
+        ssh $SSH_OPTS $HEADNODE svcadm -z $inst clear $fmri
+    elif echo "$state" | grep "online" >/dev/null; then
+        ssh $SSH_OPTS $HEADNODE svcadm -z $inst restart $fmri
+    fi
+}
+
+function sync_manager {
+    local insts=$(ssh $SSH_OPTS $HEADNODE vmadm lookup alias=~rebalancer state=running)
+    [[ -n "$insts" ]] || fatal "no running 'rebalancer' instances found"
+    echo "rebalancer instances: $insts"
+
+    for inst in $insts; do
+        local prefix=/zones/$inst/root/opt/smartdc/rebalancer
+        echo "==> Syncing manager binaries + config to $inst"
+        rsync -av \
+            ${TARGET_DIR}/rebalancer-manager \
+            ${TARGET_DIR}/rebalancer-adm \
+            $HEADNODE:$prefix/bin/
+        restart_or_clear $inst svc:/manta/application/rebalancer
+    done
+}
+
+function sync_agent {
+    local alias=${STORAGE_ALIAS:-storage}
+    local insts=$(ssh $SSH_OPTS $HEADNODE vmadm lookup alias=~$alias state=running)
+    [[ -n "$insts" ]] || fatal "no running '$alias' instances found"
+    echo "$alias instances: $insts"
+
+    for inst in $insts; do
+        local prefix=/zones/$inst/root/opt/smartdc/rebalancer-agent
+        echo "==> Syncing agent binary to $inst"
+        rsync -av \
+            ${TARGET_DIR}/rebalancer-agent \
+            $HEADNODE:$prefix/bin/
+        restart_or_clear $inst svc:/manta/application/rebalancer-agent
+    done
+}
+
+# ---- mainline
+
+[[ -n "$1" ]] || fatal "usage: $0 HEADNODE-GZ-IP [manager|agent]"
+HEADNODE=root@$1
+MODE=${2:-both}
+
+case $MODE in
+    manager) sync_manager ;;
+    agent)   sync_agent ;;
+    both)    sync_manager; sync_agent ;;
+    *)       fatal "unknown mode '$MODE' — use 'manager', 'agent', or omit for both" ;;
+esac
