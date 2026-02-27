@@ -34,6 +34,7 @@ pub enum ImageState {
     Creating,
     Failed,
     #[serde(other)]
+    #[clap(skip)]
     Unknown,
 }
 

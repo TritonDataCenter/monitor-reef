@@ -23,6 +23,31 @@ pub enum OutputFormat {
 /// Matches the wire-format serialization of `#[serde(other)] Unknown` enum variants.
 pub const UNKNOWN_DISPLAY: &str = "unknown";
 
+/// Parse a string into a serde enum, with a user-friendly error listing valid variants.
+///
+/// Uses serde deserialization for parsing (matching wire-format names) and
+/// `clap::ValueEnum` to enumerate valid variants for the error message.
+/// Variants marked with `#[clap(skip)]` (e.g., `Unknown`) are automatically
+/// excluded from the list of valid values.
+pub fn parse_filter_enum<T>(field_name: &str, value: &str) -> anyhow::Result<T>
+where
+    T: serde::de::DeserializeOwned + clap::ValueEnum,
+{
+    serde_json::from_value::<T>(serde_json::Value::String(value.to_string())).map_err(|_| {
+        let valid: Vec<String> = T::value_variants()
+            .iter()
+            .filter_map(|v| v.to_possible_value())
+            .map(|p| p.get_name().to_string())
+            .collect();
+        anyhow::anyhow!(
+            "Invalid {} value '{}': expected {}",
+            field_name,
+            value,
+            valid.join(", ")
+        )
+    })
+}
+
 /// Convert a serde-serializable enum value to its wire-format string.
 ///
 /// Uses serde_json to get the exact rename (lowercase, kebab-case, snake_case, etc.)

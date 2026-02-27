@@ -13,10 +13,10 @@ use clap::Args;
 use cloudapi_client::TypedClient;
 use cloudapi_client::pagination::{DEFAULT_PAGE_SIZE, paginate_all};
 use cloudapi_client::types::{Brand, Machine};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::Serialize;
 
 use crate::output::table::{TableBuilder, TableFormatArgs, col};
-use crate::output::{self, enum_to_display, json};
+use crate::output::{self, enum_to_display, json, parse_filter_enum};
 
 /// Augmented machine output with computed fields for node-triton compatibility
 #[derive(Serialize)]
@@ -146,11 +146,6 @@ fn is_valid_filter(key: &str) -> bool {
     VALID_FILTERS.contains(&key) || key.starts_with("tag.")
 }
 
-/// Deserialize a serde enum from its wire-format string value.
-fn parse_serde_enum<T: DeserializeOwned>(value: &str) -> std::result::Result<T, serde_json::Error> {
-    serde_json::from_value(serde_json::Value::String(value.to_string()))
-}
-
 /// Apply positional key=value filters to the ListArgs, merging with any
 /// existing --flag values. Positional filters override flags if both are set.
 /// Returns an optional MachineType filter (from `type=` positional arg).
@@ -174,18 +169,11 @@ fn apply_positional_filters(
         match key {
             "name" => args.name = Some(value.to_string()),
             "state" => {
-                args.state = Some(parse_serde_enum(value).map_err(|_| {
-                    anyhow::anyhow!(
-                        "Invalid state value '{}': expected running, stopped, etc.",
-                        value
-                    )
-                })?);
+                args.state = Some(parse_filter_enum("state", value)?);
             }
             "image" => args.image = Some(value.to_string()),
             "brand" => {
-                args.brand = Some(parse_serde_enum(value).map_err(|_| {
-                    anyhow::anyhow!("Invalid brand value '{}': expected bhyve, kvm, etc.", value)
-                })?);
+                args.brand = Some(parse_filter_enum("brand", value)?);
             }
             "memory" => {
                 args.memory = Some(value.parse().map_err(|_| {
@@ -198,12 +186,7 @@ fn apply_positional_filters(
                 })?);
             }
             "type" => {
-                machine_type = Some(parse_serde_enum(value).map_err(|_| {
-                    anyhow::anyhow!(
-                        "Invalid type value '{}': expected smartmachine or virtualmachine",
-                        value
-                    )
-                })?);
+                machine_type = Some(parse_filter_enum("type", value)?);
             }
             _ if key.starts_with("tag.") => {
                 let tag_key = &key["tag.".len()..];

@@ -167,6 +167,7 @@ pub enum MigrationState {
     Failed,
     Aborted,
     #[serde(other)]
+    #[clap(skip)]
     Unknown,
 }
 

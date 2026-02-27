@@ -61,6 +61,7 @@ pub enum MachineState {
     Offline,
     Ready,
     #[serde(other)]
+    #[clap(skip)]
     Unknown,
 }
 

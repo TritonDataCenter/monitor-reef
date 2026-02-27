@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::define_columns;
 use crate::output::table::{TableBuilder, TableFormatArgs};
-use crate::output::{enum_to_display, json};
+use crate::output::{enum_to_display, json, parse_filter_enum};
 
 #[derive(Subcommand, Clone)]
 pub enum NicCommand {
@@ -158,11 +158,18 @@ pub async fn list_nics(args: NicListArgs, client: &TypedClient, use_json: bool) 
     // Apply filters
     for filter in &args.filters {
         if let Some((key, value)) = filter.split_once('=') {
+            // Validate typed filter values upfront so invalid input is rejected early
+            let value = if key == "state" {
+                let target: cloudapi_client::types::NicState = parse_filter_enum("state", value)?;
+                enum_to_display(&target)
+            } else {
+                value.to_string()
+            };
             nics.retain(|nic| match key {
                 "ip" => nic.ip == value || nic.ip.starts_with(&format!("{}/", value)),
                 "mac" => nic.mac == value,
                 "state" => nic.state == value,
-                "network" => nic.network == value || nic.network.starts_with(value),
+                "network" => nic.network == value || nic.network.starts_with(&value),
                 "primary" => (value == "true" && nic.primary) || (value == "false" && !nic.primary),
                 "gateway" => nic.gateway == value,
                 _ => true,

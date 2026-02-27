@@ -14,7 +14,7 @@ use cloudapi_client::{VolumeState, VolumeType};
 
 use crate::output::enum_to_display;
 use crate::output::table::{TableBuilder, TableFormatArgs};
-use crate::output::{self, json};
+use crate::output::{self, json, parse_filter_enum};
 
 #[derive(Args, Clone)]
 pub struct VolumeListArgs {
@@ -150,13 +150,6 @@ fn is_valid_filter(key: &str) -> bool {
     VALID_FILTERS.contains(&key)
 }
 
-/// Deserialize a serde enum from its wire-format string value.
-fn parse_serde_enum<T: serde::de::DeserializeOwned>(
-    value: &str,
-) -> std::result::Result<T, serde_json::Error> {
-    serde_json::from_value(serde_json::Value::String(value.to_string()))
-}
-
 /// Apply positional key=value filters to the VolumeListArgs, merging with any
 /// existing --flag values. Positional filters override flags if both are set.
 fn apply_positional_filters(args: &mut VolumeListArgs) -> Result<()> {
@@ -176,12 +169,7 @@ fn apply_positional_filters(args: &mut VolumeListArgs) -> Result<()> {
         match key {
             "name" => args.name = Some(value.to_string()),
             "state" => {
-                args.state = Some(parse_serde_enum(value).map_err(|_| {
-                    anyhow::anyhow!(
-                        "Invalid state value '{}': expected creating, ready, failed, deleting",
-                        value
-                    )
-                })?);
+                args.state = Some(parse_filter_enum("state", value)?);
             }
             "size" => {
                 args.size = Some(value.parse().map_err(|_| {
@@ -189,9 +177,7 @@ fn apply_positional_filters(args: &mut VolumeListArgs) -> Result<()> {
                 })?);
             }
             "type" => {
-                args.volume_type = Some(parse_serde_enum(value).map_err(|_| {
-                    anyhow::anyhow!("Invalid type value '{}': expected tritonnfs", value)
-                })?);
+                args.volume_type = Some(parse_filter_enum("type", value)?);
             }
             _ => unreachable!(),
         }

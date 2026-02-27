@@ -14,12 +14,11 @@ use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 use cloudapi_client::types::{Image, ImageState};
 use dialoguer::Confirm;
-use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use crate::define_columns;
 use crate::output::table::{TableBuilder, TableFormatArgs};
-use crate::output::{enum_to_display, json, opt_enum_to_display, table};
+use crate::output::{enum_to_display, json, opt_enum_to_display, parse_filter_enum, table};
 
 #[derive(Subcommand, Clone)]
 pub enum ImageCommand {
@@ -330,11 +329,6 @@ fn is_valid_filter(key: &str) -> bool {
     VALID_FILTERS.contains(&key)
 }
 
-/// Deserialize a serde enum from its wire-format string value.
-fn parse_serde_enum<T: DeserializeOwned>(value: &str) -> std::result::Result<T, serde_json::Error> {
-    serde_json::from_value(serde_json::Value::String(value.to_string()))
-}
-
 /// Apply positional key=value filters to the ImageListArgs, merging with any
 /// existing --flag values. Positional filters override flags if both are set.
 /// Returns an optional owner UUID filter (from `owner=` positional arg).
@@ -363,12 +357,7 @@ fn apply_positional_filters(args: &mut ImageListArgs) -> Result<Option<cloudapi_
                 })?;
             }
             "state" => {
-                args.state = Some(parse_serde_enum(value).map_err(|_| {
-                    anyhow::anyhow!(
-                        "Invalid state value '{}': expected active, disabled, etc.",
-                        value
-                    )
-                })?);
+                args.state = Some(parse_filter_enum("state", value)?);
             }
             "owner" => {
                 owner = Some(value.parse().map_err(|_| {
@@ -376,12 +365,7 @@ fn apply_positional_filters(args: &mut ImageListArgs) -> Result<Option<cloudapi_
                 })?);
             }
             "type" => {
-                args.image_type = Some(parse_serde_enum(value).map_err(|_| {
-                    anyhow::anyhow!(
-                        "Invalid type value '{}': expected zone-dataset, lx-dataset, zvol, etc.",
-                        value
-                    )
-                })?);
+                args.image_type = Some(parse_filter_enum("type", value)?);
             }
             _ => unreachable!(),
         }

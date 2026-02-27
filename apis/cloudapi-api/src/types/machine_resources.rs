@@ -94,6 +94,7 @@ pub enum DiskState {
     Failed,
     Deleted,
     #[serde(other)]
+    #[clap(skip)]
     Unknown,
 }
 

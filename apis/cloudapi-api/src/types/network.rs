@@ -214,6 +214,7 @@ pub enum NicState {
     Running,
     Stopped,
     #[serde(other)]
+    #[clap(skip)]
     Unknown,
 }
 

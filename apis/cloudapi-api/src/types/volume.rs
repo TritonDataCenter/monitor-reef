@@ -43,6 +43,7 @@ pub enum VolumeState {
     Failed,
     Deleting,
     #[serde(other)]
+    #[clap(skip)]
     Unknown,
 }
 
