@@ -146,7 +146,7 @@ pub async fn list_user_access_keys(
                 key.created.clone(),
             ]);
         }
-        tbl.print(&args.table);
+        tbl.print(&args.table)?;
     }
 
     Ok(())

@@ -17,7 +17,8 @@ use dialoguer::Confirm;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::output::table::{TableBuilder, TableFormatArgs, col};
+use crate::define_columns;
+use crate::output::table::{TableBuilder, TableFormatArgs};
 use crate::output::{enum_to_display, json, opt_enum_to_display, table};
 
 #[derive(Subcommand, Clone)]
@@ -453,27 +454,18 @@ async fn list_images(
     if use_json {
         json::print_json_stream(&images)?;
     } else {
-        print_images_table(&images, &args);
+        print_images_table(&images, &args)?;
     }
 
     Ok(())
 }
 
-fn print_images_table(images: &[Image], args: &ImageListArgs) {
-    // Handle --short: just print IDs
-    if args.short {
-        for img in images {
-            let short_id = &img.id.to_string()[..8];
-            println!("{}", short_id);
-        }
-        return;
-    }
-
-    let columns = vec![
-        col("SHORTID", |img: &Image| img.id.to_string()[..8].to_string()),
-        col("NAME", |img: &Image| img.name.clone()),
-        col("VERSION", |img: &Image| img.version.clone()),
-        col("FLAGS", |img: &Image| {
+define_columns! {
+    ImageColumn for Image, long_from: 7, {
+        ShortId("SHORTID") => |img| img.id.to_string()[..8].to_string(),
+        Name("NAME") => |img| img.name.clone(),
+        Version("VERSION") => |img| img.version.clone(),
+        Flags("FLAGS") => |img| {
             let mut flags = String::new();
             if img.origin.is_some() {
                 flags.push('I');
@@ -486,31 +478,33 @@ fn print_images_table(images: &[Image], args: &ImageListArgs) {
             if is_public {
                 flags.push('P');
             }
-            if flags.is_empty() {
-                "-".to_string()
-            } else {
-                flags
-            }
-        }),
-        col("OS", |img: &Image| img.os.clone()),
-        col("TYPE", |img: &Image| enum_to_display(&img.type_)),
-        col("PUBDATE", |img: &Image| format_pubdate(&img.published_at)),
-        // long-only columns (from index 7)
-        col("STATE", |img: &Image| {
-            img.state
-                .as_ref()
-                .map(enum_to_display)
-                .unwrap_or_else(|| "-".to_string())
-        }),
-        col("ID", |img: &Image| img.id.to_string()),
-        col("PUBLIC", |img: &Image| {
-            img.public
-                .map(|p| p.to_string())
-                .unwrap_or_else(|| "-".to_string())
-        }),
-    ];
+            if flags.is_empty() { "-".to_string() } else { flags }
+        },
+        Os("OS") => |img| img.os.clone(),
+        Type("TYPE") => |img| enum_to_display(&img.type_),
+        PubDate("PUBDATE") => |img| format_pubdate(&img.published_at),
+        // --- long-only columns below ---
+        State("STATE") => |img| img.state.as_ref().map(enum_to_display)
+            .unwrap_or_else(|| "-".to_string()),
+        Id("ID") => |img| img.id.to_string(),
+        Public("PUBLIC") => |img| img.public.map(|p| p.to_string())
+            .unwrap_or_else(|| "-".to_string()),
+    }
+}
 
-    TableBuilder::from_columns(&columns, images, Some(7)).print(&args.table);
+fn print_images_table(images: &[Image], args: &ImageListArgs) -> Result<()> {
+    // Handle --short: just print IDs
+    if args.short {
+        for img in images {
+            let short_id = &img.id.to_string()[..8];
+            println!("{}", short_id);
+        }
+        return Ok(());
+    }
+
+    TableBuilder::from_enum_columns::<ImageColumn, _>(images, Some(ImageColumn::LONG_FROM))
+        .print(&args.table)?;
+    Ok(())
 }
 
 /// Format pubdate as YYYY-MM-DD (matching node-triton)

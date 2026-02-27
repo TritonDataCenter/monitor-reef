@@ -12,8 +12,9 @@ use cloudapi_client::TypedClient;
 use cloudapi_client::types::{Snapshot, SnapshotState};
 use dialoguer::Confirm;
 
+use crate::define_columns;
 use crate::output::json;
-use crate::output::table::{TableBuilder, TableFormatArgs, col};
+use crate::output::table::{TableBuilder, TableFormatArgs};
 
 #[derive(Subcommand, Clone)]
 pub enum SnapshotCommand {
@@ -126,19 +127,23 @@ pub async fn list_snapshots(
     if use_json {
         json::print_json_stream(&snapshots)?;
     } else {
-        let columns = vec![
-            col("NAME", |snap: &Snapshot| snap.name.clone()),
-            col("STATE", |snap: &Snapshot| {
-                crate::output::enum_to_display(&snap.state)
-            }),
-            col("CREATED", |snap: &Snapshot| snap.created.to_string()),
-            // long-only columns (from index 3)
-            col("UPDATED", |snap: &Snapshot| {
-                snap.updated.clone().unwrap_or_else(|| "-".to_string())
-            }),
-        ];
+        define_columns! {
+            SnapshotColumn for Snapshot, long_from: 3, {
+                Name("NAME") => |snap| snap.name.clone(),
+                State("STATE") => |snap| crate::output::enum_to_display(&snap.state),
+                Created("CREATED") => |snap| snap.created.to_string(),
+                // --- long-only columns below ---
+                Updated("UPDATED") => |snap| {
+                    snap.updated.clone().unwrap_or_else(|| "-".to_string())
+                },
+            }
+        }
 
-        TableBuilder::from_columns(&columns, &snapshots, Some(3)).print(&args.table);
+        TableBuilder::from_enum_columns::<SnapshotColumn, _>(
+            &snapshots,
+            Some(SnapshotColumn::LONG_FROM),
+        )
+        .print(&args.table)?;
     }
 
     Ok(())

@@ -11,8 +11,9 @@ use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 use serde::Deserialize;
 
+use crate::define_columns;
 use crate::output::json;
-use crate::output::table::{TableBuilder, TableFormatArgs, col};
+use crate::output::table::{TableBuilder, TableFormatArgs};
 
 use super::common::resolve_user;
 use super::editor;
@@ -223,37 +224,32 @@ pub async fn list_users(
     if use_json {
         json::print_json_stream(&users)?;
     } else {
-        let columns = vec![
-            col("LOGIN", |user: &cloudapi_client::types::User| {
-                user.login.clone()
-            }),
-            col("EMAIL", |user: &cloudapi_client::types::User| {
-                user.email.clone()
-            }),
-            col("NAME", |user: &cloudapi_client::types::User| {
-                match (&user.first_name, &user.last_name) {
-                    (Some(f), Some(l)) => format!("{} {}", f, l),
-                    (Some(f), None) => f.clone(),
-                    (None, Some(l)) => l.clone(),
-                    (None, None) => "-".to_string(),
-                }
-            }),
-            col("CDATE", |user: &cloudapi_client::types::User| {
-                user.created.to_string()
-            }),
-            // long-only columns (from index 4)
-            col("ID", |user: &cloudapi_client::types::User| {
-                user.id.to_string()
-            }),
-            col("FIRSTNAME", |user: &cloudapi_client::types::User| {
-                user.first_name.clone().unwrap_or_else(|| "-".to_string())
-            }),
-            col("LASTNAME", |user: &cloudapi_client::types::User| {
-                user.last_name.clone().unwrap_or_else(|| "-".to_string())
-            }),
-        ];
+        define_columns! {
+            UserColumn for cloudapi_client::types::User, long_from: 4, {
+                Login("LOGIN") => |user| user.login.clone(),
+                Email("EMAIL") => |user| user.email.clone(),
+                Name("NAME") => |user| {
+                    match (&user.first_name, &user.last_name) {
+                        (Some(f), Some(l)) => format!("{} {}", f, l),
+                        (Some(f), None) => f.clone(),
+                        (None, Some(l)) => l.clone(),
+                        (None, None) => "-".to_string(),
+                    }
+                },
+                Cdate("CDATE") => |user| user.created.to_string(),
+                // --- long-only columns below ---
+                Id("ID") => |user| user.id.to_string(),
+                FirstName("FIRSTNAME") => |user| {
+                    user.first_name.clone().unwrap_or_else(|| "-".to_string())
+                },
+                LastName("LASTNAME") => |user| {
+                    user.last_name.clone().unwrap_or_else(|| "-".to_string())
+                },
+            }
+        }
 
-        TableBuilder::from_columns(&columns, &users, Some(4)).print(table_args);
+        TableBuilder::from_enum_columns::<UserColumn, _>(&users, Some(UserColumn::LONG_FROM))
+            .print(table_args)?;
     }
 
     Ok(())

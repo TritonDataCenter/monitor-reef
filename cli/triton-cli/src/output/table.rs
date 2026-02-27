@@ -42,6 +42,71 @@ impl TableFormatArgs {
     }
 }
 
+/// Trait for enum-based column definitions.
+///
+/// Implement this on a `#[derive(strum::Display, strum::EnumIter)]` enum
+/// where `strum(serialize = "HEADER")` provides each column's display name.
+/// The `extract` method maps each variant to the field value for a given item.
+///
+/// Prefer using the [`define_columns!`] macro instead of implementing manually.
+pub trait Column<T>: std::fmt::Display + Copy {
+    fn extract(self, item: &T) -> String;
+}
+
+/// Declare a column enum with header names and extraction logic.
+///
+/// Generates:
+/// - The enum with `strum::Display` and `strum::EnumIter` derives
+/// - An `impl Column<T>` with the extraction logic
+/// - A `LONG_FROM` constant (if `long_from` is specified)
+///
+/// # Example
+/// ```ignore
+/// define_columns! {
+///     MyColumn for MyType, long_from: 2, {
+///         Name("NAME") => |item| item.name.clone(),
+///         Count("COUNT") => |item| item.count.to_string(),
+///         // --- long-only columns below ---
+///         Id("ID") => |item| item.id.to_string(),
+///     }
+/// }
+/// TableBuilder::from_enum_columns::<MyColumn, _>(&items, Some(MyColumn::LONG_FROM))
+/// ```
+#[macro_export]
+macro_rules! define_columns {
+    (
+        $vis:vis $enum_name:ident for $item_type:ty
+        $(, long_from: $long_from:expr ,)?
+        {
+            $( $variant:ident($header:literal) => |$param:ident| $body:expr ),* $(,)?
+        }
+    ) => {
+        #[derive(Clone, Copy, strum::Display, strum::EnumIter)]
+        $vis enum $enum_name {
+            $( #[strum(serialize = $header)] $variant, )*
+        }
+
+        $(
+            impl $enum_name {
+                const LONG_FROM: usize = $long_from;
+            }
+        )?
+
+        impl $crate::output::table::Column<$item_type> for $enum_name {
+            fn extract(self, _item: &$item_type) -> String {
+                match self {
+                    $(
+                        Self::$variant => {
+                            let $param = _item;
+                            $body
+                        }
+                    )*
+                }
+            }
+        }
+    };
+}
+
 /// A column definition that co-locates header name with extraction logic.
 pub struct ColumnDef<'a, T> {
     pub header: &'a str,
@@ -108,6 +173,43 @@ impl TableBuilder {
         }
     }
 
+    /// Build a table from an enum implementing `Column` + `strum::IntoEnumIterator`.
+    ///
+    /// `long_from` is the index where long-only columns begin.
+    pub fn from_enum_columns<'a, C, T>(
+        items: impl IntoIterator<Item = &'a T>,
+        long_from: Option<usize>,
+    ) -> Self
+    where
+        C: Column<T> + strum::IntoEnumIterator,
+        T: 'a,
+    {
+        let all_variants: Vec<C> = C::iter().collect();
+        let boundary = long_from.unwrap_or(all_variants.len());
+        let headers: Vec<String> = all_variants[..boundary]
+            .iter()
+            .map(|c| c.to_string())
+            .collect();
+        let long_headers = if boundary < all_variants.len() {
+            Some(all_variants.iter().map(|c| c.to_string()).collect())
+        } else {
+            None
+        };
+
+        let mut rows = Vec::new();
+        for item in items {
+            let row: Vec<String> = all_variants.iter().map(|c| c.extract(item)).collect();
+            rows.push(row);
+        }
+
+        Self {
+            headers,
+            long_headers,
+            right_aligned: Vec::new(),
+            rows,
+        }
+    }
+
     /// Set additional columns to show in long format
     pub fn with_long_headers(mut self, headers: &[&str]) -> Self {
         let mut all_headers: Vec<String> = self.headers.iter().map(|s| s.to_string()).collect();
@@ -127,18 +229,47 @@ impl TableBuilder {
     }
 
     /// Print the table with the given formatting options
-    pub fn print(self, opts: &TableFormatArgs) {
-        print!("{}", self.render(opts));
+    pub fn print(self, opts: &TableFormatArgs) -> anyhow::Result<()> {
+        print!("{}", self.render(opts)?);
+        Ok(())
     }
 
     /// Render the table to a String with the given formatting options
-    pub fn render(self, opts: &TableFormatArgs) -> String {
+    pub fn render(self, opts: &TableFormatArgs) -> anyhow::Result<String> {
         let all_headers = self.long_headers.as_ref().unwrap_or(&self.headers);
         let headers = if opts.long {
             all_headers
         } else {
             &self.headers
         };
+
+        // Validate -o columns against all known headers
+        if let Some(ref cols) = opts.columns {
+            let invalid: Vec<&str> = cols
+                .iter()
+                .filter(|c| !all_headers.iter().any(|h| h.eq_ignore_ascii_case(c)))
+                .map(|s| s.as_str())
+                .collect();
+            if !invalid.is_empty() {
+                let names: Vec<String> = invalid.iter().map(|n| format!("'{n}'")).collect();
+                anyhow::bail!(
+                    "unknown column{} {}. Valid columns: {}",
+                    if invalid.len() > 1 { "s" } else { "" },
+                    names.join(", "),
+                    all_headers.join(", "),
+                );
+            }
+        }
+
+        // Validate --sort-by field
+        if let Some((ref field, _)) = opts.parse_sort()
+            && !all_headers.iter().any(|h| h.eq_ignore_ascii_case(field))
+        {
+            anyhow::bail!(
+                "unknown sort field '{field}'. Valid columns: {}",
+                all_headers.join(", "),
+            );
+        }
 
         // Determine which columns to display
         // When -o is specified, search all known headers (including long-only ones)
@@ -220,7 +351,7 @@ impl TableBuilder {
             output.push_str(line.trim_start());
             output.push('\n');
         }
-        output
+        Ok(output)
     }
 }
 
@@ -287,7 +418,7 @@ mod tests {
             sort_by: Some("NAME".into()),
             ..default_opts()
         };
-        let output = tbl.render(&opts);
+        let output = tbl.render(&opts).unwrap();
         let lines: Vec<&str> = output.lines().collect();
         // Line 0 is header, line 1 is first data row
         assert!(
@@ -309,7 +440,7 @@ mod tests {
             sort_by: Some("-NAME".into()),
             ..default_opts()
         };
-        let output = tbl.render(&opts);
+        let output = tbl.render(&opts).unwrap();
         let lines: Vec<&str> = output.lines().collect();
         assert!(
             lines[1].starts_with("charlie"),
@@ -326,7 +457,7 @@ mod tests {
     #[test]
     fn test_sort_by_none_preserves_insertion_order() {
         let tbl = sample_builder();
-        let output = tbl.render(&default_opts());
+        let output = tbl.render(&default_opts()).unwrap();
         let lines: Vec<&str> = output.lines().collect();
         // Insertion order: charlie, alice, bob
         assert!(
@@ -353,7 +484,7 @@ mod tests {
             columns: Some(vec!["NAME".into(), "STATE".into()]),
             ..default_opts()
         };
-        let output = tbl.render(&opts);
+        let output = tbl.render(&opts).unwrap();
         let header = output.lines().next().unwrap();
         assert!(header.contains("NAME"), "header should contain NAME");
         assert!(header.contains("STATE"), "header should contain STATE");
@@ -367,7 +498,7 @@ mod tests {
             columns: Some(vec!["ID".into()]),
             ..default_opts()
         };
-        let output = tbl.render(&opts);
+        let output = tbl.render(&opts).unwrap();
         let header = output.lines().next().unwrap();
         assert!(header.contains("ID"), "header should contain ID");
         // Should not show default columns
@@ -383,7 +514,7 @@ mod tests {
             long: true,
             ..default_opts()
         };
-        let output = tbl.render(&opts);
+        let output = tbl.render(&opts).unwrap();
         let header = output.lines().next().unwrap();
         assert!(header.contains("ID"), "long header should contain ID");
         assert!(header.contains("NAME"), "long header should contain NAME");
@@ -410,7 +541,7 @@ mod tests {
             col("COUNT", |i: &Item| i.count.to_string()),
         ];
         let tbl = TableBuilder::from_columns(&columns, &items, None);
-        let output = tbl.render(&default_opts());
+        let output = tbl.render(&default_opts()).unwrap();
         let lines: Vec<&str> = output.lines().collect();
         assert_eq!(lines.len(), 3); // header + 2 rows
         assert!(lines[0].contains("NAME"));
@@ -440,7 +571,7 @@ mod tests {
         let tbl = TableBuilder::from_columns(&columns, &items, Some(2));
 
         // Default: only A, B
-        let output = tbl.render(&default_opts());
+        let output = tbl.render(&default_opts()).unwrap();
         let header = output.lines().next().unwrap();
         assert!(header.contains("A"));
         assert!(header.contains("B"));
@@ -469,7 +600,7 @@ mod tests {
             long: true,
             ..default_opts()
         };
-        let output = tbl.render(&opts);
+        let output = tbl.render(&opts).unwrap();
         let header = output.lines().next().unwrap();
         assert!(header.contains("A"));
         assert!(header.contains("B"));
@@ -494,7 +625,7 @@ mod tests {
             }),
         ];
         let tbl = TableBuilder::from_columns(&columns, &items, None);
-        let output = tbl.render(&default_opts());
+        let output = tbl.render(&default_opts()).unwrap();
         assert!(output.contains("one"));
         assert!(output.contains("two"));
     }
@@ -506,7 +637,7 @@ mod tests {
             no_header: true,
             ..default_opts()
         };
-        let output = tbl.render(&opts);
+        let output = tbl.render(&opts).unwrap();
         // First line should be data, not a header
         let first_line = output.lines().next().unwrap();
         assert!(
@@ -520,5 +651,103 @@ mod tests {
         );
         // Should have exactly 3 lines (3 data rows)
         assert_eq!(output.lines().count(), 3);
+    }
+
+    #[test]
+    fn test_invalid_column_returns_error() {
+        let tbl = sample_builder();
+        let opts = TableFormatArgs {
+            columns: Some(vec!["BOGUS".into()]),
+            ..default_opts()
+        };
+        let err = tbl.render(&opts).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("unknown column"), "got: {msg}");
+        assert!(msg.contains("'BOGUS'"), "got: {msg}");
+        assert!(
+            msg.contains("NAME"),
+            "error should list valid columns: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_multiple_invalid_columns_returns_error() {
+        let tbl = sample_builder();
+        let opts = TableFormatArgs {
+            columns: Some(vec!["FOO".into(), "BAR".into()]),
+            ..default_opts()
+        };
+        let err = tbl.render(&opts).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("unknown columns"), "got: {msg}");
+        assert!(msg.contains("'FOO'"), "got: {msg}");
+        assert!(msg.contains("'BAR'"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_valid_columns_still_work() {
+        let tbl = sample_builder();
+        let opts = TableFormatArgs {
+            columns: Some(vec!["NAME".into(), "STATE".into()]),
+            ..default_opts()
+        };
+        let output = tbl.render(&opts).unwrap();
+        assert!(output.contains("NAME"));
+        assert!(output.contains("charlie"));
+    }
+
+    #[test]
+    fn test_invalid_sort_by_returns_error() {
+        let tbl = sample_builder();
+        let opts = TableFormatArgs {
+            sort_by: Some("NOPE".into()),
+            ..default_opts()
+        };
+        let err = tbl.render(&opts).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("unknown sort field 'NOPE'"), "got: {msg}");
+        assert!(
+            msg.contains("NAME"),
+            "error should list valid columns: {msg}"
+        );
+    }
+
+    #[test]
+    fn test_invalid_sort_by_descending_returns_error() {
+        let tbl = sample_builder();
+        let opts = TableFormatArgs {
+            sort_by: Some("-NOPE".into()),
+            ..default_opts()
+        };
+        let err = tbl.render(&opts).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("unknown sort field 'NOPE'"), "got: {msg}");
+    }
+
+    #[test]
+    fn test_column_validation_case_insensitive() {
+        let tbl = sample_builder();
+        let opts = TableFormatArgs {
+            columns: Some(vec!["name".into(), "state".into()]),
+            ..default_opts()
+        };
+        let output = tbl.render(&opts).unwrap();
+        assert!(output.contains("charlie"));
+    }
+
+    #[test]
+    fn test_valid_columns_includes_long_in_error() {
+        let tbl = sample_builder();
+        let opts = TableFormatArgs {
+            columns: Some(vec!["BOGUS".into()]),
+            ..default_opts()
+        };
+        let err = tbl.render(&opts).unwrap_err();
+        let msg = err.to_string();
+        // The error should list long-only columns too
+        assert!(
+            msg.contains("ID"),
+            "error should list long-only column ID: {msg}"
+        );
     }
 }

@@ -121,7 +121,7 @@ async fn list_access_keys(
                 key.expiration.clone().unwrap_or_default(),
             ]);
         }
-        tbl.print(&args.table);
+        tbl.print(&args.table)?;
     }
 
     Ok(())

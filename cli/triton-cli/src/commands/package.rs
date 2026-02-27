@@ -11,7 +11,8 @@ use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 use cloudapi_client::types::Package;
 
-use crate::output::table::{TableBuilder, TableFormatArgs, col};
+use crate::define_columns;
+use crate::output::table::{TableBuilder, TableFormatArgs};
 use crate::output::{format_mb, json};
 
 /// Valid filter keys for positional key=value arguments
@@ -222,42 +223,43 @@ async fn list_packages(
     if use_json {
         json::print_json_stream(&packages)?;
     } else {
-        let columns = vec![
-            col("SHORTID", |pkg: &Package| {
-                let id_str = pkg.id.to_string();
-                id_str[..8.min(id_str.len())].to_string()
-            }),
-            col("NAME", |pkg: &Package| pkg.name.clone()),
-            col("MEMORY", |pkg: &Package| format_mb(pkg.memory)),
-            col("SWAP", |pkg: &Package| format_mb(pkg.swap)),
-            col("DISK", |pkg: &Package| format_mb(pkg.disk)),
-            col("VCPUS", |pkg: &Package| {
-                if pkg.vcpus > 0 {
-                    pkg.vcpus.to_string()
-                } else {
-                    "-".to_string()
-                }
-            }),
-            // long-only columns (from index 6)
-            col("ID", |pkg: &Package| pkg.id.to_string()),
-            col("DESCRIPTION", |pkg: &Package| {
-                pkg.description.clone().unwrap_or_else(|| "-".to_string())
-            }),
-            col("VERSION", |pkg: &Package| {
-                pkg.version.clone().unwrap_or_else(|| "-".to_string())
-            }),
-            col("GROUP", |pkg: &Package| {
-                pkg.group.clone().unwrap_or_else(|| "-".to_string())
-            }),
-            col("LWPS", |pkg: &Package| {
-                pkg.lwps.map_or("-".to_string(), |v| v.to_string())
-            }),
-            col("DEFAULT", |pkg: &Package| pkg.default.to_string()),
-        ];
+        define_columns! {
+            PackageColumn for Package, long_from: 6, {
+                ShortId("SHORTID") => |pkg| {
+                    let id_str = pkg.id.to_string();
+                    id_str[..8.min(id_str.len())].to_string()
+                },
+                Name("NAME") => |pkg| pkg.name.clone(),
+                Memory("MEMORY") => |pkg| format_mb(pkg.memory),
+                Swap("SWAP") => |pkg| format_mb(pkg.swap),
+                Disk("DISK") => |pkg| format_mb(pkg.disk),
+                Vcpus("VCPUS") => |pkg| {
+                    if pkg.vcpus > 0 { pkg.vcpus.to_string() } else { "-".to_string() }
+                },
+                // --- long-only columns below ---
+                Id("ID") => |pkg| pkg.id.to_string(),
+                Description("DESCRIPTION") => |pkg| {
+                    pkg.description.clone().unwrap_or_else(|| "-".to_string())
+                },
+                Version("VERSION") => |pkg| {
+                    pkg.version.clone().unwrap_or_else(|| "-".to_string())
+                },
+                Group("GROUP") => |pkg| {
+                    pkg.group.clone().unwrap_or_else(|| "-".to_string())
+                },
+                Lwps("LWPS") => |pkg| {
+                    pkg.lwps.map_or("-".to_string(), |v| v.to_string())
+                },
+                Default("DEFAULT") => |pkg| pkg.default.to_string(),
+            }
+        }
 
-        TableBuilder::from_columns(&columns, &packages, Some(6))
-            .with_right_aligned(&["MEMORY", "SWAP", "DISK", "VCPUS", "LWPS"])
-            .print(&args.table);
+        TableBuilder::from_enum_columns::<PackageColumn, _>(
+            &packages,
+            Some(PackageColumn::LONG_FROM),
+        )
+        .with_right_aligned(&["MEMORY", "SWAP", "DISK", "VCPUS", "LWPS"])
+        .print(&args.table)?;
     }
 
     Ok(())

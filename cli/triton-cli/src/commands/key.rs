@@ -105,7 +105,7 @@ async fn list_keys(args: KeyListArgs, client: &TypedClient, use_json: bool) -> R
                 key.key.clone(),
             ]);
         }
-        tbl.print(&args.table);
+        tbl.print(&args.table)?;
     }
 
     Ok(())

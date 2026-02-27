@@ -11,8 +11,9 @@ use clap::Args;
 use cloudapi_client::TypedClient;
 use cloudapi_client::types::AuditEntry;
 
+use crate::define_columns;
 use crate::output::json;
-use crate::output::table::{TableBuilder, TableFormatArgs, col};
+use crate::output::table::{TableBuilder, TableFormatArgs};
 
 #[derive(Args, Clone)]
 pub struct AuditArgs {
@@ -44,34 +45,30 @@ pub async fn run(args: AuditArgs, client: &TypedClient, use_json: bool) -> Resul
     if use_json {
         json::print_json_stream(&audits)?;
     } else {
-        let columns = vec![
-            col("TIME", |audit: &AuditEntry| audit.time.clone()),
-            col("ACTION", |audit: &AuditEntry| audit.action.clone()),
-            col("SUCCESS", |audit: &AuditEntry| {
-                audit
-                    .success
-                    .map(|s| if s { "yes" } else { "no" })
-                    .unwrap_or("-")
-                    .to_string()
-            }),
-            // long-only columns (from index 3)
-            col("CALLER", |audit: &AuditEntry| {
-                audit
-                    .caller
-                    .as_ref()
-                    .map(|c| {
+        define_columns! {
+            AuditColumn for AuditEntry, long_from: 3, {
+                Time("TIME") => |audit| audit.time.clone(),
+                Action("ACTION") => |audit| audit.action.clone(),
+                Success("SUCCESS") => |audit| {
+                    audit.success.map(|s| if s { "yes" } else { "no" })
+                        .unwrap_or("-").to_string()
+                },
+                // --- long-only columns below ---
+                Caller("CALLER") => |audit| {
+                    audit.caller.as_ref().map(|c| {
                         if let Some(obj) = c.as_object()
                             && let Some(login) = obj.get("login").and_then(|v| v.as_str())
                         {
                             return login.to_string();
                         }
                         c.to_string()
-                    })
-                    .unwrap_or_else(|| "-".to_string())
-            }),
-        ];
+                    }).unwrap_or_else(|| "-".to_string())
+                },
+            }
+        }
 
-        TableBuilder::from_columns(&columns, &audits, Some(3)).print(&args.table);
+        TableBuilder::from_enum_columns::<AuditColumn, _>(&audits, Some(AuditColumn::LONG_FROM))
+            .print(&args.table)?;
     }
 
     Ok(())

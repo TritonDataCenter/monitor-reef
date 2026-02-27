@@ -43,7 +43,7 @@ pub async fn run(args: DatacenterListArgs, client: &TypedClient, use_json: bool)
             col("URL", |(_name, url): &(&String, &String)| url.to_string()),
         ];
 
-        TableBuilder::from_columns(&columns, &entries, None).print(&args.table);
+        TableBuilder::from_columns(&columns, &entries, None).print(&args.table)?;
     }
 
     Ok(())

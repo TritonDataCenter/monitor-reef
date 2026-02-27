@@ -11,8 +11,9 @@ use clap::Args;
 use cloudapi_client::TypedClient;
 use cloudapi_client::types::FirewallRule;
 
+use crate::define_columns;
 use crate::output::json;
-use crate::output::table::{TableBuilder, TableFormatArgs, col};
+use crate::output::table::{TableBuilder, TableFormatArgs};
 
 #[derive(Args, Clone)]
 pub struct EnableFirewallArgs {
@@ -82,31 +83,30 @@ pub async fn list_rules(args: FwrulesArgs, client: &TypedClient, use_json: bool)
     if use_json {
         json::print_json_stream(&rules)?;
     } else {
-        let columns = vec![
-            col("SHORTID", |rule: &FirewallRule| {
-                rule.id.to_string()[..8].to_string()
-            }),
-            col("ENABLED", |rule: &FirewallRule| {
-                if rule.enabled { "yes" } else { "no" }.to_string()
-            }),
-            col("GLOBAL", |rule: &FirewallRule| {
-                rule.global
-                    .map(|g| if g { "yes" } else { "no" })
-                    .unwrap_or("-")
-                    .to_string()
-            }),
-            col("LOG", |rule: &FirewallRule| {
-                if rule.log { "yes" } else { "no" }.to_string()
-            }),
-            col("RULE", |rule: &FirewallRule| rule.rule.clone()),
-            // long-only columns (from index 5)
-            col("ID", |rule: &FirewallRule| rule.id.to_string()),
-            col("DESCRIPTION", |rule: &FirewallRule| {
-                rule.description.clone().unwrap_or_else(|| "-".to_string())
-            }),
-        ];
+        define_columns! {
+            FwColumn for FirewallRule, long_from: 5, {
+                ShortId("SHORTID") => |rule| rule.id.to_string()[..8].to_string(),
+                Enabled("ENABLED") => |rule| {
+                    if rule.enabled { "yes" } else { "no" }.to_string()
+                },
+                Global("GLOBAL") => |rule| {
+                    rule.global.map(|g| if g { "yes" } else { "no" })
+                        .unwrap_or("-").to_string()
+                },
+                Log("LOG") => |rule| {
+                    if rule.log { "yes" } else { "no" }.to_string()
+                },
+                Rule("RULE") => |rule| rule.rule.clone(),
+                // --- long-only columns below ---
+                Id("ID") => |rule| rule.id.to_string(),
+                Description("DESCRIPTION") => |rule| {
+                    rule.description.clone().unwrap_or_else(|| "-".to_string())
+                },
+            }
+        }
 
-        TableBuilder::from_columns(&columns, &rules, Some(5)).print(&args.table);
+        TableBuilder::from_enum_columns::<FwColumn, _>(&rules, Some(FwColumn::LONG_FROM))
+            .print(&args.table)?;
     }
 
     Ok(())

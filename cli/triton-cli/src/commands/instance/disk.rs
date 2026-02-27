@@ -13,7 +13,8 @@ use cloudapi_client::types::Disk;
 use dialoguer::Confirm;
 use std::io::IsTerminal;
 
-use crate::output::table::{TableBuilder, TableFormatArgs, col};
+use crate::define_columns;
+use crate::output::table::{TableBuilder, TableFormatArgs};
 use crate::output::{json, opt_enum_to_display};
 
 #[derive(Subcommand, Clone)]
@@ -134,31 +135,25 @@ pub async fn list_disks(args: DiskListArgs, client: &TypedClient, use_json: bool
     if use_json {
         json::print_json_stream(&disks)?;
     } else {
-        let columns = vec![
-            col("SHORTID", |disk: &Disk| {
-                disk.id.to_string()[..8].to_string()
-            }),
-            col("SIZE", |disk: &Disk| disk.size.to_string()),
-            col("PCI_SLOT", |disk: &Disk| {
-                disk.pci_slot.clone().unwrap_or_else(|| "-".to_string())
-            }),
-            // long-only columns (from index 3)
-            col("ID", |disk: &Disk| disk.id.to_string()),
-            col("BOOT", |disk: &Disk| {
-                if disk.boot.unwrap_or(false) {
-                    "yes".to_string()
-                } else {
-                    "no".to_string()
-                }
-            }),
-            col("STATE", |disk: &Disk| {
-                opt_enum_to_display(disk.state.as_ref())
-            }),
-        ];
+        define_columns! {
+            DiskColumn for Disk, long_from: 3, {
+                ShortId("SHORTID") => |disk| disk.id.to_string()[..8].to_string(),
+                Size("SIZE") => |disk| disk.size.to_string(),
+                PciSlot("PCI_SLOT") => |disk| {
+                    disk.pci_slot.clone().unwrap_or_else(|| "-".to_string())
+                },
+                // --- long-only columns below ---
+                Id("ID") => |disk| disk.id.to_string(),
+                Boot("BOOT") => |disk| {
+                    if disk.boot.unwrap_or(false) { "yes".to_string() } else { "no".to_string() }
+                },
+                State("STATE") => |disk| opt_enum_to_display(disk.state.as_ref()),
+            }
+        }
 
-        TableBuilder::from_columns(&columns, &disks, Some(3))
+        TableBuilder::from_enum_columns::<DiskColumn, _>(&disks, Some(DiskColumn::LONG_FROM))
             .with_right_aligned(&["SIZE"])
-            .print(&args.table);
+            .print(&args.table)?;
     }
 
     Ok(())

@@ -346,7 +346,7 @@ pub async fn run(
             .collect();
         json::print_json_stream(&augmented)?;
     } else {
-        print_machines_table(&machines, &args, &image_map);
+        print_machines_table(&machines, &args, &image_map)?;
     }
 
     Ok(())
@@ -356,7 +356,7 @@ fn print_machines_table(
     machines: &[Machine],
     args: &ListArgs,
     image_map: &HashMap<uuid::Uuid, String>,
-) {
+) -> Result<()> {
     // Handle --short: just print IDs
     if args.short {
         for m in machines {
@@ -364,7 +364,7 @@ fn print_machines_table(
             let short_id = &id_str[..8.min(id_str.len())];
             println!("{}", short_id);
         }
-        return;
+        return Ok(());
     }
 
     // Sort by created (descending) by default when no -s flag is provided,
@@ -423,5 +423,6 @@ fn print_machines_table(
 
     TableBuilder::from_columns(&columns, &sorted_machines, Some(6))
         .with_right_aligned(&["MEMORY"])
-        .print(&args.table);
+        .print(&args.table)?;
+    Ok(())
 }

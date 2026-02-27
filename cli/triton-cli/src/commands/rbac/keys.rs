@@ -148,7 +148,7 @@ pub async fn list_user_keys(
                 key.key.clone(),
             ]);
         }
-        tbl.print(&args.table);
+        tbl.print(&args.table)?;
     }
 
     Ok(())

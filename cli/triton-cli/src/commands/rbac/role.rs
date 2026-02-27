@@ -12,8 +12,9 @@ use cloudapi_client::TypedClient;
 use cloudapi_client::types::{MemberRef, MemberType, PolicyRef};
 use serde::Deserialize;
 
+use crate::define_columns;
 use crate::output::json;
-use crate::output::table::{TableBuilder, TableFormatArgs, col};
+use crate::output::table::{TableBuilder, TableFormatArgs};
 
 use super::editor;
 
@@ -200,23 +201,18 @@ pub async fn list_roles(
     if use_json {
         json::print_json_stream(&roles)?;
     } else {
-        let columns = vec![
-            col("NAME", |role: &cloudapi_client::types::Role| {
-                role.name.clone()
-            }),
-            col("POLICIES", |role: &cloudapi_client::types::Role| {
-                role.policies.join(", ")
-            }),
-            col("MEMBERS", |role: &cloudapi_client::types::Role| {
-                role.members.join(", ")
-            }),
-            // long-only columns (from index 3)
-            col("ID", |role: &cloudapi_client::types::Role| {
-                role.id.to_string()
-            }),
-        ];
+        define_columns! {
+            RoleColumn for cloudapi_client::types::Role, long_from: 3, {
+                Name("NAME") => |role| role.name.clone(),
+                Policies("POLICIES") => |role| role.policies.join(", "),
+                Members("MEMBERS") => |role| role.members.join(", "),
+                // --- long-only columns below ---
+                Id("ID") => |role| role.id.to_string(),
+            }
+        }
 
-        TableBuilder::from_columns(&columns, &roles, Some(3)).print(table_args);
+        TableBuilder::from_enum_columns::<RoleColumn, _>(&roles, Some(RoleColumn::LONG_FROM))
+            .print(table_args)?;
     }
 
     Ok(())

@@ -305,7 +305,7 @@ async fn list_networks(
                 net.id.to_string(),
             ]);
         }
-        tbl.print(&args.table);
+        tbl.print(&args.table)?;
     }
 
     Ok(())
@@ -593,7 +593,7 @@ async fn list_network_ips(
                 belongs_to_type,
             ]);
         }
-        tbl.print(&args.table);
+        tbl.print(&args.table)?;
     }
 
     Ok(())

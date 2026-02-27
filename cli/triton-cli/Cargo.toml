@@ -40,6 +40,7 @@ getrandom = "0.3"
 rpassword = "7"
 chrono = { workspace = true }
 reqwest = { workspace = true }
+strum = { workspace = true }
 
 # TLS certificate fallback for platforms where native cert probing fails (e.g., illumos)
 rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }

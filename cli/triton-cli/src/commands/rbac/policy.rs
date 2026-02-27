@@ -11,8 +11,9 @@ use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 use serde::Deserialize;
 
+use crate::define_columns;
 use crate::output::json;
-use crate::output::table::{TableBuilder, TableFormatArgs, col};
+use crate::output::table::{TableBuilder, TableFormatArgs};
 
 use super::editor;
 
@@ -198,28 +199,24 @@ pub async fn list_policies(
     if use_json {
         json::print_json_stream(&policies)?;
     } else {
-        let columns = vec![
-            col("NAME", |policy: &cloudapi_client::types::Policy| {
-                policy.name.clone()
-            }),
-            col("DESCRIPTION", |policy: &cloudapi_client::types::Policy| {
-                policy
-                    .description
-                    .clone()
-                    .unwrap_or_else(|| "-".to_string())
-            }),
-            col("NRULES", |policy: &cloudapi_client::types::Policy| {
-                policy.rules.len().to_string()
-            }),
-            // long-only columns (from index 3)
-            col("ID", |policy: &cloudapi_client::types::Policy| {
-                policy.id.to_string()
-            }),
-        ];
+        define_columns! {
+            PolicyColumn for cloudapi_client::types::Policy, long_from: 3, {
+                Name("NAME") => |policy| policy.name.clone(),
+                Description("DESCRIPTION") => |policy| {
+                    policy.description.clone().unwrap_or_else(|| "-".to_string())
+                },
+                Nrules("NRULES") => |policy| policy.rules.len().to_string(),
+                // --- long-only columns below ---
+                Id("ID") => |policy| policy.id.to_string(),
+            }
+        }
 
-        TableBuilder::from_columns(&columns, &policies, Some(3))
-            .with_right_aligned(&["NRULES"])
-            .print(table_args);
+        TableBuilder::from_enum_columns::<PolicyColumn, _>(
+            &policies,
+            Some(PolicyColumn::LONG_FROM),
+        )
+        .with_right_aligned(&["NRULES"])
+        .print(table_args)?;
     }
 
     Ok(())

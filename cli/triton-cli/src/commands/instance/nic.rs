@@ -12,7 +12,8 @@ use cloudapi_client::TypedClient;
 use dialoguer::Confirm;
 use serde::{Deserialize, Serialize};
 
-use crate::output::table::{TableBuilder, TableFormatArgs, col};
+use crate::define_columns;
+use crate::output::table::{TableBuilder, TableFormatArgs};
 use crate::output::{enum_to_display, json};
 
 #[derive(Subcommand, Clone)]
@@ -175,36 +176,31 @@ pub async fn list_nics(args: NicListArgs, client: &TypedClient, use_json: bool) 
             println!("{}", serde_json::to_string(nic)?);
         }
     } else {
-        let columns = vec![
-            col("IP", |nic: &NicOutput| {
-                let cidr = netmask_to_cidr(&nic.netmask)
-                    .map(|c| c.to_string())
-                    .unwrap_or_else(|| "?".to_string());
-                format!("{}/{}", nic.ip, cidr)
-            }),
-            col("MAC", |nic: &NicOutput| nic.mac.clone()),
-            col("STATE", |nic: &NicOutput| nic.state.clone()),
-            col("NETWORK", |nic: &NicOutput| {
-                nic.network
-                    .split('-')
-                    .next()
-                    .unwrap_or(&nic.network)
-                    .to_string()
-            }),
-            // long-only columns (from index 4)
-            col("PRIMARY", |nic: &NicOutput| {
-                if nic.primary { "yes" } else { "no" }.to_string()
-            }),
-            col("GATEWAY", |nic: &NicOutput| {
-                if nic.gateway.is_empty() {
-                    "-".to_string()
-                } else {
-                    nic.gateway.clone()
-                }
-            }),
-        ];
+        define_columns! {
+            NicColumn for NicOutput, long_from: 4, {
+                Ip("IP") => |nic| {
+                    let cidr = netmask_to_cidr(&nic.netmask)
+                        .map(|c| c.to_string())
+                        .unwrap_or_else(|| "?".to_string());
+                    format!("{}/{}", nic.ip, cidr)
+                },
+                Mac("MAC") => |nic| nic.mac.clone(),
+                State("STATE") => |nic| nic.state.clone(),
+                Network("NETWORK") => |nic| {
+                    nic.network.split('-').next().unwrap_or(&nic.network).to_string()
+                },
+                // --- long-only columns below ---
+                Primary("PRIMARY") => |nic| {
+                    if nic.primary { "yes" } else { "no" }.to_string()
+                },
+                Gateway("GATEWAY") => |nic| {
+                    if nic.gateway.is_empty() { "-".to_string() } else { nic.gateway.clone() }
+                },
+            }
+        }
 
-        TableBuilder::from_columns(&columns, &nics, Some(4)).print(&args.table);
+        TableBuilder::from_enum_columns::<NicColumn, _>(&nics, Some(NicColumn::LONG_FROM))
+            .print(&args.table)?;
     }
 
     Ok(())

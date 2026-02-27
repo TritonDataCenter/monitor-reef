@@ -192,7 +192,7 @@ async fn list_vlans(args: VlanListArgs, client: &TypedClient, use_json: bool) ->
                 vlan.description.clone().unwrap_or_else(|| "-".to_string()),
             ]);
         }
-        tbl.print(&args.table);
+        tbl.print(&args.table)?;
     }
 
     Ok(())
@@ -437,7 +437,7 @@ async fn list_vlan_networks(
                 if net.public { "yes" } else { "no" }.to_string(),
             ]);
         }
-        tbl.print(&args.table);
+        tbl.print(&args.table)?;
     }
 
     Ok(())

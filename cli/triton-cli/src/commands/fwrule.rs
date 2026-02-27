@@ -170,7 +170,7 @@ async fn list_rules(args: FwruleListArgs, client: &TypedClient, use_json: bool) 
                 rule.description.clone().unwrap_or_else(|| "-".to_string()),
             ]);
         }
-        tbl.print(&args.table);
+        tbl.print(&args.table)?;
     }
 
     Ok(())
@@ -435,7 +435,7 @@ async fn list_rule_instances(
                     .unwrap_or_else(|| "-".to_string()),
             ]);
         }
-        tbl.print(&args.table);
+        tbl.print(&args.table)?;
     }
 
     Ok(())

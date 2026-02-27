@@ -47,7 +47,7 @@ pub async fn run(args: ServiceListArgs, client: &TypedClient, use_json: bool) ->
             }),
         ];
 
-        TableBuilder::from_columns(&columns, &entries, None).print(&args.table);
+        TableBuilder::from_columns(&columns, &entries, None).print(&args.table)?;
     }
 
     Ok(())

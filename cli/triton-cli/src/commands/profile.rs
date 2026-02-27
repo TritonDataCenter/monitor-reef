@@ -216,7 +216,7 @@ async fn list_profiles(args: ProfileListArgs) -> Result<()> {
                 profile.insecure.to_string(),
             ]);
         }
-        tbl.print(&args.table);
+        tbl.print(&args.table)?;
     }
     Ok(())
 }

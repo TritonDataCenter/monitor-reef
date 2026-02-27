@@ -254,7 +254,7 @@ async fn list_volumes(
                 vol.created.to_string(),
             ]);
         }
-        tbl.print(&args.table);
+        tbl.print(&args.table)?;
     }
 
     Ok(())
@@ -557,7 +557,7 @@ async fn list_volume_sizes(
         for size in &sizes {
             tbl.add_row(vec![format_volume_size(size.size)]);
         }
-        tbl.print(&args.table);
+        tbl.print(&args.table)?;
     }
 
     Ok(())
