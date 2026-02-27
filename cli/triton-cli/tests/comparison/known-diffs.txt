@@ -7,4 +7,4 @@
 # as "fixed?" so you know to close the bead and remove the line.
 
 # List-command differences (query params, extra requests) — not act-as specific
-payload-act-as-inst-list  none  instance list: Rust omits limit/offset params and extra images call
+payload-act-as-inst-list  monitor-reef-n36c  instance list: Rust omits limit/offset params and extra images call
