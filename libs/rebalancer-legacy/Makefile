@@ -63,8 +63,17 @@ include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.smf.defs
 all: agent manager
 
 debug: | $(CARGO_EXEC)
+	@cp agent/Cargo.toml agent/Cargo.toml.ws
+	@sed '/^workspace/d' agent/Cargo.toml.ws > agent/Cargo.toml
+	@printf '\n[workspace]\n' >> agent/Cargo.toml
+	@if [ -f $(REPO_ROOT)/Cargo.lock ]; then \
+	    cp $(REPO_ROOT)/Cargo.lock agent/Cargo.lock; fi
 	$(CARGO) build --manifest-path=agent/Cargo.toml \
-	    --target-dir=$(AGENT_TARGET_DIR)
+	    --target-dir=$(AGENT_TARGET_DIR) || { \
+		mv agent/Cargo.toml.ws agent/Cargo.toml; \
+		rm -f agent/Cargo.lock; exit 1; }
+	@mv agent/Cargo.toml.ws agent/Cargo.toml
+	@rm -f agent/Cargo.lock
 	LD_LIBRARY_PATH=$(RELSTAGE_DIR)/root/opt/postgresql/$(PGVER)/lib:$(DEF_RPATH) \
 	    $(CARGO) build --manifest-path=manager/Cargo.toml
 	/usr/bin/elfedit -e \
@@ -128,8 +137,17 @@ doc: | $(CARGO_EXEC)
 
 .PHONY: agent
 agent: | $(CARGO_EXEC)
+	@cp agent/Cargo.toml agent/Cargo.toml.ws
+	@sed '/^workspace/d' agent/Cargo.toml.ws > agent/Cargo.toml
+	@printf '\n[workspace]\n' >> agent/Cargo.toml
+	@if [ -f $(REPO_ROOT)/Cargo.lock ]; then \
+	    cp $(REPO_ROOT)/Cargo.lock agent/Cargo.lock; fi
 	STAMP=$(STAMP) $(CARGO) build --manifest-path=agent/Cargo.toml \
-	    --release --target-dir=$(AGENT_TARGET_DIR)
+	    --release --target-dir=$(AGENT_TARGET_DIR) || { \
+		mv agent/Cargo.toml.ws agent/Cargo.toml; \
+		rm -f agent/Cargo.lock; exit 1; }
+	@mv agent/Cargo.toml.ws agent/Cargo.toml
+	@rm -f agent/Cargo.lock
 
 .PHONY: manager
 manager: | $(CARGO_EXEC)

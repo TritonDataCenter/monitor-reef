@@ -71,16 +71,28 @@ build-legacy: | $(CARGO_EXEC) ## Build legacy crates (rebalancer, cueball, etc.)
 		if [ -f Cargo.lock.modern ]; then mv Cargo.lock.modern Cargo.lock; fi; \
 		exit 1; \
 	}
-	@echo "Building agent with isolated target dir..."
-	$(CARGO) build -p agent \
+	@echo "Building agent outside workspace (no postgres feature unification)..."
+	@cp libs/rebalancer-legacy/agent/Cargo.toml \
+	    libs/rebalancer-legacy/agent/Cargo.toml.ws
+	@sed '/^workspace/d' libs/rebalancer-legacy/agent/Cargo.toml.ws \
+	    > libs/rebalancer-legacy/agent/Cargo.toml
+	@printf '\n[workspace]\n' >> libs/rebalancer-legacy/agent/Cargo.toml
+	@cp Cargo.lock libs/rebalancer-legacy/agent/Cargo.lock
+	$(CARGO) build --manifest-path=libs/rebalancer-legacy/agent/Cargo.toml \
 	    --target-dir=libs/rebalancer-legacy/target-agent || { \
-		echo "Agent build failed, restoring modern workspace..."; \
+		echo "Agent build failed, restoring..."; \
+		mv libs/rebalancer-legacy/agent/Cargo.toml.ws \
+		    libs/rebalancer-legacy/agent/Cargo.toml; \
+		rm -f libs/rebalancer-legacy/agent/Cargo.lock; \
 		mv Cargo.toml Cargo.toml.legacy; \
 		mv Cargo.toml.modern Cargo.toml; \
 		rm -f Cargo.lock; \
 		if [ -f Cargo.lock.modern ]; then mv Cargo.lock.modern Cargo.lock; fi; \
 		exit 1; \
 	}
+	@mv libs/rebalancer-legacy/agent/Cargo.toml.ws \
+	    libs/rebalancer-legacy/agent/Cargo.toml
+	@rm -f libs/rebalancer-legacy/agent/Cargo.lock
 	@echo "Restoring modern workspace..."
 	@mv Cargo.toml Cargo.toml.legacy
 	@mv Cargo.toml.modern Cargo.toml
