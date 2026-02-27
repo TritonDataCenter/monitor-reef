@@ -367,11 +367,11 @@ fn print_machines_table(
         return Ok(());
     }
 
-    // Sort by created (descending) by default when no -s flag is provided,
-    // matching node-triton behavior. When -s is provided, TableBuilder handles it.
+    // Sort by created (ascending) by default when no -s flag is provided,
+    // matching node-triton's tabula default sort direction.
     let mut sorted_machines: Vec<&Machine> = machines.iter().collect();
     if args.table.sort_by.is_none() {
-        sorted_machines.sort_by(|a, b| b.created.cmp(&a.created));
+        sorted_machines.sort_by(|a, b| a.created.cmp(&b.created));
     }
 
     let columns = vec![
@@ -411,7 +411,6 @@ fn print_machines_table(
             }
         }),
         col("AGE", |m: &&Machine| output::format_age(&m.created)),
-        // long-only columns (from index 6)
         col("ID", |m: &&Machine| m.id.to_string()),
         col("BRAND", |m: &&Machine| enum_to_display(&m.brand)),
         col("PACKAGE", |m: &&Machine| m.package.clone()),
@@ -421,8 +420,34 @@ fn print_machines_table(
         col("CREATED", |m: &&Machine| m.created.clone()),
     ];
 
-    TableBuilder::from_columns(&columns, &sorted_machines, Some(6))
+    // Set default columns based on short/long mode to match node-triton.
+    // All columns remain available for -o selection (long_from: None).
+    let mut table_opts = args.table.clone();
+    if table_opts.columns.is_none() {
+        table_opts.columns = Some(
+            if table_opts.long {
+                vec![
+                    "ID",
+                    "NAME",
+                    "IMG",
+                    "BRAND",
+                    "PACKAGE",
+                    "STATE",
+                    "FLAGS",
+                    "PRIMARYIP",
+                    "CREATED",
+                ]
+            } else {
+                vec!["SHORTID", "NAME", "IMG", "STATE", "FLAGS", "AGE"]
+            }
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        );
+    }
+
+    TableBuilder::from_columns(&columns, &sorted_machines, None)
         .with_right_aligned(&["MEMORY"])
-        .print(&args.table)?;
+        .print(&table_opts)?;
     Ok(())
 }

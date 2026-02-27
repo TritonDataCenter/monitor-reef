@@ -451,6 +451,21 @@ async fn list_images(
         response.into_inner()
     };
 
+    // Filter to active-only for default state queries since the cache may
+    // contain all states (populated by instance list's state=All fetch).
+    let images = if is_default_state {
+        images
+            .into_iter()
+            .filter(|img| {
+                img.state
+                    .as_ref()
+                    .is_none_or(|s| matches!(s, ImageState::Active))
+            })
+            .collect()
+    } else {
+        images
+    };
+
     if use_json {
         json::print_json_stream(&images)?;
     } else {
@@ -461,7 +476,7 @@ async fn list_images(
 }
 
 define_columns! {
-    ImageColumn for Image, long_from: 7, {
+    ImageColumn for Image {
         ShortId("SHORTID") => |img| img.id.to_string()[..8].to_string(),
         Name("NAME") => |img| img.name.clone(),
         Version("VERSION") => |img| img.version.clone(),
@@ -483,7 +498,6 @@ define_columns! {
         Os("OS") => |img| img.os.clone(),
         Type("TYPE") => |img| enum_to_display(&img.type_),
         PubDate("PUBDATE") => |img| format_pubdate(&img.published_at),
-        // --- long-only columns below ---
         State("STATE") => |img| img.state.as_ref().map(enum_to_display)
             .unwrap_or_else(|| "-".to_string()),
         Id("ID") => |img| img.id.to_string(),
@@ -502,8 +516,27 @@ fn print_images_table(images: &[Image], args: &ImageListArgs) -> Result<()> {
         return Ok(());
     }
 
-    TableBuilder::from_enum_columns::<ImageColumn, _>(images, Some(ImageColumn::LONG_FROM))
-        .print(&args.table)?;
+    // Set default columns based on short/long mode to match node-triton.
+    // All columns remain available for -o selection (long_from: None).
+    let mut table_opts = args.table.clone();
+    if table_opts.columns.is_none() {
+        table_opts.columns = Some(
+            if table_opts.long {
+                vec![
+                    "ID", "NAME", "VERSION", "STATE", "FLAGS", "OS", "TYPE", "PUBDATE",
+                ]
+            } else {
+                vec![
+                    "SHORTID", "NAME", "VERSION", "FLAGS", "OS", "TYPE", "PUBDATE",
+                ]
+            }
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        );
+    }
+
+    TableBuilder::from_enum_columns::<ImageColumn, _>(images, None).print(&table_opts)?;
     Ok(())
 }
 

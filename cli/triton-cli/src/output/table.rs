@@ -25,7 +25,7 @@ pub struct TableFormatArgs {
     pub long: bool,
 
     /// Sort by field (prefix with - for descending)
-    #[arg(short = 's', long = "sort-by")]
+    #[arg(short = 's', long = "sort-by", allow_hyphen_values = true)]
     pub sort_by: Option<String>,
 }
 
@@ -307,13 +307,14 @@ impl TableBuilder {
         table.load_preset(NOTHING);
         table.set_content_arrangement(comfy_table::ContentArrangement::Disabled);
 
-        if !opts.no_header {
-            let header_row: Vec<&str> = column_indices
-                .iter()
-                .filter_map(|&i| all_headers.get(i).map(|s| s.as_str()))
-                .collect();
-            table.set_header(header_row);
-        }
+        // Always set header so comfy_table includes header widths in column
+        // sizing, matching node-triton's tabula behavior. When no_header is
+        // true, we skip the header line in the output below.
+        let header_row: Vec<&str> = column_indices
+            .iter()
+            .filter_map(|&i| all_headers.get(i).map(|s| s.as_str()))
+            .collect();
+        table.set_header(&header_row);
 
         for row in &rows {
             let display_row: Vec<&str> = column_indices
@@ -345,9 +346,14 @@ impl TableBuilder {
             }
         }
 
-        // Trim leading/trailing whitespace from each line
+        // Build output, skipping header line if no_header
         let mut output = String::new();
-        for line in table.trim_fmt().lines() {
+        let formatted = table.trim_fmt();
+        let mut lines = formatted.lines();
+        if opts.no_header {
+            lines.next(); // skip the header line
+        }
+        for line in lines {
             output.push_str(line.trim_start());
             output.push('\n');
         }
