@@ -10,45 +10,287 @@
 
 //! Integration tests for mdapi evacuation functionality.
 //!
-//! These tests require a running mdapi server and test infrastructure.
-//! They are marked as `#[ignore]` by default and can be run with:
+//! This file contains two categories of tests:
+//!
+//! ## Mock-based tests (run in CI)
+//!
+//! These use an in-process mock Fast RPC server to exercise the full
+//! RPC codepath through `MdapiClient` → TCP → Fast RPC protocol →
+//! mock handler, without requiring external infrastructure.
+//!
+//! ```bash
+//! cargo test -p manager --test mdapi_integration
+//! ```
+//!
+//! ## Live integration tests (`#[ignore]`)
+//!
+//! These require a running mdapi server and test infrastructure.
+//! They validate behavior against a real deployed instance.
 //!
 //! ```bash
 //! cargo test -p manager --test mdapi_integration -- --ignored
 //! ```
 //!
-//! # Environment Variables
+//! ### Environment Variables (for live tests)
 //!
 //! - `MDAPI_TEST_ENDPOINT`: Mdapi server endpoint (e.g., "mdapi.test.domain:2030")
 //! - `MDAPI_TEST_OWNER`: Test owner UUID
 //! - `MDAPI_TEST_BUCKET`: Test bucket UUID
 //! - `MORAY_TEST_DOMAIN`: Moray domain for hybrid tests
 //! - `TEST_SHARK`: Storage ID of test shark to evacuate
-//!
-//! # Test Infrastructure Requirements
-//!
-//! 1. **Mdapi staging server** - A buckets-mdapi instance with test data
-//! 2. **Moray test instance** - For hybrid mode testing
-//! 3. **Test shark** - Storage node with 10K-100K test objects
-//!
-//! # Test Categories
-//!
-//! - Basic connectivity tests
-//! - Object discovery tests
-//! - Metadata update tests
-//! - Batch processing tests
-//! - Error handling tests
-//! - Performance benchmarks
+
+mod common;
 
 use std::env;
+
+use common::mock_mdapi::{
+    test_bucket_uuid, test_owner_uuid, MockMdapiServer,
+};
+use libmanta::mdapi::MdapiClient;
 use uuid::Uuid;
 
-/// Test configuration loaded from environment variables
+// =============================================================================
+// Mock-based tests (run in CI without external infrastructure)
+// =============================================================================
+
+/// Test mdapi client creation and basic connectivity via mock server
+#[test]
+fn test_mdapi_client_connectivity() {
+    let server = MockMdapiServer::start();
+    let client =
+        MdapiClient::new(&server.endpoint()).expect("create client");
+
+    // Make a simple RPC call to verify the connection works end-to-end.
+    let vnodes = manager::mdapi_client::list_vnodes(&client);
+    assert!(
+        vnodes.is_ok(),
+        "Failed to communicate with mock: {:?}",
+        vnodes.err()
+    );
+}
+
+/// Test listing objects from mdapi via mock
+#[test]
+fn test_mdapi_list_objects() {
+    let server = MockMdapiServer::start();
+    let client =
+        MdapiClient::new(&server.endpoint()).expect("create client");
+
+    let objects = manager::mdapi_client::find_objects(
+        &client,
+        test_owner_uuid(),
+        test_bucket_uuid(),
+        None,
+        100,
+    );
+
+    assert!(
+        objects.is_ok(),
+        "Failed to list objects: {:?}",
+        objects.err()
+    );
+
+    let objs = objects.unwrap();
+    assert_eq!(objs.len(), 3, "Expected 3 test objects from mock");
+
+    for obj in &objs {
+        assert!(!obj.object_id.is_empty(), "object_id should not be empty");
+        assert!(!obj.name.is_empty(), "name should not be empty");
+    }
+}
+
+/// Test listing buckets for an owner via mock
+#[test]
+fn test_mdapi_list_buckets() {
+    let server = MockMdapiServer::start();
+    let client =
+        MdapiClient::new(&server.endpoint()).expect("create client");
+
+    let buckets =
+        manager::mdapi_client::list_buckets(&client, test_owner_uuid());
+
+    assert!(
+        buckets.is_ok(),
+        "Failed to list buckets: {:?}",
+        buckets.err()
+    );
+
+    let b = buckets.unwrap();
+    assert!(!b.is_empty(), "Expected at least one bucket");
+    assert_eq!(b[0].name, "test-bucket");
+}
+
+/// Test updating a single object's metadata via mock
+#[test]
+fn test_mdapi_put_object() {
+    let server = MockMdapiServer::start();
+    let client =
+        MdapiClient::new(&server.endpoint()).expect("create client");
+
+    let objects = manager::mdapi_client::find_objects(
+        &client,
+        test_owner_uuid(),
+        test_bucket_uuid(),
+        None,
+        1,
+    )
+    .expect("list objects");
+
+    assert!(!objects.is_empty(), "Need at least one object for update test");
+
+    let obj = &objects[0];
+    let result = manager::mdapi_client::put_object(
+        &client,
+        obj,
+        test_bucket_uuid(),
+        Some(&obj.etag),
+    );
+
+    assert!(
+        result.is_ok(),
+        "Failed to update object: {:?}",
+        result.err()
+    );
+}
+
+/// Test batch update with chunking via mock
+#[test]
+fn test_mdapi_batch_update() {
+    let server = MockMdapiServer::start();
+    let client =
+        MdapiClient::new(&server.endpoint()).expect("create client");
+
+    let objects = manager::mdapi_client::find_objects(
+        &client,
+        test_owner_uuid(),
+        test_bucket_uuid(),
+        None,
+        50,
+    )
+    .expect("list objects");
+
+    assert!(!objects.is_empty(), "Need objects for batch test");
+
+    let batch: Vec<_> = objects
+        .iter()
+        .map(|obj| (obj, test_bucket_uuid(), Some(obj.etag.as_str())))
+        .collect();
+
+    let result = manager::mdapi_client::batch_update_with_config(
+        &client,
+        batch,
+        Some(10),
+    );
+
+    assert!(
+        result.is_ok(),
+        "Batch update failed: {:?}",
+        result.err()
+    );
+
+    let batch_result = result.unwrap();
+    assert!(
+        batch_result.successful > 0,
+        "Expected some successful updates"
+    );
+}
+
+/// Test behavior when mdapi endpoint is unreachable.
+///
+/// Uses `MdapiClient::new` directly (bypassing DNS SRV
+/// resolution in `create_client`) so the test exercises
+/// the RPC-level connection failure path.
+#[test]
+fn test_mdapi_connection_failure() {
+    // Create client pointing to an unreachable endpoint.
+    // MdapiClient::new is lazy — it stores the address
+    // without connecting.
+    let client = MdapiClient::new("127.0.0.1:9999")
+        .expect("client creation is lazy");
+
+    // But operations should fail
+    let owner = Uuid::new_v4();
+    let bucket_id = Uuid::new_v4();
+
+    let list_result = manager::mdapi_client::find_objects(
+        &client,
+        owner,
+        bucket_id,
+        None,
+        10,
+    );
+
+    assert!(
+        list_result.is_err(),
+        "Expected error when connecting to invalid endpoint"
+    );
+}
+
+/// Test behavior with invalid bucket ID via mock
+#[test]
+fn test_mdapi_invalid_bucket() {
+    let server = MockMdapiServer::start();
+    let client =
+        MdapiClient::new(&server.endpoint()).expect("create client");
+
+    // Use a random bucket ID that the mock won't recognize
+    let invalid_bucket = Uuid::new_v4();
+
+    let result = manager::mdapi_client::find_objects(
+        &client,
+        test_owner_uuid(),
+        invalid_bucket,
+        None,
+        10,
+    );
+
+    // Should return empty list — mock returns [] for unknown bucket_id
+    match result {
+        Ok(objects) => {
+            assert!(
+                objects.is_empty(),
+                "Expected empty list for invalid bucket"
+            );
+        }
+        Err(e) => {
+            panic!("Expected empty list, got error: {}", e);
+        }
+    }
+}
+
+/// Test configuration for hybrid mode.
+///
+/// Pure config test — constructs MdapiConfig directly without
+/// requiring a running server.
+#[test]
+fn test_hybrid_mode_config() {
+    let mdapi_config = manager::config::MdapiConfig {
+        shards: vec![manager::config::MdapiShard {
+            host: "127.0.0.1:2030".to_string(),
+        }],
+        connection_timeout_ms: 5000,
+        max_batch_size: 100,
+        operation_timeout_ms: 30000,
+        max_retries: 3,
+        initial_backoff_ms: 100,
+        max_backoff_ms: 5000,
+    };
+
+    let use_mdapi = manager::mdapi_client::should_use_mdapi(&mdapi_config);
+    assert!(use_mdapi, "should_use_mdapi should return true");
+}
+
+// =============================================================================
+// Live integration tests (require real mdapi infrastructure)
+// =============================================================================
+
+/// Test configuration loaded from environment variables for live tests.
 struct TestConfig {
     mdapi_endpoint: Option<String>,
     mdapi_owner: Option<Uuid>,
     mdapi_bucket: Option<Uuid>,
     moray_domain: Option<String>,
+    #[allow(dead_code)]
     test_shark: Option<String>,
 }
 
@@ -76,20 +318,12 @@ impl TestConfig {
     fn has_moray(&self) -> bool {
         self.moray_domain.is_some()
     }
-
-    fn has_shark(&self) -> bool {
-        self.test_shark.is_some()
-    }
 }
 
-// =============================================================================
-// Basic Connectivity Tests
-// =============================================================================
-
-/// Test mdapi client creation and basic connectivity
+/// Test mdapi client creation and basic connectivity against live server
 #[test]
 #[ignore]
-fn test_mdapi_client_connectivity() {
+fn test_live_mdapi_client_connectivity() {
     let config = TestConfig::from_env();
     if !config.has_mdapi() {
         eprintln!("Skipping: MDAPI_TEST_ENDPOINT not set");
@@ -108,14 +342,10 @@ fn test_mdapi_client_connectivity() {
     println!("Successfully connected to mdapi at {}", endpoint);
 }
 
-// =============================================================================
-// Object Discovery Tests
-// =============================================================================
-
-/// Test listing objects from mdapi
+/// Test listing objects from a live mdapi server
 #[test]
 #[ignore]
-fn test_mdapi_list_objects() {
+fn test_live_mdapi_list_objects() {
     let config = TestConfig::from_env();
     if !config.has_mdapi() {
         eprintln!("Skipping: MDAPI_TEST_* env vars not set");
@@ -157,10 +387,10 @@ fn test_mdapi_list_objects() {
     }
 }
 
-/// Test listing buckets for an owner
+/// Test listing buckets for an owner on a live mdapi server
 #[test]
 #[ignore]
-fn test_mdapi_list_buckets() {
+fn test_live_mdapi_list_buckets() {
     let config = TestConfig::from_env();
     if !config.has_mdapi() {
         eprintln!("Skipping: MDAPI_TEST_* env vars not set");
@@ -189,14 +419,10 @@ fn test_mdapi_list_buckets() {
     }
 }
 
-// =============================================================================
-// Metadata Update Tests
-// =============================================================================
-
-/// Test updating a single object's metadata
+/// Test updating a single object's metadata on a live mdapi server
 #[test]
 #[ignore]
-fn test_mdapi_put_object() {
+fn test_live_mdapi_put_object() {
     let config = TestConfig::from_env();
     if !config.has_mdapi() {
         eprintln!("Skipping: MDAPI_TEST_* env vars not set");
@@ -245,14 +471,10 @@ fn test_mdapi_put_object() {
     println!("Successfully updated object metadata");
 }
 
-// =============================================================================
-// Batch Processing Tests
-// =============================================================================
-
-/// Test batch update with chunking
+/// Test batch update with chunking on a live mdapi server
 #[test]
 #[ignore]
-fn test_mdapi_batch_update() {
+fn test_live_mdapi_batch_update() {
     let config = TestConfig::from_env();
     if !config.has_mdapi() {
         eprintln!("Skipping: MDAPI_TEST_* env vars not set");
@@ -314,53 +536,10 @@ fn test_mdapi_batch_update() {
     }
 }
 
-// =============================================================================
-// Error Handling Tests
-// =============================================================================
-
-/// Test behavior when mdapi endpoint is unreachable.
-///
-/// Uses `MdapiClient::new` directly (bypassing DNS SRV
-/// resolution in `create_client`) so the test exercises
-/// the RPC-level connection failure path.
+/// Test behavior with invalid bucket ID on a live mdapi server
 #[test]
 #[ignore]
-fn test_mdapi_connection_failure() {
-    use libmanta::mdapi::MdapiClient;
-
-    // Create client pointing to an unreachable endpoint.
-    // MdapiClient::new is lazy — it stores the address
-    // without connecting.
-    let client = MdapiClient::new("127.0.0.1:9999")
-        .expect("client creation is lazy");
-
-    // But operations should fail
-    let owner = Uuid::new_v4();
-    let bucket_id = Uuid::new_v4();
-
-    let list_result = manager::mdapi_client::find_objects(
-        &client,
-        owner,
-        bucket_id,
-        None,
-        10,
-    );
-
-    assert!(
-        list_result.is_err(),
-        "Expected error when connecting to invalid endpoint"
-    );
-
-    println!(
-        "Got expected error: {:?}",
-        list_result.err()
-    );
-}
-
-/// Test behavior with invalid bucket ID
-#[test]
-#[ignore]
-fn test_mdapi_invalid_bucket() {
+fn test_live_mdapi_invalid_bucket() {
     let config = TestConfig::from_env();
     if !config.has_mdapi() {
         eprintln!("Skipping: MDAPI_TEST_* env vars not set");
@@ -396,14 +575,10 @@ fn test_mdapi_invalid_bucket() {
     }
 }
 
-// =============================================================================
-// Hybrid Mode Tests (Moray + Mdapi)
-// =============================================================================
-
-/// Test configuration for hybrid mode
+/// Test configuration for hybrid mode against live infrastructure
 #[test]
 #[ignore]
-fn test_hybrid_mode_config() {
+fn test_live_hybrid_mode_config() {
     let config = TestConfig::from_env();
     if !config.has_mdapi() || !config.has_moray() {
         eprintln!("Skipping: Both MDAPI and MORAY env vars required");
@@ -433,10 +608,10 @@ fn test_hybrid_mode_config() {
 }
 
 // =============================================================================
-// Performance Benchmarks
+// Performance Benchmarks (require live infrastructure)
 // =============================================================================
 
-/// Benchmark object listing performance
+/// Benchmark object listing performance against live server
 #[test]
 #[ignore]
 fn benchmark_mdapi_list_objects() {
@@ -479,7 +654,7 @@ fn benchmark_mdapi_list_objects() {
     );
 }
 
-/// Benchmark batch update performance
+/// Benchmark batch update performance against live server
 #[test]
 #[ignore]
 fn benchmark_mdapi_batch_update() {

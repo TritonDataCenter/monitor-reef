@@ -53,6 +53,8 @@ pg = {version = "0.17.5", package = "postgres"}
 mustache = {git = "https://github.com/rjloura/rust-mustache", branch = "issue-60" }
 libc = "0.2.67"
 tempfile = "3"
+fast-rpc = { path = "../../fast" }
+tokio = "0.1"
 
 [[bin]]
 name = "rebalancer-manager"
