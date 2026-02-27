@@ -12,6 +12,53 @@ use serde::{Deserialize, Serialize};
 /// UUID type
 pub type Uuid = vmapi_api::Uuid;
 
+/// Standard Triton/restify error codes.
+///
+/// These CamelCase codes match the `code` field in CloudAPI JSON error
+/// responses.  The list covers the stock restify error codes plus
+/// CloudAPI-specific additions.  The `Unknown` variant (with
+/// `#[serde(other)]`) ensures forward compatibility when the server
+/// introduces new codes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum ErrorCode {
+    BadDigest,
+    BadMethod,
+    ConnectTimeout,
+    InternalError,
+    InvalidArgument,
+    InvalidContent,
+    InvalidCredentials,
+    InvalidHeader,
+    InvalidParameters,
+    InvalidVersion,
+    MissingParameter,
+    NotAuthorized,
+    PreconditionFailed,
+    RequestExpired,
+    RequestThrottled,
+    ResourceNotFound,
+    ServiceUnavailable,
+    ValidationFailed,
+    /// Catch-all for unrecognised error codes from the server.
+    #[serde(other)]
+    Unknown,
+}
+
+impl std::fmt::Display for ErrorCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Unknown => f.write_str("Unknown"),
+            other => {
+                // Serialize to get the exact CamelCase wire name.
+                // All named variants serialize as bare strings so
+                // serde_json::to_string wraps in quotes; strip them.
+                let s = serde_json::to_string(other).unwrap_or_default();
+                f.write_str(s.trim_matches('"'))
+            }
+        }
+    }
+}
+
 /// CloudAPI error response
 ///
 /// This matches the actual error format returned by CloudAPI, which differs
@@ -22,8 +69,8 @@ pub type Uuid = vmapi_api::Uuid;
 /// from Rust error types.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ErrorResponse {
-    /// Error code (e.g., "InvalidCredentials", "ResourceNotFound")
-    pub code: String,
+    /// Error code
+    pub code: ErrorCode,
     /// Human-readable error message
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
