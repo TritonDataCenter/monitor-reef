@@ -59,10 +59,8 @@ use serde::Deserialize;
 use serde_json::{self, Value};
 use slog::{debug, error, warn, Logger};
 use std::io::{Error, ErrorKind};
-use std::net::IpAddr;
 use std::sync::Mutex;
 use threadpool::ThreadPool;
-use trust_dns_resolver::Resolver;
 
 lazy_static! {
     static ref ERROR_LIST: Mutex<Vec<std::io::Error>> = Mutex::new(vec![]);
@@ -477,11 +475,28 @@ where
 }
 
 fn lookup_ip_str(host: &str) -> Result<String, Error> {
-    let resolver = Resolver::from_system_conf()?;
-    let response = resolver.lookup_ip(host)?;
-    let ip: Vec<IpAddr> = response.iter().collect();
+    use std::net::ToSocketAddrs;
 
-    Ok(ip[0].to_string())
+    // Use the system resolver (getaddrinfo) instead of trust-dns.
+    // trust-dns sends DNS query types that Triton's binder-balancer
+    // does not support, resulting in "Not Implemented" errors.
+    let addr = format!("{}:0", host);
+    let mut addrs = addr.to_socket_addrs().map_err(|e| {
+        Error::new(
+            ErrorKind::Other,
+            format!("failed to resolve {}: {}", host, e),
+        )
+    })?;
+
+    addrs
+        .next()
+        .map(|a| a.ip().to_string())
+        .ok_or_else(|| {
+            Error::new(
+                ErrorKind::Other,
+                format!("no addresses found for {}", host),
+            )
+        })
 }
 
 fn shark_fix_common(conf: &mut config::Config, log: &Logger) {

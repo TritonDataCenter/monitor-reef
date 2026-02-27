@@ -200,6 +200,12 @@ pub struct Config {
     #[serde(default)]
     pub mdapi: MdapiConfig,
 
+    /// Use direct PostgreSQL access (rebalancer-postgres) for
+    /// sharkspotter instead of moray RPC.  Requires provisioning
+    /// rebalancer-postgres instances via pgclone.sh.
+    #[serde(default)]
+    pub direct_db: bool,
+
     #[serde(default = "Config::default_port")]
     pub listen_port: u16,
 
@@ -221,6 +227,7 @@ impl Default for Config {
             snaplink_cleanup_required: false,
             options: ConfigOptions::default(),
             mdapi: MdapiConfig::default(),
+            direct_db: false,
             listen_port: 80,
             max_fill_percentage: 100,
             log_level: Level::Debug,
