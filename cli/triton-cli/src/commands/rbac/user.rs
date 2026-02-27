@@ -12,7 +12,7 @@ use cloudapi_client::TypedClient;
 use serde::Deserialize;
 
 use crate::output::json;
-use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::output::table::{TableBuilder, TableFormatArgs, col};
 
 use super::common::resolve_user;
 use super::editor;
@@ -223,45 +223,40 @@ pub async fn list_users(
     if use_json {
         json::print_json_stream(&users)?;
     } else {
-        let short_cols = ["login", "email", "name", "cdate"];
-        let long_cols = ["id", "firstname", "lastname"];
+        let columns = vec![
+            col("LOGIN", |user: &cloudapi_client::types::User| {
+                user.login.clone()
+            }),
+            col("EMAIL", |user: &cloudapi_client::types::User| {
+                user.email.clone()
+            }),
+            col("NAME", |user: &cloudapi_client::types::User| {
+                match (&user.first_name, &user.last_name) {
+                    (Some(f), Some(l)) => format!("{} {}", f, l),
+                    (Some(f), None) => f.clone(),
+                    (None, Some(l)) => l.clone(),
+                    (None, None) => "-".to_string(),
+                }
+            }),
+            col("CDATE", |user: &cloudapi_client::types::User| {
+                user.created.to_string()
+            }),
+            // long-only columns (from index 4)
+            col("ID", |user: &cloudapi_client::types::User| {
+                user.id.to_string()
+            }),
+            col("FIRSTNAME", |user: &cloudapi_client::types::User| {
+                user.first_name.clone().unwrap_or_else(|| "-".to_string())
+            }),
+            col("LASTNAME", |user: &cloudapi_client::types::User| {
+                user.last_name.clone().unwrap_or_else(|| "-".to_string())
+            }),
+        ];
 
-        let mut tbl = TableBuilder::new(&["LOGIN", "EMAIL", "NAME", "CDATE"]).with_long_headers(&[
-            "ID",
-            "FIRSTNAME",
-            "LASTNAME",
-        ]);
-
-        let all_cols: Vec<&str> = short_cols.iter().chain(long_cols.iter()).copied().collect();
-        for user in &users {
-            let row = all_cols
-                .iter()
-                .map(|col| get_user_field_value(user, col))
-                .collect();
-            tbl.add_row(row);
-        }
-        tbl.print(table_args);
+        TableBuilder::from_columns(&columns, &users, Some(4)).print(table_args);
     }
 
     Ok(())
-}
-
-fn get_user_field_value(user: &cloudapi_client::types::User, field: &str) -> String {
-    match field.to_lowercase().as_str() {
-        "id" => user.id.to_string(),
-        "login" => user.login.clone(),
-        "email" => user.email.clone(),
-        "name" => match (&user.first_name, &user.last_name) {
-            (Some(f), Some(l)) => format!("{} {}", f, l),
-            (Some(f), None) => f.clone(),
-            (None, Some(l)) => l.clone(),
-            (None, None) => "-".to_string(),
-        },
-        "firstname" => user.first_name.clone().unwrap_or_else(|| "-".to_string()),
-        "lastname" => user.last_name.clone().unwrap_or_else(|| "-".to_string()),
-        "cdate" | "created" => user.created.to_string(),
-        _ => "-".to_string(),
-    }
 }
 
 async fn get_user(args: UserGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {

@@ -11,7 +11,7 @@ use clap::Args;
 use cloudapi_client::TypedClient;
 
 use crate::output::json;
-use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::output::table::{TableBuilder, TableFormatArgs, col};
 
 #[derive(Args, Clone)]
 pub struct ServiceListArgs {
@@ -38,25 +38,17 @@ pub async fn run(args: ServiceListArgs, client: &TypedClient, use_json: bool) ->
         let mut entries: Vec<_> = services.iter().collect();
         entries.sort_by_key(|(name, _)| name.as_str());
 
-        let short_cols = ["name", "endpoint"];
-        let mut tbl = TableBuilder::new(&["NAME", "ENDPOINT"]);
-        for (name, url) in &entries {
-            let row = short_cols
-                .iter()
-                .map(|col| get_service_field_value(name, url, col))
-                .collect();
-            tbl.add_row(row);
-        }
-        tbl.print(&args.table);
+        let columns = vec![
+            col("NAME", |(name, _endpoint): &(&String, &String)| {
+                name.to_string()
+            }),
+            col("ENDPOINT", |(_name, endpoint): &(&String, &String)| {
+                endpoint.to_string()
+            }),
+        ];
+
+        TableBuilder::from_columns(&columns, &entries, None).print(&args.table);
     }
 
     Ok(())
-}
-
-fn get_service_field_value(name: &str, endpoint: &str, field: &str) -> String {
-    match field.to_lowercase().as_str() {
-        "name" => name.to_string(),
-        "endpoint" => endpoint.to_string(),
-        _ => "-".to_string(),
-    }
 }

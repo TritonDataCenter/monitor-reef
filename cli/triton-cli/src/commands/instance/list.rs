@@ -15,7 +15,7 @@ use cloudapi_client::pagination::{DEFAULT_PAGE_SIZE, paginate_all};
 use cloudapi_client::types::{Brand, Machine};
 use serde::{Serialize, de::DeserializeOwned};
 
-use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::output::table::{TableBuilder, TableFormatArgs, col};
 use crate::output::{self, enum_to_display, json};
 
 /// Augmented machine output with computed fields for node-triton compatibility
@@ -367,10 +367,6 @@ fn print_machines_table(
         return;
     }
 
-    let mut tbl = TableBuilder::new(&["SHORTID", "NAME", "IMG", "STATE", "FLAGS", "AGE"])
-        .with_long_headers(&["ID", "BRAND", "PACKAGE", "PRIMARYIP", "CREATED"])
-        .with_right_aligned(&["MEMORY"]);
-
     // Sort by created (descending) by default when no -s flag is provided,
     // matching node-triton behavior. When -s is provided, TableBuilder handles it.
     let mut sorted_machines: Vec<&Machine> = machines.iter().collect();
@@ -378,54 +374,20 @@ fn print_machines_table(
         sorted_machines.sort_by(|a, b| b.created.cmp(&a.created));
     }
 
-    for m in &sorted_machines {
-        tbl.add_row(vec![
-            get_field_value(m, "shortid", image_map),
-            get_field_value(m, "name", image_map),
-            get_field_value(m, "img", image_map),
-            get_field_value(m, "state", image_map),
-            get_field_value(m, "flags", image_map),
-            get_field_value(m, "age", image_map),
-            get_field_value(m, "id", image_map),
-            get_field_value(m, "brand", image_map),
-            get_field_value(m, "package", image_map),
-            get_field_value(m, "primaryip", image_map),
-            get_field_value(m, "created", image_map),
-        ]);
-    }
-
-    tbl.print(&args.table);
-}
-
-/// Get a field value from a Machine by field name
-fn get_field_value(m: &Machine, field: &str, image_map: &HashMap<uuid::Uuid, String>) -> String {
-    match field.to_lowercase().as_str() {
-        "id" => m.id.to_string(),
-        "shortid" => {
+    let columns = vec![
+        col("SHORTID", |m: &&Machine| {
             let id_str = m.id.to_string();
             id_str[..8.min(id_str.len())].to_string()
-        }
-        "name" => m.name.clone(),
-        "image" => m.image.to_string(),
-        "img" => {
-            // Look up image name@version from map, fall back to short UUID
+        }),
+        col("NAME", |m: &&Machine| m.name.clone()),
+        col("IMG", |m: &&Machine| {
             image_map.get(&m.image).cloned().unwrap_or_else(|| {
                 let image_str = m.image.to_string();
                 image_str[..8.min(image_str.len())].to_string()
             })
-        }
-        "state" => enum_to_display(&m.state),
-        "brand" => enum_to_display(&m.brand),
-        "package" => m.package.clone(),
-        "memory" => m
-            .memory
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "-".to_string()),
-        "disk" => m.disk.to_string(),
-        "primaryip" => m.primary_ip.clone().unwrap_or_else(|| "-".to_string()),
-        "created" => m.created.clone(),
-        "age" => output::format_age(&m.created),
-        "flags" => {
+        }),
+        col("STATE", |m: &&Machine| enum_to_display(&m.state)),
+        col("FLAGS", |m: &&Machine| {
             let mut flags = Vec::new();
             if m.brand == Brand::Bhyve {
                 flags.push('B');
@@ -447,7 +409,19 @@ fn get_field_value(m: &Machine, field: &str, image_map: &HashMap<uuid::Uuid, Str
             } else {
                 flags.into_iter().collect()
             }
-        }
-        _ => "-".to_string(),
-    }
+        }),
+        col("AGE", |m: &&Machine| output::format_age(&m.created)),
+        // long-only columns (from index 6)
+        col("ID", |m: &&Machine| m.id.to_string()),
+        col("BRAND", |m: &&Machine| enum_to_display(&m.brand)),
+        col("PACKAGE", |m: &&Machine| m.package.clone()),
+        col("PRIMARYIP", |m: &&Machine| {
+            m.primary_ip.clone().unwrap_or_else(|| "-".to_string())
+        }),
+        col("CREATED", |m: &&Machine| m.created.clone()),
+    ];
+
+    TableBuilder::from_columns(&columns, &sorted_machines, Some(6))
+        .with_right_aligned(&["MEMORY"])
+        .print(&args.table);
 }

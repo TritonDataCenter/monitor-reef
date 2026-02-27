@@ -12,7 +12,7 @@ use cloudapi_client::TypedClient;
 use cloudapi_client::types::FirewallRule;
 
 use crate::output::json;
-use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::output::table::{TableBuilder, TableFormatArgs, col};
 
 #[derive(Args, Clone)]
 pub struct EnableFirewallArgs {
@@ -82,40 +82,32 @@ pub async fn list_rules(args: FwrulesArgs, client: &TypedClient, use_json: bool)
     if use_json {
         json::print_json_stream(&rules)?;
     } else {
-        let short_cols = ["shortid", "enabled", "global", "log", "rule"];
-        let long_cols = ["id", "description"];
+        let columns = vec![
+            col("SHORTID", |rule: &FirewallRule| {
+                rule.id.to_string()[..8].to_string()
+            }),
+            col("ENABLED", |rule: &FirewallRule| {
+                if rule.enabled { "yes" } else { "no" }.to_string()
+            }),
+            col("GLOBAL", |rule: &FirewallRule| {
+                rule.global
+                    .map(|g| if g { "yes" } else { "no" })
+                    .unwrap_or("-")
+                    .to_string()
+            }),
+            col("LOG", |rule: &FirewallRule| {
+                if rule.log { "yes" } else { "no" }.to_string()
+            }),
+            col("RULE", |rule: &FirewallRule| rule.rule.clone()),
+            // long-only columns (from index 5)
+            col("ID", |rule: &FirewallRule| rule.id.to_string()),
+            col("DESCRIPTION", |rule: &FirewallRule| {
+                rule.description.clone().unwrap_or_else(|| "-".to_string())
+            }),
+        ];
 
-        let mut tbl = TableBuilder::new(&["SHORTID", "ENABLED", "GLOBAL", "LOG", "RULE"])
-            .with_long_headers(&["ID", "DESCRIPTION"]);
-
-        let all_cols: Vec<&str> = short_cols.iter().chain(long_cols.iter()).copied().collect();
-        for rule in &rules {
-            let row = all_cols
-                .iter()
-                .map(|col| get_instance_fwrule_field_value(rule, col))
-                .collect();
-            tbl.add_row(row);
-        }
-
-        tbl.print(&args.table);
+        TableBuilder::from_columns(&columns, &rules, Some(5)).print(&args.table);
     }
 
     Ok(())
-}
-
-fn get_instance_fwrule_field_value(rule: &FirewallRule, field: &str) -> String {
-    match field.to_lowercase().as_str() {
-        "id" => rule.id.to_string(),
-        "shortid" => rule.id.to_string()[..8].to_string(),
-        "enabled" => if rule.enabled { "yes" } else { "no" }.to_string(),
-        "global" => rule
-            .global
-            .map(|g| if g { "yes" } else { "no" })
-            .unwrap_or("-")
-            .to_string(),
-        "log" => if rule.log { "yes" } else { "no" }.to_string(),
-        "rule" => rule.rule.clone(),
-        "description" | "desc" => rule.description.clone().unwrap_or_else(|| "-".to_string()),
-        _ => "-".to_string(),
-    }
 }

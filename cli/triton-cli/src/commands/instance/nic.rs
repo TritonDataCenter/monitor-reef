@@ -12,7 +12,7 @@ use cloudapi_client::TypedClient;
 use dialoguer::Confirm;
 use serde::{Deserialize, Serialize};
 
-use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::output::table::{TableBuilder, TableFormatArgs, col};
 use crate::output::{enum_to_display, json};
 
 #[derive(Subcommand, Clone)]
@@ -140,34 +140,6 @@ fn netmask_to_cidr(netmask: &str) -> Option<u8> {
     Some(octets.iter().map(|b| b.count_ones() as u8).sum())
 }
 
-fn get_nic_field_value(nic: &NicOutput) -> impl Fn(&str) -> String + '_ {
-    move |field: &str| match field.to_lowercase().as_str() {
-        "ip" => {
-            let cidr = netmask_to_cidr(&nic.netmask)
-                .map(|c| c.to_string())
-                .unwrap_or_else(|| "?".to_string());
-            format!("{}/{}", nic.ip, cidr)
-        }
-        "mac" => nic.mac.clone(),
-        "state" => nic.state.clone(),
-        "network" => nic
-            .network
-            .split('-')
-            .next()
-            .unwrap_or(&nic.network)
-            .to_string(),
-        "primary" => if nic.primary { "yes" } else { "no" }.to_string(),
-        "gateway" => {
-            if nic.gateway.is_empty() {
-                "-".to_string()
-            } else {
-                nic.gateway.clone()
-            }
-        }
-        _ => "-".to_string(),
-    }
-}
-
 pub async fn list_nics(args: NicListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
@@ -203,19 +175,36 @@ pub async fn list_nics(args: NicListArgs, client: &TypedClient, use_json: bool) 
             println!("{}", serde_json::to_string(nic)?);
         }
     } else {
-        let short_cols = ["ip", "mac", "state", "network"];
-        let long_cols = ["primary", "gateway"];
+        let columns = vec![
+            col("IP", |nic: &NicOutput| {
+                let cidr = netmask_to_cidr(&nic.netmask)
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "?".to_string());
+                format!("{}/{}", nic.ip, cidr)
+            }),
+            col("MAC", |nic: &NicOutput| nic.mac.clone()),
+            col("STATE", |nic: &NicOutput| nic.state.clone()),
+            col("NETWORK", |nic: &NicOutput| {
+                nic.network
+                    .split('-')
+                    .next()
+                    .unwrap_or(&nic.network)
+                    .to_string()
+            }),
+            // long-only columns (from index 4)
+            col("PRIMARY", |nic: &NicOutput| {
+                if nic.primary { "yes" } else { "no" }.to_string()
+            }),
+            col("GATEWAY", |nic: &NicOutput| {
+                if nic.gateway.is_empty() {
+                    "-".to_string()
+                } else {
+                    nic.gateway.clone()
+                }
+            }),
+        ];
 
-        let mut tbl = TableBuilder::new(&["IP", "MAC", "STATE", "NETWORK"])
-            .with_long_headers(&["PRIMARY", "GATEWAY"]);
-
-        let all_cols: Vec<&str> = short_cols.iter().chain(long_cols.iter()).copied().collect();
-        for nic in &nics {
-            let field_fn = get_nic_field_value(nic);
-            let row = all_cols.iter().map(|col| field_fn(col)).collect();
-            tbl.add_row(row);
-        }
-        tbl.print(&args.table);
+        TableBuilder::from_columns(&columns, &nics, Some(4)).print(&args.table);
     }
 
     Ok(())

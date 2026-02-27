@@ -13,7 +13,7 @@ use cloudapi_client::types::Disk;
 use dialoguer::Confirm;
 use std::io::IsTerminal;
 
-use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::output::table::{TableBuilder, TableFormatArgs, col};
 use crate::output::{json, opt_enum_to_display};
 
 #[derive(Subcommand, Clone)]
@@ -134,43 +134,34 @@ pub async fn list_disks(args: DiskListArgs, client: &TypedClient, use_json: bool
     if use_json {
         json::print_json_stream(&disks)?;
     } else {
-        let short_cols = ["shortid", "size", "pci_slot"];
-        let long_cols = ["id", "boot", "state"];
+        let columns = vec![
+            col("SHORTID", |disk: &Disk| {
+                disk.id.to_string()[..8].to_string()
+            }),
+            col("SIZE", |disk: &Disk| disk.size.to_string()),
+            col("PCI_SLOT", |disk: &Disk| {
+                disk.pci_slot.clone().unwrap_or_else(|| "-".to_string())
+            }),
+            // long-only columns (from index 3)
+            col("ID", |disk: &Disk| disk.id.to_string()),
+            col("BOOT", |disk: &Disk| {
+                if disk.boot.unwrap_or(false) {
+                    "yes".to_string()
+                } else {
+                    "no".to_string()
+                }
+            }),
+            col("STATE", |disk: &Disk| {
+                opt_enum_to_display(disk.state.as_ref())
+            }),
+        ];
 
-        let mut tbl = TableBuilder::new(&["SHORTID", "SIZE", "PCI_SLOT"])
-            .with_long_headers(&["ID", "BOOT", "STATE"])
-            .with_right_aligned(&["SIZE"]);
-
-        let all_cols: Vec<&str> = short_cols.iter().chain(long_cols.iter()).copied().collect();
-        for disk in &disks {
-            let row = all_cols
-                .iter()
-                .map(|col| get_disk_field_value(disk, col))
-                .collect();
-            tbl.add_row(row);
-        }
-        tbl.print(&args.table);
+        TableBuilder::from_columns(&columns, &disks, Some(3))
+            .with_right_aligned(&["SIZE"])
+            .print(&args.table);
     }
 
     Ok(())
-}
-
-fn get_disk_field_value(disk: &Disk, field: &str) -> String {
-    match field.to_lowercase().as_str() {
-        "id" => disk.id.to_string(),
-        "shortid" => disk.id.to_string()[..8].to_string(),
-        "size" => disk.size.to_string(),
-        "pci_slot" | "pci slot" => disk.pci_slot.clone().unwrap_or_else(|| "-".to_string()),
-        "boot" => {
-            if disk.boot.unwrap_or(false) {
-                "yes".to_string()
-            } else {
-                "no".to_string()
-            }
-        }
-        "state" => opt_enum_to_display(disk.state.as_ref()),
-        _ => "-".to_string(),
-    }
 }
 
 async fn get_disk(args: DiskGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {

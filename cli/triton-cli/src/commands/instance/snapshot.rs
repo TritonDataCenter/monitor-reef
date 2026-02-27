@@ -13,7 +13,7 @@ use cloudapi_client::types::{Snapshot, SnapshotState};
 use dialoguer::Confirm;
 
 use crate::output::json;
-use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::output::table::{TableBuilder, TableFormatArgs, col};
 
 #[derive(Subcommand, Clone)]
 pub enum SnapshotCommand {
@@ -126,34 +126,22 @@ pub async fn list_snapshots(
     if use_json {
         json::print_json_stream(&snapshots)?;
     } else {
-        let short_cols = ["name", "state", "created"];
-        let long_cols = ["updated"];
+        let columns = vec![
+            col("NAME", |snap: &Snapshot| snap.name.clone()),
+            col("STATE", |snap: &Snapshot| {
+                crate::output::enum_to_display(&snap.state)
+            }),
+            col("CREATED", |snap: &Snapshot| snap.created.to_string()),
+            // long-only columns (from index 3)
+            col("UPDATED", |snap: &Snapshot| {
+                snap.updated.clone().unwrap_or_else(|| "-".to_string())
+            }),
+        ];
 
-        let mut tbl =
-            TableBuilder::new(&["NAME", "STATE", "CREATED"]).with_long_headers(&["UPDATED"]);
-
-        let all_cols: Vec<&str> = short_cols.iter().chain(long_cols.iter()).copied().collect();
-        for snap in &snapshots {
-            let row = all_cols
-                .iter()
-                .map(|col| get_snapshot_field_value(snap, col))
-                .collect();
-            tbl.add_row(row);
-        }
-        tbl.print(&args.table);
+        TableBuilder::from_columns(&columns, &snapshots, Some(3)).print(&args.table);
     }
 
     Ok(())
-}
-
-fn get_snapshot_field_value(snap: &Snapshot, field: &str) -> String {
-    match field.to_lowercase().as_str() {
-        "name" => snap.name.clone(),
-        "state" => crate::output::enum_to_display(&snap.state),
-        "created" => snap.created.to_string(),
-        "updated" => snap.updated.clone().unwrap_or_else(|| "-".to_string()),
-        _ => "-".to_string(),
-    }
 }
 
 async fn get_snapshot(args: SnapshotGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {

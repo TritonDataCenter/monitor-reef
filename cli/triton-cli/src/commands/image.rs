@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use chrono::{DateTime, Utc};
+use chrono::DateTime;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 use cloudapi_client::types::{Image, ImageState};
@@ -17,7 +17,7 @@ use dialoguer::Confirm;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 
-use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::output::table::{TableBuilder, TableFormatArgs, col};
 use crate::output::{enum_to_display, json, opt_enum_to_display, table};
 
 #[derive(Subcommand, Clone)]
@@ -469,63 +469,20 @@ fn print_images_table(images: &[Image], args: &ImageListArgs) {
         return;
     }
 
-    let mut tbl = TableBuilder::new(&[
-        "SHORTID", "NAME", "VERSION", "FLAGS", "OS", "TYPE", "PUBDATE",
-    ])
-    .with_long_headers(&["STATE", "ID", "PUBLIC"]);
-
-    for img in images {
-        tbl.add_row(vec![
-            get_image_field_value(img, "shortid"),
-            get_image_field_value(img, "name"),
-            get_image_field_value(img, "version"),
-            get_image_field_value(img, "flags"),
-            get_image_field_value(img, "os"),
-            get_image_field_value(img, "type"),
-            get_image_field_value(img, "pubdate"),
-            get_image_field_value(img, "state"),
-            get_image_field_value(img, "id"),
-            get_image_field_value(img, "public"),
-        ]);
-    }
-
-    tbl.print(&args.table);
-}
-
-/// Get a field value from an Image by field name
-fn get_image_field_value(img: &Image, field: &str) -> String {
-    match field.to_lowercase().as_str() {
-        "id" => img.id.to_string(),
-        "shortid" => img.id.to_string()[..8].to_string(),
-        "name" => img.name.clone(),
-        "version" => img.version.clone(),
-        "state" => img
-            .state
-            .as_ref()
-            .map(enum_to_display)
-            .unwrap_or_else(|| "-".to_string()),
-        "type" => enum_to_display(&img.type_),
-        "os" => img.os.clone(),
-        "description" | "desc" => img.description.clone().unwrap_or_else(|| "-".to_string()),
-        "public" => img
-            .public
-            .map(|p| p.to_string())
-            .unwrap_or_else(|| "-".to_string()),
-        "flags" => {
-            // Flags: I=incremental (has origin), S=shared (has ACL but not public), P=public
-            // Order matches node-triton: I, S, P
+    let columns = vec![
+        col("SHORTID", |img: &Image| img.id.to_string()[..8].to_string()),
+        col("NAME", |img: &Image| img.name.clone()),
+        col("VERSION", |img: &Image| img.version.clone()),
+        col("FLAGS", |img: &Image| {
             let mut flags = String::new();
-            // I = incremental (derived from another image)
             if img.origin.is_some() {
                 flags.push('I');
             }
-            // S = shared (has ACL but not public)
             let is_public = img.public.unwrap_or(false);
             let has_acl = img.acl.as_ref().map(|a| !a.is_empty()).unwrap_or(false);
             if has_acl && !is_public {
                 flags.push('S');
             }
-            // P = public
             if is_public {
                 flags.push('P');
             }
@@ -534,25 +491,26 @@ fn get_image_field_value(img: &Image, field: &str) -> String {
             } else {
                 flags
             }
-        }
-        "owner" => img
-            .owner
-            .map(|u| u.to_string())
-            .unwrap_or_else(|| "-".to_string()),
-        "published" | "published_at" => format_published(&img.published_at),
-        "pubdate" => format_pubdate(&img.published_at),
-        "size" | "image_size" => img
-            .image_size
-            .map(format_size)
-            .unwrap_or_else(|| "-".to_string()),
-        "homepage" => img.homepage.clone().unwrap_or_else(|| "-".to_string()),
-        "eula" => img.eula.clone().unwrap_or_else(|| "-".to_string()),
-        "origin" => img
-            .origin
-            .map(|u| u.to_string())
-            .unwrap_or_else(|| "-".to_string()),
-        _ => "-".to_string(),
-    }
+        }),
+        col("OS", |img: &Image| img.os.clone()),
+        col("TYPE", |img: &Image| enum_to_display(&img.type_)),
+        col("PUBDATE", |img: &Image| format_pubdate(&img.published_at)),
+        // long-only columns (from index 7)
+        col("STATE", |img: &Image| {
+            img.state
+                .as_ref()
+                .map(enum_to_display)
+                .unwrap_or_else(|| "-".to_string())
+        }),
+        col("ID", |img: &Image| img.id.to_string()),
+        col("PUBLIC", |img: &Image| {
+            img.public
+                .map(|p| p.to_string())
+                .unwrap_or_else(|| "-".to_string())
+        }),
+    ];
+
+    TableBuilder::from_columns(&columns, images, Some(7)).print(&args.table);
 }
 
 /// Format pubdate as YYYY-MM-DD (matching node-triton)
@@ -568,47 +526,6 @@ fn format_pubdate(published_at: &Option<String>) -> String {
             }
         }
         None => "-".to_string(),
-    }
-}
-
-fn format_published(published_at: &Option<String>) -> String {
-    match published_at {
-        Some(timestamp) => {
-            // Try to parse as RFC 3339
-            if let Ok(dt) = DateTime::parse_from_rfc3339(timestamp) {
-                let now = Utc::now();
-                let dt_utc = dt.with_timezone(&Utc);
-                let duration = now.signed_duration_since(dt_utc);
-
-                if duration.num_days() >= 365 {
-                    format!("{}y", duration.num_days() / 365)
-                } else if duration.num_days() >= 30 {
-                    format!("{}mo", duration.num_days() / 30)
-                } else if duration.num_days() >= 1 {
-                    format!("{}d", duration.num_days())
-                } else if duration.num_hours() >= 1 {
-                    format!("{}h", duration.num_hours())
-                } else {
-                    "now".to_string()
-                }
-            } else {
-                // Fall back to raw timestamp if parsing fails
-                timestamp.clone()
-            }
-        }
-        None => "-".to_string(),
-    }
-}
-
-fn format_size(bytes: u64) -> String {
-    if bytes >= 1024 * 1024 * 1024 {
-        format!("{:.1}G", bytes as f64 / (1024.0 * 1024.0 * 1024.0))
-    } else if bytes >= 1024 * 1024 {
-        format!("{:.1}M", bytes as f64 / (1024.0 * 1024.0))
-    } else if bytes >= 1024 {
-        format!("{:.1}K", bytes as f64 / 1024.0)
-    } else {
-        format!("{}B", bytes)
     }
 }
 

@@ -11,7 +11,7 @@ use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 use cloudapi_client::types::Package;
 
-use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::output::table::{TableBuilder, TableFormatArgs, col};
 use crate::output::{format_mb, json};
 
 /// Valid filter keys for positional key=value arguments
@@ -222,22 +222,42 @@ async fn list_packages(
     if use_json {
         json::print_json_stream(&packages)?;
     } else {
-        let short_cols = ["shortid", "name", "memory", "swap", "disk", "vcpus"];
-        let long_cols = ["id", "description", "version", "group", "lwps", "default"];
+        let columns = vec![
+            col("SHORTID", |pkg: &Package| {
+                let id_str = pkg.id.to_string();
+                id_str[..8.min(id_str.len())].to_string()
+            }),
+            col("NAME", |pkg: &Package| pkg.name.clone()),
+            col("MEMORY", |pkg: &Package| format_mb(pkg.memory)),
+            col("SWAP", |pkg: &Package| format_mb(pkg.swap)),
+            col("DISK", |pkg: &Package| format_mb(pkg.disk)),
+            col("VCPUS", |pkg: &Package| {
+                if pkg.vcpus > 0 {
+                    pkg.vcpus.to_string()
+                } else {
+                    "-".to_string()
+                }
+            }),
+            // long-only columns (from index 6)
+            col("ID", |pkg: &Package| pkg.id.to_string()),
+            col("DESCRIPTION", |pkg: &Package| {
+                pkg.description.clone().unwrap_or_else(|| "-".to_string())
+            }),
+            col("VERSION", |pkg: &Package| {
+                pkg.version.clone().unwrap_or_else(|| "-".to_string())
+            }),
+            col("GROUP", |pkg: &Package| {
+                pkg.group.clone().unwrap_or_else(|| "-".to_string())
+            }),
+            col("LWPS", |pkg: &Package| {
+                pkg.lwps.map_or("-".to_string(), |v| v.to_string())
+            }),
+            col("DEFAULT", |pkg: &Package| pkg.default.to_string()),
+        ];
 
-        let mut tbl = TableBuilder::new(&["SHORTID", "NAME", "MEMORY", "SWAP", "DISK", "VCPUS"])
-            .with_long_headers(&["ID", "DESCRIPTION", "VERSION", "GROUP", "LWPS", "DEFAULT"])
-            .with_right_aligned(&["MEMORY", "SWAP", "DISK", "VCPUS", "LWPS"]);
-
-        let all_cols: Vec<&str> = short_cols.iter().chain(long_cols.iter()).copied().collect();
-        for pkg in &packages {
-            let row = all_cols
-                .iter()
-                .map(|col| get_package_field_value(pkg, col))
-                .collect();
-            tbl.add_row(row);
-        }
-        tbl.print(&args.table);
+        TableBuilder::from_columns(&columns, &packages, Some(6))
+            .with_right_aligned(&["MEMORY", "SWAP", "DISK", "VCPUS", "LWPS"])
+            .print(&args.table);
     }
 
     Ok(())
@@ -264,34 +284,6 @@ async fn get_package(args: PackageGetArgs, client: &TypedClient, use_json: bool)
     }
 
     Ok(())
-}
-
-/// Get a field value from a Package by field name
-fn get_package_field_value(pkg: &Package, field: &str) -> String {
-    match field.to_lowercase().as_str() {
-        "id" => pkg.id.to_string(),
-        "shortid" => {
-            let id_str = pkg.id.to_string();
-            id_str[..8.min(id_str.len())].to_string()
-        }
-        "name" => pkg.name.clone(),
-        "memory" => format_mb(pkg.memory),
-        "swap" => format_mb(pkg.swap),
-        "disk" => format_mb(pkg.disk),
-        "vcpus" => {
-            if pkg.vcpus > 0 {
-                pkg.vcpus.to_string()
-            } else {
-                "-".to_string()
-            }
-        }
-        "lwps" => pkg.lwps.map_or("-".to_string(), |v| v.to_string()),
-        "version" => pkg.version.clone().unwrap_or_else(|| "-".to_string()),
-        "group" => pkg.group.clone().unwrap_or_else(|| "-".to_string()),
-        "description" | "desc" => pkg.description.clone().unwrap_or_else(|| "-".to_string()),
-        "default" => pkg.default.to_string(),
-        _ => "-".to_string(),
-    }
 }
 
 /// Resolve package name or short ID to full UUID

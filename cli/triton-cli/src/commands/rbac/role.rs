@@ -13,7 +13,7 @@ use cloudapi_client::types::{MemberRef, MemberType, PolicyRef};
 use serde::Deserialize;
 
 use crate::output::json;
-use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::output::table::{TableBuilder, TableFormatArgs, col};
 
 use super::editor;
 
@@ -200,34 +200,26 @@ pub async fn list_roles(
     if use_json {
         json::print_json_stream(&roles)?;
     } else {
-        let short_cols = ["name", "policies", "members"];
-        let long_cols = ["id"];
+        let columns = vec![
+            col("NAME", |role: &cloudapi_client::types::Role| {
+                role.name.clone()
+            }),
+            col("POLICIES", |role: &cloudapi_client::types::Role| {
+                role.policies.join(", ")
+            }),
+            col("MEMBERS", |role: &cloudapi_client::types::Role| {
+                role.members.join(", ")
+            }),
+            // long-only columns (from index 3)
+            col("ID", |role: &cloudapi_client::types::Role| {
+                role.id.to_string()
+            }),
+        ];
 
-        let mut tbl =
-            TableBuilder::new(&["NAME", "POLICIES", "MEMBERS"]).with_long_headers(&["ID"]);
-
-        let all_cols: Vec<&str> = short_cols.iter().chain(long_cols.iter()).copied().collect();
-        for role in &roles {
-            let row = all_cols
-                .iter()
-                .map(|col| get_role_field_value(role, col))
-                .collect();
-            tbl.add_row(row);
-        }
-        tbl.print(table_args);
+        TableBuilder::from_columns(&columns, &roles, Some(3)).print(table_args);
     }
 
     Ok(())
-}
-
-fn get_role_field_value(role: &cloudapi_client::types::Role, field: &str) -> String {
-    match field.to_lowercase().as_str() {
-        "id" => role.id.to_string(),
-        "name" => role.name.clone(),
-        "policies" => role.policies.join(", "),
-        "members" => role.members.join(", "),
-        _ => "-".to_string(),
-    }
 }
 
 async fn get_role(args: RoleGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {

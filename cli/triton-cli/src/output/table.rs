@@ -42,6 +42,20 @@ impl TableFormatArgs {
     }
 }
 
+/// A column definition that co-locates header name with extraction logic.
+pub struct ColumnDef<'a, T> {
+    pub header: &'a str,
+    pub extract: Box<dyn Fn(&T) -> String + 'a>,
+}
+
+/// Create a `ColumnDef` with the given header and extraction closure.
+pub fn col<'a, T>(header: &'a str, extract: impl Fn(&T) -> String + 'a) -> ColumnDef<'a, T> {
+    ColumnDef {
+        header,
+        extract: Box::new(extract),
+    }
+}
+
 /// Helper struct to build and print tables with formatting options
 pub struct TableBuilder {
     headers: Vec<String>,
@@ -57,6 +71,40 @@ impl TableBuilder {
             long_headers: None,
             right_aligned: Vec::new(),
             rows: Vec::new(),
+        }
+    }
+
+    /// Build a table from column definitions and an iterable of items.
+    ///
+    /// `long_from` is the index where long-only columns begin; columns before
+    /// it are shown by default, columns from that index onward require `-l`.
+    pub fn from_columns<'a, T: 'a>(
+        columns: &[ColumnDef<'a, T>],
+        items: impl IntoIterator<Item = &'a T>,
+        long_from: Option<usize>,
+    ) -> Self {
+        let boundary = long_from.unwrap_or(columns.len());
+        let headers: Vec<String> = columns[..boundary]
+            .iter()
+            .map(|c| c.header.to_string())
+            .collect();
+        let long_headers = if boundary < columns.len() {
+            Some(columns.iter().map(|c| c.header.to_string()).collect())
+        } else {
+            None
+        };
+
+        let mut rows = Vec::new();
+        for item in items {
+            let row: Vec<String> = columns.iter().map(|c| (c.extract)(item)).collect();
+            rows.push(row);
+        }
+
+        Self {
+            headers,
+            long_headers,
+            right_aligned: Vec::new(),
+            rows,
         }
     }
 
@@ -339,6 +387,116 @@ mod tests {
         let header = output.lines().next().unwrap();
         assert!(header.contains("ID"), "long header should contain ID");
         assert!(header.contains("NAME"), "long header should contain NAME");
+    }
+
+    #[test]
+    fn test_from_columns_basic() {
+        struct Item {
+            name: String,
+            count: u32,
+        }
+        let items = vec![
+            Item {
+                name: "alpha".into(),
+                count: 1,
+            },
+            Item {
+                name: "beta".into(),
+                count: 2,
+            },
+        ];
+        let columns = vec![
+            col("NAME", |i: &Item| i.name.clone()),
+            col("COUNT", |i: &Item| i.count.to_string()),
+        ];
+        let tbl = TableBuilder::from_columns(&columns, &items, None);
+        let output = tbl.render(&default_opts());
+        let lines: Vec<&str> = output.lines().collect();
+        assert_eq!(lines.len(), 3); // header + 2 rows
+        assert!(lines[0].contains("NAME"));
+        assert!(lines[0].contains("COUNT"));
+        assert!(lines[1].contains("alpha"));
+        assert!(lines[2].contains("beta"));
+    }
+
+    #[test]
+    fn test_from_columns_with_long() {
+        struct Item {
+            a: String,
+            b: String,
+            c: String,
+        }
+        let items = vec![Item {
+            a: "a1".into(),
+            b: "b1".into(),
+            c: "c1".into(),
+        }];
+        let columns = vec![
+            col("A", |i: &Item| i.a.clone()),
+            col("B", |i: &Item| i.b.clone()),
+            col("C", |i: &Item| i.c.clone()),
+        ];
+        // Columns 0..2 are short, column 2 is long-only
+        let tbl = TableBuilder::from_columns(&columns, &items, Some(2));
+
+        // Default: only A, B
+        let output = tbl.render(&default_opts());
+        let header = output.lines().next().unwrap();
+        assert!(header.contains("A"));
+        assert!(header.contains("B"));
+        assert!(!header.contains("C"));
+    }
+
+    #[test]
+    fn test_from_columns_with_long_shows_all() {
+        struct Item {
+            a: String,
+            b: String,
+            c: String,
+        }
+        let items = vec![Item {
+            a: "a1".into(),
+            b: "b1".into(),
+            c: "c1".into(),
+        }];
+        let columns = vec![
+            col("A", |i: &Item| i.a.clone()),
+            col("B", |i: &Item| i.b.clone()),
+            col("C", |i: &Item| i.c.clone()),
+        ];
+        let tbl = TableBuilder::from_columns(&columns, &items, Some(2));
+        let opts = TableFormatArgs {
+            long: true,
+            ..default_opts()
+        };
+        let output = tbl.render(&opts);
+        let header = output.lines().next().unwrap();
+        assert!(header.contains("A"));
+        assert!(header.contains("B"));
+        assert!(header.contains("C"));
+    }
+
+    #[test]
+    fn test_from_columns_with_context_capture() {
+        use std::collections::HashMap;
+        struct Item {
+            id: u32,
+        }
+        let mut lookup = HashMap::new();
+        lookup.insert(1, "one");
+        lookup.insert(2, "two");
+
+        let items = vec![Item { id: 1 }, Item { id: 2 }];
+        let columns = vec![
+            col("ID", |i: &Item| i.id.to_string()),
+            col("LABEL", |i: &Item| {
+                lookup.get(&i.id).unwrap_or(&"-").to_string()
+            }),
+        ];
+        let tbl = TableBuilder::from_columns(&columns, &items, None);
+        let output = tbl.render(&default_opts());
+        assert!(output.contains("one"));
+        assert!(output.contains("two"));
     }
 
     #[test]

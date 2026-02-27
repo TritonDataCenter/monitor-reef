@@ -11,7 +11,7 @@ use clap::Args;
 use cloudapi_client::TypedClient;
 
 use crate::output::json;
-use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::output::table::{TableBuilder, TableFormatArgs, col};
 
 #[derive(Args, Clone)]
 pub struct DatacenterListArgs {
@@ -38,25 +38,13 @@ pub async fn run(args: DatacenterListArgs, client: &TypedClient, use_json: bool)
         let mut entries: Vec<_> = datacenters.iter().collect();
         entries.sort_by_key(|(name, _)| *name);
 
-        let short_cols = ["name", "url"];
-        let mut tbl = TableBuilder::new(&["NAME", "URL"]);
-        for (name, url) in &entries {
-            let row = short_cols
-                .iter()
-                .map(|col| get_datacenter_field_value(name, url, col))
-                .collect();
-            tbl.add_row(row);
-        }
-        tbl.print(&args.table);
+        let columns = vec![
+            col("NAME", |(name, _url): &(&String, &String)| name.to_string()),
+            col("URL", |(_name, url): &(&String, &String)| url.to_string()),
+        ];
+
+        TableBuilder::from_columns(&columns, &entries, None).print(&args.table);
     }
 
     Ok(())
-}
-
-fn get_datacenter_field_value(name: &str, url: &str, field: &str) -> String {
-    match field.to_lowercase().as_str() {
-        "name" => name.to_string(),
-        "url" => url.to_string(),
-        _ => "-".to_string(),
-    }
 }
