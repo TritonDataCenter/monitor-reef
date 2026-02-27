@@ -72,12 +72,11 @@ function sync_agent {
     [[ -n "$insts" ]] || fatal "no running '$alias' instances found"
     echo "$alias instances: $insts"
 
-    # Prefer isolated agent target dir; fall back to workspace target.
+    # Use only the isolated agent build (no libpq).
+    # Do NOT fall back to target/ — that binary has postgres linked.
     local AGENT_BIN=${TOP}/target-agent/${PROFILE}/rebalancer-agent
-    if [[ ! -f "$AGENT_BIN" ]]; then
-        AGENT_BIN=${TARGET_DIR}/rebalancer-agent
-    fi
-    [[ -f "$AGENT_BIN" ]] || fatal "rebalancer-agent not found (tried ${TOP}/target-agent/ and ${TARGET_DIR}/)"
+    [[ -f "$AGENT_BIN" ]] || fatal "rebalancer-agent not found at ${AGENT_BIN}
+    Run 'make build-legacy' or 'make -C libs/rebalancer-legacy agent' first."
 
     for inst in $insts; do
         local prefix=/zones/$inst/root/opt/smartdc/rebalancer-agent
