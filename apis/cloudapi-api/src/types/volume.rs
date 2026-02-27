@@ -56,7 +56,7 @@ pub struct Volume {
     /// Volume name
     pub name: String,
     /// Owner UUID
-    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+
     #[serde(rename = "owner_uuid")]
     pub owner_uuid: Uuid,
     /// Volume type
@@ -70,7 +70,7 @@ pub struct Volume {
     #[serde(default)]
     pub networks: Vec<Uuid>,
     /// Filesystem path
-    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+
     #[serde(
         rename = "filesystem_path",
         default,

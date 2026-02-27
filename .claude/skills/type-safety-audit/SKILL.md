@@ -110,16 +110,24 @@ Find CLI code that imports types directly from API crates instead of through cli
 
 ### Check 8: Field Naming Exceptions
 
-Find struct fields in API types that may need explicit `#[serde(rename = "...")]` overrides because they don't follow the struct-level `rename_all` convention.
+Find struct fields in API types where the `rename_all` convention doesn't match the actual wire format.
 
 **How to find them:**
 1. Read `apis/*/src/types/*.rs` for structs with `#[serde(rename_all = "camelCase")]`
 2. Check if any field names contain underscores (snake_case) that would be auto-renamed to camelCase by serde
-3. Cross-reference with the actual JSON wire format from the Node.js service to identify fields that should remain snake_case
+3. Cross-reference with the actual JSON wire format from the Node.js service (in `target/sdc-cloudapi/`) to identify fields that should remain snake_case
 
-**A finding exists when:** A field in a `rename_all = "camelCase"` struct should keep its snake_case wire format (per the original Node.js API) but lacks an explicit `#[serde(rename = "...")]` override.
+**Determine the right fix:**
+- If **all** multi-word fields on the wire are snake_case, the struct should **remove `rename_all = "camelCase"`** entirely (Rust's default snake_case matches the wire format). Don't add individual `#[serde(rename = "...")]` overrides to a `rename_all = "camelCase"` struct when the struct-level convention is wrong.
+- If the struct has a **mix** of camelCase and snake_case fields on the wire, keep `rename_all = "camelCase"` and add individual `#[serde(rename = "...")]` overrides for the snake_case exceptions.
 
-**Known correct overrides (not findings):** `dns_names`, `free_space`, `delegate_dataset` in `Machine`.
+**A finding exists when:** A field's serde wire name (after applying `rename_all` and any explicit `rename`) doesn't match the actual Node.js API wire format.
+
+**Known correct structs (not findings):**
+- `Machine`: `rename_all = "camelCase"` with per-field snake_case overrides for `firewall_enabled`, `deletion_protection`, `compute_node`, `dns_names`, `free_space`, `delegate_dataset` (mixed convention)
+- `CreateMachineRequest`: `rename_all = "camelCase"` with per-field overrides for `firewall_enabled`, `deletion_protection`, `delegate_dataset`, `allow_shared_images` (mixed convention)
+- `Role`: `rename_all = "camelCase"` with per-field override for `default_members` (mixed convention)
+- `ChangePasswordRequest`, `DiskSpec`, `Config`, `UpdateConfigRequest`, `ResizeDiskRequest`: no `rename_all` (all fields are snake_case on the wire)
 
 ## Filing Issues
 

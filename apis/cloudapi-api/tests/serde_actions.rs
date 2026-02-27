@@ -329,7 +329,7 @@ fn test_resize_disk_request() {
     assert_eq!(req.size, 51200);
     assert!(req.dangerous_allow_shrink.is_none());
 
-    let json = r#"{"size": 25600, "dangerousAllowShrink": true}"#;
+    let json = r#"{"size": 25600, "dangerous_allow_shrink": true}"#;
     let req: ResizeDiskRequest = serde_json::from_str(json).unwrap();
     assert_eq!(req.size, 25600);
     assert_eq!(req.dangerous_allow_shrink, Some(true));

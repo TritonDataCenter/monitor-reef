@@ -130,7 +130,7 @@ pub struct Machine {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub docker: Option<bool>,
     /// Firewall enabled
-    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+
     #[serde(
         rename = "firewall_enabled",
         default,
@@ -138,7 +138,7 @@ pub struct Machine {
     )]
     pub firewall_enabled: Option<bool>,
     /// Deletion protection enabled
-    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+
     #[serde(
         rename = "deletion_protection",
         default,
@@ -146,7 +146,7 @@ pub struct Machine {
     )]
     pub deletion_protection: Option<bool>,
     /// Compute node UUID (server hosting the VM)
-    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+
     #[serde(
         rename = "compute_node",
         default,
@@ -154,11 +154,11 @@ pub struct Machine {
     )]
     pub compute_node: Option<Uuid>,
     /// DNS names (CNS feature)
-    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+
     #[serde(rename = "dns_names", default, skip_serializing_if = "Option::is_none")]
     pub dns_names: Option<Vec<String>>,
     /// Free space in bytes (bhyve with flexible disk)
-    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+
     #[serde(
         rename = "free_space",
         default,
@@ -175,7 +175,7 @@ pub struct Machine {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flexible: Option<bool>,
     /// Whether a delegate dataset is present
-    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+
     #[serde(
         rename = "delegate_dataset",
         default,
@@ -201,7 +201,7 @@ pub struct MachineDisk {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<DiskSize>,
     /// Block size in bytes
-    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+
     #[serde(
         rename = "block_size",
         default,
@@ -267,7 +267,6 @@ pub struct VolumeMount {
 
 /// Disk specification for bhyve instance creation
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct DiskSpec {
     /// Disk size in MB
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -351,10 +350,12 @@ pub struct CreateMachineRequest {
     #[serde(default)]
     pub tags: Option<Tags>,
     /// Firewall enabled
-    #[serde(default)]
+
+    #[serde(rename = "firewall_enabled", default)]
     pub firewall_enabled: Option<bool>,
     /// Deletion protection enabled
-    #[serde(default)]
+
+    #[serde(rename = "deletion_protection", default)]
     pub deletion_protection: Option<bool>,
     /// Brand (bhyve, kvm, joyent, joyent-minimal, lx)
     /// If not specified, inferred from the image
@@ -368,13 +369,15 @@ pub struct CreateMachineRequest {
     pub disks: Option<Vec<DiskSpec>>,
     /// Create a delegated ZFS dataset for the zone
     /// Only applicable to zone-based instances (joyent, joyent-minimal, lx brands)
-    #[serde(default)]
+
+    #[serde(rename = "delegate_dataset", default)]
     pub delegate_dataset: Option<bool>,
     /// Request placement on encrypted compute nodes
     #[serde(default)]
     pub encrypted: Option<bool>,
     /// Allow using images shared with this account (not owned by it)
-    #[serde(default)]
+
+    #[serde(rename = "allow_shared_images", default)]
     pub allow_shared_images: Option<bool>,
     /// Extra fields for legacy format support (tag.*, metadata.*)
     /// These are captured by serde's flatten and processed by helper methods.

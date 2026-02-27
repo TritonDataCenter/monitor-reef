@@ -808,14 +808,14 @@ pub mod types {
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"password\","]
-    #[doc = "    \"passwordConfirmation\""]
+    #[doc = "    \"password_confirmation\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"password\": {"]
     #[doc = "      \"description\": \"Current password\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
-    #[doc = "    \"passwordConfirmation\": {"]
+    #[doc = "    \"password_confirmation\": {"]
     #[doc = "      \"description\": \"New password\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    }"]
@@ -830,7 +830,6 @@ pub mod types {
         #[doc = "Current password"]
         pub password: ::std::string::String,
         #[doc = "New password"]
-        #[serde(rename = "passwordConfirmation")]
         pub password_confirmation: ::std::string::String,
     }
 
@@ -849,7 +848,7 @@ pub mod types {
     #[doc = "  \"description\": \"Configuration settings\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"defaultNetwork\": {"]
+    #[doc = "    \"default_network\": {"]
     #[doc = "      \"description\": \"Default network UUID\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
@@ -866,11 +865,7 @@ pub mod types {
     )]
     pub struct Config {
         #[doc = "Default network UUID"]
-        #[serde(
-            rename = "defaultNetwork",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub default_network: ::std::option::Option<::uuid::Uuid>,
     }
 
@@ -1337,7 +1332,7 @@ pub mod types {
     #[doc = "        \"type\": \"string\""]
     #[doc = "      }"]
     #[doc = "    },"]
-    #[doc = "    \"allowSharedImages\": {"]
+    #[doc = "    \"allow_shared_images\": {"]
     #[doc = "      \"description\": \"Allow using images shared with this account (not owned by it)\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"boolean\","]
@@ -1359,14 +1354,14 @@ pub mod types {
     #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    },"]
-    #[doc = "    \"delegateDataset\": {"]
+    #[doc = "    \"delegate_dataset\": {"]
     #[doc = "      \"description\": \"Create a delegated ZFS dataset for the zone Only applicable to zone-based instances (joyent, joyent-minimal, lx brands)\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"boolean\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
-    #[doc = "    \"deletionProtection\": {"]
+    #[doc = "    \"deletion_protection\": {"]
     #[doc = "      \"description\": \"Deletion protection enabled\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"boolean\","]
@@ -1390,7 +1385,7 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
-    #[doc = "    \"firewallEnabled\": {"]
+    #[doc = "    \"firewall_enabled\": {"]
     #[doc = "      \"description\": \"Firewall enabled\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"boolean\","]
@@ -1475,28 +1470,16 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub affinity: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
         #[doc = "Allow using images shared with this account (not owned by it)"]
-        #[serde(
-            rename = "allowSharedImages",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub allow_shared_images: ::std::option::Option<bool>,
         #[doc = "Brand (bhyve, kvm, joyent, joyent-minimal, lx) If not specified, inferred from the image"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub brand: ::std::option::Option<Brand2>,
         #[doc = "Create a delegated ZFS dataset for the zone Only applicable to zone-based instances (joyent, joyent-minimal, lx brands)"]
-        #[serde(
-            rename = "delegateDataset",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub delegate_dataset: ::std::option::Option<bool>,
         #[doc = "Deletion protection enabled"]
-        #[serde(
-            rename = "deletionProtection",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub deletion_protection: ::std::option::Option<bool>,
         #[doc = "Disks for bhyve instances"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -1505,11 +1488,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub encrypted: ::std::option::Option<bool>,
         #[doc = "Firewall enabled"]
-        #[serde(
-            rename = "firewallEnabled",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub firewall_enabled: ::std::option::Option<bool>,
         #[doc = "Image UUID"]
         pub image: ::uuid::Uuid,
@@ -2304,7 +2283,7 @@ pub mod types {
     #[doc = "  \"description\": \"Disk specification for bhyve instance creation\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"blockSize\": {"]
+    #[doc = "    \"block_size\": {"]
     #[doc = "      \"description\": \"Block size in bytes (optional)\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"integer\","]
@@ -2346,11 +2325,7 @@ pub mod types {
     )]
     pub struct DiskSpec {
         #[doc = "Block size in bytes (optional)"]
-        #[serde(
-            rename = "blockSize",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub block_size: ::std::option::Option<u64>,
         #[doc = "Mark as boot disk"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -2775,7 +2750,7 @@ pub mod types {
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"image_size\": {"]
-    #[doc = "      \"description\": \"Image size in bytes (zvol images only) Note: CloudAPI returns this as snake_case despite other fields being camelCase\","]
+    #[doc = "      \"description\": \"Image size in bytes (zvol images only)\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"integer\","]
     #[doc = "        \"null\""]
@@ -2903,7 +2878,7 @@ pub mod types {
         pub homepage: ::std::option::Option<::std::string::String>,
         #[doc = "Image UUID"]
         pub id: ::uuid::Uuid,
-        #[doc = "Image size in bytes (zvol images only) Note: CloudAPI returns this as snake_case despite other fields being camelCase"]
+        #[doc = "Image size in bytes (zvol images only)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub image_size: ::std::option::Option<u64>,
         #[doc = "Image name"]
@@ -3533,7 +3508,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"compute_node\": {"]
-    #[doc = "      \"description\": \"Compute node UUID (server hosting the VM) Note: CloudAPI returns this as snake_case despite other fields being camelCase\","]
+    #[doc = "      \"description\": \"Compute node UUID (server hosting the VM)\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -3545,14 +3520,14 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"delegate_dataset\": {"]
-    #[doc = "      \"description\": \"Whether a delegate dataset is present Note: CloudAPI returns this as snake_case despite other fields being camelCase\","]
+    #[doc = "      \"description\": \"Whether a delegate dataset is present\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"boolean\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"deletion_protection\": {"]
-    #[doc = "      \"description\": \"Deletion protection enabled Note: CloudAPI returns this as snake_case despite other fields being camelCase\","]
+    #[doc = "      \"description\": \"Deletion protection enabled\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"boolean\","]
     #[doc = "        \"null\""]
@@ -3575,7 +3550,7 @@ pub mod types {
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"dns_names\": {"]
-    #[doc = "      \"description\": \"DNS names (CNS feature) Note: CloudAPI returns this as snake_case despite other fields being camelCase\","]
+    #[doc = "      \"description\": \"DNS names (CNS feature)\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"array\","]
     #[doc = "        \"null\""]
@@ -3599,7 +3574,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"firewall_enabled\": {"]
-    #[doc = "      \"description\": \"Firewall enabled Note: CloudAPI returns this as snake_case despite other fields being camelCase\","]
+    #[doc = "      \"description\": \"Firewall enabled\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"boolean\","]
     #[doc = "        \"null\""]
@@ -3613,7 +3588,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"free_space\": {"]
-    #[doc = "      \"description\": \"Free space in bytes (bhyve with flexible disk) Note: CloudAPI returns this as snake_case despite other fields being camelCase\","]
+    #[doc = "      \"description\": \"Free space in bytes (bhyve with flexible disk)\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"integer\","]
     #[doc = "        \"null\""]
@@ -3730,15 +3705,15 @@ pub mod types {
     pub struct Machine {
         #[doc = "Brand (joyent, kvm, bhyve, lx, joyent-minimal, and internal-only brands)\n\nUses VMAPI's Brand enum to support internal-only brands like \"builder\" that may be returned by VMAPI but cannot be provisioned via CloudAPI."]
         pub brand: Brand,
-        #[doc = "Compute node UUID (server hosting the VM) Note: CloudAPI returns this as snake_case despite other fields being camelCase"]
+        #[doc = "Compute node UUID (server hosting the VM)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub compute_node: ::std::option::Option<::uuid::Uuid>,
         #[doc = "Creation timestamp"]
         pub created: ::std::string::String,
-        #[doc = "Whether a delegate dataset is present Note: CloudAPI returns this as snake_case despite other fields being camelCase"]
+        #[doc = "Whether a delegate dataset is present"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub delegate_dataset: ::std::option::Option<bool>,
-        #[doc = "Deletion protection enabled Note: CloudAPI returns this as snake_case despite other fields being camelCase"]
+        #[doc = "Deletion protection enabled"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub deletion_protection: ::std::option::Option<bool>,
         #[doc = "Disk space in MB"]
@@ -3746,7 +3721,7 @@ pub mod types {
         #[doc = "Disks (bhyve VMs only)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub disks: ::std::option::Option<::std::vec::Vec<MachineDisk>>,
-        #[doc = "DNS names (CNS feature) Note: CloudAPI returns this as snake_case despite other fields being camelCase"]
+        #[doc = "DNS names (CNS feature)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub dns_names: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
         #[doc = "Docker container"]
@@ -3755,13 +3730,13 @@ pub mod types {
         #[doc = "Whether the VM uses encrypted storage"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub encrypted: ::std::option::Option<bool>,
-        #[doc = "Firewall enabled Note: CloudAPI returns this as snake_case despite other fields being camelCase"]
+        #[doc = "Firewall enabled"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub firewall_enabled: ::std::option::Option<bool>,
         #[doc = "Whether the VM uses flexible disk mode (bhyve only)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub flexible: ::std::option::Option<bool>,
-        #[doc = "Free space in bytes (bhyve with flexible disk) Note: CloudAPI returns this as snake_case despite other fields being camelCase"]
+        #[doc = "Free space in bytes (bhyve with flexible disk)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub free_space: ::std::option::Option<u64>,
         #[doc = "Machine UUID"]
@@ -3957,7 +3932,7 @@ pub mod types {
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"block_size\": {"]
-    #[doc = "      \"description\": \"Block size in bytes Note: CloudAPI returns this as snake_case despite other fields being camelCase\","]
+    #[doc = "      \"description\": \"Block size in bytes\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"integer\","]
     #[doc = "        \"null\""]
@@ -4011,7 +3986,7 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct MachineDisk {
-        #[doc = "Block size in bytes Note: CloudAPI returns this as snake_case despite other fields being camelCase"]
+        #[doc = "Block size in bytes"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub block_size: ::std::option::Option<u64>,
         #[doc = "Boot disk"]
@@ -6321,7 +6296,7 @@ pub mod types {
     #[doc = "    \"name\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"defaultMembers\": {"]
+    #[doc = "    \"default_members\": {"]
     #[doc = "      \"description\": \"Default members (user UUIDs or logins)\","]
     #[doc = "      \"default\": [],"]
     #[doc = "      \"type\": \"array\","]
@@ -6373,11 +6348,7 @@ pub mod types {
     )]
     pub struct Role {
         #[doc = "Default members (user UUIDs or logins)"]
-        #[serde(
-            rename = "defaultMembers",
-            default,
-            skip_serializing_if = "::std::vec::Vec::is_empty"
-        )]
+        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
         pub default_members: ::std::vec::Vec<::std::string::String>,
         #[doc = "Role UUID"]
         pub id: ::uuid::Uuid,
@@ -6978,7 +6949,7 @@ pub mod types {
     #[doc = "  \"description\": \"Request to update configuration\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"defaultNetwork\": {"]
+    #[doc = "    \"default_network\": {"]
     #[doc = "      \"description\": \"Default network UUID\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
@@ -6995,11 +6966,7 @@ pub mod types {
     )]
     pub struct UpdateConfigRequest {
         #[doc = "Default network UUID"]
-        #[serde(
-            rename = "defaultNetwork",
-            default,
-            skip_serializing_if = "::std::option::Option::is_none"
-        )]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub default_network: ::std::option::Option<::uuid::Uuid>,
     }
 
@@ -7682,7 +7649,7 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"filesystem_path\": {"]
-    #[doc = "      \"description\": \"Filesystem path Note: CloudAPI returns this as snake_case despite other fields being camelCase\","]
+    #[doc = "      \"description\": \"Filesystem path\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -7707,7 +7674,7 @@ pub mod types {
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"owner_uuid\": {"]
-    #[doc = "      \"description\": \"Owner UUID Note: CloudAPI returns this as snake_case despite other fields being camelCase\","]
+    #[doc = "      \"description\": \"Owner UUID\","]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
@@ -7758,7 +7725,7 @@ pub mod types {
     pub struct Volume {
         #[doc = "Creation timestamp"]
         pub created: ::std::string::String,
-        #[doc = "Filesystem path Note: CloudAPI returns this as snake_case despite other fields being camelCase"]
+        #[doc = "Filesystem path"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub filesystem_path: ::std::option::Option<::std::string::String>,
         #[doc = "Volume UUID"]
@@ -7768,7 +7735,7 @@ pub mod types {
         #[doc = "Networks (array of UUIDs)"]
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
         pub networks: ::std::vec::Vec<::uuid::Uuid>,
-        #[doc = "Owner UUID Note: CloudAPI returns this as snake_case despite other fields being camelCase"]
+        #[doc = "Owner UUID"]
         pub owner_uuid: ::uuid::Uuid,
         #[doc = "References (machines using this volume)"]
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]

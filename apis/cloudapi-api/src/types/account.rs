@@ -110,7 +110,6 @@ pub struct ProvisioningLimits {
 
 /// Configuration settings
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct Config {
     /// Default network UUID
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -119,7 +118,6 @@ pub struct Config {
 
 /// Request to update configuration
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct UpdateConfigRequest {
     /// Default network UUID
     #[serde(default)]

@@ -167,7 +167,7 @@ pub struct Image {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<Uuid>,
     /// Image size in bytes (zvol images only)
-    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
+
     #[serde(
         default,
         skip_serializing_if = "Option::is_none",

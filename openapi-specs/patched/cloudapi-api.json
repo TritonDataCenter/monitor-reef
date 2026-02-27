@@ -276,21 +276,21 @@
             "description": "Current password",
             "type": "string"
           },
-          "passwordConfirmation": {
+          "password_confirmation": {
             "description": "New password",
             "type": "string"
           }
         },
         "required": [
           "password",
-          "passwordConfirmation"
+          "password_confirmation"
         ],
         "type": "object"
       },
       "Config": {
         "description": "Configuration settings",
         "properties": {
-          "defaultNetwork": {
+          "default_network": {
             "description": "Default network UUID",
             "format": "uuid",
             "nullable": true,
@@ -525,7 +525,7 @@
             "nullable": true,
             "type": "array"
           },
-          "allowSharedImages": {
+          "allow_shared_images": {
             "default": null,
             "description": "Allow using images shared with this account (not owned by it)",
             "nullable": true,
@@ -541,13 +541,13 @@
             "description": "Brand (bhyve, kvm, joyent, joyent-minimal, lx) If not specified, inferred from the image",
             "nullable": true
           },
-          "delegateDataset": {
+          "delegate_dataset": {
             "default": null,
             "description": "Create a delegated ZFS dataset for the zone Only applicable to zone-based instances (joyent, joyent-minimal, lx brands)",
             "nullable": true,
             "type": "boolean"
           },
-          "deletionProtection": {
+          "deletion_protection": {
             "default": null,
             "description": "Deletion protection enabled",
             "nullable": true,
@@ -568,7 +568,7 @@
             "nullable": true,
             "type": "boolean"
           },
-          "firewallEnabled": {
+          "firewall_enabled": {
             "default": null,
             "description": "Firewall enabled",
             "nullable": true,
@@ -937,7 +937,7 @@
       "DiskSpec": {
         "description": "Disk specification for bhyve instance creation",
         "properties": {
-          "blockSize": {
+          "block_size": {
             "description": "Block size in bytes (optional)",
             "format": "uint64",
             "minimum": 0,
@@ -1131,7 +1131,7 @@
             "type": "string"
           },
           "image_size": {
-            "description": "Image size in bytes (zvol images only) Note: CloudAPI returns this as snake_case despite other fields being camelCase",
+            "description": "Image size in bytes (zvol images only)",
             "format": "uint64",
             "minimum": 0,
             "nullable": true,
@@ -1391,7 +1391,7 @@
             "description": "Brand (joyent, kvm, bhyve, lx, joyent-minimal, and internal-only brands)\n\nUses VMAPI's Brand enum to support internal-only brands like \"builder\" that may be returned by VMAPI but cannot be provisioned via CloudAPI."
           },
           "compute_node": {
-            "description": "Compute node UUID (server hosting the VM) Note: CloudAPI returns this as snake_case despite other fields being camelCase",
+            "description": "Compute node UUID (server hosting the VM)",
             "format": "uuid",
             "nullable": true,
             "type": "string"
@@ -1401,12 +1401,12 @@
             "type": "string"
           },
           "delegate_dataset": {
-            "description": "Whether a delegate dataset is present Note: CloudAPI returns this as snake_case despite other fields being camelCase",
+            "description": "Whether a delegate dataset is present",
             "nullable": true,
             "type": "boolean"
           },
           "deletion_protection": {
-            "description": "Deletion protection enabled Note: CloudAPI returns this as snake_case despite other fields being camelCase",
+            "description": "Deletion protection enabled",
             "nullable": true,
             "type": "boolean"
           },
@@ -1425,7 +1425,7 @@
             "type": "array"
           },
           "dns_names": {
-            "description": "DNS names (CNS feature) Note: CloudAPI returns this as snake_case despite other fields being camelCase",
+            "description": "DNS names (CNS feature)",
             "items": {
               "type": "string"
             },
@@ -1443,7 +1443,7 @@
             "type": "boolean"
           },
           "firewall_enabled": {
-            "description": "Firewall enabled Note: CloudAPI returns this as snake_case despite other fields being camelCase",
+            "description": "Firewall enabled",
             "nullable": true,
             "type": "boolean"
           },
@@ -1453,7 +1453,7 @@
             "type": "boolean"
           },
           "free_space": {
-            "description": "Free space in bytes (bhyve with flexible disk) Note: CloudAPI returns this as snake_case despite other fields being camelCase",
+            "description": "Free space in bytes (bhyve with flexible disk)",
             "format": "uint64",
             "minimum": 0,
             "nullable": true,
@@ -1598,7 +1598,7 @@
         "description": "Disk attached to a machine (bhyve VMs)\n\nCloudAPI may omit `size` for the boot disk (which inherits its size from the image) and may return `\"remaining\"` for flexible disks.",
         "properties": {
           "block_size": {
-            "description": "Block size in bytes Note: CloudAPI returns this as snake_case despite other fields being camelCase",
+            "description": "Block size in bytes",
             "format": "uint64",
             "minimum": 0,
             "nullable": true,
@@ -2499,7 +2499,7 @@
       "Role": {
         "description": "Role information",
         "properties": {
-          "defaultMembers": {
+          "default_members": {
             "default": [],
             "description": "Default members (user UUIDs or logins)",
             "items": {
@@ -2758,7 +2758,7 @@
       "UpdateConfigRequest": {
         "description": "Request to update configuration",
         "properties": {
-          "defaultNetwork": {
+          "default_network": {
             "default": null,
             "description": "Default network UUID",
             "format": "uuid",
@@ -3042,7 +3042,7 @@
             "type": "string"
           },
           "filesystem_path": {
-            "description": "Filesystem path Note: CloudAPI returns this as snake_case despite other fields being camelCase",
+            "description": "Filesystem path",
             "nullable": true,
             "type": "string"
           },
@@ -3065,7 +3065,7 @@
             "type": "array"
           },
           "owner_uuid": {
-            "description": "Owner UUID Note: CloudAPI returns this as snake_case despite other fields being camelCase",
+            "description": "Owner UUID",
             "format": "uuid",
             "type": "string"
           },

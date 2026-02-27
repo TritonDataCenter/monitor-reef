@@ -155,7 +155,6 @@ pub struct DiskActionQuery {
 
 /// Request to resize disk
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct ResizeDiskRequest {
     /// New size in MB
     pub size: u64,

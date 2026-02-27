@@ -126,7 +126,6 @@ pub struct UpdateUserRequest {
 
 /// Request to change user password
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct ChangePasswordRequest {
     /// Current password
     pub password: String,
@@ -146,7 +145,8 @@ pub struct Role {
     #[serde(default)]
     pub members: Vec<String>,
     /// Default members (user UUIDs or logins)
-    #[serde(default)]
+
+    #[serde(rename = "default_members", default)]
     pub default_members: Vec<String>,
     /// Policies (policy UUIDs or names)
     #[serde(default)]
