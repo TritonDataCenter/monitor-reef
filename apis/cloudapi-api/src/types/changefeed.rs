@@ -194,7 +194,7 @@ pub struct ChangefeedMessage {
 impl ChangefeedMessage {
     /// Get the resource state as a typed `VmState` enum.
     ///
-    /// Currently always returns `Some` because `VmState::FromStr` maps
+    /// Currently always returns `Some` because the `FromStr` impl for `VmState` maps
     /// unrecognized strings to `VmState::Unknown`. The `Option` is preserved
     /// for forward compatibility in case parsing rules change.
     pub fn resource_state_typed(&self) -> Option<vmapi_api::VmState> {

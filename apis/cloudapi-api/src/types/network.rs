@@ -63,8 +63,8 @@ pub struct NetworkIpPath {
 
 /// Network information
 ///
-/// Note: CloudAPI returns snake_case for this object, so we use snake_case
-/// to match the API response format for CLI compatibility with node-triton.
+/// Note: CloudAPI returns snake_case for this object, so we omit `rename_all`
+/// and let serde use the Rust field names directly (already snake_case).
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Network {
     /// Network UUID

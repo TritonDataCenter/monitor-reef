@@ -59,7 +59,7 @@
 //! The Authorization header follows this format:
 //!
 //! ```text
-//! Authorization: Signature keyId="/:account/keys/:md5_fingerprint",algorithm="rsa-sha256",signature=":base64:"
+//! Authorization: Signature keyId="/:account/keys/:md5_fingerprint",algorithm="rsa-sha256",headers="date (request-target)",signature=":base64:"
 //! ```
 //!
 //! Note: The keyId always uses MD5 fingerprint format (CloudAPI server requirement).

@@ -102,7 +102,7 @@ Several CloudAPI endpoints use a single POST endpoint to dispatch multiple opera
 
 **Client wrapper pattern**: The `ActionBody` struct in `cloudapi-client` uses `#[serde(flatten)]` to merge the action field into the request body, e.g. `{"action": "stop", "origin": null}`.
 
-**Endpoints**: `MachineAction` (start/stop/reboot/resize/rename/firewall/deletion-protection), `ImageAction` (update/export/clone/import/share/unshare), `DiskAction` (resize), `VolumeAction` (update).
+**Endpoints**: `MachineAction` (start/stop/reboot/resize/rename/firewall/deletion-protection), `ImageAction` (update/export/clone/import-from-datacenter), `DiskAction` (resize), `VolumeAction` (update).
 
 See `apis/cloudapi-api/src/types/machine.rs` for the canonical example.
 
@@ -181,30 +181,17 @@ Most CloudAPI response structs use `#[serde(rename_all = "camelCase")]` to match
 - `role-tag` fields -- CloudAPI uses hyphenated `"role-tag"` in JSON, mapped to `role_tag` in Rust with `#[serde(rename = "role-tag")]`
 - Enum variants with hyphens -- e.g., `#[serde(rename = "joyent-minimal")]`, `#[serde(rename = "zone-dataset")]`
 
-**When adding new fields**: Always check the actual JSON wire format from the original Node.js service. If a field does not follow the struct-level `rename_all` convention, add an explicit `#[serde(rename = "...")]` with a comment explaining the exception.
-
-```rust
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Machine {
-    pub id: Uuid,
-    pub name: String,
-    // ...
-    /// Note: CloudAPI returns this as snake_case despite other fields being camelCase
-    #[serde(rename = "dns_names", default, skip_serializing_if = "Option::is_none")]
-    pub dns_names: Option<Vec<String>>,
-}
-```
+**When adding new fields**: Always check the actual JSON wire format from the original Node.js service. If a field does not follow the struct-level `rename_all` convention, add an explicit `#[serde(rename = "...")]` override.
 
 ## UUID Handling Conventions
 
-**Type alias**: API crates define `pub type Uuid = uuid::Uuid;` in their common types module (see `apis/cloudapi-api/src/types/common.rs`). Use this alias in all struct fields and function signatures rather than raw `uuid::Uuid` or `String`.
+**Type alias**: API crates define `pub type Uuid = uuid::Uuid;` in their common types module (see `apis/vmapi-api/src/types/common.rs`; cloudapi-api re-exports it). Use this alias in all struct fields and function signatures rather than raw `uuid::Uuid` or `String`.
 
 **Serialization**: The `uuid` crate's serde support handles serialization/deserialization as lowercase hyphenated strings (e.g., `"28faa36c-2031-4632-a819-f7defa1299a3"`). No custom serde logic is needed.
 
 **Path parameters**: UUID path parameters (machine IDs, image IDs, etc.) are parsed automatically by Dropshot via the `Uuid` type in `Path<>` structs. Invalid UUIDs produce a 400 error.
 
-**String UUIDs**: Some fields use `String` instead of `Uuid` when the upstream API may return non-UUID values or when the field serves double duty (e.g., `ChangefeedSubscription.vms` accepts UUIDs as strings). Prefer typed `Uuid` unless there is a specific reason for `String`.
+**String UUIDs**: Some fields use `String` instead of `Uuid` when the upstream API may return non-UUID values or when the field serves double duty. Prefer typed `Uuid` unless there is a specific reason for `String`.
 
 **Testing**: When constructing test UUIDs, use `uuid::Uuid::parse_str("...")` or `uuid::Uuid::nil()` rather than placeholder strings.
 
