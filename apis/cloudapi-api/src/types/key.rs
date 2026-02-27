@@ -71,12 +71,15 @@ pub struct CreateSshKeyRequest {
 // Note: No `rename_all` needed — Node.js CloudAPI uses PascalCase for status
 // values ("Active", "Inactive", "Expired"), which matches serde's default.
 // See `sdc-cloudapi/lib/endpoints/accesskeys.js` `translateAccessKey()`.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[derive(
+    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
+)]
 pub enum AccessKeyStatus {
     Active,
     Inactive,
     Expired,
     #[serde(other)]
+    #[clap(skip)]
     Unknown,
 }
 

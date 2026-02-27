@@ -155,6 +155,7 @@ pub mod types {
         Ord,
         PartialEq,
         PartialOrd,
+        clap :: ValueEnum,
         schemars :: JsonSchema,
     )]
     pub enum AccessKeyStatus {

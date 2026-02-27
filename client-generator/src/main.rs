@@ -93,7 +93,8 @@ fn configure_cloudapi(settings: &mut GenerationSettings) {
         .with_patch("NicState", &value_enum_patch)
         .with_patch("SnapshotState", &value_enum_patch)
         .with_patch("VolumeState", &value_enum_patch)
-        .with_patch("VolumeType", &value_enum_patch);
+        .with_patch("VolumeType", &value_enum_patch)
+        .with_patch("AccessKeyStatus", &value_enum_patch);
 }
 
 fn configure_jira(settings: &mut GenerationSettings) {

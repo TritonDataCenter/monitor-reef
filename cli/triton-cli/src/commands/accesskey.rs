@@ -9,6 +9,7 @@
 use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
+use cloudapi_client::types::AccessKeyStatus;
 
 use crate::output::enum_to_display;
 use crate::output::json;
@@ -45,8 +46,8 @@ pub struct AccesskeyGetArgs {
 #[derive(Args, Clone)]
 pub struct AccesskeyCreateArgs {
     /// Initial status (Active or Inactive)
-    #[arg(short, long)]
-    pub status: Option<String>,
+    #[arg(short, long, ignore_case = true)]
+    pub status: Option<AccessKeyStatus>,
     /// Description for the access key
     #[arg(short, long, visible_alias = "desc")]
     pub description: Option<String>,
@@ -57,8 +58,8 @@ pub struct AccesskeyUpdateArgs {
     /// Access key ID
     pub accesskeyid: String,
     /// New status (Active or Inactive)
-    #[arg(short, long)]
-    pub status: Option<String>,
+    #[arg(short, long, ignore_case = true)]
+    pub status: Option<AccessKeyStatus>,
     /// New description
     #[arg(short, long, visible_alias = "desc")]
     pub description: Option<String>,
@@ -160,10 +161,7 @@ async fn create_access_key(
     let account = client.effective_account();
 
     let request = cloudapi_client::types::CreateAccessKeyRequest {
-        status: args
-            .status
-            .map(|s| serde_json::from_value(serde_json::Value::String(s)))
-            .transpose()?,
+        status: args.status,
         description: args.description,
     };
 
@@ -208,10 +206,7 @@ async fn update_access_key(
         serde_json::from_str(&content)?
     } else {
         cloudapi_client::types::UpdateAccessKeyRequest {
-            status: args
-                .status
-                .map(|s| serde_json::from_value(serde_json::Value::String(s)))
-                .transpose()?,
+            status: args.status,
             description: args.description,
         }
     };

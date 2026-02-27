@@ -9,6 +9,7 @@
 use anyhow::Result;
 use clap::Args;
 use cloudapi_client::TypedClient;
+use cloudapi_client::types::AccessKeyStatus;
 
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
@@ -47,8 +48,8 @@ pub struct RbacAccesskeyCommand {
     pub delete: bool,
 
     /// Status for create/update (Active or Inactive)
-    #[arg(short = 's', long)]
-    pub status: Option<String>,
+    #[arg(short = 's', long, ignore_case = true)]
+    pub status: Option<AccessKeyStatus>,
 
     /// Description for create/update
     #[arg(short = 'D', long, visible_alias = "desc")]
@@ -183,7 +184,7 @@ async fn get_user_access_key(
 
 async fn create_user_access_key(
     user: &str,
-    status: Option<String>,
+    status: Option<AccessKeyStatus>,
     description: Option<String>,
     client: &TypedClient,
     use_json: bool,
@@ -192,9 +193,7 @@ async fn create_user_access_key(
     let user_id = resolve_user(user, client).await?;
 
     let request = cloudapi_client::types::CreateAccessKeyRequest {
-        status: status
-            .map(|s| serde_json::from_value(serde_json::Value::String(s)))
-            .transpose()?,
+        status,
         description,
     };
 
@@ -224,7 +223,7 @@ async fn create_user_access_key(
 async fn update_user_access_key(
     user: &str,
     accesskeyid: &str,
-    status: Option<String>,
+    status: Option<AccessKeyStatus>,
     description: Option<String>,
     client: &TypedClient,
     use_json: bool,
@@ -233,9 +232,7 @@ async fn update_user_access_key(
     let user_id = resolve_user(user, client).await?;
 
     let request = cloudapi_client::types::UpdateAccessKeyRequest {
-        status: status
-            .map(|s| serde_json::from_value(serde_json::Value::String(s)))
-            .transpose()?,
+        status,
         description,
     };
 
