@@ -73,11 +73,11 @@ function sync_agent {
     echo "$alias instances: $insts"
 
     # Prefer isolated agent target dir; fall back to workspace target.
-    local AGENT_BIN=${WORKSPACE_ROOT}/target-agent/${PROFILE}/rebalancer-agent
+    local AGENT_BIN=${TOP}/target-agent/${PROFILE}/rebalancer-agent
     if [[ ! -f "$AGENT_BIN" ]]; then
         AGENT_BIN=${TARGET_DIR}/rebalancer-agent
     fi
-    [[ -f "$AGENT_BIN" ]] || fatal "rebalancer-agent not found (tried target-agent/ and target/)"
+    [[ -f "$AGENT_BIN" ]] || fatal "rebalancer-agent not found (tried ${TOP}/target-agent/ and ${TARGET_DIR}/)"
 
     for inst in $insts; do
         local prefix=/zones/$inst/root/opt/smartdc/rebalancer-agent
