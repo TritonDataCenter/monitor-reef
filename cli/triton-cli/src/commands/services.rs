@@ -10,8 +10,9 @@ use anyhow::Result;
 use clap::Args;
 use cloudapi_client::TypedClient;
 
+use crate::define_columns;
 use crate::output::json;
-use crate::output::table::{TableBuilder, TableFormatArgs, col};
+use crate::output::table::{TableBuilder, TableFormatArgs};
 
 #[derive(Args, Clone)]
 pub struct ServiceListArgs {
@@ -35,19 +36,21 @@ pub async fn run(args: ServiceListArgs, client: &TypedClient, use_json: bool) ->
         json::print_json(&services)?;
     } else {
         // Sort by name for consistent output (matching node-triton)
-        let mut entries: Vec<_> = services.iter().collect();
-        entries.sort_by_key(|(name, _)| name.as_str());
+        let mut entries: Vec<(&str, &str)> = services
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        entries.sort_by_key(|(name, _)| *name);
 
-        let columns = vec![
-            col("NAME", |(name, _endpoint): &(&String, &String)| {
-                name.to_string()
-            }),
-            col("ENDPOINT", |(_name, endpoint): &(&String, &String)| {
-                endpoint.to_string()
-            }),
-        ];
+        type SvcEntry<'a> = (&'a str, &'a str);
+        define_columns! {
+            SvcColumn for SvcEntry<'_> {
+                Name("NAME") => |svc| svc.0.to_string(),
+                Endpoint("ENDPOINT") => |svc| svc.1.to_string(),
+            }
+        }
 
-        TableBuilder::from_columns(&columns, &entries, None).print(&args.table)?;
+        TableBuilder::from_enum_columns::<SvcColumn, _>(&entries, None).print(&args.table)?;
     }
 
     Ok(())

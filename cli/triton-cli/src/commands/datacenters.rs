@@ -10,8 +10,9 @@ use anyhow::Result;
 use clap::Args;
 use cloudapi_client::TypedClient;
 
+use crate::define_columns;
 use crate::output::json;
-use crate::output::table::{TableBuilder, TableFormatArgs, col};
+use crate::output::table::{TableBuilder, TableFormatArgs};
 
 #[derive(Args, Clone)]
 pub struct DatacenterListArgs {
@@ -35,15 +36,21 @@ pub async fn run(args: DatacenterListArgs, client: &TypedClient, use_json: bool)
         json::print_json(&datacenters)?;
     } else {
         // Sort by name for consistent output
-        let mut entries: Vec<_> = datacenters.iter().collect();
+        let mut entries: Vec<(&str, &str)> = datacenters
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
         entries.sort_by_key(|(name, _)| *name);
 
-        let columns = vec![
-            col("NAME", |(name, _url): &(&String, &String)| name.to_string()),
-            col("URL", |(_name, url): &(&String, &String)| url.to_string()),
-        ];
+        type DcEntry<'a> = (&'a str, &'a str);
+        define_columns! {
+            DcColumn for DcEntry<'_> {
+                Name("NAME") => |dc| dc.0.to_string(),
+                Url("URL") => |dc| dc.1.to_string(),
+            }
+        }
 
-        TableBuilder::from_columns(&columns, &entries, None).print(&args.table)?;
+        TableBuilder::from_enum_columns::<DcColumn, _>(&entries, None).print(&args.table)?;
     }
 
     Ok(())
