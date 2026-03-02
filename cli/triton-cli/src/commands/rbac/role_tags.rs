@@ -72,6 +72,9 @@ pub struct RoleTagsSetArgs {
     pub resource: String,
     /// Role names to set (replaces all existing tags)
     pub roles: Vec<String>,
+    /// Skip confirmation
+    #[arg(long, short, visible_alias = "yes", short_alias = 'y')]
+    pub force: bool,
 }
 
 #[derive(Args, Clone)]
@@ -94,6 +97,9 @@ pub struct RoleTagsRemoveArgs {
     pub resource: String,
     /// Role name to remove
     pub role: String,
+    /// Skip confirmation
+    #[arg(long, short, visible_alias = "yes", short_alias = 'y')]
+    pub force: bool,
 }
 
 #[derive(Args, Clone)]
@@ -103,6 +109,9 @@ pub struct RoleTagsClearArgs {
     pub resource_type: RoleTagResource,
     /// Resource ID or name
     pub resource: String,
+    /// Skip confirmation
+    #[arg(long, short, visible_alias = "yes", short_alias = 'y')]
+    pub force: bool,
 }
 
 #[derive(Args, Clone)]
@@ -128,6 +137,21 @@ impl RoleTagsCommand {
 
 /// Set role tags on a resource (replaces all existing tags)
 async fn role_tags_set(args: RoleTagsSetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+    if !args.force {
+        use dialoguer::Confirm;
+        if !Confirm::new()
+            .with_prompt(format!(
+                "Set role tags on {} \"{}\"?",
+                args.resource_type, args.resource
+            ))
+            .default(false)
+            .interact()?
+        {
+            println!("Aborted.");
+            return Ok(());
+        }
+    }
+
     let account = client.effective_account();
     let resource_id = resolve_resource_id(&args.resource_type, &args.resource, client).await?;
 
@@ -264,6 +288,7 @@ async fn role_tags_add(args: RoleTagsAddArgs, client: &TypedClient, use_json: bo
         resource_type: args.resource_type,
         resource: resource_id,
         roles: current_tags,
+        force: true,
     };
     role_tags_set(set_args, client, use_json).await
 }
@@ -274,6 +299,21 @@ async fn role_tags_remove(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
+    if !args.force {
+        use dialoguer::Confirm;
+        if !Confirm::new()
+            .with_prompt(format!(
+                "Remove role tag \"{}\" from {} \"{}\"?",
+                args.role, args.resource_type, args.resource
+            ))
+            .default(false)
+            .interact()?
+        {
+            println!("Aborted.");
+            return Ok(());
+        }
+    }
+
     let resource_id = resolve_resource_id(&args.resource_type, &args.resource, client).await?;
 
     // GET current tags
@@ -287,6 +327,7 @@ async fn role_tags_remove(
         resource_type: args.resource_type,
         resource: resource_id,
         roles: current_tags,
+        force: true,
     };
     role_tags_set(set_args, client, use_json).await
 }
@@ -297,10 +338,26 @@ async fn role_tags_clear(
     client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
+    if !args.force {
+        use dialoguer::Confirm;
+        if !Confirm::new()
+            .with_prompt(format!(
+                "Clear all role tags from {} \"{}\"?",
+                args.resource_type, args.resource
+            ))
+            .default(false)
+            .interact()?
+        {
+            println!("Aborted.");
+            return Ok(());
+        }
+    }
+
     let set_args = RoleTagsSetArgs {
         resource_type: args.resource_type,
         resource: args.resource,
         roles: vec![],
+        force: true,
     };
     role_tags_set(set_args, client, use_json).await
 }
@@ -366,6 +423,7 @@ async fn role_tags_edit(
         resource_type: args.resource_type,
         resource: resource_id,
         roles: edited_tags,
+        force: true,
     };
     role_tags_set(set_args, client, use_json).await
 }
