@@ -6,349 +6,468 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 Copyright 2025 Edgecast Cloud LLC.
 -->
 
-# Triton CLI Test Porting Planning Prompt
+# Triton CLI Test Development Prompt
 
 ## Objective
 
-Create a comprehensive plan for porting the node-triton test suite to Rust tests for triton-cli. The goal is to achieve equivalent test coverage while leveraging Rust testing idioms and the existing Rust ecosystem.
+Develop new tests for triton-cli to fill quality gaps identified by the behavioral evaluation. The initial test porting from node-triton is complete (~747 tests exist). This prompt focuses on writing tests that catch **real bugs** — the kind that slipped past the initial porting round.
 
-This planning prompt should produce a prioritized implementation plan with clear work items.
+This prompt should produce new test code, improved fixtures, and strengthened existing assertions.
 
-## Goals and Non-Goals
+## Context: What Exists
 
-### Goals
+### Current Test Infrastructure
 
-- **Equivalent coverage** - Port all meaningful tests from node-triton
-- **Rust-idiomatic tests** - Use standard Rust testing patterns (not literal translations)
-- **Test infrastructure** - Create reusable test helpers for CLI and API testing
-- **CI/CD ready** - Tests should run in automated pipelines
-- **Configurable** - Support the same test configuration options (allowWriteActions, skipKvmTests, etc.)
+| Component | Location | Status |
+|-----------|----------|--------|
+| Integration tests (26 files, ~636 tests) | `cli/triton-cli/tests/cli_*.rs` | Ported from node-triton |
+| Test helpers | `cli/triton-cli/tests/common/mod.rs` | Complete |
+| Test config | `cli/triton-cli/tests/common/config.rs` | Complete |
+| Fixtures (15 files) | `cli/triton-cli/tests/fixtures/` | Basic coverage |
+| Inline unit tests (~104 tests) | `cli/triton-cli/src/**/*.rs` | Good coverage |
 
-### Non-Goals
+### Dev Dependencies (from Cargo.toml)
 
-- Literal 1:1 translation of JavaScript test code to Rust
-- Porting tests for deprecated or removed features
-- Replicating TAP-specific output format (Rust test runner is sufficient)
+- `assert_cmd` 2.0 — CLI execution and assertions
+- `predicates` 3.0 — Fluent output matching
+- `test-case` 3.3 — Parameterized tests
+- `pretty_assertions` 1.4 — Better diff output
+- `hostname` 0.4 — Unique test resource naming
+- `regex` 1.10 — Pattern matching
+- `rcgen` 0.14 — Certificate generation for TLS tests
+- `tokio-rustls` 0.26 — TLS server for insecure-mode tests
+
+### Test Helper Functions (from `common/mod.rs`)
+
+| Function | Purpose |
+|----------|---------|
+| `triton_cmd()` | Get `assert_cmd::Command` for triton binary |
+| `run_triton(args)` | Execute triton, capture output |
+| `run_triton_with_env(args, env)` | Execute with environment variables |
+| `json_stream_parse(stdout)` | Parse NDJSON or JSON array output |
+| `make_resource_name(prefix)` | Generate unique resource names |
+| `fixtures_dir()` / `fixture_path(name)` | Fixture file access |
+| `safe_triton(args)` | Run and assert success |
+| `create_test_instance(...)` | Create instance for testing (API) |
+| `delete_test_instance(...)` | Clean up test instance (API) |
+| `get_test_image()` | Find suitable test image (API) |
+| `get_test_package()` | Find smallest test package (API) |
+| `get_resize_test_package()` | Find resize-compatible package (API) |
+
+### Known Acceptable Differences (do NOT test for these)
+
+See `conversion-plans/triton/reference/acceptable-output-differences.md`:
+- Clap-style help format vs node-triton custom format
+- JSON key ordering
+- Empty `[]` vs empty output for empty results
+- Clap error message format vs `error (Type):` format
+- Exit code 2 for usage errors (Clap) vs 1 (node-triton)
 
 ## Source Locations
 
 | Component | Location |
 |-----------|----------|
-| Node.js tests | `target/node-triton/test/` |
-| Node.js unit tests | `target/node-triton/test/unit/*.test.js` |
-| Node.js integration tests | `target/node-triton/test/integration/*.test.js` |
-| Node.js test helpers | `target/node-triton/test/integration/helpers.js` |
-| Node.js test common | `target/node-triton/test/lib/testcommon.js` |
-| Test fixtures | `target/node-triton/test/unit/corpus/` and `target/node-triton/test/integration/data/` |
-| Rust CLI | `cli/triton-cli/` |
-| Existing Rust tests | `cli/triton-cli/src/main.rs` (verify_cli_structure), `cli/triton-cli/src/config/paths.rs` |
+| Rust CLI source | `cli/triton-cli/src/` |
+| Rust CLI tests | `cli/triton-cli/tests/` |
+| Test helpers | `cli/triton-cli/tests/common/mod.rs` |
+| Test config | `cli/triton-cli/tests/common/config.rs` |
+| Test fixtures | `cli/triton-cli/tests/fixtures/` |
+| API types | `apis/cloudapi-api/src/types/` |
+| Node.js triton source | `target/node-triton/lib/` |
+| Node.js triton tests | `target/node-triton/test/` |
+| Acceptable differences | `conversion-plans/triton/reference/acceptable-output-differences.md` |
+| Type safety rules | `CLAUDE.md` (Type Safety Rules section) |
 
-## Node.js Test Suite Overview
+## Goals and Non-Goals
 
-### Unit Tests (6 files, ~1,196 lines)
+### Goals
 
-Located in `target/node-triton/test/unit/`:
+- **Strengthen weak assertions** — Upgrade tests from "runs without crashing" to "produces correct output"
+- **Add edge case tests** — Boundary conditions, empty inputs, malformed data
+- **Add error path tests** — Verify errors propagate correctly, not silently swallowed
+- **Add output format tests** — Verify JSON fields, table columns, value formatting against fixtures
+- **Add wire format tests** — Verify serde serialization/deserialization of API types
+- **File issues for bugs found** — Use beads (`bd`) for anything that requires code changes
 
-| File | Purpose | Priority |
-|------|---------|----------|
-| `common.test.js` | Tests `lib/common.js` (objCopy, deepObjCopy) | P3 - Rust handles this differently |
-| `metadataFromOpts.test.js` | Parsing metadata options for instance creation | P1 - Critical for `triton create` |
-| `tagsFromCreateOpts.test.js` | Parsing tags from create command options | P1 - Critical for tagging |
-| `tagsFromSetArgs.test.js` | Parsing tags from set command arguments | P1 - Critical for tagging |
-| `argvFromLine.test.js` | Parsing command-line arguments | P3 - Clap handles this |
-| `parseVolumeSize.test.js` | Parsing volume size specifications | P2 - Volume operations |
+### Non-Goals
 
-### Integration Tests (28 files, ~5,842 lines)
+- Re-porting node-triton tests already ported
+- Adding tests for features not yet implemented
+- Testing Clap's argument parsing (Clap is well-tested)
+- Testing help text content (acceptable difference)
 
-Located in `target/node-triton/test/integration/`:
+## Development Tasks
 
-**API Tests (7 files)** - Test TritonApi client methods directly:
-- `api-images.test.js`, `api-instances.test.js`, `api-ips.test.js`
-- `api-networks.test.js`, `api-nics.test.js`, `api-packages.test.js`, `api-vlans.test.js`
+### Phase 1: Strengthen Existing Assertions
 
-**CLI Tests (21 files)** - End-to-end CLI command testing:
-- Basic: `cli-basics.test.js` (help, version), `cli-subcommands.test.js`
-- Account: `cli-account.test.js`, `cli-profiles.test.js`, `cli-keys.test.js`
-- Instance: `cli-manage-workflow.test.js`, `cli-instance-tag.test.js`, `cli-snapshots.test.js`
-- Instance features: `cli-deletion-protection.test.js`, `cli-disks.test.js`, `cli-affinity.test.js`, `cli-migrations.test.js`
-- Network: `cli-networks.test.js`, `cli-nics.test.js`, `cli-vlans.test.js`, `cli-ips.test.js`
-- Firewall: `cli-fwrules.test.js`
-- Images: `cli-image-create.test.js`, `cli-image-create-kvm.test.js`
-- Volumes: `cli-volumes.test.js`, `cli-volumes-size.test.js`
+Review each existing test file and upgrade weak assertions. The pattern to look for:
 
-### Test Infrastructure Components
+```rust
+// BEFORE: Only checks exit code
+triton_cmd()
+    .args(["instance", "list", "--json"])
+    .assert()
+    .success();
 
-**Test Configuration** (`test/config.json`):
-```json
-{
-  "profileName": "test-profile",
-  "allowWriteActions": false,
-  "allowImageCreate": false,
-  "allowVolumesTests": true,
-  "skipAffinityTests": false,
-  "skipKvmTests": false,
-  "skipFlexDiskTests": false
+// AFTER: Validates output structure
+let output = triton_cmd()
+    .args(["instance", "list", "--json"])
+    .output()
+    .expect("failed to run triton");
+assert!(output.status.success());
+let instances: Vec<serde_json::Value> = json_stream_parse(&String::from_utf8_lossy(&output.stdout));
+assert!(!instances.is_empty(), "should return at least one instance");
+for inst in &instances {
+    assert!(inst.get("id").is_some(), "instance should have id field");
+    assert!(inst.get("name").is_some(), "instance should have name field");
+    assert!(inst.get("state").is_some(), "instance should have state field");
 }
 ```
 
-**Key Helper Functions** (from `helpers.js`):
-- `triton(args, opts, cb)` - Execute CLI with environment-based profile
-- `safeTriton(t, opts, cb)` - Execute CLI with error/stderr validation
-- `getTestImg(t, cb)` - Find compatible base/minimal image for provisioning
-- `getTestKvmImg(t, cb)` - Find compatible KVM image
-- `getTestPkg(t, cb)` - Find smallest available package
-- `createTestInst(t, opts, cb)` - Create test instance with cleanup
-- `deleteTestInst(t, opts, cb)` - Clean up test instance
-- `createClient()` - Create TritonApi client for direct API testing
-- `jsonStreamParse(stdout)` - Parse JSON stream output
+**Priority files to review** (sorted by likely weakness):
 
-## Evaluation Tasks
+| File | Test Count | Likely Issue |
+|------|-----------|--------------|
+| `cli_subcommands.rs` | 218 | Many may only test `--help` success |
+| `cli_output_format.rs` | 26 | May not validate all JSON fields |
+| `cli_manage_workflow.rs` | 18 | Complex workflow — check each step asserts |
+| `cli_error_paths.rs` | 40 | Check error messages are specific |
 
-### Task 1: Analyze Existing Rust Test Infrastructure
+### Phase 2: Add Fixture-Based Output Tests
 
-1. Review current tests in `cli/triton-cli/src/`
-2. Identify existing dev-dependencies in `Cargo.toml`
-3. Document what test patterns are already established
-4. Identify gaps in test infrastructure
+Create comprehensive fixtures and tests that validate exact output format without requiring API access.
 
-### Task 2: Design Test Infrastructure
+#### 2a. Expand Fixtures
 
-Design Rust equivalents for these key Node.js components:
+Current fixtures cover basic cases. Add fixtures for:
 
-**Test Helpers Module** (`tests/helpers.rs` or `tests/common/mod.rs`):
+| Fixture | Purpose | File |
+|---------|---------|------|
+| Machine with all optional fields | Tests null handling | `fixtures/machine/instance_full.json` |
+| Machine with snake_case exceptions | Tests `dns_names`, `free_space`, `delegate_dataset` | `fixtures/machine/instance_snake_case.json` |
+| Machine with unknown brand/state | Tests `#[serde(other)]` handling | `fixtures/machine/instance_unknown_enum.json` |
+| Image with all types | Tests ImageType variants | `fixtures/image/image_types.json` |
+| Empty list responses | Tests `[]` output | `fixtures/empty_list.json` |
+| Audit log entries | Tests audit trail format | `fixtures/machine/audit_log.json` |
+| NIC list response | Tests MAC address formatting | `fixtures/machine/nic_list.json` |
+| Snapshot list response | Tests snapshot fields | `fixtures/machine/snapshot_list.json` |
+| RBAC user/role/policy | Tests RBAC object format | `fixtures/rbac/` |
 
-| Node.js Function | Rust Equivalent | Notes |
-|------------------|-----------------|-------|
-| `triton(args, cb)` | `run_triton(args: &[&str]) -> Result<Output>` | Use `std::process::Command` |
-| `safeTriton(t, opts, cb)` | `run_triton_success(args: &[&str]) -> String` | Assert exit code 0, empty stderr |
-| `getTestImg(t, cb)` | `get_test_image() -> String` | Find suitable image, cache result |
-| `getTestPkg(t, cb)` | `get_test_package() -> String` | Find suitable package, cache result |
-| `createTestInst(...)` | `TestInstance::create(...) -> TestInstance` | RAII cleanup with Drop trait |
-| `jsonStreamParse(...)` | Parse via serde_json | Rust handles this naturally |
+#### 2b. Write Deserialization Round-Trip Tests
 
-**Test Configuration** (`tests/config.rs`):
-- Load from `TRITON_TEST_CONFIG` or `test/config.json`
-- Support same config options as Node.js
-- Provide `#[ignore]` annotations for conditional test execution
+For each major API type, verify serialization matches the wire format:
 
-**Fixtures**:
-- Port `test/unit/corpus/*` to `cli/triton-cli/tests/fixtures/`
-- Port `test/integration/data/*` to appropriate location
+```rust
+#[test]
+fn test_machine_deserialize_snake_case_fields() {
+    let json = r#"{
+        "id": "b6c0e147-96c7-4899-a3a5-e21d1fa1c6ad",
+        "name": "test-machine",
+        "state": "running",
+        "dns_names": ["test-machine.inst.us-east-1.triton.zone"],
+        "free_space": 10240
+    }"#;
+    let machine: Machine = serde_json::from_str(json).expect("should deserialize");
+    assert_eq!(machine.dns_names.unwrap(), vec!["test-machine.inst.us-east-1.triton.zone"]);
+    assert_eq!(machine.free_space.unwrap(), 10240);
 
-### Task 3: Categorize Tests by Porting Strategy
+    // Round-trip: verify field names in serialized output
+    let reserialized = serde_json::to_string(&machine).unwrap();
+    assert!(reserialized.contains("\"dns_names\""), "should serialize as dns_names, not dnsNames");
+    assert!(reserialized.contains("\"free_space\""), "should serialize as free_space, not freeSpace");
+}
 
-**Category A: Direct Port** - Tests that translate naturally to Rust:
-- Unit tests for parsing logic
-- CLI output validation tests
-- JSON response validation tests
+#[test]
+fn test_machine_unknown_state() {
+    let json = r#"{"id": "...", "name": "test", "state": "totally_new_state"}"#;
+    let machine: Machine = serde_json::from_str(json).expect("should handle unknown state");
+    // Should not panic, should deserialize to Unknown variant
+}
+```
 
-**Category B: Redesign** - Tests that need Rust-specific approach:
-- Tests heavily dependent on TAP assertions
-- Tests using Node.js callback patterns
-- Tests with complex async chains
+#### 2c. Write Table Output Tests
 
-**Category C: Skip/Defer** - Tests that may not be needed:
-- Tests for features not in Rust CLI
-- Tests for deprecated behaviors
-- Tests covered by Rust's type system
+For each `list` command, verify default table columns against node-triton:
 
-### Task 4: Create Implementation Plan
+```rust
+#[test]
+fn test_instance_list_table_columns() {
+    // Test against fixture data
+    let output = triton_cmd()
+        .args(["instance", "list"])
+        .env("TRITON_TEST_FIXTURE", fixture_path("machine/instance_list_multi.json"))
+        .output()
+        .expect("should run");
+    let stdout = String::from_utf8_lossy(&output.stdout);
 
-For each test category, create prioritized work items:
+    // Verify column headers match node-triton
+    let first_line = stdout.lines().next().expect("should have output");
+    assert!(first_line.contains("SHORTID"), "should have SHORTID column");
+    assert!(first_line.contains("NAME"), "should have NAME column");
+    assert!(first_line.contains("IMG"), "should have IMG column");
+    assert!(first_line.contains("STATE"), "should have STATE column");
+    assert!(first_line.contains("AGE"), "should have AGE column");
+}
+```
 
-**Phase 1: Test Infrastructure**
-- [ ] Create `tests/` directory structure
-- [ ] Implement test helpers module
-- [ ] Create test configuration system
-- [ ] Port test fixtures
+### Phase 3: Add Error Path Tests
 
-**Phase 2: Unit Tests**
-- [ ] Port metadata parsing tests
-- [ ] Port tag parsing tests
-- [ ] Port volume size parsing tests
+#### 3a. API Error Handling
 
-**Phase 3: Integration Tests - Read-Only**
-- [ ] Port `cli-basics.test.js` (help, version)
-- [ ] Port `cli-account.test.js` (account get)
-- [ ] Port `cli-profiles.test.js` (profile management)
-- [ ] Port list commands (instances, images, networks, packages)
+Test how each command handles various HTTP error responses:
 
-**Phase 4: Integration Tests - Write Operations**
-- [ ] Port instance lifecycle tests
-- [ ] Port snapshot tests
-- [ ] Port tag operation tests
-- [ ] Port image create tests
+```rust
+#[test]
+fn test_instance_get_not_found() {
+    // Should produce a clear error, not panic or silently succeed
+    let output = triton_cmd()
+        .args(["instance", "get", "nonexistent-instance-12345"])
+        .output()
+        .expect("should run");
+    assert!(!output.status.success(), "should fail for nonexistent instance");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(!stderr.is_empty(), "should have error output on stderr");
+}
+```
 
-**Phase 5: API Tests (if applicable)**
-- Determine if direct API testing is needed
-- Consider if cloudapi-client tests provide sufficient coverage
+#### 3b. Input Validation
+
+Test boundary conditions for user input:
+
+| Test | Input | Expected |
+|------|-------|----------|
+| Empty instance name | `instance get ""` | Error, not crash |
+| Very long name | `instance get <256 chars>` | Error, not crash |
+| Special characters | `instance get "foo;rm -rf /"` | Error, no command injection |
+| Invalid UUID format | `instance get "not-a-uuid"` | Treated as name, not panic |
+| Negative limit | `instance list --limit -1` | Error, not wrap to max |
+| Zero limit | `instance list --limit 0` | Error or empty result |
+| Huge limit | `instance list --limit 999999999999` | Handled gracefully |
+
+#### 3c. Silent Failure Detection
+
+Write tests that verify errors are NOT silently swallowed:
+
+```rust
+#[test]
+fn test_rbac_apply_reports_failures() {
+    // If any operation fails during rbac apply, the command
+    // should return non-zero exit code
+    let output = triton_cmd()
+        .args(["rbac", "apply", "-f", fixture_path("rbac/invalid_config.json")])
+        .output()
+        .expect("should run");
+    assert!(
+        !output.status.success(),
+        "rbac apply with invalid config should fail, not silently succeed"
+    );
+}
+```
+
+### Phase 4: Add Missing Command Tests
+
+Cross-reference the command list against test files to find untested commands:
+
+| Command | Test File | Status | What to Add |
+|---------|-----------|--------|-------------|
+| `instance audit` | `cli_manage_workflow.rs` | Partial | Dedicated audit output format test |
+| `instance migration *` | `cli_migrations.rs` | Help-only | Add workflow test (requires API) |
+| `changefeed` | None | Missing | Add help/args test at minimum |
+| `cloudapi` (raw) | None | Missing | Add basic request test |
+| `profile create/edit` | `cli_profiles.rs` | Help-only | Add workflow test (offline possible with temp dir) |
+| `profile docker-setup` | None | Missing | Add help test |
+| `profile cmon-certgen` | None | Missing | Add help test |
+| `rbac apply/reset` | None | Missing | Add help tests, fixture-based validation |
+| `rbac role-tags *` | None | Missing | Add help tests |
+| `image tag *` | None | Missing | Add help tests |
+
+### Phase 5: Test Infrastructure Improvements
+
+#### 5a. Fix Env Var Racing
+
+Tests that set environment variables can race with parallel test execution. Use per-test isolated approaches:
+
+```rust
+// WRONG: Races with other tests
+std::env::set_var("TRITON_PROFILE", "test");
+
+// RIGHT: Pass env through Command
+triton_cmd()
+    .env("TRITON_PROFILE", "test")
+    .args(["instance", "list"])
+    // ...
+```
+
+Audit all tests in `cli/triton-cli/tests/` for direct `std::env::set_var` calls.
+
+#### 5b. Improve json_stream_parse
+
+The current `json_stream_parse` silently drops parse failures. Improve it to:
+- Return `Result` instead of silently dropping errors
+- Provide context on which line failed to parse
+- Distinguish between NDJSON and JSON array format
+
+#### 5c. Add Test Categorization
+
+Tests should be clearly categorized so they can be run selectively:
+
+```rust
+// Offline tests: no API access needed, run in CI always
+#[test]
+fn test_instance_list_help() { ... }
+
+// Fixture tests: use fixture data, no API access
+#[test]
+fn test_instance_list_json_format() { ... }
+
+// API read tests: require TRITON_PROFILE, read-only
+#[test]
+#[ignore] // cargo test -- --ignored
+fn test_instance_list_api() { ... }
+
+// API write tests: require allowWriteActions
+#[test]
+#[ignore]
+fn test_instance_create_workflow() { ... }
+```
+
+## Patterns and Anti-Patterns
+
+### Good Test Patterns
+
+```rust
+// Pattern: Parameterized tests for enum variants
+#[test_case("running" ; "running state")]
+#[test_case("stopped" ; "stopped state")]
+#[test_case("provisioning" ; "provisioning state")]
+fn test_machine_state_deserialization(state: &str) {
+    let json = format!(r#"{{"state": "{}"}}"#, state);
+    let machine: Machine = serde_json::from_str(&json).expect("should deserialize");
+    // Verify Display output matches wire format
+    assert_eq!(enum_to_display(&machine.state), state);
+}
+
+// Pattern: Fixture-based round-trip
+#[test]
+fn test_network_list_fixture_roundtrip() {
+    let fixture = std::fs::read_to_string(fixture_path("network_list.json")).unwrap();
+    let networks: Vec<Network> = serde_json::from_str(&fixture).unwrap();
+    let reserialized = serde_json::to_string(&networks).unwrap();
+    // Parse both and compare structurally (ignoring key order)
+    let original: serde_json::Value = serde_json::from_str(&fixture).unwrap();
+    let roundtripped: serde_json::Value = serde_json::from_str(&reserialized).unwrap();
+    assert_eq!(original, roundtripped);
+}
+```
+
+### Anti-Patterns to Avoid
+
+```rust
+// BAD: Test that always passes
+#[test]
+fn test_something() {
+    let _ = triton_cmd().arg("--help");
+    // No assertion!
+}
+
+// BAD: Assertion on wrong thing
+#[test]
+fn test_instance_list() {
+    triton_cmd()
+        .args(["instance", "list"])
+        .assert()
+        .success(); // Only checks exit code, not output correctness
+}
+
+// BAD: Test that tests its own setup
+#[test]
+fn test_json_parse() {
+    let json = serde_json::to_string(&Machine { name: "test".into(), .. }).unwrap();
+    let parsed: Machine = serde_json::from_str(&json).unwrap();
+    assert_eq!(parsed.name, "test"); // Always passes — we just serialized it
+}
+
+// BAD: Hardcoded string matching an enum
+#[test]
+fn test_state_filter() {
+    // Should use MachineState::Running, not "running"
+    assert!(output.contains("running"));
+}
+```
 
 ## Output Format
 
-### Plan Document Structure
+### Plan Document
 
-Create plan at `conversion-plans/triton/plans/active/plan-test-porting-YYYY-MM-DD.md`:
+Create plan at `conversion-plans/triton/plans/active/plan-test-development-YYYY-MM-DD.md`:
 
 ```markdown
-# Test Porting Plan
+# Test Development Plan
 
-## Executive Summary
+## Summary
 
-| Metric | Count |
-|--------|-------|
-| Node.js Unit Tests | X files |
-| Node.js Integration Tests | X files |
-| Tests to Port | X |
-| Tests to Skip | X (with justification) |
+| Category | New Tests | Strengthened | Fixtures Added |
+|----------|----------|-------------|----------------|
+| Assertion upgrades | - | X | - |
+| Output format | X | - | X |
+| Error paths | X | - | X |
+| Edge cases | X | - | - |
+| Missing commands | X | - | - |
+| Wire format | X | - | X |
+| **Total** | **X** | **X** | **X** |
 
-## Phase 1: Test Infrastructure
+## Phase 1: Assertion Upgrades
+- [ ] File: tests, description of upgrade
 
-### 1.1 Directory Structure
-- [ ] Create `cli/triton-cli/tests/` directory
-- [ ] Create `cli/triton-cli/tests/common/mod.rs` for helpers
-- [ ] Create `cli/triton-cli/tests/fixtures/` for test data
+## Phase 2: Fixture Expansion
+- [ ] Fixture file, purpose
 
-### 1.2 Test Helpers
-- [ ] Implement `run_triton()` CLI execution helper
-- [ ] Implement `run_triton_success()` with assertions
-- [ ] Implement test image/package discovery
-- [ ] Implement `TestInstance` with RAII cleanup
-
-### 1.3 Configuration
-- [ ] Create test config loading from file/env
-- [ ] Support `allowWriteActions` flag
-- [ ] Support skip flags (KVM, affinity, etc.)
-
-## Phase 2: Unit Tests
-
-### 2.1 Metadata Parsing
-- [ ] Port `metadataFromOpts.test.js` test cases
-- [ ] Test `-m key=value` parsing
-- [ ] Test `-m @file.json` parsing
-- [ ] Test `--script` and `--cloud-config` handling
-
-[Continue with detailed work items...]
-
-## Deferred/Skipped Tests
-
-| Test File | Reason |
-|-----------|--------|
-| `common.test.js` | Rust handles object copying differently |
-| `argvFromLine.test.js` | Clap handles argument parsing |
-
-## Dependencies
-
-- `tempfile` (already in dev-dependencies)
-- `assert_cmd` - CLI testing assertions
-- `predicates` - Output matching
-- Consider: `wiremock` for API mocking (if needed)
-```
-
-## Rust Testing Patterns to Use
-
-### CLI Integration Tests
-
-Use `assert_cmd` crate for CLI testing:
-
-```rust
-use assert_cmd::Command;
-use predicates::prelude::*;
-
-#[test]
-fn test_triton_help() {
-    Command::cargo_bin("triton")
-        .unwrap()
-        .arg("--help")
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("triton"));
-}
-
-#[test]
-fn test_instance_list_json() {
-    Command::cargo_bin("triton")
-        .unwrap()
-        .args(["instance", "list", "--json"])
-        .env("TRITON_PROFILE", "test")
-        .assert()
-        .success();
-}
-```
-
-### Test Instance Cleanup (RAII)
-
-```rust
-struct TestInstance {
-    id: String,
-}
-
-impl TestInstance {
-    fn create(name: &str) -> Result<Self> {
-        // Create instance via CLI
-        Ok(Self { id })
-    }
-}
-
-impl Drop for TestInstance {
-    fn drop(&mut self) {
-        // Clean up instance
-        let _ = Command::cargo_bin("triton")
-            .args(["instance", "delete", "-w", &self.id])
-            .output();
-    }
-}
-```
-
-### Conditional Test Execution
-
-```rust
-fn should_run_write_tests() -> bool {
-    std::env::var("TRITON_TEST_ALLOW_WRITE")
-        .map(|v| v == "true" || v == "1")
-        .unwrap_or(false)
-}
-
-#[test]
-#[ignore] // Run with: cargo test -- --ignored
-fn test_instance_create() {
-    if !should_run_write_tests() {
-        return;
-    }
-    // Test implementation
-}
+[Continue for each phase...]
 ```
 
 ## Validation Steps
 
-After creating the plan:
+After writing new tests:
 
-1. **Verify test file inventory**:
+1. **Run all tests:**
    ```bash
-   ls -la target/node-triton/test/unit/
-   ls -la target/node-triton/test/integration/
+   make package-test PACKAGE=triton-cli
    ```
 
-2. **Count lines and complexity**:
+2. **Run only new/modified tests:**
    ```bash
-   wc -l target/node-triton/test/unit/*.test.js
-   wc -l target/node-triton/test/integration/*.test.js
+   cargo test -p triton-cli -- test_name_pattern
    ```
 
-3. **Check existing Rust tests**:
+3. **Verify no test races:**
    ```bash
-   grep -r "#\[test\]" cli/triton-cli/src/
+   # Run tests multiple times in parallel
+   cargo test -p triton-cli -- --test-threads=8
+   cargo test -p triton-cli -- --test-threads=8
+   cargo test -p triton-cli -- --test-threads=8
    ```
 
-4. **Review Cargo.toml dev-dependencies**:
+4. **Check for env var racing:**
    ```bash
-   grep -A 10 "\[dev-dependencies\]" cli/triton-cli/Cargo.toml
+   grep -rn 'set_var\|remove_var' cli/triton-cli/tests/ --include='*.rs'
+   ```
+
+5. **Audit assertion strength:**
+   ```bash
+   # Count tests with only .success() assertions
+   grep -c '\.success();$' cli/triton-cli/tests/*.rs
+
+   # Count tests with output content assertions
+   grep -c 'stdout(predicate\|\.stdout\|assert.*contains\|assert_eq' cli/triton-cli/tests/*.rs
    ```
 
 ## References
 
-- [Rust Book: Testing](https://doc.rust-lang.org/book/ch11-00-testing.html)
+- [Evaluation prompt](./triton-cli-evaluation-prompt.md) — Identifies gaps to test
+- [Test verification prompt](./triton-cli-test-verification-prompt.md) — Audits test quality
+- [Acceptable differences](../reference/acceptable-output-differences.md) — Don't test for these
+- [Type Safety Rules](../../../CLAUDE.md) — Patterns tests should enforce
 - [assert_cmd crate](https://docs.rs/assert_cmd)
 - [predicates crate](https://docs.rs/predicates)
-- [TAP testing framework](https://testanything.org/) (Node.js source)
-- [Node.js triton test suite](target/node-triton/test/)
-- [Existing triton-cli code](cli/triton-cli/)
+- [test-case crate](https://docs.rs/test-case)
+- [Node.js triton tests](../../target/node-triton/test/) — Reference for behavioral expectations

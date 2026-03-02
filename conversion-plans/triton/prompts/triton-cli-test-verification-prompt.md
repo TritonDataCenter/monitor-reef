@@ -6,342 +6,326 @@ file, You can obtain one at https://mozilla.org/MPL/2.0/.
 Copyright 2025 Edgecast Cloud LLC.
 -->
 
-# Triton CLI Test Verification Prompt
+# Triton CLI Test Quality Audit Prompt
 
 ## Objective
 
-Verify that the ported Rust tests for triton-cli actually test the same behaviors as the original node-triton tests. This is a **verification and gap analysis** task, not a porting task.
+Audit the quality and effectiveness of the triton-cli test suite. The initial test porting and 1:1 verification against node-triton is complete (Dec 2025). This prompt focuses on whether existing tests are **actually effective at catching bugs**.
 
-The goal is to ensure test coverage equivalence by systematically comparing the original Node.js tests against the Rust implementations.
+The key question for every test: "If the code had a bug, would this test catch it?"
 
-## Goals and Non-Goals
+This audit should produce a report of weak tests, trivially-passing tests, missing assertions, and concrete fixes.
 
-### Goals
+## Context: Why This Matters
 
-- **Verify behavioral equivalence** - Confirm Rust tests check the same behaviors as Node.js tests
-- **Identify coverage gaps** - Find any test cases from Node.js that are missing in Rust
-- **Identify over-testing** - Find any Rust tests that don't correspond to original tests
-- **Document deviations** - Record any intentional differences and their justifications
-- **Fix gaps** - When Rust tests are missing coverage, add the missing test cases
-- **Fix Rust code** - When tests fail because Rust output differs from node-triton, modify the Rust CLI to match
+The Dec 2025 test verification confirmed ~747 tests across 26 integration files and 14 source files with inline tests. The initial verification mapped Rust tests to Node.js tests 1:1. However, post-verification analysis found ~40 bugs that tests failed to catch, including:
 
-### Non-Goals
+- `json_stream_parse` silently dropping parse failures (test infrastructure bug)
+- Env var manipulation in tests racing with parallel execution
+- Tests that asserted success without checking output content
+- Integration tests that didn't verify their transform pipelines
+- Filters silently ignored (`image list --type`) with no test catching it
 
-- Re-porting tests that already exist
-- Changing test structure without justification
-- Adding new tests beyond what the original suite covered
+These are **test quality** problems, not coverage problems.
 
 ## Source Locations
 
 | Component | Location |
 |-----------|----------|
-| Original Node.js tests | `target/node-triton/test/` |
-| Node.js unit tests | `target/node-triton/test/unit/*.test.js` |
-| Node.js integration tests | `target/node-triton/test/integration/*.test.js` |
-| Node.js test helpers | `target/node-triton/test/integration/helpers.js` |
-| Ported Rust tests | `cli/triton-cli/tests/` |
-| Rust test helpers | `cli/triton-cli/tests/common/mod.rs` |
-| Test porting plan | `conversion-plans/triton/plans/active/plan-test-porting-*.md` |
+| Integration tests | `cli/triton-cli/tests/cli_*.rs` (26 files, ~636 tests) |
+| Test helpers | `cli/triton-cli/tests/common/mod.rs` |
+| Test config | `cli/triton-cli/tests/common/config.rs` |
+| Fixtures | `cli/triton-cli/tests/fixtures/` (15 files) |
+| Inline unit tests | `cli/triton-cli/src/**/*.rs` (~104 tests) |
+| Node.js reference tests | `target/node-triton/test/` |
+| Acceptable differences | `conversion-plans/triton/reference/acceptable-output-differences.md` |
 
-## Verification Methodology
+## Audit Methodology
 
-### Step 1: Extract Test Cases from Node.js
+### For Each Test File
 
-For each Node.js test file, extract:
+1. **Read every test function**
+2. **Classify each test's assertion strength** (see scale below)
+3. **Check for anti-patterns** (see checklist below)
+4. **Verify the test would fail if the code was wrong** (the core question)
+5. **Propose concrete improvements** for weak tests
 
-1. **Test names** - The string passed to `t.test()` or `test()`
-2. **Assertions** - What each test is checking (t.equal, t.ok, t.match, etc.)
-3. **Setup/teardown** - Any preconditions or cleanup
-4. **Command invocations** - The exact CLI commands being tested
-5. **Expected outputs** - Strings, patterns, or JSON structures being validated
+### Assertion Strength Scale
 
-Example extraction from `cli-basics.test.js`:
+| Level | Description | Example |
+|-------|-------------|---------|
+| **0 - None** | No assertion at all | `let _ = triton_cmd().arg("--help");` |
+| **1 - Runs** | Only checks exit code | `.assert().success()` |
+| **2 - Contains** | Checks output contains a string | `.stdout(predicate::str::contains("ID"))` |
+| **3 - Structured** | Parses output and checks fields | `let v: Value = from_str(&stdout); assert!(v["id"].is_string())` |
+| **4 - Precise** | Validates exact values or patterns | `assert_eq!(machine.state, MachineState::Running)` |
 
-```javascript
-// Original Node.js test
-t.test(' triton --version', function (t2) {
-    triton(['--version'], function (err, stdout, stderr) {
-        t2.error(err, 'no error');
-        t2.match(stdout.trim(), /^\d+\.\d+\.\d+/);  // Checks version format
-        t2.end();
-    });
-});
-```
+Tests at level 0-1 are **weak**. Level 2 is **acceptable** for help text. Level 3-4 is **strong** for data output.
 
-Document as:
+### Anti-Pattern Checklist
 
-| Test Name | Command | Expected Behavior |
-|-----------|---------|-------------------|
-| `triton --version` | `triton --version` | Outputs version matching `^\d+\.\d+\.\d+` |
+For each test, check for these problems:
 
-### Step 2: Map to Rust Tests
+- [ ] **Trivially passing**: Test would pass even if the command was completely broken
+- [ ] **Self-verifying**: Test constructs expected output from the same code it tests
+- [ ] **Success-only**: Asserts `.success()` without checking output
+- [ ] **Dead assertion**: Assertion is commented out or in unreachable code
+- [ ] **Wrong target**: Test name suggests it tests X, but actually tests Y
+- [ ] **Env var racing**: Uses `std::env::set_var` which races with parallel tests
+- [ ] **Error swallowing**: Uses `unwrap_or_default()` or `.ok()` in test helpers
+- [ ] **Hardcoded strings**: Uses string literals instead of typed enums for comparison
+- [ ] **Missing negative**: Only tests happy path, never error path
+- [ ] **Fixture mismatch**: Fixture data doesn't match current API response format
 
-For each extracted Node.js test case, find the corresponding Rust test:
+## Audit Tasks
 
-```rust
-// Rust equivalent
-#[test]
-fn test_version() {
-    Command::cargo_bin("triton")
-        .unwrap()
-        .arg("--version")
-        .assert()
-        .success()
-        .stdout(predicate::str::is_match(r"^\d+\.\d+\.\d+").unwrap());
-}
-```
+### Task 1: Test Helper Audit
 
-### Step 3: Verify Behavioral Equivalence
+The test helpers in `common/mod.rs` are foundational — bugs here affect all tests.
 
-For each test pair, verify:
+**Verify:**
 
-1. **Same command** - Is the CLI invocation identical?
-2. **Same assertions** - Are the same properties being checked?
-3. **Same error cases** - Are error conditions tested the same way?
-4. **Same output format** - Is the expected output format (text, JSON, table) the same?
+1. `json_stream_parse()` — Does it report parse failures or silently drop them?
+2. `run_triton()` / `run_triton_with_env()` — Do they capture both stdout and stderr?
+3. `safe_triton()` — Does it check stderr is empty, or just exit code?
+4. `make_resource_name()` — Is it unique enough to avoid collisions?
+5. `create_test_instance()` / `delete_test_instance()` — Do they handle failures?
+6. Environment variable handling — Are any set globally (racing with parallel tests)?
 
-### Step 4: Document Findings
+**Known issue to verify fix:** `json_stream_parse` was reported to silently drop parse failures. Check if this has been fixed. If not, flag it as P1.
 
-Create a verification matrix for each test file:
+### Task 2: Integration Test File Audit
+
+For each test file, produce a quality assessment:
+
+#### Template per file:
 
 ```markdown
-## cli-basics.test.js → cli_basics.rs
+### cli_<name>.rs
 
-| Node.js Test | Rust Test | Status | Notes |
-|--------------|-----------|--------|-------|
-| `triton --version` | `test_version` | ✓ Equivalent | |
-| `triton --help` | `test_help_short` | ✓ Equivalent | |
-| `triton badcommand` | `test_invalid_subcommand` | ⚠ Different | Rust shows different error message |
-| `triton completion bash` | MISSING | ❌ Gap | Need to add completion test |
+| Metric | Value |
+|--------|-------|
+| Total tests | X |
+| Level 0-1 (weak) | X |
+| Level 2 (acceptable) | X |
+| Level 3-4 (strong) | X |
+| Anti-patterns found | X |
+
+**Weak tests:**
+- `test_foo()` — Only asserts .success(), should check output
+- `test_bar()` — Contains string but wrong string
+
+**Anti-patterns:**
+- Uses env::set_var on line X (races)
+- Hardcoded "running" instead of MachineState::Running on line Y
+
+**Improvements needed:**
+- [ ] Upgrade `test_foo()` to parse JSON and check fields
+- [ ] Remove env::set_var, pass via Command::env
 ```
 
-### Step 5: Fix Gaps
+**Priority order for file audit:**
 
-When gaps are found:
+| Priority | File | Why |
+|----------|------|-----|
+| 1 | `cli_output_format.rs` | Core output correctness |
+| 2 | `cli_manage_workflow.rs` | Complex workflow, many steps |
+| 3 | `cli_error_paths.rs` | Error handling correctness |
+| 4 | `cli_subcommands.rs` | Large file (218 tests), likely many weak |
+| 5 | `cli_images.rs` | Known past bugs with type filter |
+| 6 | `cli_fwrules.rs` | Workflow test quality |
+| 7 | `cli_vlans.rs` | Workflow test quality |
+| 8 | `cli_profiles.rs` | Config handling |
+| 9 | `cli_networks.rs` | Filter tests |
+| 10 | `cli_basics.rs` | Foundation |
+| 11-26 | Remaining files | Standard audit |
 
-1. **Missing test** - Add the test to the Rust test file
-2. **Different behavior** - Update the Rust CLI code to match node-triton behavior
-3. **Different output format** - Modify Rust output formatting to match node-triton
-4. **Missing alias** - Add the alias to the Rust CLI
+### Task 3: Inline Unit Test Audit
 
-**Important**: When tests fail because Rust output doesn't match node-triton:
-- The Rust code should be modified to produce the expected output
-- Do NOT change the test expectations to match wrong Rust output
-- The node-triton behavior is the specification
+For unit tests in `cli/triton-cli/src/`, focus on:
 
-## Verification Checklist
+#### High-value inline tests to audit:
 
-### Unit Tests
+| File | Tests | What to Check |
+|------|-------|---------------|
+| `commands/volume.rs` | 20 | Volume size parsing edge cases |
+| `commands/instance/create.rs` | 19 | Metadata/user-data handling |
+| `output/table.rs` | 18 | Table rendering correctness |
+| `commands/instance/tag.rs` | 11 | Tag parsing edge cases |
+| `commands/instance/nic.rs` | 8 | NIC config validation |
+| `config/paths.rs` | 8 | Path resolution correctness |
+| `output/mod.rs` | 7 | Output formatting utilities |
 
-| File | Verified | Gaps Found | Gaps Fixed |
-|------|----------|------------|------------|
-| `metadataFromOpts.test.js` | [ ] | | |
-| `tagsFromCreateOpts.test.js` | [ ] | | |
-| `tagsFromSetArgs.test.js` | [ ] | | |
-| `parseVolumeSize.test.js` | [ ] | | |
+For each:
+1. Does the test cover edge cases (empty input, special chars, overflow)?
+2. Does the test verify error cases, not just happy paths?
+3. Could the test pass with a completely wrong implementation?
 
-### Integration Tests - CLI
+### Task 4: Fixture Quality Audit
 
-| File | Rust File | Verified | Gaps Found | Gaps Fixed |
-|------|-----------|----------|------------|------------|
-| `cli-basics.test.js` | `cli_basics.rs` | [ ] | | |
-| `cli-subcommands.test.js` | `cli_subcommands.rs` | [ ] | | |
-| `cli-profiles.test.js` | `cli_profiles.rs` | [ ] | | |
-| `cli-account.test.js` | `cli_account.rs` | [ ] | | |
-| `cli-keys.test.js` | `cli_keys.rs` | [ ] | | |
-| `cli-networks.test.js` | `cli_networks.rs` | [ ] | | |
-| `cli-nics.test.js` | `cli_nics.rs` | [ ] | | |
-| `cli-vlans.test.js` | `cli_vlans.rs` | [ ] | | |
-| `cli-ips.test.js` | `cli_ips.rs` | [ ] | | |
-| `cli-fwrules.test.js` | `cli_fwrules.rs` | [ ] | | |
-| `cli-images.test.js` | `cli_images.rs` | [ ] | | |
-| `cli-image-create.test.js` | `cli_image_create.rs` | [ ] | | |
-| `cli-manage-workflow.test.js` | `cli_manage_workflow.rs` | [ ] | | |
-| `cli-instance-tag.test.js` | `cli_instance_tag.rs` | [ ] | | |
-| `cli-snapshots.test.js` | `cli_snapshots.rs` | [ ] | | |
-| `cli-volumes.test.js` | `cli_volumes.rs` | [ ] | | |
-| `cli-volumes-size.test.js` | `cli_volumes.rs` | [ ] | | |
-| `cli-deletion-protection.test.js` | `cli_deletion_protection.rs` | [ ] | | |
-| `cli-migrations.test.js` | `cli_migrations.rs` | [ ] | | |
+Review `cli/triton-cli/tests/fixtures/`:
 
-### Skipped Tests (Verify Justification)
+| Check | Description |
+|-------|-------------|
+| **Realistic data** | Do fixtures have valid UUIDs, realistic timestamps, proper field values? |
+| **Edge cases** | Are there fixtures for empty arrays, null fields, missing optional fields? |
+| **Wire format accuracy** | Do JSON field names match actual CloudAPI responses? |
+| **snake_case exceptions** | Do Machine fixtures include `dns_names`, `free_space`, `delegate_dataset`? |
+| **Enum coverage** | Do fixtures include all known enum variants (states, brands, types)? |
+| **Unknown variant handling** | Are there fixtures with unknown/future enum values? |
+| **Completeness** | Are there fixtures for all resource types? (Check for missing: audit log, snapshots, migrations, RBAC objects) |
 
-| File | Reason | Valid? |
-|------|--------|--------|
-| `cli-affinity.test.js` | Requires multi-CN setup | [ ] |
-| `cli-image-create-kvm.test.js` | Requires KVM support | [ ] |
-| `cli-disks.test.js` | Requires flex disk support | [ ] |
+### Task 5: Coverage Gap Analysis
 
-## Detailed Verification Tasks
+Cross-reference commands against test assertions (not just test existence):
 
-### Task 1: Extract All Test Cases
-
-For each Node.js test file:
-
-1. Read the file and identify all `t.test()` blocks
-2. For each test, extract:
-   - Test name/description
-   - CLI command(s) executed
-   - Assertions made (what is being checked)
-   - Expected values/patterns
-3. Create a structured list of test cases
-
-### Task 2: Map Tests to Rust
-
-For each extracted test case:
-
-1. Find the corresponding Rust test function
-2. If not found, mark as MISSING
-3. If found, compare:
-   - Command arguments
-   - Assertion type (success, failure, output content)
-   - Expected output format
-
-### Task 3: Verify Output Format Compatibility
-
-Many tests check output format. Verify:
-
-1. **Table output** - Column headers, spacing, alignment
-2. **JSON output** - Field names, structure, arrays vs objects
-3. **Error messages** - Error text format
-4. **Help text** - Command descriptions, usage strings
-
-Example verification:
-
-```bash
-# Node.js behavior
-$ node-triton networks -j
-[{"id":"...","name":"..."}]
-
-# Rust behavior (should match)
-$ triton networks -j
-[{"id":"...","name":"..."}]
+```markdown
+| Command | Help Test | Output Test | Error Test | Edge Case | Total Score |
+|---------|:---------:|:-----------:|:----------:|:---------:|:-----------:|
+| instance list | ✅ | ✅ | ❌ | ❌ | 2/4 |
+| instance get | ✅ | ✅ | ✅ | ❌ | 3/4 |
+| instance create | ✅ | ⚠️ | ❌ | ❌ | 1.5/4 |
+| ... | | | | | |
 ```
 
-### Task 4: Verify Error Handling
+Legend:
+- ✅ = Strong assertion (level 3-4)
+- ⚠️ = Weak assertion (level 1-2)
+- ❌ = No test for this aspect
 
-Check that error conditions produce equivalent results:
+### Task 6: Mutation Testing Analysis
 
-1. Missing required arguments
-2. Invalid argument values
-3. Resource not found
-4. Permission denied
-5. Network errors
+Without actually running a mutation testing tool, manually identify high-value mutations:
 
-### Task 5: Document and Fix Gaps
+For each command implementation, identify code that could be wrong without any test catching it:
 
-For each gap found:
+```markdown
+### instance list (commands/instance/list.rs)
 
-1. Create a test case in the Rust test file
-2. If the Rust CLI produces different output, modify the Rust code to match
-3. Add the test to the verification matrix as fixed
+| Line | Code | Mutation | Would tests catch it? |
+|------|------|----------|--------------------|
+| 42 | `columns.push("SHORTID")` | Remove this line | ❌ No table column test |
+| 67 | `if state_filter.is_some()` | Change to `is_none()` | ❌ No filter test |
+| 89 | `serde_json::to_string(&instances)` | Return empty string | ⚠️ Only success check |
+```
+
+This identifies the highest-value tests to add.
 
 ## Output Format
 
-### Verification Report
+### Audit Report
 
-Create report at `conversion-plans/triton/reports/test-verification-YYYY-MM-DD.md`:
+Create report at `conversion-plans/triton/reports/test-quality-audit-YYYY-MM-DD.md`:
 
 ```markdown
-# Triton CLI Test Verification Report
+# Test Quality Audit Report
 
-## Summary
+## Executive Summary
 
-| Metric | Count |
-|--------|-------|
-| Node.js Test Files | X |
-| Rust Test Files | X |
-| Test Cases Verified | X |
-| Gaps Found | X |
-| Gaps Fixed | X |
-| Intentional Differences | X |
+| Metric | Count | Percentage |
+|--------|-------|-----------|
+| Total tests audited | X | 100% |
+| Strong (level 3-4) | X | X% |
+| Acceptable (level 2) | X | X% |
+| Weak (level 0-1) | X | X% |
+| Anti-patterns found | X | - |
+| Tests to fix | X | - |
+| Tests to add | X | - |
 
-## Verification Details
+## Test Helper Issues
 
-### cli-basics.test.js → cli_basics.rs
+[Findings from Task 1]
 
-#### Test Case Mapping
+## Per-File Audit
 
-| # | Node.js Test | Rust Test | Status |
-|---|--------------|-----------|--------|
-| 1 | `triton --version` | `test_version` | ✓ |
-| 2 | `triton --help` | `test_help_short` | ✓ |
-| 3 | ... | ... | ... |
+[Findings from Task 2, one section per file]
 
-#### Gaps Found
+## Inline Test Issues
 
-1. **Missing: completion tests**
-   - Node.js tests shell completion for bash, zsh, fish
-   - Action: Added `test_completion_bash`, `test_completion_zsh`, `test_completion_fish`
+[Findings from Task 3]
 
-#### Intentional Differences
+## Fixture Issues
 
-1. **Error message format**
-   - Node.js: "triton: error: unknown command 'foo'"
-   - Rust: "error: unrecognized subcommand 'foo'"
-   - Justification: Clap provides error messages, not worth customizing
+[Findings from Task 4]
 
-[Continue for each test file...]
+## Coverage Gap Matrix
 
-## Fixes Applied
+[Table from Task 5]
 
-### Code Changes
+## High-Value Mutations Not Caught
 
-1. `cli/triton-cli/src/commands/foo.rs:123` - Changed output format to match node-triton
-2. ...
+[Findings from Task 6]
 
-### Test Changes
+## Prioritized Action Items
 
-1. `cli/triton-cli/tests/cli_foo.rs` - Added missing test for X
-2. ...
+### P0 — Test infrastructure bugs
+- [ ] Fix json_stream_parse error handling
+- [ ] Fix env var racing in tests
+
+### P1 — Tests that give false confidence
+- [ ] Strengthen instance list output assertions
+- [ ] Add filter verification tests
+- [ ] ...
+
+### P2 — Missing test categories
+- [ ] Add error path tests for X
+- [ ] Add edge case tests for Y
+- [ ] ...
+
+### P3 — Minor improvements
+- [ ] Replace hardcoded strings with typed enums
+- [ ] Add fixtures for missing resource types
+- [ ] ...
 ```
 
-## Validation Commands
+### Issue Filing
 
-Run these commands to validate the verification:
+For each P0/P1 finding, file a beads issue:
 
 ```bash
-# Run all offline tests
-make triton-test
-
-# Run API tests (requires config)
-make triton-test-api
-
-# Run specific test file
-make triton-test-file TEST=cli_basics
-
-# Compare output formats manually
-node target/node-triton/bin/triton networks -j | head -5
-cargo run -p triton-cli -- networks -j | head -5
+bd create --title "Short description" \
+  --description "Detailed description with file:line references and suggested fix" \
+  --labels testing
 ```
 
-## Common Issues to Watch For
+## Validation Steps
 
-### Output Format Differences
+After completing the audit:
 
-1. **JSON spacing** - Node.js may use different indentation
-2. **Field ordering** - JSON field order may differ
-3. **Null handling** - `null` vs omitted fields
-4. **Date formats** - ISO vs Unix timestamps
-5. **Table alignment** - Column widths and padding
+1. **Verify all existing tests still pass:**
+   ```bash
+   make package-test PACKAGE=triton-cli
+   ```
 
-### Behavioral Differences
+2. **Count weak tests found:**
+   ```bash
+   # Tests with only .success() assertion
+   grep -B2 '\.success();$' cli/triton-cli/tests/*.rs | grep '#\[test\]' | wc -l
 
-1. **Exit codes** - Different codes for same errors
-2. **Stderr vs stdout** - Where errors are written
-3. **Aliases** - Missing command aliases
-4. **Short flags** - `-j` vs `--json`
+   # Tests with no assertion at all
+   # (Manual review required)
+   ```
 
-### Test Infrastructure Differences
+3. **Check for env var racing:**
+   ```bash
+   grep -rn 'std::env::set_var\|std::env::remove_var' cli/triton-cli/tests/ --include='*.rs'
+   ```
 
-1. **Setup/teardown** - Different approaches to test instance creation
-2. **Assertions** - Different assertion libraries
-3. **Test isolation** - Parallel vs sequential execution
+4. **Check for silent error drops in helpers:**
+   ```bash
+   grep -rn 'unwrap_or_default\|\.ok()\.' cli/triton-cli/tests/common/ --include='*.rs'
+   ```
+
+5. **Verify fixture accuracy against API types:**
+   ```bash
+   # Check that fixture field names match struct definitions
+   # Manual: compare fixture JSON keys against serde-annotated struct fields
+   ```
 
 ## References
 
-- [Test porting plan](conversion-plans/triton/plans/active/plan-test-porting-*.md)
-- [Node.js test suite](target/node-triton/test/)
-- [Rust test suite](cli/triton-cli/tests/)
-- [Node.js triton source](target/node-triton/lib/)
-- [Rust triton-cli source](cli/triton-cli/src/)
+- [Evaluation prompt](./triton-cli-evaluation-prompt.md) — Identifies behavioral gaps
+- [Test development prompt](./triton-cli-test-porting-prompt.md) — Writes new tests for gaps
+- [Dec 2025 test verification](../reports/test-verification-report-2025-12-18.md) — Initial 1:1 mapping
+- [Acceptable differences](../reference/acceptable-output-differences.md) — Don't flag these as test gaps
+- [Type Safety Rules](../../../CLAUDE.md) — Patterns tests should enforce
