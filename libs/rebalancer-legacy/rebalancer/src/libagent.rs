@@ -939,7 +939,10 @@ fn download(
     let mut file = match file_create(&tmp_path) {
         Ok(f) => f,
         Err(e) => {
-            error!("{}", e);
+            error!(
+                "AgentFSError: file_create {}: {}",
+                &tmp_path, e
+            );
             return Err(ObjectSkippedReason::AgentFSError);
         }
     };
@@ -947,7 +950,10 @@ fn download(
     let bytes = match std::io::copy(&mut response, &mut file) {
         Ok(b) => b,
         Err(e) => {
-            error!("Failed to complete object download: {}:{}", uri, e);
+            error!(
+                "AgentFSError: write to {}: {} (from {})",
+                &tmp_path, e, uri
+            );
             return Err(ObjectSkippedReason::AgentFSError);
         }
     };
@@ -966,7 +972,7 @@ pub fn process_task(
     metrics: &Option<MetricsMap>,
 ) {
     // Determine paths based on object type (v1 dir API vs v2 MDAPI)
-    let (file_path, url) = match (
+    let (file_path, url, obj_type) = match (
         &task.bucket_id,
         &task.object_name_hash,
     ) {
@@ -981,6 +987,7 @@ pub fn process_task(
                 bid,
                 nhash,
             ),
+            "v2",
         ),
         _ => (
             manta_file_path(&task.owner, &task.object_id),
@@ -990,8 +997,14 @@ pub fn process_task(
                 &task.owner,
                 &task.object_id,
             ),
+            "v1",
         ),
     };
+
+    info!(
+        "process_task: {} object {} -> {}",
+        obj_type, &task.object_id, &file_path
+    );
 
     let path = Path::new(&file_path);
 
@@ -1034,7 +1047,10 @@ pub fn process_task(
             match file_move(&tmp_path, &file_path) {
                 Ok(()) => TaskStatus::Complete,
                 Err(e) => {
-                    error!("{}", e);
+                    error!(
+                        "AgentFSError: file_move {} -> {}: {}",
+                        &tmp_path, &file_path, e
+                    );
                     TaskStatus::Failed(
                         ObjectSkippedReason::AgentFSError,
                     )
