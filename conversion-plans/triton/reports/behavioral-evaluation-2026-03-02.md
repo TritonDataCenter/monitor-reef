@@ -271,16 +271,16 @@ All enums have proper forward-compatible `#[serde(other)]` catch-all variants.
 
 ### P0 — Critical (Data loss, security, crashes)
 
-- [ ] `monitor-reef-qc0q` — **Multi-target early exit** — `cli/triton-cli/src/commands/instance/lifecycle.rs:56-77` — `?` operator causes exit on first error; remaining instances silently skipped
+- [x] `monitor-reef-qc0q` — **Multi-target early exit** — `cli/triton-cli/src/commands/instance/lifecycle.rs:56-77` — `?` operator causes exit on first error; remaining instances silently skipped
 
 ### P1 — Important (Wrong behavior visible to users)
 
-- [ ] `monitor-reef-0l7c` — **Reboot --wait race condition** — `cli/triton-cli/src/commands/instance/wait.rs:73-99` — polls for `running` state without confirming reboot actually happened
-- [ ] `monitor-reef-1w47` — **SDC_TESTING missing for insecure profiles** — `cli/triton-cli/src/commands/env.rs:222,293,363` — breaks legacy sdc-* tool TLS
-- [ ] `monitor-reef-f2wt` — **RBAC apply ignores SSH keys** — `cli/triton-cli/src/commands/rbac/apply.rs:58-67` — key config silently dropped
-- [ ] `monitor-reef-0s3k` — **Docker env error suppressed** — `cli/triton-cli/src/commands/env.rs:197-202` — empty output instead of helpful error
-- [ ] `monitor-reef-p10d` — **Image list flags missing X and +** — `cli/triton-cli/src/commands/image.rs:467-480` — S flag conflates two meanings
-- [ ] `monitor-reef-y9a5` — **RBAC key fetch errors swallowed** — `cli/triton-cli/src/commands/rbac/apply.rs:237-239` — silent 0-key display on API failure (pre-existing)
+- [x] `monitor-reef-0l7c` — **Reboot --wait race condition** — `cli/triton-cli/src/commands/instance/wait.rs:73-99` — polls for `running` state without confirming reboot actually happened
+- [x] `monitor-reef-1w47` — **SDC_TESTING missing for insecure profiles** — `cli/triton-cli/src/commands/env.rs:222,293,363` — breaks legacy sdc-* tool TLS
+- [x] `monitor-reef-f2wt` — **RBAC apply ignores SSH keys** — `cli/triton-cli/src/commands/rbac/apply.rs:58-67` — key config silently dropped
+- [x] `monitor-reef-0s3k` — **Docker env error suppressed** — `cli/triton-cli/src/commands/env.rs:197-202` — empty output instead of helpful error
+- [x] `monitor-reef-p10d` — **Image list flags missing X and +** — `cli/triton-cli/src/commands/image.rs:467-480` — S flag conflates two meanings
+- [x] `monitor-reef-y9a5` — **RBAC key fetch errors swallowed** — `cli/triton-cli/src/commands/rbac/apply.rs:237-239` — silent 0-key display on API failure (pre-existing)
 
 ### P2 — Moderate (Cosmetic differences, weak tests)
 
