@@ -15,7 +15,8 @@ use std::collections::BTreeMap;
 ///
 /// Returns `None` if the setup.json file does not exist (docker not configured),
 /// `Some(map)` if the file exists (map may be empty if no env vars are set).
-async fn read_docker_env(profile_name: &str) -> Option<BTreeMap<String, String>> {
+/// Values are `Some(string)` for set variables and `None` for null (unset) values.
+async fn read_docker_env(profile_name: &str) -> Option<BTreeMap<String, Option<String>>> {
     let setup_path = config_dir()
         .join("docker")
         .join(profile_name)
@@ -31,11 +32,11 @@ async fn read_docker_env(profile_name: &str) -> Option<BTreeMap<String, String>>
     let Some(env_obj) = parsed.get("env").and_then(|v| v.as_object()) else {
         return Some(BTreeMap::new());
     };
-    // Collect non-null string values, using BTreeMap for deterministic ordering
+    // Collect env values, preserving nulls so callers can emit unset commands
     Some(
         env_obj
             .iter()
-            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+            .map(|(k, v)| (k.clone(), v.as_str().map(|s| s.to_string())))
             .collect(),
     )
 }
@@ -195,7 +196,7 @@ const SMARTDC_VARS: &[&str] = &[
 
 fn print_posix_exports(
     profile: &Profile,
-    docker_env: &BTreeMap<String, String>,
+    docker_env: &BTreeMap<String, Option<String>>,
     emit_triton: bool,
     emit_docker: bool,
     emit_smartdc: bool,
@@ -211,7 +212,10 @@ fn print_posix_exports(
     if emit_docker {
         println!("# docker");
         for (key, value) in docker_env {
-            println!("export {}=\"{}\"", key, shell_escape_double(value));
+            match value {
+                Some(v) => println!("export {}=\"{}\"", key, shell_escape_double(v)),
+                None => println!("unset {}", key),
+            }
         }
     }
 
@@ -270,7 +274,7 @@ fn print_posix_unsets(emit_triton: bool, emit_docker: bool, emit_smartdc: bool) 
 
 fn print_fish_exports(
     profile: &Profile,
-    docker_env: &BTreeMap<String, String>,
+    docker_env: &BTreeMap<String, Option<String>>,
     emit_triton: bool,
     emit_docker: bool,
     emit_smartdc: bool,
@@ -286,7 +290,10 @@ fn print_fish_exports(
     if emit_docker {
         println!("# docker");
         for (key, value) in docker_env {
-            println!("set -gx {} '{}'", key, shell_escape_single(value));
+            match value {
+                Some(v) => println!("set -gx {} '{}'", key, shell_escape_single(v)),
+                None => println!("set -e {}", key),
+            }
         }
     }
 
@@ -344,7 +351,7 @@ fn print_fish_unsets(emit_triton: bool, emit_docker: bool, emit_smartdc: bool) {
 
 fn print_powershell_exports(
     profile: &Profile,
-    docker_env: &BTreeMap<String, String>,
+    docker_env: &BTreeMap<String, Option<String>>,
     emit_triton: bool,
     emit_docker: bool,
     emit_smartdc: bool,
@@ -360,7 +367,12 @@ fn print_powershell_exports(
     if emit_docker {
         println!("# docker");
         for (key, value) in docker_env {
-            println!("$env:{} = '{}'", key, shell_escape_powershell(value));
+            match value {
+                Some(v) => println!("$env:{} = '{}'", key, shell_escape_powershell(v)),
+                None => {
+                    println!("Remove-Item Env:{} -ErrorAction SilentlyContinue", key)
+                }
+            }
         }
     }
 

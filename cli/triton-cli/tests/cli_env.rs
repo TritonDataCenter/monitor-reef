@@ -215,9 +215,9 @@ fn test_env_bash_docker_vars() {
     );
 }
 
-/// Test that `triton env` omits DOCKER_TLS_VERIFY when it is null (insecure mode).
+/// Test that `triton env` emits `unset DOCKER_TLS_VERIFY` when it is null (insecure mode).
 #[test]
-fn test_env_bash_docker_insecure_omits_tls_verify() {
+fn test_env_bash_docker_insecure_unsets_tls_verify() {
     let tmp = setup_docker_env(false);
 
     let output = triton_cmd()
@@ -235,15 +235,20 @@ fn test_env_bash_docker_insecure_omits_tls_verify() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(output.status.success());
 
-    // Should have other Docker vars but NOT DOCKER_TLS_VERIFY
+    // Should have other Docker vars and unset DOCKER_TLS_VERIFY
     assert!(
         stdout.contains("export DOCKER_HOST="),
         "Should still export DOCKER_HOST. Got:\n{}",
         stdout
     );
     assert!(
-        !stdout.contains("DOCKER_TLS_VERIFY"),
-        "Should NOT export DOCKER_TLS_VERIFY when insecure. Got:\n{}",
+        stdout.contains("unset DOCKER_TLS_VERIFY"),
+        "Should unset DOCKER_TLS_VERIFY when null. Got:\n{}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("export DOCKER_TLS_VERIFY"),
+        "Should NOT export DOCKER_TLS_VERIFY when null. Got:\n{}",
         stdout
     );
 }
@@ -688,6 +693,43 @@ fn test_env_powershell_sdc_testing_secure() {
     assert!(
         stdout.contains("Remove-Item Env:SDC_TESTING -ErrorAction SilentlyContinue"),
         "Should remove SDC_TESTING in powershell when not insecure. Got:\n{}",
+        stdout
+    );
+}
+
+/// Test that `triton env --shell fish` emits `set -e DOCKER_TLS_VERIFY` when it is null.
+#[test]
+fn test_env_fish_docker_insecure_unsets_tls_verify() {
+    let tmp = setup_docker_env(false);
+
+    let output = triton_cmd()
+        .args(["env", "--shell", "fish"])
+        .env("TRITON_URL", "https://cloudapi.test.example.com")
+        .env("TRITON_ACCOUNT", "test-account")
+        .env(
+            "TRITON_KEY_ID",
+            "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
+        )
+        .env("TRITON_CONFIG_DIR", tmp.path().to_str().unwrap())
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(output.status.success());
+
+    assert!(
+        stdout.contains("set -gx DOCKER_HOST"),
+        "Should still set DOCKER_HOST. Got:\n{}",
+        stdout
+    );
+    assert!(
+        stdout.contains("set -e DOCKER_TLS_VERIFY"),
+        "Should unset DOCKER_TLS_VERIFY in fish when null. Got:\n{}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("set -gx DOCKER_TLS_VERIFY"),
+        "Should NOT set DOCKER_TLS_VERIFY in fish when null. Got:\n{}",
         stdout
     );
 }

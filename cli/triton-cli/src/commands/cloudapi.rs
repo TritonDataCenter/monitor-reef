@@ -156,6 +156,9 @@ pub async fn run(args: CloudApiArgs, client: &TypedClient) -> Result<()> {
 
     // Show headers if requested
     if args.show_headers {
+        // http::Version doesn't impl Display, but its Debug output is
+        // user-friendly ("HTTP/1.1" etc.) — allowed exception to our
+        // no-{:?}-in-user-output rule since this is an external type.
         println!("{:?} {}", response.version(), response.status());
         for (key, value) in response.headers() {
             println!("{}: {}", key, value.to_str().unwrap_or("<binary>"));

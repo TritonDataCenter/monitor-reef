@@ -3,7 +3,7 @@ This Source Code Form is subject to the terms of the Mozilla Public
 License, v. 2.0. If a copy of the MPL was not distributed with this
 file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
-Copyright 2025 Edgecast Cloud LLC.
+Copyright 2026 Edgecast Cloud LLC.
 -->
 
 # Triton CLI Behavioral Evaluation Report — 2026-03-02
@@ -284,10 +284,10 @@ All enums have proper forward-compatible `#[serde(other)]` catch-all variants.
 
 ### P2 — Moderate (Cosmetic differences, weak tests)
 
-- [ ] `monitor-reef-nrd2` — **Debug format in show-headers** — `cli/triton-cli/src/commands/cloudapi.rs:159` — `{:?}` for HTTP version
-- [ ] `monitor-reef-61m4` — **UUID resolve comment misleading** — `cli/triton-cli/src/commands/instance/get.rs:61` — claims matching node-triton but doesn't
+- [x] `monitor-reef-nrd2` — **Debug format in show-headers** — `cli/triton-cli/src/commands/cloudapi.rs:159` — wontfix: `http::Version`'s Debug output is already user-friendly ("HTTP/1.1" etc.); added comment documenting the allowed exception
+- [x] `monitor-reef-61m4` — **UUID resolve comment misleading** — `cli/triton-cli/src/commands/instance/get.rs:61` — fixed comment to not claim node-triton parity
 - [ ] `monitor-reef-slvs` — **RBAC role-tags no confirmation** — `cli/triton-cli/src/commands/rbac/role_tags.rs:130,272,294` — destructive ops lack prompts
-- [ ] `monitor-reef-n85d` — **Docker env null handling** — `cli/triton-cli/src/commands/env.rs:37` — null values dropped instead of unset
+- [x] `monitor-reef-n85d` — **Docker env null handling** — `cli/triton-cli/src/commands/env.rs:37` — null values now emit unset/set -e/Remove-Item commands
 - [ ] `monitor-reef-8gj3` — **Subcommand tests only check non-empty** — `cli/triton-cli/tests/cli_subcommands.rs` — 218 weak assertions
 - [ ] `monitor-reef-st21` — **Missing fixture files** — `cli/triton-cli/tests/fixtures/` — no disk/NIC/snapshot/key/fwrule fixtures
 - [ ] `monitor-reef-pcfq` — **RBAC dev-mode ed25519 vs RSA** — `cli/triton-cli/src/commands/rbac/apply.rs:1142` — compatibility concern
