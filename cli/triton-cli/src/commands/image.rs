@@ -16,8 +16,7 @@ use cloudapi_client::types::{Image, ImageState};
 use dialoguer::Confirm;
 use serde_json::Value;
 
-use crate::define_columns;
-use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::output::table::{TableBuilder, TableFormatArgs, col};
 use crate::output::{enum_to_display, json, opt_enum_to_display, parse_filter_enum, table};
 
 #[derive(Subcommand, Clone)]
@@ -453,44 +452,56 @@ async fn list_images(
     if use_json {
         json::print_json_stream(&images)?;
     } else {
-        print_images_table(&images, &args)?;
+        let account_info = client.inner().get_account().account(account).send().await?;
+        let account_uuid = account_info.into_inner().id;
+        print_images_table(&images, &args, &account_uuid)?;
     }
 
     Ok(())
 }
 
-define_columns! {
-    ImageColumn for Image {
-        ShortId("SHORTID") => |img| img.id.to_string()[..8].to_string(),
-        Name("NAME") => |img| img.name.clone(),
-        Version("VERSION") => |img| img.version.clone(),
-        Flags("FLAGS") => |img| {
-            let mut flags = String::new();
-            if img.origin.is_some() {
-                flags.push('I');
-            }
-            let is_public = img.public.unwrap_or(false);
-            let has_acl = img.acl.as_ref().map(|a| !a.is_empty()).unwrap_or(false);
-            if has_acl && !is_public {
-                flags.push('S');
-            }
-            if is_public {
-                flags.push('P');
-            }
-            if flags.is_empty() { "-".to_string() } else { flags }
-        },
-        Os("OS") => |img| img.os.clone(),
-        Type("TYPE") => |img| enum_to_display(&img.type_),
-        PubDate("PUBDATE") => |img| format_pubdate(&img.published_at),
-        State("STATE") => |img| img.state.as_ref().map(enum_to_display)
-            .unwrap_or_else(|| "-".to_string()),
-        Id("ID") => |img| img.id.to_string(),
-        Public("PUBLIC") => |img| img.public.map(|p| p.to_string())
-            .unwrap_or_else(|| "-".to_string()),
+/// Compute image flags matching node-triton's flag logic:
+/// - `I` — image has an origin (incremental/derived)
+/// - `P` — image is public
+/// - `X` — state is NOT active
+/// - `+` — current account owns image AND ACL is non-empty (sharing out)
+/// - `S` — current account UUID is in the ACL (shared with me)
+fn compute_image_flags(img: &Image, account_uuid: Option<&uuid::Uuid>) -> String {
+    let mut flags = String::new();
+    if img.origin.is_some() {
+        flags.push('I');
+    }
+    if img.public.unwrap_or(false) {
+        flags.push('P');
+    }
+    if img
+        .state
+        .as_ref()
+        .is_some_and(|s| !matches!(s, ImageState::Active))
+    {
+        flags.push('X');
+    }
+    let acl = img.acl.as_ref().filter(|a| !a.is_empty());
+    if let (Some(acl), Some(acct)) = (acl, account_uuid) {
+        if img.owner.as_ref() == Some(acct) {
+            flags.push('+');
+        }
+        if acl.contains(acct) {
+            flags.push('S');
+        }
+    }
+    if flags.is_empty() {
+        "-".to_string()
+    } else {
+        flags
     }
 }
 
-fn print_images_table(images: &[Image], args: &ImageListArgs) -> Result<()> {
+fn print_images_table(
+    images: &[Image],
+    args: &ImageListArgs,
+    account_uuid: &uuid::Uuid,
+) -> Result<()> {
     // Handle --short: just print IDs
     if args.short {
         for img in images {
@@ -499,6 +510,30 @@ fn print_images_table(images: &[Image], args: &ImageListArgs) -> Result<()> {
         }
         return Ok(());
     }
+
+    let columns = vec![
+        col("SHORTID", |img: &Image| img.id.to_string()[..8].to_string()),
+        col("NAME", |img: &Image| img.name.clone()),
+        col("VERSION", |img: &Image| img.version.clone()),
+        col("FLAGS", |img: &Image| {
+            compute_image_flags(img, Some(account_uuid))
+        }),
+        col("OS", |img: &Image| img.os.clone()),
+        col("TYPE", |img: &Image| enum_to_display(&img.type_)),
+        col("PUBDATE", |img: &Image| format_pubdate(&img.published_at)),
+        col("STATE", |img: &Image| {
+            img.state
+                .as_ref()
+                .map(enum_to_display)
+                .unwrap_or_else(|| "-".to_string())
+        }),
+        col("ID", |img: &Image| img.id.to_string()),
+        col("PUBLIC", |img: &Image| {
+            img.public
+                .map(|p| p.to_string())
+                .unwrap_or_else(|| "-".to_string())
+        }),
+    ];
 
     // Set default columns based on short/long mode to match node-triton.
     // All columns remain available for -o selection (long_from: None).
@@ -520,7 +555,7 @@ fn print_images_table(images: &[Image], args: &ImageListArgs) -> Result<()> {
         );
     }
 
-    TableBuilder::from_enum_columns::<ImageColumn, _>(images, None).print(&table_opts)?;
+    TableBuilder::from_columns(&columns, images, None).print(&table_opts)?;
     Ok(())
 }
 
@@ -1472,4 +1507,105 @@ async fn delete_image_tag(
     println!("Deleted tag {}", args.key);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use cloudapi_client::types::ImageType;
+
+    /// Build a minimal Image with sensible defaults for testing.
+    fn test_image() -> Image {
+        Image::builder()
+            .id(uuid::Uuid::nil())
+            .name("test")
+            .version("1.0.0")
+            .os("linux")
+            .type_(ImageType::ZoneDataset)
+            .state(Some(ImageState::Active))
+            .try_into()
+            .unwrap()
+    }
+
+    #[test]
+    fn flags_public_only() {
+        let img = Image {
+            public: Some(true),
+            ..test_image()
+        };
+        assert_eq!(compute_image_flags(&img, Some(&uuid::Uuid::nil())), "P");
+    }
+
+    #[test]
+    fn flags_incremental_public() {
+        let img = Image {
+            origin: Some(uuid::Uuid::nil()),
+            public: Some(true),
+            ..test_image()
+        };
+        assert_eq!(compute_image_flags(&img, Some(&uuid::Uuid::nil())), "IP");
+    }
+
+    #[test]
+    fn flags_non_active() {
+        let img = Image {
+            state: Some(ImageState::Disabled),
+            ..test_image()
+        };
+        assert_eq!(compute_image_flags(&img, Some(&uuid::Uuid::nil())), "X");
+    }
+
+    #[test]
+    fn flags_shared_by_me() {
+        let acct_a = uuid::Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").unwrap();
+        let acct_b = uuid::Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap();
+        let img = Image {
+            owner: Some(acct_a),
+            acl: Some(vec![acct_b]),
+            ..test_image()
+        };
+        assert_eq!(compute_image_flags(&img, Some(&acct_a)), "+");
+    }
+
+    #[test]
+    fn flags_shared_with_me() {
+        let acct_a = uuid::Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").unwrap();
+        let acct_b = uuid::Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap();
+        let img = Image {
+            owner: Some(acct_b),
+            acl: Some(vec![acct_a]),
+            ..test_image()
+        };
+        assert_eq!(compute_image_flags(&img, Some(&acct_a)), "S");
+    }
+
+    #[test]
+    fn flags_all() {
+        let acct_a = uuid::Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").unwrap();
+        let img = Image {
+            origin: Some(uuid::Uuid::nil()),
+            public: Some(true),
+            state: Some(ImageState::Disabled),
+            owner: Some(acct_a),
+            acl: Some(vec![acct_a]),
+            ..test_image()
+        };
+        assert_eq!(compute_image_flags(&img, Some(&acct_a)), "IPX+S");
+    }
+
+    #[test]
+    fn flags_none() {
+        let img = test_image();
+        assert_eq!(compute_image_flags(&img, Some(&uuid::Uuid::nil())), "-");
+    }
+
+    #[test]
+    fn flags_no_account_uuid() {
+        let acct_b = uuid::Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap();
+        let img = Image {
+            acl: Some(vec![acct_b]),
+            ..test_image()
+        };
+        assert_eq!(compute_image_flags(&img, None), "-");
+    }
 }
