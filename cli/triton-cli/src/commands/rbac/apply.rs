@@ -11,7 +11,7 @@ use clap::Args;
 use cloudapi_client::TypedClient;
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
 use crate::config::{Config, Profile, paths};
@@ -76,6 +76,15 @@ struct RbacConfigUser {
     last_name: Option<String>,
     #[serde(default)]
     company_name: Option<String>,
+    #[serde(default)]
+    keys: Option<String>,
+}
+
+/// A parsed SSH public key from a config-specified key file
+#[derive(Debug)]
+struct ParsedKey {
+    name: String,
+    key: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -145,6 +154,15 @@ enum RbacChange {
     DeleteRole {
         name: String,
     },
+    CreateKey {
+        user_login: String,
+        key_name: String,
+        key_material: String,
+    },
+    DeleteKey {
+        user_login: String,
+        key_name: String,
+    },
 }
 
 impl std::fmt::Display for RbacChange {
@@ -159,6 +177,15 @@ impl std::fmt::Display for RbacChange {
             RbacChange::CreateRole { name, .. } => write!(f, "Create role '{}'", name),
             RbacChange::UpdateRole { name, .. } => write!(f, "Update role '{}'", name),
             RbacChange::DeleteRole { name } => write!(f, "Delete role '{}'", name),
+            RbacChange::CreateKey {
+                user_login,
+                key_name,
+                ..
+            } => write!(f, "Create key '{}' for user '{}'", key_name, user_login),
+            RbacChange::DeleteKey {
+                user_login,
+                key_name,
+            } => write!(f, "Delete key '{}' for user '{}'", key_name, user_login),
         }
     }
 }
@@ -194,6 +221,8 @@ struct ApplySummary {
     users_created: usize,
     users_updated: usize,
     users_deleted: usize,
+    keys_created: usize,
+    keys_deleted: usize,
     policies_created: usize,
     policies_updated: usize,
     policies_deleted: usize,
@@ -396,6 +425,29 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
     let current_roles = roles_result?.into_inner();
     let current_policies = policies_result?.into_inner();
 
+    // Fetch current SSH keys for each user
+    let mut current_user_keys: HashMap<String, Vec<cloudapi_client::types::SshKey>> =
+        HashMap::new();
+    for user in &current_users {
+        if let Ok(keys) = client
+            .inner()
+            .list_user_keys()
+            .account(account)
+            .uuid(user.id.to_string())
+            .send()
+            .await
+        {
+            current_user_keys.insert(user.login.clone(), keys.into_inner());
+        }
+    }
+
+    // Load desired keys from config files
+    let config_dir = args.file.parent().unwrap_or(Path::new("."));
+    let mut wanted_user_keys: HashMap<String, Vec<ParsedKey>> = HashMap::new();
+    for user in &config.users {
+        wanted_user_keys.insert(user.login.clone(), load_user_keys(user, config_dir).await?);
+    }
+
     // Build maps for quick lookup
     let current_user_map: HashMap<String, _> =
         current_users.iter().map(|u| (u.login.clone(), u)).collect();
@@ -487,6 +539,40 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
                     },
                 });
             }
+
+            // Compare keys for existing user
+            let wanted_keys = wanted_user_keys
+                .get(&user.login)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
+            let current_keys = current_user_keys
+                .get(&user.login)
+                .map(|v| v.as_slice())
+                .unwrap_or(&[]);
+            let current_key_names: HashSet<&str> =
+                current_keys.iter().map(|k| k.name.as_str()).collect();
+            let wanted_key_names: HashSet<&str> =
+                wanted_keys.iter().map(|k| k.name.as_str()).collect();
+
+            // Keys to create: in wanted but not in current
+            for key in wanted_keys {
+                if !current_key_names.contains(key.name.as_str()) {
+                    changes.push(RbacChange::CreateKey {
+                        user_login: user.login.clone(),
+                        key_name: key.name.clone(),
+                        key_material: key.key.clone(),
+                    });
+                }
+            }
+            // Keys to delete: in current but not in wanted
+            for key in current_keys {
+                if !wanted_key_names.contains(key.name.as_str()) {
+                    changes.push(RbacChange::DeleteKey {
+                        user_login: user.login.clone(),
+                        key_name: key.name.clone(),
+                    });
+                }
+            }
         } else {
             changes.push(RbacChange::CreateUser {
                 login: user.login.clone(),
@@ -495,6 +581,16 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
                 last_name: user.last_name.clone(),
                 company_name: user.company_name.clone(),
             });
+            // Add key creates for new user
+            if let Some(keys) = wanted_user_keys.get(&user.login) {
+                for key in keys {
+                    changes.push(RbacChange::CreateKey {
+                        user_login: user.login.clone(),
+                        key_name: key.name.clone(),
+                        key_material: key.key.clone(),
+                    });
+                }
+            }
         }
     }
 
@@ -564,6 +660,15 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
     }
     for user in &current_users {
         if !want_users.contains(&user.login) {
+            // Delete user's keys before deleting the user
+            if let Some(keys) = current_user_keys.get(&user.login) {
+                for key in keys {
+                    changes.push(RbacChange::DeleteKey {
+                        user_login: user.login.clone(),
+                        key_name: key.name.clone(),
+                    });
+                }
+            }
             changes.push(RbacChange::DeleteUser {
                 login: user.login.clone(),
             });
@@ -581,13 +686,15 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
     changes.sort_by_key(|c| match c {
         RbacChange::CreatePolicy { .. } => 0,
         RbacChange::CreateUser { .. } => 1,
-        RbacChange::CreateRole { .. } => 2,
-        RbacChange::UpdatePolicy { .. } => 3,
-        RbacChange::UpdateUser { .. } => 4,
-        RbacChange::UpdateRole { .. } => 5,
-        RbacChange::DeleteRole { .. } => 6,
-        RbacChange::DeleteUser { .. } => 7,
-        RbacChange::DeletePolicy { .. } => 8,
+        RbacChange::CreateKey { .. } => 2,
+        RbacChange::CreateRole { .. } => 3,
+        RbacChange::UpdatePolicy { .. } => 4,
+        RbacChange::UpdateUser { .. } => 5,
+        RbacChange::UpdateRole { .. } => 6,
+        RbacChange::DeleteRole { .. } => 7,
+        RbacChange::DeleteKey { .. } => 8,
+        RbacChange::DeleteUser { .. } => 9,
+        RbacChange::DeletePolicy { .. } => 10,
     });
 
     if changes.is_empty() {
@@ -598,6 +705,8 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
                     users_created: 0,
                     users_updated: 0,
                     users_deleted: 0,
+                    keys_created: 0,
+                    keys_deleted: 0,
                     policies_created: 0,
                     policies_updated: 0,
                     policies_deleted: 0,
@@ -641,6 +750,7 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
                         first_name: first_name.clone(),
                         last_name: last_name.clone(),
                         company_name: company_name.clone(),
+                        keys: None,
                     })
                 } else {
                     None
@@ -656,6 +766,12 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
                         RbacChange::CreateUser { login, .. } => ("create", "user", login.clone()),
                         RbacChange::UpdateUser { login, .. } => ("update", "user", login.clone()),
                         RbacChange::DeleteUser { login } => ("delete", "user", login.clone()),
+                        RbacChange::CreateKey { key_name, .. } => {
+                            ("create", "key", key_name.clone())
+                        }
+                        RbacChange::DeleteKey { key_name, .. } => {
+                            ("delete", "key", key_name.clone())
+                        }
                         RbacChange::CreatePolicy { name, .. } => ("create", "policy", name.clone()),
                         RbacChange::UpdatePolicy { name, .. } => ("update", "policy", name.clone()),
                         RbacChange::DeletePolicy { name } => ("delete", "policy", name.clone()),
@@ -728,6 +844,8 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
         users_created: 0,
         users_updated: 0,
         users_deleted: 0,
+        keys_created: 0,
+        keys_deleted: 0,
         policies_created: 0,
         policies_updated: 0,
         policies_deleted: 0,
@@ -747,6 +865,8 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
             RbacChange::CreateUser { login, .. } => ("create", "user", login.clone()),
             RbacChange::UpdateUser { login, .. } => ("update", "user", login.clone()),
             RbacChange::DeleteUser { login } => ("delete", "user", login.clone()),
+            RbacChange::CreateKey { key_name, .. } => ("create", "key", key_name.clone()),
+            RbacChange::DeleteKey { key_name, .. } => ("delete", "key", key_name.clone()),
             RbacChange::CreatePolicy { name, .. } => ("create", "policy", name.clone()),
             RbacChange::UpdatePolicy { name, .. } => ("update", "policy", name.clone()),
             RbacChange::DeletePolicy { name } => ("delete", "policy", name.clone()),
@@ -776,10 +896,13 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
                             first_name: first_name.clone(),
                             last_name: last_name.clone(),
                             company_name: company_name.clone(),
+                            keys: None,
                         });
                     }
                     RbacChange::UpdateUser { .. } => summary.users_updated += 1,
                     RbacChange::DeleteUser { .. } => summary.users_deleted += 1,
+                    RbacChange::CreateKey { .. } => summary.keys_created += 1,
+                    RbacChange::DeleteKey { .. } => summary.keys_deleted += 1,
                     RbacChange::CreatePolicy { .. } => summary.policies_created += 1,
                     RbacChange::UpdatePolicy { .. } => summary.policies_updated += 1,
                     RbacChange::DeletePolicy { .. } => summary.policies_deleted += 1,
@@ -823,6 +946,12 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
             println!(
                 "  Users: {} created, {} updated, {} deleted",
                 summary.users_created, summary.users_updated, summary.users_deleted
+            );
+        }
+        if summary.keys_created > 0 || summary.keys_deleted > 0 {
+            println!(
+                "  Keys: {} created, {} deleted",
+                summary.keys_created, summary.keys_deleted
             );
         }
         if summary.policies_created > 0
@@ -875,6 +1004,84 @@ fn generate_password() -> Result<String> {
         let _ = write!(result, "{:02x}", b);
     }
     Ok(result)
+}
+
+/// Load SSH public keys for a user from config-specified path or default directory.
+///
+/// Follows node-triton's `loadUserKeys` behavior:
+/// - If `user.keys` is None: try `rbac-user-keys/` relative to config_dir (silent if missing)
+/// - If `user.keys` is Some(path): resolve relative to config_dir
+///   - Directory: read `{path}/{login}.pub`
+///   - File: read it directly
+///   - Missing: error (explicit paths must exist)
+async fn load_user_keys(user: &RbacConfigUser, config_dir: &Path) -> Result<Vec<ParsedKey>> {
+    let key_path = match &user.keys {
+        None => {
+            // Default: try rbac-user-keys/{login}.pub, silently skip if missing
+            let default_dir = config_dir.join("rbac-user-keys");
+            if !tokio::fs::try_exists(&default_dir).await.unwrap_or(false) {
+                return Ok(vec![]);
+            }
+            let pub_file = default_dir.join(format!("{}.pub", user.login));
+            if !tokio::fs::try_exists(&pub_file).await.unwrap_or(false) {
+                return Ok(vec![]);
+            }
+            pub_file
+        }
+        Some(path_str) => {
+            let path = if Path::new(path_str).is_relative() {
+                config_dir.join(path_str)
+            } else {
+                PathBuf::from(path_str)
+            };
+            if !tokio::fs::try_exists(&path).await.unwrap_or(false) {
+                return Err(anyhow::anyhow!(
+                    "Key path '{}' for user '{}' does not exist",
+                    path.display(),
+                    user.login
+                ));
+            }
+            // Check if path is a directory by trying to read it
+            if tokio::fs::read_dir(&path).await.is_ok() {
+                let pub_file = path.join(format!("{}.pub", user.login));
+                if !tokio::fs::try_exists(&pub_file).await.unwrap_or(false) {
+                    return Err(anyhow::anyhow!(
+                        "Key file '{}.pub' not found in directory '{}'",
+                        user.login,
+                        path.display()
+                    ));
+                }
+                pub_file
+            } else {
+                path
+            }
+        }
+    };
+
+    let content = tokio::fs::read_to_string(&key_path)
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to read key file '{}': {}", key_path.display(), e))?;
+
+    let mut keys = Vec::new();
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        // Parse SSH public key: <type> <base64> [comment]
+        let parts: Vec<&str> = line.splitn(3, char::is_whitespace).collect();
+        let name = if parts.len() >= 3 && !parts[2].is_empty() {
+            parts[2].to_string()
+        } else {
+            "imported-key".to_string()
+        };
+        keys.push(ParsedKey {
+            name,
+            key: line.to_string(),
+        });
+    }
+
+    Ok(keys)
 }
 
 async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Result<()> {
@@ -1115,6 +1322,41 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
                 .delete_role()
                 .account(account)
                 .role(name)
+                .send()
+                .await?;
+            Ok(())
+        }
+        RbacChange::CreateKey {
+            user_login,
+            key_name,
+            key_material,
+        } => {
+            let user_id = resolve_user(user_login, client).await?;
+            let request = cloudapi_client::types::CreateSshKeyRequest {
+                name: key_name.clone(),
+                key: key_material.clone(),
+            };
+            client
+                .inner()
+                .create_user_key()
+                .account(account)
+                .uuid(&user_id)
+                .body(request)
+                .send()
+                .await?;
+            Ok(())
+        }
+        RbacChange::DeleteKey {
+            user_login,
+            key_name,
+        } => {
+            let user_id = resolve_user(user_login, client).await?;
+            client
+                .inner()
+                .delete_user_key()
+                .account(account)
+                .uuid(&user_id)
+                .name(key_name)
                 .send()
                 .await?;
             Ok(())
