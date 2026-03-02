@@ -139,9 +139,11 @@ pub enum VolumeAction {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct VolumeActionQuery {
     /// Action to perform. Optional in the query string because clients may
-    /// send it in the request body instead (matching Restify's mapParams
-    /// behavior). Service implementations should check the body first,
-    /// then fall back to this query parameter.
+    /// send it in the request body instead. Body takes precedence over the
+    /// query parameter.
+    // Implementation note: matches Restify's mapParams behavior.
+    // Service implementations should check the body first, then fall back
+    // to this query parameter.
     #[serde(default)]
     pub action: Option<VolumeAction>,
 }

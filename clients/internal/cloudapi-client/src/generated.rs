@@ -1309,13 +1309,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Request to create a machine\n\nThis struct supports both the modern nested format and the legacy flattened format:\n\n**Modern format (Rust clients):** ```json {\"image\": \"...\", \"tags\": {\"foo\": \"bar\"}, \"metadata\": {\"key\": \"value\"}} ```\n\n**Legacy format (Node.js clients):** ```json {\"image\": \"...\", \"tag.foo\": \"bar\", \"metadata.key\": \"value\"} ```\n\nUse the `tags()` and `metadata()` methods to get the merged result from both formats."]
+    #[doc = "Request to create a machine\n\nThis struct supports both the modern nested format and the legacy flattened format:\n\n**Modern format:** ```json {\"image\": \"...\", \"tags\": {\"foo\": \"bar\"}, \"metadata\": {\"key\": \"value\"}} ```\n\n**Legacy format:** ```json {\"image\": \"...\", \"tag.foo\": \"bar\", \"metadata.key\": \"value\"} ```"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Request to create a machine\\n\\nThis struct supports both the modern nested format and the legacy flattened format:\\n\\n**Modern format (Rust clients):** ```json {\\\"image\\\": \\\"...\\\", \\\"tags\\\": {\\\"foo\\\": \\\"bar\\\"}, \\\"metadata\\\": {\\\"key\\\": \\\"value\\\"}} ```\\n\\n**Legacy format (Node.js clients):** ```json {\\\"image\\\": \\\"...\\\", \\\"tag.foo\\\": \\\"bar\\\", \\\"metadata.key\\\": \\\"value\\\"} ```\\n\\nUse the `tags()` and `metadata()` methods to get the merged result from both formats.\","]
+    #[doc = "  \"description\": \"Request to create a machine\\n\\nThis struct supports both the modern nested format and the legacy flattened format:\\n\\n**Modern format:** ```json {\\\"image\\\": \\\"...\\\", \\\"tags\\\": {\\\"foo\\\": \\\"bar\\\"}, \\\"metadata\\\": {\\\"key\\\": \\\"value\\\"}} ```\\n\\n**Legacy format:** ```json {\\\"image\\\": \\\"...\\\", \\\"tag.foo\\\": \\\"bar\\\", \\\"metadata.key\\\": \\\"value\\\"} ```\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"image\","]
@@ -3033,13 +3033,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Image error information (for failed image creation)\n\nNote: Named `ImageErrorInfo` rather than `ImageError` to distinguish this DTO from Rust error types."]
+    #[doc = "Image error information (for failed image creation)"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Image error information (for failed image creation)\\n\\nNote: Named `ImageErrorInfo` rather than `ImageError` to distinguish this DTO from Rust error types.\","]
+    #[doc = "  \"description\": \"Image error information (for failed image creation)\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"code\""]
@@ -4533,13 +4533,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Migration information\n\nNote: CloudAPI passes VMAPI migration fields through in snake_case (see migrations.js — `*_timestamp` fields are not translated to camelCase). Only `vm_uuid` is translated to `machine`."]
+    #[doc = "Migration information"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Migration information\\n\\nNote: CloudAPI passes VMAPI migration fields through in snake_case (see migrations.js — `*_timestamp` fields are not translated to camelCase). Only `vm_uuid` is translated to `machine`.\","]
+    #[doc = "  \"description\": \"Migration information\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"created_timestamp\","]
@@ -4567,7 +4567,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"machine\": {"]
-    #[doc = "      \"description\": \"Machine UUID being migrated\\n\\nNote: The Node.js CloudAPI translates VMAPI's `vm_uuid` to `machine`.\","]
+    #[doc = "      \"description\": \"Machine UUID being migrated\","]
     #[doc = "      \"type\": \"string\","]
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
@@ -4628,7 +4628,7 @@ pub mod types {
         #[doc = "Finished timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub finished_timestamp: ::std::option::Option<::std::string::String>,
-        #[doc = "Machine UUID being migrated\n\nNote: The Node.js CloudAPI translates VMAPI's `vm_uuid` to `machine`."]
+        #[doc = "Machine UUID being migrated"]
         pub machine: ::uuid::Uuid,
         #[doc = "Migration phase"]
         pub phase: MigrationPhase,
@@ -5262,13 +5262,13 @@ pub mod types {
         }
     }
 
-    #[doc = "Network information\n\nNote: CloudAPI returns snake_case for this object, so we use snake_case to match the API response format for CLI compatibility with node-triton."]
+    #[doc = "Network information"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Network information\\n\\nNote: CloudAPI returns snake_case for this object, so we use snake_case to match the API response format for CLI compatibility with node-triton.\","]
+    #[doc = "  \"description\": \"Network information\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"id\","]
@@ -16216,7 +16216,7 @@ impl Client {
         builder::ReplaceImageRoleTags::new(self)
     }
 
-    #[doc = "Update image (action dispatch)\n\nThis endpoint handles multiple actions. The action can be specified either in the request body or as a query parameter. Body takes precedence, matching Restify's `mapParams` behavior.\n\nActions: - update: Update image metadata - export: Export image to Manta - clone: Clone image to account - import-from-datacenter: Import image from another datacenter\n\nNote: share/unshare operations are implemented client-side using the `update` action to modify the ACL (see `TypedClient::share_image` / `TypedClient::unshare_image` in `cloudapi-client`).\n\nSends a `POST` request to `/{account}/images/{dataset}`\n\nArguments:\n- `account`: Account login name\n- `dataset`: Image UUID\n- `action`: Action to perform. Optional in the query string because clients may send it in the request body instead (matching Restify's mapParams behavior). Service implementations should check the body first, then fall back to this query parameter.\n- `body`\n```ignore\nlet response = client.update_image()\n    .account(account)\n    .dataset(dataset)\n    .action(action)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Update image (action dispatch)\n\nThis endpoint handles multiple actions. The action can be specified either in the request body or as a query parameter. Body takes precedence over the query parameter.\n\nActions: - update: Update image metadata - export: Export image to Manta - clone: Clone image to account - import-from-datacenter: Import image from another datacenter\n\nNote: share/unshare operations are implemented client-side using the `update` action to modify the ACL (see `TypedClient::share_image` / `TypedClient::unshare_image` in `cloudapi-client`).\n\nSends a `POST` request to `/{account}/images/{dataset}`\n\nArguments:\n- `account`: Account login name\n- `dataset`: Image UUID\n- `action`: Action to perform. Optional in the query string because clients may send it in the request body instead. Body takes precedence over the query parameter.\n- `body`\n```ignore\nlet response = client.update_image()\n    .account(account)\n    .dataset(dataset)\n    .action(action)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn update_image(&self) -> builder::UpdateImage<'_> {
         builder::UpdateImage::new(self)
     }
@@ -16301,7 +16301,7 @@ impl Client {
         builder::ReplaceMachineRoleTags::new(self)
     }
 
-    #[doc = "Update a machine (action dispatch)\n\nThis endpoint handles multiple actions. The action can be specified either in the request body (`{\"action\": \"stop\"}`) or as a query parameter (`?action=stop`). Body takes precedence, matching Restify's `mapParams` behavior. Service implementations should check both.\n\nActions: - start: Start a stopped machine - stop: Stop a running machine - reboot: Reboot a running machine - resize: Resize to a different package - rename: Change machine name/alias - enable_firewall: Enable firewall - disable_firewall: Disable firewall - enable_deletion_protection: Enable deletion protection - disable_deletion_protection: Disable deletion protection\n\nSends a `POST` request to `/{account}/machines/{machine}`\n\nArguments:\n- `account`: Account login name\n- `machine`: Machine UUID\n- `action`: Action to perform. Optional in the query string because clients may send it in the request body instead (matching Restify's mapParams behavior). Service implementations should check the body first, then fall back to this query parameter.\n- `body`\n```ignore\nlet response = client.update_machine()\n    .account(account)\n    .machine(machine)\n    .action(action)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Update a machine (action dispatch)\n\nThis endpoint handles multiple actions. The action can be specified either in the request body (`{\"action\": \"stop\"}`) or as a query parameter (`?action=stop`). Body takes precedence over the query parameter.\n\nActions: - start: Start a stopped machine - stop: Stop a running machine - reboot: Reboot a running machine - resize: Resize to a different package - rename: Change machine name/alias - enable_firewall: Enable firewall - disable_firewall: Disable firewall - enable_deletion_protection: Enable deletion protection - disable_deletion_protection: Disable deletion protection\n\nSends a `POST` request to `/{account}/machines/{machine}`\n\nArguments:\n- `account`: Account login name\n- `machine`: Machine UUID\n- `action`: Action to perform. Optional in the query string because clients may send it in the request body instead. Body takes precedence over the query parameter.\n- `body`\n```ignore\nlet response = client.update_machine()\n    .account(account)\n    .machine(machine)\n    .action(action)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn update_machine(&self) -> builder::UpdateMachine<'_> {
         builder::UpdateMachine::new(self)
     }
@@ -16346,7 +16346,7 @@ impl Client {
         builder::GetMachineDisk::new(self)
     }
 
-    #[doc = "Resize machine disk (action dispatch)\n\nThe action can be specified in the request body or as a query parameter. Body takes precedence, matching Restify's `mapParams` behavior.\n\nSends a `POST` request to `/{account}/machines/{machine}/disks/{disk}`\n\nArguments:\n- `account`: Account login name\n- `machine`: Machine UUID\n- `disk`: Disk UUID\n- `action`: Action to perform. Optional in the query string because clients may send it in the request body instead (matching Restify's mapParams behavior). Service implementations should check the body first, then fall back to this query parameter.\n- `body`\n```ignore\nlet response = client.resize_machine_disk()\n    .account(account)\n    .machine(machine)\n    .disk(disk)\n    .action(action)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Resize machine disk (action dispatch)\n\nThe action can be specified in the request body or as a query parameter. Body takes precedence over the query parameter.\n\nSends a `POST` request to `/{account}/machines/{machine}/disks/{disk}`\n\nArguments:\n- `account`: Account login name\n- `machine`: Machine UUID\n- `disk`: Disk UUID\n- `action`: Action to perform. Optional in the query string because clients may send it in the request body instead. Body takes precedence over the query parameter.\n- `body`\n```ignore\nlet response = client.resize_machine_disk()\n    .account(account)\n    .machine(machine)\n    .disk(disk)\n    .action(action)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn resize_machine_disk(&self) -> builder::ResizeMachineDisk<'_> {
         builder::ResizeMachineDisk::new(self)
     }
@@ -16880,7 +16880,7 @@ impl Client {
         builder::GetVolume::new(self)
     }
 
-    #[doc = "Update volume (action dispatch)\n\nThe action can be specified in the request body or as a query parameter. Body takes precedence, matching Restify's `mapParams` behavior.\n\nSends a `POST` request to `/{account}/volumes/{id}`\n\nArguments:\n- `account`: Account login name\n- `id`: Volume UUID\n- `action`: Action to perform. Optional in the query string because clients may send it in the request body instead (matching Restify's mapParams behavior). Service implementations should check the body first, then fall back to this query parameter.\n- `body`\n```ignore\nlet response = client.update_volume()\n    .account(account)\n    .id(id)\n    .action(action)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Update volume (action dispatch)\n\nThe action can be specified in the request body or as a query parameter. Body takes precedence over the query parameter.\n\nSends a `POST` request to `/{account}/volumes/{id}`\n\nArguments:\n- `account`: Account login name\n- `id`: Volume UUID\n- `action`: Action to perform. Optional in the query string because clients may send it in the request body instead. Body takes precedence over the query parameter.\n- `body`\n```ignore\nlet response = client.update_volume()\n    .account(account)\n    .id(id)\n    .action(action)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn update_volume(&self) -> builder::UpdateVolume<'_> {
         builder::UpdateVolume::new(self)
     }

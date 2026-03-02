@@ -100,9 +100,8 @@ pub struct ImageFile {
 }
 
 /// Image error information (for failed image creation)
-///
-/// Note: Named `ImageErrorInfo` rather than `ImageError` to distinguish this DTO
-/// from Rust error types.
+// Note: Named `ImageErrorInfo` rather than `ImageError` to distinguish this DTO
+// from Rust error types.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ImageErrorInfo {
@@ -230,9 +229,11 @@ pub enum ImageAction {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ImageActionQuery {
     /// Action to perform. Optional in the query string because clients may
-    /// send it in the request body instead (matching Restify's mapParams
-    /// behavior). Service implementations should check the body first,
-    /// then fall back to this query parameter.
+    /// send it in the request body instead. Body takes precedence over the
+    /// query parameter.
+    // Implementation note: matches Restify's mapParams behavior.
+    // Service implementations should check the body first, then fall back
+    // to this query parameter.
     #[serde(default)]
     pub action: Option<ImageAction>,
 }

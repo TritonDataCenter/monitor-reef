@@ -16,9 +16,9 @@ pub type Uuid = vmapi_api::Uuid;
 ///
 /// These CamelCase codes match the `code` field in CloudAPI JSON error
 /// responses.  The list covers the stock restify error codes plus
-/// CloudAPI-specific additions.  The `Unknown` variant (with
-/// `#[serde(other)]`) ensures forward compatibility when the server
-/// introduces new codes.
+/// CloudAPI-specific additions.  The `Unknown` variant ensures forward
+/// compatibility when the server introduces new codes.
+// Implementation note: Unknown uses #[serde(other)] for forward compatibility.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub enum ErrorCode {
     BadDigest,
@@ -61,12 +61,10 @@ impl std::fmt::Display for ErrorCode {
 
 /// CloudAPI error response
 ///
-/// This matches the actual error format returned by CloudAPI, which differs
-/// from Dropshot's default error format. CloudAPI uses `code` instead of
-/// `error_code` and `request_id` is optional.
-///
-/// Note: Named `ErrorResponse` rather than `Error` to distinguish this DTO
-/// from Rust error types.
+/// This matches the actual error format returned by CloudAPI. CloudAPI uses
+/// `code` instead of `error_code` and `request_id` is optional.
+// Note: Named ErrorResponse rather than Error to distinguish this DTO
+// from Rust error types.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ErrorResponse {
     /// Error code

@@ -303,17 +303,15 @@ pub struct NicSpec {
 ///
 /// This struct supports both the modern nested format and the legacy flattened format:
 ///
-/// **Modern format (Rust clients):**
+/// **Modern format:**
 /// ```json
 /// {"image": "...", "tags": {"foo": "bar"}, "metadata": {"key": "value"}}
 /// ```
 ///
-/// **Legacy format (Node.js clients):**
+/// **Legacy format:**
 /// ```json
 /// {"image": "...", "tag.foo": "bar", "metadata.key": "value"}
 /// ```
-///
-/// Use the `tags()` and `metadata()` methods to get the merged result from both formats.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateMachineRequest {
@@ -380,7 +378,7 @@ pub struct CreateMachineRequest {
     #[serde(rename = "allow_shared_images", default)]
     pub allow_shared_images: Option<bool>,
     /// Extra fields for legacy format support (tag.*, metadata.*)
-    /// These are captured by serde's flatten and processed by helper methods.
+    // These are captured by serde's flatten and processed by helper methods.
     #[serde(flatten)]
     #[schemars(skip)]
     pub extra: std::collections::HashMap<String, serde_json::Value>,
@@ -465,9 +463,11 @@ pub enum MachineAction {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct MachineActionQuery {
     /// Action to perform. Optional in the query string because clients may
-    /// send it in the request body instead (matching Restify's mapParams
-    /// behavior). Service implementations should check the body first,
-    /// then fall back to this query parameter.
+    /// send it in the request body instead. Body takes precedence over the
+    /// query parameter.
+    // Implementation note: matches Restify's mapParams behavior.
+    // Service implementations should check the body first, then fall back
+    // to this query parameter.
     #[serde(default)]
     pub action: Option<MachineAction>,
 }
@@ -564,8 +564,6 @@ pub struct DisableDeletionProtectionRequest {
 /// **Modern format:** `?tag=key=value` (single tag filter)
 ///
 /// **Legacy format:** `?tag.env=prod&tag.role=web` (multiple tag filters)
-///
-/// Use the `tag_filters()` method to get all tag filters from both formats.
 #[derive(Debug, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct ListMachinesQuery {
@@ -606,7 +604,7 @@ pub struct ListMachinesQuery {
     #[serde(default)]
     pub tombstone: Option<bool>,
     /// Extra fields for legacy format support (tag.*)
-    /// These are captured by serde's flatten and processed by helper methods.
+    // These are captured by serde's flatten and processed by helper methods.
     #[serde(flatten)]
     #[schemars(skip)]
     pub extra: std::collections::HashMap<String, String>,

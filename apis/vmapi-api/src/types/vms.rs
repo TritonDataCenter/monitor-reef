@@ -78,9 +78,11 @@ pub struct ListVmsQuery {
 /// Query parameters for VM action dispatch
 ///
 /// The `action` field is optional in the query string because clients may
-/// send it in the request body instead (matching Restify's `mapParams`
-/// behavior). Service implementations should check the body first,
-/// then fall back to this query parameter.
+/// send it in the request body instead. Body takes precedence over the
+/// query parameter.
+// Implementation note: matches Restify's mapParams behavior.
+// Service implementations should check the body first, then fall back
+// to this query parameter.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct VmActionQuery {
     /// Action to perform. Optional in the query string because clients may
@@ -307,7 +309,7 @@ pub struct DeleteSnapshotRequest {
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct CreateDiskRequest {
     /// Disk size in MB, or the literal "remaining" for remaining space
-    /// Use serde_json::Value because this can be a number or the string "remaining"
+    // Use serde_json::Value because this can be a number or the string "remaining"
     pub size: serde_json::Value,
     /// PCI slot (optional, auto-assigned if not specified)
     #[serde(default)]

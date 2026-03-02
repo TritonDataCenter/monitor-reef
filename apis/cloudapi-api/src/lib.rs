@@ -45,15 +45,14 @@ pub use vmapi_api::MigrationPhase;
 pub use vmapi_api::SnapshotState;
 
 /// URL for CloudAPI documentation
-///
-/// The Node.js CloudAPI has documentation redirect endpoints at `/`, `/docs`, and
-/// `/favicon.ico`. These cannot be represented in the Dropshot API trait because
-/// they conflict with `/{account}` variable path routing. Dropshot does not allow
-/// both literal segments (e.g., `/docs`) and variable segments (e.g., `/{account}`)
-/// at the same path depth.
-///
-/// Service implementations should handle these redirects at the reverse proxy or
-/// HTTP server level before routing to the Dropshot API.
+// The Node.js CloudAPI has documentation redirect endpoints at /, /docs, and
+// /favicon.ico. These cannot be represented in the Dropshot API trait because
+// they conflict with /{account} variable path routing. Dropshot does not allow
+// both literal segments (e.g., /docs) and variable segments (e.g., /{account})
+// at the same path depth.
+//
+// Service implementations should handle these redirects at the reverse proxy or
+// HTTP server level before routing to the Dropshot API.
 pub const DOCS_URL: &str = "http://apidocs.tritondatacenter.com/cloudapi/";
 
 /// URL for favicon
@@ -77,11 +76,10 @@ pub const FAVICON_URL: &str = "http://apidocs.tritondatacenter.com/favicon.ico";
 /// - Datacenters
 /// - Services
 /// - Migrations
-///
-/// Note: Documentation redirect endpoints (`/`, `/docs`, `/favicon.ico`) from the
-/// Node.js CloudAPI cannot be included due to Dropshot routing limitations.
-/// See `DOCS_URL` constant for details. These should be handled at the reverse
-/// proxy or HTTP server level.
+// Note: Documentation redirect endpoints (/, /docs, /favicon.ico) from the
+// Node.js CloudAPI cannot be included due to Dropshot routing limitations.
+// See DOCS_URL constant for details. These should be handled at the reverse
+// proxy or HTTP server level.
 #[dropshot::api_description]
 pub trait CloudApi {
     /// Context type for request handlers
@@ -202,8 +200,8 @@ pub trait CloudApi {
     ///
     /// This endpoint handles multiple actions. The action can be specified
     /// either in the request body (`{"action": "stop"}`) or as a query
-    /// parameter (`?action=stop`). Body takes precedence, matching Restify's
-    /// `mapParams` behavior. Service implementations should check both.
+    /// parameter (`?action=stop`). Body takes precedence over the query
+    /// parameter.
     ///
     /// Actions:
     /// - start: Start a stopped machine
@@ -656,8 +654,7 @@ pub trait CloudApi {
     /// Resize machine disk (action dispatch)
     ///
     /// The action can be specified in the request body or as a query
-    /// parameter. Body takes precedence, matching Restify's `mapParams`
-    /// behavior.
+    /// parameter. Body takes precedence over the query parameter.
     #[endpoint {
         method = POST,
         path = "/{account}/machines/{machine}/disks/{disk}",
@@ -753,7 +750,7 @@ pub trait CloudApi {
     ///
     /// This endpoint handles multiple actions. The action can be specified
     /// either in the request body or as a query parameter. Body takes
-    /// precedence, matching Restify's `mapParams` behavior.
+    /// precedence over the query parameter.
     ///
     /// Actions:
     /// - update: Update image metadata
@@ -1998,8 +1995,7 @@ pub trait CloudApi {
     /// Update volume (action dispatch)
     ///
     /// The action can be specified in the request body or as a query
-    /// parameter. Body takes precedence, matching Restify's `mapParams`
-    /// behavior.
+    /// parameter. Body takes precedence over the query parameter.
     #[endpoint {
         method = POST,
         path = "/{account}/volumes/{id}",

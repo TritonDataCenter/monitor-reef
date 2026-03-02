@@ -514,7 +514,7 @@
         "type": "object"
       },
       "CreateMachineRequest": {
-        "description": "Request to create a machine\n\nThis struct supports both the modern nested format and the legacy flattened format:\n\n**Modern format (Rust clients):** ```json {\"image\": \"...\", \"tags\": {\"foo\": \"bar\"}, \"metadata\": {\"key\": \"value\"}} ```\n\n**Legacy format (Node.js clients):** ```json {\"image\": \"...\", \"tag.foo\": \"bar\", \"metadata.key\": \"value\"} ```\n\nUse the `tags()` and `metadata()` methods to get the merged result from both formats.",
+        "description": "Request to create a machine\n\nThis struct supports both the modern nested format and the legacy flattened format:\n\n**Modern format:** ```json {\"image\": \"...\", \"tags\": {\"foo\": \"bar\"}, \"metadata\": {\"key\": \"value\"}} ```\n\n**Legacy format:** ```json {\"image\": \"...\", \"tag.foo\": \"bar\", \"metadata.key\": \"value\"} ```",
         "properties": {
           "affinity": {
             "default": null,
@@ -1243,7 +1243,7 @@
         ]
       },
       "ImageErrorInfo": {
-        "description": "Image error information (for failed image creation)\n\nNote: Named `ImageErrorInfo` rather than `ImageError` to distinguish this DTO from Rust error types.",
+        "description": "Image error information (for failed image creation)",
         "properties": {
           "code": {
             "description": "Error code",
@@ -1792,7 +1792,7 @@
         "type": "object"
       },
       "Migration": {
-        "description": "Migration information\n\nNote: CloudAPI passes VMAPI migration fields through in snake_case (see migrations.js — `*_timestamp` fields are not translated to camelCase). Only `vm_uuid` is translated to `machine`.",
+        "description": "Migration information",
         "properties": {
           "automatic": {
             "default": null,
@@ -1810,7 +1810,7 @@
             "type": "string"
           },
           "machine": {
-            "description": "Machine UUID being migrated\n\nNote: The Node.js CloudAPI translates VMAPI's `vm_uuid` to `machine`.",
+            "description": "Machine UUID being migrated",
             "format": "uuid",
             "type": "string"
           },
@@ -2049,7 +2049,7 @@
         ]
       },
       "Network": {
-        "description": "Network information\n\nNote: CloudAPI returns snake_case for this object, so we use snake_case to match the API response format for CLI compatibility with node-triton.",
+        "description": "Network information",
         "properties": {
           "description": {
             "description": "Description",
@@ -5872,7 +5872,7 @@
         ]
       },
       "post": {
-        "description": "This endpoint handles multiple actions. The action can be specified either in the request body or as a query parameter. Body takes precedence, matching Restify's `mapParams` behavior.\n\nActions: - update: Update image metadata - export: Export image to Manta - clone: Clone image to account - import-from-datacenter: Import image from another datacenter\n\nNote: share/unshare operations are implemented client-side using the `update` action to modify the ACL (see `TypedClient::share_image` / `TypedClient::unshare_image` in `cloudapi-client`).",
+        "description": "This endpoint handles multiple actions. The action can be specified either in the request body or as a query parameter. Body takes precedence over the query parameter.\n\nActions: - update: Update image metadata - export: Export image to Manta - clone: Clone image to account - import-from-datacenter: Import image from another datacenter\n\nNote: share/unshare operations are implemented client-side using the `update` action to modify the ACL (see `TypedClient::share_image` / `TypedClient::unshare_image` in `cloudapi-client`).",
         "operationId": "update_image",
         "parameters": [
           {
@@ -5895,7 +5895,7 @@
             }
           },
           {
-            "description": "Action to perform. Optional in the query string because clients may send it in the request body instead (matching Restify's mapParams behavior). Service implementations should check the body first, then fall back to this query parameter.",
+            "description": "Action to perform. Optional in the query string because clients may send it in the request body instead. Body takes precedence over the query parameter.",
             "in": "query",
             "name": "action",
             "schema": {
@@ -6873,7 +6873,7 @@
         ]
       },
       "post": {
-        "description": "This endpoint handles multiple actions. The action can be specified either in the request body (`{\"action\": \"stop\"}`) or as a query parameter (`?action=stop`). Body takes precedence, matching Restify's `mapParams` behavior. Service implementations should check both.\n\nActions: - start: Start a stopped machine - stop: Stop a running machine - reboot: Reboot a running machine - resize: Resize to a different package - rename: Change machine name/alias - enable_firewall: Enable firewall - disable_firewall: Disable firewall - enable_deletion_protection: Enable deletion protection - disable_deletion_protection: Disable deletion protection",
+        "description": "This endpoint handles multiple actions. The action can be specified either in the request body (`{\"action\": \"stop\"}`) or as a query parameter (`?action=stop`). Body takes precedence over the query parameter.\n\nActions: - start: Start a stopped machine - stop: Stop a running machine - reboot: Reboot a running machine - resize: Resize to a different package - rename: Change machine name/alias - enable_firewall: Enable firewall - disable_firewall: Disable firewall - enable_deletion_protection: Enable deletion protection - disable_deletion_protection: Disable deletion protection",
         "operationId": "update_machine",
         "parameters": [
           {
@@ -6896,7 +6896,7 @@
             }
           },
           {
-            "description": "Action to perform. Optional in the query string because clients may send it in the request body instead (matching Restify's mapParams behavior). Service implementations should check the body first, then fall back to this query parameter.",
+            "description": "Action to perform. Optional in the query string because clients may send it in the request body instead. Body takes precedence over the query parameter.",
             "in": "query",
             "name": "action",
             "schema": {
@@ -7423,7 +7423,7 @@
         ]
       },
       "post": {
-        "description": "The action can be specified in the request body or as a query parameter. Body takes precedence, matching Restify's `mapParams` behavior.",
+        "description": "The action can be specified in the request body or as a query parameter. Body takes precedence over the query parameter.",
         "operationId": "resize_machine_disk",
         "parameters": [
           {
@@ -7456,7 +7456,7 @@
             }
           },
           {
-            "description": "Action to perform. Optional in the query string because clients may send it in the request body instead (matching Restify's mapParams behavior). Service implementations should check the body first, then fall back to this query parameter.",
+            "description": "Action to perform. Optional in the query string because clients may send it in the request body instead. Body takes precedence over the query parameter.",
             "in": "query",
             "name": "action",
             "schema": {
@@ -12592,7 +12592,7 @@
         ]
       },
       "post": {
-        "description": "The action can be specified in the request body or as a query parameter. Body takes precedence, matching Restify's `mapParams` behavior.",
+        "description": "The action can be specified in the request body or as a query parameter. Body takes precedence over the query parameter.",
         "operationId": "update_volume",
         "parameters": [
           {
@@ -12615,7 +12615,7 @@
             }
           },
           {
-            "description": "Action to perform. Optional in the query string because clients may send it in the request body instead (matching Restify's mapParams behavior). Service implementations should check the body first, then fall back to this query parameter.",
+            "description": "Action to perform. Optional in the query string because clients may send it in the request body instead. Body takes precedence over the query parameter.",
             "in": "query",
             "name": "action",
             "schema": {

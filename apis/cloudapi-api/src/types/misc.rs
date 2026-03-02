@@ -205,15 +205,13 @@ pub enum MigrationAction {
 }
 
 /// Migration information
-///
-/// Note: CloudAPI passes VMAPI migration fields through in snake_case
-/// (see migrations.js — `*_timestamp` fields are not translated to camelCase).
-/// Only `vm_uuid` is translated to `machine`.
+// Note: CloudAPI passes VMAPI migration fields through in snake_case
+// (*_timestamp fields are not translated to camelCase).
+// Only vm_uuid is translated to machine.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct Migration {
     /// Machine UUID being migrated
-    ///
-    /// Note: The Node.js CloudAPI translates VMAPI's `vm_uuid` to `machine`.
+    // Note: The Node.js CloudAPI translates VMAPI's vm_uuid to machine.
     #[serde(rename = "machine")]
     pub vm_uuid: Uuid,
     /// Migration phase
@@ -409,8 +407,8 @@ mod tests {
         assert!(package.disks.is_some());
     }
 
-    /// Test that `role-tag` and `flexible_disk` use their explicit renames,
-    /// not the struct-level `rename_all = "camelCase"`.
+    // Test that `role-tag` and `flexible_disk` use their explicit renames,
+    // not the struct-level `rename_all = "camelCase"`.
     #[test]
     fn test_package_special_field_wire_format() {
         let json = r#"{
@@ -467,14 +465,13 @@ mod tests {
 
     /// Test that the full package list response from CloudAPI can be deserialized.
     ///
-    /// This test uses the exact JSON payload that caused the "Invalid Response Payload"
-    /// error during `triton instance create`. The error occurred at column 2064 which
-    /// corresponds to a bhyve package with `"disks":[{}]` - an empty disk object that
-    /// is missing the required `size` field.
-    ///
-    /// The node-triton client handles this correctly, but the Rust client fails because
-    /// `PackageDisk.size` is required.
-    ///
+    // This test uses the exact JSON payload that caused the "Invalid Response Payload"
+    // error during `triton instance create`. The error occurred at column 2064 which
+    // corresponds to a bhyve package with `"disks":[{}]` - an empty disk object that
+    // is missing the required `size` field.
+    //
+    // The node-triton client handles this correctly, but the Rust client fails because
+    // `PackageDisk.size` is required.
     #[test]
     fn test_package_list_deserialize_with_bhyve_empty_disk() {
         // This is the exact JSON from the error message during `triton instance create`

@@ -148,15 +148,13 @@ pub trait VmApi {
     ///
     /// Dispatches an action on the VM. The action may be specified in the
     /// request body (`{"action": "start", ...}`) or as a query parameter
-    /// (`?action=start`). Body takes precedence (matching Restify's
-    /// `mapParams` behavior).
+    /// (`?action=start`). Body takes precedence over the query parameter.
     ///
     /// Available actions: start, stop, kill, reboot, reprovision, update,
     /// add_nics, update_nics, remove_nics, create_snapshot, rollback_snapshot,
     /// delete_snapshot, create_disk, resize_disk, delete_disk, migrate.
     ///
-    /// The request body varies by action type. Use serde_json::Value to
-    /// accept any action-specific body.
+    /// The request body varies by action type.
     #[endpoint {
         method = POST,
         path = "/vms/{uuid}",

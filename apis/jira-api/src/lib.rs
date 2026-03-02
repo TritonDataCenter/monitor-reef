@@ -208,7 +208,8 @@ pub struct RemoteLinkObject {
 /// the endpoints used by bugview-service. This is NOT a complete JIRA client.
 ///
 /// The actual implementation of these endpoints is provided by Atlassian's JIRA
-/// servers, not by us. We define this trait to generate a client via Progenitor.
+/// servers, not by us.
+// We define this trait to generate a client via Progenitor.
 #[dropshot::api_description]
 pub trait JiraApi {
     /// Context type for request handlers

@@ -31,7 +31,7 @@ include ./deps/eng/tools/mk/Makefile.rust.targ
 .PHONY: triton-compare triton-compare-payload triton-compare-api triton-compare-all
 .PHONY: openapi-generate openapi-list openapi-check
 .PHONY: dev-setup workspace-test integration-test
-.PHONY: list coverage arch-lint
+.PHONY: list coverage arch-lint doc-lint
 .PHONY: clients-generate clients-check
 
 # Default target
@@ -62,7 +62,7 @@ test: | $(CARGO_NEXTEST_EXEC) ## Run all tests
 clean:: | $(CARGO_EXEC) ## Clean build artifacts
 	$(CARGO) clean
 
-lint:: arch-lint clippy
+lint:: arch-lint doc-lint clippy
 
 clippy: | $(CARGO_EXEC) ## Run clippy linter
 	$(CARGO) clippy $(RUST_CLIPPY_ARGS)
@@ -310,3 +310,29 @@ clients-list: | $(CARGO_EXEC) ## List all managed clients
 # Regenerate everything (OpenAPI specs + client code)
 regen-clients: openapi-generate clients-generate ## Regenerate OpenAPI specs and client code
 	@echo "All specs and clients regenerated. Test with: make test"
+
+# Doc-lint: check that doc comments don't leak implementation details into OpenAPI specs
+DOC_LINT_PATTERNS = serde_json\|rename_all\|Dropshot\|Progenitor\|schemars\|helper method\|Service implementation\|Rust field\|Rust error\|Rust client
+DOC_LINT_FILES = apis/cloudapi-api/src/types/*.rs apis/cloudapi-api/src/lib.rs \
+	apis/vmapi-api/src/types/*.rs apis/vmapi-api/src/lib.rs \
+	apis/jira-api/src/lib.rs apis/bugview-api/src/lib.rs
+doc-lint: ## Check doc comments for implementation details that leak into OpenAPI specs
+	@echo "Checking doc comments for implementation details..."
+	@RESULT=""; \
+	for f in $(DOC_LINT_FILES); do \
+		if [ -f "$$f" ]; then \
+			MATCHES=$$(grep -n '^[[:space:]]*///' "$$f" | grep -i '$(DOC_LINT_PATTERNS)' | sed "s|^|$$f:|"); \
+			if [ -n "$$MATCHES" ]; then \
+				echo "$$MATCHES"; \
+				RESULT="found"; \
+			fi; \
+		fi; \
+	done; \
+	if [ -n "$$RESULT" ]; then \
+		echo ""; \
+		echo "ERROR: Found implementation details in doc comments that will leak into OpenAPI specs."; \
+		echo "Convert these to regular comments (//) instead of doc comments (///)."; \
+		exit 1; \
+	else \
+		echo "No implementation detail leaks found in doc comments."; \
+	fi
