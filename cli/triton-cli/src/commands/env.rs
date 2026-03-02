@@ -13,29 +13,31 @@ use std::collections::BTreeMap;
 
 /// Read Docker environment variables from the profile's setup.json file.
 ///
-/// Returns the env map from `config_dir/docker/<profile_name>/setup.json`
-/// if the file exists and is valid, or an empty map otherwise.
-async fn read_docker_env(profile_name: &str) -> BTreeMap<String, String> {
+/// Returns `None` if the setup.json file does not exist (docker not configured),
+/// `Some(map)` if the file exists (map may be empty if no env vars are set).
+async fn read_docker_env(profile_name: &str) -> Option<BTreeMap<String, String>> {
     let setup_path = config_dir()
         .join("docker")
         .join(profile_name)
         .join("setup.json");
     let contents = match tokio::fs::read_to_string(&setup_path).await {
         Ok(c) => c,
-        Err(_) => return BTreeMap::new(),
+        Err(_) => return None,
     };
     let parsed: serde_json::Value = match serde_json::from_str(&contents) {
         Ok(v) => v,
-        Err(_) => return BTreeMap::new(),
+        Err(_) => return Some(BTreeMap::new()),
     };
     let Some(env_obj) = parsed.get("env").and_then(|v| v.as_object()) else {
-        return BTreeMap::new();
+        return Some(BTreeMap::new());
     };
     // Collect non-null string values, using BTreeMap for deterministic ordering
-    env_obj
-        .iter()
-        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
-        .collect()
+    Some(
+        env_obj
+            .iter()
+            .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+            .collect(),
+    )
 }
 
 /// Generate shell export statements for the profile.
@@ -53,6 +55,18 @@ pub async fn generate_env(
 ) -> Result<()> {
     let profile = resolve_profile(profile_name).await?;
     let docker_env = read_docker_env(&profile.name).await;
+
+    // If docker was explicitly requested but setup.json is missing, error out.
+    // (In unset mode the static var list is used, so no setup.json is needed.)
+    if !unset && docker_section && docker_env.is_none() {
+        anyhow::bail!(
+            "Could not find Docker environment setup for profile \"{}\". \
+             Run 'triton profile docker-setup {}' to set up.",
+            profile.name,
+            profile.name
+        );
+    }
+    let docker_env = docker_env.unwrap_or_default();
 
     // If no section flags specified, emit all sections
     let emit_all = !triton_section && !docker_section && !smartdc_section;

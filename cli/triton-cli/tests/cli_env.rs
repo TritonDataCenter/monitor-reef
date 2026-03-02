@@ -374,10 +374,31 @@ fn test_env_triton_section_only() {
     );
 }
 
-/// Test that `--docker` emits only the docker section.
+/// Test that `--docker` emits only the docker section when setup.json exists.
 #[test]
 fn test_env_docker_section_only() {
-    let stdout = run_env_with_args(&["--docker"]);
+    let tmp = setup_docker_env(true);
+
+    let output = triton_cmd()
+        .args(["env", "--docker"])
+        .env("TRITON_URL", "https://cloudapi.test.example.com")
+        .env("TRITON_ACCOUNT", "test-account")
+        .env(
+            "TRITON_KEY_ID",
+            "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
+        )
+        .env("TRITON_CONFIG_DIR", tmp.path().to_str().unwrap())
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "Command should succeed.\nstdout: {}\nstderr: {}",
+        stdout,
+        stderr
+    );
 
     assert!(
         stdout.contains("# docker"),
@@ -426,7 +447,28 @@ fn test_env_smartdc_section_only() {
 /// Test that combining section flags emits only those sections.
 #[test]
 fn test_env_combined_sections() {
-    let stdout = run_env_with_args(&["--triton", "--docker"]);
+    let tmp = setup_docker_env(true);
+
+    let output = triton_cmd()
+        .args(["env", "--triton", "--docker"])
+        .env("TRITON_URL", "https://cloudapi.test.example.com")
+        .env("TRITON_ACCOUNT", "test-account")
+        .env(
+            "TRITON_KEY_ID",
+            "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
+        )
+        .env("TRITON_CONFIG_DIR", tmp.path().to_str().unwrap())
+        .output()
+        .expect("Failed to run command");
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        output.status.success(),
+        "Command should succeed.\nstdout: {}\nstderr: {}",
+        stdout,
+        stderr
+    );
 
     assert!(
         stdout.contains("# triton"),
@@ -647,5 +689,34 @@ fn test_env_powershell_sdc_testing_secure() {
         stdout.contains("Remove-Item Env:SDC_TESTING -ErrorAction SilentlyContinue"),
         "Should remove SDC_TESTING in powershell when not insecure. Got:\n{}",
         stdout
+    );
+}
+
+/// Test that `triton env --docker` errors when no setup.json exists,
+/// telling the user to run `triton profile docker-setup`.
+#[test]
+fn test_env_docker_explicit_no_setup_errors() {
+    let output = triton_cmd()
+        .args(["env", "--docker"])
+        .env("TRITON_URL", "https://cloudapi.test.example.com")
+        .env("TRITON_ACCOUNT", "test-account")
+        .env(
+            "TRITON_KEY_ID",
+            "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
+        )
+        .env("HOME", "/nonexistent")
+        .output()
+        .expect("Failed to run command");
+
+    assert!(
+        !output.status.success(),
+        "Command should fail when --docker is explicit and no setup.json exists"
+    );
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("docker-setup"),
+        "Error should mention docker-setup. Got stderr:\n{}",
+        stderr
     );
 }
