@@ -254,6 +254,7 @@ pub async fn rbac_info(args: InfoArgs, client: &TypedClient, use_json: bool) -> 
     let policies = policies_result?.into_inner();
 
     // If --all flag is set, fetch keys for each user
+    let mut key_fetch_errors: Vec<String> = Vec::new();
     let user_keys: HashMap<String, Vec<cloudapi_client::types::SshKey>> = if args.all {
         let mut keys_map = HashMap::new();
         for user in &users {
@@ -264,8 +265,17 @@ pub async fn rbac_info(args: InfoArgs, client: &TypedClient, use_json: bool) -> 
                 .uuid(user.id.to_string())
                 .send()
                 .await;
-            if let Ok(keys) = keys_result {
-                keys_map.insert(user.id.to_string(), keys.into_inner());
+            match keys_result {
+                Ok(keys) => {
+                    keys_map.insert(user.id.to_string(), keys.into_inner());
+                }
+                Err(e) => {
+                    eprintln!(
+                        "Warning: failed to fetch keys for user {}: {}",
+                        user.login, e
+                    );
+                    key_fetch_errors.push(user.id.to_string());
+                }
             }
         }
         keys_map
@@ -317,11 +327,15 @@ pub async fn rbac_info(args: InfoArgs, client: &TypedClient, use_json: bool) -> 
                 let user_id_str = user.id.to_string();
                 let short_id = &user_id_str[..8];
                 if args.all {
-                    let keys_count = user_keys.get(&user_id_str).map(|k| k.len()).unwrap_or(0);
-                    let keys_str = if keys_count == 0 {
-                        stylize("no keys", "red")
+                    let keys_str = if key_fetch_errors.contains(&user_id_str) {
+                        stylize("error", "red")
                     } else {
-                        format!("{} key(s)", keys_count)
+                        let keys_count = user_keys.get(&user_id_str).map(|k| k.len()).unwrap_or(0);
+                        if keys_count == 0 {
+                            stylize("no keys", "red")
+                        } else {
+                            format!("{} key(s)", keys_count)
+                        }
                     };
                     tbl.add_row(vec![short_id, &user.login, &user.email, &keys_str]);
                 } else {
