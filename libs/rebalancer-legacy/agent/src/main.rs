@@ -246,6 +246,8 @@ pub mod agenttests {
                 manta_storage_id: "localhost:8080".to_owned(),
             },
             status: TaskStatus::Pending,
+            bucket_id: None,
+            object_name_hash: None,
         }
     }
 

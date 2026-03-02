@@ -325,7 +325,9 @@ fn assignment_save(
         md5sum text not null,
         datacenter text not null,
         manta_storage_id text not null,
-        status text not null
+        status text not null,
+        bucket_id text,
+        object_name_hash text
 	)",
             rusqlite::params![],
         )
@@ -344,15 +346,19 @@ fn assignment_save(
         transaction
             .execute(
                 "INSERT INTO tasks
-            (object_id, owner, md5sum, datacenter, manta_storage_id, status)
-            values (?1, ?2, ?3, ?4, ?5, ?6)",
+            (object_id, owner, md5sum, datacenter,
+             manta_storage_id, status,
+             bucket_id, object_name_hash)
+            values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 rusqlite::params![
                     task.object_id,
                     task.owner,
                     task.md5sum,
                     task.source.datacenter,
                     task.source.manta_storage_id,
-                    serde_json::to_vec(&task.status).unwrap()
+                    serde_json::to_vec(&task.status).unwrap(),
+                    task.bucket_id,
+                    task.object_name_hash,
                 ],
             )
             .map_err(|e| {
@@ -414,7 +420,8 @@ fn assignment_recall<S: Into<String>>(
 
     let mut stmt = match conn.prepare(
         "SELECT object_id, owner, md5sum,
-	   datacenter, manta_storage_id, status FROM tasks",
+	   datacenter, manta_storage_id, status,
+	   bucket_id, object_name_hash FROM tasks",
     ) {
         Ok(s) => s,
         Err(e) => return Err(format!("Query creation error: {}", e)),
@@ -439,6 +446,8 @@ fn assignment_recall<S: Into<String>>(
             md5sum: row.get(2)?,
             source,
             status,
+            bucket_id: row.get(6)?,
+            object_name_hash: row.get(7)?,
         };
         Ok(t)
     }) {
@@ -825,6 +834,47 @@ fn manta_file_path(owner: &str, object: &str) -> String {
     path
 }
 
+/// Storage path prefix length -- first N chars of object_id
+/// used as a subdirectory to limit files per directory.
+const STORAGE_LAYOUT_PREFIX_LEN: usize = 2;
+
+/// Construct the on-disk path for an MDAPI (v2) object.
+///
+/// Layout: /manta/v2/{owner}/{bucket_id}/{prefix}/{id},{hash}
+fn mdapi_file_path(
+    owner: &str,
+    object_id: &str,
+    bucket_id: &str,
+    name_hash: &str,
+) -> String {
+    assert!(
+        object_id.len() >= STORAGE_LAYOUT_PREFIX_LEN,
+        "object_id too short for prefix extraction"
+    );
+    let prefix = &object_id[..STORAGE_LAYOUT_PREFIX_LEN];
+    format!(
+        "/manta/v2/{}/{}/{}/{},{}",
+        owner, bucket_id, prefix, object_id, name_hash
+    )
+}
+
+/// Construct the download URL for an MDAPI (v2) object.
+///
+/// Layout: http://{host}/v2/{owner}/{bucket_id}/{prefix}/{id},{hash}
+fn mdapi_download_url(
+    host: &str,
+    owner: &str,
+    object_id: &str,
+    bucket_id: &str,
+    name_hash: &str,
+) -> String {
+    let prefix = &object_id[..STORAGE_LAYOUT_PREFIX_LEN];
+    format!(
+        "http://{}/v2/{}/{}/{}/{},{}",
+        host, owner, bucket_id, prefix, object_id, name_hash
+    )
+}
+
 fn file_move(src: &str, dst: &str) -> Result<(), String> {
     let parent = match Path::new(dst).parent() {
         Some(p) => p,
@@ -915,7 +965,34 @@ pub fn process_task(
     client: &Client,
     metrics: &Option<MetricsMap>,
 ) {
-    let file_path = manta_file_path(&task.owner, &task.object_id);
+    // Determine paths based on object type (v1 dir API vs v2 MDAPI)
+    let (file_path, url) = match (
+        &task.bucket_id,
+        &task.object_name_hash,
+    ) {
+        (Some(bid), Some(nhash)) => (
+            mdapi_file_path(
+                &task.owner, &task.object_id, bid, nhash,
+            ),
+            mdapi_download_url(
+                &task.source.manta_storage_id,
+                &task.owner,
+                &task.object_id,
+                bid,
+                nhash,
+            ),
+        ),
+        _ => (
+            manta_file_path(&task.owner, &task.object_id),
+            format!(
+                "http://{}/{}/{}",
+                &task.source.manta_storage_id,
+                &task.owner,
+                &task.object_id,
+            ),
+        ),
+    };
+
     let path = Path::new(&file_path);
 
     // If the file exists and the checksum matches, then
@@ -930,13 +1007,6 @@ pub fn process_task(
         );
         return;
     }
-
-    // Put it all together.  The format of the url is:
-    // http://<storage id>/<owner id>/<object id>
-    let url = format!(
-        "http://{}/{}/{}",
-        &task.source.manta_storage_id, &task.owner, &task.object_id
-    );
 
     let tmp_path = manta_tmp_path(&task.owner, &task.object_id);
 
@@ -959,22 +1029,22 @@ pub fn process_task(
                 &task.owner, &task.object_id, bytes
             );
 
-            // Upon successful download, move the temprorary object to its
-            // rightful location (i.e. /manta/account/object).
-            let manta_path = manta_file_path(&task.owner, &task.object_id);
-            match file_move(&tmp_path, &manta_path) {
+            // Upon successful download, move the temporary
+            // object to its rightful location.
+            match file_move(&tmp_path, &file_path) {
                 Ok(()) => TaskStatus::Complete,
                 Err(e) => {
                     error!("{}", e);
-                    TaskStatus::Failed(ObjectSkippedReason::AgentFSError)
+                    TaskStatus::Failed(
+                        ObjectSkippedReason::AgentFSError,
+                    )
                 }
             }
         }
         Err(e) => {
-            // If we failed to complete the download, remove the temporary
-            // file so that these kinds of things do not pile up.  It is
-            // worth mentioning that in all failure cases except one there
-            // will a partially downloaded object that requires clean-up.
+            // If we failed to complete the download, remove
+            // the temporary file so that these kinds of things
+            // do not pile up.
             file_remove(&tmp_path);
             TaskStatus::Failed(e)
         }

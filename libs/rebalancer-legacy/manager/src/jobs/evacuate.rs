@@ -946,6 +946,15 @@ struct MantaObjectEssential {
 
     #[serde(default)]
     pub sharks: Vec<MantaObjectShark>,
+
+    /// Bucket ID for MDAPI (v2) objects. None for v1 objects.
+    #[serde(default)]
+    pub bucket_id: Option<String>,
+
+    /// Object name for MDAPI (v2) objects, used to compute
+    /// the name hash for the v2 storage path.
+    #[serde(default)]
+    pub name: Option<String>,
 }
 
 #[derive(
@@ -3831,12 +3840,41 @@ fn add_object_to_assignment(
         .tasks
         .insert(
             manta_object.object_id.to_owned(),
-            Task {
-                object_id: manta_object.object_id.to_owned(),
-                owner: manta_object.owner.to_owned(),
-                md5sum: manta_object.content_md5.to_owned(),
-                source: source.to_owned(),
-                status: TaskStatus::Pending,
+            {
+                let (bucket_id, object_name_hash) =
+                    match &manta_object.bucket_id {
+                        Some(bid) => {
+                            let name_src =
+                                manta_object
+                                    .name
+                                    .as_deref()
+                                    .unwrap_or(
+                                        &manta_object.key,
+                                    );
+                            let nhash =
+                                common::object_name_md5_hex(
+                                    name_src,
+                                );
+                            (
+                                Some(bid.clone()),
+                                Some(nhash),
+                            )
+                        }
+                        None => (None, None),
+                    };
+                Task {
+                    object_id: manta_object
+                        .object_id
+                        .to_owned(),
+                    owner: manta_object.owner.to_owned(),
+                    md5sum: manta_object
+                        .content_md5
+                        .to_owned(),
+                    source: source.to_owned(),
+                    status: TaskStatus::Pending,
+                    bucket_id,
+                    object_name_hash,
+                }
             },
         )
         .is_some()

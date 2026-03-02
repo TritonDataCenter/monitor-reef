@@ -60,6 +60,15 @@ pub struct Task {
 
     #[serde(default = "TaskStatus::default")]
     pub status: TaskStatus,
+
+    /// Bucket ID for MDAPI (v2) objects. None for v1 objects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bucket_id: Option<String>,
+
+    /// MD5 hex digest of object name for MDAPI (v2) objects.
+    /// None for v1 objects.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_name_hash: Option<String>,
 }
 
 impl Task {
@@ -82,6 +91,8 @@ impl Arbitrary for Task {
             md5sum,
             source: MantaObjectShark::arbitrary(g),
             status: TaskStatus::arbitrary(g),
+            bucket_id: None,
+            object_name_hash: None,
         }
     }
 }
@@ -256,6 +267,16 @@ impl FromSql<sql_types::Text, Pg> for ObjectSkippedReason {
         let ts: String = t_str.to_string();
         _osr_from_sql(ts)
     }
+}
+
+/// Compute MD5 hex digest of an object name.
+///
+/// Matches the Node.js algorithm:
+///   crypto.createHash('md5').update(name).digest('hex')
+pub fn object_name_md5_hex(name: &str) -> String {
+    let mut hasher = Md5::new();
+    hasher.input(name.as_bytes());
+    format!("{:x}", hasher.result())
 }
 
 pub fn get_sharks_from_value(
@@ -475,5 +496,106 @@ mod tests {
         );
         let display = format!("{}", err);
         assert!(display.contains("shark missing"));
+    }
+
+    #[test]
+    fn object_name_md5_hex_known_vector() {
+        // echo -n "hello" | md5
+        // 5d41402abc4b2a76b9719d911017c592
+        assert_eq!(
+            object_name_md5_hex("hello"),
+            "5d41402abc4b2a76b9719d911017c592"
+        );
+    }
+
+    #[test]
+    fn object_name_md5_hex_empty_string() {
+        // echo -n "" | md5
+        // d41d8cd98f00b204e9800998ecf8427e
+        assert_eq!(
+            object_name_md5_hex(""),
+            "d41d8cd98f00b204e9800998ecf8427e"
+        );
+    }
+
+    #[test]
+    fn object_name_md5_hex_object_path() {
+        // Typical Manta object name
+        let hash = object_name_md5_hex(
+            "/user/stor/myobject.txt",
+        );
+        assert_eq!(hash.len(), 32);
+        assert!(hash.chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    #[test]
+    fn task_serde_roundtrip_v2_fields() {
+        let task = Task {
+            object_id: "obj-123".to_string(),
+            owner: "owner-456".to_string(),
+            md5sum: "abc".to_string(),
+            source: MantaObjectShark {
+                datacenter: "dc1".to_string(),
+                manta_storage_id: "1.stor".to_string(),
+            },
+            status: TaskStatus::Pending,
+            bucket_id: Some("bucket-789".to_string()),
+            object_name_hash: Some("aabbccdd".to_string()),
+        };
+        let json = serde_json::to_string(&task).unwrap();
+        assert!(json.contains("bucket_id"));
+        assert!(json.contains("object_name_hash"));
+        let round: Task = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            round.bucket_id.as_deref(),
+            Some("bucket-789"),
+        );
+        assert_eq!(
+            round.object_name_hash.as_deref(),
+            Some("aabbccdd"),
+        );
+    }
+
+    #[test]
+    fn task_serde_backward_compat_v1() {
+        // Old v1 JSON without bucket_id or object_name_hash
+        let json = r#"{
+            "object_id": "obj-1",
+            "owner": "owner-1",
+            "md5sum": "abc",
+            "source": {
+                "datacenter": "dc1",
+                "manta_storage_id": "1.stor"
+            },
+            "status": "Pending"
+        }"#;
+        let task: Task = serde_json::from_str(json).unwrap();
+        assert!(task.bucket_id.is_none());
+        assert!(task.object_name_hash.is_none());
+    }
+
+    #[test]
+    fn task_serde_v1_skips_none_fields() {
+        let task = Task {
+            object_id: "obj-1".to_string(),
+            owner: "owner-1".to_string(),
+            md5sum: "abc".to_string(),
+            source: MantaObjectShark {
+                datacenter: "dc1".to_string(),
+                manta_storage_id: "1.stor".to_string(),
+            },
+            status: TaskStatus::Pending,
+            bucket_id: None,
+            object_name_hash: None,
+        };
+        let json = serde_json::to_string(&task).unwrap();
+        assert!(
+            !json.contains("bucket_id"),
+            "v1 task should not serialize bucket_id"
+        );
+        assert!(
+            !json.contains("object_name_hash"),
+            "v1 task should not serialize object_name_hash"
+        );
     }
 }
