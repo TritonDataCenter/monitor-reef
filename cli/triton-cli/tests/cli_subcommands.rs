@@ -34,7 +34,7 @@ fn test_subcommand_help(args: &[&str]) {
         .args(&h_args)
         .assert()
         .success()
-        .stdout(predicate::str::is_empty().not());
+        .stdout(predicate::str::contains("Usage:"));
 
     // Test with help subcommand (insert "help" before last arg)
     if !args.is_empty() {
@@ -46,7 +46,7 @@ fn test_subcommand_help(args: &[&str]) {
             .args(&help_args)
             .assert()
             .success()
-            .stdout(predicate::str::is_empty().not());
+            .stdout(predicate::str::contains("Usage:"));
     }
 }
 
