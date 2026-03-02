@@ -31,9 +31,18 @@ pub struct DeleteArgs {
 
 pub async fn run(args: DeleteArgs, client: &TypedClient) -> Result<()> {
     let account = client.effective_account();
+    let total = args.instances.len();
+    let mut errors = Vec::new();
 
     for instance in &args.instances {
-        let machine_id = super::get::resolve_instance(instance, client).await?;
+        let machine_id = match super::get::resolve_instance(instance, client).await {
+            Ok(id) => id,
+            Err(e) => {
+                eprintln!("Error: {}: {}", instance, e);
+                errors.push(format!("{}: {}", instance, e));
+                continue;
+            }
+        };
         let id_str = machine_id.to_string();
 
         if !args.force
@@ -46,28 +55,47 @@ pub async fn run(args: DeleteArgs, client: &TypedClient) -> Result<()> {
             continue;
         }
 
-        client
+        if let Err(e) = client
             .inner()
             .delete_machine()
             .account(account)
             .machine(machine_id)
             .send()
-            .await?;
+            .await
+        {
+            eprintln!("Error deleting {}: {}", &id_str[..8], e);
+            errors.push(format!("{}: {}", &id_str[..8], e));
+            continue;
+        }
 
         println!("Deleting instance {}", &id_str[..8]);
 
         if args.wait {
             println!("Waiting for instance to be deleted...");
-            super::wait::wait_for_state(
+            match super::wait::wait_for_state(
                 machine_id,
                 cloudapi_client::types::MachineState::Deleted,
                 args.wait_timeout,
                 client,
             )
-            .await?;
-            println!("Instance {} deleted", &id_str[..8]);
+            .await
+            {
+                Ok(()) => println!("Instance {} deleted", &id_str[..8]),
+                Err(e) => {
+                    eprintln!("Error waiting for {}: {}", &id_str[..8], e);
+                    errors.push(format!("{}: {}", &id_str[..8], e));
+                }
+            }
         }
     }
 
-    Ok(())
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "{} of {} instances failed",
+            errors.len(),
+            total
+        ))
+    }
 }

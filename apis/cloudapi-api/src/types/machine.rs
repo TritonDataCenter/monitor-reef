@@ -645,6 +645,18 @@ impl ListMachinesQuery {
     }
 }
 
+/// Success status for an audit entry.
+///
+/// CloudAPI sends `"yes"` or `"no"` strings on the wire (not booleans).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum AuditSuccess {
+    Yes,
+    No,
+    #[serde(other)]
+    Unknown,
+}
+
 /// Audit entry for a machine
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
@@ -658,5 +670,5 @@ pub struct AuditEntry {
     pub caller: Option<serde_json::Value>,
     /// Success status
     #[serde(default)]
-    pub success: Option<bool>,
+    pub success: Option<AuditSuccess>,
 }

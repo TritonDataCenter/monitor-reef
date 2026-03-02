@@ -54,73 +54,162 @@ pub struct RebootArgs {
 }
 
 pub async fn start(args: StartArgs, client: &TypedClient) -> Result<()> {
+    let total = args.instances.len();
+    let mut errors = Vec::new();
+
     for instance in &args.instances {
-        let machine_id = super::get::resolve_instance(instance, client).await?;
+        let machine_id = match super::get::resolve_instance(instance, client).await {
+            Ok(id) => id,
+            Err(e) => {
+                eprintln!("Error: {}: {}", instance, e);
+                errors.push(format!("{}: {}", instance, e));
+                continue;
+            }
+        };
         let account = client.effective_account();
         let id_str = machine_id.to_string();
 
-        client.start_machine(account, &machine_id, None).await?;
+        if let Err(e) = client.start_machine(account, &machine_id, None).await {
+            eprintln!("Error starting {}: {}", &id_str[..8], e);
+            errors.push(format!("{}: {}", &id_str[..8], e));
+            continue;
+        }
 
         println!("Starting instance {}", &id_str[..8]);
 
         if args.wait {
-            super::wait::wait_for_state(
+            match super::wait::wait_for_state(
                 machine_id,
                 MachineState::Running,
                 args.wait_timeout,
                 client,
             )
-            .await?;
-            println!("Instance {} is running", &id_str[..8]);
+            .await
+            {
+                Ok(()) => println!("Instance {} is running", &id_str[..8]),
+                Err(e) => {
+                    eprintln!("Error waiting for {}: {}", &id_str[..8], e);
+                    errors.push(format!("{}: {}", &id_str[..8], e));
+                }
+            }
         }
     }
-    Ok(())
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "{} of {} instances failed",
+            errors.len(),
+            total
+        ))
+    }
 }
 
 pub async fn stop(args: StopArgs, client: &TypedClient) -> Result<()> {
+    let total = args.instances.len();
+    let mut errors = Vec::new();
+
     for instance in &args.instances {
-        let machine_id = super::get::resolve_instance(instance, client).await?;
+        let machine_id = match super::get::resolve_instance(instance, client).await {
+            Ok(id) => id,
+            Err(e) => {
+                eprintln!("Error: {}: {}", instance, e);
+                errors.push(format!("{}: {}", instance, e));
+                continue;
+            }
+        };
         let account = client.effective_account();
         let id_str = machine_id.to_string();
 
-        client.stop_machine(account, &machine_id, None).await?;
+        if let Err(e) = client.stop_machine(account, &machine_id, None).await {
+            eprintln!("Error stopping {}: {}", &id_str[..8], e);
+            errors.push(format!("{}: {}", &id_str[..8], e));
+            continue;
+        }
 
         println!("Stopping instance {}", &id_str[..8]);
 
         if args.wait {
-            super::wait::wait_for_state(
+            match super::wait::wait_for_state(
                 machine_id,
                 MachineState::Stopped,
                 args.wait_timeout,
                 client,
             )
-            .await?;
-            println!("Instance {} is stopped", &id_str[..8]);
+            .await
+            {
+                Ok(()) => println!("Instance {} is stopped", &id_str[..8]),
+                Err(e) => {
+                    eprintln!("Error waiting for {}: {}", &id_str[..8], e);
+                    errors.push(format!("{}: {}", &id_str[..8], e));
+                }
+            }
         }
     }
-    Ok(())
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "{} of {} instances failed",
+            errors.len(),
+            total
+        ))
+    }
 }
 
 pub async fn reboot(args: RebootArgs, client: &TypedClient) -> Result<()> {
+    let total = args.instances.len();
+    let mut errors = Vec::new();
+
     for instance in &args.instances {
-        let machine_id = super::get::resolve_instance(instance, client).await?;
+        let machine_id = match super::get::resolve_instance(instance, client).await {
+            Ok(id) => id,
+            Err(e) => {
+                eprintln!("Error: {}: {}", instance, e);
+                errors.push(format!("{}: {}", instance, e));
+                continue;
+            }
+        };
         let account = client.effective_account();
         let id_str = machine_id.to_string();
 
-        client.reboot_machine(account, &machine_id, None).await?;
+        // Record the time before issuing the reboot so we can find the
+        // corresponding audit entry later.
+        let reboot_time = chrono::Utc::now().to_rfc3339();
+
+        if let Err(e) = client.reboot_machine(account, &machine_id, None).await {
+            eprintln!("Error rebooting {}: {}", &id_str[..8], e);
+            errors.push(format!("{}: {}", &id_str[..8], e));
+            continue;
+        }
 
         println!("Rebooting instance {}", &id_str[..8]);
 
         if args.wait {
-            super::wait::wait_for_state(
-                machine_id,
-                MachineState::Running,
-                args.wait_timeout,
-                client,
-            )
-            .await?;
-            println!("Instance {} is running", &id_str[..8]);
+            // Use audit-trail polling instead of state polling. Polling for
+            // state==running is ambiguous because a fast reboot (or one that
+            // hasn't started yet) may already show "running".
+            match super::wait::wait_for_reboot(machine_id, &reboot_time, args.wait_timeout, client)
+                .await
+            {
+                Ok(()) => println!("Instance {} rebooted", &id_str[..8]),
+                Err(e) => {
+                    eprintln!("Error waiting for {}: {}", &id_str[..8], e);
+                    errors.push(format!("{}: {}", &id_str[..8], e));
+                }
+            }
         }
     }
-    Ok(())
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "{} of {} instances failed",
+            errors.len(),
+            total
+        ))
+    }
 }

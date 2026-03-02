@@ -11,7 +11,7 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use clap::Args;
 use cloudapi_client::TypedClient;
-use cloudapi_client::types::{Machine, MachineState};
+use cloudapi_client::types::{AuditSuccess, Machine, MachineState};
 use tokio::time::sleep;
 
 use crate::output::{enum_to_display, json};
@@ -93,6 +93,60 @@ pub async fn wait_for_states(
                 target_names.join(", "),
                 enum_to_display(&machine.state)
             ));
+        }
+
+        sleep(Duration::from_secs(2)).await;
+    }
+}
+
+/// Wait for a reboot to complete by polling the audit trail.
+///
+/// Instead of polling machine state (which is ambiguous — a fast reboot may
+/// already show "running" before we first poll), we look for a "reboot" audit
+/// entry with a timestamp after `reboot_time` and `success == Yes`.
+pub async fn wait_for_reboot(
+    machine_id: uuid::Uuid,
+    reboot_time: &str,
+    timeout_secs: u64,
+    client: &TypedClient,
+) -> Result<()> {
+    let account = client.effective_account();
+    let start = Instant::now();
+    let timeout = Duration::from_secs(timeout_secs);
+
+    // Small initial delay to avoid hitting the API before the action is recorded
+    sleep(Duration::from_millis(500)).await;
+
+    loop {
+        let audits = client
+            .inner()
+            .machine_audit()
+            .account(account)
+            .machine(machine_id)
+            .send()
+            .await?
+            .into_inner();
+
+        // Look for a reboot audit entry newer than our reboot request
+        for audit in &audits {
+            if audit.action == "reboot" && audit.time.as_str() > reboot_time {
+                if audit.success == Some(AuditSuccess::Yes) {
+                    return Ok(());
+                } else {
+                    return Err(anyhow::anyhow!(
+                        "Reboot failed (audit success={})",
+                        audit
+                            .success
+                            .as_ref()
+                            .map(enum_to_display)
+                            .unwrap_or_else(|| "unknown".to_string())
+                    ));
+                }
+            }
+        }
+
+        if start.elapsed() > timeout {
+            return Err(anyhow::anyhow!("Timeout waiting for reboot to complete"));
         }
 
         sleep(Duration::from_secs(2)).await;

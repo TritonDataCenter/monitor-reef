@@ -9685,7 +9685,11 @@
             "nullable": true,
             "description": "Success status",
             "default": null,
-            "type": "boolean"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AuditSuccess"
+              }
+            ]
           },
           "time": {
             "description": "Timestamp",
@@ -9695,6 +9699,15 @@
         "required": [
           "action",
           "time"
+        ]
+      },
+      "AuditSuccess": {
+        "description": "Success status for an audit entry.\n\nCloudAPI sends `\"yes\"` or `\"no\"` strings on the wire (not booleans).",
+        "type": "string",
+        "enum": [
+          "yes",
+          "no",
+          "unknown"
         ]
       },
       "Brand": {

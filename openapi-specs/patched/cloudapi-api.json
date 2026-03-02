@@ -213,10 +213,14 @@
             "nullable": true
           },
           "success": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AuditSuccess"
+              }
+            ],
             "default": null,
             "description": "Success status",
-            "nullable": true,
-            "type": "boolean"
+            "nullable": true
           },
           "time": {
             "description": "Timestamp",
@@ -228,6 +232,15 @@
           "time"
         ],
         "type": "object"
+      },
+      "AuditSuccess": {
+        "description": "Success status for an audit entry.\n\nCloudAPI sends `\"yes\"` or `\"no\"` strings on the wire (not booleans).",
+        "enum": [
+          "yes",
+          "no",
+          "unknown"
+        ],
+        "type": "string"
       },
       "Brand": {
         "description": "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",

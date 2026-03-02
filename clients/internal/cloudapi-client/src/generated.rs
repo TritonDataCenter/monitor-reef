@@ -543,9 +543,17 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"success\": {"]
     #[doc = "      \"description\": \"Success status\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"boolean\","]
-    #[doc = "        \"null\""]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/AuditSuccess\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"time\": {"]
@@ -567,7 +575,7 @@ pub mod types {
         pub caller: ::std::option::Option<::serde_json::Value>,
         #[doc = "Success status"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub success: ::std::option::Option<bool>,
+        pub success: ::std::option::Option<AuditSuccess>,
         #[doc = "Timestamp"]
         pub time: ::std::string::String,
     }
@@ -575,6 +583,91 @@ pub mod types {
     impl AuditEntry {
         pub fn builder() -> builder::AuditEntry {
             Default::default()
+        }
+    }
+
+    #[doc = "Success status for an audit entry.\n\nCloudAPI sends `\"yes\"` or `\"no\"` strings on the wire (not booleans)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Success status for an audit entry.\\n\\nCloudAPI sends `\\\"yes\\\"` or `\\\"no\\\"` strings on the wire (not booleans).\","]
+    #[doc = "  \"type\": \"string\","]
+    #[doc = "  \"enum\": ["]
+    #[doc = "    \"yes\","]
+    #[doc = "    \"no\","]
+    #[doc = "    \"unknown\""]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum AuditSuccess {
+        #[serde(rename = "yes")]
+        Yes,
+        #[serde(rename = "no")]
+        No,
+        #[serde(rename = "unknown")]
+        Unknown,
+    }
+
+    impl ::std::fmt::Display for AuditSuccess {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Yes => f.write_str("yes"),
+                Self::No => f.write_str("no"),
+                Self::Unknown => f.write_str("unknown"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for AuditSuccess {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "yes" => Ok(Self::Yes),
+                "no" => Ok(Self::No),
+                "unknown" => Ok(Self::Unknown),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for AuditSuccess {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for AuditSuccess {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for AuditSuccess {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
         }
     }
 
@@ -8685,7 +8778,10 @@ pub mod types {
                 ::std::option::Option<::serde_json::Value>,
                 ::std::string::String,
             >,
-            success: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
+            success: ::std::result::Result<
+                ::std::option::Option<super::AuditSuccess>,
+                ::std::string::String,
+            >,
             time: ::std::result::Result<::std::string::String, ::std::string::String>,
         }
 
@@ -8723,7 +8819,7 @@ pub mod types {
             }
             pub fn success<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::AuditSuccess>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.success = value

@@ -12,8 +12,8 @@ use cloudapi_client::TypedClient;
 use cloudapi_client::types::AuditEntry;
 
 use crate::define_columns;
-use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::output::{enum_to_display, json};
 
 #[derive(Args, Clone)]
 pub struct AuditArgs {
@@ -50,8 +50,9 @@ pub async fn run(args: AuditArgs, client: &TypedClient, use_json: bool) -> Resul
                 Time("TIME") => |audit| audit.time.clone(),
                 Action("ACTION") => |audit| audit.action.clone(),
                 Success("SUCCESS") => |audit| {
-                    audit.success.map(|s| if s { "yes" } else { "no" })
-                        .unwrap_or("-").to_string()
+                    audit.success.as_ref()
+                        .map(enum_to_display)
+                        .unwrap_or_else(|| "-".to_string())
                 },
                 // --- long-only columns below ---
                 Caller("CALLER") => |audit| {
