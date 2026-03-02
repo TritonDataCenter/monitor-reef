@@ -313,10 +313,16 @@ fn test_env_fish_docker_vars() {
 
 /// Helper: run `triton env` with standard env vars and extra args, return stdout.
 fn run_env_with_args(args: &[&str]) -> String {
+    run_env_with_args_insecure(args, false)
+}
+
+/// Helper: run `triton env` with standard env vars, extra args, and optional
+/// TRITON_TLS_INSECURE flag, return stdout.
+fn run_env_with_args_insecure(args: &[&str], insecure: bool) -> String {
     let mut cmd = triton_cmd();
     let mut all_args = vec!["env"];
     all_args.extend_from_slice(args);
-    let output = cmd
+    let cmd = cmd
         .args(all_args)
         .env("TRITON_URL", "https://cloudapi.test.example.com")
         .env("TRITON_ACCOUNT", "test-account")
@@ -324,9 +330,11 @@ fn run_env_with_args(args: &[&str]) -> String {
             "TRITON_KEY_ID",
             "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
         )
-        .env("HOME", "/nonexistent")
-        .output()
-        .expect("Failed to run command");
+        .env("HOME", "/nonexistent");
+    if insecure {
+        cmd.env("TRITON_TLS_INSECURE", "true");
+    }
+    let output = cmd.output().expect("Failed to run command");
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -561,6 +569,83 @@ fn test_env_unset_powershell() {
     assert!(
         stdout.contains("Remove-Item Env:SDC_URL -ErrorAction SilentlyContinue"),
         "Should use PowerShell unset for SDC_URL. Got:\n{}",
+        stdout
+    );
+}
+
+/// Test that bash exports SDC_TESTING="true" when profile is insecure.
+#[test]
+fn test_env_bash_sdc_testing_insecure() {
+    let stdout = run_env_with_args_insecure(&[], true);
+
+    assert!(
+        stdout.contains("export SDC_TESTING=\"true\""),
+        "Should export SDC_TESTING when insecure. Got:\n{}",
+        stdout
+    );
+}
+
+/// Test that bash unsets SDC_TESTING when profile is not insecure.
+#[test]
+fn test_env_bash_sdc_testing_secure() {
+    let stdout = run_env_with_args_insecure(&[], false);
+
+    assert!(
+        stdout.contains("unset SDC_TESTING"),
+        "Should unset SDC_TESTING when not insecure. Got:\n{}",
+        stdout
+    );
+    assert!(
+        !stdout.contains("export SDC_TESTING"),
+        "Should NOT export SDC_TESTING when not insecure. Got:\n{}",
+        stdout
+    );
+}
+
+/// Test that fish exports SDC_TESTING when profile is insecure.
+#[test]
+fn test_env_fish_sdc_testing_insecure() {
+    let stdout = run_env_with_args_insecure(&["--shell", "fish"], true);
+
+    assert!(
+        stdout.contains("set -gx SDC_TESTING 'true'"),
+        "Should set SDC_TESTING in fish when insecure. Got:\n{}",
+        stdout
+    );
+}
+
+/// Test that fish unsets SDC_TESTING when profile is not insecure.
+#[test]
+fn test_env_fish_sdc_testing_secure() {
+    let stdout = run_env_with_args_insecure(&["--shell", "fish"], false);
+
+    assert!(
+        stdout.contains("set -e SDC_TESTING"),
+        "Should unset SDC_TESTING in fish when not insecure. Got:\n{}",
+        stdout
+    );
+}
+
+/// Test that powershell exports SDC_TESTING when profile is insecure.
+#[test]
+fn test_env_powershell_sdc_testing_insecure() {
+    let stdout = run_env_with_args_insecure(&["--shell", "powershell"], true);
+
+    assert!(
+        stdout.contains("$env:SDC_TESTING = 'true'"),
+        "Should set SDC_TESTING in powershell when insecure. Got:\n{}",
+        stdout
+    );
+}
+
+/// Test that powershell unsets SDC_TESTING when profile is not insecure.
+#[test]
+fn test_env_powershell_sdc_testing_secure() {
+    let stdout = run_env_with_args_insecure(&["--shell", "powershell"], false);
+
+    assert!(
+        stdout.contains("Remove-Item Env:SDC_TESTING -ErrorAction SilentlyContinue"),
+        "Should remove SDC_TESTING in powershell when not insecure. Got:\n{}",
         stdout
     );
 }

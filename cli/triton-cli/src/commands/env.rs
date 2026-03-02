@@ -219,7 +219,11 @@ fn print_posix_exports(
             "export SDC_KEY_ID=\"{}\"",
             shell_escape_double(&profile.key_id)
         );
-        println!("unset SDC_TESTING");
+        if profile.insecure {
+            println!("export SDC_TESTING=\"true\"");
+        } else {
+            println!("unset SDC_TESTING");
+        }
     }
 
     // Only show the eval hint when emitting all sections in export mode
@@ -290,7 +294,11 @@ fn print_fish_exports(
             "set -gx SDC_KEY_ID '{}'",
             shell_escape_single(&profile.key_id)
         );
-        println!("set -e SDC_TESTING");
+        if profile.insecure {
+            println!("set -gx SDC_TESTING 'true'");
+        } else {
+            println!("set -e SDC_TESTING");
+        }
     }
 
     if emit_triton && emit_docker && emit_smartdc {
@@ -360,7 +368,11 @@ fn print_powershell_exports(
             "$env:SDC_KEY_ID = '{}'",
             shell_escape_powershell(&profile.key_id)
         );
-        println!("Remove-Item Env:SDC_TESTING -ErrorAction SilentlyContinue");
+        if profile.insecure {
+            println!("$env:SDC_TESTING = 'true'");
+        } else {
+            println!("Remove-Item Env:SDC_TESTING -ErrorAction SilentlyContinue");
+        }
     }
 }
 
