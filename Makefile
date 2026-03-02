@@ -241,7 +241,7 @@ dev-setup: | $(CARGO_EXEC) ## Set up development environment
 # Quick commands for common workflows
 dev: service-build service-test ## Build and test specific service (usage: make dev SERVICE=my-service)
 
-quick-check: format lint test ## Run format, lint, and test quickly
+quick-check:: $(_CHECK_COPYRIGHT_TARGET) format lint test ## Run format, lint, and test quickly
 
 # Full workflow for new API
 new-api-workflow: ## Create complete API+Service+Client (usage: make new-api-workflow NAME=myapp)
