@@ -10,15 +10,40 @@
 //! 1. `TRITON_TEST_CONFIG` environment variable (path to config file)
 //! 2. `tests/config.json` file
 //!
-//! Configuration supports:
-//! - `profile_name`: Name of profile to use from ~/.triton/profiles.d/
-//! - `profile`: Inline profile with url, account, keyId
-//! - `allow_write_actions`: Allow tests that create/modify resources
-//! - `allow_image_create`: Allow tests that create images
-//! - `allow_volumes_tests`: Allow volume-related tests
-//! - `skip_affinity_tests`: Skip affinity-related tests
-//! - `skip_kvm_tests`: Skip KVM-specific tests
-//! - `skip_flex_disk_tests`: Skip flexible disk tests
+//! See `tests/config.json.sample` for the expected format.
+//!
+//! ## Profile configuration
+//!
+//! There are two ways to specify which Triton profile to use:
+//!
+//! **Named profile** — references a profile from `~/.triton/profiles.d/`:
+//! ```json
+//! { "profileName": "my-profile" }
+//! ```
+//!
+//! **Inline profile** — specifies connection details directly:
+//! ```json
+//! {
+//!     "profile": {
+//!         "url": "https://cloudapi.example.com",
+//!         "account": "myaccount",
+//!         "keyId": "SHA256:...",
+//!         "insecure": false
+//!     }
+//! }
+//! ```
+//!
+//! Note: the `"profile"` field must be an object, not a string.
+//! Use `"profileName"` to reference a named profile by string.
+//!
+//! ## Other options
+//!
+//! - `allowWriteActions`: Allow tests that create/modify resources (default: false)
+//! - `allowImageCreate`: Allow tests that create images (default: false)
+//! - `allowVolumesTests`: Allow volume-related tests (default: true)
+//! - `skipAffinityTests`: Skip affinity-related tests (default: false)
+//! - `skipKvmTests`: Skip KVM-specific tests (default: false)
+//! - `skipFlexDiskTests`: Skip flexible disk tests (default: false)
 
 use serde::Deserialize;
 use std::path::PathBuf;
@@ -173,6 +198,11 @@ pub fn load_config() -> Option<&'static TestConfig> {
                         eprintln!(
                             "WARNING: failed to parse test config {}: {e}",
                             path.display()
+                        );
+                        eprintln!(
+                            "HINT: Use \"profileName\" (not \"profile\") for a \
+                             named profile. See tests/config.json.sample for the \
+                             expected format."
                         );
                         None
                     }

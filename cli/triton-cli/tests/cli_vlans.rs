@@ -202,10 +202,7 @@ use cloudapi_client::FabricVlan;
 #[test]
 #[ignore]
 fn test_vlan_list_table() {
-    use common::run_triton_with_profile;
-
-    let (stdout, _, success) = run_triton_with_profile(["vlan", "list"]);
-    assert!(success, "vlan list should succeed");
+    let stdout = common::safe_triton(["vlan", "list"]);
 
     // Check for expected columns
     assert!(
@@ -219,10 +216,9 @@ fn test_vlan_list_table() {
 #[test]
 #[ignore]
 fn test_vlan_list_json() {
-    use common::{json_stream_parse, run_triton_with_profile};
+    use common::json_stream_parse;
 
-    let (stdout, _, success) = run_triton_with_profile(["vlan", "list", "-j"]);
-    assert!(success, "vlan list -j should succeed");
+    let stdout = common::safe_triton(["vlan", "list", "-j"]);
 
     let vlans: Vec<FabricVlan> = json_stream_parse(&stdout);
     // May have no VLANs, that's OK
