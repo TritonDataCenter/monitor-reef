@@ -279,11 +279,7 @@ fn test_images_json() {
     // First image should have id, name, and version fields
     let first = &images[0];
     let first_id = first["id"].as_str().expect("Image should have id field");
-    assert!(
-        first_id.contains('-'),
-        "Image id should be a UUID: {}",
-        first_id
-    );
+    common::assert_valid_uuid(first_id, "Image id");
     assert!(first["name"].is_string(), "Image should have name field");
     assert!(
         first["version"].is_string(),

@@ -240,11 +240,7 @@ fn test_packages_json() {
     let first_id = packages[0]["id"]
         .as_str()
         .expect("Package should have id field");
-    assert!(
-        first_id.contains('-'),
-        "Package id should be a UUID: {}",
-        first_id
-    );
+    common::assert_valid_uuid(first_id, "Package id");
 }
 
 /// Test `triton package get ID` returns package details

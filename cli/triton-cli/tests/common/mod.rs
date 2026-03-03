@@ -324,6 +324,16 @@ pub fn short_id(uuid: &str) -> String {
     uuid.split('-').next().unwrap_or(uuid).to_string()
 }
 
+/// Assert that a string is a valid UUID, with a context message on failure
+pub fn assert_valid_uuid(s: &str, context: &str) {
+    assert!(
+        uuid::Uuid::parse_str(s).is_ok(),
+        "{} should be a valid UUID, got: {}",
+        context,
+        s
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -249,11 +249,7 @@ fn test_networks_json() {
     let first_id = networks[0]["id"]
         .as_str()
         .expect("Network should have id field");
-    assert!(
-        first_id.contains('-'),
-        "Network id should be a UUID: {}",
-        first_id
-    );
+    common::assert_valid_uuid(first_id, "Network id");
 }
 
 /// Test `triton networks -l` shows long format (full ID)
