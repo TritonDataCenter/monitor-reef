@@ -240,7 +240,9 @@ fn test_instance_migration_get() {
         create_test_instance, delete_test_instance, make_resource_name, run_triton_with_profile,
     };
 
-    common::require_write_actions();
+    if !common::require_write_actions() {
+        return;
+    }
 
     let inst_alias = make_resource_name("tritontest-migration");
 
@@ -295,7 +297,9 @@ fn test_instance_migration_get_json() {
         create_test_instance, delete_test_instance, make_resource_name, run_triton_with_profile,
     };
 
-    common::require_write_actions();
+    if !common::require_write_actions() {
+        return;
+    }
 
     let inst_alias = make_resource_name("tritontest-migration2");
     delete_test_instance(&inst_alias);
@@ -332,7 +336,9 @@ fn test_instance_migration_begin_command() {
         create_test_instance, delete_test_instance, make_resource_name, run_triton_with_profile,
     };
 
-    common::require_write_actions();
+    if !common::require_write_actions() {
+        return;
+    }
 
     let inst_alias = make_resource_name("tritontest-migration3");
     delete_test_instance(&inst_alias);
@@ -380,7 +386,9 @@ fn test_instance_migration_estimate() {
         create_test_instance, delete_test_instance, make_resource_name, run_triton_with_profile,
     };
 
-    common::require_write_actions();
+    if !common::require_write_actions() {
+        return;
+    }
 
     let inst_alias = make_resource_name("tritontest-migration4");
     delete_test_instance(&inst_alias);
@@ -420,7 +428,9 @@ fn test_instance_migration_estimate_json() {
         create_test_instance, delete_test_instance, make_resource_name, run_triton_with_profile,
     };
 
-    common::require_write_actions();
+    if !common::require_write_actions() {
+        return;
+    }
 
     let inst_alias = make_resource_name("tritontest-migration5");
     delete_test_instance(&inst_alias);

@@ -306,7 +306,9 @@ fn test_fwrule_workflow() {
         short_id,
     };
 
-    common::require_write_actions();
+    if !common::require_write_actions() {
+        return;
+    }
 
     let inst_alias = make_resource_name("tritontest-fwrules");
     let desc = "This rule was created by Rust triton tests";

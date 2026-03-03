@@ -67,8 +67,12 @@ fn try_triton(args: &[&str]) -> (String, String, bool) {
 #[test]
 #[ignore] // Requires API access and allowImageCreate
 fn test_image_create_workflow() {
-    common::require_write_actions();
-    common::require_image_create();
+    if !common::require_write_actions() {
+        return;
+    }
+    if !common::require_image_create() {
+        return;
+    }
 
     let origin_alias = make_resource_name("img-origin");
     let image_name = make_resource_name("img-test");

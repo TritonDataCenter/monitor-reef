@@ -160,7 +160,9 @@ fn test_instance_nic_workflow() {
         short_id,
     };
 
-    common::require_write_actions();
+    if !common::require_write_actions() {
+        return;
+    }
 
     let inst_alias = make_resource_name("tritontest-nics");
 

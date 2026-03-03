@@ -131,7 +131,9 @@ fn test_deletion_protection_workflow() {
         create_test_instance, delete_test_instance, make_resource_name, run_triton_with_profile,
     };
 
-    common::require_write_actions();
+    if !common::require_write_actions() {
+        return;
+    }
 
     let inst_alias = make_resource_name("tritontest-delprotect");
 
@@ -274,7 +276,9 @@ fn test_create_with_deletion_protection() {
         create_test_instance, delete_test_instance, make_resource_name, run_triton_with_profile,
     };
 
-    common::require_write_actions();
+    if !common::require_write_actions() {
+        return;
+    }
 
     let inst_alias = make_resource_name("tritontest-delprotect2");
 

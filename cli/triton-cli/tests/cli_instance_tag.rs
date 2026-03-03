@@ -148,7 +148,9 @@ fn test_instance_tag_workflow() {
         run_triton_with_profile, short_id,
     };
 
-    common::require_write_actions();
+    if !common::require_write_actions() {
+        return;
+    }
 
     let inst_alias = make_resource_name("tritontest-insttag");
 
@@ -349,7 +351,9 @@ fn test_instance_tag_get_nonexistent() {
         create_test_instance, delete_test_instance, make_resource_name, run_triton_with_profile,
     };
 
-    common::require_write_actions();
+    if !common::require_write_actions() {
+        return;
+    }
 
     let inst_alias = make_resource_name("tritontest-tagget");
     delete_test_instance(&inst_alias);

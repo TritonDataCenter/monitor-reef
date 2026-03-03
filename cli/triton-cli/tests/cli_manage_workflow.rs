@@ -199,7 +199,9 @@ fn test_instance_manage_workflow() {
         json_stream_parse, make_resource_name, run_triton_with_profile, short_id,
     };
 
-    common::require_write_actions();
+    if !common::require_write_actions() {
+        return;
+    }
 
     let inst_alias = make_resource_name("tritontest-managewf");
     let inst_alias_newname = format!("{}-renamed", inst_alias);
@@ -474,7 +476,9 @@ fn test_instance_get_deleted() {
         make_resource_name, run_triton_with_profile,
     };
 
-    common::require_write_actions();
+    if !common::require_write_actions() {
+        return;
+    }
 
     let inst_alias = make_resource_name("tritontest-deleted");
     delete_test_instance(&inst_alias);
@@ -546,7 +550,9 @@ fn test_instance_wait() {
         make_resource_name, run_triton_with_profile,
     };
 
-    common::require_write_actions();
+    if !common::require_write_actions() {
+        return;
+    }
 
     let inst_alias = make_resource_name("tritontest-wait");
     delete_test_instance(&inst_alias);

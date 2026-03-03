@@ -305,28 +305,29 @@ pub fn delete_test_instance(name_or_id: &str) {
     }
 }
 
-/// Require that write actions are allowed, panicking if not
+/// Require integration config and check that write actions are allowed.
 ///
-/// Calls `require_integration_config()` first, then asserts
-/// `allowWriteActions: true`.
-pub fn require_write_actions() {
+/// Panics if config is missing (so deliberately-enabled tests fail loudly).
+/// Returns false if config exists but `allowWriteActions` is false (deliberate opt-out).
+pub fn require_write_actions() -> bool {
     let config = config::require_integration_config();
-    assert!(
-        config.allow_write_actions,
-        "Test requires config.allowWriteActions = true"
-    );
+    if !config.allow_write_actions {
+        eprintln!("Skipping: config.allowWriteActions is false");
+        return false;
+    }
+    true
 }
 
-/// Require that image creation is allowed, panicking if not
+/// Require integration config and check that image creation is allowed.
 ///
-/// Calls `require_integration_config()` first, then asserts
-/// `allowImageCreate: true`.
-pub fn require_image_create() {
+/// Panics if config is missing. Returns false if `allowImageCreate` is false.
+pub fn require_image_create() -> bool {
     let config = config::require_integration_config();
-    assert!(
-        config.allow_image_create,
-        "Test requires config.allowImageCreate = true"
-    );
+    if !config.allow_image_create {
+        eprintln!("Skipping: config.allowImageCreate is false");
+        return false;
+    }
+    true
 }
 
 /// Get the short ID (first segment before dash) from a UUID

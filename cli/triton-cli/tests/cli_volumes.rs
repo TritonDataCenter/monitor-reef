@@ -300,7 +300,9 @@ fn delete_test_volume(name: &str) {
 fn test_volume_create_workflow() {
     use common::{make_resource_name, run_triton_with_profile};
 
-    common::require_write_actions();
+    if !common::require_write_actions() {
+        return;
+    }
 
     // Check if volumes tests are allowed (legitimate opt-out for envs without volume support)
     let config = common::config::require_integration_config();
@@ -456,7 +458,9 @@ fn test_volume_create_workflow() {
 fn test_volume_create_on_fabric_network() {
     use common::{json_stream_parse, make_resource_name, run_triton_with_profile};
 
-    common::require_write_actions();
+    if !common::require_write_actions() {
+        return;
+    }
 
     // Check if volumes tests are allowed (legitimate opt-out for envs without volume support)
     let config = common::config::require_integration_config();
