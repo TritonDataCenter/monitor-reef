@@ -466,9 +466,7 @@ impl Handler for JobCreateHandler {
                             Some(val)
                         }
                     }
-                    None => {
-                        Some(10) // Default
-                    }
+                    None => None,
                 };
 
                 let job = match job_builder

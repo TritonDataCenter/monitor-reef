@@ -26,7 +26,10 @@ use uuid::Uuid;
 ///
 /// This ensures mdapi objects have the same format as moray objects,
 /// with the addition of a bucket_id field.
-pub fn manta_object_to_value(obj: &MantaObject, bucket_id: Uuid) -> Value {
+pub fn manta_object_to_value(
+    obj: &MantaObject,
+    bucket_id: Uuid,
+) -> Value {
     json!({
         "contentLength": obj.content_length,
         "contentMD5": obj.content_md5,
@@ -44,7 +47,54 @@ pub fn manta_object_to_value(obj: &MantaObject, bucket_id: Uuid) -> Value {
         "sharks": obj.sharks,
         "type": obj.obj_type,
         "vnode": obj.vnode,
-        "bucket_id": bucket_id.to_string(),  // NEW: identifies bucket objects
+        "bucket_id": bucket_id.to_string(),
+    })
+}
+
+/// Remap raw mdapi object Value to moray-compatible format.
+///
+/// The evacuate pipeline expects moray field names (camelCase)
+/// but mdapi returns snake_case. This maps:
+///   id             → objectId / etag
+///   content_length → contentLength
+///   content_md5    → contentMD5
+///   content_type   → contentType
+///   name           → name + key
+///
+/// Fields not present in mdapi are set to defaults
+/// (mtime, dirname, creator, roles, vnode, type) so
+/// that `MantaObject` deserialization succeeds.
+fn remap_mdapi_to_moray(
+    obj: &Value,
+    bucket_id: &str,
+) -> Value {
+    let empty = Value::Null;
+
+    let object_id = obj.get("id").unwrap_or(&empty);
+    let name = obj.get("name").unwrap_or(&empty);
+    let owner = obj.get("owner").unwrap_or(&empty);
+
+    json!({
+        "objectId": object_id,
+        "contentLength": obj.get("content_length")
+            .unwrap_or(&empty),
+        "contentMD5": obj.get("content_md5")
+            .unwrap_or(&empty),
+        "contentType": obj.get("content_type")
+            .unwrap_or(&empty),
+        "name": name,
+        "key": name,
+        "etag": object_id,
+        "owner": owner,
+        "sharks": obj.get("sharks").unwrap_or(&empty),
+        "headers": obj.get("headers").unwrap_or(&empty),
+        "bucket_id": bucket_id,
+        "mtime": 0,
+        "dirname": "",
+        "creator": owner,
+        "roles": [],
+        "vnode": 0,
+        "type": "object"
     })
 }
 
@@ -175,24 +225,44 @@ pub fn discover_mdapi_objects_for_shard(
                     marker
                 );
 
-                for obj_value in &objects {
-                    // Check if object is on target shark using the raw Value
-                    if let Some(matching_shark) = value_on_target_shark(obj_value, filter_sharks) {
-                        // Get etag from the value
+                for (idx, obj_value) in objects.iter().enumerate()
+                {
+                    // Log sample of raw object data for debugging
+                    if idx == 0 && bucket_object_count == 0 {
+                        debug!(
+                            log,
+                            "mdapi sample object sharks={} \
+                             filter_sharks={:?}",
+                            obj_value
+                                .get("sharks")
+                                .map(|s| s.to_string())
+                                .unwrap_or_else(
+                                    || "MISSING".into()
+                                ),
+                            filter_sharks
+                        );
+                    }
+                    // Check if object is on target shark
+                    if let Some(matching_shark) =
+                        value_on_target_shark(
+                            obj_value,
+                            filter_sharks,
+                        )
+                    {
+                        // Remap mdapi snake_case fields to
+                        // moray-style camelCase for the evacuate
+                        // pipeline.
+                        let manta_value = remap_mdapi_to_moray(
+                            obj_value,
+                            &bucket.id.to_string(),
+                        );
+
+                        // Use object id as etag for mdapi objects
                         let etag = obj_value
-                            .get("etag")
+                            .get("id")
                             .and_then(|e| e.as_str())
                             .unwrap_or("")
                             .to_string();
-
-                        // Add bucket_id to the value
-                        let mut manta_value = obj_value.clone();
-                        if let Some(obj) = manta_value.as_object_mut() {
-                            obj.insert(
-                                "bucket_id".to_string(),
-                                Value::String(bucket.id.to_string()),
-                            );
-                        }
 
                         // Create SharkspotterMessage with the actual matching shark
                         let ss_msg = SharkspotterMessage {
@@ -328,5 +398,68 @@ mod tests {
         // Should return None when no match
         let filter_sharks = vec!["3.stor.domain".to_string()];
         assert!(value_on_target_shark(&obj, &filter_sharks).is_none());
+    }
+
+    #[test]
+    fn test_remap_mdapi_to_moray() {
+        let mdapi_obj = json!({
+            "id": "7cd02e49-18ab-4ce3-9ee4-df20945c63b1",
+            "owner": "3c254973-8690-4ac7-bcce-d739d1017473",
+            "bucket_id": "8b524092-fd30-405d-9344-f2a3420e37e2",
+            "name": "cors-test-image.png",
+            "content_length": 70,
+            "content_md5": "MC8ljpbQBdHGQZ+TThMHSQ==",
+            "content_type": "image/png",
+            "headers": {},
+            "sharks": [
+                {
+                    "datacenter": "coal",
+                    "manta_storage_id": "1.stor.coal.joyent.us"
+                }
+            ],
+            "properties": {}
+        });
+
+        let remapped = remap_mdapi_to_moray(
+            &mdapi_obj,
+            "8b524092-fd30-405d-9344-f2a3420e37e2",
+        );
+
+        assert_eq!(
+            remapped.get("objectId")
+                .and_then(|v| v.as_str()),
+            Some("7cd02e49-18ab-4ce3-9ee4-df20945c63b1")
+        );
+        assert_eq!(
+            remapped.get("contentLength")
+                .and_then(|v| v.as_i64()),
+            Some(70)
+        );
+        assert_eq!(
+            remapped.get("contentMD5")
+                .and_then(|v| v.as_str()),
+            Some("MC8ljpbQBdHGQZ+TThMHSQ==")
+        );
+        assert_eq!(
+            remapped.get("contentType")
+                .and_then(|v| v.as_str()),
+            Some("image/png")
+        );
+        assert_eq!(
+            remapped.get("key")
+                .and_then(|v| v.as_str()),
+            Some("cors-test-image.png")
+        );
+        assert_eq!(
+            remapped.get("bucket_id")
+                .and_then(|v| v.as_str()),
+            Some("8b524092-fd30-405d-9344-f2a3420e37e2")
+        );
+        // sharks preserved as-is
+        assert!(
+            remapped.get("sharks")
+                .and_then(|v| v.as_array())
+                .is_some()
+        );
     }
 }

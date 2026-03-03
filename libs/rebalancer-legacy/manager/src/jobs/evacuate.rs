@@ -250,19 +250,48 @@ impl MetadataBackend {
 
         match (use_moray, use_mdapi) {
             (true, true) => {
-                // HYBRID: Both backends enabled for complete evacuation
-                let moray =
-                    moray_client::create_client(shard, &config.domain_name)?;
+                // HYBRID: Both backends enabled for
+                // complete evacuation.
+                //
+                // Moray shards may not exist for every
+                // mdapi vnode.  When the moray client
+                // cannot be created (e.g. DNS lookup for
+                // `{shard}.moray.{domain}` fails) we
+                // fall back to an mdapi-only backend for
+                // this shard.  Bucket objects do not
+                // need moray, and traditional objects
+                // will never appear on a vnode that has
+                // no matching moray shard.
                 let mdapi = create_mdapi_clients_from_shards(
                     &config.mdapi.shards,
                 )?;
-                debug!(
-                    "Created hybrid backend (moray + {} mdapi shard(s)) \
-                     for shard {}",
-                    mdapi.len(),
-                    shard
-                );
-                Ok(MetadataBackend::Hybrid { moray, mdapi })
+                match moray_client::create_client(
+                    shard,
+                    &config.domain_name,
+                ) {
+                    Ok(moray) => {
+                        debug!(
+                            "Created hybrid backend \
+                             (moray + {} mdapi shard(s)) \
+                             for shard {}",
+                            mdapi.len(),
+                            shard
+                        );
+                        Ok(MetadataBackend::Hybrid {
+                            moray,
+                            mdapi,
+                        })
+                    }
+                    Err(e) => {
+                        debug!(
+                            "Moray client for shard {} \
+                             unavailable ({}), using \
+                             mdapi-only for this shard",
+                            shard, e
+                        );
+                        Ok(MetadataBackend::Mdapi(mdapi))
+                    }
+                }
             }
             (false, true) => {
                 // Mdapi only - bucket objects
@@ -1548,7 +1577,7 @@ impl EvacuateJob {
             assignments: RwLock::new(HashMap::new()),
             from_shark,
             conn: Mutex::new(conn),
-            max_objects: Some(10),
+            max_objects: None,
             post_client: reqwest::Client::new(),
             get_client: reqwest::Client::new(),
             update_rx,
