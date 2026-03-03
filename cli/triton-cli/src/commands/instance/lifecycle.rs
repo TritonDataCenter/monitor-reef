@@ -70,6 +70,12 @@ pub async fn start(args: StartArgs, client: &TypedClient) -> Result<()> {
         let id_str = machine_id.to_string();
 
         if let Err(e) = client.start_machine(account, &machine_id, None).await {
+            #[cfg(debug_assertions)]
+            if e.to_string()
+                .contains(cloudapi_client::EMIT_PAYLOAD_SENTINEL)
+            {
+                continue;
+            }
             eprintln!("Error starting {}: {}", &id_str[..8], e);
             errors.push(format!("{}: {}", &id_str[..8], e));
             continue;
@@ -123,6 +129,12 @@ pub async fn stop(args: StopArgs, client: &TypedClient) -> Result<()> {
         let id_str = machine_id.to_string();
 
         if let Err(e) = client.stop_machine(account, &machine_id, None).await {
+            #[cfg(debug_assertions)]
+            if e.to_string()
+                .contains(cloudapi_client::EMIT_PAYLOAD_SENTINEL)
+            {
+                continue;
+            }
             eprintln!("Error stopping {}: {}", &id_str[..8], e);
             errors.push(format!("{}: {}", &id_str[..8], e));
             continue;
@@ -180,6 +192,12 @@ pub async fn reboot(args: RebootArgs, client: &TypedClient) -> Result<()> {
         let reboot_time = chrono::Utc::now().to_rfc3339();
 
         if let Err(e) = client.reboot_machine(account, &machine_id, None).await {
+            #[cfg(debug_assertions)]
+            if e.to_string()
+                .contains(cloudapi_client::EMIT_PAYLOAD_SENTINEL)
+            {
+                continue;
+            }
             eprintln!("Error rebooting {}: {}", &id_str[..8], e);
             errors.push(format!("{}: {}", &id_str[..8], e));
             continue;

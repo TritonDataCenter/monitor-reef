@@ -63,6 +63,12 @@ pub async fn run(args: DeleteArgs, client: &TypedClient) -> Result<()> {
             .send()
             .await
         {
+            #[cfg(debug_assertions)]
+            if e.to_string()
+                .contains(cloudapi_client::EMIT_PAYLOAD_SENTINEL)
+            {
+                continue;
+            }
             eprintln!("Error deleting {}: {}", &id_str[..8], e);
             errors.push(format!("{}: {}", &id_str[..8], e));
             continue;
