@@ -172,10 +172,7 @@ fn triton_with_profile() -> Command {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_key_get() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     // First, list keys in JSON to get a key name
     let list_output = triton_with_profile()
@@ -226,10 +223,7 @@ fn test_key_get() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_key_list() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["key", "list"])
@@ -254,10 +248,7 @@ fn test_key_list() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_key_list_json() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["key", "list", "-j"])

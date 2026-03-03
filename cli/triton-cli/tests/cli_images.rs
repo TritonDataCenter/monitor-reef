@@ -183,10 +183,7 @@ fn triton_with_profile() -> Command {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_images_list_table() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["images"])
@@ -215,10 +212,7 @@ fn test_images_list_table() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_image_list() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["image", "list"])
@@ -247,10 +241,7 @@ fn test_image_list() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_images_json() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["images", "-j"])
@@ -298,10 +289,7 @@ fn test_images_json() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_image_get_by_id() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     // First, get a list of images to find one to get
     let list_output = triton_with_profile()
@@ -355,10 +343,7 @@ fn test_image_get_by_id() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_image_get_by_shortid() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     // First, get a list of images
     let list_output = triton_with_profile()
@@ -409,10 +394,7 @@ fn test_image_get_by_shortid() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_image_get_by_name() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     // First, get a list of images
     let list_output = triton_with_profile()

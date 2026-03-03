@@ -145,15 +145,11 @@ fn test_instance_snapshots_alias() {
 #[ignore]
 fn test_instance_snapshot_workflow() {
     use common::{
-        allow_write_actions, create_test_instance, delete_test_instance, make_resource_name,
-        run_triton_with_profile, short_id,
+        create_test_instance, delete_test_instance, make_resource_name, run_triton_with_profile,
+        short_id,
     };
 
-    // Skip if write actions not allowed
-    if !allow_write_actions() {
-        eprintln!("Skipping test: requires config.allowWriteActions");
-        return;
-    }
+    common::require_write_actions();
 
     let inst_alias = make_resource_name("tritontest-snapshots");
     let snap_name = "test-snapshot";
@@ -317,14 +313,10 @@ fn test_instance_snapshot_workflow() {
 #[ignore]
 fn test_instance_snapshot_list_empty() {
     use common::{
-        allow_write_actions, create_test_instance, delete_test_instance, make_resource_name,
-        run_triton_with_profile,
+        create_test_instance, delete_test_instance, make_resource_name, run_triton_with_profile,
     };
 
-    if !allow_write_actions() {
-        eprintln!("Skipping test: requires config.allowWriteActions");
-        return;
-    }
+    common::require_write_actions();
 
     let inst_alias = make_resource_name("tritontest-snapempty");
     delete_test_instance(&inst_alias);

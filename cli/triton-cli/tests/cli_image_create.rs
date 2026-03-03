@@ -30,20 +30,12 @@ use cloudapi_client::{Image, ImageState, Machine, MachineState};
 use predicates::prelude::*;
 
 use common::{
-    allow_image_create, allow_write_actions, get_test_image, get_test_package, json_stream_parse,
-    make_resource_name, run_triton_with_profile,
+    get_test_image, get_test_package, json_stream_parse, make_resource_name,
+    run_triton_with_profile,
 };
 
 fn triton_cmd() -> Command {
     Command::cargo_bin("triton").expect("Failed to find triton binary")
-}
-
-/// Get test config - returns None if write actions or image create not allowed
-fn get_test_config() -> Option<()> {
-    if !allow_write_actions() || !allow_image_create() {
-        return None;
-    }
-    Some(())
 }
 
 /// Helper to run triton command with profile env and assert success
@@ -75,10 +67,8 @@ fn try_triton(args: &[&str]) -> (String, String, bool) {
 #[test]
 #[ignore] // Requires API access and allowImageCreate
 fn test_image_create_workflow() {
-    if get_test_config().is_none() {
-        eprintln!("Skipping: requires allowWriteActions and allowImageCreate in config");
-        return;
-    }
+    common::require_write_actions();
+    common::require_image_create();
 
     let origin_alias = make_resource_name("img-origin");
     let image_name = make_resource_name("img-test");
@@ -342,37 +332,61 @@ fn test_image_export_help() {
 /// Test image create requires arguments
 #[test]
 fn test_image_create_no_args() {
-    triton_cmd().args(["image", "create"]).assert().failure();
+    triton_cmd()
+        .args(["image", "create"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("required"));
 }
 
 /// Test image share requires arguments
 #[test]
 fn test_image_share_no_args() {
-    triton_cmd().args(["image", "share"]).assert().failure();
+    triton_cmd()
+        .args(["image", "share"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("required"));
 }
 
 /// Test image unshare requires arguments
 #[test]
 fn test_image_unshare_no_args() {
-    triton_cmd().args(["image", "unshare"]).assert().failure();
+    triton_cmd()
+        .args(["image", "unshare"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("required"));
 }
 
 /// Test image update requires arguments
 #[test]
 fn test_image_update_no_args() {
-    triton_cmd().args(["image", "update"]).assert().failure();
+    triton_cmd()
+        .args(["image", "update"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("required"));
 }
 
 /// Test image tag requires arguments
 #[test]
 fn test_image_tag_no_args() {
-    triton_cmd().args(["image", "tag"]).assert().failure();
+    triton_cmd()
+        .args(["image", "tag"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Usage:"));
 }
 
 /// Test image wait requires arguments
 #[test]
 fn test_image_wait_no_args() {
-    triton_cmd().args(["image", "wait"]).assert().failure();
+    triton_cmd()
+        .args(["image", "wait"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("required"));
 }
 
 // Helper functions

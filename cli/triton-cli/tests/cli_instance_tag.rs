@@ -144,15 +144,11 @@ fn test_inst_tags_shortcut_help() {
 #[allow(clippy::approx_constant)]
 fn test_instance_tag_workflow() {
     use common::{
-        allow_write_actions, create_test_instance, delete_test_instance, fixture_path,
-        make_resource_name, run_triton_with_profile, short_id,
+        create_test_instance, delete_test_instance, fixture_path, make_resource_name,
+        run_triton_with_profile, short_id,
     };
 
-    // Skip if write actions not allowed
-    if !allow_write_actions() {
-        eprintln!("Skipping test: requires config.allowWriteActions");
-        return;
-    }
+    common::require_write_actions();
 
     let inst_alias = make_resource_name("tritontest-insttag");
 
@@ -350,14 +346,10 @@ fn test_instance_tag_workflow() {
 #[ignore]
 fn test_instance_tag_get_nonexistent() {
     use common::{
-        allow_write_actions, create_test_instance, delete_test_instance, make_resource_name,
-        run_triton_with_profile,
+        create_test_instance, delete_test_instance, make_resource_name, run_triton_with_profile,
     };
 
-    if !allow_write_actions() {
-        eprintln!("Skipping test: requires config.allowWriteActions");
-        return;
-    }
+    common::require_write_actions();
 
     let inst_alias = make_resource_name("tritontest-tagget");
     delete_test_instance(&inst_alias);

@@ -219,10 +219,7 @@ fn triton_with_profile() -> Command {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_fwrule_list() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["fwrule", "list"])
@@ -250,10 +247,7 @@ fn test_fwrule_list() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_fwrule_list_json() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["fwrule", "list", "-j"])
@@ -308,15 +302,11 @@ fn delete_fwrule(id: &str) {
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_fwrule_workflow() {
     use common::{
-        allow_write_actions, create_test_instance, delete_test_instance, make_resource_name,
-        run_triton_with_profile, short_id,
+        create_test_instance, delete_test_instance, make_resource_name, run_triton_with_profile,
+        short_id,
     };
 
-    // Skip if write actions not allowed
-    if !allow_write_actions() {
-        eprintln!("Skipping test: requires config.allowWriteActions");
-        return;
-    }
+    common::require_write_actions();
 
     let inst_alias = make_resource_name("tritontest-fwrules");
     let desc = "This rule was created by Rust triton tests";

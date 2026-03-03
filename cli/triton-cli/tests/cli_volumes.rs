@@ -200,10 +200,7 @@ fn triton_with_profile() -> Command {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_volume_list() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["volume", "list"])
@@ -231,10 +228,7 @@ fn test_volume_list() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_volume_list_json() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["volume", "list", "-j"])
@@ -263,10 +257,7 @@ fn test_volume_list_json() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_volume_sizes() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["volume", "sizes"])
@@ -307,19 +298,13 @@ fn delete_test_volume(name: &str) {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_volume_create_workflow() {
-    use common::{allow_write_actions, make_resource_name, run_triton_with_profile};
+    use common::{make_resource_name, run_triton_with_profile};
 
-    // Skip if write actions not allowed
-    if !allow_write_actions() {
-        eprintln!("Skipping test: requires config.allowWriteActions");
-        return;
-    }
+    common::require_write_actions();
 
-    // Check if volumes tests are allowed
-    let config = common::config::load_config();
-    if let Some(c) = config
-        && !c.allow_volumes_tests
-    {
+    // Check if volumes tests are allowed (legitimate opt-out for envs without volume support)
+    let config = common::config::require_integration_config();
+    if !config.allow_volumes_tests {
         eprintln!("Skipping test: config.allowVolumesTests is false");
         return;
     }
@@ -469,19 +454,13 @@ fn test_volume_create_workflow() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_volume_create_on_fabric_network() {
-    use common::{
-        allow_write_actions, json_stream_parse, make_resource_name, run_triton_with_profile,
-    };
+    use common::{json_stream_parse, make_resource_name, run_triton_with_profile};
 
-    if !allow_write_actions() {
-        eprintln!("Skipping test: requires config.allowWriteActions");
-        return;
-    }
+    common::require_write_actions();
 
-    let config = common::config::load_config();
-    if let Some(c) = config
-        && !c.allow_volumes_tests
-    {
+    // Check if volumes tests are allowed (legitimate opt-out for envs without volume support)
+    let config = common::config::require_integration_config();
+    if !config.allow_volumes_tests {
         eprintln!("Skipping test: config.allowVolumesTests is false");
         return;
     }

@@ -153,10 +153,7 @@ fn triton_with_profile() -> Command {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_packages_list_table() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["packages"])
@@ -185,10 +182,7 @@ fn test_packages_list_table() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_package_list() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["package", "list"])
@@ -207,10 +201,7 @@ fn test_package_list() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_packages_json() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["packages", "-j"])
@@ -247,10 +238,7 @@ fn test_packages_json() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_package_get_by_id() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     // First, get a list of packages to find one to get
     let list_output = triton_with_profile()
@@ -296,10 +284,7 @@ fn test_package_get_by_id() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_package_get_by_shortid() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     // First, get a list of packages
     let list_output = triton_with_profile()
@@ -343,10 +328,7 @@ fn test_package_get_by_shortid() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_package_get_by_name() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     // First, get a list of packages
     let list_output = triton_with_profile()

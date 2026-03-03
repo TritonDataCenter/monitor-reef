@@ -305,18 +305,28 @@ pub fn delete_test_instance(name_or_id: &str) {
     }
 }
 
-/// Check if write actions are allowed in the test config
-pub fn allow_write_actions() -> bool {
-    config::load_config()
-        .map(|c| c.allow_write_actions)
-        .unwrap_or(false)
+/// Require that write actions are allowed, panicking if not
+///
+/// Calls `require_integration_config()` first, then asserts
+/// `allowWriteActions: true`.
+pub fn require_write_actions() {
+    let config = config::require_integration_config();
+    assert!(
+        config.allow_write_actions,
+        "Test requires config.allowWriteActions = true"
+    );
 }
 
-/// Check if image creation is allowed in the test config
-pub fn allow_image_create() -> bool {
-    config::load_config()
-        .map(|c| c.allow_image_create)
-        .unwrap_or(false)
+/// Require that image creation is allowed, panicking if not
+///
+/// Calls `require_integration_config()` first, then asserts
+/// `allowImageCreate: true`.
+pub fn require_image_create() {
+    let config = config::require_integration_config();
+    assert!(
+        config.allow_image_create,
+        "Test requires config.allowImageCreate = true"
+    );
 }
 
 /// Get the short ID (first segment before dash) from a UUID

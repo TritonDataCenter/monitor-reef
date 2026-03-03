@@ -128,15 +128,10 @@ use cloudapi_client::Machine;
 #[ignore]
 fn test_deletion_protection_workflow() {
     use common::{
-        allow_write_actions, create_test_instance, delete_test_instance, make_resource_name,
-        run_triton_with_profile,
+        create_test_instance, delete_test_instance, make_resource_name, run_triton_with_profile,
     };
 
-    // Skip if write actions not allowed
-    if !allow_write_actions() {
-        eprintln!("Skipping test: requires config.allowWriteActions");
-        return;
-    }
+    common::require_write_actions();
 
     let inst_alias = make_resource_name("tritontest-delprotect");
 
@@ -276,15 +271,10 @@ fn test_deletion_protection_workflow() {
 #[ignore]
 fn test_create_with_deletion_protection() {
     use common::{
-        allow_write_actions, create_test_instance, delete_test_instance, make_resource_name,
-        run_triton_with_profile,
+        create_test_instance, delete_test_instance, make_resource_name, run_triton_with_profile,
     };
 
-    // Skip if write actions not allowed
-    if !allow_write_actions() {
-        eprintln!("Skipping test: requires config.allowWriteActions");
-        return;
-    }
+    common::require_write_actions();
 
     let inst_alias = make_resource_name("tritontest-delprotect2");
 

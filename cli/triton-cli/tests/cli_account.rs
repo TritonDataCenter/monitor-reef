@@ -134,10 +134,7 @@ fn triton_with_profile() -> Command {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_account_get() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["account", "get"])
@@ -184,10 +181,7 @@ fn test_account_get() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_account_get_json() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["account", "get", "-j"])
@@ -225,10 +219,7 @@ fn test_account_get_json() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_account_limits() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["account", "limits"])
@@ -272,10 +263,7 @@ fn test_account_limits() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_account_limits_json() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["account", "limits", "-j"])
@@ -330,10 +318,7 @@ fn test_account_limits_json() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_account_update_invalid_field() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["account", "update", "foo=bar"])

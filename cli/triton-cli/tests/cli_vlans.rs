@@ -419,13 +419,9 @@ fn test_vlan_list_with_filters() {
 #[test]
 #[ignore]
 fn test_vlan_create_delete_workflow() {
-    use common::{allow_write_actions, make_resource_name, run_triton_with_profile};
+    use common::{make_resource_name, run_triton_with_profile};
 
-    // Skip if write actions not allowed
-    if !allow_write_actions() {
-        eprintln!("Skipping test: requires config.allowWriteActions");
-        return;
-    }
+    common::require_write_actions();
 
     let vlan_name = make_resource_name("tritontest-vlan");
     // Use a high VLAN ID to avoid conflicts (3197 from node-triton tests)
@@ -486,13 +482,9 @@ fn test_vlan_create_delete_workflow() {
 #[test]
 #[ignore]
 fn test_vlan_delete_by_name() {
-    use common::{allow_write_actions, make_resource_name, run_triton_with_profile};
+    use common::{make_resource_name, run_triton_with_profile};
 
-    // Skip if write actions not allowed
-    if !allow_write_actions() {
-        eprintln!("Skipping test: requires config.allowWriteActions");
-        return;
-    }
+    common::require_write_actions();
 
     let vlan_name = make_resource_name("tritontest-vlan2");
     let vlan_id = "3198";

@@ -212,11 +212,19 @@ pub fn load_config() -> Option<&'static TestConfig> {
         .as_ref()
 }
 
-/// Check if integration tests should run
+/// Require integration test configuration, panicking if not found
 ///
-/// Returns true if a valid test configuration exists
-pub fn has_integration_config() -> bool {
-    load_config().is_some()
+/// Use this in `#[ignore]` tests that require API access. Unlike
+/// `has_integration_config()` (removed), this panics with a helpful
+/// message so that deliberately-enabled tests don't silently pass.
+pub fn require_integration_config() -> &'static TestConfig {
+    load_config().unwrap_or_else(|| {
+        panic!(
+            "Integration test config required but not found.\n\
+             Set TRITON_TEST_CONFIG or create tests/config.json.\n\
+             See tests/config.json.sample for the expected format."
+        )
+    })
 }
 
 /// Get environment variables for running triton with test profile

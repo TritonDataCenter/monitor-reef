@@ -195,15 +195,11 @@ fn test_delete_alias() {
 #[ignore]
 fn test_instance_manage_workflow() {
     use common::{
-        allow_write_actions, delete_test_instance, get_resize_test_package, get_test_image,
-        get_test_package, json_stream_parse, make_resource_name, run_triton_with_profile, short_id,
+        delete_test_instance, get_resize_test_package, get_test_image, get_test_package,
+        json_stream_parse, make_resource_name, run_triton_with_profile, short_id,
     };
 
-    // Skip if write actions not allowed
-    if !allow_write_actions() {
-        eprintln!("Skipping test: requires config.allowWriteActions");
-        return;
-    }
+    common::require_write_actions();
 
     let inst_alias = make_resource_name("tritontest-managewf");
     let inst_alias_newname = format!("{}-renamed", inst_alias);
@@ -474,14 +470,11 @@ fn test_instance_manage_workflow() {
 #[ignore]
 fn test_instance_get_deleted() {
     use common::{
-        allow_write_actions, delete_test_instance, get_test_image, get_test_package,
-        json_stream_parse, make_resource_name, run_triton_with_profile,
+        delete_test_instance, get_test_image, get_test_package, json_stream_parse,
+        make_resource_name, run_triton_with_profile,
     };
 
-    if !allow_write_actions() {
-        eprintln!("Skipping test: requires config.allowWriteActions");
-        return;
-    }
+    common::require_write_actions();
 
     let inst_alias = make_resource_name("tritontest-deleted");
     delete_test_instance(&inst_alias);
@@ -549,14 +542,11 @@ fn test_instance_get_deleted() {
 #[ignore]
 fn test_instance_wait() {
     use common::{
-        allow_write_actions, delete_test_instance, get_test_image, get_test_package,
-        json_stream_parse, make_resource_name, run_triton_with_profile,
+        delete_test_instance, get_test_image, get_test_package, json_stream_parse,
+        make_resource_name, run_triton_with_profile,
     };
 
-    if !allow_write_actions() {
-        eprintln!("Skipping test: requires config.allowWriteActions");
-        return;
-    }
+    common::require_write_actions();
 
     let inst_alias = make_resource_name("tritontest-wait");
     delete_test_instance(&inst_alias);

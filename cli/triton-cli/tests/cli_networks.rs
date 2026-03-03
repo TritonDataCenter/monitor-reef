@@ -149,10 +149,7 @@ fn triton_with_profile() -> Command {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_networks_list_table() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["networks"])
@@ -181,10 +178,7 @@ fn test_networks_list_table() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_network_list() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["network", "list"])
@@ -216,10 +210,7 @@ fn test_network_list() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_networks_json() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["networks", "-j"])
@@ -256,10 +247,7 @@ fn test_networks_json() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_networks_long_format() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["networks", "-l"])
@@ -277,10 +265,7 @@ fn test_networks_long_format() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_network_get_by_id() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     // First, get a list of networks to find one to get
     let list_output = triton_with_profile()
@@ -326,10 +311,7 @@ fn test_network_get_by_id() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_network_get_by_shortid() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     // First, get a list of networks
     let list_output = triton_with_profile()
@@ -373,10 +355,7 @@ fn test_network_get_by_shortid() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_network_get_by_name() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     // First, get a list of networks
     let list_output = triton_with_profile()
@@ -430,10 +409,7 @@ fn test_network_get_by_name() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_networks_filter_public_true() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["networks", "--public=true", "-j"])
@@ -456,10 +432,7 @@ fn test_networks_filter_public_true() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_networks_filter_public_false() {
-    if !common::config::has_integration_config() {
-        eprintln!("Skipping: no test config found");
-        return;
-    }
+    common::config::require_integration_config();
 
     let output = triton_with_profile()
         .args(["networks", "--public=false", "-j"])
