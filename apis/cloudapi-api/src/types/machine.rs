@@ -192,7 +192,6 @@ pub struct Machine {
 /// CloudAPI may omit `size` for the boot disk (which inherits its size
 /// from the image) and may return `"remaining"` for flexible disks.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct MachineDisk {
     /// Disk UUID
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -201,12 +200,7 @@ pub struct MachineDisk {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub size: Option<DiskSize>,
     /// Block size in bytes
-
-    #[serde(
-        rename = "block_size",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub block_size: Option<u64>,
     /// Boot disk
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -218,7 +212,6 @@ pub struct MachineDisk {
 
 /// Network interface on a machine
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct MachineNic {
     /// MAC address
     pub mac: String,
@@ -250,7 +243,6 @@ pub enum MountMode {
 
 /// Volume mount specification for instance creation
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct VolumeMount {
     /// Volume name
     pub name: String,
@@ -284,7 +276,6 @@ pub struct DiskSpec {
 
 /// NIC specification for instance creation
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct NicSpec {
     /// Network UUID
     pub network: Uuid,
@@ -313,7 +304,6 @@ pub struct NicSpec {
 /// {"image": "...", "tag.foo": "bar", "metadata.key": "value"}
 /// ```
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct CreateMachineRequest {
     /// Machine alias/name
     #[serde(default)]
@@ -348,12 +338,10 @@ pub struct CreateMachineRequest {
     #[serde(default)]
     pub tags: Option<Tags>,
     /// Firewall enabled
-
-    #[serde(rename = "firewall_enabled", default)]
+    #[serde(default)]
     pub firewall_enabled: Option<bool>,
     /// Deletion protection enabled
-
-    #[serde(rename = "deletion_protection", default)]
+    #[serde(default)]
     pub deletion_protection: Option<bool>,
     /// Brand (bhyve, kvm, joyent, joyent-minimal, lx)
     /// If not specified, inferred from the image
@@ -367,15 +355,13 @@ pub struct CreateMachineRequest {
     pub disks: Option<Vec<DiskSpec>>,
     /// Create a delegated ZFS dataset for the zone
     /// Only applicable to zone-based instances (joyent, joyent-minimal, lx brands)
-
-    #[serde(rename = "delegate_dataset", default)]
+    #[serde(default)]
     pub delegate_dataset: Option<bool>,
     /// Request placement on encrypted compute nodes
     #[serde(default)]
     pub encrypted: Option<bool>,
     /// Allow using images shared with this account (not owned by it)
-
-    #[serde(rename = "allow_shared_images", default)]
+    #[serde(default)]
     pub allow_shared_images: Option<bool>,
     /// Extra fields for legacy format support (tag.*, metadata.*)
     // These are captured by serde's flatten and processed by helper methods.
@@ -474,7 +460,6 @@ pub struct MachineActionQuery {
 
 /// Request to start a machine
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct StartMachineRequest {
     /// Origin identifier (defaults to 'cloudapi')
     #[serde(default)]
@@ -483,7 +468,6 @@ pub struct StartMachineRequest {
 
 /// Request to stop a machine
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct StopMachineRequest {
     /// Origin identifier (defaults to 'cloudapi')
     #[serde(default)]
@@ -492,7 +476,6 @@ pub struct StopMachineRequest {
 
 /// Request to reboot a machine
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct RebootMachineRequest {
     /// Origin identifier (defaults to 'cloudapi')
     #[serde(default)]
@@ -501,7 +484,6 @@ pub struct RebootMachineRequest {
 
 /// Request to resize a machine
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct ResizeMachineRequest {
     /// New package name or UUID
     pub package: String,
@@ -512,7 +494,6 @@ pub struct ResizeMachineRequest {
 
 /// Request to rename a machine
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct RenameMachineRequest {
     /// New machine alias/name (max 189 chars, or 63 if CNS enabled)
     pub name: String,
@@ -523,7 +504,6 @@ pub struct RenameMachineRequest {
 
 /// Request to enable firewall
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct EnableFirewallRequest {
     /// Origin identifier (defaults to 'cloudapi')
     #[serde(default)]
@@ -532,7 +512,6 @@ pub struct EnableFirewallRequest {
 
 /// Request to disable firewall
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct DisableFirewallRequest {
     /// Origin identifier (defaults to 'cloudapi')
     #[serde(default)]
@@ -541,7 +520,6 @@ pub struct DisableFirewallRequest {
 
 /// Request to enable deletion protection
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct EnableDeletionProtectionRequest {
     /// Origin identifier (defaults to 'cloudapi')
     #[serde(default)]
@@ -550,7 +528,6 @@ pub struct EnableDeletionProtectionRequest {
 
 /// Request to disable deletion protection
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct DisableDeletionProtectionRequest {
     /// Origin identifier (defaults to 'cloudapi')
     #[serde(default)]
@@ -565,7 +542,6 @@ pub struct DisableDeletionProtectionRequest {
 ///
 /// **Legacy format:** `?tag.env=prod&tag.role=web` (multiple tag filters)
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct ListMachinesQuery {
     /// Filter by machine name
     #[serde(default)]
@@ -659,7 +635,6 @@ pub enum AuditSuccess {
 
 /// Audit entry for a machine
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct AuditEntry {
     /// Action performed
     pub action: String,

@@ -530,14 +530,68 @@ mod tests {
         }
     }
 
-    /// Parse tags from a list of key=value strings into a Map
+    /// Parse tags from a list of key=value strings into a Map,
+    /// using the production parse_tag_value for type coercion.
     fn parse_tags_from_args(tags: &[String]) -> Result<Map<String, Value>> {
         let mut map: Map<String, Value> = Map::new();
         for tag in tags {
             let (key, value) = parse_tag(tag)?;
-            map.insert(key, Value::String(value));
+            map.insert(key, parse_tag_value(&value));
         }
         Ok(map)
+    }
+
+    // ===== parse_tag_value tests =====
+
+    #[test]
+    fn test_parse_tag_value_bool_true() {
+        assert_eq!(parse_tag_value("true"), Value::Bool(true));
+    }
+
+    #[test]
+    fn test_parse_tag_value_bool_false() {
+        assert_eq!(parse_tag_value("false"), Value::Bool(false));
+    }
+
+    #[test]
+    fn test_parse_tag_value_integer() {
+        assert_eq!(
+            parse_tag_value("42"),
+            Value::Number(serde_json::Number::from_f64(42.0).unwrap())
+        );
+    }
+
+    #[test]
+    fn test_parse_tag_value_negative_number() {
+        assert_eq!(
+            parse_tag_value("-7"),
+            Value::Number(serde_json::Number::from_f64(-7.0).unwrap())
+        );
+    }
+
+    #[test]
+    fn test_parse_tag_value_float() {
+        let val = parse_tag_value("3.14");
+        assert!(val.is_number());
+    }
+
+    #[test]
+    fn test_parse_tag_value_string() {
+        assert_eq!(parse_tag_value("hello"), Value::String("hello".to_string()));
+    }
+
+    #[test]
+    fn test_parse_tag_value_empty_string() {
+        assert_eq!(parse_tag_value(""), Value::String("".to_string()));
+    }
+
+    #[test]
+    fn test_parse_tag_value_whitespace_trimming() {
+        assert_eq!(parse_tag_value("  true  "), Value::Bool(true));
+        assert_eq!(
+            parse_tag_value("  42  "),
+            Value::Number(serde_json::Number::from_f64(42.0).unwrap())
+        );
     }
 
     // ===== parse_tag tests =====
@@ -604,7 +658,11 @@ mod tests {
         assert_eq!(map.len(), 3);
         assert_eq!(map.get("foo").unwrap(), "bar");
         assert_eq!(map.get("baz").unwrap(), "qux");
-        assert_eq!(map.get("count").unwrap(), "42");
+        // count=42 is coerced to a number by parse_tag_value
+        assert_eq!(
+            *map.get("count").unwrap(),
+            Value::Number(serde_json::Number::from_f64(42.0).unwrap())
+        );
     }
 
     #[test]

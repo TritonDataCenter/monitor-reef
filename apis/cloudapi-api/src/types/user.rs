@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! User, role, and policy types
 
@@ -135,7 +135,6 @@ pub struct ChangePasswordRequest {
 
 /// Role information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct Role {
     /// Role UUID
     pub id: Uuid,
@@ -145,8 +144,7 @@ pub struct Role {
     #[serde(default)]
     pub members: Vec<String>,
     /// Default members (user UUIDs or logins)
-
-    #[serde(rename = "default_members", default)]
+    #[serde(default)]
     pub default_members: Vec<String>,
     /// Policies (policy UUIDs or names)
     #[serde(default)]
@@ -203,7 +201,6 @@ pub struct PolicyRef {
 
 /// Request to create role
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct CreateRoleRequest {
     /// Role name
     pub name: String,
@@ -217,7 +214,6 @@ pub struct CreateRoleRequest {
 
 /// Request to update role
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct UpdateRoleRequest {
     /// Role name
     #[serde(default)]
@@ -232,7 +228,6 @@ pub struct UpdateRoleRequest {
 
 /// Policy information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct Policy {
     /// Policy UUID
     pub id: Uuid,
@@ -250,7 +245,6 @@ pub struct Policy {
 
 /// Request to create policy
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct CreatePolicyRequest {
     /// Policy name
     pub name: String,
@@ -263,7 +257,6 @@ pub struct CreatePolicyRequest {
 
 /// Request to update policy
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct UpdatePolicyRequest {
     /// Policy name
     #[serde(default)]

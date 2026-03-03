@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Account-related types
 
@@ -98,7 +98,6 @@ pub struct UpdateAccountRequest {
 
 /// Provisioning limits for an account
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct ProvisioningLimits {
     /// Maximum number of machines
     pub machines: Option<i64>,
@@ -126,7 +125,6 @@ pub struct UpdateConfigRequest {
 
 /// Request to replace role tags
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct ReplaceRoleTagsRequest {
     /// Role tags (list of role names)
     #[serde(rename = "role-tag", default)]
@@ -135,7 +133,6 @@ pub struct ReplaceRoleTagsRequest {
 
 /// Response after replacing role tags on a resource
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct RoleTagsResponse {
     /// Resource path name
     pub name: String,

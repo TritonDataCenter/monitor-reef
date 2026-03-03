@@ -97,8 +97,7 @@ pub struct Network {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub netmask: Option<String>,
     /// VLAN ID
-    /// Note: This field uses snake_case in the API response, not camelCase
-    #[serde(default, skip_serializing_if = "Option::is_none", rename = "vlan_id")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vlan_id: Option<u16>,
     /// DNS suffixes for CNS
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -219,7 +218,6 @@ pub enum NicState {
 
 /// NIC information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct Nic {
     /// MAC address
     pub mac: String,
@@ -241,7 +239,6 @@ pub struct Nic {
 
 /// Request to add NIC
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct AddNicRequest {
     /// Network UUID
     pub network: Uuid,
@@ -255,7 +252,6 @@ pub struct AddNicRequest {
 /// Note: CloudAPI's `translateIp()` (networks.js) copies NAPI fields directly,
 /// so multi-word fields stay in snake_case (owner_uuid, belongs_to_uuid, etc.).
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct NetworkIp {
     /// IP address
     pub ip: String,
@@ -265,34 +261,18 @@ pub struct NetworkIp {
     #[serde(default)]
     pub managed: Option<bool>,
     /// Owner UUID
-    /// Note: NAPI field passed through in snake_case by CloudAPI
-    #[serde(
-        rename = "owner_uuid",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub owner_uuid: Option<Uuid>,
     /// Belongs to UUID
-    /// Note: NAPI field passed through in snake_case by CloudAPI
-    #[serde(
-        rename = "belongs_to_uuid",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub belongs_to_uuid: Option<Uuid>,
     /// Belongs to type
-    /// Note: NAPI field passed through in snake_case by CloudAPI
-    #[serde(
-        rename = "belongs_to_type",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub belongs_to_type: Option<String>,
 }
 
 /// Request to update network IP
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct UpdateNetworkIpRequest {
     /// Reserved
     pub reserved: bool,

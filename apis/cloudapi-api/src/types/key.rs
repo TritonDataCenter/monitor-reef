@@ -41,7 +41,6 @@ pub struct UserAccessKeyPath {
 
 /// SSH key information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct SshKey {
     /// Key name
     pub name: String,
@@ -59,7 +58,6 @@ pub struct SshKey {
 
 /// Request to create SSH key
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct CreateSshKeyRequest {
     /// Key name
     pub name: String,

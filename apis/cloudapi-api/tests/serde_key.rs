@@ -8,7 +8,7 @@
 //!
 //! These tests verify that CloudAPI JSON responses for keys deserialize
 //! correctly, particularly:
-//! - `SshKey` has a hyphenated `role-tag` field overriding `rename_all = "camelCase"`
+//! - `SshKey` has a hyphenated `role-tag` field via `#[serde(rename = "role-tag")]`
 //! - `AccessKeyStatus` uses PascalCase ("Active", "Inactive", "Expired")
 //!   with no `rename_all` — this matches the Node.js CloudAPI wire format
 //! - `CredentialType` uses lowercase ("permanent", "temporary")

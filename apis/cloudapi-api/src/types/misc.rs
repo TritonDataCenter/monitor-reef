@@ -53,7 +53,6 @@ pub struct PackageDisk {
 
 /// Package information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct Package {
     /// Package UUID
     pub id: Uuid,
@@ -90,11 +89,7 @@ pub struct Package {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub brand: Option<VmapiBrand>,
     /// Flexible disk mode (bhyve only)
-    #[serde(
-        rename = "flexible_disk",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flexible_disk: Option<bool>,
     /// Disk configuration (bhyve only)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -115,7 +110,6 @@ pub type Datacenters = std::collections::HashMap<String, String>;
 
 /// Datacenter information (used for add_foreign_datacenter response)
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct Datacenter {
     /// Datacenter name
     pub name: String,
@@ -125,7 +119,6 @@ pub struct Datacenter {
 
 /// Request to add foreign datacenter
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct AddForeignDatacenterRequest {
     /// Datacenter name
     pub name: String,
@@ -144,7 +137,6 @@ pub type Services = std::collections::HashMap<String, String>;
 
 /// Service information (individual service entry, for documentation)
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct Service {
     /// Service name
     pub name: String,
@@ -262,7 +254,6 @@ pub struct MigrationProgressEntry {
 
 /// Migration estimate request
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct MigrationEstimateRequest {
     /// Affinity rules
     #[serde(default)]
@@ -271,7 +262,6 @@ pub struct MigrationEstimateRequest {
 
 /// Migration estimate response
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct MigrationEstimate {
     /// Estimated migration size in bytes
     pub size: u64,
@@ -307,7 +297,6 @@ pub struct MigrationEstimate {
 /// {"action": "abort"}
 /// ```
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct MigrateRequest {
     /// Migration action to perform
     pub action: MigrationAction,
@@ -407,8 +396,7 @@ mod tests {
         assert!(package.disks.is_some());
     }
 
-    // Test that `role-tag` and `flexible_disk` use their explicit renames,
-    // not the struct-level `rename_all = "camelCase"`.
+    // Test that `role-tag` and `flexible_disk` use their wire-format names.
     #[test]
     fn test_package_special_field_wire_format() {
         let json = r#"{

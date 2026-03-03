@@ -8,7 +8,7 @@
 //!
 //! These tests verify that CloudAPI JSON responses for firewall rules
 //! deserialize correctly, particularly the hyphenated `role-tag` field
-//! which overrides the struct-level `rename_all = "camelCase"`.
+//! which uses an explicit `#[serde(rename = "role-tag")]`.
 
 mod common;
 

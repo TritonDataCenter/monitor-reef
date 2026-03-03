@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Machine sub-resources (snapshots, tags, metadata, disks)
 
@@ -60,7 +60,6 @@ use vmapi_api::SnapshotState;
 
 /// Snapshot information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     /// Snapshot name
     pub name: String,
@@ -75,7 +74,6 @@ pub struct Snapshot {
 
 /// Request to create snapshot
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct CreateSnapshotRequest {
     /// Snapshot name
     #[serde(default)]

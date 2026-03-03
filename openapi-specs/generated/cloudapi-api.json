@@ -10626,7 +10626,7 @@
           },
           "published_at": {
             "nullable": true,
-            "description": "Published timestamp Note: This field uses snake_case in the API response, not camelCase",
+            "description": "Published timestamp",
             "type": "string"
           },
           "requirements": {
@@ -11549,7 +11549,7 @@
           },
           "vlan_id": {
             "nullable": true,
-            "description": "VLAN ID Note: This field uses snake_case in the API response, not camelCase",
+            "description": "VLAN ID",
             "type": "integer",
             "format": "uint16",
             "minimum": 0
@@ -11567,12 +11567,12 @@
         "properties": {
           "belongs_to_type": {
             "nullable": true,
-            "description": "Belongs to type Note: NAPI field passed through in snake_case by CloudAPI",
+            "description": "Belongs to type",
             "type": "string"
           },
           "belongs_to_uuid": {
             "nullable": true,
-            "description": "Belongs to UUID Note: NAPI field passed through in snake_case by CloudAPI",
+            "description": "Belongs to UUID",
             "type": "string",
             "format": "uuid"
           },
@@ -11588,7 +11588,7 @@
           },
           "owner_uuid": {
             "nullable": true,
-            "description": "Owner UUID Note: NAPI field passed through in snake_case by CloudAPI",
+            "description": "Owner UUID",
             "type": "string",
             "format": "uuid"
           },

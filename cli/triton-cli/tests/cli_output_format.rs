@@ -204,19 +204,21 @@ fn test_volume_fixture_has_required_json_fields() {
 }
 
 #[test]
-fn test_volume_fixture_camel_case_fields() {
+fn test_volume_fixture_snake_case_override_fields() {
     let val = load_fixture("volume_list.json");
 
-    // Volume struct uses rename_all = "camelCase"
+    // Volume struct has rename_all = "camelCase" but owner_uuid and filesystem_path
+    // have explicit #[serde(rename = "owner_uuid")] / #[serde(rename = "filesystem_path")]
+    // overrides, so the wire format is snake_case for these fields.
     assert_has_fields(
         &val,
-        &["ownerUuid", "filesystemPath"],
-        "volume camelCase fields",
+        &["owner_uuid", "filesystem_path"],
+        "volume snake_case override fields",
     );
 
-    // Verify snake_case versions are NOT present
-    assert_field_absent(&val, "owner_uuid", "volume");
-    assert_field_absent(&val, "filesystem_path", "volume");
+    // Verify camelCase versions are NOT present (explicit renames override rename_all)
+    assert_field_absent(&val, "ownerUuid", "volume");
+    assert_field_absent(&val, "filesystemPath", "volume");
 }
 
 #[test]
@@ -504,7 +506,7 @@ fn test_uuid_fields_are_valid_format() {
         ("machine/instance_list.json", &["id", "image"]),
         ("image_list.json", &["id", "owner"]),
         ("network_list.json", &["id"]),
-        ("volume_list.json", &["id", "ownerUuid"]),
+        ("volume_list.json", &["id", "owner_uuid"]),
         ("package_list.json", &["id"]),
         ("disk_list.json", &["id"]),
         ("fwrule_list.json", &["id"]),

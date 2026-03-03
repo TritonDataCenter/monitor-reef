@@ -89,7 +89,6 @@ pub struct ImageRequirements {
 
 /// Image file information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct ImageFile {
     /// Compression type (gzip, bzip2, none)
     pub compression: String,
@@ -103,7 +102,6 @@ pub struct ImageFile {
 // Note: Named `ImageErrorInfo` rather than `ImageError` to distinguish this DTO
 // from Rust error types.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct ImageErrorInfo {
     /// Error code
     pub code: String,
@@ -114,7 +112,6 @@ pub struct ImageErrorInfo {
 
 /// Image/dataset information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct Image {
     /// Image UUID
     pub id: Uuid,
@@ -137,12 +134,7 @@ pub struct Image {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub homepage: Option<String>,
     /// Published timestamp
-    /// Note: This field uses snake_case in the API response, not camelCase
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        rename = "published_at"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub published_at: Option<Timestamp>,
     /// Owner UUID (API version >= 7.1.0)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -166,12 +158,7 @@ pub struct Image {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<Uuid>,
     /// Image size in bytes (zvol images only)
-
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        rename = "image_size"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub image_size: Option<u64>,
     /// Files array (contains compression, sha1, size)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -186,7 +173,6 @@ pub struct Image {
 
 /// Request to create image from machine
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct CreateImageRequest {
     /// Machine UUID to create image from
     pub machine: Uuid,
@@ -240,7 +226,6 @@ pub struct ImageActionQuery {
 
 /// Request to update an image
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct UpdateImageRequest {
     /// Image name
     #[serde(default)]
@@ -274,12 +259,10 @@ pub struct ExportImageRequest {
 
 /// Request to clone an image
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct CloneImageRequest {}
 
 /// Request to import image from datacenter
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct ImportImageRequest {
     /// Source datacenter name
     pub datacenter: String,
@@ -308,7 +291,6 @@ pub struct ImageCollectionActionQuery {
 
 /// Query parameters for listing images
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct ListImagesQuery {
     /// Filter by image name
     #[serde(default)]

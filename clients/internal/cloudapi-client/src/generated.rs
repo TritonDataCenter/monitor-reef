@@ -2883,7 +2883,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"published_at\": {"]
-    #[doc = "      \"description\": \"Published timestamp Note: This field uses snake_case in the API response, not camelCase\","]
+    #[doc = "      \"description\": \"Published timestamp\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -2987,7 +2987,7 @@ pub mod types {
         #[doc = "Public image (API version >= 7.1.0)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub public: ::std::option::Option<bool>,
-        #[doc = "Published timestamp Note: This field uses snake_case in the API response, not camelCase"]
+        #[doc = "Published timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub published_at: ::std::option::Option<::std::string::String>,
         #[doc = "Requirements (always present, may be empty)"]
@@ -5472,7 +5472,7 @@ pub mod types {
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"vlan_id\": {"]
-    #[doc = "      \"description\": \"VLAN ID Note: This field uses snake_case in the API response, not camelCase\","]
+    #[doc = "      \"description\": \"VLAN ID\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"integer\","]
     #[doc = "        \"null\""]
@@ -5534,7 +5534,7 @@ pub mod types {
         #[doc = "DNS suffixes for CNS"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub suffixes: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-        #[doc = "VLAN ID Note: This field uses snake_case in the API response, not camelCase"]
+        #[doc = "VLAN ID"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub vlan_id: ::std::option::Option<u16>,
     }
@@ -5559,14 +5559,14 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"belongs_to_type\": {"]
-    #[doc = "      \"description\": \"Belongs to type Note: NAPI field passed through in snake_case by CloudAPI\","]
+    #[doc = "      \"description\": \"Belongs to type\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"belongs_to_uuid\": {"]
-    #[doc = "      \"description\": \"Belongs to UUID Note: NAPI field passed through in snake_case by CloudAPI\","]
+    #[doc = "      \"description\": \"Belongs to UUID\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -5585,7 +5585,7 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"owner_uuid\": {"]
-    #[doc = "      \"description\": \"Owner UUID Note: NAPI field passed through in snake_case by CloudAPI\","]
+    #[doc = "      \"description\": \"Owner UUID\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -5604,10 +5604,10 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct NetworkIp {
-        #[doc = "Belongs to type Note: NAPI field passed through in snake_case by CloudAPI"]
+        #[doc = "Belongs to type"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub belongs_to_type: ::std::option::Option<::std::string::String>,
-        #[doc = "Belongs to UUID Note: NAPI field passed through in snake_case by CloudAPI"]
+        #[doc = "Belongs to UUID"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub belongs_to_uuid: ::std::option::Option<::uuid::Uuid>,
         #[doc = "IP address"]
@@ -5615,7 +5615,7 @@ pub mod types {
         #[doc = "Managed"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub managed: ::std::option::Option<bool>,
-        #[doc = "Owner UUID Note: NAPI field passed through in snake_case by CloudAPI"]
+        #[doc = "Owner UUID"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub owner_uuid: ::std::option::Option<::uuid::Uuid>,
         #[doc = "Reserved"]

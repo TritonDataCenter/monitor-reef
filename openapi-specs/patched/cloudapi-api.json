@@ -1176,7 +1176,7 @@
             "type": "boolean"
           },
           "published_at": {
-            "description": "Published timestamp Note: This field uses snake_case in the API response, not camelCase",
+            "description": "Published timestamp",
             "nullable": true,
             "type": "string"
           },
@@ -2146,7 +2146,7 @@
             "type": "array"
           },
           "vlan_id": {
-            "description": "VLAN ID Note: This field uses snake_case in the API response, not camelCase",
+            "description": "VLAN ID",
             "format": "uint16",
             "minimum": 0,
             "nullable": true,
@@ -2164,12 +2164,12 @@
         "description": "Network IP information\n\nNote: CloudAPI's `translateIp()` (networks.js) copies NAPI fields directly, so multi-word fields stay in snake_case (owner_uuid, belongs_to_uuid, etc.).",
         "properties": {
           "belongs_to_type": {
-            "description": "Belongs to type Note: NAPI field passed through in snake_case by CloudAPI",
+            "description": "Belongs to type",
             "nullable": true,
             "type": "string"
           },
           "belongs_to_uuid": {
-            "description": "Belongs to UUID Note: NAPI field passed through in snake_case by CloudAPI",
+            "description": "Belongs to UUID",
             "format": "uuid",
             "nullable": true,
             "type": "string"
@@ -2185,7 +2185,7 @@
             "type": "boolean"
           },
           "owner_uuid": {
-            "description": "Owner UUID Note: NAPI field passed through in snake_case by CloudAPI",
+            "description": "Owner UUID",
             "format": "uuid",
             "nullable": true,
             "type": "string"

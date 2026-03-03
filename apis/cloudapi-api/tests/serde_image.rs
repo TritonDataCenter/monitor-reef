@@ -41,8 +41,7 @@ fn test_image_basic_deserialize() {
 }
 
 /// Test that `published_at` (snake_case) deserializes correctly.
-/// This field uses an explicit `#[serde(rename = "published_at")]` because
-/// the Image struct uses `rename_all = "camelCase"`.
+/// The wire format uses snake_case `published_at` for this field.
 #[test]
 fn test_image_published_at_snake_case() {
     let image: Image = common::deserialize_fixture("image", "basic.json");

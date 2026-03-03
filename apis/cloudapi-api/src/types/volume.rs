@@ -59,15 +59,12 @@ pub enum VolumeState {
 
 /// Volume information
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct Volume {
     /// Volume UUID
     pub id: Uuid,
     /// Volume name
     pub name: String,
     /// Owner UUID
-
-    #[serde(rename = "owner_uuid")]
     pub owner_uuid: Uuid,
     /// Volume type
     #[serde(rename = "type")]
@@ -80,12 +77,7 @@ pub struct Volume {
     #[serde(default)]
     pub networks: Vec<Uuid>,
     /// Filesystem path
-
-    #[serde(
-        rename = "filesystem_path",
-        default,
-        skip_serializing_if = "Option::is_none"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filesystem_path: Option<String>,
     /// Creation timestamp
     pub created: Timestamp,
@@ -99,7 +91,6 @@ pub struct Volume {
 
 /// Volume size option
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct VolumeSize {
     /// Size in MiB
     pub size: u64,
@@ -107,7 +98,6 @@ pub struct VolumeSize {
 
 /// Request to create volume
 #[derive(Debug, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct CreateVolumeRequest {
     /// Volume name
     #[serde(default)]
@@ -150,7 +140,6 @@ pub struct VolumeActionQuery {
 
 /// Request to update volume
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "camelCase")]
 pub struct UpdateVolumeRequest {
     /// Volume name
     #[serde(default)]

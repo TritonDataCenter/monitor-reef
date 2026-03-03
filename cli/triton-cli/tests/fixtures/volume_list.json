@@ -1,14 +1,14 @@
 {
   "id": "e435d72a-2498-8d49-a042-87b222a8b63f",
   "name": "my-nfs-volume",
-  "ownerUuid": "ae35672a-9498-ed49-c042-87b232a8b63c",
+  "owner_uuid": "ae35672a-9498-ed49-c042-87b232a8b63c",
   "type": "tritonnfs",
   "size": 10240,
   "state": "ready",
   "networks": [
     "3985900d-15a8-42d8-a997-1f7e8df2d0af"
   ],
-  "filesystemPath": "192.168.128.5:/export/data",
+  "filesystem_path": "192.168.128.5:/export/data",
   "created": "2026-01-15T10:30:00.000Z",
   "tags": {},
   "refs": []
