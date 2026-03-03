@@ -43,6 +43,15 @@ pub struct ApplyArgs {
     /// Generate SSH keys and CLI profiles for each user (development/testing only)
     #[arg(long, hide = true)]
     pub dev_create_keys_and_profiles: bool,
+    /// SSH key type for dev key generation (ed25519 or rsa)
+    #[arg(long, default_value = "ed25519", hide = true)]
+    pub dev_key_type: DevKeyType,
+}
+
+#[derive(Debug, Clone, clap::ValueEnum)]
+pub enum DevKeyType {
+    Ed25519,
+    Rsa,
 }
 
 #[derive(Args, Clone)]
@@ -988,7 +997,15 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
     // Dev mode: generate SSH keys and create CLI profiles for newly created users
     if let Some(profile) = base_profile {
         if !created_users.is_empty() {
-            execute_dev_actions(&created_users, &profile, client, false, use_json).await?;
+            execute_dev_actions(
+                &created_users,
+                &profile,
+                client,
+                false,
+                use_json,
+                &args.dev_key_type,
+            )
+            .await?;
         } else if !use_json {
             println!();
             println!("Dev mode: No new users were created, skipping key/profile generation.");
@@ -1382,6 +1399,7 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
 async fn generate_ssh_key(
     user_login: &str,
     profile_name: &str,
+    key_type: &DevKeyType,
 ) -> Result<(PathBuf, String, String)> {
     // Create dev-keys directory
     let keys_dir = paths::config_dir().join("dev-keys");
@@ -1394,20 +1412,23 @@ async fn generate_ssh_key(
     let _ = tokio::fs::remove_file(&key_path).await;
     let _ = tokio::fs::remove_file(key_path.with_extension("pub")).await;
 
-    // Generate ed25519 key using ssh-keygen
+    let key_path_str = key_path
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("Invalid path for key: {}", key_path.display()))?;
+    let comment = format!("{}-dev", user_login);
+
+    // Build ssh-keygen args based on key type
+    let mut args = vec!["-t"];
+    match key_type {
+        DevKeyType::Ed25519 => args.push("ed25519"),
+        DevKeyType::Rsa => {
+            args.extend(["rsa", "-m", "PEM", "-b", "4096"]);
+        }
+    }
+    args.extend(["-N", "", "-f", key_path_str, "-C", &comment]);
+
     let output = Command::new("ssh-keygen")
-        .args([
-            "-t",
-            "ed25519",
-            "-N",
-            "",
-            "-f",
-            key_path
-                .to_str()
-                .ok_or_else(|| anyhow::anyhow!("Invalid path for key: {}", key_path.display()))?,
-            "-C",
-            &format!("{}-dev", user_login),
-        ])
+        .args(&args)
         .output()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to run ssh-keygen: {}", e))?;
@@ -1462,6 +1483,7 @@ async fn execute_dev_actions(
     client: &TypedClient,
     _dry_run: bool,
     use_json: bool,
+    key_type: &DevKeyType,
 ) -> Result<()> {
     let account = client.effective_account();
 
@@ -1488,7 +1510,7 @@ async fn execute_dev_actions(
             println!("  Generating SSH key for user '{}'...", user.login);
         }
         let (key_path, public_key, key_name) =
-            generate_ssh_key(&user.login, &base_profile.name).await?;
+            generate_ssh_key(&user.login, &base_profile.name, key_type).await?;
 
         if !use_json {
             println!("    Key saved to: {}", key_path.display());
