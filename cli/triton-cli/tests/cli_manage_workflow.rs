@@ -293,7 +293,10 @@ fn test_instance_manage_workflow() {
 
     // Verify metadata was set
     assert_eq!(
-        instance.metadata.get("foo").expect("foo metadata key should exist"),
+        instance
+            .metadata
+            .get("foo")
+            .expect("foo metadata key should exist"),
         "bar",
         "foo metadata should be set to 'bar'"
     );
@@ -305,7 +308,11 @@ fn test_instance_manage_workflow() {
 
     // Verify tags were set
     assert_eq!(
-        instance.tags.get("blah").expect("blah tag key should exist").as_str(),
+        instance
+            .tags
+            .get("blah")
+            .expect("blah tag key should exist")
+            .as_str(),
         Some("bling"),
         "blah tag should be 'bling'"
     );
@@ -333,7 +340,9 @@ fn test_instance_manage_workflow() {
 
     // Check metadata on retrieved instance
     assert_eq!(
-        get1.metadata.get("foo").expect("foo metadata key should exist after get"),
+        get1.metadata
+            .get("foo")
+            .expect("foo metadata key should exist after get"),
         "bar",
         "foo metadata should be 'bar'"
     );
@@ -522,9 +531,12 @@ fn test_instance_get_deleted() {
     );
 
     // Verify stdout has JSON with deleted state
-    assert!(!stdout.trim().is_empty(), "expected JSON output for deleted instance");
-    let instance: Machine = serde_json::from_str(&stdout)
-        .expect("should parse deleted instance JSON");
+    assert!(
+        !stdout.trim().is_empty(),
+        "expected JSON output for deleted instance"
+    );
+    let instance: Machine =
+        serde_json::from_str(&stdout).expect("should parse deleted instance JSON");
     assert_eq!(
         instance.state,
         MachineState::Deleted,
