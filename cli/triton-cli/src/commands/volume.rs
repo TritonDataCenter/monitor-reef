@@ -307,7 +307,8 @@ fn parse_volume_size(size_str: &str) -> Result<u64> {
         }
 
         // 1 GiB = 1024 MiB
-        Ok(gib * 1024)
+        gib.checked_mul(1024)
+            .ok_or_else(|| anyhow::anyhow!("Size too large: {}", size_str))
     } else {
         // Check for leading zeros (octal-like, e.g., "042")
         if size_str.len() > 1 && size_str.starts_with('0') {
@@ -706,6 +707,21 @@ mod tests {
         assert!(parse_volume_size("042g").is_err());
         assert!(parse_volume_size("042G").is_err());
         assert!(parse_volume_size("042").is_err());
+    }
+
+    #[test]
+    fn test_parse_volume_size_overflow() {
+        // 18014398509481984 * 1024 overflows u64
+        assert!(parse_volume_size("18014398509481984G").is_err());
+    }
+
+    #[test]
+    fn test_parse_volume_size_max_safe() {
+        // Largest GiB value that doesn't overflow: u64::MAX / 1024
+        assert_eq!(
+            parse_volume_size("18014398509481983G").unwrap(),
+            18014398509481983 * 1024
+        );
     }
 
     // ===== parse_tags tests =====
