@@ -97,11 +97,15 @@ fn make_test_bucket() -> Value {
 /// Fast RPC dispatch handler for the mock mdapi server.
 ///
 /// Routes by `msg.data.m.name` (the RPC method name) and returns
-/// canned responses in the format expected by `MdapiClient::call()`:
+/// canned responses matching the real buckets-mdapi server format.
 ///
-///   `d = [ <response_value> ]`
+/// For single-result RPCs (get, update, listvnodes, listowners):
+///   One FastMessage with `d = [<response_value>]`.
+///   Client `call()` reads `msg.data.d.get(0)`.
 ///
-/// where `call()` reads `msg.data.d.get(0)` as the result.
+/// For list RPCs (listbuckets, listobjects):
+///   One FastMessage *per row*, each with `d = [<row_value>]`.
+///   Client `call_multi()` collects `d.get(0)` from each message.
 fn mock_mdapi_handler(
     msg: &FastMessage,
     _log: &Logger,
@@ -120,21 +124,22 @@ fn mock_mdapi_handler(
                 .and_then(|v| v.as_str())
                 .unwrap_or("");
 
-            let objects = if bucket_id == TEST_BUCKET_ID {
-                json!([
-                    make_test_object(0),
-                    make_test_object(1),
-                    make_test_object(2)
-                ])
+            if bucket_id == TEST_BUCKET_ID {
+                // One FastMessage per object row, matching real server
+                let msgs: Vec<FastMessage> = (0..3)
+                    .map(|i| {
+                        let data = FastMessageData::new(
+                            method.clone(),
+                            json!([make_test_object(i)]),
+                        );
+                        FastMessage::data(msg.id, data)
+                    })
+                    .collect();
+                Ok(msgs)
             } else {
-                json!([])
-            };
-
-            // Response: d = [ [obj1, obj2, obj3] ]
-            // Client call() reads d.get(0) → [obj1, obj2, obj3]
-            // Then list_objects deserializes to Vec<Value>
-            let data = FastMessageData::new(method, json!([objects]));
-            Ok(vec![FastMessage::data(msg.id, data)])
+                // Empty result — no messages
+                Ok(vec![])
+            }
         }
 
         "updateobject" => {
@@ -152,9 +157,10 @@ fn mock_mdapi_handler(
         }
 
         "listbuckets" => {
+            // One FastMessage per bucket row, matching real server
             let data = FastMessageData::new(
                 method,
-                json!([[make_test_bucket()]]),
+                json!([make_test_bucket()]),
             );
             Ok(vec![FastMessage::data(msg.id, data)])
         }

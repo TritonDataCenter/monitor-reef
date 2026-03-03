@@ -891,8 +891,39 @@ fn file_move(src: &str, dst: &str) -> Result<(), String> {
         })?;
     }
 
-    fs::rename(src, dst)
-        .map_err(|e| format!("Error renaming file {}: {}", src, e))
+    match fs::rename(src, dst) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            // EXDEV (errno 18): src and dst are on different filesystems.
+            // This is expected on SmartOS storage zones where /var/tmp and
+            // /manta are separate ZFS datasets.  Fall back to copy + delete.
+            if e.raw_os_error() == Some(18) {
+                info!(
+                    "rename across filesystems, falling back to \
+                     copy+delete: {} -> {}",
+                    src, dst
+                );
+                fs::copy(src, dst).map_err(|ce| {
+                    format!(
+                        "Error copying file {} -> {}: {}",
+                        src, dst, ce
+                    )
+                })?;
+                fs::remove_file(src).map_err(|re| {
+                    format!(
+                        "Error removing temp file {} after copy: {}",
+                        src, re
+                    )
+                })?;
+                Ok(())
+            } else {
+                Err(format!(
+                    "Error renaming file {} -> {}: {}",
+                    src, dst, e
+                ))
+            }
+        }
+    }
 }
 
 fn file_remove(file_path: &str) {

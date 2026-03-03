@@ -719,6 +719,87 @@ impl MdapiClient {
         })
     }
 
+    /// Send an RPC request and collect all response messages.
+    ///
+    /// Unlike `call()` which returns only one response value, this method
+    /// collects `d[0]` from every FastMessage received into a `Vec<Value>`.
+    /// This is needed for list RPCs where the server sends one FastMessage
+    /// per result row (e.g. `listbuckets`, `listobjects`).
+    fn call_multi<T: Serialize>(
+        &self,
+        method: &str,
+        payload: &T,
+    ) -> Result<Vec<Value>, MdapiError> {
+        let args = serde_json::to_value(vec![payload]).map_err(|e| {
+            MdapiError::SerializationError(format!(
+                "Failed to serialize payload: {}",
+                e
+            ))
+        })?;
+
+        let mut stream = self.pool.get()?;
+        let mut msg_id = FastMessageId::new();
+        let send_result = fast_client::send(
+            method.to_string(),
+            args,
+            &mut msg_id,
+            &mut stream,
+        );
+
+        if let Err(e) = send_result {
+            return Err(MdapiError::RpcError(format!(
+                "Failed to send RPC request: {}",
+                e
+            )));
+        }
+
+        let mut results: Vec<Value> = Vec::new();
+        let mut response_error: Option<String> = None;
+
+        let recv_cb = |msg: &FastMessage| {
+            if let Some(error_obj) = msg.data.d.get(0) {
+                if let Some(err_name) = error_obj.get("name") {
+                    if err_name.as_str() == Some("FastRequestError")
+                        || err_name.as_str() == Some("PostgresError")
+                        || err_name.as_str() == Some("BucketNotFoundError")
+                        || err_name.as_str() == Some("ObjectNotFoundError")
+                    {
+                        response_error = Some(
+                            error_obj
+                                .get("message")
+                                .and_then(|m| m.as_str())
+                                .unwrap_or("Unknown error")
+                                .to_string(),
+                        );
+                        return Ok(());
+                    }
+                }
+            }
+
+            if let Some(data) = msg.data.d.get(0) {
+                results.push(data.clone());
+            }
+            Ok(())
+        };
+
+        let recv_result = fast_client::receive(&mut stream, recv_cb);
+
+        if let Err(e) = recv_result {
+            return Err(MdapiError::RpcError(format!(
+                "Failed to receive RPC response: {}",
+                e
+            )));
+        }
+
+        self.pool.put(stream);
+
+        if let Some(err) = response_error {
+            return Err(MdapiError::RpcError(err));
+        }
+
+        Ok(results)
+    }
+
     /// Get bucket metadata
     ///
     /// # Arguments
@@ -885,16 +966,20 @@ impl MdapiClient {
             request_id: Self::generate_request_id(),
         };
 
-        let response = self.call("listbuckets", &payload)?;
+        let responses = self.call_multi("listbuckets", &payload)?;
 
-        // Parse response as array of buckets
-        let buckets: Vec<Bucket> =
-            serde_json::from_value(response).map_err(|e| {
-                MdapiError::SerializationError(format!(
-                    "Failed to parse buckets response: {}",
-                    e
-                ))
-            })?;
+        // Each response is a single bucket object (one FastMessage per row)
+        let mut buckets = Vec::with_capacity(responses.len());
+        for (i, val) in responses.iter().enumerate() {
+            let bucket: Bucket =
+                serde_json::from_value(val.clone()).map_err(|e| {
+                    MdapiError::SerializationError(format!(
+                        "Failed to parse bucket response[{}]: {}",
+                        i, e
+                    ))
+                })?;
+            buckets.push(bucket);
+        }
 
         Ok(buckets)
     }
@@ -1087,16 +1172,8 @@ impl MdapiClient {
             request_id: Self::generate_request_id(),
         };
 
-        let response = self.call("listobjects", &payload)?;
-
-        // Parse response as array of object Values
-        let objects: Vec<Value> =
-            serde_json::from_value(response).map_err(|e| {
-                MdapiError::SerializationError(format!(
-                    "Failed to parse objects response: {}",
-                    e
-                ))
-            })?;
+        // Each response is a single object value (one FastMessage per row)
+        let objects = self.call_multi("listobjects", &payload)?;
 
         Ok(objects)
     }

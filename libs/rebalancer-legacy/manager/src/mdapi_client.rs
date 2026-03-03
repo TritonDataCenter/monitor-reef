@@ -98,7 +98,10 @@ fn get_srv_record(
         .ok_or_else(|| {
             InternalError::new(
                 Some(InternalErrorCode::IpLookupError),
-                "SRV Lookup returned success with 0 IPs",
+                format!(
+                    "mdapi SRV lookup returned 0 results for {}",
+                    query
+                ),
             )
             .into()
         })
@@ -113,7 +116,10 @@ fn lookup_ip(host: &str) -> Result<IpAddr, Error> {
         Some(a) => Ok(*a),
         None => Err(InternalError::new(
             Some(InternalErrorCode::IpLookupError),
-            "IP Lookup returned success with 0 IPs",
+            format!(
+                "mdapi IP lookup returned 0 results for {}",
+                host
+            ),
         )
         .into()),
     }
