@@ -429,6 +429,26 @@ fn fake_response_body(
     use cloudapi_api::ImageRequirements;
 
     match operation_id {
+        "get_account" | "head_account" => {
+            let fake = Account {
+                id: last_seg_uuid,
+                login: last_seg.to_string(),
+                email: last_seg.to_string(),
+                company_name: None,
+                first_name: None,
+                last_name: None,
+                address: None,
+                postal_code: None,
+                city: None,
+                state: None,
+                country: None,
+                phone: None,
+                created: fake_ts.to_string(),
+                updated: fake_ts.to_string(),
+                triton_cns_enabled: None,
+            };
+            serde_json::to_vec(&fake).expect("Account serialization should not fail")
+        }
         "get_image" | "head_image" => {
             let fake = Image {
                 id: last_seg_uuid,

@@ -7,6 +7,13 @@
         "https://cloudapi.us-west-1.example.com": "us-west-1"
     },
     "responses": {
+        "get_account": {
+            "id": "00000000-0000-0000-0000-000000000099",
+            "login": "$LAST_SEG",
+            "email": "$LAST_SEG",
+            "created": "2025-01-01T00:00:00.000Z",
+            "updated": "2025-01-01T00:00:00.000Z"
+        },
         "list_datacenters": {
             "us-test-1": "https://cloudapi.us-test-1.example.com",
             "us-west-1": "https://cloudapi.us-west-1.example.com"

@@ -452,9 +452,18 @@ async fn list_images(
     if use_json {
         json::print_json_stream(&images)?;
     } else {
-        let account_info = client.inner().get_account().account(account).send().await?;
-        let account_uuid = account_info.into_inner().id;
-        print_images_table(&images, &args, &account_uuid)?;
+        // Only fetch the account UUID when needed for FLAGS (+/S flags).
+        // Matches node-triton: skip the call when no images have a non-empty ACL.
+        let has_acl = images
+            .iter()
+            .any(|img| img.acl.as_ref().is_some_and(|a| !a.is_empty()));
+        let account_uuid = if has_acl {
+            let account_info = client.inner().get_account().account(account).send().await?;
+            Some(account_info.into_inner().id)
+        } else {
+            None
+        };
+        print_images_table(&images, &args, account_uuid.as_ref())?;
     }
 
     Ok(())
@@ -500,7 +509,7 @@ fn compute_image_flags(img: &Image, account_uuid: Option<&uuid::Uuid>) -> String
 fn print_images_table(
     images: &[Image],
     args: &ImageListArgs,
-    account_uuid: &uuid::Uuid,
+    account_uuid: Option<&uuid::Uuid>,
 ) -> Result<()> {
     // Handle --short: just print IDs
     if args.short {
@@ -516,7 +525,7 @@ fn print_images_table(
         col("NAME", |img: &Image| img.name.clone()),
         col("VERSION", |img: &Image| img.version.clone()),
         col("FLAGS", |img: &Image| {
-            compute_image_flags(img, Some(account_uuid))
+            compute_image_flags(img, account_uuid)
         }),
         col("OS", |img: &Image| img.os.clone()),
         col("TYPE", |img: &Image| enum_to_display(&img.type_)),
