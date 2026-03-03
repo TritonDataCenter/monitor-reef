@@ -77,22 +77,42 @@ fn test_instance_ssh_no_args() {
 // Verify they at least don't crash:
 #[test]
 fn test_instance_delete_zero_args_succeeds() {
-    triton_cmd().args(["instance", "delete"]).assert().success();
+    triton_cmd()
+        .args(["instance", "delete"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty());
 }
 
 #[test]
 fn test_instance_start_zero_args_succeeds() {
-    triton_cmd().args(["instance", "start"]).assert().success();
+    triton_cmd()
+        .args(["instance", "start"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty());
 }
 
 #[test]
 fn test_instance_stop_zero_args_succeeds() {
-    triton_cmd().args(["instance", "stop"]).assert().success();
+    triton_cmd()
+        .args(["instance", "stop"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty());
 }
 
 #[test]
 fn test_instance_reboot_zero_args_succeeds() {
-    triton_cmd().args(["instance", "reboot"]).assert().success();
+    triton_cmd()
+        .args(["instance", "reboot"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty());
 }
 
 // =============================================================================
@@ -226,13 +246,19 @@ fn test_volume_create_fails_without_profile() {
         .env_remove("TRITON_KEY_ID")
         .env_remove("SDC_KEY_ID")
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("triton: error:"));
 }
 
 // volume delete accepts variadic args - zero is a no-op
 #[test]
 fn test_volume_delete_zero_args_succeeds() {
-    triton_cmd().args(["volume", "delete"]).assert().success();
+    triton_cmd()
+        .args(["volume", "delete"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty());
 }
 
 #[test]
@@ -249,7 +275,12 @@ fn test_key_add_fails_without_matching_key() {
 // key delete accepts variadic args - zero is a no-op
 #[test]
 fn test_key_delete_zero_args_succeeds() {
-    triton_cmd().args(["key", "delete"]).assert().success();
+    triton_cmd()
+        .args(["key", "delete"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty());
 }
 
 #[test]
@@ -264,17 +295,32 @@ fn test_fwrule_create_no_args() {
 // fwrule delete/enable/disable accept variadic args - zero is a no-op
 #[test]
 fn test_fwrule_delete_zero_args_succeeds() {
-    triton_cmd().args(["fwrule", "delete"]).assert().success();
+    triton_cmd()
+        .args(["fwrule", "delete"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty());
 }
 
 #[test]
 fn test_fwrule_enable_zero_args_succeeds() {
-    triton_cmd().args(["fwrule", "enable"]).assert().success();
+    triton_cmd()
+        .args(["fwrule", "enable"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty());
 }
 
 #[test]
 fn test_fwrule_disable_zero_args_succeeds() {
-    triton_cmd().args(["fwrule", "disable"]).assert().success();
+    triton_cmd()
+        .args(["fwrule", "disable"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty());
 }
 
 #[test]
@@ -320,22 +366,42 @@ fn test_ssh_alias_no_args() {
 // Variadic aliases also succeed with zero args
 #[test]
 fn test_delete_alias_zero_args_succeeds() {
-    triton_cmd().args(["delete"]).assert().success();
+    triton_cmd()
+        .args(["delete"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty());
 }
 
 #[test]
 fn test_start_alias_zero_args_succeeds() {
-    triton_cmd().args(["start"]).assert().success();
+    triton_cmd()
+        .args(["start"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty());
 }
 
 #[test]
 fn test_stop_alias_zero_args_succeeds() {
-    triton_cmd().args(["stop"]).assert().success();
+    triton_cmd()
+        .args(["stop"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty());
 }
 
 #[test]
 fn test_reboot_alias_zero_args_succeeds() {
-    triton_cmd().args(["reboot"]).assert().success();
+    triton_cmd()
+        .args(["reboot"])
+        .assert()
+        .success()
+        .stdout(predicate::str::is_empty())
+        .stderr(predicate::str::is_empty());
 }
 
 // =============================================================================
@@ -347,7 +413,8 @@ fn test_completion_invalid_shell() {
     triton_cmd()
         .args(["completion", "invalid_shell"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("invalid value"));
 }
 
 // =============================================================================

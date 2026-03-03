@@ -62,7 +62,8 @@ fn test_no_profile_instance_list_fails() {
     triton_no_profile()
         .args(["instance", "list"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("triton: error:"));
 }
 
 #[test]
@@ -87,7 +88,8 @@ fn test_no_profile_image_list_fails() {
     triton_no_profile()
         .args(["image", "list"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("triton: error:"));
 }
 
 #[test]
@@ -95,7 +97,8 @@ fn test_no_profile_network_list_fails() {
     triton_no_profile()
         .args(["network", "list"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("triton: error:"));
 }
 
 #[test]
@@ -103,7 +106,8 @@ fn test_no_profile_volume_list_fails() {
     triton_no_profile()
         .args(["volume", "list"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("triton: error:"));
 }
 
 #[test]
@@ -111,7 +115,8 @@ fn test_no_profile_package_list_fails() {
     triton_no_profile()
         .args(["package", "list"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("triton: error:"));
 }
 
 #[test]
@@ -119,7 +124,8 @@ fn test_no_profile_instance_get_fails() {
     triton_no_profile()
         .args(["instance", "get", "some-instance"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("triton: error:"));
 }
 
 #[test]
@@ -127,7 +133,8 @@ fn test_no_profile_account_get_fails() {
     triton_no_profile()
         .args(["account", "get"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("triton: error:"));
 }
 
 // =============================================================================
@@ -139,7 +146,10 @@ fn test_url_only_no_account_fails() {
     let mut cmd = triton_no_profile();
     cmd.env("TRITON_URL", "https://cloudapi.example.com");
     // Missing TRITON_ACCOUNT and TRITON_KEY_ID
-    cmd.args(["instance", "list"]).assert().failure();
+    cmd.args(["instance", "list"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("triton: error:"));
 }
 
 #[test]
@@ -148,7 +158,10 @@ fn test_url_and_account_no_key_fails() {
     cmd.env("TRITON_URL", "https://cloudapi.example.com")
         .env("TRITON_ACCOUNT", "testaccount");
     // Missing TRITON_KEY_ID
-    cmd.args(["instance", "list"]).assert().failure();
+    cmd.args(["instance", "list"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("triton: error:"));
 }
 
 // =============================================================================
@@ -163,7 +176,8 @@ fn test_connection_refused_instance_list() {
     triton_with_url("http://127.0.0.1:1")
         .args(["instance", "list"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("triton: error:"));
 }
 
 #[test]
@@ -171,7 +185,8 @@ fn test_connection_refused_image_list() {
     triton_with_url("http://127.0.0.1:1")
         .args(["image", "list"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("triton: error:"));
 }
 
 #[test]
@@ -207,7 +222,8 @@ fn test_invalid_url_format_fails() {
     triton_with_url("not-a-valid-url")
         .args(["instance", "list"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("triton: error:"));
 }
 
 #[test]
@@ -215,7 +231,8 @@ fn test_empty_url_fails() {
     triton_with_url("")
         .args(["instance", "list"])
         .assert()
-        .failure();
+        .failure()
+        .stderr(predicate::str::contains("triton: error:"));
 }
 
 // =============================================================================
@@ -371,5 +388,6 @@ fn test_completion_succeeds_without_profile() {
     triton_no_profile()
         .args(["completion", "bash"])
         .assert()
-        .success();
+        .success()
+        .stdout(predicate::str::is_empty().not());
 }
