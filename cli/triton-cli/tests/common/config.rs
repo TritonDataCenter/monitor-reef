@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Test configuration management
 //!
@@ -157,9 +157,26 @@ pub fn load_config() -> Option<&'static TestConfig> {
                 });
 
             config_path.and_then(|path| {
-                let content = std::fs::read_to_string(&path).ok()?;
-                let config: TestConfig = serde_json::from_str(&content).ok()?;
-                Some(config)
+                let content = match std::fs::read_to_string(&path) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        eprintln!(
+                            "WARNING: failed to read test config {}: {e}",
+                            path.display()
+                        );
+                        return None;
+                    }
+                };
+                match serde_json::from_str(&content) {
+                    Ok(config) => Some(config),
+                    Err(e) => {
+                        eprintln!(
+                            "WARNING: failed to parse test config {}: {e}",
+                            path.display()
+                        );
+                        None
+                    }
+                }
             })
         })
         .as_ref()
