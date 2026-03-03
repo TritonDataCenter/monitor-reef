@@ -292,9 +292,11 @@ fn test_instance_manage_workflow() {
     );
 
     // Verify metadata was set
-    if let Some(foo) = instance.metadata.get("foo") {
-        assert_eq!(foo, "bar", "foo metadata should be set to 'bar'");
-    }
+    assert_eq!(
+        instance.metadata.get("foo").expect("foo metadata key should exist"),
+        "bar",
+        "foo metadata should be set to 'bar'"
+    );
     // Verify user-script from --script option was set
     assert!(
         instance.metadata.contains_key("user-script"),
@@ -302,9 +304,11 @@ fn test_instance_manage_workflow() {
     );
 
     // Verify tags were set
-    if let Some(blah) = instance.tags.get("blah") {
-        assert_eq!(blah.as_str(), Some("bling"), "blah tag should be 'bling'");
-    }
+    assert_eq!(
+        instance.tags.get("blah").expect("blah tag key should exist").as_str(),
+        Some("bling"),
+        "blah tag should be 'bling'"
+    );
 
     // Test: triton instance get by UUID, alias, and short ID
     eprintln!("Test: triton instance get -j {}", inst_alias);
@@ -328,9 +332,11 @@ fn test_instance_manage_workflow() {
     assert_eq!(get2.id, get3.id, "UUIDs should match");
 
     // Check metadata on retrieved instance
-    if let Some(foo) = get1.metadata.get("foo") {
-        assert_eq!(foo, "bar", "foo metadata should be 'bar'");
-    }
+    assert_eq!(
+        get1.metadata.get("foo").expect("foo metadata key should exist after get"),
+        "bar",
+        "foo metadata should be 'bar'"
+    );
 
     // Test: triton stop with wait
     eprintln!("Test: triton stop -w {}", inst_alias);
@@ -515,16 +521,15 @@ fn test_instance_get_deleted() {
         success, stdout, stderr
     );
 
-    // If stdout has JSON, check state is deleted
-    if !stdout.trim().is_empty()
-        && let Ok(instance) = serde_json::from_str::<Machine>(&stdout)
-    {
-        assert_eq!(
-            instance.state,
-            MachineState::Deleted,
-            "state should be 'deleted'"
-        );
-    }
+    // Verify stdout has JSON with deleted state
+    assert!(!stdout.trim().is_empty(), "expected JSON output for deleted instance");
+    let instance: Machine = serde_json::from_str(&stdout)
+        .expect("should parse deleted instance JSON");
+    assert_eq!(
+        instance.state,
+        MachineState::Deleted,
+        "state should be 'deleted'"
+    );
 }
 
 /// Test instance wait command
