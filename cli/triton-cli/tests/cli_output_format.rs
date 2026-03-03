@@ -255,6 +255,96 @@ fn test_package_fixture_field_types() {
 }
 
 // =============================================================================
+// Disk JSON field tests
+// =============================================================================
+
+#[test]
+fn test_disk_fixture_has_required_json_fields() {
+    let val = load_fixture("disk_list.json");
+    assert_has_fields(&val, &["id", "size", "state"], "disk");
+}
+
+#[test]
+fn test_disk_fixture_snake_case_fields() {
+    let val = load_fixture("disk_list.json");
+
+    // Disk struct has NO rename_all, so fields stay snake_case
+    assert_has_fields(&val, &["block_size", "pci_slot"], "disk snake_case fields");
+
+    // Verify camelCase versions are NOT present
+    assert_field_absent(&val, "blockSize", "disk");
+    assert_field_absent(&val, "pciSlot", "disk");
+}
+
+// =============================================================================
+// NIC JSON field tests
+// =============================================================================
+
+#[test]
+fn test_nic_fixture_has_required_json_fields() {
+    let val = load_fixture("nic_list.json");
+    assert_has_fields(&val, &["mac", "ip", "primary", "netmask", "network"], "nic");
+}
+
+#[test]
+fn test_nic_fixture_state_field() {
+    let val = load_fixture("nic_list.json");
+
+    // state is optional but present in our fixture
+    assert_has_fields(&val, &["state"], "nic state");
+}
+
+// =============================================================================
+// Snapshot JSON field tests
+// =============================================================================
+
+#[test]
+fn test_snapshot_fixture_has_required_json_fields() {
+    let val = load_fixture("snapshot_list.json");
+    assert_has_fields(&val, &["name", "state", "created"], "snapshot");
+}
+
+// =============================================================================
+// SSH Key JSON field tests
+// =============================================================================
+
+#[test]
+fn test_key_fixture_has_required_json_fields() {
+    let val = load_fixture("key_list.json");
+    assert_has_fields(&val, &["name", "key", "fingerprint"], "key");
+}
+
+#[test]
+fn test_key_fixture_role_tag_hyphenated() {
+    let val = load_fixture("key_list.json");
+
+    // SshKey uses #[serde(rename = "role-tag")]
+    assert_has_fields(&val, &["role-tag"], "key role-tag");
+    assert_field_absent(&val, "roleTag", "key");
+    assert_field_absent(&val, "role_tag", "key");
+}
+
+// =============================================================================
+// Firewall Rule JSON field tests
+// =============================================================================
+
+#[test]
+fn test_fwrule_fixture_has_required_json_fields() {
+    let val = load_fixture("fwrule_list.json");
+    assert_has_fields(&val, &["id", "rule", "enabled", "log"], "fwrule");
+}
+
+#[test]
+fn test_fwrule_fixture_role_tag_hyphenated() {
+    let val = load_fixture("fwrule_list.json");
+
+    // FirewallRule uses #[serde(rename = "role-tag")]
+    assert_has_fields(&val, &["role-tag"], "fwrule role-tag");
+    assert_field_absent(&val, "roleTag", "fwrule");
+    assert_field_absent(&val, "role_tag", "fwrule");
+}
+
+// =============================================================================
 // JSON stream parsing tests
 // =============================================================================
 
@@ -370,6 +460,8 @@ fn test_all_fixtures_have_id_field() {
         "network_list.json",
         "volume_list.json",
         "package_list.json",
+        "disk_list.json",
+        "fwrule_list.json",
     ];
 
     for fixture_name in &fixtures {
@@ -389,6 +481,8 @@ fn test_all_fixtures_have_name_field() {
         "network_list.json",
         "volume_list.json",
         "package_list.json",
+        "snapshot_list.json",
+        "key_list.json",
     ];
 
     for fixture_name in &fixtures {
@@ -412,6 +506,8 @@ fn test_uuid_fields_are_valid_format() {
         ("network_list.json", &["id"]),
         ("volume_list.json", &["id", "ownerUuid"]),
         ("package_list.json", &["id"]),
+        ("disk_list.json", &["id"]),
+        ("fwrule_list.json", &["id"]),
     ];
 
     for (fixture_name, fields) in fixtures_and_fields {

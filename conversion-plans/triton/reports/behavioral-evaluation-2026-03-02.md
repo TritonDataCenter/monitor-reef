@@ -289,7 +289,7 @@ All enums have proper forward-compatible `#[serde(other)]` catch-all variants.
 - [x] `monitor-reef-slvs` — **RBAC role-tags no confirmation** — `cli/triton-cli/src/commands/rbac/role_tags.rs` — added `--force`/`-y` flag and `dialoguer::Confirm` prompts for set/remove/clear
 - [x] `monitor-reef-n85d` — **Docker env null handling** — `cli/triton-cli/src/commands/env.rs:37` — null values now emit unset/set -e/Remove-Item commands
 - [x] `monitor-reef-8gj3` — **Subcommand tests only check non-empty** — `cli/triton-cli/tests/cli_subcommands.rs` — assertions now check for "Usage:"
-- [ ] `monitor-reef-st21` — **Missing fixture files** — `cli/triton-cli/tests/fixtures/` — no disk/NIC/snapshot/key/fwrule fixtures
+- [x] `monitor-reef-st21` — **Missing fixture files** — `cli/triton-cli/tests/fixtures/` — added disk/NIC/snapshot/key/fwrule fixtures with field validation tests
 - [ ] `monitor-reef-pcfq` — **RBAC dev-mode ed25519 vs RSA** — `cli/triton-cli/src/commands/rbac/apply.rs:1142` — compatibility concern
 
 ### P3 — Low (Edge cases, minor improvements)
