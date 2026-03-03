@@ -79,12 +79,35 @@ struct ProxyConfig {
     user: String,
 }
 
+/// Parse optional `USER@instance` syntax, returning (user, instance_id).
+///
+/// If the instance argument contains `@` with non-empty parts on both sides,
+/// the portion before `@` is the SSH user and the portion after is the
+/// instance name or ID. This matches the Node.js `triton instance ssh`
+/// behavior where `triton inst ssh debian@myvm` connects as user `debian`.
+fn parse_instance_arg(instance: &str) -> (Option<&str>, &str) {
+    if let Some(at_pos) = instance.find('@') {
+        let user = &instance[..at_pos];
+        let id = &instance[at_pos + 1..];
+        if !user.is_empty() && !id.is_empty() {
+            return (Some(user), id);
+        }
+    }
+    (None, instance)
+}
+
 pub async fn run(
-    args: SshArgs,
+    mut args: SshArgs,
     client: &TypedClient,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
-    let machine_id = super::get::resolve_instance(&args.instance, client).await?;
+    // Support USER@instance syntax (e.g. "debian@myvm"). The user portion
+    // overrides --user/-l and image default_user, matching Node.js behavior.
+    let (at_user, instance_id) = parse_instance_arg(&args.instance);
+    if let Some(user) = at_user {
+        args.user = Some(user.to_string());
+    }
+    let machine_id = super::get::resolve_instance(instance_id, client).await?;
     let account = client.effective_account();
 
     // Get instance details
@@ -331,4 +354,53 @@ fn execute_ssh(args: &SshArgs, config: &SshConfig) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_instance_arg_with_user() {
+        let (user, id) = parse_instance_arg("debian@migrate-test");
+        assert_eq!(user, Some("debian"));
+        assert_eq!(id, "migrate-test");
+    }
+
+    #[test]
+    fn test_parse_instance_arg_plain_name() {
+        let (user, id) = parse_instance_arg("migrate-test");
+        assert_eq!(user, None);
+        assert_eq!(id, "migrate-test");
+    }
+
+    #[test]
+    fn test_parse_instance_arg_uuid() {
+        let (user, id) = parse_instance_arg("28faa36c-2031-4632-a819-f7defa1299a3");
+        assert_eq!(user, None);
+        assert_eq!(id, "28faa36c-2031-4632-a819-f7defa1299a3");
+    }
+
+    #[test]
+    fn test_parse_instance_arg_user_with_uuid() {
+        let (user, id) = parse_instance_arg("root@28faa36c-2031-4632-a819-f7defa1299a3");
+        assert_eq!(user, Some("root"));
+        assert_eq!(id, "28faa36c-2031-4632-a819-f7defa1299a3");
+    }
+
+    #[test]
+    fn test_parse_instance_arg_empty_user() {
+        // "@instance" should not extract an empty user
+        let (user, id) = parse_instance_arg("@instance");
+        assert_eq!(user, None);
+        assert_eq!(id, "@instance");
+    }
+
+    #[test]
+    fn test_parse_instance_arg_empty_instance() {
+        // "user@" should not extract an empty instance
+        let (user, id) = parse_instance_arg("user@");
+        assert_eq!(user, None);
+        assert_eq!(id, "user@");
+    }
 }
