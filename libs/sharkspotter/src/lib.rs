@@ -48,6 +48,7 @@
 
 pub mod config;
 pub mod directdb;
+pub mod directdb_buckets;
 pub mod mdapi_discovery;
 pub mod util;
 
@@ -723,6 +724,47 @@ fn run_direct_db_shard_thread(
     });
 }
 
+fn run_direct_db_buckets_shard_thread(
+    pool: &ThreadPool,
+    shard: u32,
+    obj_tx: &crossbeam_channel::Sender<SharkspotterMessage>,
+    conf: &config::Config,
+    log: &Logger,
+) {
+    let th_obj_tx = obj_tx.clone();
+    let th_conf = conf.clone();
+    let th_log = log.clone();
+
+    pool.execute(move || {
+        let mut rt = match tokio::runtime::Builder::new()
+            .enable_all()
+            .basic_scheduler()
+            .build()
+        {
+            Ok(r) => r,
+            Err(e) => {
+                error!(th_log, "could not create runtime: {}", e);
+                ERROR_LIST.lock().expect("ERROR_LIST lock").push(e);
+                return;
+            }
+        };
+
+        if let Err(e) = rt.block_on(
+            directdb_buckets::get_buckets_objects_from_shard(
+                shard,
+                th_conf,
+                th_log.clone(),
+                th_obj_tx,
+            ),
+        ) {
+            if e.kind() != ErrorKind::BrokenPipe {
+                error!(th_log, "buckets shard thread error: {}", e);
+            }
+            ERROR_LIST.lock().expect("ERROR_LIST lock").push(e);
+        }
+    });
+}
+
 /// Auto-discover vnodes from mdapi via the listvnodes RPC.
 ///
 /// Returns a `Vec<u32>` of vnode numbers. If the server does not
@@ -843,6 +885,23 @@ pub fn run_multithreaded(
             run_direct_db_shard_thread(&pool, shard, &obj_tx, &conf, &log);
         } else {
             run_moray_shard_thread(&pool, shard, &obj_tx, &conf, &log)?;
+        }
+    }
+
+    // Buckets-postgres DirectDB discovery (via pgclone clone-buckets).
+    if conf.direct_db_buckets {
+        let bmin = conf.buckets_min_shard;
+        let bmax = conf.buckets_max_shard;
+        debug!(
+            log,
+            "Starting buckets directdb discovery for shards {}..={}",
+            bmin,
+            bmax
+        );
+        for shard in bmin..=bmax {
+            run_direct_db_buckets_shard_thread(
+                &pool, shard, &obj_tx, &conf, &log,
+            );
         }
     }
 

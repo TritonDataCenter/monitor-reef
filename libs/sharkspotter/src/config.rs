@@ -31,6 +31,14 @@ pub struct Config {
     pub multithreaded: bool,
     pub max_threads: usize,
     pub direct_db: bool,
+    /// Use direct PostgreSQL access to rebalancer-buckets-postgres
+    /// clones for bucket object discovery.  Requires provisioning
+    /// via `pgclone.sh clone-buckets`.
+    pub direct_db_buckets: bool,
+    /// Minimum buckets-postgres shard number (for direct_db_buckets).
+    pub buckets_min_shard: u32,
+    /// Maximum buckets-postgres shard number (for direct_db_buckets).
+    pub buckets_max_shard: u32,
     pub log_level: Level,
     /// Mdapi endpoints for bucket object discovery (one per shard).
     /// Each entry is a "host:port" string (e.g., "1.buckets-mdapi.domain:2030").
@@ -59,6 +67,9 @@ impl Default for Config {
             multithreaded: false,
             max_threads: 50,
             direct_db: false,
+            direct_db_buckets: false,
+            buckets_min_shard: 1,
+            buckets_max_shard: 1,
             log_level: Level::Debug,
             mdapi_endpoints: vec![],
             owners: None,
@@ -171,6 +182,23 @@ impl<'a, 'b> Config {
                 .long("direct_db")
                 .help("use direct DB access instead of moray")
                 .takes_value(false))
+            .arg(Arg::with_name("direct_db_buckets")
+                .long("direct_db_buckets")
+                .help("use direct DB access to buckets-postgres \
+                    clones (requires pgclone.sh clone-buckets)")
+                .takes_value(false))
+            .arg(Arg::with_name("buckets_min_shard")
+                .long("buckets_min_shard")
+                .value_name("SHARD")
+                .help("minimum buckets-postgres shard number \
+                    (default: 1)")
+                .takes_value(true))
+            .arg(Arg::with_name("buckets_max_shard")
+                .long("buckets_max_shard")
+                .value_name("SHARD")
+                .help("maximum buckets-postgres shard number \
+                    (default: 1)")
+                .takes_value(true))
             .arg(Arg::with_name("log_level")
                 .short("l")
                 .long("log_level")
@@ -243,6 +271,22 @@ impl<'a, 'b> Config {
 
         if matches.is_present("direct_db") {
             config.direct_db = true;
+        }
+
+        if matches.is_present("direct_db_buckets") {
+            config.direct_db_buckets = true;
+        }
+
+        if let Ok(bmin) = value_t!(
+            matches, "buckets_min_shard", u32
+        ) {
+            config.buckets_min_shard = bmin;
+        }
+
+        if let Ok(bmax) = value_t!(
+            matches, "buckets_max_shard", u32
+        ) {
+            config.buckets_max_shard = bmax;
         }
 
         if let Ok(max_threads) = value_t!(matches, "max_threads", usize) {
