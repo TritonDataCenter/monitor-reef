@@ -20,36 +20,18 @@ pub struct VolumePath {
 }
 
 /// Volume type
-// ValueEnum is derived here (not via Progenitor client-generator patch) because
-// the CLI imports this type through the client re-export, not the generated types module.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Serialize,
-    Deserialize,
-    JsonSchema,
-    PartialEq,
-    Eq,
-    clap::ValueEnum,
-    strum::Display,
-)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, strum::Display)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum VolumeType {
     Tritonnfs,
     /// Unknown type (forward compatibility)
     #[serde(other)]
-    #[clap(skip)]
     Unknown,
 }
 
 /// Volume state
-// ValueEnum is derived here (not via Progenitor client-generator patch) because
-// the CLI imports this type through the client re-export, not the generated types module.
-#[derive(
-    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
-)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum VolumeState {
     Creating,
@@ -57,7 +39,6 @@ pub enum VolumeState {
     Failed,
     Deleting,
     #[serde(other)]
-    #[clap(skip)]
     Unknown,
 }
 

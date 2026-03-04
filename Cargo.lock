@@ -694,7 +694,6 @@ dependencies = [
 name = "cloudapi-api"
 version = "9.20.0"
 dependencies = [
- "clap",
  "dropshot",
  "http",
  "schemars",

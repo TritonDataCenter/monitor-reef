@@ -222,8 +222,6 @@ pub use cloudapi_api::{
     VolumeMount,
     VolumePath,
     VolumeSize,
-    VolumeState,
-    VolumeType,
 };
 
 // =============================================================================
@@ -563,19 +561,16 @@ fn fake_response_body(
             serde_json::to_vec(&fake).expect("FirewallRule serialization should not fail")
         }
         "get_volume" => {
-            let fake = Volume {
-                id: last_seg_uuid,
-                name: last_seg.to_string(),
-                owner_uuid: uuid::Uuid::nil(),
-                volume_type: cloudapi_api::VolumeType::Tritonnfs,
-                size: 0,
-                state: cloudapi_api::VolumeState::Ready,
-                networks: vec![],
-                filesystem_path: None,
-                created: fake_ts.to_string(),
-                tags: Default::default(),
-                refs: vec![],
-            };
+            let fake: types::Volume = types::Volume::builder()
+                .id(last_seg_uuid)
+                .name(last_seg.to_string())
+                .owner_uuid(uuid::Uuid::nil())
+                .type_(types::VolumeType::Tritonnfs)
+                .size(0_u64)
+                .state(types::VolumeState::Ready)
+                .created(fake_ts.to_string())
+                .try_into()
+                .expect("Volume builder should not fail");
             serde_json::to_vec(&fake).expect("Volume serialization should not fail")
         }
         "get_key" | "head_key" | "get_user_key" | "head_user_key" => {
@@ -1544,61 +1539,49 @@ impl TypedClient {
     // ========================================================================
 
     /// Get a volume by UUID
-    ///
-    /// Returns the canonical API `Volume` type instead of Progenitor's
-    /// `types::Volume`. This ensures that empty `tags` serialize as
-    /// `"tags": {}` in JSON output rather than being omitted — see
-    /// `normalize_volume()` for the full explanation.
-    pub async fn get_volume(&self, account: &str, id: &str) -> Result<Volume, Error<types::Error>> {
-        let v = self
+    pub async fn get_volume(
+        &self,
+        account: &str,
+        id: &str,
+    ) -> Result<types::Volume, Error<types::Error>> {
+        Ok(self
             .inner
             .get_volume()
             .account(account)
             .id(id)
             .send()
             .await?
-            .into_inner();
-        normalize_volume(v).map_err(|e| Error::Custom(e.to_string()))
+            .into_inner())
     }
 
     /// List volumes
-    ///
-    /// Returns canonical API `Volume` types instead of Progenitor's
-    /// `types::Volume`. This ensures that empty `tags` serialize as
-    /// `"tags": {}` in JSON output rather than being omitted — see
-    /// `normalize_volume()` for the full explanation.
-    pub async fn list_volumes(&self, account: &str) -> Result<Vec<Volume>, Error<types::Error>> {
-        let vols = self
+    pub async fn list_volumes(
+        &self,
+        account: &str,
+    ) -> Result<Vec<types::Volume>, Error<types::Error>> {
+        Ok(self
             .inner
             .list_volumes()
             .account(account)
             .send()
             .await?
-            .into_inner();
-        vols.into_iter()
-            .map(|v| normalize_volume(v).map_err(|e| Error::Custom(e.to_string())))
-            .collect()
+            .into_inner())
     }
 
     /// Create a volume
-    ///
-    /// Accepts Progenitor's `types::CreateVolumeRequest` (needed for the
-    /// builder) but returns the canonical API `Volume` type so that empty
-    /// `tags` serialize as `"tags": {}` — see `normalize_volume()`.
-    pub async fn create_volume_normalized(
+    pub async fn create_volume(
         &self,
         account: &str,
         request: types::CreateVolumeRequest,
-    ) -> Result<Volume, Error<types::Error>> {
-        let v = self
+    ) -> Result<types::Volume, Error<types::Error>> {
+        Ok(self
             .inner
             .create_volume()
             .account(account)
             .body(request)
             .send()
             .await?
-            .into_inner();
-        normalize_volume(v).map_err(|e| Error::Custom(e.to_string()))
+            .into_inner())
     }
 
     /// Update volume name
@@ -1699,24 +1682,6 @@ pub enum GetMachineError {
 #[allow(clippy::expect_used)]
 fn to_json_value<T: serde::Serialize>(value: &T) -> serde_json::Value {
     serde_json::to_value(value).expect("request serialization should not fail")
-}
-
-/// Convert a Progenitor-generated Volume to the canonical API type.
-///
-/// VOLAPI sometimes omits the `labels` field for volumes without tags.
-/// CloudAPI passes this through, so the Rust client may receive responses
-/// with no `tags` field at all. The API type's `#[serde(default)]` on `tags`
-/// correctly deserializes this as an empty map, but Progenitor *also* adds
-/// `skip_serializing_if = "Map::is_empty"` to its generated type — which
-/// then suppresses `"tags"` entirely when the CLI serializes to JSON.
-/// Node.js `triton` always outputs `"tags": {}`, so we need to match that.
-///
-/// The canonical API type (`cloudapi_api::Volume`) has `#[serde(default)]`
-/// without `skip_serializing_if`, so re-serializing through it preserves
-/// the empty map as `"tags": {}` in JSON output.
-fn normalize_volume(v: types::Volume) -> Result<Volume, serde_json::Error> {
-    let value = serde_json::to_value(&v)?;
-    serde_json::from_value(value)
 }
 
 /// Wrapper that adds an `action` field to a request body for action-dispatch

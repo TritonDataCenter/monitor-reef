@@ -10,7 +10,7 @@ use anyhow::Result;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 
-use cloudapi_client::{VolumeState, VolumeType};
+use cloudapi_client::types::{VolumeState, VolumeType};
 
 use crate::output::enum_to_display;
 use crate::output::table::{TableBuilder, TableFormatArgs};
@@ -214,7 +214,7 @@ async fn list_volumes(
                 return false;
             }
             if let Some(vtype) = args.volume_type
-                && vol.volume_type != vtype
+                && vol.type_ != vtype
             {
                 return false;
             }
@@ -223,7 +223,9 @@ async fn list_volumes(
         .collect();
 
     if use_json {
-        json::print_json_stream(&volumes)?;
+        let normalized: Vec<serde_json::Value> =
+            volumes.iter().map(volume_to_json).collect::<Result<_>>()?;
+        json::print_json_stream(&normalized)?;
     } else {
         // node-triton column order: SHORTID, NAME, SIZE, TYPE, STATE, AGE
         let mut tbl = TableBuilder::new(&["SHORTID", "NAME", "SIZE", "TYPE", "STATE", "AGE"])
@@ -233,7 +235,7 @@ async fn list_volumes(
                 vol.id.to_string()[..8].to_string(),
                 vol.name.clone(),
                 format_volume_size(vol.size),
-                enum_to_display(&vol.volume_type),
+                enum_to_display(&vol.type_),
                 enum_to_display(&vol.state),
                 output::format_age(&vol.created.to_string()),
                 vol.id.to_string(),
@@ -252,13 +254,28 @@ async fn get_volume(args: VolumeGetArgs, client: &TypedClient, use_json: bool) -
 
     let volume = client.get_volume(account, &volume_id.to_string()).await?;
 
+    let normalized = volume_to_json(&volume)?;
     if use_json {
-        json::print_json(&volume)?;
+        json::print_json(&normalized)?;
     } else {
-        json::print_json_pretty(&volume)?;
+        json::print_json_pretty(&normalized)?;
     }
 
     Ok(())
+}
+
+/// Serialize a volume to JSON, ensuring `"tags": {}` is present even when empty.
+///
+/// Progenitor's generated `Volume` type uses `skip_serializing_if = "Map::is_empty"`
+/// on `tags`, which omits the field when empty. Node.js `triton` always outputs
+/// `"tags": {}`, so we normalize here at the output layer.
+fn volume_to_json(vol: &cloudapi_client::types::Volume) -> Result<serde_json::Value> {
+    let mut v = serde_json::to_value(vol)?;
+    if let Some(obj) = v.as_object_mut() {
+        obj.entry("tags")
+            .or_insert_with(|| serde_json::Value::Object(Default::default()));
+    }
+    Ok(v)
 }
 
 /// Format volume size from MiB to GiB display string (e.g., 10240 → "10G").
@@ -394,22 +411,15 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
     // Parse tags
     let tags = args.tags.as_ref().map(|t| parse_tags(t)).transpose()?;
 
-    // The clap arg uses `cloudapi_client::VolumeType` (API type, has ValueEnum)
-    // but `types::CreateVolumeRequest` expects `types::VolumeType` (Progenitor).
-    // These are structurally identical enums from different codegen paths.
-    let progenitor_type = match args.r#type {
-        VolumeType::Tritonnfs => cloudapi_client::types::VolumeType::Tritonnfs,
-        VolumeType::Unknown => cloudapi_client::types::VolumeType::Unknown,
-    };
     let request = cloudapi_client::types::CreateVolumeRequest {
         name: args.name.clone(),
-        type_: Some(progenitor_type),
+        type_: Some(args.r#type),
         size,
         networks,
         tags,
     };
 
-    let volume = client.create_volume_normalized(account, request).await?;
+    let volume = client.create_volume(account, request).await?;
 
     let should_wait = args.wait > 0;
     let wait_timeout = args.wait_timeout.unwrap_or(300); // Default 5 minutes
@@ -425,7 +435,7 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
             wait_for_volume_ready(&volume.id.to_string(), client, wait_timeout).await?;
 
         if use_json {
-            json::print_json(&final_volume)?;
+            json::print_json(&volume_to_json(&final_volume)?)?;
         } else if final_volume.state == VolumeState::Ready {
             println!(
                 "Created volume {} ({}) - {} MiB",
@@ -449,7 +459,7 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
         );
 
         if use_json {
-            json::print_json(&volume)?;
+            json::print_json(&volume_to_json(&volume)?)?;
         }
     }
 
@@ -460,7 +470,7 @@ async fn wait_for_volume_ready(
     volume_id: &str,
     client: &TypedClient,
     timeout_secs: u64,
-) -> Result<cloudapi_client::Volume> {
+) -> Result<cloudapi_client::types::Volume> {
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
 
