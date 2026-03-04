@@ -443,7 +443,6 @@ dependencies = [
 name = "bugview-api"
 version = "0.1.0"
 dependencies = [
- "clap",
  "dropshot",
  "http",
  "jira-api",

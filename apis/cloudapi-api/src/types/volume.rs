@@ -20,6 +20,8 @@ pub struct VolumePath {
 }
 
 /// Volume type
+// ValueEnum is derived here (not via Progenitor client-generator patch) because
+// the CLI imports this type through the client re-export, not the generated types module.
 #[derive(
     Debug,
     Clone,
@@ -43,6 +45,8 @@ pub enum VolumeType {
 }
 
 /// Volume state
+// ValueEnum is derived here (not via Progenitor client-generator patch) because
+// the CLI imports this type through the client re-export, not the generated types module.
 #[derive(
     Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
 )]

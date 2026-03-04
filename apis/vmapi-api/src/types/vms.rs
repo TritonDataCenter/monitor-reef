@@ -339,6 +339,8 @@ pub struct DeleteDiskRequest {
 }
 
 /// Migration sub-action for the `migrate` VM action
+// ValueEnum is derived here (not via Progenitor client-generator patch) because
+// the CLI imports this type through the client re-export, not the generated types module.
 #[derive(Debug, Clone, clap::ValueEnum, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum MigrationAction {
@@ -352,6 +354,7 @@ pub enum MigrationAction {
     Finalize,
     /// Unknown action (forward compatibility)
     #[serde(other)]
+    #[clap(skip)]
     Unknown,
 }
 
@@ -431,9 +434,7 @@ pub struct Disk {
 }
 
 /// Snapshot state
-#[derive(
-    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
-)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SnapshotState {
     Queued,

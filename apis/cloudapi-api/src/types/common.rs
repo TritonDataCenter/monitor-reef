@@ -106,9 +106,7 @@ pub type RoleTags = Vec<String>;
 // be provisioned via CloudAPI. Output types (Machine, Package) and query
 // filters (ListMachinesQuery) use vmapi_api::Brand to accurately represent
 // and filter by any brand that may exist in the system.
-#[derive(
-    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
-)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Brand {
     Bhyve,

@@ -37,18 +37,7 @@ pub struct MachinePath {
 /// - `deleted`: VM has been destroyed
 /// - `failed`: VM is in a failed state
 /// - `unknown`: VM state cannot be determined
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Serialize,
-    Deserialize,
-    JsonSchema,
-    PartialEq,
-    Eq,
-    clap::ValueEnum,
-    strum::Display,
-)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, strum::Display)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum MachineState {
@@ -61,14 +50,11 @@ pub enum MachineState {
     Offline,
     Ready,
     #[serde(other)]
-    #[clap(skip)]
     Unknown,
 }
 
 /// Machine type (virtualization category)
-#[derive(
-    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
-)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum MachineType {
     /// SmartOS zone or Linux container
@@ -77,7 +63,6 @@ pub enum MachineType {
     Virtualmachine,
     /// Unknown type (forward compatibility)
     #[serde(other)]
-    #[clap(skip)]
     Unknown,
 }
 

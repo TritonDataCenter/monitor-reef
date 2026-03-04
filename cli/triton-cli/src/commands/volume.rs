@@ -23,7 +23,7 @@ pub struct VolumeListArgs {
     pub name: Option<String>,
 
     /// Filter by state (creating, ready, failed, deleting)
-    #[arg(long)]
+    #[arg(long, value_enum)]
     pub state: Option<VolumeState>,
 
     /// Filter by size in MiB
@@ -31,7 +31,7 @@ pub struct VolumeListArgs {
     pub size: Option<u64>,
 
     /// Filter by type (e.g., tritonnfs)
-    #[arg(long = "type")]
+    #[arg(long = "type", value_enum)]
     pub volume_type: Option<VolumeType>,
 
     #[command(flatten)]

@@ -14,9 +14,7 @@ use serde::{Deserialize, Serialize};
 // ============================================================================
 
 /// Sort field for issue lists
-#[derive(
-    Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema, clap::ValueEnum, strum::Display,
-)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, JsonSchema, strum::Display)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum IssueSort {

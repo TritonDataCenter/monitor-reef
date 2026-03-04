@@ -21,9 +21,7 @@ pub struct ImagePath {
 }
 
 /// Image state
-#[derive(
-    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
-)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ImageState {
     /// Return images in all states (query filter only, not a real state)
@@ -34,14 +32,11 @@ pub enum ImageState {
     Creating,
     Failed,
     #[serde(other)]
-    #[clap(skip)]
     Unknown,
 }
 
 /// Image type
-#[derive(
-    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
-)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ImageType {
     #[serde(rename = "zone-dataset")]
@@ -58,7 +53,6 @@ pub enum ImageType {
     Other,
     /// Unknown type (forward compatibility)
     #[serde(other)]
-    #[clap(skip)]
     Unknown,
 }
 

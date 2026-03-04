@@ -41,9 +41,7 @@ pub type Tags = HashMap<String, Value>;
 // internal-only brands like "builder" that exist in SmartOS but are not
 // exposed for public provisioning. CloudAPI's output types (Machine, Package)
 // use this enum to accurately represent VM state.
-#[derive(
-    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
-)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Brand {
     Bhyve,
@@ -56,25 +54,13 @@ pub enum Brand {
     Lx,
     /// Unknown brand (forward compatibility)
     #[serde(other)]
-    #[clap(skip)]
     Unknown,
 }
 
 /// VM state
 ///
 /// These states reflect the possible values returned by VMAPI.
-#[derive(
-    Debug,
-    Clone,
-    Copy,
-    Serialize,
-    Deserialize,
-    JsonSchema,
-    PartialEq,
-    Eq,
-    clap::ValueEnum,
-    strum::Display,
-)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, strum::Display)]
 #[serde(rename_all = "lowercase")]
 #[strum(serialize_all = "lowercase")]
 pub enum VmState {

@@ -203,16 +203,13 @@ pub struct UpdateFabricNetworkRequest {
 }
 
 /// NIC state
-#[derive(
-    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
-)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum NicState {
     Provisioning,
     Running,
     Stopped,
     #[serde(other)]
-    #[clap(skip)]
     Unknown,
 }
 

@@ -82,9 +82,7 @@ pub struct CreateSnapshotRequest {
 }
 
 /// Disk state
-#[derive(
-    Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq, clap::ValueEnum,
-)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum DiskState {
     Creating,
@@ -93,7 +91,6 @@ pub enum DiskState {
     Failed,
     Deleted,
     #[serde(other)]
-    #[clap(skip)]
     Unknown,
 }
 
