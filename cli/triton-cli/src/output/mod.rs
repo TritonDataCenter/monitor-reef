@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Output formatting utilities
 
@@ -115,11 +115,15 @@ pub fn format_mb(mb: u64) -> String {
 /// - 1+ minutes ago -> "5m"
 /// - recent -> "30s"
 pub fn format_age(timestamp: &str) -> String {
-    use chrono::{DateTime, Utc};
+    use chrono::Utc;
+    format_age_since(timestamp, Utc::now())
+}
+
+fn format_age_since(timestamp: &str, now: chrono::DateTime<chrono::Utc>) -> String {
+    use chrono::DateTime;
 
     if let Ok(created_dt) = DateTime::parse_from_rfc3339(timestamp) {
-        let now = Utc::now();
-        let created_utc = created_dt.with_timezone(&Utc);
+        let created_utc = created_dt.with_timezone(&chrono::Utc);
         let duration = now.signed_duration_since(created_utc);
 
         let seconds = duration.num_seconds();
@@ -212,5 +216,89 @@ mod tests {
     #[test]
     fn test_format_mb_zero() {
         assert_eq!(format_mb(0), "0M");
+    }
+
+    // format_age tests using format_age_since with deterministic reference times
+    mod format_age {
+        use super::super::format_age_since;
+        use chrono::{TimeZone, Utc};
+
+        // Pi Day 2026: 2026-03-14T00:00:00Z
+        fn pi_day_2026() -> chrono::DateTime<Utc> {
+            Utc.with_ymd_and_hms(2026, 3, 14, 0, 0, 0).unwrap()
+        }
+
+        // Tau Day 2026: 2026-06-28T00:00:00Z
+        fn tau_day_2026() -> chrono::DateTime<Utc> {
+            Utc.with_ymd_and_hms(2026, 6, 28, 0, 0, 0).unwrap()
+        }
+
+        #[test]
+        fn test_format_age_years() {
+            // Pi Day 2024 is 2 years before Pi Day 2026
+            let result = format_age_since("2024-03-14T00:00:00Z", pi_day_2026());
+            assert_eq!(result, "2y");
+        }
+
+        #[test]
+        fn test_format_age_weeks() {
+            // 2 weeks before Tau Day 2026
+            let result = format_age_since("2026-06-14T00:00:00Z", tau_day_2026());
+            assert_eq!(result, "2w");
+        }
+
+        #[test]
+        fn test_format_age_days() {
+            // 3 days before Pi Day 2026
+            let result = format_age_since("2026-03-11T00:00:00Z", pi_day_2026());
+            assert_eq!(result, "3d");
+        }
+
+        #[test]
+        fn test_format_age_hours() {
+            // 5 hours before Tau Day 2026
+            let result = format_age_since("2026-06-27T19:00:00Z", tau_day_2026());
+            assert_eq!(result, "5h");
+        }
+
+        #[test]
+        fn test_format_age_minutes() {
+            // 10 minutes before Pi Day 2026
+            let result = format_age_since("2026-03-13T23:50:00Z", pi_day_2026());
+            assert_eq!(result, "10m");
+        }
+
+        #[test]
+        fn test_format_age_seconds() {
+            // 30 seconds before Tau Day 2026
+            let result = format_age_since("2026-06-27T23:59:30Z", tau_day_2026());
+            assert_eq!(result, "30s");
+        }
+
+        #[test]
+        fn test_format_age_zero() {
+            // Same instant as Pi Day 2026
+            let result = format_age_since("2026-03-14T00:00:00Z", pi_day_2026());
+            assert_eq!(result, "0s");
+        }
+
+        #[test]
+        fn test_format_age_future() {
+            // 1 hour after Pi Day 2026
+            let result = format_age_since("2026-03-14T01:00:00Z", pi_day_2026());
+            assert_eq!(result, "-");
+        }
+
+        #[test]
+        fn test_format_age_invalid() {
+            let result = format_age_since("not-a-date", pi_day_2026());
+            assert_eq!(result, "-");
+        }
+
+        #[test]
+        fn test_format_age_empty() {
+            let result = format_age_since("", pi_day_2026());
+            assert_eq!(result, "-");
+        }
     }
 }
