@@ -182,8 +182,12 @@ async fn list_profiles(args: ProfileListArgs) -> Result<()> {
 
     // Add saved profiles
     for name in &saved_profiles {
-        if let Ok(profile) = Profile::load(name).await {
-            profiles_to_show.push(profile);
+        match Profile::load(name).await {
+            Ok(profile) => profiles_to_show.push(profile),
+            // arch-lint: allow(no-error-swallowing) reason="One corrupt profile should not prevent listing the rest"
+            Err(e) => {
+                eprintln!("warning: skipping profile '{name}': {e}");
+            }
         }
     }
 
