@@ -172,10 +172,10 @@ fn patch_empty_202_responses(spec: &mut Value) -> Result<()> {
             .and_then(|m| m.get_mut("responses"))
             .and_then(|r| r.get_mut("202"));
 
-        if let Some(resp) = response {
-            if let Some(obj) = resp.as_object_mut() {
-                obj.remove("content");
-            }
+        if let Some(resp) = response
+            && let Some(obj) = resp.as_object_mut()
+        {
+            obj.remove("content");
         }
     }
 
