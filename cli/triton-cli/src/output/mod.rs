@@ -27,23 +27,38 @@ pub const UNKNOWN_DISPLAY: &str = "unknown";
 ///
 /// Uses serde deserialization for parsing (matching wire-format names) and
 /// `clap::ValueEnum` to enumerate valid variants for the error message.
-/// Variants marked with `#[clap(skip)]` (e.g., `Unknown`) are automatically
+/// Variants marked with `#[clap(skip)]` or named "unknown" are automatically
 /// excluded from the list of valid values.
 pub fn parse_filter_enum<T>(field_name: &str, value: &str) -> anyhow::Result<T>
 where
     T: serde::de::DeserializeOwned + clap::ValueEnum,
 {
-    serde_json::from_value::<T>(serde_json::Value::String(value.to_string())).map_err(|_| {
-        let valid: Vec<String> = T::value_variants()
+    let valid_values = || -> Vec<String> {
+        T::value_variants()
             .iter()
             .filter_map(|v| v.to_possible_value())
             .map(|p| p.get_name().to_string())
-            .collect();
+            .filter(|name| name != UNKNOWN_DISPLAY)
+            .collect()
+    };
+
+    // Reject "unknown" even though it deserializes successfully — it's a
+    // forward-compatibility catch-all, not a user-selectable value.
+    if value == UNKNOWN_DISPLAY {
+        anyhow::bail!(
+            "Invalid {} value '{}': expected {}",
+            field_name,
+            value,
+            valid_values().join(", ")
+        );
+    }
+
+    serde_json::from_value::<T>(serde_json::Value::String(value.to_string())).map_err(|_| {
         anyhow::anyhow!(
             "Invalid {} value '{}': expected {}",
             field_name,
             value,
-            valid.join(", ")
+            valid_values().join(", ")
         )
     })
 }
