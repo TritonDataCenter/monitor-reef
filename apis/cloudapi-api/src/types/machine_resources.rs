@@ -66,7 +66,8 @@ pub struct Snapshot {
     /// Snapshot state
     pub state: SnapshotState,
     /// Creation timestamp
-    pub created: Timestamp,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created: Option<Timestamp>,
     /// Last update timestamp
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub updated: Option<Timestamp>,

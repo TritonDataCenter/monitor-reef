@@ -6522,14 +6522,16 @@ pub mod types {
     #[doc = "  \"description\": \"Snapshot information\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
-    #[doc = "    \"created\","]
     #[doc = "    \"name\","]
     #[doc = "    \"state\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"created\": {"]
     #[doc = "      \"description\": \"Creation timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"description\": \"Snapshot name\","]
@@ -6559,7 +6561,8 @@ pub mod types {
     )]
     pub struct Snapshot {
         #[doc = "Creation timestamp"]
-        pub created: ::std::string::String,
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub created: ::std::option::Option<::std::string::String>,
         #[doc = "Snapshot name"]
         pub name: ::std::string::String,
         #[doc = "Snapshot state"]
@@ -14279,7 +14282,10 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct Snapshot {
-            created: ::std::result::Result<::std::string::String, ::std::string::String>,
+            created: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             state: ::std::result::Result<super::SnapshotState, ::std::string::String>,
             updated: ::std::result::Result<
@@ -14291,7 +14297,7 @@ pub mod types {
         impl ::std::default::Default for Snapshot {
             fn default() -> Self {
                 Self {
-                    created: Err("no value supplied for created".to_string()),
+                    created: Ok(Default::default()),
                     name: Err("no value supplied for name".to_string()),
                     state: Err("no value supplied for state".to_string()),
                     updated: Ok(Default::default()),
@@ -14302,7 +14308,7 @@ pub mod types {
         impl Snapshot {
             pub fn created<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.created = value

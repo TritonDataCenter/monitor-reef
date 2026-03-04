@@ -341,7 +341,7 @@ fn test_volume_create_workflow() {
     ]);
     assert!(!success, "create with invalid size should fail");
     assert!(
-        stderr.contains("invalid") || stderr.contains("not a valid"),
+        stderr.to_lowercase().contains("invalid") || stderr.contains("not a valid"),
         "error should mention invalid size: {}",
         stderr
     );

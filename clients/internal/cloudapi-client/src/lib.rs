@@ -604,7 +604,7 @@ fn fake_response_body(
             let fake = Snapshot {
                 name: last_seg.to_string(),
                 state: cloudapi_api::SnapshotState::Created,
-                created: fake_ts.to_string(),
+                created: Some(fake_ts.to_string()),
                 updated: None,
             };
             serde_json::to_vec(&fake).expect("Snapshot serialization should not fail")

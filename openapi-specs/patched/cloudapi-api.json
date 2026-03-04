@@ -2586,6 +2586,7 @@
         "properties": {
           "created": {
             "description": "Creation timestamp",
+            "nullable": true,
             "type": "string"
           },
           "name": {
@@ -2607,7 +2608,6 @@
           }
         },
         "required": [
-          "created",
           "name",
           "state"
         ],

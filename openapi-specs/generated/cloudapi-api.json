@@ -11995,6 +11995,7 @@
         "type": "object",
         "properties": {
           "created": {
+            "nullable": true,
             "description": "Creation timestamp",
             "type": "string"
           },
@@ -12017,7 +12018,6 @@
           }
         },
         "required": [
-          "created",
           "name",
           "state"
         ]

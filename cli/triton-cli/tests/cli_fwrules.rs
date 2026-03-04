@@ -335,7 +335,8 @@ fn test_fwrule_workflow() {
 
     // Test: Create firewall rule (disabled)
     eprintln!("Test: triton fwrule create -d \"{}\"", rule_text);
-    let (_stdout, stderr, success) = run_triton_with_profile(["fwrule", "create", "-d", &rule_text]);
+    let (_stdout, stderr, success) =
+        run_triton_with_profile(["fwrule", "create", "-d", &rule_text]);
     if !success {
         eprintln!("Failed to create fwrule: stderr={}", stderr);
         delete_test_instance(&inst_id);
