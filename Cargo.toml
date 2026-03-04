@@ -8,6 +8,7 @@
 members = [
     "apis/bugview-api",
     "apis/cloudapi-api",
+    "apis/cnapi-api",
     "apis/jira-api",
     "apis/vmapi-api",
     "cli/bugview-cli",
@@ -15,6 +16,7 @@ members = [
     "cli/vmapi-cli",
     "clients/internal/bugview-client",
     "clients/internal/cloudapi-client",
+    "clients/internal/cnapi-client",
     "clients/internal/jira-client",
     "clients/internal/vmapi-client",
     "libs/triton-auth",

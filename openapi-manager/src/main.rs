@@ -51,6 +51,18 @@ fn crate_version(crate_path: &str) -> Result<semver::Version> {
 fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
     let apis = vec![
         ManagedApiConfig {
+            ident: "cnapi-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/cnapi-api")?,
+            },
+            title: "CNAPI",
+            metadata: ManagedApiMetadata {
+                description: Some("Triton Compute Node API"),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: cnapi_api::cnapi_api_mod::stub_api_description,
+        },
+        ManagedApiConfig {
             ident: "bugview-api",
             versions: Versions::Lockstep {
                 version: crate_version("apis/bugview-api")?,

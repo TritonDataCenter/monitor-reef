@@ -1,0 +1,3997 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "CNAPI",
+    "description": "Triton Compute Node API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/allocate": {
+      "post": {
+        "tags": [
+          "allocations"
+        ],
+        "summary": "Allocate a server for a new VM",
+        "operationId": "allocate",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/boot/{server_uuid}": {
+      "get": {
+        "tags": [
+          "boot_params"
+        ],
+        "summary": "Get boot parameters for a server or \"default\"",
+        "description": "Note: Original Node.js had separate /boot/default and /boot/:server_uuid endpoints. Dropshot's tree router doesn't allow a literal and variable at the same path level, so we use a single /boot/{server_uuid} endpoint where server_uuid can be \"default\" or an actual UUID.",
+        "operationId": "boot_params_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BootParams"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "boot_params"
+        ],
+        "summary": "Update boot parameters for a server or \"default\"",
+        "operationId": "boot_params_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BootParamsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "boot_params"
+        ],
+        "summary": "Set boot parameters for a server or \"default\"",
+        "operationId": "boot_params_set",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BootParamsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/ping": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Return CNAPI service status",
+        "operationId": "ping",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PingResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/platforms": {
+      "get": {
+        "tags": [
+          "platforms"
+        ],
+        "summary": "List platforms",
+        "operationId": "platform_list",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlatformListResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers": {
+      "get": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "List servers in the datacenter",
+        "operationId": "server_list",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "extras",
+            "description": "Comma-separated extras: agents, vms, memory, disk, sysinfo, capacity, all",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fields",
+            "description": "Comma-separated field names to return",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "headnode",
+            "description": "Return only headnodes",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "hostname",
+            "description": "Return machine with given hostname",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Maximum number of results (1-1000, default 1000)",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Offset for pagination",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint32",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "reserved",
+            "description": "Return only reserved servers",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "reservoir",
+            "description": "Return only reservoir servers",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "setup",
+            "description": "Return only setup servers",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "uuids",
+            "description": "Comma-separated list of UUIDs to look up",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Server",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Server"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}": {
+      "get": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Get a single server",
+        "operationId": "server_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Server"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Update server properties",
+        "operationId": "server_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ServerUpdateParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Server"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Delete a server",
+        "operationId": "server_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/cn-agent/pause": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Pause cn-agent on a server",
+        "operationId": "server_pause_cn_agent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/cn-agent/resume": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Resume cn-agent on a server",
+        "operationId": "server_resume_cn_agent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/dataset-properties": {
+      "get": {
+        "tags": [
+          "zfs"
+        ],
+        "summary": "Get all dataset properties on a server",
+        "operationId": "dataset_properties_get_all",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/datasets": {
+      "get": {
+        "tags": [
+          "zfs"
+        ],
+        "summary": "List datasets on a server",
+        "operationId": "dataset_list",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_AnyValue",
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "zfs"
+        ],
+        "summary": "Create a dataset on a server",
+        "operationId": "dataset_create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetCreateParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/datasets/{dataset}": {
+      "delete": {
+        "tags": [
+          "zfs"
+        ],
+        "summary": "Destroy a dataset",
+        "operationId": "dataset_destroy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/datasets/{dataset}/properties": {
+      "get": {
+        "tags": [
+          "zfs"
+        ],
+        "summary": "Get properties of a specific dataset",
+        "operationId": "dataset_properties_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "zfs"
+        ],
+        "summary": "Set properties on a dataset",
+        "operationId": "dataset_properties_set",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetPropertiesSetParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/datasets/{dataset}/rollback": {
+      "post": {
+        "tags": [
+          "zfs"
+        ],
+        "summary": "Rollback a dataset to a snapshot",
+        "operationId": "snapshot_rollback",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/datasets/{dataset}/snapshot": {
+      "post": {
+        "tags": [
+          "zfs"
+        ],
+        "summary": "Create a snapshot of a dataset",
+        "operationId": "snapshot_create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/datasets/{dataset}/snapshots": {
+      "get": {
+        "tags": [
+          "zfs"
+        ],
+        "summary": "List snapshots of a dataset",
+        "operationId": "snapshot_list",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "dataset",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_AnyValue",
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/ensure-image": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Ensure an image is available on the server",
+        "operationId": "server_ensure_image",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EnsureImageParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/events/heartbeat": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Receive heartbeat event from a server",
+        "operationId": "server_event_heartbeat",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HeartbeatParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/events/status": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Receive status update event from a server",
+        "operationId": "server_event_status_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StatusUpdateParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/execute": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Execute a command on a server via cn-agent",
+        "operationId": "command_execute",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommandExecuteParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/factory-reset": {
+      "put": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Factory reset a server",
+        "operationId": "server_factory_reset",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/images/{uuid}": {
+      "get": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Get image info on a server",
+        "operationId": "image_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageInfo"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/install-agent": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Install an agent on the server",
+        "operationId": "server_install_agent",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InstallAgentParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/nics": {
+      "put": {
+        "tags": [
+          "nics"
+        ],
+        "summary": "Update NIC on a server",
+        "operationId": "nic_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NicUpdateParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/nics/update": {
+      "post": {
+        "tags": [
+          "nics"
+        ],
+        "summary": "Dispatch NIC update task to cn-agent",
+        "operationId": "nic_update_task",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NicUpdateTaskParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/nop": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "No-op endpoint (for testing connectivity)",
+        "operationId": "server_nop",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/reboot": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Reboot a server",
+        "operationId": "server_reboot",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/recovery-config": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Set recovery configuration",
+        "operationId": "server_recovery_config",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecoveryConfigParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/setup": {
+      "put": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Initiate server setup",
+        "operationId": "server_setup",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/sysinfo": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Register sysinfo from a server",
+        "operationId": "server_sysinfo_register",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SysinfoRegisterParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/sysinfo-refresh": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Refresh server sysinfo",
+        "operationId": "server_sysinfo_refresh",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/task-history": {
+      "get": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Get task history for a server",
+        "operationId": "server_task_history",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Task",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Task"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/tickets": {
+      "get": {
+        "tags": [
+          "waitlist"
+        ],
+        "summary": "List waitlist tickets for a server",
+        "operationId": "server_waitlist_list",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Ticket",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Ticket"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "waitlist"
+        ],
+        "summary": "Create a waitlist ticket",
+        "operationId": "waitlist_ticket_create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WaitlistCreateParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ticket"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "waitlist"
+        ],
+        "summary": "Delete all waitlist tickets for a server",
+        "operationId": "waitlist_tickets_delete_all",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/uninstall-agents": {
+      "post": {
+        "tags": [
+          "servers"
+        ],
+        "summary": "Uninstall agents from the server",
+        "operationId": "server_uninstall_agents",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UninstallAgentsParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vm-nics/update": {
+      "post": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Update VM NICs",
+        "description": "Note: Original Node.js path was /servers/:server_uuid/vms/nics/update which conflicts with Dropshot's tree router (/vms/{uuid} vs /vms/nics). Remapped to /servers/:server_uuid/vm-nics/update.",
+        "operationId": "vm_nics_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VmNicsUpdateParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms": {
+      "get": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "List VMs on a server (deprecated: use VMAPI instead)",
+        "operationId": "vm_list",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_AnyValue",
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Create a VM on a server",
+        "operationId": "vm_create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VmCreateParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms/{uuid}": {
+      "get": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Load VM details",
+        "operationId": "vm_load",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Destroy a VM",
+        "operationId": "vm_destroy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms/{uuid}/console": {
+      "get": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Get VM console info",
+        "operationId": "vm_console",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms/{uuid}/docker-build": {
+      "post": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Docker build in a VM",
+        "operationId": "vm_docker_build",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DockerBuildParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms/{uuid}/docker-copy": {
+      "post": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Docker copy files to/from a VM",
+        "operationId": "vm_docker_copy",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DockerCopyParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms/{uuid}/docker-exec": {
+      "post": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Execute a Docker command in a VM",
+        "operationId": "vm_docker_exec",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DockerExecParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms/{uuid}/docker-stats": {
+      "get": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Get Docker stats for a VM",
+        "operationId": "vm_docker_stats",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms/{uuid}/images": {
+      "post": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Create an image from a VM",
+        "operationId": "vm_create_image",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VmImageCreateParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms/{uuid}/info": {
+      "get": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Get VM info (vnc port, etc.)",
+        "operationId": "vm_info",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms/{uuid}/kill": {
+      "post": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Kill a VM",
+        "operationId": "vm_kill",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms/{uuid}/migrate": {
+      "post": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Migrate a VM",
+        "operationId": "vm_migrate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VmMigrateParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms/{uuid}/proc": {
+      "get": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Get VM process listing",
+        "operationId": "vm_proc",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms/{uuid}/reboot": {
+      "post": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Reboot a VM",
+        "operationId": "vm_reboot",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms/{uuid}/reprovision": {
+      "post": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Reprovision a VM",
+        "operationId": "vm_reprovision",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VmReprovisionParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms/{uuid}/snapshots": {
+      "put": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Rollback a VM snapshot",
+        "operationId": "vm_snapshot_rollback",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VmRollbackParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Create a VM snapshot",
+        "operationId": "vm_snapshot_create",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VmSnapshotParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms/{uuid}/start": {
+      "post": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Start a VM",
+        "operationId": "vm_start",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms/{uuid}/stop": {
+      "post": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Stop a VM",
+        "operationId": "vm_stop",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms/{uuid}/update": {
+      "post": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Update a VM",
+        "operationId": "vm_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VmUpdateParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/vms/{uuid}/vnc": {
+      "get": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Get VM VNC connection info",
+        "operationId": "vm_vnc",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/servers/{server_uuid}/zpools": {
+      "get": {
+        "tags": [
+          "zfs"
+        ],
+        "summary": "List zpools on a server",
+        "operationId": "zpool_list",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "server_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_AnyValue",
+                  "type": "array",
+                  "items": {}
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/tasks/{taskid}": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Get task details",
+        "operationId": "task_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "taskid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/tasks/{taskid}/wait": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Wait for a task to complete",
+        "operationId": "task_wait",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "taskid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timeout",
+            "description": "Timeout in seconds",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Task"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/tickets/{ticket_uuid}": {
+      "get": {
+        "tags": [
+          "waitlist"
+        ],
+        "summary": "Get a waitlist ticket",
+        "operationId": "waitlist_ticket_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ticket"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "waitlist"
+        ],
+        "summary": "Update a waitlist ticket",
+        "operationId": "waitlist_ticket_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WaitlistUpdateParams"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/tickets/{ticket_uuid}/release": {
+      "put": {
+        "tags": [
+          "waitlist"
+        ],
+        "summary": "Release a waitlist ticket",
+        "operationId": "waitlist_ticket_release",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/tickets/{ticket_uuid}/wait": {
+      "get": {
+        "tags": [
+          "waitlist"
+        ],
+        "summary": "Wait for a waitlist ticket",
+        "operationId": "waitlist_ticket_wait",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "ticket_uuid",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "timeout",
+            "description": "Timeout in seconds",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ticket"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AgentInfo": {
+        "description": "Agent information (cn-agent, vm-agent, etc.)",
+        "type": "object",
+        "properties": {
+          "image_uuid": {
+            "nullable": true,
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "uuid": {
+            "nullable": true,
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "BootParams": {
+        "description": "Boot parameters response",
+        "type": "object",
+        "properties": {
+          "boot_modules": {
+            "nullable": true,
+            "default": null,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "kernel_args": {
+            "nullable": true,
+            "default": null
+          },
+          "kernel_flags": {
+            "nullable": true,
+            "default": null
+          },
+          "platform": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          }
+        }
+      },
+      "BootParamsBody": {
+        "description": "Body for POST/PUT boot params endpoints",
+        "type": "object"
+      },
+      "CommandExecuteParams": {
+        "description": "Body for POST /servers/:server_uuid/execute",
+        "type": "object",
+        "properties": {
+          "args": {
+            "nullable": true,
+            "default": null,
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "env": {
+            "nullable": true,
+            "default": null
+          },
+          "script": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "script"
+        ]
+      },
+      "DatasetCreateParams": {
+        "description": "Body for POST /servers/:server_uuid/datasets (create)",
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "properties": {
+            "nullable": true,
+            "default": null
+          },
+          "type": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "DatasetPropertiesSetParams": {
+        "description": "Body for POST /servers/:server_uuid/datasets/:dataset/properties",
+        "type": "object"
+      },
+      "DockerBuildParams": {
+        "description": "Body for POST /servers/:server_uuid/vms/:uuid/docker-build",
+        "type": "object"
+      },
+      "DockerCopyParams": {
+        "description": "Body for POST /servers/:server_uuid/vms/:uuid/docker-copy",
+        "type": "object"
+      },
+      "DockerExecParams": {
+        "description": "Body for POST /servers/:server_uuid/vms/:uuid/docker-exec",
+        "type": "object"
+      },
+      "EnsureImageParams": {
+        "description": "Body for POST /servers/:server_uuid/ensure-image",
+        "type": "object",
+        "properties": {
+          "image_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "zfs_storage_pool_name": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "image_uuid"
+        ]
+      },
+      "Error": {
+        "description": "Error information from a response.",
+        "type": "object",
+        "properties": {
+          "error_code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "request_id"
+        ]
+      },
+      "HeartbeatParams": {
+        "description": "Body for POST /servers/:server_uuid/events/heartbeat",
+        "type": "object"
+      },
+      "ImageInfo": {
+        "description": "Image information returned by GET /servers/:server_uuid/images/:uuid",
+        "type": "object",
+        "properties": {
+          "uuid": {
+            "nullable": true,
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "InstallAgentParams": {
+        "description": "Body for POST /servers/:server_uuid/install-agent",
+        "type": "object",
+        "properties": {
+          "image_uuid": {
+            "nullable": true,
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          },
+          "package_name": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "package_url": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          }
+        }
+      },
+      "NicUpdateParams": {
+        "description": "Body for PUT /servers/:server_uuid/nics",
+        "type": "object"
+      },
+      "NicUpdateTaskParams": {
+        "description": "Body for POST /servers/:server_uuid/nics/update",
+        "type": "object"
+      },
+      "PingResponse": {
+        "description": "Ping response",
+        "type": "object",
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          },
+          "services": {
+            "$ref": "#/components/schemas/PingServices"
+          }
+        },
+        "required": [
+          "ready",
+          "services"
+        ]
+      },
+      "PingServices": {
+        "description": "Service status in ping response",
+        "type": "object",
+        "properties": {
+          "amqp": {
+            "type": "string"
+          },
+          "moray": {
+            "type": "string"
+          },
+          "workflow": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "amqp",
+          "moray",
+          "workflow"
+        ]
+      },
+      "PlatformListResponse": {
+        "description": "Platform list response. The original response is a JSON object keyed by platform image name with arrays of server UUIDs as values.",
+        "type": "object"
+      },
+      "RecoveryConfigParams": {
+        "description": "Body for POST /servers/:server_uuid/recovery-config",
+        "type": "object"
+      },
+      "Server": {
+        "description": "Server object as returned by CNAPI",
+        "type": "object",
+        "properties": {
+          "agents": {
+            "nullable": true,
+            "default": null,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentInfo"
+            }
+          },
+          "boot_platform": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "created": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "current_platform": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "datacenter": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "disk_pool_size_bytes": {
+            "nullable": true,
+            "default": null,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "headnode": {
+            "nullable": true,
+            "default": null,
+            "type": "boolean"
+          },
+          "hostname": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "last_boot": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "last_heartbeat": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "memory_available_bytes": {
+            "nullable": true,
+            "default": null,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "memory_total_bytes": {
+            "nullable": true,
+            "default": null,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "overprovision_ratios": {
+            "nullable": true,
+            "default": null
+          },
+          "rack_identifier": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "reserved": {
+            "nullable": true,
+            "default": null,
+            "type": "boolean"
+          },
+          "setting_up": {
+            "nullable": true,
+            "default": null,
+            "type": "boolean"
+          },
+          "setup": {
+            "nullable": true,
+            "default": null,
+            "type": "boolean"
+          },
+          "status": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "sysinfo": {
+            "nullable": true,
+            "default": null
+          },
+          "traits": {
+            "nullable": true,
+            "default": null
+          },
+          "transitional_status": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "vms": {
+            "nullable": true,
+            "default": null
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "ServerUpdateParams": {
+        "description": "Body for POST /servers/:server_uuid (update)",
+        "type": "object",
+        "properties": {
+          "overprovision_ratios": {
+            "nullable": true,
+            "default": null
+          },
+          "rack_identifier": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "reserved": {
+            "nullable": true,
+            "default": null,
+            "type": "boolean"
+          },
+          "reservoir": {
+            "nullable": true,
+            "default": null,
+            "type": "boolean"
+          },
+          "setting_up": {
+            "nullable": true,
+            "default": null,
+            "type": "boolean"
+          },
+          "traits": {
+            "nullable": true,
+            "default": null
+          },
+          "transitional_status": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          }
+        }
+      },
+      "StatusUpdateParams": {
+        "description": "Body for POST /servers/:server_uuid/events/status",
+        "type": "object"
+      },
+      "SysinfoRegisterParams": {
+        "description": "Body for POST /servers/:server_uuid/sysinfo (register)",
+        "type": "object"
+      },
+      "Task": {
+        "description": "Task object as stored in Moray",
+        "type": "object",
+        "properties": {
+          "finished_at": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "history": {
+            "nullable": true,
+            "default": null,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskHistory"
+            }
+          },
+          "id": {
+            "type": "string"
+          },
+          "progress": {
+            "nullable": true,
+            "default": null
+          },
+          "server_uuid": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "started_at": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "status": {
+            "nullable": true,
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskStatus"
+              }
+            ]
+          },
+          "task_id": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "TaskHistory": {
+        "description": "Task history entry",
+        "type": "object",
+        "properties": {
+          "event": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "timestamp": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          }
+        }
+      },
+      "TaskResponse": {
+        "description": "Generic task response returned by endpoints that dispatch work to cn-agent",
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "The task ID that can be used to poll for status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "TaskStatus": {
+        "description": "Task status",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "active",
+              "complete",
+              "failure"
+            ]
+          },
+          {
+            "description": "Forward-compatible catch-all",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
+        ]
+      },
+      "Ticket": {
+        "description": "Waitlist ticket",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "expires_at": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "server_uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "nullable": true,
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TicketStatus"
+              }
+            ]
+          },
+          "updated_at": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id",
+          "scope",
+          "server_uuid",
+          "uuid"
+        ]
+      },
+      "TicketStatus": {
+        "description": "Ticket status",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "queued",
+              "active",
+              "expired",
+              "finished"
+            ]
+          },
+          {
+            "description": "Forward-compatible catch-all",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
+        ]
+      },
+      "UninstallAgentsParams": {
+        "description": "Body for POST /servers/:server_uuid/uninstall-agents",
+        "type": "object"
+      },
+      "VmCreateParams": {
+        "description": "Body for POST /servers/:server_uuid/vms (create)",
+        "type": "object"
+      },
+      "VmImageCreateParams": {
+        "description": "Body for POST /servers/:server_uuid/vms/:uuid/images (create-image)",
+        "type": "object"
+      },
+      "VmMigrateParams": {
+        "description": "Body for POST /servers/:server_uuid/vms/:uuid/migrate",
+        "type": "object",
+        "properties": {
+          "action": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          }
+        }
+      },
+      "VmNicsUpdateParams": {
+        "description": "Body for POST /servers/:server_uuid/vms/nics/update",
+        "type": "object"
+      },
+      "VmReprovisionParams": {
+        "description": "Body for POST /servers/:server_uuid/vms/:uuid/reprovision",
+        "type": "object",
+        "properties": {
+          "image_uuid": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "image_uuid"
+        ]
+      },
+      "VmRollbackParams": {
+        "description": "Body for PUT /servers/:server_uuid/vms/:uuid/snapshots (rollback)",
+        "type": "object",
+        "properties": {
+          "snapshot_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "snapshot_name"
+        ]
+      },
+      "VmSnapshotParams": {
+        "description": "Body for POST /servers/:server_uuid/vms/:uuid/snapshots",
+        "type": "object",
+        "properties": {
+          "snapshot_name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "snapshot_name"
+        ]
+      },
+      "VmUpdateParams": {
+        "description": "Body for POST /servers/:server_uuid/vms/:uuid/update",
+        "type": "object"
+      },
+      "WaitlistCreateParams": {
+        "description": "Body for POST /servers/:server_uuid/tickets (create)",
+        "type": "object",
+        "properties": {
+          "action": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "expires_at": {
+            "nullable": true,
+            "default": null,
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "scope"
+        ]
+      },
+      "WaitlistUpdateParams": {
+        "description": "Body for PUT /tickets/:ticket_uuid (update)",
+        "type": "object"
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "allocations"
+    },
+    {
+      "name": "boot_params"
+    },
+    {
+      "name": "images"
+    },
+    {
+      "name": "nics"
+    },
+    {
+      "name": "platforms"
+    },
+    {
+      "name": "servers"
+    },
+    {
+      "name": "system"
+    },
+    {
+      "name": "tasks"
+    },
+    {
+      "name": "vms"
+    },
+    {
+      "name": "waitlist"
+    },
+    {
+      "name": "zfs"
+    }
+  ]
+}
