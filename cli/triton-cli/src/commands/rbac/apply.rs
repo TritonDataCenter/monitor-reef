@@ -405,8 +405,8 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
     let base_profile = if args.dev_create_keys_and_profiles {
         let profile_name = Config::load()
             .await
-            .ok()
-            .and_then(|c| c.profile)
+            .map_err(|e| anyhow::anyhow!("failed to load config: {e}"))?
+            .profile
             .ok_or_else(|| {
                 anyhow::anyhow!(
                     "--dev-create-keys-and-profiles requires a configured profile.\n\
