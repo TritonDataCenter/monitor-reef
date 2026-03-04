@@ -2779,6 +2779,15 @@
         "description": "Migration record",
         "type": "object",
         "properties": {
+          "action": {
+            "nullable": true,
+            "description": "Migration action that was requested",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationAction"
+              }
+            ]
+          },
           "automatic": {
             "nullable": true,
             "description": "Automatic migration flag",
@@ -2857,6 +2866,31 @@
         "required": [
           "state",
           "vm_uuid"
+        ]
+      },
+      "MigrationAction": {
+        "description": "Migration sub-action for the `migrate` VM action",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "begin",
+              "estimate",
+              "sync",
+              "pause",
+              "switch",
+              "abort",
+              "rollback",
+              "finalize"
+            ]
+          },
+          {
+            "description": "Unknown action (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
         ]
       },
       "MigrationPhase": {

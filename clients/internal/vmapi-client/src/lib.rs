@@ -92,7 +92,6 @@ pub use vmapi_api::{
     MetadataValueResponse,
     MigrateVmRequest,
     Migration,
-    MigrationAction,
     MigrationPath,
     MigrationPhase,
     MigrationProgress,

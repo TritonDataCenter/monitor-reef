@@ -95,6 +95,37 @@ pub enum MigrationPhase {
     Unknown,
 }
 
+/// Migration sub-action for the `migrate` VM action
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum MigrationAction {
+    Begin,
+    Estimate,
+    Sync,
+    Pause,
+    Switch,
+    Abort,
+    Rollback,
+    Finalize,
+    /// Unknown action (forward compatibility)
+    #[serde(other)]
+    Unknown,
+}
+
+/// Request body for `migrate` action
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct MigrateVmRequest {
+    /// Migration sub-action to perform
+    #[serde(default)]
+    pub migration_action: Option<MigrationAction>,
+    /// Target server UUID for migration
+    #[serde(default)]
+    pub target_server_uuid: Option<Uuid>,
+    /// Affinity rules for server selection
+    #[serde(default)]
+    pub affinity: Option<Vec<String>>,
+}
+
 /// Migration progress entry
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct MigrationProgress {
@@ -170,6 +201,9 @@ pub struct Migration {
     /// Automatic migration flag
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub automatic: Option<bool>,
+    /// Migration action that was requested
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub action: Option<MigrationAction>,
 }
 
 // ============================================================================

@@ -17,11 +17,12 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 use uuid::Uuid;
 // Use the generated types from vmapi_client::types
+use vmapi_client::types::MigrationAction;
 use vmapi_client::{Client, TypedClient, types};
 // Re-exported API types for TypedClient methods
 use vmapi_client::{
-    AddNicsRequest, CreateDiskRequest, MigrateVmRequest, MigrationAction, ResizeDiskRequest,
-    UpdateNicsRequest, UpdateVmRequest,
+    AddNicsRequest, CreateDiskRequest, MigrateVmRequest, ResizeDiskRequest, UpdateNicsRequest,
+    UpdateVmRequest,
 };
 
 /// Convert a serde-serializable enum value to its wire-format string.
@@ -1121,8 +1122,12 @@ async fn main() -> Result<()> {
             action,
             target_server_uuid,
         } => {
+            // Convert Progenitor MigrationAction (with ValueEnum) to API MigrationAction
+            let migration_action = action
+                .map(|a| serde_json::from_value(serde_json::to_value(a)?))
+                .transpose()?;
             let request = MigrateVmRequest {
-                migration_action: action,
+                migration_action,
                 target_server_uuid,
                 affinity: None,
             };

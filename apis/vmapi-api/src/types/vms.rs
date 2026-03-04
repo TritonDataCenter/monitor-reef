@@ -338,40 +338,6 @@ pub struct DeleteDiskRequest {
     pub pci_slot: String,
 }
 
-/// Migration sub-action for the `migrate` VM action
-// ValueEnum is derived here (not via Progenitor client-generator patch) because
-// the CLI imports this type through the client re-export, not the generated types module.
-#[derive(Debug, Clone, clap::ValueEnum, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum MigrationAction {
-    Begin,
-    Estimate,
-    Sync,
-    Pause,
-    Switch,
-    Abort,
-    Rollback,
-    Finalize,
-    /// Unknown action (forward compatibility)
-    #[serde(other)]
-    #[clap(skip)]
-    Unknown,
-}
-
-/// Request body for `migrate` action
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct MigrateVmRequest {
-    /// Migration sub-action to perform
-    #[serde(default)]
-    pub migration_action: Option<MigrationAction>,
-    /// Target server UUID for migration
-    #[serde(default)]
-    pub target_server_uuid: Option<Uuid>,
-    /// Affinity rules for server selection
-    #[serde(default)]
-    pub affinity: Option<Vec<String>>,
-}
-
 // ============================================================================
 // VM Entity Types
 // ============================================================================

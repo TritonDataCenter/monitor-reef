@@ -983,6 +983,21 @@ pub mod types {
     #[doc = "    \"vm_uuid\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"action\": {"]
+    #[doc = "      \"description\": \"Migration action that was requested\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/MigrationAction\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"automatic\": {"]
     #[doc = "      \"description\": \"Automatic migration flag\","]
     #[doc = "      \"type\": ["]
@@ -1089,6 +1104,9 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct Migration {
+        #[doc = "Migration action that was requested"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub action: ::std::option::Option<MigrationAction>,
         #[doc = "Automatic migration flag"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub automatic: ::std::option::Option<bool>,
@@ -1128,6 +1146,133 @@ pub mod types {
     impl Migration {
         pub fn builder() -> builder::Migration {
             Default::default()
+        }
+    }
+
+    #[doc = "Migration sub-action for the `migrate` VM action"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Migration sub-action for the `migrate` VM action\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"begin\","]
+    #[doc = "        \"estimate\","]
+    #[doc = "        \"sync\","]
+    #[doc = "        \"pause\","]
+    #[doc = "        \"switch\","]
+    #[doc = "        \"abort\","]
+    #[doc = "        \"rollback\","]
+    #[doc = "        \"finalize\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown action (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        clap :: ValueEnum,
+        schemars :: JsonSchema,
+    )]
+    pub enum MigrationAction {
+        #[serde(rename = "begin")]
+        Begin,
+        #[serde(rename = "estimate")]
+        Estimate,
+        #[serde(rename = "sync")]
+        Sync,
+        #[serde(rename = "pause")]
+        Pause,
+        #[serde(rename = "switch")]
+        Switch,
+        #[serde(rename = "abort")]
+        Abort,
+        #[serde(rename = "rollback")]
+        Rollback,
+        #[serde(rename = "finalize")]
+        Finalize,
+        #[doc = "Unknown action (forward compatibility)"]
+        #[serde(rename = "unknown")]
+        Unknown,
+    }
+
+    impl ::std::fmt::Display for MigrationAction {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Begin => f.write_str("begin"),
+                Self::Estimate => f.write_str("estimate"),
+                Self::Sync => f.write_str("sync"),
+                Self::Pause => f.write_str("pause"),
+                Self::Switch => f.write_str("switch"),
+                Self::Abort => f.write_str("abort"),
+                Self::Rollback => f.write_str("rollback"),
+                Self::Finalize => f.write_str("finalize"),
+                Self::Unknown => f.write_str("unknown"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for MigrationAction {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "begin" => Ok(Self::Begin),
+                "estimate" => Ok(Self::Estimate),
+                "sync" => Ok(Self::Sync),
+                "pause" => Ok(Self::Pause),
+                "switch" => Ok(Self::Switch),
+                "abort" => Ok(Self::Abort),
+                "rollback" => Ok(Self::Rollback),
+                "finalize" => Ok(Self::Finalize),
+                "unknown" => Ok(Self::Unknown),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for MigrationAction {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for MigrationAction {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for MigrationAction {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
         }
     }
 
@@ -4484,6 +4629,10 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct Migration {
+            action: ::std::result::Result<
+                ::std::option::Option<super::MigrationAction>,
+                ::std::string::String,
+            >,
             automatic: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             created_timestamp: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -4521,6 +4670,7 @@ pub mod types {
         impl ::std::default::Default for Migration {
             fn default() -> Self {
                 Self {
+                    action: Ok(Default::default()),
                     automatic: Ok(Default::default()),
                     created_timestamp: Ok(Default::default()),
                     duration_ms: Ok(Default::default()),
@@ -4538,6 +4688,16 @@ pub mod types {
         }
 
         impl Migration {
+            pub fn action<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<super::MigrationAction>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.action = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for action: {e}"));
+                self
+            }
             pub fn automatic<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<bool>>,
@@ -4668,6 +4828,7 @@ pub mod types {
                 value: Migration,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    action: value.action?,
                     automatic: value.automatic?,
                     created_timestamp: value.created_timestamp?,
                     duration_ms: value.duration_ms?,
@@ -4687,6 +4848,7 @@ pub mod types {
         impl ::std::convert::From<super::Migration> for Migration {
             fn from(value: super::Migration) -> Self {
                 Self {
+                    action: Ok(value.action),
                     automatic: Ok(value.automatic),
                     created_timestamp: Ok(value.created_timestamp),
                     duration_ms: Ok(value.duration_ms),
