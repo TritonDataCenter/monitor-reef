@@ -17,6 +17,14 @@ pub struct RenameArgs {
 
     /// New instance name (max 189 chars, or 63 if CNS enabled)
     pub name: String,
+
+    /// Wait for rename to complete
+    #[arg(long, short)]
+    pub wait: bool,
+
+    /// Wait timeout in seconds
+    #[arg(long, default_value = "600")]
+    pub wait_timeout: u64,
 }
 
 pub async fn run(args: RenameArgs, client: &TypedClient) -> Result<()> {
@@ -28,7 +36,44 @@ pub async fn run(args: RenameArgs, client: &TypedClient) -> Result<()> {
         .rename_machine(account, &machine_id, args.name.clone(), None)
         .await?;
 
+    println!("Renaming instance {} to {}", &id_str[..8], args.name);
+
+    if args.wait {
+        wait_for_rename(account, &machine_id, &args.name, args.wait_timeout, client).await?;
+    }
+
     println!("Renamed instance {} to {}", &id_str[..8], args.name);
 
     Ok(())
+}
+
+async fn wait_for_rename(
+    account: &str,
+    machine_id: &uuid::Uuid,
+    target_name: &str,
+    timeout_secs: u64,
+    client: &TypedClient,
+) -> Result<()> {
+    use std::time::{Duration, Instant};
+    use tokio::time::sleep;
+
+    let start = Instant::now();
+    let timeout = Duration::from_secs(timeout_secs);
+
+    loop {
+        let machine = client.get_machine(account, machine_id).await?;
+
+        if machine.name == target_name {
+            return Ok(());
+        }
+
+        if start.elapsed() > timeout {
+            return Err(anyhow::anyhow!(
+                "Timeout waiting for rename to complete (current name: {})",
+                machine.name,
+            ));
+        }
+
+        sleep(Duration::from_secs(2)).await;
+    }
 }

@@ -406,6 +406,10 @@ async fn delete_tag(args: TagDeleteArgs, client: &TypedClient) -> Result<()> {
         if let Some(target_state) = pre_state {
             super::wait::wait_for_state(machine_id, target_state, args.wait_timeout, client)
                 .await?;
+
+            // Poll until all tags are actually gone
+            let empty = Map::new();
+            wait_for_tags_exact(machine_id, &empty, args.wait_timeout, client).await?;
         }
 
         println!("Deleted all tags on instance {}", args.instance);
