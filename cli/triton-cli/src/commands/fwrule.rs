@@ -218,7 +218,7 @@ async fn create_rule(args: FwruleCreateArgs, client: &TypedClient, use_json: boo
         .await?;
     let rule = response.into_inner();
 
-    println!(
+    eprintln!(
         "Created firewall rule {} ({}{})",
         &rule.id.to_string()[..8],
         if rule.enabled { "enabled" } else { "disabled" },
@@ -383,9 +383,9 @@ async fn update_rule(args: FwruleUpdateArgs, client: &TypedClient, use_json: boo
     let rule = response.into_inner();
 
     if updated_fields.is_empty() {
-        println!("Updated firewall rule {}", &rule.id.to_string()[..8]);
+        eprintln!("Updated firewall rule {}", &rule.id.to_string()[..8]);
     } else {
-        println!(
+        eprintln!(
             "Updated firewall rule {} (fields: {})",
             &rule.id.to_string()[..8],
             updated_fields.join(", ")

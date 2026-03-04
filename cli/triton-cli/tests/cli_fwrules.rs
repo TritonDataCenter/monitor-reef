@@ -342,15 +342,15 @@ fn test_fwrule_workflow() {
         return;
     }
     assert!(
-        stdout.contains("Created firewall rule") && stdout.contains("(disabled)"),
-        "stdout should contain created (disabled) message: {}",
-        stdout
+        stderr.contains("Created firewall rule") && stderr.contains("(disabled)"),
+        "stderr should contain created (disabled) message: {}",
+        stderr
     );
 
-    let disabled_rule_id = match extract_rule_id(&stdout) {
+    let disabled_rule_id = match extract_rule_id(&stderr) {
         Some(id) => id,
         None => {
-            eprintln!("Failed to extract rule ID from: {}", stdout);
+            eprintln!("Failed to extract rule ID from: {}", stderr);
             delete_test_instance(&inst_id);
             return;
         }
@@ -372,16 +372,16 @@ fn test_fwrule_workflow() {
         "Test: triton fwrule create -D \"{}\" \"{}\" --log",
         desc, rule_text
     );
-    let (stdout, _, success) =
+    let (_, stderr, success) =
         run_triton_with_profile(["fwrule", "create", "-D", desc, &rule_text, "--log"]);
     assert!(success, "fwrule create should succeed");
     assert!(
-        stdout.contains("Created firewall rule") && !stdout.contains("(disabled)"),
-        "stdout should show created (enabled) message: {}",
-        stdout
+        stderr.contains("Created firewall rule") && !stderr.contains("(disabled)"),
+        "stderr should show created (enabled) message: {}",
+        stderr
     );
 
-    let enabled_rule_id = match extract_rule_id(&stdout) {
+    let enabled_rule_id = match extract_rule_id(&stderr) {
         Some(id) => id,
         None => {
             eprintln!("Failed to extract rule ID");

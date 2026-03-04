@@ -385,9 +385,9 @@ async fn update_vlan(args: VlanUpdateArgs, client: &TypedClient, use_json: bool)
     let vlan = response.into_inner();
 
     if updated_fields.is_empty() {
-        println!("Updated VLAN {}", vlan.vlan_id);
+        eprintln!("Updated VLAN {}", vlan.vlan_id);
     } else {
-        println!(
+        eprintln!(
             "Updated VLAN {} (fields: {})",
             vlan.vlan_id,
             updated_fields.join(", ")

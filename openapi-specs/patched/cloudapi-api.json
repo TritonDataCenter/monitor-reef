@@ -6926,15 +6926,8 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Machine"
-                }
-              }
-            },
-            "description": "successful operation"
+          "202": {
+            "description": "successfully enqueued operation"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
@@ -8766,15 +8759,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Machine"
-                }
-              }
-            },
-            "description": "successful operation"
+          "202": {
+            "description": "successfully enqueued operation"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"

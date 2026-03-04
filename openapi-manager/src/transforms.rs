@@ -25,8 +25,7 @@ pub fn apply_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Res
     if source.exists() {
         std::fs::create_dir_all(patched_dir).context("failed to create patched specs directory")?;
         let dest = patched_dir.join("cloudapi-api.json");
-        transform_cloudapi_error_schema(&source, &dest)
-            .context("failed to transform cloudapi-api.json")?;
+        transform_cloudapi_spec(&source, &dest).context("failed to transform cloudapi-api.json")?;
     }
 
     Ok(())
@@ -53,7 +52,7 @@ pub fn check_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Res
     // Generate what the patched file should look like
     let content = std::fs::read_to_string(&source).context("failed to read source spec")?;
     let mut spec: Value = serde_json::from_str(&content).context("failed to parse spec")?;
-    patch_cloudapi_error_schema(&mut spec)?;
+    apply_all_cloudapi_patches(&mut spec)?;
     let expected = serde_json::to_string_pretty(&spec).context("failed to serialize")?;
 
     let actual = std::fs::read_to_string(&dest).context("failed to read patched spec")?;
@@ -94,17 +93,24 @@ pub fn check_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Res
 /// }
 /// ```
 ///
-/// This function reads a source spec, patches the Error schema, and writes to a destination.
-fn transform_cloudapi_error_schema(source: &Utf8Path, dest: &Utf8Path) -> Result<()> {
+/// This function reads a source spec, applies all patches, and writes to a destination.
+fn transform_cloudapi_spec(source: &Utf8Path, dest: &Utf8Path) -> Result<()> {
     let content = std::fs::read_to_string(source).context("failed to read spec file")?;
     let mut spec: Value = serde_json::from_str(&content).context("failed to parse spec as JSON")?;
 
-    patch_cloudapi_error_schema(&mut spec)?;
+    apply_all_cloudapi_patches(&mut spec)?;
 
     let output = serde_json::to_string_pretty(&spec).context("failed to serialize spec")?;
     std::fs::write(dest, output).context("failed to write patched spec file")?;
 
     eprintln!("Wrote patched CloudAPI spec to {}", dest);
+    Ok(())
+}
+
+/// Apply all CloudAPI patches to a parsed spec.
+fn apply_all_cloudapi_patches(spec: &mut Value) -> Result<()> {
+    patch_cloudapi_error_schema(spec)?;
+    patch_empty_202_responses(spec)?;
     Ok(())
 }
 
@@ -138,6 +144,40 @@ fn patch_cloudapi_error_schema(spec: &mut Value) -> Result<()> {
         },
         "required": ["code"]
     });
+
+    Ok(())
+}
+
+/// Remove `content` from 202 responses that should have empty bodies.
+///
+/// Dropshot generates a 202 response with `application/json` content for
+/// `HttpResponseAccepted<()>`, but the real CloudAPI returns 202 with an
+/// empty body. Progenitor's `ResponseValue::from_response` tries to parse
+/// the body as JSON, which fails on empty input. Removing the `content`
+/// field makes Progenitor generate code that doesn't attempt JSON parsing.
+fn patch_empty_202_responses(spec: &mut Value) -> Result<()> {
+    let endpoints: &[(&str, &str)] = &[
+        ("/{account}/machines/{machine}", "post"),
+        ("/{account}/machines/{machine}/snapshots/{name}", "post"),
+    ];
+
+    let paths = spec
+        .get_mut("paths")
+        .ok_or_else(|| anyhow::anyhow!("paths not found in spec"))?;
+
+    for (path, method) in endpoints {
+        let response = paths
+            .get_mut(*path)
+            .and_then(|p| p.get_mut(*method))
+            .and_then(|m| m.get_mut("responses"))
+            .and_then(|r| r.get_mut("202"));
+
+        if let Some(resp) = response {
+            if let Some(obj) = resp.as_object_mut() {
+                obj.remove("content");
+            }
+        }
+    }
 
     Ok(())
 }

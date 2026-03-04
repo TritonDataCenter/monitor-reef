@@ -433,7 +433,7 @@ async fn create_network(
     let network = response.into_inner();
     let network_id_str = network.id.to_string();
 
-    println!(
+    eprintln!(
         "Created network {} ({})",
         &network.name,
         &network_id_str[..8]
@@ -667,7 +667,7 @@ async fn update_network_ip(
 
     let ip = response.into_inner();
 
-    println!("Updated IP {}", ip.ip);
+    eprintln!("Updated IP {}", ip.ip);
 
     if use_json {
         json::print_json(&ip)?;

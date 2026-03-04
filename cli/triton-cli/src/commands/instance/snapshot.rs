@@ -196,7 +196,7 @@ async fn create_snapshot(
 
     let snapshot = response.into_inner();
 
-    println!("Creating snapshot {}", snapshot.name);
+    eprintln!("Creating snapshot {}", snapshot.name);
 
     if args.wait {
         let final_snapshot = wait_for_snapshot_state(
@@ -207,7 +207,7 @@ async fn create_snapshot(
             client,
         )
         .await?;
-        println!("Snapshot {} is created", final_snapshot.name);
+        eprintln!("Snapshot {} is created", final_snapshot.name);
         if use_json {
             json::print_json(&final_snapshot)?;
         }

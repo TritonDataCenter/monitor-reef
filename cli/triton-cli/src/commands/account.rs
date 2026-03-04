@@ -220,7 +220,7 @@ async fn update_account(
             .await?;
         let acc = response.into_inner();
 
-        println!("Account updated from file");
+        eprintln!("Account updated from file");
 
         if use_json {
             json::print_json(&acc)?;
@@ -282,7 +282,7 @@ async fn update_account(
         .await?;
     let acc = response.into_inner();
 
-    println!("Account updated");
+    eprintln!("Account updated");
 
     if use_json {
         json::print_json(&acc)?;

@@ -228,7 +228,7 @@ pub async fn run(
 
     // Handle dry-run mode
     if args.dry_run {
-        println!("Dry-run mode: Instance would be created with:");
+        eprintln!("Dry-run mode: Instance would be created with:");
         if use_json {
             json::print_json(&request)?;
         } else {
@@ -301,11 +301,11 @@ pub async fn run(
         .map_err(|e| anyhow::anyhow!("Failed to create machine: {}", e))?;
     let id_str = machine.id.to_string();
 
-    println!("Creating instance {} ({})", &machine.name, &id_str[..8]);
+    eprintln!("Creating instance {} ({})", &machine.name, &id_str[..8]);
 
     // Wait if requested
     if args.wait {
-        println!("Waiting for instance to be running...");
+        eprintln!("Waiting for instance to be running...");
         super::wait::wait_for_state(
             machine.id,
             cloudapi_client::types::MachineState::Running,
@@ -313,7 +313,7 @@ pub async fn run(
             client,
         )
         .await?;
-        println!("Instance is running");
+        eprintln!("Instance is running");
     }
 
     if use_json {

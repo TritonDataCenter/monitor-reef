@@ -223,7 +223,7 @@ pub trait CloudApi {
         path: Path<MachinePath>,
         query: Query<MachineActionQuery>,
         body: TypedBody<serde_json::Value>,
-    ) -> Result<HttpResponseOk<Machine>, HttpError>;
+    ) -> Result<HttpResponseAccepted<()>, HttpError>;
 
     /// Delete a machine
     #[endpoint {
@@ -463,7 +463,7 @@ pub trait CloudApi {
     async fn start_machine_from_snapshot(
         rqctx: RequestContext<Self::Context>,
         path: Path<SnapshotPath>,
-    ) -> Result<HttpResponseOk<Machine>, HttpError>;
+    ) -> Result<HttpResponseAccepted<()>, HttpError>;
 
     /// List machine snapshots
     #[endpoint {

@@ -700,7 +700,7 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
         .send()
         .await?;
     let image = response.into_inner();
-    println!(
+    eprintln!(
         "Creating image {} ({})",
         image.name,
         &image.id.to_string()[..8]
@@ -714,7 +714,7 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
             client,
         )
         .await?;
-        println!("Image is active");
+        eprintln!("Image is active");
     }
 
     if use_json {
@@ -780,7 +780,7 @@ async fn clone_image(
     }
 
     let image = client.clone_image(account, &image_uuid).await?;
-    println!(
+    eprintln!(
         "Cloned image {} ({})",
         image.name,
         &image.id.to_string()[..8]
@@ -856,7 +856,7 @@ async fn copy_image(
         .import_image_from_datacenter(account, &source_dc, image_uuid)
         .await?;
 
-    println!(
+    eprintln!(
         "Copied image {}@{} ({}) to datacenter {}",
         image.name,
         image.version,
@@ -960,9 +960,9 @@ async fn update_image(
         .await?;
 
     if updated_fields.is_empty() {
-        println!("Updated image {}", image.name);
+        eprintln!("Updated image {}", image.name);
     } else {
-        println!(
+        eprintln!(
             "Updated image {} (fields: {})",
             image.name,
             updated_fields.join(", ")
@@ -997,7 +997,7 @@ async fn export_image(
         .export_image(account, &image_uuid, args.manta_path.clone())
         .await?;
 
-    println!("Exporting image {} to {}", image.name, args.manta_path);
+    eprintln!("Exporting image {} to {}", image.name, args.manta_path);
 
     if use_json {
         json::print_json(&image)?;
@@ -1036,7 +1036,7 @@ async fn wait_image(
         if args.states.iter().any(|s| image.state.as_ref() == Some(s)) {
             done += 1;
             let current_state = opt_enum_to_display(image.state.as_ref());
-            println!(
+            eprintln!(
                 "{}/{}: Image {} ({}@{}) already {}",
                 done, total, image.id, image.name, image.version, current_state
             );
@@ -1054,13 +1054,13 @@ async fn wait_image(
 
     // Print waiting message
     if images_to_wait.len() == 1 {
-        println!(
+        eprintln!(
             "Waiting for image {} to enter state (states: {})",
             images_to_wait[0].1,
             state_names.join(", ")
         );
     } else {
-        println!(
+        eprintln!(
             "Waiting for {} images to enter state (states: {})",
             images_to_wait.len(),
             state_names.join(", ")
@@ -1073,7 +1073,7 @@ async fn wait_image(
         let image = wait_for_image_states(*image_uuid, &args.states, args.timeout, client).await?;
         done += 1;
         let final_state = opt_enum_to_display(image.state.as_ref());
-        println!(
+        eprintln!(
             "{}/{}: Image {} moved to state {}",
             done, total, display_name, final_state
         );
@@ -1276,7 +1276,7 @@ async fn share_image(
         .share_image(account, &image_uuid, target_account)
         .await?;
 
-    println!("Shared image {} with account {}", image.name, args.account);
+    eprintln!("Shared image {} with account {}", image.name, args.account);
 
     if use_json {
         json::print_json(&image)?;
@@ -1310,7 +1310,7 @@ async fn unshare_image(
         .unshare_image(account, &image_uuid, target_account)
         .await?;
 
-    println!(
+    eprintln!(
         "Unshared image {} from account {}",
         image.name, args.account
     );

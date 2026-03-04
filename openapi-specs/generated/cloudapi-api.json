@@ -3671,12 +3671,16 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "202": {
+            "description": "successfully enqueued operation",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Machine"
+                  "title": "Null",
+                  "type": "string",
+                  "enum": [
+                    null
+                  ]
                 }
               }
             }
@@ -5434,12 +5438,16 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "202": {
+            "description": "successfully enqueued operation",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Machine"
+                  "title": "Null",
+                  "type": "string",
+                  "enum": [
+                    null
+                  ]
                 }
               }
             }

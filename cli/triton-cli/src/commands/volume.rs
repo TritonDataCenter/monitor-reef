@@ -415,7 +415,7 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
     let wait_timeout = args.wait_timeout.unwrap_or(300); // Default 5 minutes
 
     if should_wait {
-        println!(
+        eprintln!(
             "Creating volume {} ({})...",
             volume.name,
             &volume.id.to_string()[..8]
@@ -441,7 +441,7 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
             ));
         }
     } else {
-        println!(
+        eprintln!(
             "Creating volume {} ({}) - {} MiB",
             volume.name,
             &volume.id.to_string()[..8],

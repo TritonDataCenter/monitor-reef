@@ -239,7 +239,7 @@ async fn begin_migration(
         )
         .await?;
         // Output node-triton compatible message
-        println!("Done - begin finished");
+        eprintln!("Done - begin finished");
     } else if !args.quiet {
         if use_json {
             json::print_json(&migration)?;
@@ -285,7 +285,7 @@ async fn sync_migration(
             client,
         )
         .await?;
-        println!("Done - sync finished");
+        eprintln!("Done - sync finished");
     } else if use_json {
         json::print_json(&migration)?;
     } else {
@@ -328,7 +328,7 @@ async fn switch_migration(
             client,
         )
         .await?;
-        println!("Done - switch finished");
+        eprintln!("Done - switch finished");
     } else if use_json {
         json::print_json(&migration)?;
     } else {
@@ -480,7 +480,7 @@ async fn abort_migration(
             client,
         )
         .await?;
-        println!("Done - abort finished");
+        eprintln!("Done - abort finished");
     } else if use_json {
         json::print_json(&migration)?;
     } else {

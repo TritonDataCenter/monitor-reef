@@ -214,7 +214,7 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
 
     let disk = response.into_inner();
 
-    println!(
+    eprintln!(
         "Added disk {} ({} MiB)",
         &disk.id.to_string()[..8],
         disk.size
@@ -228,7 +228,7 @@ async fn add_disk(args: DiskAddArgs, client: &TypedClient, use_json: bool) -> Re
             client,
         )
         .await?;
-        println!("Instance {} is running", &id_str[..8]);
+        eprintln!("Instance {} is running", &id_str[..8]);
     }
 
     if use_json {
