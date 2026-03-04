@@ -120,9 +120,11 @@ fn row_to_manta_value(
     row: &tokio_postgres::Row,
     vnode: u32,
 ) -> Result<Value, Error> {
-    let id: uuid::Uuid = row.get("id");
-    let owner: uuid::Uuid = row.get("owner");
-    let bucket_id: uuid::Uuid = row.get("bucket_id");
+    // UUID columns are read as text to avoid needing
+    // tokio-postgres "with-uuid-0_7" feature.
+    let id: &str = row.get("id");
+    let owner: &str = row.get("owner");
+    let bucket_id: &str = row.get("bucket_id");
     let name: &str = row.get("name");
     let content_length: i64 = row.get("content_length");
     let content_type: &str = row.get("content_type");
@@ -146,17 +148,17 @@ fn row_to_manta_value(
         .collect();
 
     Ok(json!({
-        "objectId": id.to_string(),
-        "etag": id.to_string(),
+        "objectId": id,
+        "etag": id,
         "contentLength": content_length,
         "contentMD5": content_md5,
         "contentType": content_type,
         "name": name,
         "key": name,
-        "owner": owner.to_string(),
-        "creator": owner.to_string(),
+        "owner": owner,
+        "creator": owner,
         "sharks": sharks_json,
-        "bucket_id": bucket_id.to_string(),
+        "bucket_id": bucket_id,
         "headers": {},
         "dirname": "",
         "roles": [],
@@ -232,7 +234,7 @@ async fn scan_vnode(
     debug!(log, "Scanning vnode {}", vnode);
 
     let rows = client
-        .query_raw(query.as_str(), Vec::<String>::new())
+        .query_raw(query.as_str(), vec![])
         .await
         .map_err(|e| {
             error!(
@@ -271,7 +273,7 @@ async fn scan_vnode(
 
         if let Some(shark) = matching_shark {
             let manta_value = row_to_manta_value(&row, vnode)?;
-            let id: uuid::Uuid = row.get("id");
+            let id: &str = row.get("id");
 
             trace!(
                 log,
@@ -450,13 +452,14 @@ mod tests {
 
     #[test]
     fn base64_encode_md5_like() {
-        // 16-byte MD5 digest should produce 24-char base64
+        // 16-byte MD5 digest: 16 / 3 = 5 rem 1, so 24-char
+        // base64 with == padding on the last group.
         let md5 = [
             0x2f, 0xd3, 0x6b, 0x21, 0x95, 0xd3, 0x63, 0x7e,
             0xc0, 0xc9, 0x56, 0xcd, 0xf7, 0xe8, 0x19, 0xef,
         ];
         let encoded = base64_encode(&md5);
         assert_eq!(encoded.len(), 24);
-        assert!(!encoded.contains('='));
+        assert!(encoded.ends_with("=="));
     }
 }

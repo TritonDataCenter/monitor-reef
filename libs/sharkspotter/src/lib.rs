@@ -888,7 +888,9 @@ pub fn run_multithreaded(
         }
     }
 
-    // Buckets-postgres DirectDB discovery (via pgclone clone-buckets).
+    // Bucket object discovery: direct_db_buckets (pgclone) or mdapi RPC,
+    // but not both.  This mirrors the moray side where direct_db and moray
+    // RPC are mutually exclusive.
     if conf.direct_db_buckets {
         let bmin = conf.buckets_min_shard;
         let bmax = conf.buckets_max_shard;
@@ -903,12 +905,7 @@ pub fn run_multithreaded(
                 &pool, shard, &obj_tx, &conf, &log,
             );
         }
-    }
-
-    // Mdapi discovery — iterate over all configured endpoints (one per shard).
-    // Each endpoint hosts a distinct set of vnodes, so we query each to get
-    // complete coverage (INV-1 from CHG-055).
-    if !conf.mdapi_endpoints.is_empty() {
+    } else if !conf.mdapi_endpoints.is_empty() {
         use libmanta::mdapi::MdapiClient;
         use slog::{info, warn};
 

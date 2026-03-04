@@ -3308,6 +3308,9 @@ fn start_sharkspotter(
         sharks: vec![shark.to_string()],
         chunk_size: job_action.config.options.md_read_chunk_size as u64,
         direct_db: job_action.config.direct_db,
+        direct_db_buckets: job_action.config.direct_db_buckets,
+        buckets_min_shard: job_action.config.buckets_min_shard,
+        buckets_max_shard: job_action.config.buckets_max_shard,
         max_threads: job_action.config.options.max_md_read_threads,
         mdapi_endpoints,
         ..Default::default()
