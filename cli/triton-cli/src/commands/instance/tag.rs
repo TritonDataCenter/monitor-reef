@@ -319,6 +319,7 @@ async fn set_tags(args: TagSetArgs, client: &TypedClient) -> Result<()> {
         return Err(anyhow::anyhow!("No tags specified"));
     }
 
+    let expected_tags: Map<String, Value> = tag_map.clone();
     let request = TagsRequest::from(tag_map);
 
     // Capture current state before tag operation so --wait uses the correct target
@@ -339,6 +340,9 @@ async fn set_tags(args: TagSetArgs, client: &TypedClient) -> Result<()> {
 
     if let Some(target_state) = pre_state {
         super::wait::wait_for_state(machine_id, target_state, args.wait_timeout, client).await?;
+
+        // After machine state settles, poll until all requested tags are visible
+        wait_for_tags(machine_id, &expected_tags, args.wait_timeout, client).await?;
     }
 
     // Output the updated tags (matching node-triton behavior)
@@ -410,22 +414,26 @@ async fn delete_tag(args: TagDeleteArgs, client: &TypedClient) -> Result<()> {
         let mut seen = std::collections::HashSet::new();
         let unique_keys: Vec<_> = args.keys.iter().filter(|k| seen.insert(*k)).collect();
 
-        for key in unique_keys {
+        for key in &unique_keys {
             client
                 .inner()
                 .delete_machine_tag()
                 .account(account)
                 .machine(machine_id)
-                .tag(key)
+                .tag(key.as_str())
                 .send()
                 .await?;
 
-            if let Some(target_state) = pre_state {
-                super::wait::wait_for_state(machine_id, target_state, args.wait_timeout, client)
-                    .await?;
-            }
-
             println!("Deleted tag {} on instance {}", key, args.instance);
+        }
+
+        if let Some(target_state) = pre_state {
+            super::wait::wait_for_state(machine_id, target_state, args.wait_timeout, client)
+                .await?;
+
+            // Poll until deleted tags are actually gone
+            let deleted_keys: Vec<&str> = unique_keys.iter().map(|k| k.as_str()).collect();
+            wait_for_tags_deleted(machine_id, &deleted_keys, args.wait_timeout, client).await?;
         }
     }
 
@@ -468,6 +476,7 @@ async fn replace_all_tags(args: TagReplaceAllArgs, client: &TypedClient) -> Resu
         return Err(anyhow::anyhow!("no tags were provided"));
     }
 
+    let expected_tags: Map<String, Value> = tag_map.clone();
     let request = TagsRequest::from(tag_map);
 
     // Capture current state before tag operation so --wait uses the correct target
@@ -488,6 +497,9 @@ async fn replace_all_tags(args: TagReplaceAllArgs, client: &TypedClient) -> Resu
 
     if let Some(target_state) = pre_state {
         super::wait::wait_for_state(machine_id, target_state, args.wait_timeout, client).await?;
+
+        // Poll until tags match exactly what was set (old tags gone, new tags present)
+        wait_for_tags_exact(machine_id, &expected_tags, args.wait_timeout, client).await?;
     }
 
     // Output the updated tags (matching node-triton behavior)
@@ -512,6 +524,115 @@ async fn replace_all_tags(args: TagReplaceAllArgs, client: &TypedClient) -> Resu
     }
 
     Ok(())
+}
+
+/// Poll until all expected tag key-value pairs are present on the machine
+/// Poll until tags match exactly the expected set (no extras, no missing)
+async fn wait_for_tags_exact(
+    machine_id: uuid::Uuid,
+    expected: &Map<String, Value>,
+    timeout_secs: u64,
+    client: &TypedClient,
+) -> Result<()> {
+    use std::time::{Duration, Instant};
+    use tokio::time::sleep;
+
+    let account = client.effective_account();
+    let start = Instant::now();
+    let timeout = Duration::from_secs(timeout_secs);
+
+    loop {
+        let response = client
+            .inner()
+            .list_machine_tags()
+            .account(account)
+            .machine(machine_id)
+            .send()
+            .await?;
+
+        let tags = response.into_inner();
+        if tags.len() == expected.len() && expected.iter().all(|(k, v)| tags.get(k) == Some(v)) {
+            return Ok(());
+        }
+
+        if start.elapsed() > timeout {
+            return Err(anyhow::anyhow!(
+                "Timeout waiting for tags to match expected set"
+            ));
+        }
+
+        sleep(Duration::from_secs(2)).await;
+    }
+}
+
+async fn wait_for_tags_deleted(
+    machine_id: uuid::Uuid,
+    keys: &[&str],
+    timeout_secs: u64,
+    client: &TypedClient,
+) -> Result<()> {
+    use std::time::{Duration, Instant};
+    use tokio::time::sleep;
+
+    let account = client.effective_account();
+    let start = Instant::now();
+    let timeout = Duration::from_secs(timeout_secs);
+
+    loop {
+        let response = client
+            .inner()
+            .list_machine_tags()
+            .account(account)
+            .machine(machine_id)
+            .send()
+            .await?;
+
+        let tags = response.into_inner();
+        if keys.iter().all(|k| !tags.contains_key(*k)) {
+            return Ok(());
+        }
+
+        if start.elapsed() > timeout {
+            return Err(anyhow::anyhow!("Timeout waiting for tags to be deleted"));
+        }
+
+        sleep(Duration::from_secs(2)).await;
+    }
+}
+
+async fn wait_for_tags(
+    machine_id: uuid::Uuid,
+    expected: &Map<String, Value>,
+    timeout_secs: u64,
+    client: &TypedClient,
+) -> Result<()> {
+    use std::time::{Duration, Instant};
+    use tokio::time::sleep;
+
+    let account = client.effective_account();
+    let start = Instant::now();
+    let timeout = Duration::from_secs(timeout_secs);
+
+    loop {
+        let response = client
+            .inner()
+            .list_machine_tags()
+            .account(account)
+            .machine(machine_id)
+            .send()
+            .await?;
+
+        let tags = response.into_inner();
+        if expected.iter().all(|(k, v)| tags.get(k) == Some(v)) {
+            return Ok(());
+        }
+
+        if start.elapsed() > timeout {
+            return Err(anyhow::anyhow!("Timeout waiting for tags to appear"));
+        }
+
+        sleep(Duration::from_secs(2)).await;
+    }
 }
 
 #[cfg(test)]

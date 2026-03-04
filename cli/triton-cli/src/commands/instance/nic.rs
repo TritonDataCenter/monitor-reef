@@ -222,7 +222,7 @@ async fn get_nic(args: NicGetArgs, client: &TypedClient, use_json: bool) -> Resu
         .get_nic()
         .account(account)
         .machine(machine_id)
-        .mac(&args.mac)
+        .mac(args.mac.replace(':', ""))
         .send()
         .await?;
 

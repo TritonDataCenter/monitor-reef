@@ -16,6 +16,10 @@ pub struct StartArgs {
     /// Instance ID(s) or name(s)
     pub instances: Vec<String>,
 
+    /// Boot from a snapshot
+    #[arg(long)]
+    pub snapshot: Option<String>,
+
     /// Wait for instance to be running
     #[arg(long, short)]
     pub wait: bool,
@@ -69,7 +73,21 @@ pub async fn start(args: StartArgs, client: &TypedClient) -> Result<()> {
         let account = client.effective_account();
         let id_str = machine_id.to_string();
 
-        if let Err(e) = client.start_machine(account, &machine_id, None).await {
+        let start_result = if let Some(ref snap) = args.snapshot {
+            client
+                .inner()
+                .start_machine_from_snapshot()
+                .account(account)
+                .machine(machine_id)
+                .name(snap)
+                .send()
+                .await
+                .map(|_| ())
+        } else {
+            client.start_machine(account, &machine_id, None).await
+        };
+
+        if let Err(e) = start_result {
             #[cfg(debug_assertions)]
             if e.to_string()
                 .contains(cloudapi_client::EMIT_PAYLOAD_SENTINEL)
@@ -81,8 +99,6 @@ pub async fn start(args: StartArgs, client: &TypedClient) -> Result<()> {
             continue;
         }
 
-        println!("Starting instance {}", &id_str[..8]);
-
         if args.wait {
             match super::wait::wait_for_state(
                 machine_id,
@@ -92,12 +108,14 @@ pub async fn start(args: StartArgs, client: &TypedClient) -> Result<()> {
             )
             .await
             {
-                Ok(()) => println!("Instance {} is running", &id_str[..8]),
+                Ok(()) => println!("Start instance {}", &id_str[..8]),
                 Err(e) => {
                     eprintln!("Error waiting for {}: {}", &id_str[..8], e);
                     errors.push(format!("{}: {}", &id_str[..8], e));
                 }
             }
+        } else {
+            println!("Start (async) instance {}", &id_str[..8]);
         }
     }
 
@@ -140,8 +158,6 @@ pub async fn stop(args: StopArgs, client: &TypedClient) -> Result<()> {
             continue;
         }
 
-        println!("Stopping instance {}", &id_str[..8]);
-
         if args.wait {
             match super::wait::wait_for_state(
                 machine_id,
@@ -151,12 +167,14 @@ pub async fn stop(args: StopArgs, client: &TypedClient) -> Result<()> {
             )
             .await
             {
-                Ok(()) => println!("Instance {} is stopped", &id_str[..8]),
+                Ok(()) => println!("Stop instance {}", &id_str[..8]),
                 Err(e) => {
                     eprintln!("Error waiting for {}: {}", &id_str[..8], e);
                     errors.push(format!("{}: {}", &id_str[..8], e));
                 }
             }
+        } else {
+            println!("Stop (async) instance {}", &id_str[..8]);
         }
     }
 
@@ -212,7 +230,7 @@ pub async fn reboot(args: RebootArgs, client: &TypedClient) -> Result<()> {
             match super::wait::wait_for_reboot(machine_id, &reboot_time, args.wait_timeout, client)
                 .await
             {
-                Ok(()) => println!("Instance {} rebooted", &id_str[..8]),
+                Ok(()) => println!("Rebooted instance {}", &id_str[..8]),
                 Err(e) => {
                     eprintln!("Error waiting for {}: {}", &id_str[..8], e);
                     errors.push(format!("{}: {}", &id_str[..8], e));

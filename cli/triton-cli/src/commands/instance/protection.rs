@@ -6,9 +6,12 @@
 
 //! Instance deletion protection commands
 
+use std::time::{Duration, Instant};
+
 use anyhow::Result;
 use clap::Args;
 use cloudapi_client::TypedClient;
+use tokio::time::sleep;
 
 #[derive(Args, Clone)]
 pub struct EnableProtectionArgs {
@@ -19,6 +22,10 @@ pub struct EnableProtectionArgs {
     /// Wait for operation to complete (default: operation is synchronous)
     #[arg(short = 'w', long)]
     pub wait: bool,
+
+    /// Wait timeout in seconds
+    #[arg(long, default_value = "120")]
+    pub wait_timeout: u64,
 }
 
 #[derive(Args, Clone)]
@@ -30,6 +37,10 @@ pub struct DisableProtectionArgs {
     /// Wait for operation to complete (default: operation is synchronous)
     #[arg(short = 'w', long)]
     pub wait: bool,
+
+    /// Wait timeout in seconds
+    #[arg(long, default_value = "120")]
+    pub wait_timeout: u64,
 }
 
 pub async fn enable(args: EnableProtectionArgs, client: &TypedClient) -> Result<()> {
@@ -41,6 +52,10 @@ pub async fn enable(args: EnableProtectionArgs, client: &TypedClient) -> Result<
         client
             .enable_deletion_protection(account, &machine_id, None)
             .await?;
+
+        if args.wait {
+            wait_for_protection(account, &machine_id, true, args.wait_timeout, client).await?;
+        }
 
         // Use full UUID with quotes to match node-triton output format
         println!(
@@ -62,6 +77,10 @@ pub async fn disable(args: DisableProtectionArgs, client: &TypedClient) -> Resul
             .disable_deletion_protection(account, &machine_id, None)
             .await?;
 
+        if args.wait {
+            wait_for_protection(account, &machine_id, false, args.wait_timeout, client).await?;
+        }
+
         // Use full UUID with quotes to match node-triton output format
         println!(
             "Disabled deletion protection for instance \"{}\"",
@@ -70,4 +89,37 @@ pub async fn disable(args: DisableProtectionArgs, client: &TypedClient) -> Resul
     }
 
     Ok(())
+}
+
+async fn wait_for_protection(
+    account: &str,
+    machine_id: &uuid::Uuid,
+    expect_enabled: bool,
+    timeout_secs: u64,
+    client: &TypedClient,
+) -> Result<()> {
+    let start = Instant::now();
+    let timeout = Duration::from_secs(timeout_secs);
+
+    loop {
+        let machine = client.get_machine(account, machine_id).await?;
+        let is_enabled = machine.deletion_protection == Some(true);
+
+        if is_enabled == expect_enabled {
+            return Ok(());
+        }
+
+        if start.elapsed() > timeout {
+            return Err(anyhow::anyhow!(
+                "Timeout waiting for deletion protection to be {}",
+                if expect_enabled {
+                    "enabled"
+                } else {
+                    "disabled"
+                }
+            ));
+        }
+
+        sleep(Duration::from_secs(2)).await;
+    }
 }

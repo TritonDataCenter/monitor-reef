@@ -305,18 +305,23 @@ pub async fn run(
 
     // Wait if requested
     if args.wait {
+        // Emit initial state immediately so -wj produces NDJSON stream
+        if use_json {
+            json::print_json(&machine)?;
+        }
         eprintln!("Waiting for instance to be running...");
-        super::wait::wait_for_state(
+        let final_machine = super::wait::wait_for_states(
             machine.id,
-            cloudapi_client::types::MachineState::Running,
+            &[cloudapi_client::types::MachineState::Running],
             args.wait_timeout,
             client,
         )
         .await?;
         eprintln!("Instance is running");
-    }
-
-    if use_json {
+        if use_json {
+            json::print_json(&final_machine)?;
+        }
+    } else if use_json {
         json::print_json(&machine)?;
     }
 

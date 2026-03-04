@@ -27,6 +27,39 @@ pub struct ResizeArgs {
     pub wait_timeout: u64,
 }
 
+async fn wait_for_resize(
+    account: &str,
+    machine_id: &uuid::Uuid,
+    target_package: &str,
+    timeout_secs: u64,
+    client: &TypedClient,
+) -> Result<()> {
+    use std::time::{Duration, Instant};
+    use tokio::time::sleep;
+
+    let start = Instant::now();
+    let timeout = Duration::from_secs(timeout_secs);
+
+    loop {
+        let machine = client.get_machine(account, machine_id).await?;
+
+        if machine.state == cloudapi_client::types::MachineState::Running
+            && machine.package == target_package
+        {
+            return Ok(());
+        }
+
+        if start.elapsed() > timeout {
+            return Err(anyhow::anyhow!(
+                "Timeout waiting for resize to complete (current package: {})",
+                machine.package,
+            ));
+        }
+
+        sleep(Duration::from_secs(2)).await;
+    }
+}
+
 pub async fn run(args: ResizeArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let package_id = crate::commands::package::resolve_package(&args.package, client).await?;
@@ -44,15 +77,15 @@ pub async fn run(args: ResizeArgs, client: &TypedClient) -> Result<()> {
     );
 
     if args.wait {
-        println!("Waiting for resize to complete...");
-        super::wait::wait_for_state(
-            machine_id,
-            cloudapi_client::types::MachineState::Running,
+        wait_for_resize(
+            account,
+            &machine_id,
+            &args.package,
             args.wait_timeout,
             client,
         )
         .await?;
-        println!("Instance {} resize complete", &id_str[..8]);
+        println!("Resized instance {}", &id_str[..8]);
     }
 
     Ok(())

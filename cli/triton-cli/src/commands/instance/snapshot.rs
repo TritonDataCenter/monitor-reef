@@ -83,6 +83,14 @@ pub struct SnapshotDeleteArgs {
     /// Skip confirmation
     #[arg(long, short)]
     pub force: bool,
+
+    /// Wait for snapshot deletion to complete
+    #[arg(long, short)]
+    pub wait: bool,
+
+    /// Wait timeout in seconds
+    #[arg(long, default_value = "600")]
+    pub wait_timeout: u64,
 }
 
 #[derive(Args, Clone)]
@@ -207,7 +215,7 @@ async fn create_snapshot(
             client,
         )
         .await?;
-        eprintln!("Snapshot {} is created", final_snapshot.name);
+        println!("Created snapshot \"{}\"", final_snapshot.name);
         if use_json {
             json::print_json(&final_snapshot)?;
         }
@@ -268,6 +276,49 @@ async fn wait_for_snapshot_state(
     }
 }
 
+async fn wait_for_snapshot_deleted(
+    machine_id: uuid::Uuid,
+    snapshot_name: &str,
+    timeout_secs: u64,
+    client: &TypedClient,
+) -> Result<()> {
+    use std::time::{Duration, Instant};
+    use tokio::time::sleep;
+
+    let account = client.effective_account();
+    let start = Instant::now();
+    let timeout = Duration::from_secs(timeout_secs);
+
+    loop {
+        let response = client
+            .inner()
+            .get_machine_snapshot()
+            .account(account)
+            .machine(machine_id)
+            .name(snapshot_name)
+            .send()
+            .await;
+
+        match response {
+            Err(_) => return Ok(()), // Snapshot not found = deleted
+            Ok(resp) => {
+                let snapshot = resp.into_inner();
+                if snapshot.state == SnapshotState::Failed {
+                    return Err(anyhow::anyhow!("Snapshot deletion failed"));
+                }
+            }
+        }
+
+        if start.elapsed() > timeout {
+            return Err(anyhow::anyhow!(
+                "Timeout waiting for snapshot to be deleted"
+            ));
+        }
+
+        sleep(Duration::from_secs(2)).await;
+    }
+}
+
 async fn delete_snapshot(args: SnapshotDeleteArgs, client: &TypedClient) -> Result<()> {
     if !args.force
         && !Confirm::new()
@@ -281,6 +332,8 @@ async fn delete_snapshot(args: SnapshotDeleteArgs, client: &TypedClient) -> Resu
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
 
+    println!("Deleting snapshot \"{}\"", args.name);
+
     client
         .inner()
         .delete_machine_snapshot()
@@ -290,7 +343,11 @@ async fn delete_snapshot(args: SnapshotDeleteArgs, client: &TypedClient) -> Resu
         .send()
         .await?;
 
-    println!("Deleted snapshot {}", args.name);
+    if args.wait {
+        wait_for_snapshot_deleted(machine_id, &args.name, args.wait_timeout, client).await?;
+    }
+
+    println!("Deleted snapshot \"{}\"", args.name);
 
     Ok(())
 }

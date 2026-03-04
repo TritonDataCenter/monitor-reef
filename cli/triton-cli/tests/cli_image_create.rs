@@ -117,7 +117,7 @@ fn test_image_create_workflow() {
     let origin_image = origin_inst.image;
 
     // Create image from instance
-    let output = safe_triton(&[
+    let (output, img_stderr, img_success) = try_triton(&[
         "image",
         "create",
         "-j",
@@ -128,6 +128,19 @@ fn test_image_create_workflow() {
         &image_name,
         image_version,
     ]);
+
+    if !img_success {
+        if img_stderr.contains("501") || img_stderr.contains("NotAvailable") {
+            eprintln!("Skipping: image creation not available on this DC");
+            // Cleanup origin instance before returning
+            let _ = try_triton(&["rm", "-f", "-w", &origin_inst_id]);
+            return;
+        }
+        panic!(
+            "image create failed unexpectedly:\nstdout: {}\nstderr: {}",
+            output, img_stderr
+        );
+    }
 
     let lines: Vec<Image> = json_stream_parse(&output);
     assert!(!lines.is_empty(), "Expected image output");

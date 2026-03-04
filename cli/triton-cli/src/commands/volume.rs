@@ -112,7 +112,7 @@ pub struct VolumeDeleteArgs {
     /// Volume ID(s) or name(s)
     pub volumes: Vec<String>,
     /// Skip confirmation
-    #[arg(long, short)]
+    #[arg(long, short, short_alias = 'y')]
     pub force: bool,
     /// Wait for deletion
     #[arg(long, short)]
