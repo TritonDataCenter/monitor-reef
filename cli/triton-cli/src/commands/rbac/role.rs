@@ -511,7 +511,13 @@ async fn add_role_from_file(
                         Some(policy_ref(s))
                     } else if v.is_object() {
                         // New format: {"name": "...", "id": "..."}
-                        serde_json::from_value::<PolicyRef>(v.clone()).ok()
+                        match serde_json::from_value::<PolicyRef>(v.clone()) {
+                            Ok(p) => Some(p),
+                            Err(e) => {
+                                eprintln!("warning: skipping malformed policy entry: {e}");
+                                None
+                            }
+                        }
                     } else {
                         None
                     }
@@ -532,7 +538,13 @@ async fn add_role_from_file(
                         Some(member_ref(s, false))
                     } else if v.is_object() {
                         // New format: {"type": "subuser", "login": "..."}
-                        serde_json::from_value::<MemberRef>(v.clone()).ok()
+                        match serde_json::from_value::<MemberRef>(v.clone()) {
+                            Ok(m) => Some(m),
+                            Err(e) => {
+                                eprintln!("warning: skipping malformed member entry: {e}");
+                                None
+                            }
+                        }
                     } else {
                         None
                     }
