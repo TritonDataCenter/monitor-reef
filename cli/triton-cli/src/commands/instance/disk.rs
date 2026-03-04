@@ -130,7 +130,15 @@ pub async fn list_disks(args: DiskListArgs, client: &TypedClient, use_json: bool
         .send()
         .await?;
 
-    let disks = response.into_inner();
+    let mut disks = response.into_inner();
+    disks.sort_by(|a, b| {
+        let slot_cmp = a.pci_slot.cmp(&b.pci_slot);
+        if slot_cmp == std::cmp::Ordering::Equal {
+            a.id.cmp(&b.id)
+        } else {
+            slot_cmp
+        }
+    });
 
     if use_json {
         json::print_json_stream(&disks)?;

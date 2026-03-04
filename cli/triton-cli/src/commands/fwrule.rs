@@ -146,7 +146,8 @@ async fn list_rules(args: FwruleListArgs, client: &TypedClient, use_json: bool) 
         .send()
         .await?;
 
-    let rules = response.into_inner();
+    let mut rules = response.into_inner();
+    rules.sort_by(|a, b| a.rule.cmp(&b.rule));
 
     if use_json {
         json::print_json_stream(&rules)?;
@@ -161,7 +162,7 @@ async fn list_rules(args: FwruleListArgs, client: &TypedClient, use_json: bool) 
                 if rule.global.unwrap_or(false) {
                     "true"
                 } else {
-                    "false"
+                    "-"
                 }
                 .to_string(),
                 if rule.log { "true" } else { "false" }.to_string(),
@@ -415,7 +416,8 @@ async fn list_rule_instances(
         .send()
         .await?;
 
-    let machines = response.into_inner();
+    let mut machines = response.into_inner();
+    machines.sort_by(|a, b| a.created.cmp(&b.created));
 
     if use_json {
         json::print_json(&machines)?;

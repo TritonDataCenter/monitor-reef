@@ -140,7 +140,9 @@ pub async fn list_metadata(
         json::print_json(&metadata)?;
     } else {
         let mut tbl = table::create_table(&["KEY", "VALUE"]);
-        for (key, value) in metadata.iter() {
+        let mut entries: Vec<_> = metadata.iter().collect();
+        entries.sort_by_key(|(key, _)| *key);
+        for (key, value) in entries {
             let value_str = match value.as_str() {
                 Some(s) => s.to_string(),
                 None => value.to_string(),

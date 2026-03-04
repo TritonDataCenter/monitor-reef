@@ -78,7 +78,8 @@ pub async fn list_rules(args: FwrulesArgs, client: &TypedClient, use_json: bool)
         .send()
         .await?;
 
-    let rules = response.into_inner();
+    let mut rules = response.into_inner();
+    rules.sort_by(|a, b| a.rule.cmp(&b.rule));
 
     if use_json {
         json::print_json_stream(&rules)?;

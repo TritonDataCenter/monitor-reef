@@ -156,7 +156,7 @@ async fn list_vlans(args: VlanListArgs, client: &TypedClient, use_json: bool) ->
     let filters = parse_vlan_filters(&args.filters)?;
 
     // Apply client-side filters (like node-triton)
-    let vlans: Vec<_> = vlans
+    let mut vlans: Vec<_> = vlans
         .into_iter()
         .filter(|vlan| {
             if let Some(id) = filters.vlan_id
@@ -177,6 +177,8 @@ async fn list_vlans(args: VlanListArgs, client: &TypedClient, use_json: bool) ->
             true
         })
         .collect();
+
+    vlans.sort_by_key(|v| v.vlan_id);
 
     if use_json {
         // Output NDJSON format (one JSON object per line) like node-triton

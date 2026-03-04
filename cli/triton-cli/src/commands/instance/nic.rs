@@ -154,6 +154,7 @@ pub async fn list_nics(args: NicListArgs, client: &TypedClient, use_json: bool) 
         .await?;
 
     let mut nics: Vec<NicOutput> = response.into_inner().iter().map(NicOutput::from).collect();
+    nics.sort_by(|a, b| a.ip.cmp(&b.ip));
 
     // Apply filters
     for filter in &args.filters {

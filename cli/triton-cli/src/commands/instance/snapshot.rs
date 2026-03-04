@@ -130,7 +130,8 @@ pub async fn list_snapshots(
         .send()
         .await?;
 
-    let snapshots = response.into_inner();
+    let mut snapshots = response.into_inner();
+    snapshots.sort_by(|a, b| a.name.cmp(&b.name));
 
     if use_json {
         json::print_json_stream(&snapshots)?;
