@@ -88,7 +88,7 @@ pub struct ImageListArgs {
     #[arg(long, value_enum)]
     pub state: Option<cloudapi_client::types::ImageState>,
     /// Filter by type
-    #[arg(long, name = "type", value_enum)]
+    #[arg(long = "type", value_enum)]
     pub image_type: Option<cloudapi_client::types::ImageType>,
 
     /// Include all images (including inactive, disabled, etc.)

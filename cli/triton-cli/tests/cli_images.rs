@@ -18,6 +18,7 @@
 mod common;
 
 use assert_cmd::Command;
+use cloudapi_client::Image;
 use predicates::prelude::*;
 use serde_json::Value;
 
@@ -437,4 +438,194 @@ fn test_image_get_by_name() {
         Some(image_name),
         "Returned image should have the same name"
     );
+}
+
+// =============================================================================
+// Filter verification tests - ensure list filters actually filter results
+// =============================================================================
+
+/// Test `triton image list --name <name>` filters by name
+#[test]
+#[ignore = "requires API access - run with make triton-test-api"]
+fn test_image_list_filter_by_name() {
+    use common::{json_stream_parse, safe_triton};
+
+    common::config::require_integration_config();
+
+    // List all images
+    let stdout = safe_triton(["images", "-j"]);
+    let all_images: Vec<Image> = json_stream_parse(&stdout);
+    if all_images.is_empty() {
+        eprintln!("Skipping: no images available");
+        return;
+    }
+
+    let filter_name = &all_images[0].name;
+
+    // List with --name filter
+    let stdout = safe_triton(["images", "-j", "--name", filter_name]);
+    let filtered: Vec<Image> = json_stream_parse(&stdout);
+
+    assert!(
+        filtered.len() <= all_images.len(),
+        "filtered count ({}) should be <= total count ({})",
+        filtered.len(),
+        all_images.len()
+    );
+    for img in &filtered {
+        assert_eq!(
+            &img.name, filter_name,
+            "every filtered image should have name '{}'",
+            filter_name
+        );
+    }
+}
+
+/// Test `triton image list --type <type>` filters by type
+#[test]
+#[ignore = "requires API access - run with make triton-test-api"]
+fn test_image_list_filter_by_type() {
+    use common::{json_stream_parse, safe_triton};
+
+    common::config::require_integration_config();
+
+    let stdout = safe_triton(["images", "-j"]);
+    let all_images: Vec<Image> = json_stream_parse(&stdout);
+    if all_images.is_empty() {
+        eprintln!("Skipping: no images available");
+        return;
+    }
+
+    // Get the wire-format string for the first image's type
+    let filter_type = &all_images[0].image_type;
+    let type_str = serde_json::to_value(filter_type)
+        .ok()
+        .and_then(|v| v.as_str().map(String::from))
+        .expect("image type should serialize to a string");
+
+    let stdout = safe_triton(["images", "-j", "--type", &type_str]);
+    let filtered: Vec<Image> = json_stream_parse(&stdout);
+
+    assert!(
+        filtered.len() <= all_images.len(),
+        "filtered count ({}) should be <= total count ({})",
+        filtered.len(),
+        all_images.len()
+    );
+    for img in &filtered {
+        assert_eq!(
+            img.image_type, *filter_type,
+            "every filtered image should have type '{}'",
+            type_str
+        );
+    }
+}
+
+/// Test `triton image list --os <os>` filters by OS
+#[test]
+#[ignore = "requires API access - run with make triton-test-api"]
+fn test_image_list_filter_by_os() {
+    use common::{json_stream_parse, safe_triton};
+
+    common::config::require_integration_config();
+
+    let stdout = safe_triton(["images", "-j"]);
+    let all_images: Vec<Image> = json_stream_parse(&stdout);
+    if all_images.is_empty() {
+        eprintln!("Skipping: no images available");
+        return;
+    }
+
+    let filter_os = &all_images[0].os;
+
+    let stdout = safe_triton(["images", "-j", "--os", filter_os]);
+    let filtered: Vec<Image> = json_stream_parse(&stdout);
+
+    assert!(
+        filtered.len() <= all_images.len(),
+        "filtered count ({}) should be <= total count ({})",
+        filtered.len(),
+        all_images.len()
+    );
+    for img in &filtered {
+        assert_eq!(
+            &img.os, filter_os,
+            "every filtered image should have os '{}'",
+            filter_os
+        );
+    }
+}
+
+/// Test `triton image list --state active` filters by state
+#[test]
+#[ignore = "requires API access - run with make triton-test-api"]
+fn test_image_list_filter_by_state() {
+    use cloudapi_client::ImageState;
+    use common::{json_stream_parse, safe_triton};
+
+    common::config::require_integration_config();
+
+    let stdout = safe_triton(["images", "-j"]);
+    let all_images: Vec<Image> = json_stream_parse(&stdout);
+    if all_images.is_empty() {
+        eprintln!("Skipping: no images available");
+        return;
+    }
+
+    let stdout = safe_triton(["images", "-j", "--state", "active"]);
+    let filtered: Vec<Image> = json_stream_parse(&stdout);
+
+    assert!(
+        filtered.len() <= all_images.len(),
+        "filtered count ({}) should be <= total count ({})",
+        filtered.len(),
+        all_images.len()
+    );
+    for img in &filtered {
+        assert_eq!(
+            img.state,
+            Some(ImageState::Active),
+            "every filtered image should have state 'active'"
+        );
+    }
+}
+
+/// Test `triton image list type=<type>` positional filter syntax
+#[test]
+#[ignore = "requires API access - run with make triton-test-api"]
+fn test_image_list_positional_filter() {
+    use common::{json_stream_parse, safe_triton};
+
+    common::config::require_integration_config();
+
+    let stdout = safe_triton(["images", "-j"]);
+    let all_images: Vec<Image> = json_stream_parse(&stdout);
+    if all_images.is_empty() {
+        eprintln!("Skipping: no images available");
+        return;
+    }
+
+    let filter_type = &all_images[0].image_type;
+    let type_str = serde_json::to_value(filter_type)
+        .ok()
+        .and_then(|v| v.as_str().map(String::from))
+        .expect("image type should serialize to a string");
+    let positional = format!("type={}", type_str);
+
+    let stdout = safe_triton(["images", "-j", &positional]);
+    let filtered: Vec<Image> = json_stream_parse(&stdout);
+
+    assert!(
+        filtered.len() <= all_images.len(),
+        "filtered count ({}) should be <= total count ({})",
+        filtered.len(),
+        all_images.len()
+    );
+    for img in &filtered {
+        assert_eq!(
+            img.image_type, *filter_type,
+            "every filtered image should have type '{}'",
+            type_str
+        );
+    }
 }
