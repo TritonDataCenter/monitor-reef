@@ -4629,6 +4629,10 @@ fn get_client_from_hash<'a>(
 
 // Called when we are not using batched updates or a batched update fails and
 // we want to update each object one by one.
+//
+// Wraps the put_object call with retry logic so that transient errors
+// (EAGAIN, connection reset, RPC timeouts) are retried with exponential
+// backoff instead of immediately failing the object.
 fn metadata_update_one(
     job_action: &Arc<EvacuateJob>,
     client: MetadataClientOption,
@@ -4643,16 +4647,21 @@ fn metadata_update_one(
         }
     };
 
+    let retry_config = mdapi_client::RetryConfig::default();
+
     let now = std::time::Instant::now();
-    let ret = mclient
-        .put_object(object, etag)
-        .map_err(|e| {
-            InternalError::new(
-                Some(InternalErrorCode::MetadataUpdateFailure),
-                format!("{}", e),
-            )
-        })
-        .map_err(Error::from);
+    // Retry the raw put_object call so that is_retryable_error sees the
+    // original error variant (e.g. Error::Mdapi(IoError(...))) before it
+    // gets wrapped into MetadataUpdateFailure.
+    let ret = mdapi_client::with_retry_if_retryable(&retry_config, || {
+        mclient.put_object(object, etag)
+    })
+    .map_err(|e| {
+        Error::from(InternalError::new(
+            Some(InternalErrorCode::MetadataUpdateFailure),
+            format!("{}", e),
+        ))
+    });
 
     if ret.is_err() {
         error!(

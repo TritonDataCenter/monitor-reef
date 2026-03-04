@@ -681,7 +681,19 @@ pub fn is_retryable_error(error: &Error) -> bool {
         Error::Reqwest(_) => true, // Network errors are retryable
         Error::Hyper(_) => true,   // HTTP errors may be transient
         Error::IoError(_) => true, // I/O errors may be transient
-        Error::Mdapi(_) => false,  // Mdapi errors are generally not retryable
+        Error::Mdapi(mdapi_err) => {
+            use libmanta::mdapi::MdapiError;
+            // Transient mdapi errors (EAGAIN, connection reset, etc.)
+            // are retryable.  Permanent errors (not found, precondition
+            // failed, bad data) are not.
+            matches!(
+                mdapi_err,
+                MdapiError::IoError(_)
+                    | MdapiError::RpcError(_)
+                    | MdapiError::DatabaseError(_)
+                    | MdapiError::Other(_)
+            )
+        }
         Error::SerdeJson(_) => false, // Serialization errors are not retryable
         _ => false,
     }
@@ -2788,5 +2800,38 @@ mod tests {
             "Bucket not found".to_string(),
         ));
         assert!(!is_retryable_error(&not_found_error));
+
+        // Transient mdapi errors are retryable (EAGAIN, connection reset)
+        use libmanta::mdapi::MdapiError;
+        let io_error = Error::Mdapi(MdapiError::IoError(
+            "os error 11 (EAGAIN)".to_string(),
+        ));
+        assert!(is_retryable_error(&io_error));
+
+        let rpc_error = Error::Mdapi(MdapiError::RpcError(
+            "connection reset".to_string(),
+        ));
+        assert!(is_retryable_error(&rpc_error));
+
+        let db_error = Error::Mdapi(MdapiError::DatabaseError(
+            "temporary failure".to_string(),
+        ));
+        assert!(is_retryable_error(&db_error));
+
+        // Permanent mdapi errors are NOT retryable
+        let not_found = Error::Mdapi(MdapiError::ObjectNotFound(
+            "object gone".to_string(),
+        ));
+        assert!(!is_retryable_error(&not_found));
+
+        let precondition = Error::Mdapi(MdapiError::PreconditionFailed(
+            "etag mismatch".to_string(),
+        ));
+        assert!(!is_retryable_error(&precondition));
+
+        let bucket_exists = Error::Mdapi(MdapiError::BucketAlreadyExists(
+            "conflict".to_string(),
+        ));
+        assert!(!is_retryable_error(&bucket_exists));
     }
 }
