@@ -10903,10 +10903,9 @@
           },
           "free_space": {
             "nullable": true,
-            "description": "Free space in bytes (bhyve with flexible disk)",
+            "description": "Free space in bytes (bhyve with flexible disk, may be negative)",
             "type": "integer",
-            "format": "uint64",
-            "minimum": 0
+            "format": "int64"
           },
           "id": {
             "description": "Machine UUID",

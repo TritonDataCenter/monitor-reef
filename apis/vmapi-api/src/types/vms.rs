@@ -548,9 +548,9 @@ pub struct Vm {
     /// Limit privilege flag
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub limit_priv: Option<String>,
-    /// Free space in bytes (bhyve with flexible disk)
+    /// Free space in bytes (bhyve with flexible disk, may be negative)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub free_space: Option<u64>,
+    pub free_space: Option<i64>,
     /// Flexible disk mode (bhyve only)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub flexible_disk_size: Option<u64>,

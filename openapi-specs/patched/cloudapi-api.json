@@ -1466,9 +1466,8 @@
             "type": "boolean"
           },
           "free_space": {
-            "description": "Free space in bytes (bhyve with flexible disk)",
-            "format": "uint64",
-            "minimum": 0,
+            "description": "Free space in bytes (bhyve with flexible disk, may be negative)",
+            "format": "int64",
             "nullable": true,
             "type": "integer"
           },

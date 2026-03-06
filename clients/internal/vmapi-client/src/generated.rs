@@ -2998,13 +2998,12 @@ pub mod types {
     #[doc = "      \"minimum\": 0.0"]
     #[doc = "    },"]
     #[doc = "    \"free_space\": {"]
-    #[doc = "      \"description\": \"Free space in bytes (bhyve with flexible disk)\","]
+    #[doc = "      \"description\": \"Free space in bytes (bhyve with flexible disk, may be negative)\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"integer\","]
     #[doc = "        \"null\""]
     #[doc = "      ],"]
-    #[doc = "      \"format\": \"uint64\","]
-    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
     #[doc = "    \"image_uuid\": {"]
     #[doc = "      \"description\": \"Image UUID\","]
@@ -3277,9 +3276,9 @@ pub mod types {
         #[doc = "Flexible disk mode (bhyve only)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub flexible_disk_size: ::std::option::Option<u64>,
-        #[doc = "Free space in bytes (bhyve with flexible disk)"]
+        #[doc = "Free space in bytes (bhyve with flexible disk, may be negative)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub free_space: ::std::option::Option<u64>,
+        pub free_space: ::std::option::Option<i64>,
         #[doc = "Image UUID"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub image_uuid: ::std::option::Option<::uuid::Uuid>,
@@ -6306,7 +6305,7 @@ pub mod types {
                 ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             flexible_disk_size:
                 ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
-            free_space: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
+            free_space: ::std::result::Result<::std::option::Option<i64>, ::std::string::String>,
             image_uuid:
                 ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             indestructible_delegated:
@@ -6588,7 +6587,7 @@ pub mod types {
             }
             pub fn free_space<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<u64>>,
+                T: ::std::convert::TryInto<::std::option::Option<i64>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.free_space = value

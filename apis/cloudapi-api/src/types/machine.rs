@@ -142,14 +142,14 @@ pub struct Machine {
 
     #[serde(rename = "dns_names", default, skip_serializing_if = "Option::is_none")]
     pub dns_names: Option<Vec<String>>,
-    /// Free space in bytes (bhyve with flexible disk)
+    /// Free space in bytes (bhyve with flexible disk, may be negative)
 
     #[serde(
         rename = "free_space",
         default,
         skip_serializing_if = "Option::is_none"
     )]
-    pub free_space: Option<u64>,
+    pub free_space: Option<i64>,
     /// Disks (bhyve VMs only)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub disks: Option<Vec<MachineDisk>>,
