@@ -110,7 +110,7 @@ enum Commands {
     Env {
         /// Profile name (defaults to current)
         profile: Option<String>,
-        /// Shell type (bash, fish, powershell)
+        /// Shell type (bash, fish, csh, powershell)
         #[arg(long, default_value = "bash")]
         shell: String,
         /// Emit only the Triton section

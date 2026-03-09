@@ -89,6 +89,19 @@ pub async fn generate_env(
                 );
             }
         }
+        "csh" | "tcsh" => {
+            if unset {
+                print_csh_unsets(emit_triton, emit_docker, emit_smartdc);
+            } else {
+                print_csh_exports(
+                    &profile,
+                    &docker_env,
+                    emit_triton,
+                    emit_docker,
+                    emit_smartdc,
+                );
+            }
+        }
         "fish" => {
             if unset {
                 print_fish_unsets(emit_triton, emit_docker, emit_smartdc);
@@ -268,6 +281,83 @@ fn print_posix_unsets(emit_triton: bool, emit_docker: bool, emit_smartdc: bool) 
         println!("# smartdc");
         for var in SMARTDC_VARS {
             println!("unset {var}");
+        }
+    }
+}
+
+fn print_csh_exports(
+    profile: &Profile,
+    docker_env: &BTreeMap<String, Option<String>>,
+    emit_triton: bool,
+    emit_docker: bool,
+    emit_smartdc: bool,
+) {
+    if emit_triton {
+        println!("# triton");
+        println!(
+            "setenv TRITON_PROFILE \"{}\"",
+            shell_escape_double(&profile.name)
+        );
+    }
+
+    if emit_docker {
+        println!("# docker");
+        for (key, value) in docker_env {
+            match value {
+                Some(v) => println!("setenv {} \"{}\"", key, shell_escape_double(v)),
+                None => println!("unsetenv {}", key),
+            }
+        }
+    }
+
+    if emit_smartdc {
+        println!("# smartdc");
+        println!("setenv SDC_URL \"{}\"", shell_escape_double(&profile.url));
+        println!(
+            "setenv SDC_ACCOUNT \"{}\"",
+            shell_escape_double(&profile.account)
+        );
+
+        if let Some(user) = &profile.user {
+            println!("setenv SDC_USER \"{}\"", shell_escape_double(user));
+        } else {
+            println!("unsetenv SDC_USER");
+        }
+
+        println!(
+            "setenv SDC_KEY_ID \"{}\"",
+            shell_escape_double(&profile.key_id)
+        );
+        if profile.insecure {
+            println!("setenv SDC_TESTING \"true\"");
+        } else {
+            println!("unsetenv SDC_TESTING");
+        }
+    }
+
+    if emit_triton && emit_docker && emit_smartdc {
+        println!("# Run this command to configure your shell:");
+        println!("#     eval `triton env --shell csh`");
+    }
+}
+
+fn print_csh_unsets(emit_triton: bool, emit_docker: bool, emit_smartdc: bool) {
+    if emit_triton {
+        println!("# triton");
+        for var in TRITON_VARS {
+            println!("unsetenv {var}");
+        }
+    }
+    if emit_docker {
+        println!("# docker");
+        for var in DOCKER_VARS {
+            println!("unsetenv {var}");
+        }
+    }
+    if emit_smartdc {
+        println!("# smartdc");
+        for var in SMARTDC_VARS {
+            println!("unsetenv {var}");
         }
     }
 }
