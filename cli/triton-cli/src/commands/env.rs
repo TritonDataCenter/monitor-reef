@@ -337,7 +337,7 @@ fn print_csh_exports(
 
     if emit_triton && emit_docker && emit_smartdc {
         println!("# Run this command to configure your shell:");
-        println!("#     eval `triton env --shell csh`");
+        println!("#    triton env --shell csh | source /dev/stdin");
     }
 }
 
