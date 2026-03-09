@@ -1509,24 +1509,13 @@ pub mod types {
     #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"networks\": {"]
-    #[doc = "      \"description\": \"Networks (array of UUIDs) - simple network specification\","]
+    #[doc = "      \"description\": \"Networks - array of network objects matching CloudAPI wire format\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"array\","]
     #[doc = "        \"null\""]
     #[doc = "      ],"]
     #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\","]
-    #[doc = "        \"format\": \"uuid\""]
-    #[doc = "      }"]
-    #[doc = "    },"]
-    #[doc = "    \"nics\": {"]
-    #[doc = "      \"description\": \"NICs - advanced NIC specification with IP addresses and options\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"$ref\": \"#/components/schemas/NicSpec\""]
+    #[doc = "        \"$ref\": \"#/components/schemas/NetworkObject\""]
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"package\": {"]
@@ -1595,12 +1584,9 @@ pub mod types {
         #[doc = "Machine alias/name"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub name: ::std::option::Option<::std::string::String>,
-        #[doc = "Networks (array of UUIDs) - simple network specification"]
+        #[doc = "Networks - array of network objects matching CloudAPI wire format"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub networks: ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
-        #[doc = "NICs - advanced NIC specification with IP addresses and options"]
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub nics: ::std::option::Option<::std::vec::Vec<NicSpec>>,
+        pub networks: ::std::option::Option<::std::vec::Vec<NetworkObject>>,
         #[doc = "Package name or UUID"]
         pub package: ::std::string::String,
         #[doc = "Tags (modern format - nested object)"]
@@ -5627,6 +5613,64 @@ pub mod types {
         }
     }
 
+    #[doc = "Network object for instance creation\n\nMatches the CloudAPI wire format for the `networks` array. Each entry specifies a network UUID and optional IP address."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Network object for instance creation\\n\\nMatches the CloudAPI wire format for the `networks` array. Each entry specifies a network UUID and optional IP address.\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"ipv4_uuid\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"ipv4_ips\": {"]
+    #[doc = "      \"description\": \"IP addresses (array with max 1 element, matching CloudAPI format)\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"array\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"ipv4_uuid\": {"]
+    #[doc = "      \"description\": \"Network UUID\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
+    #[doc = "    \"primary\": {"]
+    #[doc = "      \"description\": \"Mark as primary NIC\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"boolean\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct NetworkObject {
+        #[doc = "IP addresses (array with max 1 element, matching CloudAPI format)"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub ipv4_ips: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        #[doc = "Network UUID"]
+        pub ipv4_uuid: ::uuid::Uuid,
+        #[doc = "Mark as primary NIC"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub primary: ::std::option::Option<bool>,
+    }
+
+    impl NetworkObject {
+        pub fn builder() -> builder::NetworkObject {
+            Default::default()
+        }
+    }
+
     #[doc = "NIC information"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -5714,71 +5758,6 @@ pub mod types {
 
     impl Nic {
         pub fn builder() -> builder::Nic {
-            Default::default()
-        }
-    }
-
-    #[doc = "NIC specification for instance creation"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"description\": \"NIC specification for instance creation\","]
-    #[doc = "  \"type\": \"object\","]
-    #[doc = "  \"required\": ["]
-    #[doc = "    \"network\""]
-    #[doc = "  ],"]
-    #[doc = "  \"properties\": {"]
-    #[doc = "    \"gateway\": {"]
-    #[doc = "      \"description\": \"Gateway address (optional)\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"string\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ]"]
-    #[doc = "    },"]
-    #[doc = "    \"ip\": {"]
-    #[doc = "      \"description\": \"Specific IP address (optional)\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"string\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ]"]
-    #[doc = "    },"]
-    #[doc = "    \"network\": {"]
-    #[doc = "      \"description\": \"Network UUID\","]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"format\": \"uuid\""]
-    #[doc = "    },"]
-    #[doc = "    \"primary\": {"]
-    #[doc = "      \"description\": \"Mark as primary NIC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"boolean\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ]"]
-    #[doc = "    }"]
-    #[doc = "  }"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(
-        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
-    )]
-    pub struct NicSpec {
-        #[doc = "Gateway address (optional)"]
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub gateway: ::std::option::Option<::std::string::String>,
-        #[doc = "Specific IP address (optional)"]
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub ip: ::std::option::Option<::std::string::String>,
-        #[doc = "Network UUID"]
-        pub network: ::uuid::Uuid,
-        #[doc = "Mark as primary NIC"]
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub primary: ::std::option::Option<bool>,
-    }
-
-    impl NicSpec {
-        pub fn builder() -> builder::NicSpec {
             Default::default()
         }
     }
@@ -9624,11 +9603,7 @@ pub mod types {
                 ::std::string::String,
             >,
             networks: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
-                ::std::string::String,
-            >,
-            nics: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<super::NicSpec>>,
+                ::std::option::Option<::std::vec::Vec<super::NetworkObject>>,
                 ::std::string::String,
             >,
             package: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -9660,7 +9635,6 @@ pub mod types {
                     metadata: Ok(Default::default()),
                     name: Ok(Default::default()),
                     networks: Ok(Default::default()),
-                    nics: Ok(Default::default()),
                     package: Err("no value supplied for package".to_string()),
                     tags: Ok(Default::default()),
                     volumes: Ok(Default::default()),
@@ -9797,22 +9771,14 @@ pub mod types {
             }
             pub fn networks<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::vec::Vec<::uuid::Uuid>>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::std::vec::Vec<super::NetworkObject>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.networks = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for networks: {e}"));
-                self
-            }
-            pub fn nics<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::option::Option<::std::vec::Vec<super::NicSpec>>>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.nics = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for nics: {e}"));
                 self
             }
             pub fn package<T>(mut self, value: T) -> Self
@@ -9872,7 +9838,6 @@ pub mod types {
                     metadata: value.metadata?,
                     name: value.name?,
                     networks: value.networks?,
-                    nics: value.nics?,
                     package: value.package?,
                     tags: value.tags?,
                     volumes: value.volumes?,
@@ -9896,7 +9861,6 @@ pub mod types {
                     metadata: Ok(value.metadata),
                     name: Ok(value.name),
                     networks: Ok(value.networks),
-                    nics: Ok(value.nics),
                     package: Ok(value.package),
                     tags: Ok(value.tags),
                     volumes: Ok(value.volumes),
@@ -13246,6 +13210,84 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct NetworkObject {
+            ipv4_ips: ::std::result::Result<
+                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::string::String,
+            >,
+            ipv4_uuid: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+            primary: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for NetworkObject {
+            fn default() -> Self {
+                Self {
+                    ipv4_ips: Ok(Default::default()),
+                    ipv4_uuid: Err("no value supplied for ipv4_uuid".to_string()),
+                    primary: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl NetworkObject {
+            pub fn ipv4_ips<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ipv4_ips = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ipv4_ips: {e}"));
+                self
+            }
+            pub fn ipv4_uuid<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.ipv4_uuid = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for ipv4_uuid: {e}"));
+                self
+            }
+            pub fn primary<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.primary = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for primary: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<NetworkObject> for super::NetworkObject {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: NetworkObject,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    ipv4_ips: value.ipv4_ips?,
+                    ipv4_uuid: value.ipv4_uuid?,
+                    primary: value.primary?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::NetworkObject> for NetworkObject {
+            fn from(value: super::NetworkObject) -> Self {
+                Self {
+                    ipv4_ips: Ok(value.ipv4_ips),
+                    ipv4_uuid: Ok(value.ipv4_uuid),
+                    primary: Ok(value.primary),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Nic {
             gateway: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -13374,99 +13416,6 @@ pub mod types {
                     network: Ok(value.network),
                     primary: Ok(value.primary),
                     state: Ok(value.state),
-                }
-            }
-        }
-
-        #[derive(Clone, Debug)]
-        pub struct NicSpec {
-            gateway: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
-                ::std::string::String,
-            >,
-            ip: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
-                ::std::string::String,
-            >,
-            network: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
-            primary: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
-        }
-
-        impl ::std::default::Default for NicSpec {
-            fn default() -> Self {
-                Self {
-                    gateway: Ok(Default::default()),
-                    ip: Ok(Default::default()),
-                    network: Err("no value supplied for network".to_string()),
-                    primary: Ok(Default::default()),
-                }
-            }
-        }
-
-        impl NicSpec {
-            pub fn gateway<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.gateway = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for gateway: {e}"));
-                self
-            }
-            pub fn ip<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.ip = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for ip: {e}"));
-                self
-            }
-            pub fn network<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::uuid::Uuid>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.network = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for network: {e}"));
-                self
-            }
-            pub fn primary<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::option::Option<bool>>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.primary = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for primary: {e}"));
-                self
-            }
-        }
-
-        impl ::std::convert::TryFrom<NicSpec> for super::NicSpec {
-            type Error = super::error::ConversionError;
-            fn try_from(
-                value: NicSpec,
-            ) -> ::std::result::Result<Self, super::error::ConversionError> {
-                Ok(Self {
-                    gateway: value.gateway?,
-                    ip: value.ip?,
-                    network: value.network?,
-                    primary: value.primary?,
-                })
-            }
-        }
-
-        impl ::std::convert::From<super::NicSpec> for NicSpec {
-            fn from(value: super::NicSpec) -> Self {
-                Self {
-                    gateway: Ok(value.gateway),
-                    ip: Ok(value.ip),
-                    network: Ok(value.network),
-                    primary: Ok(value.primary),
                 }
             }
         }

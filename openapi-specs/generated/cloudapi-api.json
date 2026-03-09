@@ -10089,21 +10089,11 @@
           },
           "networks": {
             "nullable": true,
-            "description": "Networks (array of UUIDs) - simple network specification",
+            "description": "Networks - array of network objects matching CloudAPI wire format",
             "default": null,
             "type": "array",
             "items": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          "nics": {
-            "nullable": true,
-            "description": "NICs - advanced NIC specification with IP addresses and options",
-            "default": null,
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/NicSpec"
+              "$ref": "#/components/schemas/NetworkObject"
             }
           },
           "package": {
@@ -11609,6 +11599,33 @@
           "reserved"
         ]
       },
+      "NetworkObject": {
+        "description": "Network object for instance creation\n\nMatches the CloudAPI wire format for the `networks` array. Each entry specifies a network UUID and optional IP address.",
+        "type": "object",
+        "properties": {
+          "ipv4_ips": {
+            "nullable": true,
+            "description": "IP addresses (array with max 1 element, matching CloudAPI format)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "ipv4_uuid": {
+            "description": "Network UUID",
+            "type": "string",
+            "format": "uuid"
+          },
+          "primary": {
+            "nullable": true,
+            "description": "Mark as primary NIC",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ipv4_uuid"
+        ]
+      },
       "Nic": {
         "description": "NIC information",
         "type": "object",
@@ -11655,35 +11672,6 @@
           "netmask",
           "network",
           "primary"
-        ]
-      },
-      "NicSpec": {
-        "description": "NIC specification for instance creation",
-        "type": "object",
-        "properties": {
-          "gateway": {
-            "nullable": true,
-            "description": "Gateway address (optional)",
-            "type": "string"
-          },
-          "ip": {
-            "nullable": true,
-            "description": "Specific IP address (optional)",
-            "type": "string"
-          },
-          "network": {
-            "description": "Network UUID",
-            "type": "string",
-            "format": "uuid"
-          },
-          "primary": {
-            "nullable": true,
-            "description": "Mark as primary NIC",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "network"
         ]
       },
       "NicState": {

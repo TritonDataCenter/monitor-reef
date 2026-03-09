@@ -259,20 +259,20 @@ pub struct DiskSpec {
     pub boot: Option<bool>,
 }
 
-/// NIC specification for instance creation
+/// Network object for instance creation
+///
+/// Matches the CloudAPI wire format for the `networks` array.
+/// Each entry specifies a network UUID and optional IP address.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct NicSpec {
+pub struct NetworkObject {
     /// Network UUID
-    pub network: Uuid,
-    /// Specific IP address (optional)
+    pub ipv4_uuid: Uuid,
+    /// IP addresses (array with max 1 element, matching CloudAPI format)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub ip: Option<String>,
+    pub ipv4_ips: Option<Vec<String>>,
     /// Mark as primary NIC
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primary: Option<bool>,
-    /// Gateway address (optional)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub gateway: Option<String>,
 }
 
 /// Request to create a machine
@@ -297,12 +297,9 @@ pub struct CreateMachineRequest {
     pub image: Uuid,
     /// Package name or UUID
     pub package: String,
-    /// Networks (array of UUIDs) - simple network specification
+    /// Networks - array of network objects matching CloudAPI wire format
     #[serde(default)]
-    pub networks: Option<Vec<Uuid>>,
-    /// NICs - advanced NIC specification with IP addresses and options
-    #[serde(default)]
-    pub nics: Option<Vec<NicSpec>>,
+    pub networks: Option<Vec<NetworkObject>>,
     /// Affinity rules for instance placement (added in CloudAPI v8.3.0)
     ///
     /// Rules follow the pattern: `<key><operator><value>` where:

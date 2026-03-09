@@ -168,10 +168,10 @@ pub use cloudapi_api::{
     Network,
     NetworkIp,
     NetworkIpPath,
+    NetworkObject,
     NetworkPath,
     Nic,
     NicPath,
-    NicSpec,
     NicState,
     Package,
     PackagePath,
@@ -771,6 +771,22 @@ fn transform_create_machine_body(request: &mut reqwest::Request) {
     {
         for (key, value) in meta_obj {
             map.insert(format!("metadata.{key}"), value.clone());
+        }
+    }
+
+    // Simplify networks: NetworkObjects with only ipv4_uuid (no ipv4_ips,
+    // no primary) become plain UUID strings to match node-triton's wire format.
+    // Objects with additional fields are kept as-is.
+    if let Some(networks) = map.get_mut("networks")
+        && let Some(arr) = networks.as_array_mut()
+    {
+        for entry in arr.iter_mut() {
+            if let Some(obj) = entry.as_object()
+                && obj.len() == 1
+                && let Some(uuid_val) = obj.get("ipv4_uuid")
+            {
+                *entry = uuid_val.clone();
+            }
         }
     }
 

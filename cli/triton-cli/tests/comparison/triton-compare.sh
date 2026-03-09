@@ -1124,6 +1124,16 @@ run_payload_tests() {
         instance create "$IMAGE_UUID" "$PKG_UUID" --name test-meta \
         -m greeting=hello
 
+    # Instance create with NIC specification (exercises NetworkObject wire format)
+    run_payload_test "payload-create-nic" "instance create (with nic)" \
+        instance create "$IMAGE_UUID" "$PKG_UUID" --name test-nic \
+        --nic "ipv4_uuid=$NET_UUID,ipv4_ips=10.0.0.5"
+
+    # Instance create with simple network (exercises NetworkObject wrapping)
+    run_payload_test "payload-create-network" "instance create (with network)" \
+        instance create "$IMAGE_UUID" "$PKG_UUID" --name test-net \
+        --network "$NET_UUID"
+
     # Instance start (action-dispatch: ?action=start)
     run_payload_test "payload-start" "instance start" \
         instance start "$INST_UUID"

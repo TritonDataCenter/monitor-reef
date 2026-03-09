@@ -167,25 +167,32 @@ pub async fn run(
         request = request.allow_shared_images(true);
     }
 
-    // Handle networks (simple mode)
+    // Handle networks (simple mode - plain UUIDs wrapped as NetworkObject)
+    // The pre-hook in cloudapi-client simplifies these to plain UUID strings
+    // when no ipv4_ips or primary are set, matching node-triton's wire format.
     if let Some(networks) = &args.network {
         let network_strs: Vec<&str> = networks
             .iter()
             .flat_map(|n| n.split(','))
             .map(|s| s.trim())
             .collect();
-        let mut network_ids: Vec<uuid::Uuid> = Vec::new();
+        let mut network_objects: Vec<cloudapi_client::types::NetworkObject> = Vec::new();
         for network_str in network_strs {
-            let network_id = super::super::network::resolve_network(network_str, client).await?;
-            network_ids.push(network_id);
+            let network_id =
+                super::super::network::resolve_network_with_get(network_str, client).await?;
+            network_objects.push(cloudapi_client::types::NetworkObject {
+                ipv4_uuid: network_id,
+                ipv4_ips: None,
+                primary: None,
+            });
         }
-        request = request.networks(network_ids);
+        request = request.networks(network_objects);
     }
 
-    // Handle NICs (advanced mode)
+    // Handle NICs (advanced mode - also uses networks field)
     if let Some(nics) = &args.nic {
         let nic_specs = parse_nic_specs(nics, client).await?;
-        request = request.nics(Some(nic_specs));
+        request = request.networks(nic_specs);
     }
 
     // Handle affinity rules
@@ -241,17 +248,17 @@ pub async fn run(
                 println!("  Brand: {}", enum_to_display(brand));
             }
             if let Some(networks) = &request.networks {
-                println!(
-                    "  Networks: {}",
-                    networks
-                        .iter()
-                        .map(|n| n.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                );
-            }
-            if let Some(nics) = &request.nics {
-                println!("  NICs: {} specified", nics.len());
+                println!("  Networks: {} specified", networks.len());
+                for net in networks {
+                    let mut desc = net.ipv4_uuid.to_string();
+                    if let Some(ips) = &net.ipv4_ips {
+                        desc.push_str(&format!(" ({})", ips.join(", ")));
+                    }
+                    if net.primary == Some(true) {
+                        desc.push_str(" [primary]");
+                    }
+                    println!("    - {}", desc);
+                }
             }
             if let Some(metadata) = &request.metadata {
                 println!(
@@ -588,37 +595,104 @@ fn parse_size(s: &str) -> Result<u64> {
     }
 }
 
-/// Parse NIC specifications
+/// Parse NIC specifications into NetworkObject array
 async fn parse_nic_specs(
     nics: &[String],
     client: &TypedClient,
-) -> Result<Vec<cloudapi_client::types::NicSpec>> {
+) -> Result<Vec<cloudapi_client::types::NetworkObject>> {
     let mut result = Vec::new();
-    for (i, spec) in nics.iter().enumerate() {
-        let nic = parse_nic_spec(spec, i == 0, client).await?;
+    for spec in nics {
+        let nic = parse_nic_spec(spec, client).await?;
         result.push(nic);
     }
     Ok(result)
 }
 
-/// Parse a single NIC specification
-/// Format: network=UUID[,ip=IP][,primary]
-async fn parse_nic_spec(
-    spec: &str,
-    is_first: bool,
-    client: &TypedClient,
-) -> Result<cloudapi_client::types::NicSpec> {
+/// Parsed NIC fields before network resolution
+#[derive(Debug)]
+struct ParsedNicSpec {
+    network: String,
+    ip: Option<String>,
+    primary: Option<bool>,
+}
+
+/// Parse the key=value fields from a NIC specification string.
+/// Accepts both native format (network=, ip=) and node-triton format
+/// (ipv4_uuid=, ipv4_ips=).
+fn parse_nic_spec_fields(spec: &str) -> Result<ParsedNicSpec> {
     let mut network: Option<String> = None;
     let mut ip: Option<String> = None;
     let mut primary: Option<bool> = None;
 
     for part in spec.split(',') {
         let part = part.trim();
+        if part.is_empty() {
+            continue;
+        }
         if part == "primary" {
             primary = Some(true);
         } else if let Some(val) = part.strip_prefix("network=") {
+            if network.is_some() {
+                return Err(anyhow::anyhow!(
+                    "NIC specification '{}': network specified multiple times",
+                    spec
+                ));
+            }
+            if val.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "NIC specification '{}': network value cannot be empty",
+                    spec
+                ));
+            }
+            network = Some(val.to_string());
+        } else if let Some(val) = part.strip_prefix("ipv4_uuid=") {
+            if network.is_some() {
+                return Err(anyhow::anyhow!(
+                    "NIC specification '{}': network specified multiple times (via ipv4_uuid)",
+                    spec
+                ));
+            }
+            if val.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "NIC specification '{}': ipv4_uuid value cannot be empty",
+                    spec
+                ));
+            }
             network = Some(val.to_string());
         } else if let Some(val) = part.strip_prefix("ip=") {
+            if ip.is_some() {
+                return Err(anyhow::anyhow!(
+                    "NIC specification '{}': IP specified multiple times",
+                    spec
+                ));
+            }
+            if val.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "NIC specification '{}': ip value cannot be empty",
+                    spec
+                ));
+            }
+            ip = Some(val.to_string());
+        } else if let Some(val) = part.strip_prefix("ipv4_ips=") {
+            if ip.is_some() {
+                return Err(anyhow::anyhow!(
+                    "NIC specification '{}': IP specified multiple times (via ipv4_ips)",
+                    spec
+                ));
+            }
+            if val.is_empty() {
+                return Err(anyhow::anyhow!(
+                    "NIC specification '{}': ipv4_ips value cannot be empty",
+                    spec
+                ));
+            }
+            let ips: Vec<&str> = val.split('|').collect();
+            if ips.len() != 1 {
+                return Err(anyhow::anyhow!(
+                    "NIC specification '{}': only 1 ipv4_ip may be specified",
+                    spec
+                ));
+            }
             ip = Some(val.to_string());
         } else if network.is_none() {
             // First value without key is the network
@@ -632,17 +706,30 @@ async fn parse_nic_spec(
         }
     }
 
-    let network_id =
-        network.ok_or_else(|| anyhow::anyhow!("NIC specification '{}' missing network", spec))?;
+    Ok(ParsedNicSpec {
+        network: network
+            .ok_or_else(|| anyhow::anyhow!("NIC specification '{}' missing network", spec))?,
+        ip,
+        primary,
+    })
+}
+
+/// Parse a single NIC specification into a NetworkObject
+/// Format: network=UUID[,ip=IP][,primary]
+/// Also accepts node-triton format: ipv4_uuid=UUID[,ipv4_ips=IP]
+async fn parse_nic_spec(
+    spec: &str,
+    client: &TypedClient,
+) -> Result<cloudapi_client::types::NetworkObject> {
+    let parsed = parse_nic_spec_fields(spec)?;
 
     // Resolve network name to UUID if needed
-    let resolved_network = super::super::network::resolve_network(&network_id, client).await?;
+    let resolved_network = super::super::network::resolve_network(&parsed.network, client).await?;
 
-    Ok(cloudapi_client::types::NicSpec {
-        network: resolved_network,
-        ip,
-        primary: primary.or(if is_first { Some(true) } else { None }),
-        gateway: None,
+    Ok(cloudapi_client::types::NetworkObject {
+        ipv4_uuid: resolved_network,
+        ipv4_ips: parsed.ip.map(|ip| vec![ip]),
+        primary: parsed.primary,
     })
 }
 
@@ -831,5 +918,172 @@ mod tests {
         );
         assert_eq!(disk.size, Some(20 * 1024));
         assert_eq!(disk.boot, Some(true));
+    }
+
+    // ===== parse_nic_spec_fields tests =====
+
+    #[test]
+    fn test_parse_nic_spec_network_only() {
+        let parsed = parse_nic_spec_fields("48324407-b9c1-40dc-ad11-b0832ecae8ad").unwrap();
+        assert_eq!(parsed.network, "48324407-b9c1-40dc-ad11-b0832ecae8ad");
+        assert_eq!(parsed.ip, None);
+        assert_eq!(parsed.primary, None);
+    }
+
+    #[test]
+    fn test_parse_nic_spec_network_key() {
+        let parsed = parse_nic_spec_fields("network=48324407-b9c1-40dc-ad11-b0832ecae8ad").unwrap();
+        assert_eq!(parsed.network, "48324407-b9c1-40dc-ad11-b0832ecae8ad");
+        assert_eq!(parsed.primary, None);
+    }
+
+    #[test]
+    fn test_parse_nic_spec_network_with_ip() {
+        let parsed =
+            parse_nic_spec_fields("network=48324407-b9c1-40dc-ad11-b0832ecae8ad,ip=192.168.128.75")
+                .unwrap();
+        assert_eq!(parsed.network, "48324407-b9c1-40dc-ad11-b0832ecae8ad");
+        assert_eq!(parsed.ip.as_deref(), Some("192.168.128.75"));
+    }
+
+    #[test]
+    fn test_parse_nic_spec_node_triton_format() {
+        let parsed = parse_nic_spec_fields(
+            "ipv4_uuid=48324407-b9c1-40dc-ad11-b0832ecae8ad,ipv4_ips=192.168.128.75",
+        )
+        .unwrap();
+        assert_eq!(parsed.network, "48324407-b9c1-40dc-ad11-b0832ecae8ad");
+        assert_eq!(parsed.ip.as_deref(), Some("192.168.128.75"));
+        assert_eq!(parsed.primary, None);
+    }
+
+    #[test]
+    fn test_parse_nic_spec_node_triton_uuid_only() {
+        let parsed =
+            parse_nic_spec_fields("ipv4_uuid=48324407-b9c1-40dc-ad11-b0832ecae8ad").unwrap();
+        assert_eq!(parsed.network, "48324407-b9c1-40dc-ad11-b0832ecae8ad");
+        assert_eq!(parsed.ip, None);
+    }
+
+    #[test]
+    fn test_parse_nic_spec_ipv4_ips_pipe_separated() {
+        let err = parse_nic_spec_fields(
+            "ipv4_uuid=48324407-b9c1-40dc-ad11-b0832ecae8ad,ipv4_ips=10.0.0.1|10.0.0.2",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("only 1 ipv4_ip may be specified"));
+        assert!(
+            err.to_string().contains(
+                "ipv4_uuid=48324407-b9c1-40dc-ad11-b0832ecae8ad,ipv4_ips=10.0.0.1|10.0.0.2"
+            )
+        );
+    }
+
+    #[test]
+    fn test_parse_nic_spec_empty_network() {
+        let err = parse_nic_spec_fields("network=").unwrap_err();
+        assert!(err.to_string().contains("network value cannot be empty"));
+    }
+
+    #[test]
+    fn test_parse_nic_spec_empty_ipv4_uuid() {
+        let err = parse_nic_spec_fields("ipv4_uuid=").unwrap_err();
+        assert!(err.to_string().contains("ipv4_uuid value cannot be empty"));
+    }
+
+    #[test]
+    fn test_parse_nic_spec_empty_ip() {
+        let err =
+            parse_nic_spec_fields("network=48324407-b9c1-40dc-ad11-b0832ecae8ad,ip=").unwrap_err();
+        assert!(err.to_string().contains("ip value cannot be empty"));
+    }
+
+    #[test]
+    fn test_parse_nic_spec_trailing_comma() {
+        let parsed =
+            parse_nic_spec_fields("network=48324407-b9c1-40dc-ad11-b0832ecae8ad,").unwrap();
+        assert_eq!(parsed.network, "48324407-b9c1-40dc-ad11-b0832ecae8ad");
+    }
+
+    #[test]
+    fn test_parse_nic_spec_with_primary() {
+        let parsed =
+            parse_nic_spec_fields("network=48324407-b9c1-40dc-ad11-b0832ecae8ad,primary").unwrap();
+        assert_eq!(parsed.primary, Some(true));
+    }
+
+    #[test]
+    fn test_parse_nic_spec_unknown_key() {
+        let result =
+            parse_nic_spec_fields("network=48324407-b9c1-40dc-ad11-b0832ecae8ad,bogus=123");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("Unknown key"));
+    }
+
+    #[test]
+    fn test_parse_nic_spec_missing_network() {
+        let result = parse_nic_spec_fields("ip=192.168.128.75");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("missing network"));
+    }
+
+    #[test]
+    fn test_parse_nic_spec_bare_uuid_not_first() {
+        let parsed = parse_nic_spec_fields("48324407-b9c1-40dc-ad11-b0832ecae8ad").unwrap();
+        assert_eq!(parsed.network, "48324407-b9c1-40dc-ad11-b0832ecae8ad");
+        assert_eq!(parsed.primary, None);
+    }
+
+    #[test]
+    fn test_parse_nic_spec_conflict_network_ipv4_uuid() {
+        let result = parse_nic_spec_fields(
+            "network=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa,ipv4_uuid=bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        );
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("network specified multiple times")
+        );
+    }
+
+    #[test]
+    fn test_parse_nic_spec_conflict_ip_ipv4_ips() {
+        let result = parse_nic_spec_fields(
+            "network=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa,ip=10.0.0.1,ipv4_ips=10.0.0.2",
+        );
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("IP specified multiple times")
+        );
+    }
+
+    #[test]
+    fn test_parse_nic_spec_empty_ipv4_ips() {
+        let result =
+            parse_nic_spec_fields("network=aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa,ipv4_ips=");
+        assert!(result.is_err());
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("ipv4_ips value cannot be empty")
+        );
+    }
+
+    #[test]
+    fn test_parse_nic_spec_mixed_format_accepted() {
+        // Cross-format mixing of non-conflicting keys is intentionally accepted:
+        // ipv4_uuid for network + ip= for address
+        let parsed = parse_nic_spec_fields(
+            "ipv4_uuid=48324407-b9c1-40dc-ad11-b0832ecae8ad,ip=192.168.128.75",
+        )
+        .unwrap();
+        assert_eq!(parsed.network, "48324407-b9c1-40dc-ad11-b0832ecae8ad");
+        assert_eq!(parsed.ip.as_deref(), Some("192.168.128.75"));
     }
 }
