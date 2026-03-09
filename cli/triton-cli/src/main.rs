@@ -462,22 +462,47 @@ impl Cli {
         let profile = resolve_profile(self.profile.as_deref()).await?;
 
         // Allow CLI/env overrides on top of the resolved profile.
-        // self.url/account/key_id pick up TRITON_* vars via clap's `env`,
-        // and we also check SDC_* as a legacy fallback.
+        // self.url/account/key_id pick up TRITON_* vars via clap's `env`.
+        //
+        // SDC_* legacy env vars are only used as overrides when no explicit
+        // profile was selected (via -p or TRITON_PROFILE). When an explicit
+        // profile is chosen, its values take precedence over SDC_* env vars.
+        // (SDC_* vars are already handled by env_profile() when the "env"
+        // profile is active.)
+        let explicit_profile =
+            self.profile.is_some() || std::env::var("TRITON_PROFILE").is_ok();
         let final_url = self
             .url
             .clone()
-            .or_else(|| std::env::var("SDC_URL").ok())
+            .or_else(|| {
+                if !explicit_profile {
+                    std::env::var("SDC_URL").ok()
+                } else {
+                    None
+                }
+            })
             .unwrap_or_else(|| profile.url.clone());
         let final_account = self
             .account
             .clone()
-            .or_else(|| std::env::var("SDC_ACCOUNT").ok())
+            .or_else(|| {
+                if !explicit_profile {
+                    std::env::var("SDC_ACCOUNT").ok()
+                } else {
+                    None
+                }
+            })
             .unwrap_or_else(|| profile.account.clone());
         let final_key_id = self
             .key_id
             .clone()
-            .or_else(|| std::env::var("SDC_KEY_ID").ok())
+            .or_else(|| {
+                if !explicit_profile {
+                    std::env::var("SDC_KEY_ID").ok()
+                } else {
+                    None
+                }
+            })
             .unwrap_or_else(|| profile.key_id.clone());
 
         let key_source = triton_auth::KeySource::auto(&final_key_id);

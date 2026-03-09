@@ -54,8 +54,9 @@ pub async fn run(client: &TypedClient, use_json: bool) -> Result<()> {
             "name": full_name,
             "email": acc.email,
             "url": profile_url,
-            "totalDisk": total_disk * 1000 * 1000,  // Convert MB to bytes (decimal)
-            "totalMemory": total_memory * 1000 * 1000,  // Convert MB to bytes (decimal)
+            // Decimal MB→bytes matches node-triton do_info.js:71-72
+            "totalDisk": total_disk * 1000 * 1000,
+            "totalMemory": total_memory * 1000 * 1000,
             "totalInstances": machines.len(),
             "instances": states,
         });
@@ -73,7 +74,8 @@ pub async fn run(client: &TypedClient, use_json: bool) -> Result<()> {
         println!("name: {}", full_name);
         println!("email: {}", acc.email);
         println!("url: {}", profile_url);
-        // node-triton converts to bytes with *1000*1000 then displays with humanSizeFromBytes
+        // Decimal MB→bytes per node-triton do_info.js:71-72, then
+        // humanSizeFromBytes (common.js:355) for display
         println!(
             "totalDisk: {}",
             human_size_from_bytes(total_disk * 1000 * 1000)
@@ -91,7 +93,8 @@ pub async fn run(client: &TypedClient, use_json: bool) -> Result<()> {
     Ok(())
 }
 
-/// Format bytes as human-readable size (matches node-triton humanSizeFromBytes)
+/// Format bytes as human-readable size
+/// Matches node-triton common.js:355-407 humanSizeFromBytes (default/non-narrow mode)
 fn human_size_from_bytes(bytes: u64) -> String {
     if bytes == 0 {
         return "0 B".to_string();

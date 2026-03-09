@@ -84,9 +84,10 @@ pub fn opt_enum_to_display<T: serde::Serialize + std::fmt::Debug>(val: Option<&T
     }
 }
 
-/// Format megabytes as human-readable size (matches node-triton format)
+/// Format megabytes as human-readable size
 ///
-/// node-triton uses `humanSizeFromBytes` with `narrow: true` and `precision: 1`.
+/// Matches node-triton do_package/do_list.js:115-126 which uses binary
+/// `* 1024 * 1024` then `humanSizeFromBytes({narrow: true})` (common.js:355-407).
 /// This converts MiB to bytes, then picks the best unit from B/K/M/G/T/P using
 /// `floor(log(bytes) / log(1024))`. The fractional part is **truncated** (not
 /// rounded) to 1 decimal place, matching node-triton's string-slice behavior.
