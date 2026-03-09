@@ -469,8 +469,7 @@ impl Cli {
         // profile is chosen, its values take precedence over SDC_* env vars.
         // (SDC_* vars are already handled by env_profile() when the "env"
         // profile is active.)
-        let explicit_profile =
-            self.profile.is_some() || std::env::var("TRITON_PROFILE").is_ok();
+        let explicit_profile = self.profile.is_some() || std::env::var("TRITON_PROFILE").is_ok();
         let final_url = self
             .url
             .clone()
