@@ -4,6 +4,17 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
+// When implementing changefeed it became brutally apparent that the
+// json payloads emitted by CloudAPI on the changefeed are pretty much
+// raw VMAPI changefeed payloads. At that point, rather than encode
+// all of the VMAPI types directly inside the CloudAPI trait, it felt
+// prudent to have Claude build out all the VMAPI types in a vmapi-api crate.
+// So we pointed the Claude at all of the restify->dropshot tooling
+// and out popped everything: the API, the client, and the CLI.
+
+// If this message is still here, then this crate is probably still
+// relatively untested.
+
 //! VMAPI Client Library
 //!
 //! This client provides typed access to the Triton VMAPI service.
