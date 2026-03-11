@@ -1,0 +1,103 @@
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at https://mozilla.org/MPL/2.0/.
+//
+// Copyright 2026 Edgecast Cloud LLC.
+
+//! RBAC (Role-Based Access Control) management commands
+
+mod accesskeys;
+mod apply;
+mod common;
+mod editor;
+mod keys;
+mod policy;
+mod role;
+mod role_tags;
+mod user;
+
+use anyhow::Result;
+use clap::Subcommand;
+use cloudapi_client::TypedClient;
+
+use crate::output::table::TableFormatArgs;
+
+pub use accesskeys::{RbacAccesskeyCommand, UserAccesskeysArgs};
+pub use apply::{ApplyArgs, ResetArgs};
+pub use keys::{RbacKeyCommand, UserKeyAddArgs, UserKeyDeleteArgs, UserKeysArgs};
+pub use policy::RbacPolicyCommand;
+pub use role::RbacRoleCommand;
+pub use role_tags::RoleTagsCommand;
+pub use user::RbacUserCommand;
+
+#[derive(Subcommand, Clone)]
+pub enum RbacCommand {
+    /// Show RBAC summary information
+    Info(apply::InfoArgs),
+    /// Apply RBAC configuration from a file
+    Apply(ApplyArgs),
+    /// Reset (delete) all RBAC users, roles, and policies
+    Reset(ResetArgs),
+    /// Manage RBAC users
+    User(#[command(flatten)] RbacUserCommand),
+    /// List RBAC users (alias for 'user list')
+    #[command(hide = true)]
+    Users,
+    /// Manage RBAC roles
+    Role(#[command(flatten)] RbacRoleCommand),
+    /// List RBAC roles (alias for 'role list')
+    #[command(hide = true)]
+    Roles,
+    /// Manage RBAC policies
+    Policy(#[command(flatten)] RbacPolicyCommand),
+    /// List RBAC policies (alias for 'policy list')
+    #[command(hide = true)]
+    Policies,
+    /// List SSH keys for a sub-user
+    Keys(UserKeysArgs),
+    /// Manage SSH keys for a sub-user (show/add/delete)
+    Key(#[command(flatten)] RbacKeyCommand),
+    /// List access keys for a sub-user
+    Accesskeys(UserAccesskeysArgs),
+    /// Manage access keys for a sub-user (show/create/update/delete)
+    Accesskey(#[command(flatten)] RbacAccesskeyCommand),
+    /// Add SSH key to a sub-user (deprecated: use 'key -a' instead)
+    #[command(visible_alias = "add-key", hide = true)]
+    KeyAdd(UserKeyAddArgs),
+    /// Delete SSH key from a sub-user (deprecated: use 'key -d' instead)
+    #[command(visible_alias = "delete-key", visible_alias = "rm-key", hide = true)]
+    KeyDelete(UserKeyDeleteArgs),
+    /// Manage role tags on resources
+    #[command(visible_alias = "role-tag")]
+    RoleTags {
+        #[command(subcommand)]
+        command: RoleTagsCommand,
+    },
+}
+
+impl RbacCommand {
+    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
+        match self {
+            Self::Info(args) => apply::rbac_info(args, client, use_json).await,
+            Self::Apply(args) => apply::rbac_apply(args, client, use_json).await,
+            Self::Reset(args) => apply::rbac_reset(args, client).await,
+            Self::User(command) => command.run(client, use_json).await,
+            Self::Users => user::list_users(&TableFormatArgs::default(), client, use_json).await,
+            Self::Role(command) => command.run(client, use_json).await,
+            Self::Roles => role::list_roles(&TableFormatArgs::default(), client, use_json).await,
+            Self::Policy(command) => command.run(client, use_json).await,
+            Self::Policies => {
+                policy::list_policies(&TableFormatArgs::default(), client, use_json).await
+            }
+            Self::Keys(args) => keys::list_user_keys(args, client, use_json).await,
+            Self::Key(command) => command.run(client, use_json).await,
+            Self::Accesskeys(args) => {
+                accesskeys::list_user_access_keys(args, client, use_json).await
+            }
+            Self::Accesskey(command) => command.run(client, use_json).await,
+            Self::KeyAdd(args) => keys::add_user_key(args, client, use_json).await,
+            Self::KeyDelete(args) => keys::delete_user_key(args, client).await,
+            Self::RoleTags { command } => command.run(client, use_json).await,
+        }
+    }
+}

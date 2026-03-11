@@ -1,0 +1,3924 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Triton VMAPI",
+    "description": "Triton VMAPI - internal HTTP API for managing virtual machines in a Triton datacenter",
+    "version": "9.17.0"
+  },
+  "paths": {
+    "/job_results": {
+      "post": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Post job results (workflow callback)",
+        "description": "Internal endpoint for workflow to report job completion.",
+        "operationId": "post_job_results",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostJobResultsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/jobs": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "List jobs",
+        "description": "Returns an array of workflow jobs.",
+        "operationId": "list_jobs",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "execution",
+            "description": "Filter by execution state",
+            "schema": {
+              "$ref": "#/components/schemas/JobExecution"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Pagination limit",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Pagination offset",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "task",
+            "description": "Filter by task (job type)",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "vm_uuid",
+            "description": "Filter by VM UUID",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Job",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Job"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/jobs/{job_uuid}": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Get job",
+        "description": "Returns a single job object.",
+        "operationId": "get_job",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_uuid",
+            "description": "Job UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/jobs/{job_uuid}/wait": {
+      "get": {
+        "tags": [
+          "jobs"
+        ],
+        "summary": "Wait for job completion",
+        "description": "Blocks until the job completes and returns the final job state.",
+        "operationId": "wait_job",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_uuid",
+            "description": "Job UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Job"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/migrations": {
+      "get": {
+        "tags": [
+          "migrations"
+        ],
+        "summary": "List migrations",
+        "description": "Returns all migration records.",
+        "operationId": "list_migrations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Pagination limit",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Pagination offset",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "source_server_uuid",
+            "description": "Filter by source server UUID",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "description": "Filter by state",
+            "schema": {
+              "$ref": "#/components/schemas/MigrationState"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_server_uuid",
+            "description": "Filter by target server UUID",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Migration",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Migration"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/migrations/{uuid}": {
+      "get": {
+        "tags": [
+          "migrations"
+        ],
+        "summary": "Get migration for VM",
+        "description": "Returns the migration record for a specific VM.",
+        "operationId": "get_migration",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID (migrations are identified by the VM they apply to)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Migration"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "migrations"
+        ],
+        "summary": "Delete migration record",
+        "description": "Removes the migration record for a VM.",
+        "operationId": "delete_migration",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID (migrations are identified by the VM they apply to)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/migrations/{uuid}/progress": {
+      "post": {
+        "tags": [
+          "migrations"
+        ],
+        "summary": "Report migration progress (internal)",
+        "description": "Internal endpoint for cn-agent to report migration progress.",
+        "operationId": "report_migration_progress",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID (migrations are identified by the VM they apply to)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MigrationProgressRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Migration"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/migrations/{uuid}/store": {
+      "post": {
+        "tags": [
+          "migrations"
+        ],
+        "summary": "Store migration record (internal)",
+        "description": "Internal endpoint for cn-agent to store migration records.",
+        "operationId": "store_migration_record",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID (migrations are identified by the VM they apply to)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StoreMigrationRecordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Migration"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/migrations/{uuid}/updateVmServerUuid": {
+      "post": {
+        "tags": [
+          "migrations"
+        ],
+        "summary": "Update VM server UUID (internal)",
+        "description": "Internal endpoint to update the server UUID after migration.",
+        "operationId": "update_vm_server_uuid",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID (migrations are identified by the VM they apply to)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateVmServerUuidRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vm"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/migrations/{uuid}/watch": {
+      "get": {
+        "tags": [
+          "migrations"
+        ],
+        "summary": "Watch migration progress",
+        "description": "Streams migration progress updates via WebSocket (application/x-json-stream). Returns newline-delimited JSON objects for progress events.",
+        "operationId": "watch_migration",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID (migrations are identified by the VM they apply to)",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "default": {
+            "description": "",
+            "content": {
+              "*/*": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "x-dropshot-websocket": {}
+      }
+    },
+    "/ping": {
+      "get": {
+        "tags": [
+          "ping"
+        ],
+        "summary": "Health check endpoint",
+        "operationId": "ping",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PingResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/statuses": {
+      "get": {
+        "tags": [
+          "statuses"
+        ],
+        "summary": "Get statuses for multiple VMs",
+        "description": "Returns status information for multiple VMs by UUID.",
+        "operationId": "list_statuses",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "uuids",
+            "description": "Comma-separated list of VM UUIDs to get status for",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Map_of_VmStatus",
+                  "type": "object",
+                  "additionalProperties": {
+                    "$ref": "#/components/schemas/VmStatus"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/vms": {
+      "get": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "List VMs",
+        "description": "Returns an array of VM objects matching the query filters.",
+        "operationId": "list_vms",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "alias",
+            "description": "Filter by alias (VM name)",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "billing_id",
+            "description": "Filter by billing UUID (package)",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "brand",
+            "description": "Filter by brand",
+            "schema": {
+              "$ref": "#/components/schemas/Brand"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fields",
+            "description": "Field selection (comma-separated list of fields to return)",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "image_uuid",
+            "description": "Filter by image UUID",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_destroyed",
+            "description": "Filter to include destroyed VMs",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Pagination limit (max results)",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Pagination offset",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "owner_uuid",
+            "description": "Filter by owner UUID",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "predicate",
+            "description": "Predicate query filter",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ram",
+            "description": "Filter by RAM in MB",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "server_uuid",
+            "description": "Filter by server UUID",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "description": "Filter by state",
+            "schema": {
+              "$ref": "#/components/schemas/VmState"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tag",
+            "description": "Filter by tag (format: key=value)",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Vm",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Vm"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Bulk update VMs for a server",
+        "description": "Used by cn-agent to sync VM state for an entire compute node.",
+        "operationId": "put_vms",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutVmsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Create VM",
+        "description": "Provisions a new virtual machine.",
+        "operationId": "create_vm",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateVmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "successful creation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "head": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Count VMs (HEAD)",
+        "description": "Returns count of VMs in response headers without body.",
+        "operationId": "head_vms",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "alias",
+            "description": "Filter by alias (VM name)",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "billing_id",
+            "description": "Filter by billing UUID (package)",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "brand",
+            "description": "Filter by brand",
+            "schema": {
+              "$ref": "#/components/schemas/Brand"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fields",
+            "description": "Field selection (comma-separated list of fields to return)",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "image_uuid",
+            "description": "Filter by image UUID",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "include_destroyed",
+            "description": "Filter to include destroyed VMs",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Pagination limit (max results)",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Pagination offset",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "owner_uuid",
+            "description": "Filter by owner UUID",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "predicate",
+            "description": "Predicate query filter",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ram",
+            "description": "Filter by RAM in MB",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "server_uuid",
+            "description": "Filter by server UUID",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "description": "Filter by state",
+            "schema": {
+              "$ref": "#/components/schemas/VmState"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tag",
+            "description": "Filter by tag (format: key=value)",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Vm",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Vm"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/vms/{uuid}": {
+      "get": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Get VM",
+        "description": "Returns a single VM object.",
+        "operationId": "get_vm",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vm"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Replace VM object",
+        "description": "Replaces the entire VM object (used by cn-agent for sync).",
+        "operationId": "put_vm",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutVmRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vm"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Perform VM action",
+        "description": "Dispatches an action on the VM. The action may be specified in the request body (`{\"action\": \"start\", ...}`) or as a query parameter (`?action=start`). Body takes precedence over the query parameter.\n\nAvailable actions: start, stop, kill, reboot, reprovision, update, add_nics, update_nics, remove_nics, create_snapshot, rollback_snapshot, delete_snapshot, create_disk, resize_disk, delete_disk, migrate.\n\nThe request body varies by action type.",
+        "operationId": "vm_action",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "description": "Action to perform. Optional in the query string because clients may send it in the request body instead.",
+            "schema": {
+              "$ref": "#/components/schemas/VmAction"
+            }
+          },
+          {
+            "in": "query",
+            "name": "sync",
+            "description": "If true, wait for job completion before returning (default: false)",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "successfully enqueued operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Destroy VM",
+        "description": "Destroys the virtual machine.",
+        "operationId": "delete_vm",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "successfully enqueued operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "head": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Check VM existence (HEAD)",
+        "description": "Returns 200 if VM exists, 404 otherwise.",
+        "operationId": "head_vm",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Vm"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/vms/{uuid}/customer_metadata": {
+      "get": {
+        "tags": [
+          "vms",
+          "metadata"
+        ],
+        "summary": "List customer metadata",
+        "description": "Returns all customer metadata for a VM.",
+        "operationId": "list_customer_metadata",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Map_of_AnyValue",
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "vms",
+          "metadata"
+        ],
+        "summary": "Set customer metadata (replace all)",
+        "description": "Replaces all customer metadata with the provided values.",
+        "operationId": "set_customer_metadata",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMetadataRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "successfully enqueued operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "vms",
+          "metadata"
+        ],
+        "summary": "Add customer metadata (merge)",
+        "description": "Adds/merges customer metadata with existing values.",
+        "operationId": "add_customer_metadata",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddMetadataRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "successfully enqueued operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "vms",
+          "metadata"
+        ],
+        "summary": "Delete all customer metadata",
+        "description": "Removes all customer metadata.",
+        "operationId": "delete_all_customer_metadata",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "successfully enqueued operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/vms/{uuid}/customer_metadata/{key}": {
+      "get": {
+        "tags": [
+          "vms",
+          "metadata"
+        ],
+        "summary": "Get customer metadata key",
+        "description": "Returns the value of a specific customer metadata key.",
+        "operationId": "get_customer_metadata",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "description": "Metadata/tag key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "vms",
+          "metadata"
+        ],
+        "summary": "Delete customer metadata key",
+        "description": "Removes a specific customer metadata key.",
+        "operationId": "delete_customer_metadata",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "description": "Metadata/tag key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "successfully enqueued operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/vms/{uuid}/internal_metadata": {
+      "get": {
+        "tags": [
+          "vms",
+          "metadata"
+        ],
+        "summary": "List internal metadata",
+        "description": "Returns all internal metadata for a VM.",
+        "operationId": "list_internal_metadata",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Map_of_AnyValue",
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "vms",
+          "metadata"
+        ],
+        "summary": "Set internal metadata (replace all)",
+        "description": "Replaces all internal metadata with the provided values.",
+        "operationId": "set_internal_metadata",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMetadataRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "successfully enqueued operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "vms",
+          "metadata"
+        ],
+        "summary": "Add internal metadata (merge)",
+        "description": "Adds/merges internal metadata with existing values.",
+        "operationId": "add_internal_metadata",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddMetadataRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "successfully enqueued operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "vms",
+          "metadata"
+        ],
+        "summary": "Delete all internal metadata",
+        "description": "Removes all internal metadata.",
+        "operationId": "delete_all_internal_metadata",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "successfully enqueued operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/vms/{uuid}/internal_metadata/{key}": {
+      "get": {
+        "tags": [
+          "vms",
+          "metadata"
+        ],
+        "summary": "Get internal metadata key",
+        "description": "Returns the value of a specific internal metadata key.",
+        "operationId": "get_internal_metadata",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "description": "Metadata/tag key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "vms",
+          "metadata"
+        ],
+        "summary": "Delete internal metadata key",
+        "description": "Removes a specific internal metadata key.",
+        "operationId": "delete_internal_metadata",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "description": "Metadata/tag key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "successfully enqueued operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/vms/{uuid}/jobs": {
+      "get": {
+        "tags": [
+          "vms",
+          "jobs"
+        ],
+        "summary": "List jobs for a VM",
+        "description": "Returns jobs associated with a specific VM.",
+        "operationId": "list_vm_jobs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "in": "query",
+            "name": "execution",
+            "description": "Filter by execution state",
+            "schema": {
+              "$ref": "#/components/schemas/JobExecution"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "description": "Pagination limit",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "description": "Pagination offset",
+            "schema": {
+              "nullable": true,
+              "type": "integer",
+              "format": "uint64",
+              "minimum": 0
+            }
+          },
+          {
+            "in": "query",
+            "name": "task",
+            "description": "Filter by task (job type)",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "vm_uuid",
+            "description": "Filter by VM UUID",
+            "schema": {
+              "nullable": true,
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Array_of_Job",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Job"
+                  }
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/vms/{uuid}/proc": {
+      "get": {
+        "tags": [
+          "vms"
+        ],
+        "summary": "Get VM process info",
+        "description": "Returns process information for the VM from CNAPI.",
+        "operationId": "get_vm_proc",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/vms/{uuid}/role_tags": {
+      "put": {
+        "tags": [
+          "vms",
+          "role_tags"
+        ],
+        "summary": "Set role tags (replace all)",
+        "description": "Replaces all role tags on the VM.",
+        "operationId": "set_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "vms",
+          "role_tags"
+        ],
+        "summary": "Add role tags (merge)",
+        "description": "Adds role tags to the VM.",
+        "operationId": "add_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddRoleTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoleTagsResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "vms",
+          "role_tags"
+        ],
+        "summary": "Delete all role tags",
+        "description": "Removes all role tags from the VM.",
+        "operationId": "delete_all_role_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/vms/{uuid}/role_tags/{role_tag}": {
+      "delete": {
+        "tags": [
+          "vms",
+          "role_tags"
+        ],
+        "summary": "Delete single role tag",
+        "description": "Removes a specific role tag from the VM.",
+        "operationId": "delete_role_tag",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "role_tag",
+            "description": "Role tag value",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/vms/{uuid}/tags": {
+      "get": {
+        "tags": [
+          "vms",
+          "tags"
+        ],
+        "summary": "List tags",
+        "description": "Returns all tags for a VM.",
+        "operationId": "list_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "title": "Map_of_AnyValue",
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "vms",
+          "tags"
+        ],
+        "summary": "Set tags (replace all)",
+        "description": "Replaces all tags with the provided values.",
+        "operationId": "set_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetMetadataRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "successfully enqueued operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "vms",
+          "tags"
+        ],
+        "summary": "Add tags (merge)",
+        "description": "Adds/merges tags with existing values.",
+        "operationId": "add_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddMetadataRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "successfully enqueued operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "vms",
+          "tags"
+        ],
+        "summary": "Delete all tags",
+        "description": "Removes all tags.",
+        "operationId": "delete_all_tags",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "successfully enqueued operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/vms/{uuid}/tags/{key}": {
+      "get": {
+        "tags": [
+          "vms",
+          "tags"
+        ],
+        "summary": "Get tag",
+        "description": "Returns the value of a specific tag.",
+        "operationId": "get_tag",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "description": "Metadata/tag key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "vms",
+          "tags"
+        ],
+        "summary": "Delete tag",
+        "description": "Removes a specific tag.",
+        "operationId": "delete_tag",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "key",
+            "description": "Metadata/tag key",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "description": "VM UUID",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "successfully enqueued operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "AddMetadataRequest": {
+        "description": "Request body for adding metadata (POST - merge)",
+        "type": "object",
+        "additionalProperties": true
+      },
+      "AddRoleTagsRequest": {
+        "description": "Request body for adding role tags (POST - merge)",
+        "type": "object",
+        "properties": {
+          "role_tags": {
+            "description": "Role tags to add",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "role_tags"
+        ]
+      },
+      "Brand": {
+        "description": "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "bhyve",
+              "joyent",
+              "joyent-minimal",
+              "kvm",
+              "lx"
+            ]
+          },
+          {
+            "description": "Internal brand for image build zones (not provisionable via CloudAPI)",
+            "type": "string",
+            "enum": [
+              "builder"
+            ]
+          },
+          {
+            "description": "Unknown brand (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
+        ]
+      },
+      "CreateVmRequest": {
+        "description": "Request body for creating a new VM",
+        "type": "object",
+        "properties": {
+          "alias": {
+            "nullable": true,
+            "description": "VM alias/name",
+            "default": null,
+            "type": "string"
+          },
+          "billing_id": {
+            "nullable": true,
+            "description": "Billing ID (package UUID)",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          },
+          "brand": {
+            "nullable": true,
+            "description": "Brand (if not inferred from image)",
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Brand"
+              }
+            ]
+          },
+          "cpu_cap": {
+            "nullable": true,
+            "description": "CPU cap",
+            "default": null,
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "customer_metadata": {
+            "nullable": true,
+            "description": "Customer metadata",
+            "default": null,
+            "type": "object",
+            "additionalProperties": true
+          },
+          "delegate_dataset": {
+            "nullable": true,
+            "description": "Delegate dataset flag",
+            "default": null,
+            "type": "boolean"
+          },
+          "disks": {
+            "nullable": true,
+            "description": "Disks configuration (bhyve)",
+            "default": null,
+            "type": "array",
+            "items": {}
+          },
+          "firewall_enabled": {
+            "nullable": true,
+            "description": "Firewall enabled",
+            "default": null,
+            "type": "boolean"
+          },
+          "image_uuid": {
+            "nullable": true,
+            "description": "Image UUID",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          },
+          "internal_metadata": {
+            "nullable": true,
+            "description": "Internal metadata",
+            "default": null,
+            "type": "object",
+            "additionalProperties": true
+          },
+          "networks": {
+            "nullable": true,
+            "description": "Networks to attach",
+            "default": null,
+            "type": "array",
+            "items": {}
+          },
+          "nics": {
+            "nullable": true,
+            "description": "NICs configuration",
+            "default": null,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NicSpec"
+            }
+          },
+          "owner_uuid": {
+            "description": "Owner UUID (required)",
+            "type": "string",
+            "format": "uuid"
+          },
+          "quota": {
+            "nullable": true,
+            "description": "Disk quota in MB",
+            "default": null,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "ram": {
+            "nullable": true,
+            "description": "RAM in MB",
+            "default": null,
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "server_uuid": {
+            "nullable": true,
+            "description": "Server UUID (for placement)",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          },
+          "tags": {
+            "nullable": true,
+            "description": "Tags",
+            "default": null,
+            "type": "object",
+            "additionalProperties": true
+          },
+          "vcpus": {
+            "nullable": true,
+            "description": "VCPUs",
+            "default": null,
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "owner_uuid"
+        ],
+        "additionalProperties": true
+      },
+      "Disk": {
+        "description": "Disk attached to a VM (bhyve VMs)",
+        "type": "object",
+        "properties": {
+          "boot": {
+            "nullable": true,
+            "description": "Boot disk flag",
+            "type": "boolean"
+          },
+          "disk_uuid": {
+            "nullable": true,
+            "description": "Disk UUID",
+            "type": "string",
+            "format": "uuid"
+          },
+          "image_uuid": {
+            "nullable": true,
+            "description": "Image UUID (for image-backed disks)",
+            "type": "string",
+            "format": "uuid"
+          },
+          "path": {
+            "nullable": true,
+            "description": "Disk path (zfs zvol path)",
+            "type": "string"
+          },
+          "pci_slot": {
+            "nullable": true,
+            "description": "PCI slot",
+            "type": "string"
+          },
+          "size": {
+            "nullable": true,
+            "description": "Disk size in MB",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        }
+      },
+      "Error": {
+        "description": "Error information from a response.",
+        "type": "object",
+        "properties": {
+          "error_code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "request_id"
+        ]
+      },
+      "Job": {
+        "description": "Job object returned by VMAPI",
+        "type": "object",
+        "properties": {
+          "chain": {
+            "nullable": true,
+            "description": "Task chain (ordered list of tasks)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskChainEntry"
+            }
+          },
+          "chain_results": {
+            "nullable": true,
+            "description": "Task results",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskResult"
+            }
+          },
+          "created_at": {
+            "nullable": true,
+            "description": "Creation timestamp",
+            "type": "string"
+          },
+          "elapsed": {
+            "nullable": true,
+            "description": "Completion timestamp",
+            "type": "number",
+            "format": "double"
+          },
+          "execution": {
+            "nullable": true,
+            "description": "Job execution state",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JobExecution"
+              }
+            ]
+          },
+          "name": {
+            "nullable": true,
+            "description": "Job name/task type (e.g., \"provision\", \"start\", \"reboot\")",
+            "type": "string"
+          },
+          "num_tasks_done": {
+            "nullable": true,
+            "description": "Number of tasks completed",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "onerror": {
+            "nullable": true,
+            "description": "Onerror chain (tasks to run on failure)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskChainEntry"
+            }
+          },
+          "onerror_results": {
+            "nullable": true,
+            "description": "Onerror results",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskResult"
+            }
+          },
+          "params": {
+            "nullable": true,
+            "description": "Parameters passed to the job",
+            "type": "object",
+            "additionalProperties": true
+          },
+          "started": {
+            "nullable": true,
+            "description": "Start timestamp (when execution began)",
+            "type": "string"
+          },
+          "timeout": {
+            "nullable": true,
+            "description": "Timeout in seconds",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "uuid": {
+            "description": "Job UUID",
+            "type": "string",
+            "format": "uuid"
+          },
+          "vm_uuid": {
+            "nullable": true,
+            "description": "VM UUID this job operates on",
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "uuid"
+        ]
+      },
+      "JobExecution": {
+        "description": "Job execution state",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "succeeded",
+              "failed",
+              "canceled"
+            ]
+          },
+          {
+            "description": "Unknown state (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
+        ]
+      },
+      "JobResponse": {
+        "description": "Response when VM creation or action returns a job",
+        "type": "object",
+        "properties": {
+          "job_uuid": {
+            "nullable": true,
+            "description": "Job UUID (for async operations)",
+            "type": "string",
+            "format": "uuid"
+          },
+          "vm_uuid": {
+            "description": "VM UUID",
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "vm_uuid"
+        ]
+      },
+      "Migration": {
+        "description": "Migration record",
+        "type": "object",
+        "properties": {
+          "action": {
+            "nullable": true,
+            "description": "Migration action that was requested",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationAction"
+              }
+            ]
+          },
+          "automatic": {
+            "nullable": true,
+            "description": "Automatic migration flag",
+            "type": "boolean"
+          },
+          "created_timestamp": {
+            "nullable": true,
+            "description": "Creation timestamp",
+            "type": "string"
+          },
+          "duration_ms": {
+            "nullable": true,
+            "description": "Total duration in milliseconds",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "error": {
+            "nullable": true,
+            "description": "Error message if migration failed",
+            "type": "string"
+          },
+          "finished_timestamp": {
+            "nullable": true,
+            "description": "Finished timestamp",
+            "type": "string"
+          },
+          "phase": {
+            "nullable": true,
+            "description": "Current phase",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationPhase"
+              }
+            ]
+          },
+          "progress_history": {
+            "nullable": true,
+            "description": "Progress history",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MigrationProgress"
+            }
+          },
+          "source_server_uuid": {
+            "nullable": true,
+            "description": "Source server UUID",
+            "type": "string",
+            "format": "uuid"
+          },
+          "started_timestamp": {
+            "nullable": true,
+            "description": "Started timestamp",
+            "type": "string"
+          },
+          "state": {
+            "description": "Current migration state",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationState"
+              }
+            ]
+          },
+          "target_server_uuid": {
+            "nullable": true,
+            "description": "Target server UUID",
+            "type": "string",
+            "format": "uuid"
+          },
+          "vm_uuid": {
+            "description": "VM UUID being migrated",
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "state",
+          "vm_uuid"
+        ]
+      },
+      "MigrationAction": {
+        "description": "Migration sub-action for the `migrate` VM action",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "begin",
+              "estimate",
+              "sync",
+              "pause",
+              "switch",
+              "abort",
+              "rollback",
+              "finalize"
+            ]
+          },
+          {
+            "description": "Unknown action (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
+        ]
+      },
+      "MigrationPhase": {
+        "description": "Migration phase\n\nRepresents the current phase of a migration operation.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "begin",
+              "sync",
+              "switch"
+            ]
+          },
+          {
+            "description": "Unknown phase (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
+        ]
+      },
+      "MigrationProgress": {
+        "description": "Migration progress entry",
+        "type": "object",
+        "properties": {
+          "duration_ms": {
+            "nullable": true,
+            "description": "Duration in milliseconds",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "error": {
+            "nullable": true,
+            "description": "Error (if failed)",
+            "type": "string"
+          },
+          "eta_ms": {
+            "nullable": true,
+            "description": "ETA in seconds",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "message": {
+            "nullable": true,
+            "description": "Message",
+            "type": "string"
+          },
+          "percentage": {
+            "nullable": true,
+            "description": "Progress percentage (0-100)",
+            "type": "number",
+            "format": "double"
+          },
+          "phase": {
+            "nullable": true,
+            "description": "Progress phase",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationPhase"
+              }
+            ]
+          },
+          "state": {
+            "nullable": true,
+            "description": "Current state",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationState"
+              }
+            ]
+          },
+          "timestamp": {
+            "nullable": true,
+            "description": "Timestamp",
+            "type": "string"
+          },
+          "total_bytes": {
+            "nullable": true,
+            "description": "Total bytes to transfer",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "transferred_bytes": {
+            "nullable": true,
+            "description": "Bytes transferred",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "type": {
+            "description": "Progress type (e.g., \"progress\", \"end\")",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "MigrationProgressRequest": {
+        "description": "Request body for POST /migrations/:uuid/progress (internal)",
+        "type": "object",
+        "properties": {
+          "duration_ms": {
+            "nullable": true,
+            "description": "Duration in milliseconds",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "error": {
+            "nullable": true,
+            "description": "Error (if failed)",
+            "type": "string"
+          },
+          "eta_ms": {
+            "nullable": true,
+            "description": "ETA in seconds",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "message": {
+            "nullable": true,
+            "description": "Message",
+            "type": "string"
+          },
+          "percentage": {
+            "nullable": true,
+            "description": "Progress percentage (0-100)",
+            "type": "number",
+            "format": "double"
+          },
+          "phase": {
+            "nullable": true,
+            "description": "Progress phase",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationPhase"
+              }
+            ]
+          },
+          "state": {
+            "nullable": true,
+            "description": "Current state",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MigrationState"
+              }
+            ]
+          },
+          "timestamp": {
+            "nullable": true,
+            "description": "Timestamp",
+            "type": "string"
+          },
+          "total_bytes": {
+            "nullable": true,
+            "description": "Total bytes to transfer",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "transferred_bytes": {
+            "nullable": true,
+            "description": "Bytes transferred",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "type": {
+            "description": "Progress type (e.g., \"progress\", \"end\")",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "MigrationState": {
+        "description": "Migration state",
+        "oneOf": [
+          {
+            "description": "Migration is starting",
+            "type": "string",
+            "enum": [
+              "begin"
+            ]
+          },
+          {
+            "description": "Estimating migration parameters",
+            "type": "string",
+            "enum": [
+              "estimate"
+            ]
+          },
+          {
+            "description": "Syncing data",
+            "type": "string",
+            "enum": [
+              "sync"
+            ]
+          },
+          {
+            "description": "Migration paused",
+            "type": "string",
+            "enum": [
+              "paused"
+            ]
+          },
+          {
+            "description": "Switching to target",
+            "type": "string",
+            "enum": [
+              "switch"
+            ]
+          },
+          {
+            "description": "Migration aborted",
+            "type": "string",
+            "enum": [
+              "aborted"
+            ]
+          },
+          {
+            "description": "Migration rolled back",
+            "type": "string",
+            "enum": [
+              "rollback"
+            ]
+          },
+          {
+            "description": "Migration successful",
+            "type": "string",
+            "enum": [
+              "successful"
+            ]
+          },
+          {
+            "description": "Migration failed",
+            "type": "string",
+            "enum": [
+              "failed"
+            ]
+          },
+          {
+            "description": "Running (in progress)",
+            "type": "string",
+            "enum": [
+              "running"
+            ]
+          },
+          {
+            "description": "Unknown state (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
+        ]
+      },
+      "Nic": {
+        "description": "NIC attached to a VM",
+        "type": "object",
+        "properties": {
+          "gateway": {
+            "nullable": true,
+            "description": "Gateway",
+            "type": "string"
+          },
+          "ip": {
+            "nullable": true,
+            "description": "IP address (IPv4)",
+            "type": "string"
+          },
+          "ips": {
+            "nullable": true,
+            "description": "IPv6 addresses",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mac": {
+            "description": "MAC address",
+            "type": "string"
+          },
+          "model": {
+            "nullable": true,
+            "description": "NIC model (e.g., \"virtio\")",
+            "type": "string"
+          },
+          "netmask": {
+            "nullable": true,
+            "description": "Netmask",
+            "type": "string"
+          },
+          "network_uuid": {
+            "nullable": true,
+            "description": "Network UUID",
+            "type": "string",
+            "format": "uuid"
+          },
+          "nic_tag": {
+            "nullable": true,
+            "description": "NIC tag",
+            "type": "string"
+          },
+          "primary": {
+            "nullable": true,
+            "description": "Whether this is the primary NIC",
+            "type": "boolean"
+          },
+          "vlan_id": {
+            "nullable": true,
+            "description": "VLAN ID",
+            "type": "integer",
+            "format": "uint16",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "mac"
+        ]
+      },
+      "NicSpec": {
+        "description": "NIC specification for add/update operations",
+        "type": "object",
+        "properties": {
+          "allow_ip_spoofing": {
+            "nullable": true,
+            "description": "Whether this NIC is allowed to have spoofed IP addresses",
+            "default": null,
+            "type": "boolean"
+          },
+          "allow_mac_spoofing": {
+            "nullable": true,
+            "description": "Whether this NIC is allowed to have spoofed MAC addresses",
+            "default": null,
+            "type": "boolean"
+          },
+          "allow_restricted_traffic": {
+            "nullable": true,
+            "description": "Whether this NIC allows restricted traffic",
+            "default": null,
+            "type": "boolean"
+          },
+          "gateway": {
+            "nullable": true,
+            "description": "Gateway address",
+            "default": null,
+            "type": "string"
+          },
+          "ip": {
+            "nullable": true,
+            "description": "Specific IP address to use",
+            "default": null,
+            "type": "string"
+          },
+          "mac": {
+            "nullable": true,
+            "description": "MAC address (for update operations)",
+            "default": null,
+            "type": "string"
+          },
+          "model": {
+            "nullable": true,
+            "description": "NIC model (e.g., \"virtio\")",
+            "default": null,
+            "type": "string"
+          },
+          "network_uuid": {
+            "nullable": true,
+            "description": "Network UUID to add NIC on",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
+          },
+          "primary": {
+            "nullable": true,
+            "description": "Mark as primary NIC",
+            "default": null,
+            "type": "boolean"
+          }
+        }
+      },
+      "PingResponse": {
+        "description": "Ping response",
+        "type": "object",
+        "properties": {
+          "backend_status": {
+            "nullable": true,
+            "description": "Backend services health status",
+            "type": "string"
+          },
+          "healthy": {
+            "nullable": true,
+            "description": "Health check status details",
+            "type": "boolean"
+          },
+          "status": {
+            "description": "Ping status (e.g., \"OK\")",
+            "type": "string"
+          }
+        },
+        "required": [
+          "status"
+        ]
+      },
+      "PostJobResultsRequest": {
+        "description": "Request body for POST /job_results (workflow callback)",
+        "type": "object",
+        "properties": {
+          "execution": {
+            "nullable": true,
+            "description": "Job execution state",
+            "default": null,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/JobExecution"
+              }
+            ]
+          },
+          "info": {
+            "nullable": true,
+            "description": "Error info if failed",
+            "default": null
+          },
+          "job_uuid": {
+            "description": "Job UUID",
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "job_uuid"
+        ]
+      },
+      "PutVmRequest": {
+        "description": "Request body for PUT /vms/:uuid (replace VM object)",
+        "type": "object",
+        "additionalProperties": true
+      },
+      "PutVmsRequest": {
+        "description": "Request body for PUT /vms (bulk update VMs for a server)",
+        "type": "object",
+        "properties": {
+          "server_uuid": {
+            "description": "Server UUID",
+            "type": "string",
+            "format": "uuid"
+          },
+          "vms": {
+            "description": "Array of VMs to update",
+            "type": "array",
+            "items": {}
+          }
+        },
+        "required": [
+          "server_uuid",
+          "vms"
+        ]
+      },
+      "RoleTagsResponse": {
+        "description": "Response containing role tags",
+        "type": "object",
+        "properties": {
+          "role_tags": {
+            "description": "List of role tags",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "role_tags"
+        ]
+      },
+      "SetMetadataRequest": {
+        "description": "Request body for setting metadata (PUT - replace all)",
+        "type": "object",
+        "additionalProperties": true
+      },
+      "SetRoleTagsRequest": {
+        "description": "Request body for setting role tags (PUT - replace all)",
+        "type": "object",
+        "properties": {
+          "role_tags": {
+            "description": "Role tags to set (replaces all existing)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "role_tags"
+        ]
+      },
+      "Snapshot": {
+        "description": "Snapshot of a VM",
+        "type": "object",
+        "properties": {
+          "created_at": {
+            "description": "Creation timestamp",
+            "type": "string"
+          },
+          "name": {
+            "description": "Snapshot name",
+            "type": "string"
+          },
+          "state": {
+            "description": "Snapshot state",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SnapshotState"
+              }
+            ]
+          }
+        },
+        "required": [
+          "created_at",
+          "name",
+          "state"
+        ]
+      },
+      "SnapshotState": {
+        "description": "Snapshot state",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "queued",
+              "creating",
+              "created",
+              "failed",
+              "deleted"
+            ]
+          },
+          {
+            "description": "Unknown state (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
+        ]
+      },
+      "StoreMigrationRecordRequest": {
+        "description": "Request body for POST /migrations/:uuid/store (internal)",
+        "type": "object"
+      },
+      "TaskChainEntry": {
+        "description": "Task chain entry in a job",
+        "type": "object",
+        "properties": {
+          "body": {
+            "nullable": true,
+            "description": "Task body (function name)",
+            "type": "string"
+          },
+          "name": {
+            "description": "Task name",
+            "type": "string"
+          },
+          "retry": {
+            "nullable": true,
+            "description": "Retry count",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "timeout": {
+            "nullable": true,
+            "description": "Timeout in seconds",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "TaskResult": {
+        "description": "Result of a task in the job",
+        "type": "object",
+        "properties": {
+          "error": {
+            "nullable": true,
+            "description": "Error message if task failed",
+            "type": "string"
+          },
+          "finished_at": {
+            "nullable": true,
+            "description": "Finish time",
+            "type": "string"
+          },
+          "name": {
+            "nullable": true,
+            "description": "Task name",
+            "type": "string"
+          },
+          "result": {
+            "nullable": true,
+            "description": "Result value",
+            "type": "string"
+          },
+          "started_at": {
+            "nullable": true,
+            "description": "Start time",
+            "type": "string"
+          }
+        }
+      },
+      "UpdateVmServerUuidRequest": {
+        "description": "Request body for POST /migrations/:uuid/updateVmServerUuid (internal)",
+        "type": "object",
+        "properties": {
+          "server_uuid": {
+            "description": "New server UUID",
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "server_uuid"
+        ]
+      },
+      "Vm": {
+        "description": "VM object returned by VMAPI\n\nThis is a large object with many fields. All fields use snake_case.",
+        "type": "object",
+        "properties": {
+          "alias": {
+            "nullable": true,
+            "description": "VM alias/name",
+            "type": "string"
+          },
+          "autoboot": {
+            "nullable": true,
+            "description": "Autoboot flag",
+            "type": "boolean"
+          },
+          "billing_id": {
+            "nullable": true,
+            "description": "Billing ID (package UUID)",
+            "type": "string",
+            "format": "uuid"
+          },
+          "brand": {
+            "description": "Brand (bhyve, kvm, joyent, joyent-minimal, lx)",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Brand"
+              }
+            ]
+          },
+          "cpu_cap": {
+            "nullable": true,
+            "description": "CPU cap (percentage, e.g., 100 = 1 full CPU)",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "create_timestamp": {
+            "nullable": true,
+            "description": "Creation timestamp",
+            "type": "string"
+          },
+          "customer_metadata": {
+            "nullable": true,
+            "description": "Customer metadata",
+            "type": "object",
+            "additionalProperties": true
+          },
+          "delegate_dataset": {
+            "nullable": true,
+            "description": "Delegate dataset flag",
+            "type": "boolean"
+          },
+          "destroyed": {
+            "nullable": true,
+            "description": "Destroyed timestamp (if destroyed)",
+            "type": "string"
+          },
+          "disks": {
+            "nullable": true,
+            "description": "Disks (bhyve VMs)",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Disk"
+            }
+          },
+          "dns_domain": {
+            "nullable": true,
+            "description": "DNS domain",
+            "type": "string"
+          },
+          "do_not_inventory": {
+            "nullable": true,
+            "description": "Do not inventory flag (for operators)",
+            "type": "boolean"
+          },
+          "docker": {
+            "nullable": true,
+            "description": "Docker container flag",
+            "type": "boolean"
+          },
+          "firewall_enabled": {
+            "nullable": true,
+            "description": "Firewall enabled",
+            "type": "boolean"
+          },
+          "flexible_disk_size": {
+            "nullable": true,
+            "description": "Flexible disk mode (bhyve only)",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "free_space": {
+            "nullable": true,
+            "description": "Free space in bytes (bhyve with flexible disk, may be negative)",
+            "type": "integer",
+            "format": "int64"
+          },
+          "image_uuid": {
+            "nullable": true,
+            "description": "Image UUID",
+            "type": "string",
+            "format": "uuid"
+          },
+          "indestructible_delegated": {
+            "nullable": true,
+            "description": "Indestructible delegated flag",
+            "type": "boolean"
+          },
+          "indestructible_zoneroot": {
+            "nullable": true,
+            "description": "Indestructible zoneroot flag",
+            "type": "boolean"
+          },
+          "internal_metadata": {
+            "nullable": true,
+            "description": "Internal metadata",
+            "type": "object",
+            "additionalProperties": true
+          },
+          "internal_metadata_namespaces": {
+            "nullable": true,
+            "description": "Internal metadata namespaces",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "last_modified": {
+            "nullable": true,
+            "description": "Last modified timestamp",
+            "type": "string"
+          },
+          "limit_priv": {
+            "nullable": true,
+            "description": "Limit privilege flag",
+            "type": "string"
+          },
+          "maintain_resolvers": {
+            "nullable": true,
+            "description": "Maintain resolvers flag",
+            "type": "boolean"
+          },
+          "max_locked_memory": {
+            "nullable": true,
+            "description": "Max locked memory in MB",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_lwps": {
+            "nullable": true,
+            "description": "Max LWPs (lightweight processes)",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_physical_memory": {
+            "nullable": true,
+            "description": "Max physical memory in MB",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "max_swap": {
+            "nullable": true,
+            "description": "Max swap in MB",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "nics": {
+            "nullable": true,
+            "description": "Network interfaces",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Nic"
+            }
+          },
+          "owner_uuid": {
+            "description": "Owner UUID",
+            "type": "string",
+            "format": "uuid"
+          },
+          "platform_buildstamp": {
+            "nullable": true,
+            "description": "Platform build timestamp",
+            "type": "string"
+          },
+          "quota": {
+            "nullable": true,
+            "description": "Disk quota in MB",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "ram": {
+            "nullable": true,
+            "description": "RAM in MB",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "resolvers": {
+            "nullable": true,
+            "description": "Resolvers (DNS servers)",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "server_uuid": {
+            "nullable": true,
+            "description": "Server UUID (compute node hosting the VM)",
+            "type": "string",
+            "format": "uuid"
+          },
+          "snapshots": {
+            "nullable": true,
+            "description": "Snapshots",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Snapshot"
+            }
+          },
+          "state": {
+            "description": "Current state",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/VmState"
+              }
+            ]
+          },
+          "tags": {
+            "nullable": true,
+            "description": "Tags",
+            "type": "object",
+            "additionalProperties": true
+          },
+          "uuid": {
+            "description": "VM UUID",
+            "type": "string",
+            "format": "uuid"
+          },
+          "vcpus": {
+            "nullable": true,
+            "description": "Number of VCPUs",
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "zfs_io_priority": {
+            "nullable": true,
+            "description": "ZFS I/O priority",
+            "type": "integer",
+            "format": "uint64",
+            "minimum": 0
+          },
+          "zonedataset": {
+            "nullable": true,
+            "description": "Zone dataset UUID",
+            "type": "string"
+          },
+          "zonepath": {
+            "nullable": true,
+            "description": "Zone path",
+            "type": "string"
+          }
+        },
+        "required": [
+          "brand",
+          "owner_uuid",
+          "state",
+          "uuid"
+        ]
+      },
+      "VmState": {
+        "description": "VM state\n\nThese states reflect the possible values returned by VMAPI.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "running",
+              "stopped",
+              "stopping",
+              "provisioning",
+              "failed",
+              "destroyed",
+              "incomplete",
+              "configured",
+              "ready",
+              "receiving"
+            ]
+          },
+          {
+            "description": "Unknown state (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
+        ]
+      },
+      "VmStatus": {
+        "description": "Status entry for a single VM",
+        "type": "object",
+        "properties": {
+          "last_modified": {
+            "nullable": true,
+            "description": "Last modified timestamp",
+            "type": "string"
+          },
+          "state": {
+            "description": "VM state",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/VmState"
+              }
+            ]
+          }
+        },
+        "required": [
+          "state"
+        ]
+      },
+      "VmAction": {
+        "description": "VM actions available via POST /vms/:uuid",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "start",
+              "stop",
+              "kill",
+              "reboot",
+              "reprovision",
+              "update",
+              "add_nics",
+              "update_nics",
+              "remove_nics",
+              "create_snapshot",
+              "rollback_snapshot",
+              "delete_snapshot",
+              "create_disk",
+              "resize_disk",
+              "delete_disk",
+              "migrate"
+            ]
+          },
+          {
+            "description": "Unknown action (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
+        ]
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "jobs"
+    },
+    {
+      "name": "metadata"
+    },
+    {
+      "name": "migrations"
+    },
+    {
+      "name": "ping"
+    },
+    {
+      "name": "role_tags"
+    },
+    {
+      "name": "statuses"
+    },
+    {
+      "name": "tags"
+    },
+    {
+      "name": "vms"
+    }
+  ]
+}

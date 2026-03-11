@@ -1,0 +1,9 @@
+{
+  "mac": "90:b8:d0:2f:b8:f9",
+  "primary": true,
+  "ip": "10.88.88.137",
+  "netmask": "255.255.255.0",
+  "gateway": "10.88.88.2",
+  "network": "6b187a3e-28f2-4173-9c8d-3a7f5c0e4b12",
+  "state": "running"
+}

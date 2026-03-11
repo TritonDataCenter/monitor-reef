@@ -43,6 +43,7 @@ edition.workspace = true
 description = "<Service> API trait definition"
 
 [dependencies]
+clap = { workspace = true }  # Needed if any enums derive clap::ValueEnum
 dropshot = { workspace = true }
 http = "1.1"
 schemars = { workspace = true }
@@ -52,6 +53,10 @@ serde_json = { workspace = true }
 [lints.clippy]
 unused_async = "allow"
 ```
+
+**Note:** Include `clap` only if enums in this crate will be used directly as CLI
+`#[arg(value_enum)]` parameters (e.g., `MachineState`, `VolumeState`). If only the
+Progenitor-generated copy needs `ValueEnum`, use `build.rs` patches instead (see Phase 3).
 
 ### 3. Create Type Modules
 
@@ -63,9 +68,35 @@ Key patterns:
 - Response types: `#[derive(Debug, Serialize, Deserialize, JsonSchema)]`
 - Request types: `#[derive(Debug, Deserialize, JsonSchema)]`
 - Path params: `#[derive(Debug, Deserialize, JsonSchema)]`
-- Use `#[serde(rename_all = "camelCase")]` for JSON compatibility
+- State/status enums: `#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]`
+  - Include `PartialEq, Eq` so enums can be compared with `==` in CLI code
+  - If the enum will be a CLI `--state`/`--sort` arg, also add `clap::ValueEnum`
+- Use `#[serde(rename_all = "camelCase")]` **only if the Node.js translate() function outputs camelCase** — see reference.md "JSON Field Naming" for details
 - Use `#[serde(default)]` for optional fields
 - Use `#[serde(rename = "field-name")]` for fields with hyphens or non-standard casing
+
+#### Forward-Compatible Enums
+
+State and status enums **must** include a `#[serde(other)] Unknown` catch-all variant.
+This prevents deserialization failures when the server adds new states:
+
+```rust
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum MachineState {
+    Provisioning,
+    Running,
+    Stopped,
+    Failed,
+    // ... all known variants
+    /// Catch-all for states added after this client was compiled
+    #[serde(other)]
+    Unknown,
+}
+```
+
+This pattern is mandatory for any enum that represents server-side state. See
+`apis/cloudapi-api/src/types/changefeed.rs` for the established example.
 
 **Don't assume camelCase everywhere.** Check the plan's "Field Naming Exceptions" section for fields that use snake_case or other conventions in the actual API.
 

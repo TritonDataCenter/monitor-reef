@@ -16,20 +16,24 @@ This is a template for generating Rust client libraries from Dropshot API traits
 2. Update `Cargo.toml`:
    - Change `name = "client-template"` to `name = "your-service-client"`
    - Change `name = "client_template"` to `name = "your_service_client"` in the `[lib]` section
-3. Update `build.rs` to point to your service's OpenAPI spec:
-   - Change `let spec_path = "../../../openapi-specs/generated/example-api.json";`
-   - To `let spec_path = "../../../openapi-specs/generated/your-api.json";`
-4. Ensure your API spec has been generated: `cargo run -p openapi-manager -- generate`
-5. Run `cargo build` to generate the client
+3. Register the client in `client-generator/src/main.rs`:
+   - Add a `ClientConfig` entry to the `CLIENTS` array
+   - Point `spec_path` to your API's OpenAPI spec
+   - Point `output_path` to `clients/internal/your-service-client/src/generated.rs`
+   - Configure generation settings (patches, derives, etc.)
+4. Ensure your API spec has been generated: `make openapi-generate`
+5. Generate the client code: `make clients-generate`
 6. Use the generated client library in your applications
 
 ## How It Works
 
-The `build.rs` script:
+The `client-generator` tool:
 1. Reads the OpenAPI specification from `openapi-specs/generated/` (checked into git)
-2. Uses Progenitor to generate a type-safe Rust client at build time
-3. The generated client is written to the build output directory
-4. Your `src/lib.rs` includes and exports the generated client code
+2. Uses Progenitor to generate a type-safe Rust client
+3. Formats the output with rustfmt and writes it to `src/generated.rs`
+4. Your `src/lib.rs` includes and exports the generated client code via `mod generated`
+
+The generated `src/generated.rs` is checked into git, making generated types visible to grep, IDE navigation, and code review.
 
 ## Generated Client Structure
 
@@ -38,7 +42,8 @@ This template creates a **library crate**, not an application. The generated cli
 ## Benefits
 
 - **Type safety**: Progenitor generates type-safe clients matching your API exactly
-- **Fast compilation**: Specs generated from API traits without compiling service implementations
+- **Visible code**: Generated code is checked in and visible in diffs, grep, and IDEs
+- **Fast compilation**: No build.rs step — generated code compiles directly
 - **Versioning**: dropshot-api-manager tracks API versions and validates compatibility
 - **Consistent**: Same OpenAPI spec used for documentation, validation, and client generation
 - **Clean dependencies**: Only includes what's needed for the generated client
@@ -99,5 +104,5 @@ This template is designed for internal clients that talk to services in this mon
 - Service defines API trait in `apis/your-service-api`
 - Service implements the trait in `services/your-service`
 - `openapi-manager` generates OpenAPI spec from the trait
-- This client is generated from that spec
+- `client-generator` produces `src/generated.rs` from that spec
 - Other services use this client to talk to your service

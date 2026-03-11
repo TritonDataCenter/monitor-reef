@@ -1,0 +1,12 @@
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "name": "empty-volume",
+  "owner_uuid": "9dce1460-0c4c-4417-ab8b-25ca478c5a78",
+  "type": "tritonnfs",
+  "size": 1024,
+  "state": "creating",
+  "networks": [],
+  "created": "2024-06-15T10:30:00.000Z",
+  "tags": {},
+  "refs": []
+}

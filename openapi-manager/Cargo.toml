@@ -12,18 +12,24 @@ edition.workspace = true
 [lints]
 workspace = true
 
+[[bin]]
+name = "openapi-manager"
+path = "src/main.rs"
+
 [dependencies]
 dropshot = { workspace = true }
 dropshot-api-manager = { workspace = true }
 dropshot-api-manager-types = { workspace = true }
 bugview-api = { path = "../apis/bugview-api" }
+cloudapi-api = { path = "../apis/cloudapi-api" }
 jira-api = { path = "../apis/jira-api" }
+vmapi-api = { path = "../apis/vmapi-api" }
 anyhow = { workspace = true }
 camino = { workspace = true }
 cargo_toml = { workspace = true }
 clap = { workspace = true }
 semver = { workspace = true }
+serde_json = { workspace = true }
 
-[[bin]]
-name = "openapi-manager"
-path = "src/main.rs"
+[dev-dependencies]
+tempfile = { workspace = true }

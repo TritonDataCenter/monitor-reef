@@ -17,12 +17,9 @@ name = "bugview_client"
 path = "src/lib.rs"
 
 [dependencies]
+clap = { workspace = true }
 progenitor-client = { workspace = true }
 reqwest = { workspace = true }
+schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-
-[build-dependencies]
-progenitor = { workspace = true }
-serde_json = { workspace = true }
-openapiv3 = { workspace = true }

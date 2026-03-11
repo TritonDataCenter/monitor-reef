@@ -1,0 +1,5 @@
+{
+    "name": "deploy-key",
+    "key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA... deploy@ci",
+    "fingerprint": "SHA256:xyz9876543210"
+}

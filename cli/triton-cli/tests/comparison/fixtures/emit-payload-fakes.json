@@ -1,0 +1,267 @@
+{
+    "list_default": [],
+    "get_default": { "id": "$LAST_SEG", "name": "$LAST_SEG" },
+    "mutation_default": {},
+    "datacenter_headers": {
+        "https://cloudapi.us-test-1.example.com": "us-test-1",
+        "https://cloudapi.us-west-1.example.com": "us-west-1"
+    },
+    "responses": {
+        "get_account": {
+            "id": "00000000-0000-0000-0000-000000000099",
+            "login": "$LAST_SEG",
+            "email": "$LAST_SEG",
+            "created": "2025-01-01T00:00:00.000Z",
+            "updated": "2025-01-01T00:00:00.000Z"
+        },
+        "list_datacenters": {
+            "us-test-1": "https://cloudapi.us-test-1.example.com",
+            "us-west-1": "https://cloudapi.us-west-1.example.com"
+        },
+        "list_datacenter": {
+            "us-test-1": "https://cloudapi.us-test-1.example.com",
+            "us-west-1": "https://cloudapi.us-west-1.example.com"
+        },
+        "get_image": {
+            "id": "$LAST_SEG_UUID",
+            "name": "$LAST_SEG",
+            "version": "0.0.0",
+            "os": "other",
+            "type": "other",
+            "requirements": {},
+            "acl": ["00000000-0000-0000-0000-000000000008"]
+        },
+        "get_machine": {
+            "id": "$LAST_SEG_UUID",
+            "name": "$LAST_SEG",
+            "type": "virtualmachine",
+            "brand": "bhyve",
+            "state": "running",
+            "image": "00000000-0000-0000-0000-000000000000",
+            "package": "emit-payload-fake",
+            "memory": null,
+            "disk": 0,
+            "ips": [],
+            "metadata": {},
+            "tags": {},
+            "created": "2025-01-01T00:00:00.000Z",
+            "updated": "2025-01-01T00:00:00.000Z"
+        },
+        "get_package": {
+            "id": "$LAST_SEG_UUID",
+            "name": "$LAST_SEG",
+            "memory": 256,
+            "disk": 10240,
+            "swap": 512,
+            "vcpus": 2,
+            "default": false
+        },
+        "get_network": {
+            "id": "$LAST_SEG_UUID",
+            "name": "$LAST_SEG",
+            "public": false
+        },
+        "get_fabric_network": {
+            "id": "$LAST_SEG_UUID",
+            "name": "$LAST_SEG",
+            "public": false
+        },
+        "get_firewall_rule": {
+            "id": "$LAST_SEG_UUID",
+            "rule": "",
+            "enabled": false,
+            "log": false,
+            "global": null
+        },
+        "get_volume": {
+            "id": "$LAST_SEG_UUID",
+            "name": "$LAST_SEG",
+            "owner_uuid": "00000000-0000-0000-0000-000000000000",
+            "type": "tritonnfs",
+            "size": 0,
+            "state": "ready",
+            "networks": [],
+            "created": "2025-01-01T00:00:00.000Z",
+            "tags": {},
+            "refs": []
+        },
+        "get_key": {
+            "name": "$LAST_SEG",
+            "key": "",
+            "fingerprint": ""
+        },
+        "get_nic": {
+            "mac": "00:00:00:00:00:00",
+            "primary": false,
+            "ip": "0.0.0.0",
+            "netmask": "0.0.0.0",
+            "network": "00000000-0000-0000-0000-000000000000"
+        },
+        "get_machine_snapshot": {
+            "name": "$LAST_SEG",
+            "state": "created",
+            "created": "2025-01-01T00:00:00.000Z"
+        },
+        "get_machine_disk": {
+            "id": "$LAST_SEG_UUID",
+            "size": 0,
+            "boot": null
+        },
+        "get_fabric_vlan": {
+            "vlan_id": 0,
+            "name": "$LAST_SEG"
+        },
+        "create_nic": {
+            "mac": "00:00:00:00:00:00",
+            "primary": false,
+            "ip": "0.0.0.0",
+            "state": "running",
+            "network": "fake"
+        },
+        "update_fabric_vlan": {
+            "vlan_id": "$VLAN_ID",
+            "name": "fake",
+            "description": ""
+        },
+        "get_role": {
+            "id": "00000000-0000-0000-0000-000000000000",
+            "name": "$LAST_SEG",
+            "members": [],
+            "default_members": [],
+            "policies": []
+        },
+        "get_policy": {
+            "id": "00000000-0000-0000-0000-000000000000",
+            "name": "$LAST_SEG",
+            "rules": []
+        },
+        "list_machines": [
+            {
+                "id": "00000000-0000-0000-0000-000000000000",
+                "name": "test-instance",
+                "type": "virtualmachine",
+                "brand": "bhyve",
+                "state": "running",
+                "image": "00000000-0000-0000-0000-000000000000",
+                "package": "emit-payload-fake",
+                "memory": 0,
+                "disk": 0,
+                "ips": ["10.0.0.1"],
+                "primaryIp": "10.0.0.1",
+                "metadata": {},
+                "tags": {},
+                "created": "2025-01-01T00:00:00.000Z",
+                "updated": "2025-01-01T00:00:00.000Z"
+            }
+        ],
+        "list_machine": [
+            {
+                "id": "00000000-0000-0000-0000-000000000000",
+                "name": "test-instance",
+                "type": "virtualmachine",
+                "brand": "bhyve",
+                "state": "running",
+                "image": "00000000-0000-0000-0000-000000000000",
+                "package": "emit-payload-fake",
+                "memory": 0,
+                "disk": 0,
+                "ips": ["10.0.0.1"],
+                "primaryIp": "10.0.0.1",
+                "metadata": {},
+                "tags": {},
+                "created": "2025-01-01T00:00:00.000Z",
+                "updated": "2025-01-01T00:00:00.000Z"
+            }
+        ],
+        "list_images": [
+            {
+                "id": "00000000-0000-0000-0000-000000000000",
+                "name": "test-image",
+                "version": "0.0.0",
+                "os": "other",
+                "type": "other",
+                "requirements": {},
+                "acl": [],
+                "state": "active",
+                "published_at": "2025-01-01T00:00:00.000Z"
+            }
+        ],
+        "list_image": [
+            {
+                "id": "00000000-0000-0000-0000-000000000000",
+                "name": "test-image",
+                "version": "0.0.0",
+                "os": "other",
+                "type": "other",
+                "requirements": {},
+                "acl": [],
+                "state": "active",
+                "published_at": "2025-01-01T00:00:00.000Z"
+            }
+        ],
+        "list_packages": [
+            {
+                "id": "00000000-0000-0000-0000-000000000000",
+                "name": "test-package",
+                "memory": 256,
+                "disk": 10240,
+                "swap": 512,
+                "vcpus": 2,
+                "default": false
+            }
+        ],
+        "list_package": [
+            {
+                "id": "00000000-0000-0000-0000-000000000000",
+                "name": "test-package",
+                "memory": 256,
+                "disk": 10240,
+                "swap": 512,
+                "vcpus": 2,
+                "default": false
+            }
+        ],
+        "list_volumes": [
+            {
+                "id": "00000000-0000-0000-0000-000000000000",
+                "name": "test-volume",
+                "owner_uuid": "00000000-0000-0000-0000-000000000000",
+                "type": "tritonnfs",
+                "size": 0,
+                "state": "ready",
+                "networks": [],
+                "created": "2025-01-01T00:00:00.000Z",
+                "tags": {},
+                "refs": []
+            }
+        ],
+        "list_volume": [
+            {
+                "id": "00000000-0000-0000-0000-000000000000",
+                "name": "test-volume",
+                "owner_uuid": "00000000-0000-0000-0000-000000000000",
+                "type": "tritonnfs",
+                "size": 0,
+                "state": "ready",
+                "networks": [],
+                "created": "2025-01-01T00:00:00.000Z",
+                "tags": {},
+                "refs": []
+            }
+        ],
+        "list_networks": [
+            {
+                "id": "00000000-0000-0000-0000-000000000004",
+                "name": "test-network",
+                "public": false
+            }
+        ],
+        "list_network": [
+            {
+                "id": "00000000-0000-0000-0000-000000000004",
+                "name": "test-network",
+                "public": false
+            }
+        ]
+    }
+}

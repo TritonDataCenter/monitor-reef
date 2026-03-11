@@ -12,6 +12,8 @@ use dropshot_api_manager::{Environment, ManagedApiConfig};
 use dropshot_api_manager_types::{ManagedApiMetadata, Versions};
 use std::process::ExitCode;
 
+mod transforms;
+
 fn workspace_root() -> Result<Utf8PathBuf> {
     Utf8PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .parent()
@@ -61,6 +63,20 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
             api_description: bugview_api::bugview_api_mod::stub_api_description,
         },
         ManagedApiConfig {
+            ident: "cloudapi-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/cloudapi-api")?,
+            },
+            title: "Triton CloudAPI",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Triton CloudAPI - public-facing REST API for managing virtual machines, images, networks, volumes, and other resources",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: cloudapi_api::cloud_api_mod::stub_api_description,
+        },
+        ManagedApiConfig {
             ident: "jira-api",
             versions: Versions::Lockstep {
                 version: crate_version("apis/jira-api")?,
@@ -74,15 +90,50 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
             },
             api_description: jira_api::jira_api_mod::stub_api_description,
         },
+        ManagedApiConfig {
+            ident: "vmapi-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/vmapi-api")?,
+            },
+            title: "Triton VMAPI",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Triton VMAPI - internal HTTP API for managing virtual machines in a Triton datacenter",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: vmapi_api::vm_api_mod::stub_api_description,
+        },
     ];
     let managed_apis = dropshot_api_manager::ManagedApis::new(apis)?;
     Ok(managed_apis)
 }
 
 fn main() -> Result<ExitCode> {
+    let root = workspace_root()?;
+    let generated_dir = root.join("openapi-specs/generated");
+    let patched_dir = root.join("openapi-specs/patched");
+
+    // Detect subcommand before App::parse() consumes the args
+    let is_check = std::env::args().nth(1).as_deref() == Some("check");
+
     let app = dropshot_api_manager::App::parse();
     let env = environment()?;
     let apis = all_apis()?;
 
-    Ok(app.exec(&env, &apis))
+    let exit_code = app.exec(&env, &apis);
+
+    if exit_code == ExitCode::SUCCESS {
+        if is_check {
+            // Verify patched specs are fresh without rewriting them
+            if !transforms::check_transforms(generated_dir.as_path(), patched_dir.as_path())? {
+                return Ok(ExitCode::FAILURE);
+            }
+        } else {
+            // Regenerate patched specs from the (possibly updated) generated specs
+            transforms::apply_transforms(generated_dir.as_path(), patched_dir.as_path())?;
+        }
+    }
+
+    Ok(exit_code)
 }

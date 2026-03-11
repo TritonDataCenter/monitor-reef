@@ -1,0 +1,14 @@
+{
+  "id": "3985900d-15a8-42d8-a997-1f7e8df2d0af",
+  "name": "My-Fabric-Network",
+  "public": false,
+  "fabric": true,
+  "gateway": "192.168.128.1",
+  "internet_nat": true,
+  "provision_start_ip": "192.168.128.5",
+  "provision_end_ip": "192.168.131.250",
+  "subnet": "192.168.128.0/22",
+  "netmask": "255.255.252.0",
+  "vlan_id": 2,
+  "resolvers": ["8.8.8.8", "8.8.4.4"]
+}

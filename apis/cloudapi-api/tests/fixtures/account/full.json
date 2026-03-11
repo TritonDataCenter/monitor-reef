@@ -1,0 +1,17 @@
+{
+  "id": "9dce1460-0c4c-4417-ab8b-25ca478c5a78",
+  "login": "testuser",
+  "email": "test@example.com",
+  "companyName": "Acme Corp",
+  "firstName": "Test",
+  "lastName": "User",
+  "address": "123 Main St",
+  "postalCode": "94105",
+  "city": "San Francisco",
+  "state": "CA",
+  "country": "US",
+  "phone": "+1-555-555-5555",
+  "created": "2024-01-01T00:00:00.000Z",
+  "updated": "2024-06-15T12:00:00.000Z",
+  "triton_cns_enabled": true
+}

@@ -15,10 +15,7 @@
 //!
 //! The generated client provides a type-safe, async interface to your API.
 
-// Include the Progenitor-generated client code
 // Allow unwrap in generated code - Progenitor uses it in Client::new()
 #[allow(clippy::unwrap_used)]
-mod generated {
-    include!(concat!(env!("OUT_DIR"), "/client.rs"));
-}
+mod generated;
 pub use generated::*;

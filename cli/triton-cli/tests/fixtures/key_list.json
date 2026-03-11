@@ -1,0 +1,7 @@
+{
+  "name": "my-ssh-key",
+  "key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyDataHere user@host",
+  "fingerprint": "SHA256:dGVzdGZpbmdlcnByaW50ZGF0YQ",
+  "created": "2026-01-10T08:30:00.000Z",
+  "role-tag": ["admin"]
+}

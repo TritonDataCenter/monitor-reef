@@ -1,0 +1,1599 @@
+#!/usr/bin/env bash
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+#
+# triton-compare.sh - Compare Node.js triton vs Rust triton CLI output
+#
+# Runs the same commands against both CLIs, normalizes output, and reports diffs.
+# Exit codes: 0 = all pass, 1 = diffs found, 2 = usage error
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ---------- defaults ----------
+NODE_TRITON="${NODE_TRITON:-$(command -v triton 2>/dev/null || echo "")}"
+RUST_TRITON="${RUST_TRITON:-target/debug/triton}"
+TIER="offline"
+PROFILE=""
+OUTPUT_DIR=""
+VERBOSE=0
+
+# ---------- counters ----------
+PASS_COUNT=0
+DIFF_COUNT=0
+SKIP_COUNT=0
+NEW_COUNT=0
+FIXED_COUNT=0
+
+# ---------- tracking file data ----------
+# Associative arrays: test_id -> bead_id or reason
+declare -A KNOWN_DIFFS=()
+declare -A IGNORED_DIFFS=()
+
+# ---------- usage ----------
+usage() {
+    cat <<'EOF'
+Usage: triton-compare.sh [OPTIONS]
+
+Compare Node.js triton and Rust triton CLI output.
+
+Options:
+  --node-triton PATH   Path to Node.js triton (default: $(which triton))
+  --rust-triton PATH   Path to Rust triton (default: target/debug/triton)
+  --tier TIER          "offline", "api", "payload", or "all" (default: offline)
+  --profile NAME       Profile name for API tests
+  --output-dir DIR     Directory for diff artifacts (default: mktemp -d)
+  --verbose            Show each command as it runs
+  -h, --help           Show this help
+
+Tiers:
+  offline   Commands that need no API (help, profiles, env, completion)
+  api       Read-only API commands (list, get) — requires working auth
+  payload   Mutating operations — compares request payloads (fully offline)
+  all       offline + api + payload
+
+Examples:
+  # Quick offline comparison
+  ./triton-compare.sh
+
+  # Full comparison with API access
+  ./triton-compare.sh --tier all --profile demo
+
+  # Use specific binaries (e.g. release build)
+  ./triton-compare.sh --node-triton /usr/local/bin/triton \
+                      --rust-triton ./target/release/triton
+EOF
+}
+
+# ---------- arg parsing ----------
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --node-triton) NODE_TRITON="$2"; shift 2 ;;
+        --rust-triton) RUST_TRITON="$2"; shift 2 ;;
+        --tier)        TIER="$2"; shift 2 ;;
+        --profile)     PROFILE="$2"; shift 2 ;;
+        --output-dir)  OUTPUT_DIR="$2"; shift 2 ;;
+        --verbose)     VERBOSE=1; shift ;;
+        -h|--help)     usage; exit 0 ;;
+        *)             echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+# ---------- validation ----------
+if [[ ! "$TIER" =~ ^(offline|api|payload|all)$ ]]; then
+    echo "Error: --tier must be 'offline', 'api', 'payload', or 'all'" >&2
+    exit 2
+fi
+
+if [[ -z "$NODE_TRITON" ]]; then
+    echo "Error: Node.js triton not found in PATH. Use --node-triton PATH." >&2
+    exit 2
+fi
+
+if [[ ! -x "$NODE_TRITON" ]]; then
+    echo "Error: Node.js triton not executable: $NODE_TRITON" >&2
+    exit 2
+fi
+
+if [[ ! -x "$RUST_TRITON" ]]; then
+    echo "Error: Rust triton not executable: $RUST_TRITON" >&2
+    echo "  Build with: make build" >&2
+    exit 2
+fi
+
+if [[ "$TIER" =~ ^(api|all)$ && -z "$PROFILE" ]]; then
+    echo "Error: --profile required for API tests" >&2
+    exit 2
+fi
+
+# ---------- load tracking files ----------
+
+load_tracking_files() {
+    local known_file="$SCRIPT_DIR/known-diffs.txt"
+    local ignored_file="$SCRIPT_DIR/ignored-diffs.txt"
+
+    if [[ -f "$known_file" ]]; then
+        while IFS= read -r line; do
+            # Skip comments and blank lines
+            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+            [[ -z "${line// /}" ]] && continue
+            local test_id bead_id
+            test_id="$(echo "$line" | awk '{print $1}')"
+            bead_id="$(echo "$line" | awk '{print $2}')"
+            KNOWN_DIFFS["$test_id"]="$bead_id"
+        done < "$known_file"
+    fi
+
+    if [[ -f "$ignored_file" ]]; then
+        while IFS= read -r line; do
+            [[ "$line" =~ ^[[:space:]]*# ]] && continue
+            [[ -z "${line// /}" ]] && continue
+            local test_id reason
+            test_id="$(echo "$line" | awk '{print $1}')"
+            reason="$(echo "$line" | awk '{$1=""; print}' | sed 's/^ //')"
+            IGNORED_DIFFS["$test_id"]="$reason"
+        done < "$ignored_file"
+    fi
+}
+
+load_tracking_files
+
+# ---------- setup ----------
+if [[ -z "$OUTPUT_DIR" ]]; then
+    OUTPUT_DIR="$(mktemp -d "${OUTPUT_DIR:-./target}/triton-compare.XXXXXX")"
+fi
+mkdir -p "$OUTPUT_DIR/diffs" "$OUTPUT_DIR/node" "$OUTPUT_DIR/rust"
+
+# Environment variables that override profile settings via clap's `env` attribute.
+# These must be unset in isolated mode to prevent the user's real credentials
+# from leaking into the test environment (which would cause tests to silently
+# use real auth instead of the generated test keys, producing false passes
+# when the agent is unreachable and wrong-identity payloads when it is).
+ISOLATED_ENV_UNSET=(
+    TRITON_PROFILE TRITON_URL TRITON_ACCOUNT TRITON_KEY_ID
+    TRITON_RBAC_USER TRITON_RBAC_ROLE TRITON_TLS_INSECURE
+    SDC_URL SDC_ACCOUNT SDC_KEY_ID
+    SSH_AUTH_SOCK
+)
+
+# Run a command in the isolated environment.
+# Usage: run_isolated [VAR=val ...] <binary> [args...]
+# Any leading KEY=VALUE arguments are exported before running the command.
+# Uses a subshell to unset env vars (BSD env on macOS lacks -u support).
+run_isolated() {
+    (
+        unset "${ISOLATED_ENV_UNSET[@]}"
+        export HOME="$ISOLATED_HOME"
+        # Node-triton uses TRITONTEST_CLI_CONFIG_DIR; Rust uses TRITON_CONFIG_DIR
+        export TRITONTEST_CLI_CONFIG_DIR="$ISOLATED_CONFIG"
+        export TRITON_CONFIG_DIR="$ISOLATED_CONFIG"
+        # Export any VAR=val arguments (name must be a valid shell variable)
+        while [[ "$1" =~ ^[A-Z_][A-Z0-9_]*= ]]; do
+            export "$1"
+            shift
+        done
+        "$@"
+    )
+}
+
+# Create isolated environment for offline tests
+ISOLATED_HOME="$(mktemp -d "${TMPDIR:-/tmp}/triton-compare-home.XXXXXX")"
+ISOLATED_CONFIG="$ISOLATED_HOME/.triton"
+mkdir -p "$ISOLATED_CONFIG/profiles.d"
+
+# Generate SSH keys in various formats to exercise key discovery
+# Each profile gets a key whose fingerprint matches its keyId
+ISOLATED_SSH="$ISOLATED_HOME/.ssh"
+mkdir -p "$ISOLATED_SSH"
+chmod 700 "$ISOLATED_SSH"
+
+# Key 1: ed25519 in OpenSSH format (the easy case)
+ssh-keygen -t ed25519 -f "$ISOLATED_SSH/id_ed25519" -N "" -q
+KEY1_FP=$(ssh-keygen -lf "$ISOLATED_SSH/id_ed25519" -E md5 | awk '{print $2}' | sed 's/^MD5://')
+
+# Key 2: RSA in PKCS#1 PEM format (the problematic format from differences.md #1)
+ssh-keygen -t rsa -b 2048 -f "$ISOLATED_SSH/id_rsa" -N "" -m PEM -q
+KEY2_FP=$(ssh-keygen -lf "$ISOLATED_SSH/id_rsa" -E md5 | awk '{print $2}' | sed 's/^MD5://')
+
+# Key 3: ECDSA in OpenSSH format
+ssh-keygen -t ecdsa -b 256 -f "$ISOLATED_SSH/id_ecdsa" -N "" -q
+KEY3_FP=$(ssh-keygen -lf "$ISOLATED_SSH/id_ecdsa" -E md5 | awk '{print $2}' | sed 's/^MD5://')
+
+# Write profiles with keyIds matching the generated keys
+cat > "$ISOLATED_CONFIG/profiles.d/test-compare.json" <<EOF
+{
+    "url": "https://cloudapi.us-test-1.example.com",
+    "account": "testuser@example.com",
+    "keyId": "$KEY1_FP"
+}
+EOF
+
+cat > "$ISOLATED_CONFIG/profiles.d/staging.json" <<EOF
+{
+    "url": "https://cloudapi.staging.example.com",
+    "account": "deploy@example.com",
+    "keyId": "$KEY2_FP"
+}
+EOF
+
+cat > "$ISOLATED_CONFIG/profiles.d/us-west-1.json" <<EOF
+{
+    "url": "https://cloudapi.us-west-1.example.com",
+    "account": "admin@example.com",
+    "keyId": "$KEY3_FP"
+}
+EOF
+
+# Set test-compare as the current profile
+# Node-triton uses a plain-text "profile" file; Rust uses "config.json"
+echo '"test-compare"' > "$ISOLATED_CONFIG/profile"
+echo '{"profile": "test-compare"}' > "$ISOLATED_CONFIG/config.json"
+
+cleanup() {
+    rm -rf "$ISOLATED_HOME"
+}
+trap cleanup EXIT
+
+NODE_VERSION=$("$NODE_TRITON" --version 2>/dev/null || echo "unknown")
+RUST_VERSION=$("$RUST_TRITON" --version 2>/dev/null || echo "unknown")
+
+echo "=== Triton CLI Comparison Report ==="
+echo "Node: $NODE_TRITON ($NODE_VERSION)"
+echo "Rust: $RUST_TRITON ($RUST_VERSION)"
+echo "Tier: $TIER"
+echo ""
+
+export > $OUTPUT_DIR/env
+
+# ---------- normalization functions ----------
+
+# Sort JSON keys, handle NDJSON (one JSON object per line)
+normalize_json() {
+    local input="$1"
+    # Detect NDJSON: multiple lines each starting with {
+    if grep -cq '^{' "$input" 2>/dev/null && [[ $(wc -l < "$input") -gt 1 ]]; then
+        # Convert NDJSON to sorted JSON array
+        jq -s 'sort_by(.name // .id // .key // keys[0])' "$input" 2>/dev/null | jq -S '.' || cat "$input"
+    else
+        jq -S '.' "$input" 2>/dev/null || cat "$input"
+    fi
+}
+
+# Collapse whitespace in table output, strip trailing spaces
+normalize_table() {
+    sed -E 's/[[:space:]]+/ /g; s/ $//'
+}
+
+# Strip ANSI escape codes
+strip_ansi() {
+    sed -E 's/\x1b\[[0-9;]*[a-zA-Z]//g'
+}
+
+# General normalization pipeline for non-JSON text output
+normalize_text() {
+    strip_ansi
+}
+
+# Extract the last JSON object from output that may contain non-JSON text
+# (e.g., status messages before/after the emit-payload envelope).
+# Prints from the first '{' to the matching '}', ignoring surrounding text.
+extract_json_object() {
+    sed -n '/^{/,/^}/p'
+}
+
+# Strip multi-line JSON objects (emit-payload envelopes) from output,
+# leaving only rendered CLI output (tables, status messages, etc.).
+# Inverse of extract_json_object.
+strip_json_objects() {
+    sed '/^{/,/^}/d'
+}
+
+# Extract sorted subcommand names from help output (either Node.js or Rust format)
+# Produces one "command-name" per line, sorted. Filters out "help".
+# Also extracts aliases:
+#   Node.js format: "copy (cp)" → outputs both "copy" and "cp"
+#   Rust/clap format: "copy  Copy image [aliases: cp]" → outputs both "copy" and "cp"
+# Uses POSIX awk only (no gawk, alas).
+normalize_help_commands() {
+    awk '
+    /^Commands:/ { in_cmds=1; next }
+    /^Options:/ || /^Usage:/ || /^[^ ]/ { in_cmds=0 }
+    in_cmds && /^[[:space:]]+[a-z]/ {
+        if ($1 == "help") next
+        print $1
+        # Node.js aliases: "copy (cp)" — $2 is "(alias)"
+        if ($2 ~ /^\([a-z?]+\)$/) {
+            alias = $2
+            gsub(/[()]/, "", alias)
+            if (alias != "?") print alias
+        }
+        # Rust/clap aliases: "[aliases: cp, ...]"
+        if (match($0, /\[aliases:/)) {
+            rest = substr($0, RSTART + 10)
+            gsub(/\].*/, "", rest)
+            n = split(rest, aliases, /,[[:space:]]*/)
+            for (i = 1; i <= n; i++) {
+                gsub(/^[[:space:]]+|[[:space:]]+$/, "", aliases[i])
+                if (aliases[i] != "") print aliases[i]
+            }
+        }
+    }' | sort
+}
+
+# ---------- tracking helpers ----------
+
+# Check if a test is in the ignored list; if so, skip it
+# Returns 0 if ignored (caller should skip), 1 if not ignored
+is_ignored() {
+    local test_id="$1"
+    [[ -v "IGNORED_DIFFS[$test_id]" ]]
+}
+
+# Get annotation for a DIFF result
+diff_annotation() {
+    local test_id="$1"
+    if [[ -v "KNOWN_DIFFS[$test_id]" ]]; then
+        echo " (bead ${KNOWN_DIFFS[$test_id]})"
+    else
+        echo " (NEW)"
+    fi
+}
+
+# Get annotation for a PASS result that was previously a known diff
+pass_annotation() {
+    local test_id="$1"
+    if [[ -v "KNOWN_DIFFS[$test_id]" ]]; then
+        echo " (fixed? bead ${KNOWN_DIFFS[$test_id]})"
+    fi
+}
+
+# ---------- test runner ----------
+
+# Run a single command against both CLIs and compare output
+# Args: test_id description [env_mode] command...
+#   env_mode: "isolated" (use fake home) or "live" (use real env)
+run_test() {
+    local test_id="$1"; shift
+    local description="$1"; shift
+    local env_mode="$1"; shift
+    # Remaining args are the triton subcommand + flags
+
+    # Check ignored list first
+    if is_ignored "$test_id"; then
+        printf "SKIP     %-30s %s (intentional: %s)\n" \
+            "$test_id" "$description" "${IGNORED_DIFFS[$test_id]}"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        return 0
+    fi
+
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "  Running: triton $*"
+    fi
+
+    local node_out="$OUTPUT_DIR/node/$test_id.out"
+    local node_err="$OUTPUT_DIR/node/$test_id.err"
+    local rust_out="$OUTPUT_DIR/rust/$test_id.out"
+    local rust_err="$OUTPUT_DIR/rust/$test_id.err"
+
+    local node_exit=0
+    local rust_exit=0
+
+    # Run Node.js triton
+    if [[ "$env_mode" == "isolated" ]]; then
+        run_isolated "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
+    else
+        "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
+    fi
+
+    # Run Rust triton
+    if [[ "$env_mode" == "isolated" ]]; then
+        run_isolated "$RUST_TRITON" "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
+    else
+        "$RUST_TRITON" "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
+    fi
+
+    # Normalize and diff
+    compare_outputs "$test_id" "$description" "$node_out" "$rust_out" "$node_exit" "$rust_exit"
+}
+
+# Run a test with JSON output (-j flag) — uses JSON normalization
+run_json_test() {
+    local test_id="$1"; shift
+    local description="$1"; shift
+    local env_mode="$1"; shift
+
+    # Check ignored list first
+    if is_ignored "$test_id"; then
+        printf "SKIP     %-30s %s (intentional: %s)\n" \
+            "$test_id" "$description" "${IGNORED_DIFFS[$test_id]}"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        return 0
+    fi
+
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "  Running: triton $*"
+    fi
+
+    local node_out="$OUTPUT_DIR/node/$test_id.out"
+    local rust_out="$OUTPUT_DIR/rust/$test_id.out"
+    local node_err="$OUTPUT_DIR/node/$test_id.err"
+    local rust_err="$OUTPUT_DIR/rust/$test_id.err"
+    local node_norm="$OUTPUT_DIR/node/$test_id.norm"
+    local rust_norm="$OUTPUT_DIR/rust/$test_id.norm"
+
+    local node_exit=0
+    local rust_exit=0
+
+    if [[ "$env_mode" == "isolated" ]]; then
+        run_isolated "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
+        run_isolated "$RUST_TRITON" "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
+    else
+        "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
+        "$RUST_TRITON" "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
+    fi
+
+    # Normalize JSON
+    normalize_json "$node_out" > "$node_norm"
+    normalize_json "$rust_out" > "$rust_norm"
+
+    compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
+}
+
+# Compare two already-produced output files with text normalization
+compare_outputs() {
+    local test_id="$1"
+    local description="$2"
+    local node_out="$3"
+    local rust_out="$4"
+    local node_exit="$5"
+    local rust_exit="$6"
+
+    local node_norm="$OUTPUT_DIR/node/$test_id.norm"
+    local rust_norm="$OUTPUT_DIR/rust/$test_id.norm"
+
+    normalize_text < "$node_out" > "$node_norm"
+    normalize_text < "$rust_out" > "$rust_norm"
+
+    compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
+}
+
+# Core comparison of two normalized files
+compare_files() {
+    local test_id="$1"
+    local description="$2"
+    local node_norm="$3"
+    local rust_norm="$4"
+    local node_exit="$5"
+    local rust_exit="$6"
+
+    local diff_file="$OUTPUT_DIR/diffs/$test_id.diff"
+
+    # Build diff with context
+    local has_diff=0
+    {
+        if [[ "$node_exit" -ne "$rust_exit" ]]; then
+            echo "Exit code: node=$node_exit rust=$rust_exit"
+            echo "---"
+            has_diff=1
+        fi
+        if ! diff -u --label "node" --label "rust" "$node_norm" "$rust_norm"; then
+            has_diff=1
+        fi
+    } > "$diff_file" 2>&1
+
+    if [[ $has_diff -eq 0 ]]; then
+        local annotation
+        annotation="$(pass_annotation "$test_id")"
+        printf "PASS     %-30s %s%s\n" "$test_id" "$description" "$annotation"
+        PASS_COUNT=$((PASS_COUNT + 1))
+        if [[ -n "$annotation" ]]; then
+            FIXED_COUNT=$((FIXED_COUNT + 1))
+        fi
+        rm -f "$diff_file"
+    else
+        local annotation
+        annotation="$(diff_annotation "$test_id")"
+        printf "DIFF     %-30s %s%s\n" "$test_id" "$description" "$annotation"
+        DIFF_COUNT=$((DIFF_COUNT + 1))
+        if [[ "$annotation" == " (NEW)" ]]; then
+            NEW_COUNT=$((NEW_COUNT + 1))
+        fi
+    fi
+}
+
+# Skip a test with a reason
+skip_test() {
+    local test_id="$1"
+    local description="$2"
+    local reason="$3"
+    printf "SKIP     %-30s %s (%s)\n" "$test_id" "$description" "$reason"
+    SKIP_COUNT=$((SKIP_COUNT + 1))
+}
+
+# Run a help coverage test: compare subcommand names, not exact help text
+# This verifies the Rust CLI has the same subcommands as Node.js, ignoring
+# layout differences (clap vs node-cmdln).
+run_help_coverage_test() {
+    local test_id="$1"; shift
+    local description="$1"; shift
+    local env_mode="$1"; shift
+    # Remaining args are the triton subcommand + flags
+
+    # Check ignored list first
+    if is_ignored "$test_id"; then
+        printf "SKIP     %-30s %s (intentional: %s)\n" \
+            "$test_id" "$description" "${IGNORED_DIFFS[$test_id]}"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        return 0
+    fi
+
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "  Running: triton $*"
+    fi
+
+    local node_out="$OUTPUT_DIR/node/$test_id.out"
+    local node_err="$OUTPUT_DIR/node/$test_id.err"
+    local rust_out="$OUTPUT_DIR/rust/$test_id.out"
+    local rust_err="$OUTPUT_DIR/rust/$test_id.err"
+
+    local node_exit=0
+    local rust_exit=0
+
+    # Run both CLIs
+    if [[ "$env_mode" == "isolated" ]]; then
+        run_isolated "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
+        run_isolated "$RUST_TRITON" "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
+    else
+        "$NODE_TRITON" "$@" > "$node_out" 2> "$node_err" || node_exit=$?
+        "$RUST_TRITON" "$@" > "$rust_out" 2> "$rust_err" || rust_exit=$?
+    fi
+
+    # Extract subcommand names
+    local node_norm="$OUTPUT_DIR/node/$test_id.norm"
+    local rust_norm="$OUTPUT_DIR/rust/$test_id.norm"
+
+    normalize_help_commands < "$node_out" > "$node_norm"
+    normalize_help_commands < "$rust_out" > "$rust_norm"
+
+    # Superset check: every Node.js command must exist in Rust.
+    # Extra Rust commands are OK (improvements). Only missing ones are flagged.
+    local missing
+    missing="$(comm -23 "$node_norm" "$rust_norm")"
+
+    local diff_file="$OUTPUT_DIR/diffs/$test_id.diff"
+
+    if [[ -z "$missing" ]]; then
+        local annotation
+        annotation="$(pass_annotation "$test_id")"
+        printf "PASS     %-30s %s%s\n" "$test_id" "$description" "$annotation"
+        PASS_COUNT=$((PASS_COUNT + 1))
+        if [[ -n "$annotation" ]]; then
+            FIXED_COUNT=$((FIXED_COUNT + 1))
+        fi
+        rm -f "$diff_file"
+    else
+        {
+            echo "Commands in Node.js but missing from Rust:"
+            echo "$missing" | sed 's/^/  /'
+            local extra
+            extra="$(comm -13 "$node_norm" "$rust_norm")"
+            if [[ -n "$extra" ]]; then
+                echo ""
+                echo "Extra commands in Rust (OK):"
+                echo "$extra" | sed 's/^/  /'
+            fi
+        } > "$diff_file"
+        local annotation
+        annotation="$(diff_annotation "$test_id")"
+        printf "DIFF     %-30s %s%s\n" "$test_id" "$description" "$annotation"
+        DIFF_COUNT=$((DIFF_COUNT + 1))
+        if [[ "$annotation" == " (NEW)" ]]; then
+            NEW_COUNT=$((NEW_COUNT + 1))
+        fi
+    fi
+}
+
+# ---------- Tier 1: Offline tests ----------
+
+run_offline_tests() {
+    echo "--- Offline Tests ---"
+    echo ""
+    printf "%-8s %-30s %s\n" "RESULT" "TEST ID" "DESCRIPTION"
+    printf "%-8s %-30s %s\n" "------" "-------" "-----------"
+
+    # Profile commands (isolated environment)
+    run_test "profile-list" "profile list" \
+        isolated profile list
+
+    run_json_test "profile-list-json" "profile list -j" \
+        isolated profile list -j
+
+    run_test "profile-get" "profile get" \
+        isolated profile get
+
+    run_json_test "profile-get-json" "profile get -j" \
+        isolated profile get -j
+
+    # Env command
+    run_test "env-bash" "env (bash output)" \
+        isolated env
+
+    # Check if fish shell is supported by both
+    run_test "env-fish" "env --shell fish" \
+        isolated env --shell fish 2>/dev/null || \
+    run_test "env-fish" "env --shell fish" \
+        isolated env -s fish 2>/dev/null || \
+    skip_test "env-fish" "env --shell fish" "flag syntax differs"
+
+    # Completion
+    run_test "completion-bash" "completion bash" \
+        isolated completion bash 2>/dev/null || \
+    skip_test "completion-bash" "completion bash" "syntax differs"
+
+    # Subcommand help — compare command coverage, not layout
+    for subcmd in instance image package network volume key fwrule vlan account; do
+        run_help_coverage_test "help-$subcmd" "$subcmd --help" \
+            isolated "$subcmd" --help
+    done
+
+    echo ""
+}
+
+# ---------- Tier 2: API tests ----------
+
+run_api_tests() {
+    echo "--- API Tests (read-only, profile: $PROFILE) ---"
+    echo ""
+    printf "%-8s %-30s %s\n" "RESULT" "TEST ID" "DESCRIPTION"
+    printf "%-8s %-30s %s\n" "------" "-------" "-----------"
+
+    # List commands (table + JSON)
+    for resource in instance image package network volume key fwrule vlan; do
+        run_test "${resource}-list" "$resource list" \
+            live -p "$PROFILE" "$resource" list
+
+        run_json_test "${resource}-list-json" "$resource list -j" \
+            live -p "$PROFILE" "$resource" list -j
+    done
+
+    # Table formatting flags for instance list
+    run_test "instance-list-sort-name" "instance list -s name" \
+        live -p "$PROFILE" instance list -s name
+
+    run_test "instance-list-sort-name-desc" "instance list -s -name" \
+        live -p "$PROFILE" instance list -s -name
+
+    run_test "instance-list-columns" "instance list -o name,state" \
+        live -p "$PROFILE" instance list -o name,state
+
+    run_test "instance-list-long" "instance list -l" \
+        live -p "$PROFILE" instance list -l
+
+    run_test "instance-list-no-header" "instance list -H" \
+        live -p "$PROFILE" instance list -H
+
+    # Table formatting flags for image list
+    run_test "image-list-sort-name" "image list -s name" \
+        live -p "$PROFILE" image list -s name
+
+    run_test "image-list-columns" "image list -o name,version" \
+        live -p "$PROFILE" image list -o name,version
+
+    run_test "image-list-long" "image list -l" \
+        live -p "$PROFILE" image list -l
+
+    run_test "image-list-no-header" "image list -H" \
+        live -p "$PROFILE" image list -H
+
+    # Account and info
+    run_test "account-get" "account get" \
+        live -p "$PROFILE" account get
+
+    run_json_test "account-get-json" "account get -j" \
+        live -p "$PROFILE" account get -j
+
+    run_test "info" "info" \
+        live -p "$PROFILE" info
+
+    run_json_test "info-json" "info -j" \
+        live -p "$PROFILE" info -j
+
+    # Datacenters and services
+    run_test "datacenters" "datacenters" \
+        live -p "$PROFILE" datacenters
+
+    run_json_test "datacenters-json" "datacenters -j" \
+        live -p "$PROFILE" datacenters -j
+
+    run_test "services" "services" \
+        live -p "$PROFILE" services
+
+    run_json_test "services-json" "services -j" \
+        live -p "$PROFILE" services -j
+
+    # Dynamic get tests: parse first ID from JSON list, then run get
+    for resource in instance image package network volume key; do
+        local first_id
+        first_id=$("$NODE_TRITON" -p "$PROFILE" "$resource" list -j 2>/dev/null \
+            | head -1 | jq -r '.id // .name // .key // empty' 2>/dev/null || echo "")
+
+        if [[ -n "$first_id" ]]; then
+            # Both CLIs output JSON for resource get (even without -j),
+            # so use JSON normalization to sort keys consistently
+            run_json_test "${resource}-get" "$resource get $first_id" \
+                live -p "$PROFILE" "$resource" get "$first_id"
+
+            run_json_test "${resource}-get-json" "$resource get -j $first_id" \
+                live -p "$PROFILE" "$resource" get -j "$first_id"
+        else
+            skip_test "${resource}-get" "$resource get" "no items found"
+            skip_test "${resource}-get-json" "$resource get -j" "no items found"
+        fi
+    done
+
+    # Alias tests: verify shorthand commands produce same output as long form
+    echo ""
+    echo "--- Alias Tests ---"
+    echo ""
+    printf "%-8s %-30s %s\n" "RESULT" "TEST ID" "DESCRIPTION"
+    printf "%-8s %-30s %s\n" "------" "-------" "-----------"
+
+    # For aliases, compare Rust short vs Rust long (not node vs rust)
+    for pair in "insts:instance list" "imgs:image list" "pkgs:package list" "nets:network list"; do
+        local alias_cmd="${pair%%:*}"
+        local long_cmd="${pair#*:}"
+        local test_id="alias-$alias_cmd"
+
+        local alias_out="$OUTPUT_DIR/rust/${test_id}-alias.out"
+        local long_out="$OUTPUT_DIR/rust/${test_id}-long.out"
+
+        "$RUST_TRITON" -p "$PROFILE" $alias_cmd -j > "$alias_out" 2>/dev/null || true
+        # shellcheck disable=SC2086
+        "$RUST_TRITON" -p "$PROFILE" $long_cmd -j > "$long_out" 2>/dev/null || true
+
+        local alias_norm="$OUTPUT_DIR/rust/${test_id}-alias.norm"
+        local long_norm="$OUTPUT_DIR/rust/${test_id}-long.norm"
+
+        normalize_json "$alias_out" > "$alias_norm"
+        normalize_json "$long_out" > "$long_norm"
+
+        if diff -q "$alias_norm" "$long_norm" > /dev/null 2>&1; then
+            printf "PASS     %-30s %s\n" "$test_id" "$alias_cmd == $long_cmd"
+            PASS_COUNT=$((PASS_COUNT + 1))
+        else
+            printf "DIFF     %-30s %s\n" "$test_id" "$alias_cmd != $long_cmd"
+            diff -u --label "alias" --label "long" "$alias_norm" "$long_norm" \
+                > "$OUTPUT_DIR/diffs/${test_id}.diff" 2>&1 || true
+            DIFF_COUNT=$((DIFF_COUNT + 1))
+        fi
+    done
+
+    echo ""
+}
+
+# ---------- Tier 3: Payload tests (mutating operations, fully offline) ----------
+
+# Run a single payload comparison test.
+# Both CLIs emit a JSON envelope via emit-payload mode; we normalize and diff.
+# Args: test_id description cli_args...
+run_payload_test() {
+    local test_id="$1"; shift
+    local description="$1"; shift
+    # Remaining args are the triton subcommand + flags
+
+    # Check ignored list first
+    if is_ignored "$test_id"; then
+        printf "SKIP     %-30s %s (intentional: %s)\n" \
+            "$test_id" "$description" "${IGNORED_DIFFS[$test_id]}"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        return 0
+    fi
+
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "  Running: triton $*"
+    fi
+
+    local node_out="$OUTPUT_DIR/node/$test_id.out"
+    local node_err="$OUTPUT_DIR/node/$test_id.err"
+    local rust_out="$OUTPUT_DIR/rust/$test_id.out"
+    local rust_err="$OUTPUT_DIR/rust/$test_id.err"
+    local node_norm="$OUTPUT_DIR/node/$test_id.norm"
+    local rust_norm="$OUTPUT_DIR/rust/$test_id.norm"
+
+    local node_exit=0
+    local rust_exit=0
+
+    local fixtures="$SCRIPT_DIR/fixtures/emit-payload-fakes.json"
+
+    # Node.js: use TRITON_EMIT_PAYLOAD env var
+    run_isolated \
+        TRITON_EMIT_PAYLOAD=1 \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
+        "$NODE_TRITON" "$@" < /dev/null > "$node_out" 2> "$node_err" || node_exit=$?
+
+    # Rust: use --emit-payload flag
+    run_isolated \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
+        "$RUST_TRITON" --emit-payload "$@" < /dev/null > "$rust_out" 2> "$rust_err" || rust_exit=$?
+
+    # Normalize: extract JSON objects (strip status messages), slurp into array,
+    # sort keys, strip null values and .body.origin
+    local jq_filter='[.[] | select(.method) | del(.body.origin) | if .body == {} then .body = null else . end | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
+    extract_json_object < "$node_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$node_norm" 2>/dev/null \
+        || cp "$node_out" "$node_norm"
+    extract_json_object < "$rust_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \
+        || cp "$rust_out" "$rust_norm"
+
+    # Apply per-test node-side fixup if set (for filtering known client quirks)
+    if [[ -n "${PAYLOAD_NODE_JQ_FIXUP:-}" ]]; then
+        jq "$PAYLOAD_NODE_JQ_FIXUP" "$node_norm" > "$node_norm.tmp" && mv "$node_norm.tmp" "$node_norm"
+    fi
+
+    compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
+}
+
+# Run a payload test comparing only mutation envelopes (POST/PUT/DELETE/PATCH).
+# Resolution GETs are filtered out so that differences in name-resolution
+# strategy (e.g., GET-by-name vs LIST+filter) don't cause false diffs.
+# Args: test_id description cli_args...
+run_payload_test_mutations() {
+    local test_id="$1"; shift
+    local description="$1"; shift
+
+    if is_ignored "$test_id"; then
+        printf "SKIP     %-30s %s (intentional: %s)\n" \
+            "$test_id" "$description" "${IGNORED_DIFFS[$test_id]}"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        return 0
+    fi
+
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "  Running: triton $*"
+    fi
+
+    local node_out="$OUTPUT_DIR/node/$test_id.out"
+    local node_err="$OUTPUT_DIR/node/$test_id.err"
+    local rust_out="$OUTPUT_DIR/rust/$test_id.out"
+    local rust_err="$OUTPUT_DIR/rust/$test_id.err"
+    local node_norm="$OUTPUT_DIR/node/$test_id.norm"
+    local rust_norm="$OUTPUT_DIR/rust/$test_id.norm"
+
+    local node_exit=0
+    local rust_exit=0
+
+    local fixtures="$SCRIPT_DIR/fixtures/emit-payload-fakes.json"
+
+    run_isolated \
+        TRITON_EMIT_PAYLOAD=1 \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
+        "$NODE_TRITON" "$@" < /dev/null > "$node_out" 2> "$node_err" || node_exit=$?
+
+    run_isolated \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
+        "$RUST_TRITON" --emit-payload "$@" < /dev/null > "$rust_out" 2> "$rust_err" || rust_exit=$?
+
+    # Like run_payload_test but also filter to mutations only (no GET/HEAD)
+    local jq_filter='[.[] | select(.method) | select(.method != "GET" and .method != "HEAD") | del(.body.origin) | if .body == {} then .body = null else . end | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
+    extract_json_object < "$node_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$node_norm" 2>/dev/null \
+        || cp "$node_out" "$node_norm"
+    extract_json_object < "$rust_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \
+        || cp "$rust_out" "$rust_norm"
+
+    compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
+}
+
+# Run a payload test where each CLI uses different invocation syntax.
+# Args: test_id description node_args... --- rust_args...
+# The "---" separator divides node-triton args from Rust triton args.
+run_payload_test_split() {
+    local test_id="$1"; shift
+    local description="$1"; shift
+
+    # Split args at "---"
+    local node_args=()
+    local rust_args=()
+    local in_rust=0
+    for arg in "$@"; do
+        if [[ "$arg" == "---" ]]; then
+            in_rust=1
+            continue
+        fi
+        if [[ $in_rust -eq 0 ]]; then
+            node_args+=("$arg")
+        else
+            rust_args+=("$arg")
+        fi
+    done
+
+    # Check ignored list first
+    if is_ignored "$test_id"; then
+        printf "SKIP     %-30s %s (intentional: %s)\n" \
+            "$test_id" "$description" "${IGNORED_DIFFS[$test_id]}"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        return 0
+    fi
+
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "  Running node: triton ${node_args[*]}"
+        echo "  Running rust: triton ${rust_args[*]}"
+    fi
+
+    local node_out="$OUTPUT_DIR/node/$test_id.out"
+    local node_err="$OUTPUT_DIR/node/$test_id.err"
+    local rust_out="$OUTPUT_DIR/rust/$test_id.out"
+    local rust_err="$OUTPUT_DIR/rust/$test_id.err"
+    local node_norm="$OUTPUT_DIR/node/$test_id.norm"
+    local rust_norm="$OUTPUT_DIR/rust/$test_id.norm"
+
+    local node_exit=0
+    local rust_exit=0
+
+    local fixtures="$SCRIPT_DIR/fixtures/emit-payload-fakes.json"
+
+    run_isolated \
+        TRITON_EMIT_PAYLOAD=1 \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
+        "$NODE_TRITON" "${node_args[@]}" > "$node_out" 2> "$node_err" || node_exit=$?
+
+    run_isolated \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
+        "$RUST_TRITON" --emit-payload "${rust_args[@]}" > "$rust_out" 2> "$rust_err" || rust_exit=$?
+
+    local jq_filter='[.[] | select(.method) | del(.body.origin) | if .body == {} then .body = null else . end | if .body == null then . else .body |= with_entries(select(.value != null)) end]'
+    extract_json_object < "$node_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$node_norm" 2>/dev/null \
+        || cp "$node_out" "$node_norm"
+    extract_json_object < "$rust_out" | jq -s '.' 2>/dev/null | jq -S "$jq_filter" > "$rust_norm" 2>/dev/null \
+        || cp "$rust_out" "$rust_norm"
+
+    compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
+}
+
+# Run a rendered-output comparison test.
+# Same setup as run_payload_test (emit-payload mode + fixtures), but
+# compares the rendered CLI output (tables, text) instead of HTTP envelopes.
+# JSON envelopes are stripped; remaining text is normalized and diffed.
+# Args: test_id description cli_args...
+run_render_test() {
+    local test_id="$1"; shift
+    local description="$1"; shift
+
+    if is_ignored "$test_id"; then
+        printf "SKIP     %-30s %s (intentional: %s)\n" \
+            "$test_id" "$description" "${IGNORED_DIFFS[$test_id]}"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        return 0
+    fi
+
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "  Running: triton $*"
+    fi
+
+    local node_out="$OUTPUT_DIR/node/$test_id.out"
+    local node_err="$OUTPUT_DIR/node/$test_id.err"
+    local rust_out="$OUTPUT_DIR/rust/$test_id.out"
+    local rust_err="$OUTPUT_DIR/rust/$test_id.err"
+    local node_norm="$OUTPUT_DIR/node/$test_id.norm"
+    local rust_norm="$OUTPUT_DIR/rust/$test_id.norm"
+
+    local node_exit=0
+    local rust_exit=0
+
+    local fixtures="$SCRIPT_DIR/fixtures/emit-payload-fakes.json"
+
+    run_isolated \
+        TRITON_EMIT_PAYLOAD=1 \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
+        "$NODE_TRITON" "$@" < /dev/null > "$node_out" 2> "$node_err" || node_exit=$?
+
+    run_isolated \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
+        "$RUST_TRITON" --emit-payload "$@" < /dev/null > "$rust_out" 2> "$rust_err" || rust_exit=$?
+
+    # Strip JSON envelopes, normalize remaining text
+    strip_json_objects < "$node_out" | normalize_text > "$node_norm"
+    strip_json_objects < "$rust_out" | normalize_text > "$rust_norm"
+
+    compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
+}
+
+# Run a rendered-output comparison test for -j (JSON) output.
+# Same setup as run_payload_test, but filters out HTTP envelope objects
+# (those with a "method" key) from the NDJSON stream, keeping only the
+# data objects that represent actual CLI output.
+# Args: test_id description cli_args...
+run_render_json_test() {
+    local test_id="$1"; shift
+    local description="$1"; shift
+
+    if is_ignored "$test_id"; then
+        printf "SKIP     %-30s %s (intentional: %s)\n" \
+            "$test_id" "$description" "${IGNORED_DIFFS[$test_id]}"
+        SKIP_COUNT=$((SKIP_COUNT + 1))
+        return 0
+    fi
+
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "  Running: triton $*"
+    fi
+
+    local node_out="$OUTPUT_DIR/node/$test_id.out"
+    local node_err="$OUTPUT_DIR/node/$test_id.err"
+    local rust_out="$OUTPUT_DIR/rust/$test_id.out"
+    local rust_err="$OUTPUT_DIR/rust/$test_id.err"
+    local node_norm="$OUTPUT_DIR/node/$test_id.norm"
+    local rust_norm="$OUTPUT_DIR/rust/$test_id.norm"
+
+    local node_exit=0
+    local rust_exit=0
+
+    local fixtures="$SCRIPT_DIR/fixtures/emit-payload-fakes.json"
+
+    run_isolated \
+        TRITON_EMIT_PAYLOAD=1 \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
+        "$NODE_TRITON" "$@" < /dev/null > "$node_out" 2> "$node_err" || node_exit=$?
+
+    run_isolated \
+        TRITON_EMIT_PAYLOAD_FIXTURES="$fixtures" \
+        "$RUST_TRITON" --emit-payload "$@" < /dev/null > "$rust_out" 2> "$rust_err" || rust_exit=$?
+
+    # Strip multi-line JSON envelopes, then filter out any remaining
+    # single-line JSON objects that have a "method" key (envelope fragments).
+    # Normalize the remaining data JSON.
+    strip_json_objects < "$node_out" \
+        | jq -c 'select(.method | not)' 2>/dev/null \
+        > "$node_norm.tmp" || true
+    strip_json_objects < "$rust_out" \
+        | jq -c 'select(.method | not)' 2>/dev/null \
+        > "$rust_norm.tmp" || true
+
+    normalize_json "$node_norm.tmp" > "$node_norm"
+    normalize_json "$rust_norm.tmp" > "$rust_norm"
+    rm -f "$node_norm.tmp" "$rust_norm.tmp"
+
+    compare_files "$test_id" "$description" "$node_norm" "$rust_norm" "$node_exit" "$rust_exit"
+}
+
+# Check if node-triton has the emit-payload patch applied.
+# Resolves the cloudapi2.js path from the NODE_TRITON binary and greps
+# for the TRITON_EMIT_PAYLOAD marker. Returns 0 if patched, 1 if not.
+check_payload_patch() {
+    local triton_real
+    triton_real="$(readlink -f "$NODE_TRITON" 2>/dev/null || echo "$NODE_TRITON")"
+    local prefix
+    prefix="$(dirname "$(dirname "$triton_real")")"
+
+    # Try two common layouts:
+    #   npm/nix: <prefix>/lib/node_modules/triton/lib/cloudapi2.js
+    #   git checkout: <prefix>/lib/cloudapi2.js
+    local cloudapi=""
+    for candidate in \
+        "$prefix/lib/node_modules/triton/lib/cloudapi2.js" \
+        "$prefix/lib/cloudapi2.js"; do
+        if [[ -f "$candidate" ]]; then
+            cloudapi="$candidate"
+            break
+        fi
+    done
+
+    if [[ -z "$cloudapi" ]]; then
+        return 1
+    fi
+
+    grep -q 'TRITON_EMIT_PAYLOAD' "$cloudapi" 2>/dev/null
+}
+
+run_payload_tests() {
+    echo "--- Payload Tests (mutating operations, offline) ---"
+    echo ""
+    printf "%-8s %-30s %s\n" "RESULT" "TEST ID" "DESCRIPTION"
+    printf "%-8s %-30s %s\n" "------" "-------" "-----------"
+
+    # Debug: show any cached files in both CLIs' config dirs
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo "  [debug] Rust cache:"
+        find "$ISOLATED_CONFIG/cache" -type f 2>/dev/null | sed 's/^/    /' || echo "    (none)"
+        echo "  [debug] Node cache (HOME=$ISOLATED_HOME):"
+        find "$ISOLATED_HOME/.triton/cache" -type f 2>/dev/null | sed 's/^/    /' || echo "    (none)"
+    fi
+
+    # Dummy UUIDs for testing (no API contact needed)
+    local IMAGE_UUID="00000000-0000-0000-0000-000000000001"
+    local PKG_UUID="00000000-0000-0000-0000-000000000002"
+    local INST_UUID="00000000-0000-0000-0000-000000000003"
+    local NET_UUID="00000000-0000-0000-0000-000000000004"
+
+    # --- Instance ---
+
+    # Instance create (basic)
+    run_payload_test "payload-create-basic" "instance create (basic)" \
+        instance create "$IMAGE_UUID" "$PKG_UUID" --name test-instance
+
+    # Instance create with tags (exercises Rust tag flattening transform)
+    run_payload_test "payload-create-tags" "instance create (with tags)" \
+        instance create "$IMAGE_UUID" "$PKG_UUID" --name test-tags \
+        -t env=test -t role=web
+
+    # Instance create with metadata
+    run_payload_test "payload-create-metadata" "instance create (with metadata)" \
+        instance create "$IMAGE_UUID" "$PKG_UUID" --name test-meta \
+        -m greeting=hello
+
+    # Instance create with NIC specification (exercises NetworkObject wire format)
+    run_payload_test "payload-create-nic" "instance create (with nic)" \
+        instance create "$IMAGE_UUID" "$PKG_UUID" --name test-nic \
+        --nic "ipv4_uuid=$NET_UUID,ipv4_ips=10.0.0.5"
+
+    # Instance create with simple network (exercises NetworkObject wrapping)
+    run_payload_test "payload-create-network" "instance create (with network)" \
+        instance create "$IMAGE_UUID" "$PKG_UUID" --name test-net \
+        --network "$NET_UUID"
+
+    # Instance start (action-dispatch: ?action=start)
+    run_payload_test "payload-start" "instance start" \
+        instance start "$INST_UUID"
+
+    # Instance stop (action-dispatch: ?action=stop)
+    run_payload_test "payload-stop" "instance stop" \
+        instance stop "$INST_UUID"
+
+    # Instance reboot (action-dispatch: ?action=reboot)
+    run_payload_test "payload-reboot" "instance reboot" \
+        instance reboot "$INST_UUID"
+
+    # Instance delete
+    run_payload_test "payload-delete" "instance delete" \
+        instance delete --force "$INST_UUID"
+
+    # --- Firewall rule ---
+
+    run_payload_test "payload-fwrule-create" "fwrule create" \
+        fwrule create "FROM any TO vm $INST_UUID ALLOW tcp PORT 22"
+
+    # --- VLAN ---
+
+    run_payload_test "payload-vlan-create" "vlan create" \
+        vlan create 100 --name test-vlan
+
+    run_payload_test "payload-vlan-create-desc" "vlan create (with description)" \
+        vlan create 200 --name test-vlan-2 --description "A test VLAN"
+
+    # --- Network ---
+
+    run_payload_test "payload-network-create" "network create" \
+        network create 100 --name test-net \
+        --subnet 10.0.0.0/24 --start-ip 10.0.0.1 --end-ip 10.0.0.254
+
+    run_payload_test "payload-network-create-gw" "network create (with gateway)" \
+        network create 100 --name test-net-gw \
+        --subnet 10.0.0.0/24 --start-ip 10.0.0.1 --end-ip 10.0.0.254 \
+        --gateway 10.0.0.1
+
+    # --- Volume ---
+
+    run_payload_test "payload-volume-create" "volume create" \
+        volume create --name test-vol --size 10G
+
+    run_payload_test "payload-volume-create-net" "volume create (with network)" \
+        volume create --name test-vol-net --size 10G --network "$NET_UUID"
+
+    # --- Image ---
+
+    run_payload_test "payload-image-create" "image create" \
+        image create "$INST_UUID" test-image 1.0.0
+
+    run_payload_test "payload-image-list-o" "image list -o" \
+        images -o shortid,name,version
+
+    # --- Instance actions (remaining) ---
+
+    run_payload_test "payload-rename" "instance rename" \
+        instance rename "$INST_UUID" new-name
+
+    run_payload_test "payload-resize" "instance resize" \
+        instance resize "$INST_UUID" "$PKG_UUID"
+
+    run_payload_test "payload-enable-fw" "instance enable-firewall" \
+        instance enable-firewall "$INST_UUID"
+
+    run_payload_test "payload-disable-fw" "instance disable-firewall" \
+        instance disable-firewall "$INST_UUID"
+
+    run_payload_test "payload-enable-delprot" "instance enable-deletion-protection" \
+        instance enable-deletion-protection "$INST_UUID"
+
+    run_payload_test "payload-disable-delprot" "instance disable-deletion-protection" \
+        instance disable-deletion-protection "$INST_UUID"
+
+    # --- Instance snapshot ---
+
+    run_payload_test "payload-snap-create" "instance snapshot create" \
+        instance snapshot create "$INST_UUID" -n snap1
+
+    run_payload_test "payload-snap-delete" "instance snapshot delete" \
+        instance snapshot delete "$INST_UUID" snap1 -f
+
+    # --- Instance NIC ---
+
+    run_payload_test "payload-nic-add" "instance nic create" \
+        instance nic create "$INST_UUID" "$NET_UUID"
+
+    run_payload_test "payload-nic-remove" "instance nic delete" \
+        instance nic delete "$INST_UUID" aa:bb:cc:dd:ee:ff -f
+
+    # --- Instance disk ---
+
+    # Node-triton's mapParams leaks the machine id as ?id=<uuid> on the
+    # GET list-disks request.  The server ignores it, so strip it here.
+    PAYLOAD_NODE_JQ_FIXUP='[.[] | .url |= split("?")[0]]' \
+    run_payload_test "payload-disk-add" "instance disk add" \
+        instance disk add "$INST_UUID" 10240
+
+    local DISK_UUID="00000000-0000-0000-0000-000000000007"
+    run_payload_test "payload-disk-delete" "instance disk delete" \
+        instance disk delete "$INST_UUID" "$DISK_UUID"
+
+    # --- Instance tag ---
+
+    run_payload_test "payload-tag-set" "instance tag set" \
+        instance tag set "$INST_UUID" env=prod role=web
+
+    run_payload_test "payload-tag-delete" "instance tag delete" \
+        instance tag delete "$INST_UUID" env
+
+    run_payload_test "payload-tag-replace" "instance tag replace-all" \
+        instance tag replace-all "$INST_UUID" env=staging
+
+    run_payload_test "payload-tag-delete-all" "instance tag delete --all" \
+        instance tag delete "$INST_UUID" --all
+
+    # --- Instance metadata ---
+
+    run_payload_test "payload-meta-set" "instance metadata set" \
+        instance metadata set "$INST_UUID" greeting=hello
+
+    run_payload_test "payload-meta-delete" "instance metadata delete" \
+        instance metadata delete -f "$INST_UUID" greeting
+
+    # --- Image (additional) ---
+
+    run_payload_test "payload-image-delete" "image delete" \
+        image delete "$IMAGE_UUID" -f
+
+    run_payload_test "payload-image-clone" "image clone" \
+        image clone "$IMAGE_UUID"
+
+    local ACCT_UUID="00000000-0000-0000-0000-000000000008"
+    run_payload_test "payload-image-share" "image share" \
+        image share "$IMAGE_UUID" "$ACCT_UUID"
+
+    run_payload_test "payload-image-unshare" "image unshare" \
+        image unshare "$IMAGE_UUID" "$ACCT_UUID"
+
+    run_payload_test "payload-image-update" "image update" \
+        image update "$IMAGE_UUID" name=new-name version=2.0.0
+
+    run_payload_test "payload-image-export" "image export" \
+        image export "$IMAGE_UUID" /user/stor/export
+
+    run_payload_test "payload-image-copy" "image copy" \
+        image copy "$IMAGE_UUID" us-west-1
+
+    # --- Volume (additional) ---
+
+    local VOL_UUID="00000000-0000-0000-0000-000000000005"
+    run_payload_test "payload-volume-delete" "volume delete" \
+        volume delete "$VOL_UUID" -f
+
+    # --- VLAN (additional) ---
+
+    run_payload_test "payload-vlan-delete" "vlan delete" \
+        vlan delete 100
+
+    # Disabled: node-triton's tritonapi.updateFabricVlan is not a function
+    # (bug in node-triton), so it emits an empty payload and exits 1.
+    # Rust correctly emits a PUT request. Nothing to compare against.
+    # run_payload_test "payload-vlan-update" "vlan update" \
+    #     vlan update 100 name=updated-vlan
+
+    # --- Firewall rule (additional) ---
+
+    local FWRULE_UUID="00000000-0000-0000-0000-000000000006"
+    run_payload_test "payload-fwrule-delete" "fwrule delete" \
+        fwrule delete "$FWRULE_UUID" -f
+
+    run_payload_test "payload-fwrule-enable" "fwrule enable" \
+        fwrule enable "$FWRULE_UUID"
+
+    run_payload_test "payload-fwrule-disable" "fwrule disable" \
+        fwrule disable "$FWRULE_UUID"
+
+    run_payload_test "payload-fwrule-update" "fwrule update" \
+        fwrule update "$FWRULE_UUID" rule="FROM any TO vm $INST_UUID ALLOW tcp PORT 80"
+
+    # --- Key ---
+
+    # Key add (uses temp SSH key from $ISOLATED_SSH)
+    run_payload_test "payload-key-add" "key add" \
+        key add --name test-key "$ISOLATED_SSH/id_ed25519.pub"
+
+    run_payload_test "payload-key-delete" "key delete" \
+        key delete test-key -f
+
+    # --- Account ---
+
+    run_payload_test "payload-account-update" "account update" \
+        account update companyName=TestCorp
+
+    # --- RBAC ---
+
+    # RBAC user create
+    local user_json="$ISOLATED_HOME/rbac-user.json"
+    cat > "$user_json" <<'USERJSON'
+{"login": "testuser", "email": "test@example.com", "password": "secret123"}
+USERJSON
+    run_payload_test "payload-rbac-user-create" "rbac user create" \
+        rbac user -a "$user_json"
+
+    # RBAC role create
+    local role_json="$ISOLATED_HOME/rbac-role.json"
+    cat > "$role_json" <<'ROLEJSON'
+{"name": "testrole", "members": [{"type": "subuser", "login": "testuser", "default": false}], "policies": [{"name": "testpolicy"}]}
+ROLEJSON
+    run_payload_test "payload-rbac-role-create" "rbac role create" \
+        rbac role -a "$role_json"
+
+    # RBAC policy create
+    local policy_json="$ISOLATED_HOME/rbac-policy.json"
+    cat > "$policy_json" <<'POLICYJSON'
+{"name": "testpolicy", "rules": ["can getmachine"], "description": "A test policy"}
+POLICYJSON
+    run_payload_test "payload-rbac-policy-create" "rbac policy create" \
+        rbac policy -a "$policy_json"
+
+    # RBAC deletes — both Node and Rust support -y to skip confirmation prompt.
+    # Use UUID for user so Rust's resolve_user() returns immediately.
+    local USER_UUID="00000000-0000-0000-0000-000000000009"
+
+    run_payload_test "payload-rbac-user-delete" "rbac user delete" \
+        rbac user -d "$USER_UUID" -y
+
+    run_payload_test "payload-rbac-role-delete" "rbac role delete" \
+        rbac role -d testrole -y
+
+    run_payload_test "payload-rbac-policy-delete" "rbac policy delete" \
+        rbac policy -d testpolicy -y
+
+    # RBAC key add/delete
+    run_payload_test "payload-rbac-key-add" "rbac key add" \
+        rbac key -a --name test-key "$USER_UUID" "$ISOLATED_SSH/id_ed25519.pub"
+
+    # Both Node and Rust support -y to skip confirmation prompt
+    run_payload_test "payload-rbac-key-delete" "rbac key delete" \
+        rbac key -d "$USER_UUID" test-key -y
+
+    # --- Accesskey (account-level) ---
+
+    run_payload_test "payload-accesskey-create" "accesskey create" \
+        accesskey create --status Active --description "test key"
+
+    run_payload_test "payload-accesskey-update" "accesskey update" \
+        accesskey update fake-key-id -f "$SCRIPT_DIR/fixtures/accesskey-update.json"
+
+    # Both Node and Rust support --force/-f to skip confirmation prompt
+    run_payload_test "payload-accesskey-delete" "accesskey delete" \
+        accesskey delete fake-key-id -f
+
+    # --- RBAC Accesskey ---
+
+    run_payload_test "payload-rbac-accesskey-create" "rbac accesskey create" \
+        rbac accesskey -c "$USER_UUID" --status Active
+
+    run_payload_test "payload-rbac-accesskey-update" "rbac accesskey update" \
+        rbac accesskey -u "$USER_UUID" fake-key-id --status Inactive
+
+    # Both Node and Rust support -f/--force to skip confirmation prompt
+    run_payload_test "payload-rbac-accesskey-delete" "rbac accesskey delete" \
+        rbac accesskey -d "$USER_UUID" fake-key-id -f
+
+    # --- Network IP ---
+
+    run_payload_test "payload-network-ip-update" "network ip update" \
+        network ip update "$NET_UUID" 10.0.0.5 -f "$SCRIPT_DIR/fixtures/network-ip-update.json"
+
+    # Name-based lookup: both CLIs should list_networks to resolve, then update
+    run_payload_test "payload-network-ip-update-name" "network ip update (by name)" \
+        network ip update test-network 10.0.0.5 -f "$SCRIPT_DIR/fixtures/network-ip-update.json"
+
+    # --- Name-based resolution tests ---
+    #
+    # These use resource names instead of UUIDs to exercise client-side
+    # name-resolution codepaths (list + client-side filter).  Both CLIs
+    # resolve names via different strategies (node-triton typically does
+    # GET-by-name; Rust does LIST + client-side match), so we compare
+    # only the final mutation envelope (filtering out resolution GETs).
+    # The list_* fixture entries return nil UUIDs, matching the
+    # $LAST_SEG_UUID that node-triton's GET fixtures produce for
+    # non-UUID inputs.
+
+    # Instance create with image name + package name
+    run_payload_test_mutations "payload-create-by-name" "instance create (by name)" \
+        instance create test-image test-package --name test-by-name
+
+    # Instance lifecycle by name
+    run_payload_test_mutations "payload-start-by-name" "instance start (by name)" \
+        instance start test-instance
+
+    run_payload_test_mutations "payload-stop-by-name" "instance stop (by name)" \
+        instance stop test-instance
+
+    run_payload_test_mutations "payload-reboot-by-name" "instance reboot (by name)" \
+        instance reboot test-instance
+
+    run_payload_test_mutations "payload-delete-by-name" "instance delete (by name)" \
+        instance delete --force test-instance
+
+    # Instance rename + resize by name (resize also resolves package name)
+    run_payload_test_mutations "payload-rename-by-name" "instance rename (by name)" \
+        instance rename test-instance renamed-inst
+
+    run_payload_test_mutations "payload-resize-by-name" "instance resize (by name)" \
+        instance resize test-instance test-package
+
+    # Image operations by name
+    run_payload_test_mutations "payload-image-clone-by-name" "image clone (by name)" \
+        image clone test-image
+
+    run_payload_test_mutations "payload-image-delete-by-name" "image delete (by name)" \
+        image delete test-image -f
+
+    # Volume delete by name
+    run_payload_test_mutations "payload-volume-delete-by-name" "volume delete (by name)" \
+        volume delete test-volume -f
+
+    # --- Act-as tests ---
+    #
+    # The --act-as flag changes the account in the URL path (e.g.,
+    # /other-account/machines instead of /tester/machines). These tests
+    # verify that the Rust CLI handles this correctly across different
+    # HTTP methods and resource types.
+
+    # GET list
+    run_payload_test "payload-act-as-inst-list" "instance list (act-as)" \
+        --act-as other-account instance list
+
+    # POST create
+    run_payload_test "payload-act-as-create" "instance create (act-as)" \
+        --act-as other-account instance create "$IMAGE_UUID" "$PKG_UUID" --name test-actas
+
+    # POST action-dispatch
+    run_payload_test "payload-act-as-stop" "instance stop (act-as)" \
+        --act-as other-account instance stop "$INST_UUID"
+
+    # DELETE
+    run_payload_test "payload-act-as-delete" "instance delete (act-as)" \
+        --act-as other-account instance delete --force "$INST_UUID"
+
+    # GET different resource
+    run_payload_test "payload-act-as-img-list" "image list (act-as)" \
+        --act-as other-account image list
+
+    # POST non-instance resource
+    run_payload_test "payload-act-as-fwrule" "fwrule create (act-as)" \
+        --act-as other-account fwrule create "FROM any TO vm $INST_UUID ALLOW tcp PORT 22"
+
+    # Name resolution + act-as (filter to mutations only)
+    run_payload_test_mutations "payload-act-as-stop-name" "instance stop by name (act-as)" \
+        --act-as other-account instance stop test-instance
+
+    # --- Rendered output tests ---
+    #
+    # Compare the rendered CLI output (tables and JSON) rather than HTTP
+    # envelopes. Catches deserialization bugs where a field deserializes
+    # as None/null and renders differently (e.g., missing primaryIp).
+
+    # Tabular output
+    run_render_test "render-image-list" "image list (rendered)" \
+        images -o shortid,name,version,state,pubdate
+
+    run_render_test "render-instance-list" "instance list (rendered)" \
+        instances -o shortid,name,state,primaryIp,created
+
+    run_render_test "render-package-list" "package list (rendered)" \
+        packages -o shortid,name,memory,swap,disk,vcpus
+
+    run_render_test "render-volume-list" "volume list (rendered)" \
+        volumes -o shortid,name,size,type,state,created
+
+    # JSON output
+    run_render_json_test "render-image-list-j" "image list -j (rendered)" \
+        images -j
+
+    run_render_json_test "render-instance-list-j" "instance list -j (rendered)" \
+        instances -j
+
+    run_render_json_test "render-package-list-j" "package list -j (rendered)" \
+        packages -j
+
+    run_render_json_test "render-volume-list-j" "volume list -j (rendered)" \
+        volumes -j
+
+    # Debug: show any cached files created during the run
+    if [[ $VERBOSE -eq 1 ]]; then
+        echo ""
+        echo "  [debug] Rust cache (post-run):"
+        find "$ISOLATED_CONFIG/cache" -type f 2>/dev/null | sed 's/^/    /' || echo "    (none)"
+        echo "  [debug] Node cache (post-run, HOME=$ISOLATED_HOME):"
+        find "$ISOLATED_HOME/.triton/cache" -type f 2>/dev/null | sed 's/^/    /' || echo "    (none)"
+    fi
+
+    echo ""
+}
+
+# ---------- main ----------
+
+case "$TIER" in
+    offline) run_offline_tests ;;
+    api)     run_api_tests ;;
+    payload)
+        if ! check_payload_patch; then
+            echo "Error: node-triton does not have the emit-payload patch applied." >&2
+            echo "  Apply it with:" >&2
+            echo "    cd \$(dirname \$(dirname \$(readlink -f $NODE_TRITON)))" >&2
+            echo "    git apply $SCRIPT_DIR/patches/node-triton-emit-payload.patch" >&2
+            exit 2
+        fi
+        run_payload_tests
+        ;;
+    all)
+        run_offline_tests
+        run_api_tests
+        if check_payload_patch; then
+            run_payload_tests
+        else
+            echo ""
+            echo "--- Payload Tests (skipped: node-triton emit-payload patch not applied) ---"
+            echo "  Apply it with:"
+            echo "    cd \$(dirname \$(dirname \$(readlink -f $NODE_TRITON)))"
+            echo "    git apply $SCRIPT_DIR/patches/node-triton-emit-payload.patch"
+            echo ""
+        fi
+        ;;
+esac
+
+echo "=== Summary ==="
+echo "  Pass: $PASS_COUNT"
+echo "  Diff: $DIFF_COUNT (known: $((DIFF_COUNT - NEW_COUNT)), new: $NEW_COUNT)"
+echo "  Skip: $SKIP_COUNT"
+if [[ $FIXED_COUNT -gt 0 ]]; then
+    echo "  Fixed: $FIXED_COUNT (known diffs now passing — close the bead!)"
+fi
+echo ""
+
+if [[ $DIFF_COUNT -gt 0 ]]; then
+    echo "Diffs saved to: $OUTPUT_DIR/diffs/"
+    echo ""
+    echo "To inspect a diff:"
+    echo "  cat $OUTPUT_DIR/diffs/<test-id>.diff"
+    echo ""
+    echo "Raw outputs saved to:"
+    echo "  $OUTPUT_DIR/node/  (Node.js)"
+    echo "  $OUTPUT_DIR/rust/  (Rust)"
+    if [[ $NEW_COUNT -gt 0 ]]; then
+        echo ""
+        echo "New diffs need triage — file a bead or add to ignored-diffs.txt"
+    fi
+    exit 1
+else
+    echo "All tests passed!"
+    # Clean up output dir if no diffs (nothing to inspect)
+    if [[ "$OUTPUT_DIR" == *triton-compare.* ]]; then
+        rm -rf "$OUTPUT_DIR"
+    fi
+    exit 0
+fi

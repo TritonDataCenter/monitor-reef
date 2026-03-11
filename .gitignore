@@ -3,3 +3,9 @@
 /rust
 .env
 .idea/
+
+# Created by cargo when installing from a git repo
+.cargo-ok
+
+# Test configuration (contains credentials)
+cli/triton-cli/tests/config.json

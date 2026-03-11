@@ -10,6 +10,10 @@
 RUST_USE_BOOTSTRAP = false
 RUST_CLIPPY_ARGS = --all-targets --all-features -- -D warnings
 
+# Coverage thresholds
+COVERAGE_LINE_THRESHOLD = 40
+COVERAGE_TIMEOUT = 300
+
 ENGBLD_REQUIRE :=       $(shell git submodule update --init deps/eng)
 include ./deps/eng/tools/mk/Makefile.defs
 TOP ?= $(error Unable to access eng.git submodule Makefiles.)
@@ -18,14 +22,17 @@ include ./deps/eng/tools/mk/Makefile.targ
 include ./deps/eng/tools/mk/Makefile.rust.defs
 include ./deps/eng/tools/mk/Makefile.rust.targ
 
-.PHONY: help build test clean lint format
+.PHONY: help build build-release test clean lint format audit audit-update
 .PHONY: api-new service-new client-new
 .PHONY: service-build service-test service-run
 .PHONY: client-build client-test
 .PHONY: package-build package-test
+.PHONY: triton-test triton-test-api triton-test-all
+.PHONY: triton-compare triton-compare-payload triton-compare-api triton-compare-all
 .PHONY: openapi-generate openapi-list openapi-check
 .PHONY: dev-setup workspace-test integration-test
-.PHONY: list coverage arch-lint
+.PHONY: list coverage arch-lint doc-lint
+.PHONY: clients-generate clients-check
 
 # Default target
 help: ## Show this help message
@@ -46,17 +53,31 @@ help: ## Show this help message
 build: | $(CARGO_EXEC) ## Build all APIs, services and clients
 	$(CARGO) build
 
-test: | $(CARGO_EXEC) ## Run all tests
-	$(CARGO) test
+build-release: | $(CARGO_EXEC) ## Build all APIs, services and clients
+	$(CARGO) build --release
+
+test: | $(CARGO_NEXTEST_EXEC) ## Run all tests
+	TRITON_CONFIG_DIR=/nonexistent $(CARGO) nextest run
 
 clean:: | $(CARGO_EXEC) ## Clean build artifacts
 	$(CARGO) clean
 
-lint: | $(CARGO_EXEC) ## Run clippy linter
+lint:: arch-lint doc-lint clippy
+
+clippy: | $(CARGO_EXEC) ## Run clippy linter
 	$(CARGO) clippy $(RUST_CLIPPY_ARGS)
+
+clippy-fix: | $(CARGO_EXEC) ## Run clippy linter
+	$(CARGO) clippy --fix --allow-dirty $(RUST_CLIPPY_ARGS)
 
 format: | $(CARGO_EXEC) ## Format all code
 	$(CARGO) fmt
+
+audit: | $(CARGO_EXEC) ## Run security audit on dependencies
+	$(CARGO) audit
+
+audit-update: | $(CARGO_EXEC) ## Update advisory database and run audit
+	$(CARGO) audit --update
 
 workspace-test: | $(CARGO_EXEC) ## Run all workspace tests
 	$(CARGO) test --workspace
@@ -112,16 +133,13 @@ client-new: ## Create new client (usage: make client-new CLIENT=my-service-clien
 	cp -r clients/internal/client-template clients/internal/$(CLIENT)
 	sed -i 's/client-template/$(CLIENT)/g' clients/internal/$(CLIENT)/Cargo.toml
 	sed -i 's/client_template/$(shell echo $(CLIENT) | tr '-' '_')/g' clients/internal/$(CLIENT)/Cargo.toml
-	@if [ ! -z "$(API)" ]; then \
-		sed -i 's|generated/example-api.json|generated/$(API).json|g' clients/internal/$(CLIENT)/build.rs; \
-		echo "Updated build.rs to use $(API).json"; \
-	fi
 	@echo "Created new client: clients/internal/$(CLIENT)"
 	@echo ""
 	@echo "Next steps:"
-	@echo "  1. Add 'clients/internal/$(CLIENT)' to workspace Cargo.toml members list"
-	@echo "  2. Verify build.rs points to correct OpenAPI spec"
-	@echo "  3. Run: make client-build CLIENT=$(CLIENT)"
+	@echo "  1. Register the client in client-generator/src/main.rs"
+	@echo "  2. Add 'clients/internal/$(CLIENT)' to workspace Cargo.toml members list"
+	@echo "  3. Run: make clients-generate"
+	@echo "  4. Run: make client-build CLIENT=$(CLIENT)"
 
 client-build: | $(CARGO_EXEC) ## Build specific client (usage: make client-build CLIENT=my-service-client)
 	@if [ -z "$(CLIENT)" ]; then echo "Usage: make client-build CLIENT=my-service-client"; exit 1; fi
@@ -140,14 +158,52 @@ package-test: | $(CARGO_EXEC) ## Test specific package (usage: make package-test
 	@if [ -z "$(PACKAGE)" ]; then echo "Usage: make package-test PACKAGE=my-package"; exit 1; fi
 	$(CARGO) test -p $(PACKAGE)
 
+# Triton CLI test commands
+triton-test: | $(CARGO_EXEC) ## Run triton-cli offline tests (no API required)
+	TRITON_CONFIG_DIR=/nonexistent $(CARGO) test -p triton-cli
+
+triton-test-api: | $(CARGO_EXEC) ## Run triton-cli API tests (requires tests/config.json)
+	@if [ ! -f cli/triton-cli/tests/config.json ]; then \
+		echo "Error: cli/triton-cli/tests/config.json not found"; \
+		echo "Copy config.json.sample and configure for your environment"; \
+		exit 1; \
+	fi
+	$(CARGO) test -p triton-cli -- --ignored
+
+triton-test-all: | $(CARGO_NEXTEST_EXEC) $(CARGO_EXEC) ## Run all triton-cli tests (offline + API)
+	@if [ ! -f cli/triton-cli/tests/config.json ]; then \
+		echo "Warning: No config.json - API tests will fail"; \
+	fi
+	$(CARGO) nextest run -p triton-cli --no-fail-fast -- --include-ignored
+
+triton-test-file: | $(CARGO_EXEC) ## Run specific triton-cli test file (usage: make triton-test-file TEST=cli_vlans)
+	@if [ -z "$(TEST)" ]; then echo "Usage: make triton-test-file TEST=cli_vlans"; exit 1; fi
+	$(CARGO) test -p triton-cli --test $(TEST)
+
+# Triton CLI comparison tests (Node.js vs Rust)
+triton-compare: build ## Compare Node.js vs Rust triton (offline tests)
+	cli/triton-cli/tests/comparison/triton-compare.sh --tier offline
+
+triton-compare-payload: build ## Compare Node.js vs Rust triton (payload tests)
+	cli/triton-cli/tests/comparison/triton-compare.sh --tier payload
+
+triton-compare-api: build ## Compare Node.js vs Rust triton (API tests, needs PROFILE=name)
+	@if [ -z "$(PROFILE)" ]; then echo "Usage: make triton-compare-api PROFILE=demo"; exit 1; fi
+	cli/triton-cli/tests/comparison/triton-compare.sh --tier api --profile $(PROFILE)
+
+triton-compare-all: build ## Compare Node.js vs Rust triton (all tests, needs PROFILE=name)
+	@if [ -z "$(PROFILE)" ]; then echo "Usage: make triton-compare-all PROFILE=demo"; exit 1; fi
+	cli/triton-cli/tests/comparison/triton-compare.sh --tier all --profile $(PROFILE)
+
 # OpenAPI management commands (using dropshot-api-manager)
 openapi-generate: | $(CARGO_EXEC) ## Generate OpenAPI specs from API traits
 	@echo "Generating OpenAPI specs using dropshot-api-manager..."
 	$(CARGO) run -p openapi-manager -- generate
 	@echo "OpenAPI specs generated in openapi-specs/generated/"
+	@echo "Patched client specs in openapi-specs/patched/"
 	@echo ""
 	@echo "    Don't forget to commit the updated specs:"
-	@echo "    git add openapi-specs/generated/"
+	@echo "    git add openapi-specs/generated/ openapi-specs/patched/"
 	@echo "    git commit -m 'Update OpenAPI specs'"
 
 openapi-list: | $(CARGO_EXEC) ## List all managed APIs
@@ -185,7 +241,7 @@ dev-setup: | $(CARGO_EXEC) ## Set up development environment
 # Quick commands for common workflows
 dev: service-build service-test ## Build and test specific service (usage: make dev SERVICE=my-service)
 
-quick-check: format lint test ## Run format, lint, and test quickly
+quick-check:: $(_CHECK_COPYRIGHT_TARGET) format lint test ## Run format, lint, and test quickly
 
 # Full workflow for new API
 new-api-workflow: ## Create complete API+Service+Client (usage: make new-api-workflow NAME=myapp)
@@ -222,36 +278,61 @@ list: ## List all APIs, services and clients
 	@ls -1 openapi-specs/generated/ 2>/dev/null || echo "  No specs generated yet (run: make openapi-generate)"
 
 # Validation and CI commands
-check:: | $(CARGO_EXEC) ## Run all validation checks (CI-ready)
+check:: | $(CARGO_NEXTEST_EXEC) $(CARGO_EXEC) ## Run all validation checks (CI-ready)
 	@echo "Running all validation checks..."
-	$(CARGO) test --workspace
-	$(MAKE) openapi-check
 	$(MAKE) arch-lint
+	$(MAKE) openapi-check
+	$(MAKE) clients-check
+	TRITON_CONFIG_DIR=/nonexistent $(CARGO) nextest run --workspace
 	@echo ""
 	@echo "All validation checks passed!"
 
-# Regenerate clients after OpenAPI spec changes
-regen-clients: | $(CARGO_EXEC) ## Regenerate all client libraries
-	@echo "Regenerating clients by rebuilding..."
-	$(CARGO) build
-	@echo "All clients regenerated. Test with: make test"
+# Client code generation (checked-in generated.rs files)
+clients-generate: | $(CARGO_EXEC) ## Generate all client src/generated.rs files
+	$(CARGO) run -p client-generator -- generate
+	$(CARGO) fmt -- clients/internal/*/src/generated.rs
 
-# Code coverage (configuration in tarpaulin.toml)
-coverage: | $(CARGO_EXEC) ## Run code coverage check (line >= 40%)
-	@if ! $(CARGO) tarpaulin --version >/dev/null 2>&1; then \
-		echo "cargo-tarpaulin not found, installing..."; \
-		$(CARGO) install --features vendored-openssl cargo-tarpaulin; \
+clients-check: | $(CARGO_EXEC) ## Check that generated client code is up-to-date (use in CI)
+	@echo "Checking client generated code is up-to-date..."
+	$(CARGO) run -p client-generator -- generate
+	$(CARGO) fmt -- clients/internal/*/src/generated.rs
+	@if git diff --quiet clients/internal/*/src/generated.rs; then \
+		echo "All clients are up-to-date."; \
+	else \
+		echo "ERROR: Generated client code is stale. Run 'make clients-generate' and commit."; \
+		git diff --stat clients/internal/*/src/generated.rs; \
+		exit 1; \
 	fi
-	@echo "Running code coverage analysis..."
-	$(CARGO) tarpaulin
 
-# Hopefully, something similar to the no-sync-io check will be added to clippy
-# in the future and we won't need this utility:
-#  - https://github.com/rust-lang/rust-clippy/issues/4377
-#  - https://github.com/rust-lang/rfcs/pull/3639
-arch-lint: | $(CARGO_EXEC) ## Run architecture lints
-	@if ! $(CARGO_HOME)/bin/arch-lint --version >/dev/null 2>&1; then \
-		echo "arch-lint not found, installing..."; \
-		$(CARGO) install arch-lint-cli; \
+clients-list: | $(CARGO_EXEC) ## List all managed clients
+	$(CARGO) run -p client-generator -- list
+
+# Regenerate everything (OpenAPI specs + client code)
+regen-clients: openapi-generate clients-generate ## Regenerate OpenAPI specs and client code
+	@echo "All specs and clients regenerated. Test with: make test"
+
+# Doc-lint: check that doc comments don't leak implementation details into OpenAPI specs
+DOC_LINT_PATTERNS = serde_json\|rename_all\|Dropshot\|Progenitor\|schemars\|helper method\|Service implementation\|Rust field\|Rust error\|Rust client
+DOC_LINT_FILES = apis/cloudapi-api/src/types/*.rs apis/cloudapi-api/src/lib.rs \
+	apis/vmapi-api/src/types/*.rs apis/vmapi-api/src/lib.rs \
+	apis/jira-api/src/lib.rs apis/bugview-api/src/lib.rs
+doc-lint: ## Check doc comments for implementation details that leak into OpenAPI specs
+	@echo "Checking doc comments for implementation details..."
+	@RESULT=""; \
+	for f in $(DOC_LINT_FILES); do \
+		if [ -f "$$f" ]; then \
+			MATCHES=$$(grep -n '^[[:space:]]*///' "$$f" | grep -i '$(DOC_LINT_PATTERNS)' | sed "s|^|$$f:|"); \
+			if [ -n "$$MATCHES" ]; then \
+				echo "$$MATCHES"; \
+				RESULT="found"; \
+			fi; \
+		fi; \
+	done; \
+	if [ -n "$$RESULT" ]; then \
+		echo ""; \
+		echo "ERROR: Found implementation details in doc comments that will leak into OpenAPI specs."; \
+		echo "Convert these to regular comments (//) instead of doc comments (///)."; \
+		exit 1; \
+	else \
+		echo "No implementation detail leaks found in doc comments."; \
 	fi
-	$(CARGO_HOME)/bin/arch-lint check

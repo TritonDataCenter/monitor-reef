@@ -1,0 +1,32 @@
+{
+  "vm_uuid": "a1234567-1234-1234-1234-123456789012",
+  "state": "sync",
+  "phase": "sync",
+  "source_server_uuid": "44454c4c-5300-1057-8050-b7c04f533532",
+  "target_server_uuid": "55565c5c-6400-2068-9060-c8d15f644643",
+  "created_timestamp": "2024-06-15T12:00:00.000Z",
+  "started_timestamp": "2024-06-15T12:00:01.000Z",
+  "progress_history": [
+    {
+      "type": "progress",
+      "phase": "begin",
+      "state": "running",
+      "percentage": 100.0,
+      "message": "Begin phase completed",
+      "duration_ms": 500,
+      "timestamp": "2024-06-15T12:00:01.000Z"
+    },
+    {
+      "type": "progress",
+      "phase": "sync",
+      "state": "running",
+      "percentage": 45.5,
+      "transferred_bytes": 536870912,
+      "total_bytes": 1073741824,
+      "eta_ms": 30000,
+      "message": "Syncing data",
+      "timestamp": "2024-06-15T12:00:30.000Z"
+    }
+  ],
+  "automatic": false
+}

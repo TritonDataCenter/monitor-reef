@@ -1,0 +1,8 @@
+{
+  "id": "c7d4e8a2-1f3b-4a5c-9d6e-8f7a2b3c4d5e",
+  "size": 10240,
+  "block_size": 8192,
+  "pci_slot": "4:0",
+  "boot": false,
+  "state": "running"
+}

@@ -1,0 +1,21 @@
+{
+  "id": "f1e2d3c4-b5a6-9788-7654-321098fedcba",
+  "name": "my-data-volume",
+  "owner_uuid": "9dce1460-0c4c-4417-ab8b-25ca478c5a78",
+  "type": "tritonnfs",
+  "size": 10240,
+  "state": "ready",
+  "networks": [
+    "ac336e0f-8532-4e0e-a19e-7cd5bdd62817"
+  ],
+  "filesystem_path": "nfs://10.88.88.10/exports/f1e2d3c4-b5a6-9788-7654-321098fedcba",
+  "created": "2024-06-15T10:30:00.000Z",
+  "tags": {
+    "env": "production",
+    "app": "myservice"
+  },
+  "refs": [
+    "a1234567-1234-1234-1234-123456789012",
+    "b1234567-1234-1234-1234-123456789012"
+  ]
+}

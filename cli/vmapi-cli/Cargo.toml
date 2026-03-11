@@ -1,0 +1,32 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "vmapi-cli"
+version = "9.17.0"
+edition.workspace = true
+description = "CLI for Triton VMAPI"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "vmapi"
+path = "src/main.rs"
+
+[dependencies]
+vmapi-api = { path = "../../apis/vmapi-api" }
+vmapi-client = { path = "../../clients/internal/vmapi-client" }
+clap = { workspace = true, features = ["env"] }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+assert_cmd = "2.0"
+predicates = "3.0"

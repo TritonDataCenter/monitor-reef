@@ -1,0 +1,11 @@
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "rule": "FROM any TO tag \"web\" ALLOW tcp PORT 80",
+  "enabled": true,
+  "log": false,
+  "global": false,
+  "description": "Allow HTTP traffic to web servers",
+  "created": "2026-01-12T14:00:00.000Z",
+  "updated": "2026-01-12T14:00:00.000Z",
+  "role-tag": ["ops"]
+}

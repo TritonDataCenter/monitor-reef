@@ -1,0 +1,28 @@
+{
+  "id": "2b683a82-a066-11e3-97ab-2faa44701c5a",
+  "name": "base-64-lts",
+  "version": "21.4.0",
+  "os": "smartos",
+  "type": "zone-dataset",
+  "description": "A 64-bit SmartOS image with just essential packages installed.",
+  "requirements": {
+    "min_ram": 256
+  },
+  "homepage": "https://docs.tritondatacenter.com/public-cloud/instances/infrastructure/images/smartos/base",
+  "published_at": "2021-04-01T00:42:24Z",
+  "owner": "9dce1460-0c4c-4417-ab8b-25ca478c5a78",
+  "public": true,
+  "state": "active",
+  "tags": {
+    "role": "os",
+    "group": "base-64-lts"
+  },
+  "files": [
+    {
+      "compression": "gzip",
+      "sha1": "3bebb6ae2f2e1ac1a960e4b8d0a06e23b0e52b2d",
+      "size": 112713776
+    }
+  ],
+  "acl": ["b4bb1880-8c2c-11e5-8994-28cfe91f7baf"]
+}

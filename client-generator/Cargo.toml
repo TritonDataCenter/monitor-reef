@@ -1,0 +1,28 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "client-generator"
+version = "0.1.0"
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "client-generator"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+camino = { workspace = true }
+clap = { workspace = true }
+openapiv3 = { workspace = true }
+progenitor = { workspace = true }
+progenitor-impl = { workspace = true }
+rustfmt-wrapper = { workspace = true }
+serde_json = { workspace = true }
+syn = "2.0"

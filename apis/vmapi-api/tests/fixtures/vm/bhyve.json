@@ -1,0 +1,56 @@
+{
+  "uuid": "b2345678-2345-2345-2345-234567890123",
+  "alias": "test-bhyve-vm",
+  "brand": "bhyve",
+  "state": "stopped",
+  "owner_uuid": "9dce1460-0c4c-4417-ab8b-25ca478c5a78",
+  "image_uuid": "d8e9f2a1-3b4c-5d6e-7f8a-9b0c1d2e3f4a",
+  "server_uuid": "44454c4c-5300-1057-8050-b7c04f533532",
+  "ram": 4096,
+  "max_physical_memory": 4096,
+  "cpu_cap": 400,
+  "vcpus": 4,
+  "quota": 51200,
+  "nics": [
+    {
+      "mac": "90:b8:d0:a1:b2:c3",
+      "ip": "10.88.88.50",
+      "netmask": "255.255.255.0",
+      "gateway": "10.88.88.1",
+      "network_uuid": "3985900d-15a8-42d8-a997-1f7e8df2d0af",
+      "primary": true,
+      "model": "virtio"
+    }
+  ],
+  "disks": [
+    {
+      "disk_uuid": "c3456789-3456-3456-3456-345678901234",
+      "pci_slot": "4:0",
+      "path": "/dev/zvol/rdsk/zones/b2345678-2345-2345-2345-234567890123/disk0",
+      "size": 10240,
+      "boot": true,
+      "image_uuid": "d8e9f2a1-3b4c-5d6e-7f8a-9b0c1d2e3f4a"
+    },
+    {
+      "disk_uuid": "d4567890-4567-4567-4567-456789012345",
+      "pci_slot": "4:1",
+      "path": "/dev/zvol/rdsk/zones/b2345678-2345-2345-2345-234567890123/disk1",
+      "size": 40960,
+      "boot": false
+    }
+  ],
+  "snapshots": [
+    {
+      "name": "pre-upgrade",
+      "created_at": "2024-06-01T00:00:00.000Z",
+      "state": "created"
+    }
+  ],
+  "firewall_enabled": false,
+  "autoboot": true,
+  "delegate_dataset": false,
+  "free_space": 20480,
+  "flexible_disk_size": 51200,
+  "create_timestamp": "2024-03-01T00:00:00.000Z",
+  "last_modified": "2024-06-15T12:00:00.000Z"
+}

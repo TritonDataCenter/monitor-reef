@@ -1,0 +1,55 @@
+{
+  "uuid": "a1234567-1234-1234-1234-123456789012",
+  "alias": "test-zone",
+  "brand": "joyent",
+  "state": "running",
+  "owner_uuid": "9dce1460-0c4c-4417-ab8b-25ca478c5a78",
+  "image_uuid": "2b683a82-a066-11e3-97ab-2faa44701c5a",
+  "server_uuid": "44454c4c-5300-1057-8050-b7c04f533532",
+  "billing_id": "73a1ca34-1e30-48c3-a29a-ebdc3d8f3b6c",
+  "ram": 1024,
+  "max_physical_memory": 1024,
+  "cpu_cap": 100,
+  "quota": 25600,
+  "max_swap": 2048,
+  "max_locked_memory": 1024,
+  "max_lwps": 4000,
+  "zfs_io_priority": 100,
+  "nics": [
+    {
+      "mac": "90:b8:d0:80:ec:ae",
+      "ip": "67.158.54.228",
+      "netmask": "255.255.255.0",
+      "gateway": "67.158.54.1",
+      "nic_tag": "external",
+      "network_uuid": "3985900d-15a8-42d8-a997-1f7e8df2d0af",
+      "primary": true
+    },
+    {
+      "mac": "90:b8:d0:80:b2:5a",
+      "ip": "192.168.128.34",
+      "netmask": "255.255.252.0",
+      "gateway": "192.168.128.1",
+      "nic_tag": "sdc_overlay/ac336e0f",
+      "network_uuid": "ac336e0f-8532-4e0e-a19e-7cd5bdd62817",
+      "primary": false,
+      "vlan_id": 100
+    }
+  ],
+  "customer_metadata": {
+    "root_authorized_keys": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKey"
+  },
+  "internal_metadata": {
+    "sdc:operator-script": "#!/bin/bash\nexit 0"
+  },
+  "tags": {
+    "env": "production",
+    "app": "webserver"
+  },
+  "firewall_enabled": true,
+  "dns_domain": "inst.triton.zone",
+  "resolvers": ["8.8.8.8", "8.8.4.4"],
+  "autoboot": true,
+  "create_timestamp": "2024-01-15T10:30:00.000Z",
+  "last_modified": "2024-06-15T12:00:00.000Z"
+}

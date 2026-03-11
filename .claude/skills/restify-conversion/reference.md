@@ -126,29 +126,52 @@ If the literal endpoint is just a convenience alias for a default value, merge t
 
 ## JSON Field Naming (API Compatibility)
 
-The original Node.js API often uses camelCase in JSON responses, but **not always**. Check actual responses.
+**Do NOT blindly apply `rename_all = "camelCase"`**. The Node.js `translate()` function in each endpoint handler is the ground truth for the wire format. Many internal/VMAPI-passthrough fields stay in snake_case even in CloudAPI responses.
+
+### Determining the correct casing
+
+1. **Read the `translate()` function** (or equivalent response-building code) in the Node.js source
+2. Fields explicitly translated (e.g., `obj.vmUuid = vm.uuid`) → camelCase
+3. Fields passed through from internal APIs (VMAPI, NAPI, PAPI) → usually stay snake_case
+4. When in doubt, check node-triton test fixtures or actual API responses
+
+### Applying serde attributes
 
 1. Use snake_case for Rust field names (idiomatic Rust)
-2. Add `#[serde(rename_all = "camelCase")]` on structs **if** the API uses camelCase
-3. For individual fields that differ, use `#[serde(rename = "originalName")]`
+2. Add `#[serde(rename_all = "camelCase")]` **only if all (or nearly all) fields** use camelCase in the wire format
+3. For individual fields that differ from the struct-level convention, use `#[serde(rename = "wire_name")]`
+4. If most fields are snake_case, **omit `rename_all`** entirely — Rust snake_case matches the wire format
 
 ```rust
+// GOOD: struct where most fields are camelCase, with explicit overrides
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct VmInfo {
-    pub vm_uuid: String,        // Serializes as "vmUuid"
-    pub owner_uuid: String,     // Serializes as "ownerUuid"
-    #[serde(rename = "RAM")]    // Override for specific field
-    pub ram: u64,
+pub struct Machine {
+    pub id: Uuid,
+    pub name: String,
+    // CloudAPI returns this as snake_case despite other fields being camelCase
+    #[serde(rename = "dns_names", default, skip_serializing_if = "Option::is_none")]
+    pub dns_names: Option<Vec<String>>,
+}
+
+// GOOD: struct where fields are snake_case (passthrough from internal API)
+#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+pub struct Migration {
+    #[serde(rename = "machine")]
+    pub vm_uuid: Uuid,
+    pub created_timestamp: Timestamp,  // snake_case matches wire format
 }
 ```
 
 **Common exceptions to watch for:**
 - Fields with hyphens: `role-tag` → `#[serde(rename = "role-tag")]`
-- Fields that stay snake_case: `triton_cns_enabled`, `published_at`
+- VMAPI/NAPI/PAPI passthrough fields: `owner_uuid`, `belongs_to_uuid`, `*_timestamp`
 - All-caps fields: `RAM`, `DNS`
+- Keyword fields: `type` → `#[serde(rename = "type")]` on `machine_type`
 
-Document these in the Phase 1 plan under "Field Naming Exceptions".
+**Cautionary examples:** The `Disk`, `Migration`, and `PackageDisk` structs were all initially given `rename_all = "camelCase"` which caused deserialization failures for snake_case fields like `pci_slot`, `created_timestamp`, and `block_size`.
+
+Document field naming decisions in the Phase 1 plan under "Field Naming Exceptions".
 
 ## UUID Handling (IMPORTANT Behavior Change)
 
@@ -257,26 +280,27 @@ pub struct VmDetails {
 
 ## Action Dispatch Pattern
 
-Some APIs use an action-based pattern where a single endpoint handles multiple operations via a query parameter:
+Some APIs use an action-based pattern where a single endpoint handles multiple operations. Node.js Restify's `mapParams: true` merges query and body params, so clients may send the action in either place:
 
 ```
-POST /vms/:uuid?action=start
-POST /vms/:uuid?action=stop
-POST /vms/:uuid?action=update    (body: {ram: 1024, ...})
-POST /vms/:uuid?action=add_nics  (body: {nics: [...]})
+POST /vms/:uuid?action=start           (action in query)
+POST /vms/:uuid  {"action": "stop"}    (action in body — preferred)
+POST /vms/:uuid?action=update  {"ram": 1024}  (action in query, fields in body)
+POST /vms/:uuid  {"action": "update", "ram": 1024}  (everything in body)
 ```
 
 ### Recommended Approach
 
 1. **API trait uses `serde_json::Value` for the body** - allows any JSON
 2. **Define an Action enum** for the query parameter
-3. **Define typed request structs FOR EVERY ACTION** in the API crate
-4. **Implementation dispatches** based on action and deserializes appropriately
-5. **Client library** depends on API crate and provides typed wrapper methods
+3. **Query struct action field is `Option`** - clients may send action in the body instead
+4. **Define typed request structs FOR EVERY ACTION** in the API crate
+5. **Service implementations check body first, fall back to query parameter**
+6. **Client library sends action in the body** using an `ActionBody` wrapper with `#[serde(flatten)]`
 
 ```rust
 // In API trait
-#[derive(Debug, Deserialize, JsonSchema)]
+#[derive(Debug, PartialEq, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum VmAction {
     Start,
@@ -286,9 +310,11 @@ pub enum VmAction {
     // ... all actions
 }
 
+// Query parameter is optional — action may come from body instead
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct VmActionQuery {
-    pub action: VmAction,
+    #[serde(default)]
+    pub action: Option<VmAction>,
 }
 
 // Typed request structs (exported for client use)
@@ -299,7 +325,7 @@ pub struct UpdateVmRequest {
     pub cpu_cap: Option<u32>,
 }
 
-// The endpoint accepts generic JSON body
+// The endpoint accepts optional query param + generic JSON body
 #[endpoint {
     method = POST,
     path = "/vms/{uuid}",
@@ -406,7 +432,11 @@ The client crate depends on the API crate and provides typed wrappers. Since we 
 
 ```rust
 // clients/internal/vmapi-client/src/lib.rs
-include!(concat!(env!("OUT_DIR"), "/client.rs"));
+
+// Generated code lives in src/generated.rs (created by client-generator)
+#[allow(clippy::unwrap_used)]
+mod generated;
+pub use generated::*;
 
 // Re-export action enum and request types from API crate
 pub use vmapi_api::{VmAction, UpdateVmRequest, AddNicsRequest, ...};
@@ -427,10 +457,13 @@ impl TypedClient {
     }
 
     pub async fn start_vm(&self, uuid: &str) -> Result<types::AsyncJobResponse, Error<types::Error>> {
+        let body = ActionBody {
+            action: vmapi_api::VmAction::Start,
+            body: serde_json::json!({}),
+        };
         self.inner.vm_action()
             .uuid(uuid)
-            .action(vmapi_api::VmAction::Start)
-            .body(serde_json::json!({}))
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())  // Unwrap ResponseValue<T>
@@ -441,10 +474,13 @@ impl TypedClient {
         uuid: &str,
         request: &vmapi_api::UpdateVmRequest,
     ) -> Result<types::AsyncJobResponse, Error<types::Error>> {
+        let body = ActionBody {
+            action: vmapi_api::VmAction::Update,
+            body: request,
+        };
         self.inner.vm_action()
             .uuid(uuid)
-            .action(vmapi_api::VmAction::Update)
-            .body(serde_json::to_value(request).unwrap_or_default())
+            .body(to_json_value(&body))
             .send()
             .await
             .map(|r| r.into_inner())
@@ -547,6 +583,78 @@ Use `String` only when:
 - New values are added frequently and backward compatibility matters
 - The field is rarely used for logic
 
+### Forward-Compatible Enums (Mandatory for State Fields)
+
+State and status enums **must** include a `#[serde(other)] Unknown` catch-all variant.
+Without this, the client will fail to deserialize if the server adds a new state:
+
+```rust
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum VolumeState {
+    Creating,
+    Ready,
+    Failed,
+    Deleting,
+    /// Catch-all for states added after this client was compiled
+    #[serde(other)]
+    Unknown,
+}
+```
+
+See `apis/cloudapi-api/src/types/changefeed.rs` for the established pattern.
+
+### Displaying Enum Values
+
+**Never use `format!("{:?}", enum).to_lowercase()`** — this is a known anti-pattern that
+produces wrong output for renamed variants (e.g., `JoyentMinimal` becomes `"joyentminimal"`
+instead of `"joyent-minimal"`).
+
+Use `enum_to_display()` which gets the exact serde wire-format string:
+
+```rust
+/// Convert a serde-serializable enum value to its wire-format string.
+pub fn enum_to_display<T: serde::Serialize + std::fmt::Debug>(val: &T) -> String {
+    serde_json::to_value(val)
+        .ok()
+        .and_then(|v| v.as_str().map(String::from))
+        .unwrap_or_else(|| format!("{:?}", val))
+}
+```
+
+In triton-cli this lives at `cli/triton-cli/src/output/mod.rs`. Standalone CLIs should
+define a local copy.
+
+### Comparing Enum Values
+
+Always compare typed enums directly — never convert to strings for comparison:
+
+```rust
+// GOOD: type-safe, compiler-checked
+if machine.state == MachineState::Failed { ... }
+if targets.contains(&machine.state) { ... }
+
+// BAD: fragile, latent bugs with Debug format
+if format!("{:?}", machine.state).to_lowercase() == "failed" { ... }
+```
+
+The `PartialEq, Eq` derives on the enum make this possible.
+
+## Type Safety Quick Reference
+
+These patterns prevent the most common type-safety issues in generated CLI code:
+
+| Issue | Wrong | Right |
+|-------|-------|-------|
+| Hardcoded enum string | `if s == "running"` | `if m.state == MachineState::Running` |
+| Display format | `format!("{:?}", e).to_lowercase()` | `enum_to_display(&e)` |
+| Duplicate enum | `enum State { Running, ... }` | `use client::MachineState` |
+| Missing ValueEnum | enum in API crate without `ValueEnum` | Add derive + `with_patch` in client-generator config |
+| String CLI arg | `#[arg(long)] state: String` | `#[arg(long, value_enum)] state: MachineState` |
+| Direct API import | `use vmapi_api::MachineState` | `use vmapi_client::MachineState` |
+
+**Rule of thumb:** If a type exists in the API crate or is generated by Progenitor, import it — never redefine it.
+
 ## Checklist
 
 Before completing any phase, verify:
@@ -582,3 +690,11 @@ Before completing any phase, verify:
 - [ ] Client re-exports action enum and request types
 - [ ] Typed wrapper methods use builder pattern
 - [ ] Wrapper methods unwrap ResponseValue with `.map(|r| r.into_inner())`
+
+**Type Safety (ALL phases):**
+- [ ] No hardcoded string literals matching enum variant wire names
+- [ ] All enums used as CLI args have `clap::ValueEnum` (on API type or via `with_patch`)
+- [ ] No duplicate enum definitions — import from client crate
+- [ ] `enum_to_display()` used for display, never `format!("{:?}", ...)`
+- [ ] State/status enums have `#[serde(other)] Unknown` variant
+- [ ] CLI imports types from client re-exports, not directly from API crates
