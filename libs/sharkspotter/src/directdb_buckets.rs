@@ -7,7 +7,6 @@
 /*
  * Copyright 2026 Edgecast Cloud LLC.
  *
- * AI-Generated Code
  */
 
 //! Direct database discovery for buckets-postgres clones.
@@ -123,7 +122,17 @@ fn row_to_manta_value(
     // UUID columns are read as text to avoid needing
     // tokio-postgres "with-uuid-0_7" feature.
     let id: &str = row.get("id");
-    let owner: &str = row.get("owner");
+
+    let owner: &str = row.try_get<_,String>("owner");
+
+    if let Err(e) = &owner { 
+        eprintln!("decode owner error vnode={} : reason={}", vnode, e);
+         return Err(Error::new(
+            ErrorKind::Other,
+            format!("failed to decode owner on vnode {}: {}", vnode, e),
+        ));
+    }
+
     let bucket_id: &str = row.get("bucket_id");
     let name: &str = row.get("name");
     let content_length: i64 = row.get("content_length");

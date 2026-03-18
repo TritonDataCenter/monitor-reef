@@ -23,14 +23,6 @@
 #   pgclone.sh <manatee VM UUID>
 #       (equivalent to: pgclone.sh clone-moray <UUID>)
 #
-# Invariants (LAW-025):
-#   INV-1: Clone VMs tagged with manta_role for discovery
-#   INV-2: Failed creation cleans up all artifacts
-#   INV-3: Clone never has active recovery.conf
-#   INV-4: Autovacuum always disabled in clone
-#   INV-5: Unique snapshot name per clone
-#
-# AI-Generated Code
 #
 
 set -o errexit
@@ -612,12 +604,12 @@ function do_clone {
             ;;
         buckets)
             tag="${PGCLONE_TAG_BUCKETS}"
-            alias_sed_from='.buckets-postgres.'
+            alias_sed_from='\\.buckets-(postgres|mdapi)\\.'
             alias_sed_to='.rebalancer-buckets-postgres.'
             smf_service="manta/rebalancer-buckets-postgres"
-            domain_pattern='^[0-9]*\.buckets-postgres\.'
-            alias_replace='/\.buckets-postgres\./, ".rebalancer-buckets-postgres."'
-            domain_replace='/^.*\.buckets-postgres\./, "rebalancer-buckets-postgres."'
+            domain_pattern='^[0-9]*\.(buckets-postgres|buckets-mdapi)\.'
+            alias_replace='/\.(buckets-postgres|buckets-mdapi)\./, ".rebalancer-buckets-postgres."'
+            domain_replace='/^.*\.(buckets-postgres|buckets-mdapi)\./, "rebalancer-buckets-postgres."'
             ;;
         *)
             echo "BUG: unknown kind '${kind}'" >&2
@@ -634,11 +626,6 @@ function do_clone {
 
     # INV-2: clean up on failure.
     trap cleanup_on_failure ERR
-
-    local js_from
-    js_from=$(printf '%s' "${alias_sed_from}" \
-        | sed 's/\./\\\\./g')
-    local js_to="${alias_sed_to}"
 
     NEW_ALIAS=$(json -e \
         "this.alias = this.alias
