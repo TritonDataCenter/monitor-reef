@@ -527,7 +527,7 @@ where
     pub fn try_claim(&self) -> Option<PoolConnection<C, R, F>> {
         let mut connection_data_guard =
             self.protected_data.connection_data_lock();
-        let connection_data = connection_data_guard.deref_mut();
+        let mut connection_data = connection_data_guard.deref_mut();
         let mut waiting_for_connection = true;
         let mut result: Option<PoolConnection<C, R, F>> = None;
 

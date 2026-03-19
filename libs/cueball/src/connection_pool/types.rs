@@ -192,7 +192,7 @@ where
         ProtectedData(Arc::new((Mutex::new(connection_data), Condvar::new())))
     }
 
-    pub fn connection_data_lock(&self) -> MutexGuard<'_, ConnectionData<C>> {
+    pub fn connection_data_lock(&self) -> MutexGuard<ConnectionData<C>> {
         (self.0).0.lock().unwrap()
     }
 
@@ -246,7 +246,7 @@ impl RebalanceCheck {
         RebalanceCheck(Arc::new((Mutex::new(false), Condvar::new())))
     }
 
-    pub fn get_lock(&self) -> MutexGuard<'_, bool> {
+    pub fn get_lock(&self) -> MutexGuard<bool> {
         (self.0).0.lock().unwrap()
     }
 

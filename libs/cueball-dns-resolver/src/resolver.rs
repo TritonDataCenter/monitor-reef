@@ -396,8 +396,7 @@ fn resolve_srv_records(
             let ttl = srv.ttl;
             let now: DateTime<Utc> = Utc::now();
             let next: i64 = now.timestamp() + i64::from(ttl);
-            let next_service = NaiveDateTime::from_timestamp_opt(next, 0)
-                .expect("valid timestamp");
+            let next_service = NaiveDateTime::from_timestamp(next, 0);
             context.last_srv_ttl = Some(ttl);
             context.next_service = Some(next_service);
             let port = srv.port;
@@ -415,8 +414,7 @@ fn resolve_srv_records(
     if context.srvs.is_empty() {
         let now: DateTime<Utc> = Utc::now();
         let next: i64 = now.timestamp() + i64::from(5);
-        let next_service = NaiveDateTime::from_timestamp_opt(next, 0)
-            .expect("valid timestamp");
+        let next_service = NaiveDateTime::from_timestamp(next, 0);
         debug!(context.log, "setting next service to {:?}", next_service);
         context.next_service = Some(next_service);
         let lookup_name = SrvRec {
