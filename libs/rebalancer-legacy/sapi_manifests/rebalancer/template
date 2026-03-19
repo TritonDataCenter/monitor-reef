@@ -92,27 +92,6 @@
     "direct_db": false,
     {{/REBALANCER_DIRECT_DB}}
 
-    {{#REBALANCER_DIRECT_DB_BUCKETS}}
-    "direct_db_buckets": {{REBALANCER_DIRECT_DB_BUCKETS}},
-    {{/REBALANCER_DIRECT_DB_BUCKETS}}
-    {{^REBALANCER_DIRECT_DB_BUCKETS}}
-    "direct_db_buckets": false,
-    {{/REBALANCER_DIRECT_DB_BUCKETS}}
-
-    {{#REBALANCER_BUCKETS_MIN_SHARD}}
-    "buckets_min_shard": {{REBALANCER_BUCKETS_MIN_SHARD}},
-    {{/REBALANCER_BUCKETS_MIN_SHARD}}
-    {{^REBALANCER_BUCKETS_MIN_SHARD}}
-    "buckets_min_shard": 1,
-    {{/REBALANCER_BUCKETS_MIN_SHARD}}
-
-    {{#REBALANCER_BUCKETS_MAX_SHARD}}
-    "buckets_max_shard": {{REBALANCER_BUCKETS_MAX_SHARD}},
-    {{/REBALANCER_BUCKETS_MAX_SHARD}}
-    {{^REBALANCER_BUCKETS_MAX_SHARD}}
-    "buckets_max_shard": 1,
-    {{/REBALANCER_BUCKETS_MAX_SHARD}}
-
     "mdapi": {
         "shards": [{{#BUCKETS_MORAY_SHARDS}}
             {

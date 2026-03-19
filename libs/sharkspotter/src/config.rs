@@ -6,13 +6,13 @@
 
 /*
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2026 Edgecast Cloud LLC.
  */
 
 use clap::{value_t, App, AppSettings, Arg, ArgMatches};
 use slog::Level;
 use std::io::{Error, ErrorKind};
 use std::str::FromStr;
-use uuid::Uuid;
 
 const MAX_THREADS: usize = 100;
 
@@ -30,26 +30,19 @@ pub struct Config {
     pub obj_id_only: bool,
     pub multithreaded: bool,
     pub max_threads: usize,
-    pub direct_db: bool,
     /// Use direct PostgreSQL access to rebalancer-buckets-postgres
     /// clones for bucket object discovery.  Requires provisioning
     /// via `pgclone.sh clone-buckets`.
-    pub direct_db_buckets: bool,
-    /// Minimum buckets-postgres shard number (for direct_db_buckets).
-    pub buckets_min_shard: u32,
-    /// Maximum buckets-postgres shard number (for direct_db_buckets).
-    pub buckets_max_shard: u32,
+    pub direct_db: bool,
     pub log_level: Level,
     /// Mdapi endpoints for bucket object discovery (one per shard).
     /// Each entry is a "host:port" string (e.g., "1.buckets-mdapi.domain:2030").
     pub mdapi_endpoints: Vec<String>,
-    /// Owners to query for bucket objects (required for mdapi discovery)
-    pub owners: Option<Vec<Uuid>>,
-    /// Mdapi vnodes to query for bucket discovery. These are the virtual node
-    /// numbers from the buckets-mdplacement ring, NOT moray shard numbers.
-    /// If not specified, defaults to using min_shard..=max_shard (legacy behavior).
-    pub mdapi_vnodes: Option<Vec<u32>>,
 }
+
+// Note: owners and mdapi_vnodes were removed from Config.
+// Vnodes and owners are now always auto-discovered via listvnodes
+// and listowners RPCs from each mdapi shard.
 
 impl Default for Config {
     fn default() -> Self {
@@ -67,13 +60,8 @@ impl Default for Config {
             multithreaded: false,
             max_threads: 50,
             direct_db: false,
-            direct_db_buckets: false,
-            buckets_min_shard: 1,
-            buckets_max_shard: 1,
             log_level: Level::Debug,
             mdapi_endpoints: vec![],
-            owners: None,
-            mdapi_vnodes: None,
         }
     }
 }
@@ -180,25 +168,8 @@ impl<'a, 'b> Config {
             .arg(Arg::with_name("direct_db")
                 .short("-D")
                 .long("direct_db")
-                .help("use direct DB access instead of moray")
+                .help("use direct DB access instead of moray/mdapi")
                 .takes_value(false))
-            .arg(Arg::with_name("direct_db_buckets")
-                .long("direct_db_buckets")
-                .help("use direct DB access to buckets-postgres \
-                    clones (requires pgclone.sh clone-buckets)")
-                .takes_value(false))
-            .arg(Arg::with_name("buckets_min_shard")
-                .long("buckets_min_shard")
-                .value_name("SHARD")
-                .help("minimum buckets-postgres shard number \
-                    (default: 1)")
-                .takes_value(true))
-            .arg(Arg::with_name("buckets_max_shard")
-                .long("buckets_max_shard")
-                .value_name("SHARD")
-                .help("maximum buckets-postgres shard number \
-                    (default: 1)")
-                .takes_value(true))
             .arg(Arg::with_name("log_level")
                 .short("l")
                 .long("log_level")
@@ -208,20 +179,6 @@ impl<'a, 'b> Config {
                 .long("mdapi-endpoint")
                 .value_name("ENDPOINT")
                 .help("Mdapi endpoint(s) for bucket object discovery (e.g., 1.buckets-mdapi.domain:2030)")
-                .number_of_values(1)
-                .multiple(true)
-                .takes_value(true))
-            .arg(Arg::with_name("owners")
-                .long("owners")
-                .value_name("UUID")
-                .help("Owner UUIDs to query for bucket objects (comma-separated or multiple flags)")
-                .number_of_values(1)
-                .multiple(true)
-                .takes_value(true))
-            .arg(Arg::with_name("mdapi_vnodes")
-                .long("mdapi-vnodes")
-                .value_name("VNODE")
-                .help("Mdapi vnodes to query for bucket discovery (from buckets-mdplacement ring)")
                 .number_of_values(1)
                 .multiple(true)
                 .takes_value(true))
@@ -273,22 +230,6 @@ impl<'a, 'b> Config {
             config.direct_db = true;
         }
 
-        if matches.is_present("direct_db_buckets") {
-            config.direct_db_buckets = true;
-        }
-
-        if let Ok(bmin) = value_t!(
-            matches, "buckets_min_shard", u32
-        ) {
-            config.buckets_min_shard = bmin;
-        }
-
-        if let Ok(bmax) = value_t!(
-            matches, "buckets_max_shard", u32
-        ) {
-            config.buckets_max_shard = bmax;
-        }
-
         if let Ok(max_threads) = value_t!(matches, "max_threads", usize) {
             config.max_threads = max_threads;
         }
@@ -308,48 +249,6 @@ impl<'a, 'b> Config {
         if let Some(endpoints) = matches.values_of("mdapi_endpoint") {
             config.mdapi_endpoints =
                 endpoints.map(String::from).collect();
-        }
-
-        // Parse owner UUIDs
-        if let Some(owners) = matches.values_of("owners") {
-            let mut parsed_owners = Vec::new();
-            for owner_str in owners {
-                match Uuid::parse_str(owner_str) {
-                    Ok(uuid) => parsed_owners.push(uuid),
-                    Err(e) => {
-                        let msg = format!(
-                            "Invalid owner UUID '{}': {}",
-                            owner_str, e
-                        );
-                        eprintln!("{}", msg);
-                        return Err(Error::new(ErrorKind::Other, msg));
-                    }
-                }
-            }
-            if !parsed_owners.is_empty() {
-                config.owners = Some(parsed_owners);
-            }
-        }
-
-        // Parse mdapi vnodes
-        if let Some(vnodes) = matches.values_of("mdapi_vnodes") {
-            let mut parsed_vnodes = Vec::new();
-            for vnode_str in vnodes {
-                match vnode_str.parse::<u32>() {
-                    Ok(vnode) => parsed_vnodes.push(vnode),
-                    Err(e) => {
-                        let msg = format!(
-                            "Invalid mdapi vnode '{}': {}",
-                            vnode_str, e
-                        );
-                        eprintln!("{}", msg);
-                        return Err(Error::new(ErrorKind::Other, msg));
-                    }
-                }
-            }
-            if !parsed_vnodes.is_empty() {
-                config.mdapi_vnodes = Some(parsed_vnodes);
-            }
         }
 
         normalize_config(&mut config);
@@ -438,11 +337,7 @@ mod test {
             "--mdapi-endpoint",
             "1.buckets-mdapi.east.joyent.us:2030",
             "--mdapi-endpoint",
-            "2.buckets-mdapi.east.joyent.us:2030",
-            "--owners",
-            "550e8400-e29b-41d4-a716-446655440000",
-            "--owners",
-            "660e8400-e29b-41d4-a716-446655440001",
+            "2.buckets-mdapi.east.joyent.us:2030"
         ];
 
         let matches = Config::get_app().get_matches_from(args);
@@ -457,34 +352,6 @@ mod test {
             config.mdapi_endpoints[1],
             "2.buckets-mdapi.east.joyent.us:2030"
         );
-
-        let owners = config.owners.expect("owners should be set");
-        assert_eq!(owners.len(), 2);
-        assert_eq!(
-            owners[0],
-            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap()
-        );
-        assert_eq!(
-            owners[1],
-            Uuid::parse_str("660e8400-e29b-41d4-a716-446655440001").unwrap()
-        );
-    }
-
-    #[test]
-    fn parse_invalid_owner_uuid() {
-        let args = vec![
-            "target/debug/sharkspotter",
-            "--domain",
-            "east.joyent.us",
-            "--shark",
-            "1.stor",
-            "--owners",
-            "not-a-valid-uuid",
-        ];
-
-        let matches = Config::get_app().get_matches_from(args);
-        let result = Config::config_from_matches(matches);
-        assert!(result.is_err());
     }
 
     #[test]
@@ -544,54 +411,6 @@ mod test {
         assert_eq!(config.max_threads, 50);
         assert!(!config.direct_db);
         assert!(config.mdapi_endpoints.is_empty());
-        assert!(config.owners.is_none());
-        assert!(config.mdapi_vnodes.is_none());
     }
 
-    #[test]
-    fn parse_mdapi_vnodes() {
-        let args = vec![
-            "target/debug/sharkspotter",
-            "--domain",
-            "east.joyent.us",
-            "--shark",
-            "1.stor",
-            "--mdapi-endpoint",
-            "1.buckets-mdapi.east.joyent.us:2030",
-            "--owners",
-            "550e8400-e29b-41d4-a716-446655440000",
-            "--mdapi-vnodes",
-            "0",
-            "--mdapi-vnodes",
-            "100",
-            "--mdapi-vnodes",
-            "200",
-        ];
-
-        let matches = Config::get_app().get_matches_from(args);
-        let config = Config::config_from_matches(matches).expect("config");
-
-        let vnodes = config.mdapi_vnodes.expect("vnodes should be set");
-        assert_eq!(vnodes.len(), 3);
-        assert_eq!(vnodes[0], 0);
-        assert_eq!(vnodes[1], 100);
-        assert_eq!(vnodes[2], 200);
-    }
-
-    #[test]
-    fn parse_invalid_mdapi_vnode() {
-        let args = vec![
-            "target/debug/sharkspotter",
-            "--domain",
-            "east.joyent.us",
-            "--shark",
-            "1.stor",
-            "--mdapi-vnodes",
-            "not-a-number",
-        ];
-
-        let matches = Config::get_app().get_matches_from(args);
-        let result = Config::config_from_matches(matches);
-        assert!(result.is_err());
-    }
 }

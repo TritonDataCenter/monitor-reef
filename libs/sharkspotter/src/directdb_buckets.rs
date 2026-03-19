@@ -121,22 +121,13 @@ fn row_to_manta_value(
 ) -> Result<Value, Error> {
     // UUID columns are read as text to avoid needing
     // tokio-postgres "with-uuid-0_7" feature.
-    let id: &str = row.get("id");
-
-    let owner: &str = row.try_get<_,String>("owner");
-
-    if let Err(e) = &owner { 
-        eprintln!("decode owner error vnode={} : reason={}", vnode, e);
-         return Err(Error::new(
-            ErrorKind::Other,
-            format!("failed to decode owner on vnode {}: {}", vnode, e),
-        ));
-    }
 
     let bucket_id: &str = row.get("bucket_id");
     let name: &str = row.get("name");
     let content_length: i64 = row.get("content_length");
     let content_type: &str = row.get("content_type");
+    let owner: &str = row.get("owner");
+    let id: &str = row.get("id");
 
     // content_md5 is bytea — base64-encode it.
     let content_md5_bytes: &[u8] = row.get("content_md5");

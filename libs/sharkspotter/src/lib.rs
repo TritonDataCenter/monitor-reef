@@ -765,6 +765,141 @@ fn run_direct_db_buckets_shard_thread(
     });
 }
 
+fn run_mdapi_shard_thread(
+    pool: &ThreadPool,
+    endpoint: &str,
+    conf: &config::Config,
+    obj_tx: &crossbeam_channel::Sender<SharkspotterMessage>,
+    log: &Logger,
+) {
+    use libmanta::mdapi::MdapiClient;
+    use slog::{info, warn};
+
+    info!(log, "Connecting to mdapi shard: {}", endpoint);
+
+    let mdapi_client = match MdapiClient::new(endpoint) {
+        Ok(c) => c,
+        Err(e) => {
+            slog::error!(
+                log,
+                "Failed to create mdapi client for {}: {}",
+                endpoint,
+                e
+            );
+            let mut error_list = ERROR_LIST.lock().unwrap();
+            error_list.push(Error::new(
+                ErrorKind::Other,
+                format!(
+                    "Failed to create mdapi client for {}: {}",
+                    endpoint, e
+                ),
+            ));
+            return;
+        }
+    };
+
+    // Auto-discover vnodes from this mdapi shard.
+    let vnodes = match auto_discover_vnodes(&mdapi_client, &log) {
+        Ok(v) if !v.is_empty() => {
+            info!(
+                log,
+                "Auto-discovered {} vnodes from {} via listvnodes RPC",
+                v.len(),
+                endpoint
+            );
+            v
+        }
+        Ok(_) => {
+            warn!(
+                log,
+                "listvnodes returned empty from {}, skipping this shard",
+                endpoint
+            );
+            return;
+        }
+        Err(e) => {
+            warn!(
+                log,
+                "listvnodes RPC failed on {} ({}), skipping this shard",
+                endpoint,
+                e
+            );
+            return;
+        }
+    };
+
+    // Auto-discover owners across all vnodes on this shard.
+    let owners = match auto_discover_owners(&mdapi_client, &vnodes, &log) {
+        Ok(o) if !o.is_empty() => {
+            info!(
+                log,
+                "Auto-discovered {} owners from {} via listowners RPC",
+                o.len(),
+                endpoint
+            );
+            o
+        }
+        Ok(_) => {
+            warn!(
+                log,
+                "listowners returned no owners from {}, skipping this shard",
+                endpoint
+            );
+            return;
+        }
+        Err(e) => {
+            warn!(
+                log,
+                "listowners RPC failed on {} ({}), skipping this shard",
+                endpoint,
+                e
+            );
+            return;
+        }
+    };
+
+    // Spawn mdapi discovery threads for each vnode on this shard.
+    for vnode in vnodes {
+        let mdapi_client_clone = mdapi_client.clone();
+        let obj_tx_clone = obj_tx.clone();
+        let sharks_clone = conf.sharks.clone();
+        let owners_clone = owners.clone();
+        let log_clone = log.clone();
+
+        pool.execute(move || {
+            match mdapi_discovery::discover_mdapi_objects_for_shard(
+                &mdapi_client_clone,
+                &owners_clone,
+                vnode,
+                &sharks_clone,
+                &obj_tx_clone,
+                &log_clone,
+            ) {
+                Ok(count) => {
+                    info!(
+                        log_clone,
+                        "Mdapi discovery for vnode {} complete: \
+                         {} objects",
+                        vnode,
+                        count
+                    );
+                }
+                Err(e) => {
+                    slog::error!(
+                        log_clone,
+                        "Mdapi discovery failed for vnode {}: {}",
+                        vnode,
+                        e
+                    );
+                    let mut error_list =
+                        ERROR_LIST.lock().unwrap();
+                    error_list.push(e);
+                }
+            }
+        });
+    }
+}
+
 /// Auto-discover vnodes from mdapi via the listvnodes RPC.
 ///
 /// Returns a `Vec<u32>` of vnode numbers. If the server does not
@@ -879,7 +1014,7 @@ pub fn run_multithreaded(
     shark_fix_common(&mut conf, &log);
     validate_sharks(&conf, &log)?;
 
-    // Moray/DirectDB discovery (existing)
+    // Moray/DirectDB discovery
     for shard in conf.min_shard..=conf.max_shard {
         if conf.direct_db {
             run_direct_db_shard_thread(&pool, shard, &obj_tx, &conf, &log);
@@ -887,180 +1022,28 @@ pub fn run_multithreaded(
             run_moray_shard_thread(&pool, shard, &obj_tx, &conf, &log)?;
         }
     }
+    // Mdapi/DirecDB discovery 
+    for endpoint in &conf.mdapi_endpoints {
+        let shard: u32 = endpoint
+            .split('.')
+            .next()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or_else(|| {
+                panic!(
+                    "Could not parse shard number from endpoint '{}': \
+                     expected format '<shard>.buckets-mdapi.<domain>'",
+                    endpoint
+                );
+            });
 
-    // Bucket object discovery: direct_db_buckets (pgclone) or mdapi RPC,
-    // but not both.  This mirrors the moray side where direct_db and moray
-    // RPC are mutually exclusive.
-    if conf.direct_db_buckets {
-        for shard in conf.buckets_min_shard..=conf.buckets_max_shard {
+        if conf.direct_db {
             run_direct_db_buckets_shard_thread(
                 &pool, shard, &obj_tx, &conf, &log,
             );
-        }
-    } else if !conf.mdapi_endpoints.is_empty() {
-        use libmanta::mdapi::MdapiClient;
-        use slog::{info, warn};
-
-        info!(
-            log,
-            "Starting mdapi discovery across {} endpoint(s)",
-            conf.mdapi_endpoints.len()
-        );
-
-        for endpoint in &conf.mdapi_endpoints {
-            info!(log, "Connecting to mdapi shard: {}", endpoint);
-
-            let mdapi_client = match MdapiClient::new(endpoint) {
-                Ok(c) => c,
-                Err(e) => {
-                    slog::error!(
-                        log,
-                        "Failed to create mdapi client for {}: {}",
-                        endpoint,
-                        e
-                    );
-                    let mut error_list = ERROR_LIST.lock().unwrap();
-                    error_list.push(Error::new(
-                        ErrorKind::Other,
-                        format!(
-                            "Failed to create mdapi client for {}: {}",
-                            endpoint, e
-                        ),
-                    ));
-                    continue;
-                }
-            };
-
-            // Determine vnodes: explicit config > auto-discovery > fallback
-            let vnodes: Vec<u32> = match &conf.mdapi_vnodes {
-                Some(v) => {
-                    info!(
-                        log,
-                        "Using configured mdapi_vnodes: {:?} ({} vnodes)",
-                        v,
-                        v.len()
-                    );
-                    v.clone()
-                }
-                None => {
-                    match auto_discover_vnodes(&mdapi_client, &log) {
-                        Ok(v) if !v.is_empty() => {
-                            info!(
-                                log,
-                                "Auto-discovered {} vnodes from {} via \
-                                 listvnodes RPC",
-                                v.len(),
-                                endpoint
-                            );
-                            v
-                        }
-                        Ok(_) => {
-                            warn!(
-                                log,
-                                "listvnodes returned empty from {}, \
-                                 falling back to shard range {}..={}",
-                                endpoint,
-                                conf.min_shard,
-                                conf.max_shard
-                            );
-                            (conf.min_shard..=conf.max_shard).collect()
-                        }
-                        Err(e) => {
-                            warn!(
-                                log,
-                                "listvnodes RPC failed on {} ({}), \
-                                 falling back to shard range {}..={}",
-                                endpoint,
-                                e,
-                                conf.min_shard,
-                                conf.max_shard
-                            );
-                            (conf.min_shard..=conf.max_shard).collect()
-                        }
-                    }
-                }
-            };
-
-            // Determine owners: explicit config > auto-discovery > skip
-            let owners = match &conf.owners {
-                Some(o) => o.clone(),
-                None => {
-                    match auto_discover_owners(
-                        &mdapi_client, &vnodes, &log,
-                    ) {
-                        Ok(o) if !o.is_empty() => {
-                            info!(
-                                log,
-                                "Auto-discovered {} owners from {} via \
-                                 listowners RPC",
-                                o.len(),
-                                endpoint
-                            );
-                            o
-                        }
-                        Ok(_) => {
-                            warn!(
-                                log,
-                                "listowners returned no owners from {}, \
-                                 skipping this shard",
-                                endpoint
-                            );
-                            continue;
-                        }
-                        Err(e) => {
-                            warn!(
-                                log,
-                                "listowners RPC failed on {} ({}), \
-                                 skipping this shard",
-                                endpoint,
-                                e
-                            );
-                            continue;
-                        }
-                    }
-                }
-            };
-
-            // Spawn mdapi discovery threads for each vnode on this shard
-            for vnode in vnodes {
-                let mdapi_client_clone = mdapi_client.clone();
-                let obj_tx_clone = obj_tx.clone();
-                let sharks_clone = conf.sharks.clone();
-                let owners_clone = owners.clone();
-                let log_clone = log.clone();
-
-                pool.execute(move || {
-                    match mdapi_discovery::discover_mdapi_objects_for_shard(
-                        &mdapi_client_clone,
-                        &owners_clone,
-                        vnode,
-                        &sharks_clone,
-                        &obj_tx_clone,
-                        &log_clone,
-                    ) {
-                        Ok(count) => {
-                            info!(
-                                log_clone,
-                                "Mdapi discovery for vnode {} complete: \
-                                 {} objects",
-                                vnode,
-                                count
-                            );
-                        }
-                        Err(e) => {
-                            slog::error!(
-                                log_clone,
-                                "Mdapi discovery failed for vnode {}: {}",
-                                vnode,
-                                e
-                            );
-                            let mut error_list =
-                                ERROR_LIST.lock().unwrap();
-                            error_list.push(e);
-                        }
-                    }
-                });
-            }
+        } else {
+            run_mdapi_shard_thread(
+                &pool, endpoint, &conf, &obj_tx, &log,
+            );
         }
     }
 
