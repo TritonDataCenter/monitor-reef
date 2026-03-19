@@ -44,15 +44,7 @@ fn run() -> anyhow::Result<i32> {
     let key = &args[1];
     let mut proto = Protocol::init()?;
 
-    if proto.version() < 2 {
-        eprintln!(
-            "ERROR: metadata service does not support V2 protocol \
-             (required for DELETE)"
-        );
-        return Ok(exit_code::ERROR);
-    }
-
-    match proto.execute("DELETE", Some(key))? {
+    match proto.delete(key)? {
         // DELETE of non-existent key is not an error
         Response::Success(_) | Response::NotFound => {
             Ok(exit_code::SUCCESS)

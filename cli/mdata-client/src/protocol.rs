@@ -35,6 +35,12 @@ const RECV_TIMEOUT_MS: u64 = 6_000;
 /// Timeout for V2 operations (45 seconds, allows for slower PUT).
 const RECV_TIMEOUT_MS_V2: u64 = 45_000;
 
+/// Maximum number of timeout-and-reset retries before giving up.
+const MAX_RETRIES: u32 = 3;
+
+/// Maximum number of stale V2 frames to discard before giving up.
+const MAX_STALE_FRAMES: u32 = 5;
+
 /// Protocol handler for metadata operations.
 pub struct Protocol {
     transport: Transport,
@@ -54,6 +60,39 @@ impl Protocol {
         self.version
     }
 
+    /// Execute a DELETE command.
+    ///
+    /// Requires V2 protocol support.
+    pub fn delete(&mut self, key: &str) -> Result<Response> {
+        if self.version < 2 {
+            bail!(
+                "metadata service does not support V2 protocol \
+                 (required for DELETE)"
+            );
+        }
+        self.execute("DELETE", Some(key))
+    }
+
+    /// Execute a PUT command, encoding the key and value per protocol.
+    ///
+    /// The V2 PUT wire format requires `base64(key) + " " + base64(value)`
+    /// as the command argument. This method handles that encoding so
+    /// callers can pass raw strings.
+    pub fn put(&mut self, key: &str, value: &str) -> Result<Response> {
+        if self.version < 2 {
+            bail!(
+                "metadata service does not support V2 protocol \
+                 (required for PUT)"
+            );
+        }
+        let arg = format!(
+            "{} {}",
+            STANDARD.encode(key),
+            STANDARD.encode(value),
+        );
+        self.execute("PUT", Some(&arg))
+    }
+
     /// Execute a metadata command with automatic retry on timeout.
     ///
     /// On timeout, the protocol is reset (transport reconnected and
@@ -63,13 +102,22 @@ impl Protocol {
         command: &str,
         arg: Option<&str>,
     ) -> Result<Response> {
+        let mut retries = 0;
         loop {
             match self.try_execute(command, arg) {
                 Ok(response) => return Ok(response),
                 Err(e) => {
                     if is_timeout(&e) {
+                        retries += 1;
+                        if retries > MAX_RETRIES {
+                            bail!(
+                                "giving up after {MAX_RETRIES} \
+                                 timeout retries"
+                            );
+                        }
                         eprintln!(
-                            "receive timeout, resetting protocol..."
+                            "receive timeout, resetting \
+                             protocol (attempt {retries}/{MAX_RETRIES})..."
                         );
                         self.reset()?;
                         continue;
@@ -153,8 +201,9 @@ impl Protocol {
 
         self.transport.send(&request)?;
 
-        // Read V2 response, retrying on request ID mismatch
-        // (stale frames from a previous timed-out request)
+        // Read V2 response, discarding stale frames from
+        // previous timed-out requests (mismatched request IDs)
+        let mut stale_count = 0u32;
         loop {
             let line =
                 self.transport.recv_line(RECV_TIMEOUT_MS_V2)?;
@@ -174,15 +223,17 @@ impl Protocol {
                         }
                     };
                 }
-                Err(e) => {
-                    // If it's a request ID mismatch, discard and
-                    // read the next frame
-                    let msg = format!("{e}");
-                    if msg.contains("request ID mismatch") {
-                        continue;
+                Err(FrameError::ReqIdMismatch { .. }) => {
+                    stale_count += 1;
+                    if stale_count > MAX_STALE_FRAMES {
+                        bail!(
+                            "too many stale V2 frames \
+                             ({MAX_STALE_FRAMES}), giving up"
+                        );
                     }
-                    return Err(e);
+                    continue;
                 }
+                Err(FrameError::Other(e)) => return Err(e),
             }
         }
     }
@@ -235,6 +286,15 @@ fn negotiate(transport: &mut Transport) -> Result<u8> {
     }
 }
 
+/// Errors from V2 frame parsing.
+#[derive(Debug, thiserror::Error)]
+enum FrameError {
+    #[error("V2 request ID mismatch: expected {expected}, got {actual}")]
+    ReqIdMismatch { expected: String, actual: String },
+    #[error("{0}")]
+    Other(anyhow::Error),
+}
+
 /// A parsed V2 protocol frame.
 #[derive(Debug)]
 struct V2Frame {
@@ -245,64 +305,91 @@ struct V2Frame {
 /// Parse a V2 response frame and validate its integrity.
 ///
 /// Frame format: `V2 <body_len> <crc32_hex> <reqid> <status> [<b64_payload>]`
-fn parse_v2_frame(line: &str, expected_reqid: &str) -> Result<V2Frame> {
-    let mut parts = line.splitn(4, ' ');
+fn parse_v2_frame(
+    line: &str,
+    expected_reqid: &str,
+) -> std::result::Result<V2Frame, FrameError> {
+    let parse_body =
+        || -> Result<(String, String, Option<String>)> {
+            let mut parts = line.splitn(4, ' ');
 
-    let marker = parts.next();
-    let len_str = parts.next();
-    let crc_str = parts.next();
-    let body = parts.next();
+            let marker = parts.next();
+            let len_str = parts.next();
+            let crc_str = parts.next();
+            let body = parts.next();
 
-    let (Some("V2"), Some(len_str), Some(crc_str), Some(body)) =
-        (marker, len_str, crc_str, body)
-    else {
-        bail!("invalid V2 frame: expected 'V2 <len> <crc> <body>'");
-    };
+            let (
+                Some("V2"),
+                Some(len_str),
+                Some(crc_str),
+                Some(body),
+            ) = (marker, len_str, crc_str, body)
+            else {
+                bail!(
+                    "invalid V2 frame: \
+                     expected 'V2 <len> <crc> <body>'"
+                );
+            };
 
-    let expected_len: usize = len_str
-        .parse()
-        .map_err(|_| anyhow::anyhow!("invalid V2 frame length: {len_str}"))?;
+            let expected_len: usize =
+                len_str.parse().map_err(|_| {
+                    anyhow::anyhow!(
+                        "invalid V2 frame length: {len_str}"
+                    )
+                })?;
 
-    let expected_crc = u32::from_str_radix(crc_str, 16)
-        .map_err(|_| anyhow::anyhow!("invalid V2 frame CRC: {crc_str}"))?;
+            let expected_crc =
+                u32::from_str_radix(crc_str, 16).map_err(|_| {
+                    anyhow::anyhow!(
+                        "invalid V2 frame CRC: {crc_str}"
+                    )
+                })?;
 
-    // Validate body length
-    if body.len() != expected_len {
-        bail!(
-            "V2 frame length mismatch: header says {expected_len}, body is {}",
-            body.len()
-        );
+            if body.len() != expected_len {
+                bail!(
+                    "V2 frame length mismatch: \
+                     header says {expected_len}, body is {}",
+                    body.len()
+                );
+            }
+
+            let actual_crc = crc32fast::hash(body.as_bytes());
+            if actual_crc != expected_crc {
+                bail!(
+                    "V2 frame CRC mismatch: \
+                     expected {expected_crc:08x}, \
+                     got {actual_crc:08x}"
+                );
+            }
+
+            let mut body_parts = body.splitn(3, ' ');
+            let reqid = body_parts.next().ok_or_else(|| {
+                anyhow::anyhow!("missing request ID in V2 frame")
+            })?;
+            let status = body_parts.next().ok_or_else(|| {
+                anyhow::anyhow!("missing status in V2 frame")
+            })?;
+            let payload = body_parts.next().map(String::from);
+
+            Ok((
+                reqid.to_string(),
+                status.to_string(),
+                payload,
+            ))
+        };
+
+    match parse_body() {
+        Ok((reqid, status, payload)) => {
+            if reqid != expected_reqid {
+                return Err(FrameError::ReqIdMismatch {
+                    expected: expected_reqid.to_string(),
+                    actual: reqid,
+                });
+            }
+            Ok(V2Frame { status, payload })
+        }
+        Err(e) => Err(FrameError::Other(e)),
     }
-
-    // Validate CRC32
-    let actual_crc = crc32fast::hash(body.as_bytes());
-    if actual_crc != expected_crc {
-        bail!(
-            "V2 frame CRC mismatch: expected {expected_crc:08x}, got {actual_crc:08x}"
-        );
-    }
-
-    // Parse body: "<reqid> <status> [<b64_payload>]"
-    let mut body_parts = body.splitn(3, ' ');
-    let reqid = body_parts
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("missing request ID in V2 frame"))?;
-    let status = body_parts
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("missing status in V2 frame"))?;
-    let payload = body_parts.next().map(String::from);
-
-    // Validate request ID
-    if reqid != expected_reqid {
-        bail!(
-            "V2 request ID mismatch: expected {expected_reqid}, got {reqid}"
-        );
-    }
-
-    Ok(V2Frame {
-        status: status.to_string(),
-        payload,
-    })
 }
 
 /// Decode a BASE64-encoded payload string.
@@ -389,6 +476,7 @@ mod tests {
             format!("V2 {} 00000000 {body}", body.len());
 
         let err = parse_v2_frame(&frame, reqid).unwrap_err();
+        assert!(matches!(err, FrameError::Other(_)));
         assert!(format!("{err}").contains("CRC mismatch"));
     }
 
@@ -402,7 +490,10 @@ mod tests {
 
         let err =
             parse_v2_frame(&frame, "00000000").unwrap_err();
-        assert!(format!("{err}").contains("request ID mismatch"));
+        assert!(matches!(
+            err,
+            FrameError::ReqIdMismatch { .. }
+        ));
     }
 
     #[test]
@@ -413,6 +504,7 @@ mod tests {
         let frame = format!("V2 99 {crc:08x} {body}");
 
         let err = parse_v2_frame(&frame, reqid).unwrap_err();
+        assert!(matches!(err, FrameError::Other(_)));
         assert!(format!("{err}").contains("length mismatch"));
     }
 }

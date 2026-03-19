@@ -286,7 +286,10 @@ fn open_serial(path: &Path) -> Result<RawFd> {
     }
 
     // Configure raw mode for the serial port
-    configure_serial_raw(fd)?;
+    if let Err(e) = configure_serial_raw(fd) {
+        unsafe { libc::close(fd) };
+        return Err(e);
+    }
 
     // Clear O_NONBLOCK now that setup is done
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };

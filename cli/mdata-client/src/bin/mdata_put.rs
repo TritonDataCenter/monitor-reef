@@ -20,9 +20,6 @@
 
 use std::io::{IsTerminal, Read};
 
-use base64::engine::general_purpose::STANDARD;
-use base64::Engine as _;
-
 use mdata_client::protocol::Protocol;
 use mdata_client::{Response, exit_code};
 
@@ -67,22 +64,7 @@ fn run() -> anyhow::Result<i32> {
 
     let mut proto = Protocol::init()?;
 
-    if proto.version() < 2 {
-        eprintln!(
-            "ERROR: metadata service does not support V2 protocol \
-             (required for PUT)"
-        );
-        return Ok(exit_code::ERROR);
-    }
-
-    // PUT argument format: base64(key) + " " + base64(value)
-    let arg = format!(
-        "{} {}",
-        STANDARD.encode(key),
-        STANDARD.encode(&value),
-    );
-
-    match proto.execute("PUT", Some(&arg))? {
+    match proto.put(key, &value)? {
         Response::Success(_) => Ok(exit_code::SUCCESS),
         Response::NotFound => {
             eprintln!("ERROR: unexpected NOTFOUND response for PUT");
