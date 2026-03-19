@@ -336,7 +336,7 @@ pub async fn get_buckets_objects_from_shard(
         shard, conf.domain
     );
 
-    info!(log, "Connecting to {}", host);
+    info!(log, "Direct_db Connecting to {}", host);
 
     let (client, connection) = tokio_postgres::Config::new()
         .host(host.as_str())

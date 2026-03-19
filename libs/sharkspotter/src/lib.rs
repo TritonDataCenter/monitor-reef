@@ -892,15 +892,7 @@ pub fn run_multithreaded(
     // but not both.  This mirrors the moray side where direct_db and moray
     // RPC are mutually exclusive.
     if conf.direct_db_buckets {
-        let bmin = conf.buckets_min_shard;
-        let bmax = conf.buckets_max_shard;
-        debug!(
-            log,
-            "Starting buckets directdb discovery for shards {}..={}",
-            bmin,
-            bmax
-        );
-        for shard in bmin..=bmax {
+        for shard in conf.buckets_min_shard..=conf.buckets_max_shard {
             run_direct_db_buckets_shard_thread(
                 &pool, shard, &obj_tx, &conf, &log,
             );

@@ -9,6 +9,19 @@
 # Runs from the Triton headnode.  Single-file, no
 # dependencies beyond sdc-* and json(1).
 #
+# For each clone the script:
+#
+#  * creates a temporary (surrogate) VM using VMAPI
+#  * creates a new manatee (zfs) snapshot and clones it
+#  * attaches the cloned dataset as the delegated dataset
+#    for the surrogate VM
+#  * installs a user-script which runs on startup and
+#    configures and starts postgresql
+#  * starts the VM
+#
+# On any unexpected error it should exit prematurely with
+# a non-zero exit code.
+#
 # Subcommands:
 #
 #   pgclone.sh clone-moray <manatee VM UUID>
@@ -102,6 +115,14 @@ function create_surrogate_payload {
     local new_alias="$2"
     local tag_value="$3"
 
+    #
+    # Create the new payload with a bunch of properties first copied from the
+    # existing VM, and then some other properties are set specific to the clone.
+    #
+    # The new VM is provisioned on the same networks as the original, so we must
+    # use vmapi in order that the network interfaces are created correctly in the
+    # rest of Triton.
+    #
     json -e 'this.n = {
         autoboot: false,
         billing_id: this.billing_id,
@@ -157,6 +178,11 @@ function provision_vm {
     local payload="$1"
     local vmapi_result wf_job_uuid
 
+    #
+    # Provisioning with VMAPI is asynchronous so we get back a workflow
+    # job_uuid.  We use sdc-waitforjob to poll the job status until it
+    # completes.
+    #
     vmapi_result=$(sdc-vmapi /vms -X POST \
         -d@- <<<"${payload}" | json -H)
     wf_job_uuid=$(json job_uuid <<<"${vmapi_result}")
@@ -177,6 +203,11 @@ function destroy_delegated_dataset {
     local server_uuid="$1" new_uuid="$2"
     local result_json
 
+    #
+    # When we provision a new dataset is created.  We don't need that one, so
+    # we destroy it.  We'll replace it with a new clone of the manatee
+    # snapshot below.
+    #
     echo "Destroying unused delegated dataset..."
     result_json=$(sdc-oneachnode -J \
         -n "${server_uuid}" \
@@ -232,6 +263,10 @@ function copy_registrar_config {
     local new_uuid="$3"
     local result_json
 
+    #
+    # Keep a copy of manatee's registrar config so we can mangle it into
+    # something that works for rebalancer to find this instance.
+    #
     echo "Copying registrar config..."
     result_json=$(sdc-oneachnode -J \
         -n "${server_uuid}" \
@@ -243,6 +278,16 @@ function copy_registrar_config {
 #
 # generate_setup_script -- write the in-zone setup.sh to a
 # temp file and return the path.
+#
+# The user-script we setup earlier will run /setup.sh in
+# the zone on startup.  We create that with a script that
+# will:
+#
+#  * setup postgres + permissions
+#  * create a postgres service
+#  * disable existing "recovery.conf" so that we don't
+#    attempt to recover from a real manatee
+#  * import and startup the postgresql service
 #
 # Arguments:
 #   $1  SMF service name
@@ -291,8 +336,7 @@ mkdir -p /var/pg
 chown -R postgres:postgres /var/pg
 
 #
-# INV-4: Disable autovacuum.
-# INV-3: Disable recovery.conf.
+# Disable autovacuum and ensure we're not going to try to recover from a sync.
 #
 grep -v "^autovacuum = " \
     \${data_dir}/data/postgresql.conf \
@@ -307,15 +351,22 @@ echo "autovacuum = off" >> \${data_dir}/data/postgresql.conf
 PGBIN="/opt/postgresql/\${pg_version}/bin"
 PGDATA="\${data_dir}/data"
 
+# Set our own pg_hba.conf so connections are allowed from \`manta\` and \`admin\`
+# networks.
 cat > \${PGDATA}/pg_hba.conf <<EOF
-# TYPE  DATABASE  USER  ADDRESS        METHOD
-local   all       all                  trust
-local   replication admin              trust
-host    all       all   127.0.0.1/32   trust
-host    all       all   ::1/128        trust
-host    all       all   0.0.0.0/0      trust
+# TYPE  DATABASE        USER            ADDRESS                 METHOD
+# "local" is for Unix domain socket connections only
+local   all             all                                     trust
+local   replication     admin                                   trust
+# IPv4 local connections:
+host    all             all             127.0.0.1/32            trust
+# IPv6 local connections:
+host    all             all             ::1/128                 trust
+# Allow any remote connections on \`admin\` or \`manta\` network
+host    all             all             0.0.0.0/0               trust
 EOF
 
+# Copied from pkgsrc version and modified to fit
 cat > pg.xml <<EOF
 <?xml version='1.0'?>
 <!DOCTYPE service_bundle SYSTEM '/usr/share/lib/xml/dtd/service_bundle.dtd.1'>
@@ -373,6 +424,8 @@ EOF
 
 svccfg import pg.xml
 
+# Generate registrar config, then import and start the service
+
 MY_IP=\$(mdata-get sdc:nics \
     | json -Ha nic_tag ip \
     | grep "^manta" \
@@ -382,6 +435,8 @@ if [[ -z "\${MY_IP}" ]]; then
     exit 1
 fi
 
+# Ensure the domain looks like the expected pattern since we depend on that
+# in our mutation
 reg_domain=\$(json registration.domain \
     < /opt/smartdc/registrar/etc/config.json.in)
 if ! echo "\${reg_domain}" | grep -qE '${domain_pattern}'
@@ -405,6 +460,7 @@ svccfg import \
     /opt/smartdc/registrar/smf/manifests/registrar.xml
 svcadm enable registrar
 
+# Fix the prompt to be something more useful
 alias="\$(mdata-get sdc:alias)"
 if [[ -n \${alias} ]]; then
 cat >> /root/.bashrc <<BASHEOF
@@ -431,6 +487,7 @@ function install_setup_script {
     local script_path="$3"
     local result_json
 
+    # Upload the script into place
     echo "Installing startup script..."
     result_json=$(sdc-oneachnode -X -J \
         -n "${server_uuid}" \
@@ -439,6 +496,7 @@ function install_setup_script {
         | json result)
     check_result "${result_json}"
 
+    # Fix the permissions
     result_json=$(sdc-oneachnode -J \
         -n "${server_uuid}" \
         "chmod 755 /zones/${new_uuid}/root/setup.sh" \
@@ -633,7 +691,7 @@ function do_clone {
             .replace(/-[0-9a-f]+$/, '-${NEW_UUID_SHORT}')" \
         alias <<<"${VICTIM_JSON}")
 
-    echo "Creating Surrogate VM ${NEW_UUID} (${kind})"
+    echo "Creating Surrogate VM ${NEW_UUID} (${kind})  ${NEWALIAS}"
 
     # INV-1: tag for discoverability.
     local new_json
