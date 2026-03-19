@@ -4,11 +4,10 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! Transport layer for the metadata protocol.
+//! Unix transport implementation.
 //!
-//! Supports Unix domain sockets (for SmartOS zones) and serial ports
-//! (for KVM/HVM guests). Platform detection automatically selects
-//! the appropriate transport.
+//! Supports Unix domain sockets (SmartOS zones) and serial ports
+//! (KVM/HVM guests) using poll() for timeout-based I/O.
 
 use std::io;
 use std::os::unix::io::{AsRawFd, RawFd};
@@ -18,33 +17,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
-/// Errors specific to the transport layer.
-#[derive(Debug, thiserror::Error)]
-pub enum TransportError {
-    #[error("timed out waiting for response")]
-    Timeout,
-    #[error("connection closed unexpectedly")]
-    Eof,
-    #[error("invalid UTF-8 in response")]
-    InvalidData,
-    #[error("I/O error: {0}")]
-    Io(#[from] io::Error),
-}
-
-/// Detected transport configuration.
-#[derive(Clone, Debug)]
-pub enum TransportConfig {
-    /// Unix domain socket (SmartOS zone).
-    UnixSocket(PathBuf),
-    /// Serial port (KVM/HVM guest).
-    Serial(PathBuf),
-}
-
-/// Low-level transport for sending and receiving lines.
-pub struct Transport {
-    config: TransportConfig,
-    fd: RawFd,
-}
+use super::{Transport, TransportConfig, TransportError};
 
 impl Transport {
     /// Detect the appropriate transport and open it.
@@ -52,11 +25,6 @@ impl Transport {
         let config = detect_transport()?;
         let fd = open_transport(&config)?;
         Ok(Self { config, fd })
-    }
-
-    /// Whether this transport is a serial port.
-    pub fn is_serial(&self) -> bool {
-        matches!(self.config, TransportConfig::Serial(_))
     }
 
     /// Send a string over the transport.
@@ -72,7 +40,9 @@ impl Transport {
                 )
             };
             if n < 0 {
-                return Err(TransportError::Io(io::Error::last_os_error()));
+                return Err(TransportError::Io(
+                    io::Error::last_os_error(),
+                ));
             }
             written += n as usize;
         }
@@ -82,20 +52,24 @@ impl Transport {
     /// Receive a single line (terminated by `\n`) with a timeout.
     ///
     /// Returns the line content without the trailing newline.
-    pub fn recv_line(&self, timeout_ms: u64) -> Result<String, TransportError> {
-        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+    pub fn recv_line(
+        &self,
+        timeout_ms: u64,
+    ) -> Result<String, TransportError> {
+        let deadline =
+            Instant::now() + Duration::from_millis(timeout_ms);
         let mut line = Vec::new();
         let mut byte = [0u8; 1];
 
         loop {
-            let remaining = deadline.saturating_duration_since(Instant::now());
+            let remaining =
+                deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 return Err(TransportError::Timeout);
             }
 
-            let remaining_ms = remaining
-                .as_millis()
-                .min(i32::MAX as u128) as i32;
+            let remaining_ms =
+                remaining.as_millis().min(i32::MAX as u128) as i32;
 
             if !poll_readable(self.fd, remaining_ms)? {
                 return Err(TransportError::Timeout);
@@ -130,13 +104,10 @@ impl Transport {
 
     /// Close and reopen the transport for protocol reset.
     pub fn reconnect(&mut self) -> Result<()> {
-        // Close existing connection
         if self.fd >= 0 {
             unsafe { libc::close(self.fd) };
             self.fd = -1;
         }
-
-        // Reopen
         self.fd = open_transport(&self.config)?;
         Ok(())
     }
@@ -151,9 +122,11 @@ impl Drop for Transport {
     }
 }
 
-/// Poll a file descriptor for readability with a timeout in milliseconds.
-/// Returns `true` if readable, `false` on timeout.
-fn poll_readable(fd: RawFd, timeout_ms: i32) -> Result<bool, TransportError> {
+/// Poll a file descriptor for readability with a timeout.
+fn poll_readable(
+    fd: RawFd,
+    timeout_ms: i32,
+) -> Result<bool, TransportError> {
     let mut pfd = libc::pollfd {
         fd,
         events: libc::POLLIN,
@@ -163,7 +136,6 @@ fn poll_readable(fd: RawFd, timeout_ms: i32) -> Result<bool, TransportError> {
     if ret < 0 {
         let err = io::Error::last_os_error();
         if err.kind() == io::ErrorKind::Interrupted {
-            // Interrupted by signal, treat as no data yet (caller retries)
             return Ok(false);
         }
         return Err(TransportError::Io(err));
@@ -171,7 +143,9 @@ fn poll_readable(fd: RawFd, timeout_ms: i32) -> Result<bool, TransportError> {
     if ret == 0 {
         return Ok(false);
     }
-    if pfd.revents & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL) != 0 {
+    if pfd.revents & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL)
+        != 0
+    {
         return Err(TransportError::Io(io::Error::new(
             io::ErrorKind::ConnectionReset,
             "poll returned error condition",
@@ -181,9 +155,6 @@ fn poll_readable(fd: RawFd, timeout_ms: i32) -> Result<bool, TransportError> {
 }
 
 /// Detect the appropriate transport for this platform.
-///
-/// Tries Unix domain sockets first (SmartOS zone paths), then serial
-/// ports (KVM/HVM). Returns the first working transport configuration.
 fn detect_transport() -> Result<TransportConfig> {
     // SmartOS zone socket paths (tried in order)
     let socket_paths = [
@@ -194,17 +165,19 @@ fn detect_transport() -> Result<TransportConfig> {
 
     for path in &socket_paths {
         if Path::new(path).exists() {
-            return Ok(TransportConfig::UnixSocket(PathBuf::from(path)));
+            return Ok(TransportConfig::UnixSocket(
+                PathBuf::from(path),
+            ));
         }
     }
 
     // Serial ports for KVM/HVM guests
     let serial_paths = [
-        "/dev/term/b",  // illumos/SmartOS
-        "/dev/ttyS1",   // Linux
-        "/dev/tty01",   // NetBSD
-        "/dev/cua01",   // OpenBSD
-        "/dev/cuau1",   // FreeBSD
+        "/dev/term/b", // illumos/SmartOS
+        "/dev/ttyS1",  // Linux
+        "/dev/tty01",  // NetBSD
+        "/dev/cua01",  // OpenBSD
+        "/dev/cuau1",  // FreeBSD
     ];
 
     for path in &serial_paths {
@@ -214,7 +187,8 @@ fn detect_transport() -> Result<TransportConfig> {
     }
 
     bail!(
-        "no metadata transport found; tried sockets ({}) and serial ports ({})",
+        "no metadata transport found; tried sockets ({}) \
+         and serial ports ({})",
         socket_paths.join(", "),
         serial_paths.join(", "),
     )
@@ -230,21 +204,23 @@ fn open_transport(config: &TransportConfig) -> Result<RawFd> {
 
 /// Connect to a Unix domain socket.
 fn open_socket(path: &Path) -> Result<RawFd> {
-    let stream = UnixStream::connect(path)
-        .with_context(|| format!("connecting to metadata socket: {}", path.display()))?;
+    let stream = UnixStream::connect(path).with_context(|| {
+        format!(
+            "connecting to metadata socket: {}",
+            path.display()
+        )
+    })?;
     let fd = stream.as_raw_fd();
-
-    // Prevent the UnixStream from closing the fd when dropped.
     // We manage the fd lifetime ourselves.
     std::mem::forget(stream);
-
     Ok(fd)
 }
 
-/// Open and configure a serial port for metadata protocol communication.
+/// Open and configure a serial port.
 fn open_serial(path: &Path) -> Result<RawFd> {
     let c_path = std::ffi::CString::new(
-        path.to_str().context("serial port path is not valid UTF-8")?,
+        path.to_str()
+            .context("serial port path is not valid UTF-8")?,
     )
     .context("serial port path contains null byte")?;
 
@@ -258,14 +234,15 @@ fn open_serial(path: &Path) -> Result<RawFd> {
         let err = io::Error::last_os_error();
         if err.kind() == io::ErrorKind::PermissionDenied {
             bail!(
-                "permission denied opening {}: are you running as root?",
+                "permission denied opening {}: \
+                 are you running as root?",
                 path.display()
             );
         }
         bail!("opening serial port {}: {}", path.display(), err);
     }
 
-    // Acquire an exclusive lock on the serial port
+    // Acquire an exclusive lock
     let mut flock_val: libc::flock = unsafe { std::mem::zeroed() };
     #[allow(clippy::unnecessary_cast)]
     {
@@ -279,13 +256,14 @@ fn open_serial(path: &Path) -> Result<RawFd> {
         let err = io::Error::last_os_error();
         unsafe { libc::close(fd) };
         bail!(
-            "failed to lock serial port {} (another mdata process may be running): {}",
+            "failed to lock serial port {} \
+             (another mdata process may be running): {}",
             path.display(),
             err,
         );
     }
 
-    // Configure raw mode for the serial port
+    // Configure raw mode
     if let Err(e) = configure_serial_raw(fd) {
         unsafe { libc::close(fd) };
         return Err(e);
@@ -294,7 +272,9 @@ fn open_serial(path: &Path) -> Result<RawFd> {
     // Clear O_NONBLOCK now that setup is done
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
     if flags >= 0 {
-        unsafe { libc::fcntl(fd, libc::F_SETFL, flags & !libc::O_NONBLOCK) };
+        unsafe {
+            libc::fcntl(fd, libc::F_SETFL, flags & !libc::O_NONBLOCK)
+        };
     }
 
     // Flush any pending data
@@ -303,53 +283,29 @@ fn open_serial(path: &Path) -> Result<RawFd> {
     Ok(fd)
 }
 
-/// Configure a serial port file descriptor for raw (non-canonical) I/O.
-///
-/// Matches the termios settings from the original C mdata-client:
-/// - 8 data bits, no parity, no flow control
-/// - All input/output processing disabled
-/// - No echo, no signals
-/// - VMIN=0, VTIME=1 (100ms inter-byte timeout)
+/// Configure a serial port for raw (non-canonical) I/O.
 fn configure_serial_raw(fd: RawFd) -> Result<()> {
     let mut tios: libc::termios = unsafe { std::mem::zeroed() };
 
     if unsafe { libc::tcgetattr(fd, &mut tios) } < 0 {
-        bail!(
-            "tcgetattr failed: {}",
-            io::Error::last_os_error()
-        );
+        bail!("tcgetattr failed: {}", io::Error::last_os_error());
     }
 
-    // Input flags: disable break handling, CR/NL translation,
-    // parity checking, stripping, and software flow control
     tios.c_iflag &= !(libc::BRKINT
         | libc::ICRNL
         | libc::INPCK
         | libc::ISTRIP
         | libc::IXON);
-
-    // Output flags: disable all output processing
     tios.c_oflag &= !libc::OPOST;
-
-    // Control flags: 8-bit characters, disable hangup-on-close
     tios.c_cflag |= libc::CS8;
     tios.c_cflag &= !libc::HUPCL;
-
-    // Local flags: disable echo, canonical mode, extensions, signals
-    tios.c_lflag &= !(libc::ECHO
-        | libc::ICANON
-        | libc::IEXTEN
-        | libc::ISIG);
-
-    // Control characters for non-canonical read
-    tios.c_cc[libc::VMIN] = 0;  // Non-blocking: return immediately
-    tios.c_cc[libc::VTIME] = 1; // 100ms inter-byte timeout
+    tios.c_lflag &=
+        !(libc::ECHO | libc::ICANON | libc::IEXTEN | libc::ISIG);
+    tios.c_cc[libc::VMIN] = 0;
+    tios.c_cc[libc::VTIME] = 1;
 
     if unsafe { libc::tcsetattr(fd, libc::TCSAFLUSH, &tios) } < 0 {
-        bail!(
-            "tcsetattr failed: {}",
-            io::Error::last_os_error()
-        );
+        bail!("tcsetattr failed: {}", io::Error::last_os_error());
     }
 
     Ok(())
@@ -361,9 +317,6 @@ mod tests {
 
     #[test]
     fn test_detect_transport_returns_error_when_no_transport() {
-        // On a dev machine (macOS), no transport should be found.
-        // This is expected and not a bug.
-        // On SmartOS, this test would need to be adjusted.
         if !Path::new("/.zonecontrol/metadata.sock").exists()
             && !Path::new("/dev/term/b").exists()
             && !Path::new("/dev/ttyS1").exists()
