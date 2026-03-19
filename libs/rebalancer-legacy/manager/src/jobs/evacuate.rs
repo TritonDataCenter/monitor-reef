@@ -3286,20 +3286,15 @@ fn start_sharkspotter(
 ) -> Result<thread::JoinHandle<Result<(), Error>>, Error> {
     let shark = &job_action.from_shark.manta_storage_id;
 
-    // Resolve mdapi SRV records before building config.
+    // Pass original hostnames from config.  Resolution is handled
+    // downstream by sharkspotter or the mdapi client.
     let mdapi_endpoints: Vec<String> = job_action
         .config
         .mdapi
         .shards
         .iter()
-        .map(|s| {
-            let addr =
-                mdapi_client::get_mdapi_srv_sockaddr(
-                    &s.host,
-                )?;
-            Ok(format!("{}:{}", addr.ip(), addr.port()))
-        })
-        .collect::<Result<Vec<String>, Error>>()?;
+        .map(|s| s.host.clone())
+        .collect();
 
     let config = sharkspotter::config::Config {
         domain: String::from(domain),

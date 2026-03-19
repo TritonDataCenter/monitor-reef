@@ -225,8 +225,8 @@ async fn scan_vnode(
     log: &Logger,
 ) -> Result<u64, Error> {
     let query = format!(
-        "SELECT id, owner, bucket_id, name, content_length, \
-         content_md5, content_type, sharks \
+        "SELECT id::text, owner::text, bucket_id::text, name, \
+         content_length, content_md5, content_type, sharks \
          FROM manta_bucket_{}.manta_bucket_object",
         vnode
     );
