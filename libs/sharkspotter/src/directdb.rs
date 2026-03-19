@@ -12,7 +12,7 @@ use crossbeam_channel as crossbeam;
 use futures::{pin_mut, TryStreamExt};
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value};
-use slog::{debug, error, trace, warn, Logger};
+use slog::{debug, error, info, trace, warn, Logger};
 use std::io::{Error, ErrorKind};
 use tokio_postgres::{NoTls, Row};
 
@@ -111,6 +111,7 @@ pub async fn get_objects_from_shard(
     pin_mut!(rows);
     // Iterate over the rows in the stream.  For each one determine if it
     // matches the shark we are looking for.
+    let mut total_rows: u64 = 0;
     while let Some(row) = rows
         .try_next()
         .await
@@ -121,6 +122,7 @@ pub async fn get_objects_from_shard(
             )
         })?
     {
+        total_rows += 1;
         let val_str: &str = row.get("_value");
         let value: Value = serde_json::from_str(val_str)
             .map_err(|e| Error::new(ErrorKind::Other, e))?;
@@ -135,6 +137,12 @@ pub async fn get_objects_from_shard(
             return Err(e);
         }
     }
+
+    info!(
+        log,
+        "Moray directdb shard {} complete: {} rows scanned",
+        shard, total_rows
+    );
 
     Ok(())
 }
