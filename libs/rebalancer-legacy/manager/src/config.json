@@ -7,7 +7,10 @@
       }
    ],
   "mdapi": {
-    "shards": [],
+    "shards": [
+        { "host": "1.buckets-mdapi.east.joyent.us" },
+        { "host": "2.buckets-mdapi.east.joyent.us" }
+    ],
     "connection_timeout_ms": 5000
   }
 }

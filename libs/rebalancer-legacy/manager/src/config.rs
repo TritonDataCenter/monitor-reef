@@ -206,20 +206,6 @@ pub struct Config {
     #[serde(default)]
     pub direct_db: bool,
 
-    /// Use direct PostgreSQL access (rebalancer-buckets-postgres)
-    /// for bucket object discovery.  Requires provisioning via
-    /// `pgclone.sh clone-buckets`.
-    #[serde(default)]
-    pub direct_db_buckets: bool,
-
-    /// Minimum buckets-postgres shard number (for direct_db_buckets).
-    #[serde(default = "Config::default_buckets_min_shard")]
-    pub buckets_min_shard: u32,
-
-    /// Maximum buckets-postgres shard number (for direct_db_buckets).
-    #[serde(default = "Config::default_buckets_max_shard")]
-    pub buckets_max_shard: u32,
-
     #[serde(default = "Config::default_port")]
     pub listen_port: u16,
 
@@ -242,9 +228,6 @@ impl Default for Config {
             options: ConfigOptions::default(),
             mdapi: MdapiConfig::default(),
             direct_db: false,
-            direct_db_buckets: false,
-            buckets_min_shard: 1,
-            buckets_max_shard: 1,
             listen_port: 80,
             max_fill_percentage: 100,
             log_level: Level::Debug,
@@ -280,14 +263,6 @@ impl Config {
     /// This method assumes the `shards: Vec<Shard>` is sorted.
     pub fn max_shard_num(&self) -> u32 {
         util::shard_host2num(self.shards.last().expect("last").host.as_str())
-    }
-
-    fn default_buckets_min_shard() -> u32 {
-        1
-    }
-
-    fn default_buckets_max_shard() -> u32 {
-        1
     }
 
     fn default_port() -> u16 {
