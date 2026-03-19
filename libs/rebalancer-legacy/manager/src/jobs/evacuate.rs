@@ -4386,43 +4386,51 @@ fn start_assignment_checker(
                     break;
                 }
 
-                for ace in assignments.values() {
-                    if ace.state != AssignmentState::Assigned {
-                        trace!("Skipping unassigned assignment {:?}", ace);
-                        continue;
+                // Poll agents concurrently to avoid blocking on
+                // hundreds of sequential HTTP GETs.
+                let assigned: Vec<_> = assignments
+                    .values()
+                    .filter(|ace| ace.state == AssignmentState::Assigned)
+                    .cloned()
+                    .collect();
+
+                const CHECKER_CONCURRENCY: usize = 8;
+                let (poll_tx, poll_rx) = std::sync::mpsc::channel();
+
+                for chunk in assigned.chunks(CHECKER_CONCURRENCY) {
+                    let mut handles = Vec::with_capacity(chunk.len());
+                    for ace in chunk {
+                        let tx = poll_tx.clone();
+                        let ja = Arc::clone(&job_action);
+                        let ace = ace.clone();
+                        handles.push(thread::spawn(move || {
+                            let result = assignment_get(ja, &ace);
+                            let _ = tx.send((ace, result));
+                        }));
                     }
+                    for h in handles {
+                        let _ = h.join();
+                    }
+                }
+                drop(poll_tx);
 
-                    debug!(
-                        "Assignment Checker, checking: {} | {:?}",
-                        ace.id, ace.state
-                    );
-
-                    // TODO: Async/await candidate
-                    let ag_assignment =
-                        match assignment_get(Arc::clone(&job_action), &ace) {
-                            Ok(a) => a,
-                            Err(e) => {
-                                // If necessary the assignment and its associated
-                                // objects are marked as skipped in the get()
-                                // method.
-                                error!("Could not get assignment: {}", e);
-                                continue;
-                            }
-                        };
+                // Process completed assignments sequentially.
+                for (ace, result) in poll_rx.iter() {
+                    let ag_assignment = match result {
+                        Ok(a) => a,
+                        Err(e) => {
+                            error!("Could not get assignment: {}", e);
+                            continue;
+                        }
+                    };
 
                     debug!(
                         "Got Assignment: {} {:?}",
                         ag_assignment.uuid, ag_assignment.stats
                     );
-                    // If agent assignment is complete, process it and pass
-                    // it to the metadata update broker.  Otherwise, continue
-                    // to next assignment.
+
                     match ag_assignment.stats.state {
                         AgentAssignmentState::Complete(_) => {
-                            // We don't want to shut this thread down simply
-                            // because we have issues handling one assignment.
-                            // The process() function should mark the
-                            // associated objects appropriately.
                             debug!(
                                 "Processing Assignment: {:?}",
                                 ag_assignment
