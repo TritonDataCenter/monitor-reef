@@ -3831,19 +3831,33 @@ fn add_object_to_assignment(
             }
         };
 
-    let source = manta_object
+    // Build source list: prefer non-evacuation sharks, fall back
+    // to the evacuation shark.  The destination shark is excluded.
+    let dest_host = &shark.manta_storage_id;
+    let mut sources: Vec<_> = manta_object
         .sharks
         .iter()
-        .find(|s| s.manta_storage_id != from_shark_host);
+        .filter(|s| {
+            s.manta_storage_id != *dest_host
+                && s.manta_storage_id != from_shark_host
+        })
+        .cloned()
+        .collect();
 
-    let source = match source {
-        Some(src) => src,
+    // Append the evacuation shark as last resort.
+    if let Some(evac) = manta_object
+        .sharks
+        .iter()
+        .find(|s| s.manta_storage_id == from_shark_host)
+    {
+        sources.push(evac.clone());
+    }
+
+    let (source, alternate_sources) = match sources.split_first() {
+        Some((first, rest)) => (first.clone(), rest.to_vec()),
         None => {
-            // The only shark we could find was the one that
-            // is being evacuated.
             job_action
                 .skip_object(&mut eobj, ObjectSkippedReason::SourceIsEvacShark);
-
             return Err(AssignmentAddObjectError::SouceIsEvacShark);
         }
     };
@@ -3894,10 +3908,11 @@ fn add_object_to_assignment(
                     md5sum: manta_object
                         .content_md5
                         .to_owned(),
-                    source: source.to_owned(),
+                    source: source.clone(),
                     status: TaskStatus::Pending,
                     bucket_id,
                     object_name_hash,
+                    alternate_sources: alternate_sources.clone(),
                 }
             },
         )

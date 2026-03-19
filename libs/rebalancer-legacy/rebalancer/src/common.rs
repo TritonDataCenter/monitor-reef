@@ -69,6 +69,12 @@ pub struct Task {
     /// None for v1 objects.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object_name_hash: Option<String>,
+
+    /// Additional sharks to try if the primary source returns
+    /// 404.  Ordered by preference: replicas first, evacuation
+    /// shark last.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub alternate_sources: Vec<MantaObjectShark>,
 }
 
 impl Task {
@@ -93,6 +99,7 @@ impl Arbitrary for Task {
             status: TaskStatus::arbitrary(g),
             bucket_id: None,
             object_name_hash: None,
+            alternate_sources: vec![],
         }
     }
 }
