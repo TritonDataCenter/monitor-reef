@@ -1,0 +1,37 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "mdata-client"
+version = "0.1.0"
+edition.workspace = true
+description = "Rust implementation of the SmartOS metadata client (mdata-get/put/list/delete)"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "mdata-get"
+path = "src/bin/mdata_get.rs"
+
+[[bin]]
+name = "mdata-put"
+path = "src/bin/mdata_put.rs"
+
+[[bin]]
+name = "mdata-list"
+path = "src/bin/mdata_list.rs"
+
+[[bin]]
+name = "mdata-delete"
+path = "src/bin/mdata_delete.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+base64 = { workspace = true }
+crc32fast = { workspace = true }
+libc = { workspace = true }
+thiserror = { workspace = true }

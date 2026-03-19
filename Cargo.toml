@@ -11,6 +11,7 @@ members = [
     "apis/jira-api",
     "apis/vmapi-api",
     "cli/bugview-cli",
+    "cli/mdata-client",
     "cli/triton-cli",
     "cli/vmapi-cli",
     "clients/internal/bugview-client",
@@ -59,12 +60,15 @@ expect_used = "deny"
 [workspace.dependencies]
 askama = "0.15"
 anyhow = "1.0"
+base64 = "0.22"
 build-data = "0.2"
 camino = "1.1"
 cargo_toml = "0.22"
 chrono = "0.4"
+crc32fast = "1.4"
 clap = { version = "4.5", features = ["derive"] }
 dropshot = { version = "0.16" }
+libc = "0.2"
 dropshot-api-manager = "0.3"
 dropshot-api-manager-types = "0.3"
 openapiv3 = "2.0"
