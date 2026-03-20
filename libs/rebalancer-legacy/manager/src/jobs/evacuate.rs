@@ -5089,11 +5089,14 @@ fn metadata_update_broker_dynamic(
                         msg,
                     );
                 }
-                let ace = match md_update_rx.recv() {
+                let ace = match md_update_rx.recv_timeout(
+                    Duration::from_secs(5),
+                ) {
                     Ok(ace) => ace,
-                    Err(e) => {
-                        // If the queue is empty and there are no active or
-                        // queued threads, kick one off to drain the queue.
+                    Err(crossbeam_channel::RecvTimeoutError::Timeout) => {
+                        // No new assignments arrived, but the queue
+                        // may still have unprocessed items from
+                        // earlier.  Ensure a worker is running.
                         if !queue.is_empty()
                             && pool.active_count() == 0
                             && pool.queued_count() == 0
@@ -5102,14 +5105,27 @@ fn metadata_update_broker_dynamic(
                                 Arc::clone(&job_action),
                                 Arc::clone(&queue),
                             );
-
+                            pool.execute(worker);
+                        }
+                        continue;
+                    }
+                    Err(crossbeam_channel::RecvTimeoutError::Disconnected) => {
+                        // Checker exited.  Kick off a final
+                        // worker if there's remaining work.
+                        if !queue.is_empty()
+                            && pool.active_count() == 0
+                            && pool.queued_count() == 0
+                        {
+                            let worker = metadata_update_worker_dynamic(
+                                Arc::clone(&job_action),
+                                Arc::clone(&queue),
+                            );
                             pool.execute(worker);
                         }
 
                         warn!(
                             "Could not receive metadata from assignment \
-                             checker thread: {}",
-                            e
+                             checker thread (disconnected)"
                         );
 
                         break;
