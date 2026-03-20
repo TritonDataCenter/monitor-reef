@@ -4939,6 +4939,9 @@ fn metadata_update_assignment(
                     );
                     job_action.mark_object_error(&eobj.id, e.into());
                     continue;
+                } else {
+                    updated_objects.push(eobj);
+                    continue;
                 }
             }
 
