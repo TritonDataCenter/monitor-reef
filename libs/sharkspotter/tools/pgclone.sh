@@ -665,9 +665,9 @@ function do_clone {
             alias_sed_from='\.buckets-postgres\.'
             alias_sed_to='.rebalancer-buckets-postgres.'
             smf_service="manta/rebalancer-buckets-postgres"
-            domain_pattern='^[0-9]*\.buckets-postgres\.'
+            domain_pattern='^[0-9]*\.(buckets-postgres|buckets-mdapi)\.'
             alias_replace='/\.buckets-postgres\./, ".rebalancer-buckets-postgres."'
-            domain_replace='/^.*\.buckets-postgres\./, "rebalancer-buckets-postgres."'
+            domain_replace='/^.*\.(buckets-postgres|buckets-mdapi)\./, "rebalancer-buckets-postgres."'
             ;;
         *)
             echo "BUG: unknown kind '${kind}'" >&2
