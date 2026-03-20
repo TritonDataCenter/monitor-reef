@@ -5120,6 +5120,44 @@ fn metadata_update_broker_dynamic(
 
                 pool.execute(worker);
             }
+
+            // Drain: the assignment checker may have marked objects as
+            // PostProcessing after the last batch was sent through the
+            // channel.  Do a final sweep of the assignments hash for
+            // any that reached AgentComplete but weren't sent to the
+            // broker channel.
+            {
+                let assignments = job_action
+                    .assignments
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner());
+
+                let remaining: Vec<_> = assignments
+                    .values()
+                    .filter(|ace| {
+                        ace.state == AssignmentState::AgentComplete
+                    })
+                    .cloned()
+                    .collect();
+
+                if !remaining.is_empty() {
+                    info!(
+                        "Metadata update broker: draining {} \
+                         remaining assignments after checker exit",
+                        remaining.len()
+                    );
+                    for ace in remaining {
+                        queue.push(DyanmicWorkerMsg::Data(ace));
+                    }
+
+                    let worker = metadata_update_worker_dynamic(
+                        Arc::clone(&job_action),
+                        Arc::clone(&queue),
+                    );
+                    pool.execute(worker);
+                }
+            }
+
             pool.join();
             metrics_gauge_set(MD_THREAD_GAUGE, 0);
             Ok(())
