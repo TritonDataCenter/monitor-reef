@@ -1435,7 +1435,7 @@ impl EvacuateJobUpdateMessage {
     }
 }
 
-enum DyanmicWorkerMsg {
+enum DynamicWorkerMsg {
     Data(AssignmentCacheEntry),
     Stop,
 }
@@ -4563,7 +4563,7 @@ fn metadata_update_worker_static(
 // queue is empty the worker exits.
 fn metadata_update_worker_dynamic(
     job_action: Arc<EvacuateJob>,
-    queue_front: Arc<Injector<DyanmicWorkerMsg>>,
+    queue_front: Arc<Injector<DynamicWorkerMsg>>,
 ) -> impl Fn() {
     move || {
         // For each worker we create a hash of moray clients indexed by shard.
@@ -4595,8 +4595,8 @@ fn metadata_update_worker_dynamic(
                 Steal::Success(dwm) => {
                     idle_rounds = 0;
                     match dwm {
-                        DyanmicWorkerMsg::Data(a) => a,
-                        DyanmicWorkerMsg::Stop => {
+                        DynamicWorkerMsg::Data(a) => a,
+                        DynamicWorkerMsg::Stop => {
                             debug!("Received stop message, exiting");
                             break;
                         }
@@ -4978,7 +4978,7 @@ fn metadata_update_assignment(
 
 fn update_dynamic_metadata_threads(
     pool: &mut ThreadPool,
-    queue_back: &Arc<Injector<DyanmicWorkerMsg>>,
+    queue_back: &Arc<Injector<DynamicWorkerMsg>>,
     max_thread_count: &mut usize,
     msg: JobUpdateMessage,
 ) {
@@ -5002,7 +5002,7 @@ fn update_dynamic_metadata_threads(
     // Otherwise the logic below will handle spinning up
     // more worker threads if they are needed.
     for _ in difference..0 {
-        queue_back.push(DyanmicWorkerMsg::Stop);
+        queue_back.push(DynamicWorkerMsg::Stop);
     }
     *max_thread_count = new_worker_count;
     pool.set_num_threads(*max_thread_count);
@@ -5055,7 +5055,7 @@ fn metadata_update_broker_dynamic(
         "Dyn_MD_Update".into(),
         job_action.config.options.max_metadata_update_threads,
     );
-    let queue = Arc::new(Injector::<DyanmicWorkerMsg>::new());
+    let queue = Arc::new(Injector::<DynamicWorkerMsg>::new());
     let update_rx = match &job_action.update_rx {
         Some(urx) => urx.clone(),
         None => {
@@ -5113,7 +5113,7 @@ fn metadata_update_broker_dynamic(
                     }
                 };
 
-                queue.push(DyanmicWorkerMsg::Data(ace));
+                queue.push(DynamicWorkerMsg::Data(ace));
 
                 // If all the pools threads are devoted to workers there's
                 // really no reason to queue up a new worker.
@@ -5164,7 +5164,7 @@ fn metadata_update_broker_dynamic(
                         remaining.len()
                     );
                     for ace in remaining {
-                        queue.push(DyanmicWorkerMsg::Data(ace));
+                        queue.push(DynamicWorkerMsg::Data(ace));
                     }
 
                     let worker = metadata_update_worker_dynamic(
