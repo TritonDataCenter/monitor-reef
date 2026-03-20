@@ -4581,23 +4581,40 @@ fn metadata_update_worker_dynamic(
             thread::current().id()
         );
 
-        // If the queue is empty or we receive a Stop message, then break out
-        // of the loop and return.
-        //
-        // If we get a retry error then, retry.
-        //
-        // Otherwise get the assignment cache entry and process it.
+        // Poll the queue for work.  On Stop, exit immediately.
+        // On Empty, wait briefly and retry — new assignments may
+        // arrive from the broker while the checker is still running.
+        // After MAX_IDLE_ROUNDS consecutive empty polls, exit to
+        // avoid holding resources when no more work is expected.
+        const MAX_IDLE_ROUNDS: u32 = 20;
+        const IDLE_SLEEP_MS: u64 = 250;
+        let mut idle_rounds: u32 = 0;
+
         loop {
             let ace = match queue_front.steal() {
-                Steal::Success(dwm) => match dwm {
-                    DyanmicWorkerMsg::Data(a) => a,
-                    DyanmicWorkerMsg::Stop => {
-                        debug!("Received stop message, exiting");
+                Steal::Success(dwm) => {
+                    idle_rounds = 0;
+                    match dwm {
+                        DyanmicWorkerMsg::Data(a) => a,
+                        DyanmicWorkerMsg::Stop => {
+                            debug!("Received stop message, exiting");
+                            break;
+                        }
+                    }
+                }
+                Steal::Retry => continue,
+                Steal::Empty => {
+                    idle_rounds += 1;
+                    if idle_rounds >= MAX_IDLE_ROUNDS {
+                        debug!(
+                            "No work after {} idle rounds, exiting",
+                            idle_rounds
+                        );
                         break;
                     }
-                },
-                Steal::Retry => continue,
-                Steal::Empty => break,
+                    thread::sleep(Duration::from_millis(IDLE_SLEEP_MS));
+                    continue;
+                }
             };
             metadata_update_assignment(&job_action, ace, &mut client_hash);
         }
