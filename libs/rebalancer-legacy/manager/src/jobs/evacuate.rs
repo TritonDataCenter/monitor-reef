@@ -1054,6 +1054,12 @@ pub enum EvacuateObjectError {
     DuplicateShark,
     InternalError,
     MetadataUpdateFailed,
+    MorayUpdateFailed,
+    MorayEtagMismatch,
+    MorayObjectNotFound,
+    MdapiUpdateFailed,
+    MdapiEtagMismatch,
+    MdapiObjectNotFound,
     MissingSharks,
     BadContentLength,
 }
@@ -1087,8 +1093,23 @@ impl From<Error> for EvacuateObjectError {
                 InternalErrorCode::MetadataUpdateFailure => {
                     EvacuateObjectError::MetadataUpdateFailed
                 }
+                InternalErrorCode::MdapiObjectNotFound => {
+                    EvacuateObjectError::MdapiObjectNotFound
+                }
                 _ => EvacuateObjectError::InternalError,
             },
+            Error::Mdapi(ref mdapi_err) => {
+                use libmanta::mdapi::MdapiError;
+                match mdapi_err {
+                    MdapiError::ObjectNotFound(_) => {
+                        EvacuateObjectError::MdapiObjectNotFound
+                    }
+                    MdapiError::PreconditionFailed(_) => {
+                        EvacuateObjectError::MdapiEtagMismatch
+                    }
+                    _ => EvacuateObjectError::MdapiUpdateFailed,
+                }
+            }
             _ => EvacuateObjectError::InternalError,
         }
     }
@@ -4937,7 +4958,14 @@ fn metadata_update_assignment(
                          {:?}\n({}).",
                         o, dest_shark, e
                     );
-                    job_action.mark_object_error(&eobj.id, e.into());
+                    let err = if is_bucket_object(&o) {
+                        // Mdapi errors have typed variants —
+                        // use From<Error> for fine-grained mapping.
+                        EvacuateObjectError::from(e)
+                    } else {
+                        EvacuateObjectError::MorayUpdateFailed
+                    };
+                    job_action.mark_object_error(&eobj.id, err);
                     continue;
                 } else {
                     updated_objects.push(eobj);

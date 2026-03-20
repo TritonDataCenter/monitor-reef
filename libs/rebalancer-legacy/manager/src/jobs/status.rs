@@ -94,7 +94,7 @@ pub struct JobStatusResultsEvacuate {
     pub counts: HashMap<String, i64>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty")]
-    pub error_breakdown: HashMap<String, i64>,
+    pub error_breakdown: HashMap<String, HashMap<String, i64>>,
 
     #[serde(skip_serializing_if = "HashMap::is_empty")]
     pub skip_breakdown: HashMap<String, i64>,
@@ -164,6 +164,34 @@ fn aggregate_status_counts(
     ret
 }
 
+/// Group error reasons by backend (moray, mdapi, other).
+///
+/// Errors like "moray_update_failed" → {"moray": {"update_failed": N}}
+/// Errors like "mdapi_etag_mismatch" → {"mdapi": {"etag_mismatch": N}}
+/// Errors like "internal_error" → {"other": {"internal_error": N}}
+fn error_counts_to_nested_map(
+    reasons: &[ReasonCount],
+) -> HashMap<String, HashMap<String, i64>> {
+    let mut grouped: HashMap<String, HashMap<String, i64>> = HashMap::new();
+
+    for r in reasons {
+        let (backend, detail) = if r.reason.starts_with("moray_") {
+            ("moray".to_string(), r.reason["moray_".len()..].to_string())
+        } else if r.reason.starts_with("mdapi_") {
+            ("mdapi".to_string(), r.reason["mdapi_".len()..].to_string())
+        } else {
+            ("other".to_string(), r.reason.clone())
+        };
+
+        grouped
+            .entry(backend)
+            .or_insert_with(HashMap::new)
+            .insert(detail, r.count);
+    }
+
+    grouped
+}
+
 fn reason_counts_to_map(reasons: &[ReasonCount]) -> HashMap<String, i64> {
     reasons
         .iter()
@@ -211,7 +239,7 @@ fn get_evacaute_job_status(
 
     Ok(JobStatusResultsEvacuate {
         counts,
-        error_breakdown: reason_counts_to_map(&error_breakdown),
+        error_breakdown: error_counts_to_nested_map(&error_breakdown),
         skip_breakdown: reason_counts_to_map(&skip_breakdown),
     })
 }
