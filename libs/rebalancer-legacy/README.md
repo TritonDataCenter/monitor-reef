@@ -218,6 +218,54 @@ svcs config-agent
 tail -f /var/svc/log/smartdc-config-agent:default.log
 ```
 
+## Agent Performance Tuning
+
+The rebalancer agent has two concurrency tunables in its configuration file
+(`/opt/smartdc/rebalancer-agent/etc/config.toml`):
+
+```toml
+[server]
+host = "0.0.0.0"
+port = 7878
+
+# Number of assignments processed concurrently.
+# Each worker handles one assignment at a time.
+workers = 1
+
+# Number of parallel file download threads within each assignment.
+# Each assignment has up to 50 tasks (objects to copy).
+workers_per_assignment = 1
+```
+
+### Recommended values
+
+| Setting | Default | Production | Effect |
+|---------|---------|------------|--------|
+| `workers` | 1 | 2–4 | Concurrent assignments being processed |
+| `workers_per_assignment` | 1 | 4–8 | Parallel file downloads per assignment |
+
+**Effective concurrency per agent** = `workers` × `workers_per_assignment`.
+
+With `workers=2` and `workers_per_assignment=4`, each agent performs 8
+concurrent file copy operations.  With N destination agents, total
+throughput is `N × workers × workers_per_assignment` parallel copies.
+
+### Guidelines
+
+- **Start conservatively** and increase based on observed I/O and network
+  utilization on the storage nodes.
+- **`workers_per_assignment`** has the biggest impact — it parallelizes the
+  file download and checksum verification within a single assignment.
+- **`workers`** adds parallelism across assignments, useful when individual
+  downloads are slow (large objects, high latency).
+- **Monitor the agents** via the metrics endpoint (`curl localhost:8878/metrics`)
+  and the agent log for `source_other_error` or timeout counts that may
+  indicate the concurrency is too high for the network or storage tier.
+- Increasing concurrency beyond the storage node's I/O capacity will not
+  improve throughput and may degrade performance for user traffic.
+- The metadata update thread count on the manager side can be adjusted
+  dynamically while a job is running (see [Operators Guide](docs/operators_guide.md)).
+
 ## Build
 
 ### Binaries
