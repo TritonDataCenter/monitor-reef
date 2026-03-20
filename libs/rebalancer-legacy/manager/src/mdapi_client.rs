@@ -510,21 +510,35 @@ pub fn put_object(
         conditions,
     };
 
-    trace!(
-        "Updating object: name={}, vnode={}, etag={:?}",
-        object.name,
-        vnode,
+    info!(
+        "mdapi put_object: name={}, id={}, vnode={}, bucket_id={}, \
+         sharks={:?}, etag={:?}",
+        update.name,
+        update.id,
+        update.vnode,
+        update.bucket_id,
+        update.sharks,
         etag
     );
 
     // Call mdapi update_object
-    mclient.update_object(update).map_err(|e| {
-        error!("Failed to update object {}: {}", object.name, e);
-        Error::from(e)
-    })?;
-
-    debug!("Successfully updated object: {}", object.name);
-    Ok(())
+    match mclient.update_object(update) {
+        Ok(resp) => {
+            info!(
+                "mdapi put_object success: name={}, response={:?}",
+                object.name, resp
+            );
+            Ok(())
+        }
+        Err(e) => {
+            error!(
+                "mdapi put_object failed: name={}, id={}, vnode={}, \
+                 bucket_id={}, error={}",
+                object.name, object.object_id, vnode, bucket_id, e
+            );
+            Err(Error::from(e))
+        }
+    }
 }
 
 /// Batch update multiple objects with error handling and fallback logic.
