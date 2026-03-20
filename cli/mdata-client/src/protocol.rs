@@ -16,7 +16,15 @@
 //!
 //! V2 is negotiated automatically on connection. PUT and DELETE
 //! operations require V2.
+//!
+//! ## Error handling
+//!
+//! Transport methods return `Result<_, TransportError>` for structured
+//! I/O errors (timeout, EOF, invalid data). Protocol methods return
+//! `anyhow::Result` to add contextual information. `TransportError`
+//! converts to `anyhow::Error` via thiserror's `#[error]` derive.
 
+use std::fmt;
 use std::thread;
 use std::time::Duration;
 
@@ -52,11 +60,19 @@ pub struct Protocol<T: MetadataTransport> {
     version: ProtocolVersion,
 }
 
+impl<T: MetadataTransport> fmt::Debug for Protocol<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Protocol")
+            .field("version", &self.version)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Protocol<Transport> {
     /// Initialize: open transport, negotiate protocol version.
     pub fn init() -> Result<Self> {
         let mut transport = Transport::open()?;
-        let version = negotiate(&mut transport)?;
+        let version = Self::negotiate(&mut transport)?;
         Ok(Self { transport, version })
     }
 }
@@ -65,7 +81,7 @@ impl<T: MetadataTransport> Protocol<T> {
     /// Create a protocol handler with an existing transport.
     #[cfg(test)]
     pub fn with_transport(mut transport: T) -> Result<Self> {
-        let version = negotiate(&mut transport)?;
+        let version = Self::negotiate(&mut transport)?;
         Ok(Self { transport, version })
     }
 
@@ -228,47 +244,47 @@ impl<T: MetadataTransport> Protocol<T> {
     fn reset(&mut self) -> Result<()> {
         thread::sleep(Duration::from_secs(1));
         self.transport.reconnect()?;
-        self.version = negotiate(&mut self.transport)?;
+        self.version = Self::negotiate(&mut self.transport)?;
         Ok(())
     }
-}
 
-/// Negotiate protocol version with the metadata service.
-///
-/// For serial transports, sends a reset sequence first (`\n` ->
-/// `invalid command`) to clear any stale state on the port.
-fn negotiate<T: MetadataTransport>(transport: &mut T) -> Result<ProtocolVersion> {
-    if transport.is_serial() {
-        // Serial port reset: send a bare newline, expect
-        // "invalid command" response to confirm port is alive
-        transport.send("\n").ok();
+    /// Negotiate protocol version with the metadata service.
+    ///
+    /// For serial transports, sends a reset sequence first (`\n` ->
+    /// `invalid command`) to clear any stale state on the port.
+    fn negotiate(transport: &mut T) -> Result<ProtocolVersion> {
+        if transport.is_serial() {
+            // Serial port reset: send a bare newline, expect
+            // "invalid command" response to confirm port is alive
+            transport.send("\n").ok();
+            match transport.recv_line(RECV_TIMEOUT_MS) {
+                Ok(_) => {} // Discard response (usually "invalid command")
+                Err(TransportError::Timeout) => {
+                    // Port may not be responsive yet, continue anyway
+                }
+                Err(TransportError::Eof) => {
+                    bail!("serial port closed during reset sequence");
+                }
+                Err(TransportError::Io(e)) => {
+                    bail!("serial port I/O error during reset: {e}");
+                }
+                Err(TransportError::InvalidData) => {}
+            }
+        }
+
+        // Attempt V2 negotiation
+        transport.send("NEGOTIATE V2\n")?;
         match transport.recv_line(RECV_TIMEOUT_MS) {
-            Ok(_) => {} // Discard response (usually "invalid command")
+            Ok(ref line) if line == "V2_OK" => Ok(ProtocolVersion::V2),
+            Ok(ref line) if line == "invalid command" => Ok(ProtocolVersion::V1),
+            Ok(other) => {
+                bail!("unexpected negotiation response: {other}")
+            }
             Err(TransportError::Timeout) => {
-                // Port may not be responsive yet, continue anyway
+                bail!("timeout during protocol negotiation")
             }
-            Err(TransportError::Eof) => {
-                bail!("serial port closed during reset sequence");
-            }
-            Err(TransportError::Io(e)) => {
-                bail!("serial port I/O error during reset: {e}");
-            }
-            Err(TransportError::InvalidData) => {}
+            Err(e) => Err(e.into()),
         }
-    }
-
-    // Attempt V2 negotiation
-    transport.send("NEGOTIATE V2\n")?;
-    match transport.recv_line(RECV_TIMEOUT_MS) {
-        Ok(ref line) if line == "V2_OK" => Ok(ProtocolVersion::V2),
-        Ok(ref line) if line == "invalid command" => Ok(ProtocolVersion::V1),
-        Ok(other) => {
-            bail!("unexpected negotiation response: {other}")
-        }
-        Err(TransportError::Timeout) => {
-            bail!("timeout during protocol negotiation")
-        }
-        Err(e) => Err(e.into()),
     }
 }
 
@@ -292,60 +308,7 @@ struct V2Frame {
 ///
 /// Frame format: `V2 <body_len> <crc32_hex> <reqid> <status> [<b64_payload>]`
 fn parse_v2_frame(line: &str, expected_reqid: &str) -> std::result::Result<V2Frame, FrameError> {
-    let parse_body = || -> Result<(String, String, Option<String>)> {
-        let mut parts = line.splitn(4, ' ');
-
-        let marker = parts.next();
-        let len_str = parts.next();
-        let crc_str = parts.next();
-        let body = parts.next();
-
-        let (Some("V2"), Some(len_str), Some(crc_str), Some(body)) =
-            (marker, len_str, crc_str, body)
-        else {
-            bail!(
-                "invalid V2 frame: \
-                     expected 'V2 <len> <crc> <body>'"
-            );
-        };
-
-        let expected_len: usize = len_str
-            .parse()
-            .map_err(|_| anyhow::anyhow!("invalid V2 frame length: {len_str}"))?;
-
-        let expected_crc = u32::from_str_radix(crc_str, 16)
-            .map_err(|_| anyhow::anyhow!("invalid V2 frame CRC: {crc_str}"))?;
-
-        if body.len() != expected_len {
-            bail!(
-                "V2 frame length mismatch: \
-                     header says {expected_len}, body is {}",
-                body.len()
-            );
-        }
-
-        let actual_crc = crc32fast::hash(body.as_bytes());
-        if actual_crc != expected_crc {
-            bail!(
-                "V2 frame CRC mismatch: \
-                     expected {expected_crc:08x}, \
-                     got {actual_crc:08x}"
-            );
-        }
-
-        let mut body_parts = body.splitn(3, ' ');
-        let reqid = body_parts
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("missing request ID in V2 frame"))?;
-        let status = body_parts
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("missing status in V2 frame"))?;
-        let payload = body_parts.next().map(String::from);
-
-        Ok((reqid.to_string(), status.to_string(), payload))
-    };
-
-    match parse_body() {
+    match parse_v2_body(line) {
         Ok((reqid, status, payload)) => {
             if reqid != expected_reqid {
                 return Err(FrameError::ReqIdMismatch {
@@ -357,6 +320,53 @@ fn parse_v2_frame(line: &str, expected_reqid: &str) -> std::result::Result<V2Fra
         }
         Err(e) => Err(FrameError::Other(e)),
     }
+}
+
+/// Parse the envelope and body of a V2 frame, validating length and CRC.
+///
+/// Returns `(request_id, status, optional_payload)`.
+fn parse_v2_body(line: &str) -> Result<(String, String, Option<String>)> {
+    let mut parts = line.splitn(4, ' ');
+
+    let marker = parts.next();
+    let len_str = parts.next();
+    let crc_str = parts.next();
+    let body = parts.next();
+
+    let (Some("V2"), Some(len_str), Some(crc_str), Some(body)) = (marker, len_str, crc_str, body)
+    else {
+        bail!("invalid V2 frame: expected 'V2 <len> <crc> <body>'");
+    };
+
+    let expected_len: usize = len_str
+        .parse()
+        .map_err(|_| anyhow::anyhow!("invalid V2 frame length: {len_str}"))?;
+
+    let expected_crc = u32::from_str_radix(crc_str, 16)
+        .map_err(|_| anyhow::anyhow!("invalid V2 frame CRC: {crc_str}"))?;
+
+    if body.len() != expected_len {
+        bail!(
+            "V2 frame length mismatch: header says {expected_len}, body is {}",
+            body.len()
+        );
+    }
+
+    let actual_crc = crc32fast::hash(body.as_bytes());
+    if actual_crc != expected_crc {
+        bail!("V2 frame CRC mismatch: expected {expected_crc:08x}, got {actual_crc:08x}");
+    }
+
+    let mut body_parts = body.splitn(3, ' ');
+    let reqid = body_parts
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("missing request ID in V2 frame"))?;
+    let status = body_parts
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("missing status in V2 frame"))?;
+    let payload = body_parts.next().map(String::from);
+
+    Ok((reqid.to_string(), status.to_string(), payload))
 }
 
 /// Decode a BASE64-encoded payload string.

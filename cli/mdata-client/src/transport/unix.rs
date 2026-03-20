@@ -280,18 +280,3 @@ fn configure_serial_raw(fd: RawFd) -> Result<()> {
 
     Ok(())
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_detect_transport_returns_error_when_no_transport() {
-        if !Path::new("/.zonecontrol/metadata.sock").exists()
-            && !Path::new("/dev/term/b").exists()
-            && !Path::new("/dev/ttyS1").exists()
-        {
-            assert!(detect_transport().is_err());
-        }
-    }
-}

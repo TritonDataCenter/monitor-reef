@@ -10,6 +10,10 @@
 //! matching the transport used by the original mdata-get.exe from
 //! sdc-vmtools. Uses Win32 serial API (CreateFileW, SetCommState,
 //! SetCommTimeouts, ReadFile, WriteFile).
+//!
+//! Win32 FFI types (Dcb, CommTimeouts) are defined inline rather than
+//! pulling in the `windows` crate — we only need 5 functions and the
+//! crate adds ~50 MB of bindings.
 
 use std::io;
 use std::path::PathBuf;
