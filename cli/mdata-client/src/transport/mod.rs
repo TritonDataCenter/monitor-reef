@@ -9,6 +9,12 @@
 //! Supports Unix domain sockets (for SmartOS zones) and serial ports
 //! (for KVM/HVM guests on Unix and Windows). Platform detection
 //! automatically selects the appropriate transport.
+//!
+//! The socket transport uses safe Rust I/O (`UnixStream`) exclusively.
+//! The serial transport requires `unsafe` only for terminal
+//! configuration (termios), file locking (fcntl), poll-based timeouts,
+//! and Windows serial port setup — operations with no safe Rust
+//! equivalent.
 
 use std::io;
 use std::path::PathBuf;
@@ -53,13 +59,16 @@ pub enum TransportConfig {
     Serial(PathBuf),
 }
 
-/// Low-level transport for sending and receiving lines.
+/// Line-oriented transport for the metadata protocol.
+///
+/// Uses safe Rust I/O for sockets. Serial ports require minimal
+/// unsafe for terminal configuration and poll-based timeouts.
 pub struct Transport {
     config: TransportConfig,
     #[cfg(unix)]
-    fd: std::os::unix::io::RawFd,
+    inner: unix::TransportInner,
     #[cfg(windows)]
-    handle: windows::RawHandle,
+    file: std::fs::File,
 }
 
 impl MetadataTransport for Transport {

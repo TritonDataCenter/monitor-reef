@@ -8,16 +8,22 @@
 //!
 //! Communicates with the metadata service over COM2 serial port,
 //! matching the transport used by the original mdata-get.exe from
-//! sdc-vmtools. Uses Win32 serial API (CreateFileW, SetCommState,
-//! SetCommTimeouts, ReadFile, WriteFile).
+//! sdc-vmtools.
+//!
+//! Uses `std::fs::File` for open/close/read/write (safe Rust I/O).
+//! Unsafe is limited to Win32 serial port configuration APIs
+//! (GetCommState, SetCommState, SetCommTimeouts, PurgeComm) which
+//! have no safe Rust equivalent.
 //!
 //! Win32 FFI types (Dcb, CommTimeouts) are defined inline rather than
-//! pulling in the `windows` crate — we only need 5 functions and the
+//! pulling in the `windows` crate — we only need 4 functions and the
 //! crate adds ~50 MB of bindings.
 
-use std::io;
+use std::fs::{File, OpenOptions};
+use std::io::{self, Read, Write};
+use std::os::windows::fs::OpenOptionsExt;
+use std::os::windows::io::AsRawHandle;
 use std::path::PathBuf;
-use std::ptr;
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, bail};
@@ -25,14 +31,9 @@ use anyhow::{Result, bail};
 use super::{Transport, TransportConfig, TransportError};
 
 /// Opaque handle type matching Windows HANDLE.
-pub(super) type RawHandle = *mut std::ffi::c_void;
+type RawHandle = *mut std::ffi::c_void;
 
 // ── Win32 FFI definitions ──────────────────────────────────────
-
-const GENERIC_READ: u32 = 0x8000_0000;
-const GENERIC_WRITE: u32 = 0x4000_0000;
-const OPEN_EXISTING: u32 = 3;
-const INVALID_HANDLE_VALUE: RawHandle = -1isize as RawHandle;
 
 /// DCB flags bitmask: only fBinary set (bit 0).
 const DCB_FLAGS_BINARY: u32 = 0x0001;
@@ -67,34 +68,6 @@ struct CommTimeouts {
 
 #[link(name = "kernel32")]
 unsafe extern "system" {
-    fn CreateFileW(
-        lp_file_name: *const u16,
-        dw_desired_access: u32,
-        dw_share_mode: u32,
-        lp_security_attributes: *mut std::ffi::c_void,
-        dw_creation_disposition: u32,
-        dw_flags_and_attributes: u32,
-        h_template_file: RawHandle,
-    ) -> RawHandle;
-
-    fn CloseHandle(h_object: RawHandle) -> i32;
-
-    fn ReadFile(
-        h_file: RawHandle,
-        lp_buffer: *mut u8,
-        n_number_of_bytes_to_read: u32,
-        lp_number_of_bytes_read: *mut u32,
-        lp_overlapped: *mut std::ffi::c_void,
-    ) -> i32;
-
-    fn WriteFile(
-        h_file: RawHandle,
-        lp_buffer: *const u8,
-        n_number_of_bytes_to_write: u32,
-        lp_number_of_bytes_written: *mut u32,
-        lp_overlapped: *mut std::ffi::c_void,
-    ) -> i32;
-
     fn GetCommState(h_file: RawHandle, lp_dcb: *mut Dcb) -> i32;
     fn SetCommState(h_file: RawHandle, lp_dcb: *mut Dcb) -> i32;
 
@@ -109,44 +82,27 @@ const PURGE_RX_TX: u32 = 0x0004 | 0x0008;
 // ── Transport implementation ───────────────────────────────────
 
 impl Transport {
-    /// Detect the appropriate transport and open it.
+    /// Open the COM2 serial port.
     ///
     /// On Windows, this always uses COM2 (the virtual serial port
     /// connected to the SmartOS metadata service).
     pub fn open() -> Result<Self> {
         let config = TransportConfig::Serial(PathBuf::from("\\\\.\\COM2"));
-        let handle = open_serial_port(&config)?;
-        Ok(Self { config, handle })
+        let file = open_serial_port(&config)?;
+        Ok(Self { config, file })
     }
 
     /// Send a string over the transport.
     pub fn send(&self, data: &str) -> Result<(), TransportError> {
-        let bytes = data.as_bytes();
-        let mut written = 0u32;
-        let mut total = 0usize;
-        while total < bytes.len() {
-            let to_write = (bytes.len() - total).min(u32::MAX as usize) as u32;
-            let ret = unsafe {
-                WriteFile(
-                    self.handle,
-                    bytes[total..].as_ptr(),
-                    to_write,
-                    &mut written,
-                    ptr::null_mut(),
-                )
-            };
-            if ret == 0 {
-                return Err(TransportError::Io(io::Error::last_os_error()));
-            }
-            total += written as usize;
-        }
-        Ok(())
+        (&self.file)
+            .write_all(data.as_bytes())
+            .map_err(TransportError::Io)
     }
 
     /// Receive a single line (terminated by `\n`) with a timeout.
     ///
-    /// Uses SetCommTimeouts to enforce the deadline. ReadFile returns
-    /// 0 bytes read when the timeout expires.
+    /// Uses SetCommTimeouts to set the read deadline, then safe
+    /// `File::read` for the actual I/O.
     pub fn recv_line(&self, timeout_ms: u64) -> Result<String, TransportError> {
         let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let mut line = Vec::new();
@@ -160,7 +116,9 @@ impl Transport {
 
             let remaining_ms = remaining.as_millis().min(u32::MAX as u128) as u32;
 
-            // Set read timeout to remaining time
+            // Set read timeout to remaining time.
+            // SAFETY: handle is valid (owned by self.file),
+            // timeouts is a properly initialized stack struct.
             let timeouts = CommTimeouts {
                 read_interval_timeout: 0,
                 read_total_timeout_multiplier: 0,
@@ -168,25 +126,14 @@ impl Transport {
                 write_total_timeout_multiplier: 0,
                 write_total_timeout_constant: 5000,
             };
-            if unsafe { SetCommTimeouts(self.handle, &timeouts) } == 0 {
+            let handle = self.file.as_raw_handle() as RawHandle;
+            if unsafe { SetCommTimeouts(handle, &timeouts) } == 0 {
                 return Err(TransportError::Io(io::Error::last_os_error()));
             }
 
-            let mut bytes_read = 0u32;
-            let ret = unsafe {
-                ReadFile(
-                    self.handle,
-                    byte.as_mut_ptr(),
-                    1,
-                    &mut bytes_read,
-                    ptr::null_mut(),
-                )
-            };
+            let n = (&self.file).read(&mut byte).map_err(TransportError::Io)?;
 
-            if ret == 0 {
-                return Err(TransportError::Io(io::Error::last_os_error()));
-            }
-            if bytes_read == 0 {
+            if n == 0 {
                 return Err(TransportError::Timeout);
             }
 
@@ -199,70 +146,49 @@ impl Transport {
 
     /// Close and reopen the transport for protocol reset.
     pub fn reconnect(&mut self) -> Result<()> {
-        if !self.handle.is_null() && self.handle != INVALID_HANDLE_VALUE {
-            unsafe { CloseHandle(self.handle) };
-            self.handle = INVALID_HANDLE_VALUE;
-        }
-        self.handle = open_serial_port(&self.config)?;
+        // Dropping the old file closes the handle automatically.
+        self.file = open_serial_port(&self.config)?;
         Ok(())
     }
 }
 
-impl Drop for Transport {
-    fn drop(&mut self) {
-        if !self.handle.is_null() && self.handle != INVALID_HANDLE_VALUE {
-            unsafe { CloseHandle(self.handle) };
-            self.handle = INVALID_HANDLE_VALUE;
-        }
-    }
-}
-
-/// Encode a Rust string as a null-terminated UTF-16 wide string.
-fn to_wide(s: &str) -> Vec<u16> {
-    s.encode_utf16().chain(std::iter::once(0)).collect()
-}
+// No custom Drop needed — File closes the handle on drop.
 
 /// Open and configure the serial port for metadata communication.
-fn open_serial_port(config: &TransportConfig) -> Result<RawHandle> {
+fn open_serial_port(config: &TransportConfig) -> Result<File> {
     let TransportConfig::Serial(path) = config;
 
-    let path_str = path.to_str().unwrap_or("\\\\.\\COM2");
-    let wide_path = to_wide(path_str);
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .share_mode(0) // exclusive access
+        .open(path)
+        .map_err(
+            |err| anyhow::anyhow!("failed to open serial port {}: {}", path.display(), err,),
+        )?;
 
-    let handle = unsafe {
-        CreateFileW(
-            wide_path.as_ptr(),
-            GENERIC_READ | GENERIC_WRITE,
-            0, // exclusive access
-            ptr::null_mut(),
-            OPEN_EXISTING,
-            0,
-            ptr::null_mut(),
-        )
-    };
+    // Configure serial port: 8N1, no flow control.
+    // If this fails, `file` is dropped which closes the handle.
+    configure_serial(&file)?;
 
-    if handle == INVALID_HANDLE_VALUE {
-        let err = io::Error::last_os_error();
-        bail!("failed to open serial port {}: {}", path_str, err,);
-    }
-
-    // Configure serial port: 8N1, no flow control
-    if let Err(e) = configure_serial(handle) {
-        unsafe { CloseHandle(handle) };
-        return Err(e);
-    }
-
-    // Flush any pending data
+    // Flush any pending data from previous sessions.
+    // SAFETY: handle is valid (owned by file), PURGE_RX_TX clears
+    // both input and output buffers.
+    let handle = file.as_raw_handle() as RawHandle;
     unsafe { PurgeComm(handle, PURGE_RX_TX) };
 
-    Ok(handle)
+    Ok(file)
 }
 
 /// Configure serial port for raw 8N1 communication.
-fn configure_serial(handle: RawHandle) -> Result<()> {
+fn configure_serial(file: &File) -> Result<()> {
+    let handle = file.as_raw_handle() as RawHandle;
+
+    // SAFETY: Dcb is a plain C struct; all-zeros is valid.
     let mut dcb: Dcb = unsafe { std::mem::zeroed() };
     dcb.dcb_length = std::mem::size_of::<Dcb>() as u32;
 
+    // SAFETY: handle is valid, dcb is a properly sized stack buffer.
     if unsafe { GetCommState(handle, &mut dcb) } == 0 {
         bail!("GetCommState failed: {}", io::Error::last_os_error());
     }
@@ -273,11 +199,15 @@ fn configure_serial(handle: RawHandle) -> Result<()> {
     dcb.stop_bits = 0; // ONESTOPBIT
     dcb.flags = DCB_FLAGS_BINARY;
 
+    // SAFETY: handle is valid, dcb is properly initialized from
+    // GetCommState + our modifications.
     if unsafe { SetCommState(handle, &mut dcb) } == 0 {
         bail!("SetCommState failed: {}", io::Error::last_os_error());
     }
 
-    // Set initial timeouts
+    // Set initial timeouts.
+    // SAFETY: handle is valid, timeouts is a properly initialized
+    // stack struct.
     let timeouts = CommTimeouts {
         read_interval_timeout: 0,
         read_total_timeout_multiplier: 0,
