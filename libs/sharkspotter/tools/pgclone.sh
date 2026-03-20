@@ -561,8 +561,8 @@ function cleanup_on_failure {
     fi
 
     echo "Deleting VM ${NEW_UUID} via VMAPI..." >&2
-    sdc-vmapi "/vms/${NEW_UUID}?action=destroy" \
-        -X POST 2>/dev/null || true
+    sdc-vmapi "/vms/${NEW_UUID}" \
+        -X DELETE 2>/dev/null || true
 
     echo "Cleanup complete." >&2
 }
@@ -629,8 +629,8 @@ function destroy_clone {
     fi
 
     echo "Deleting VM ${clone_uuid} via VMAPI..."
-    sdc-vmapi "/vms/${clone_uuid}?action=destroy" \
-        -X POST 2>/dev/null || true
+    sdc-vmapi "/vms/${clone_uuid}" \
+        -X DELETE 2>/dev/null || true
 
     echo "Destroyed clone ${clone_uuid}."
 }
@@ -662,11 +662,11 @@ function do_clone {
             ;;
         buckets)
             tag="${PGCLONE_TAG_BUCKETS}"
-            alias_sed_from='\.buckets-postgres\.'
+            alias_sed_from='\.(buckets-postgres|buckets-mdapi)\.'
             alias_sed_to='.rebalancer-buckets-postgres.'
             smf_service="manta/rebalancer-buckets-postgres"
             domain_pattern='^[0-9]*\.(buckets-postgres|buckets-mdapi)\.'
-            alias_replace='/\.buckets-postgres\./, ".rebalancer-buckets-postgres."'
+            alias_replace='/\.(buckets-postgres|buckets-mdapi)\./, ".rebalancer-buckets-postgres."'
             domain_replace='/^.*\.(buckets-postgres|buckets-mdapi)\./, "rebalancer-buckets-postgres."'
             ;;
         *)
