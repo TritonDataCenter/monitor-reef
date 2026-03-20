@@ -35,10 +35,7 @@ fn main() {
 
 fn run() -> anyhow::Result<i32> {
     let args: Vec<String> = std::env::args().collect();
-    let progname = args
-        .first()
-        .map(String::as_str)
-        .unwrap_or("mdata-put");
+    let progname = args.first().map(String::as_str).unwrap_or("mdata-put");
 
     if args.len() < 2 || args.len() > 3 {
         eprintln!("Usage: {progname} <keyname> [<value>]");

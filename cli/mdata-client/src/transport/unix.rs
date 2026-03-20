@@ -10,7 +10,7 @@
 //! (KVM/HVM guests) using poll() for timeout-based I/O.
 
 use std::io;
-use std::os::unix::io::{AsRawFd, RawFd};
+use std::os::unix::io::{IntoRawFd, RawFd};
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -40,9 +40,11 @@ impl Transport {
                 )
             };
             if n < 0 {
-                return Err(TransportError::Io(
-                    io::Error::last_os_error(),
-                ));
+                let err = io::Error::last_os_error();
+                if err.kind() == io::ErrorKind::Interrupted {
+                    continue;
+                }
+                return Err(TransportError::Io(err));
             }
             written += n as usize;
         }
@@ -52,36 +54,24 @@ impl Transport {
     /// Receive a single line (terminated by `\n`) with a timeout.
     ///
     /// Returns the line content without the trailing newline.
-    pub fn recv_line(
-        &self,
-        timeout_ms: u64,
-    ) -> Result<String, TransportError> {
-        let deadline =
-            Instant::now() + Duration::from_millis(timeout_ms);
+    pub fn recv_line(&self, timeout_ms: u64) -> Result<String, TransportError> {
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let mut line = Vec::new();
         let mut byte = [0u8; 1];
 
         loop {
-            let remaining =
-                deadline.saturating_duration_since(Instant::now());
+            let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 return Err(TransportError::Timeout);
             }
 
-            let remaining_ms =
-                remaining.as_millis().min(i32::MAX as u128) as i32;
+            let remaining_ms = remaining.as_millis().min(i32::MAX as u128) as i32;
 
             if !poll_readable(self.fd, remaining_ms)? {
                 return Err(TransportError::Timeout);
             }
 
-            let n = unsafe {
-                libc::read(
-                    self.fd,
-                    byte.as_mut_ptr() as *mut libc::c_void,
-                    1,
-                )
-            };
+            let n = unsafe { libc::read(self.fd, byte.as_mut_ptr() as *mut libc::c_void, 1) };
 
             if n < 0 {
                 let err = io::Error::last_os_error();
@@ -95,8 +85,7 @@ impl Transport {
             }
 
             if byte[0] == b'\n' {
-                return String::from_utf8(line)
-                    .map_err(|_| TransportError::InvalidData);
+                return String::from_utf8(line).map_err(|_| TransportError::InvalidData);
             }
             line.push(byte[0]);
         }
@@ -123,35 +112,32 @@ impl Drop for Transport {
 }
 
 /// Poll a file descriptor for readability with a timeout.
-fn poll_readable(
-    fd: RawFd,
-    timeout_ms: i32,
-) -> Result<bool, TransportError> {
+fn poll_readable(fd: RawFd, timeout_ms: i32) -> Result<bool, TransportError> {
     let mut pfd = libc::pollfd {
         fd,
         events: libc::POLLIN,
         revents: 0,
     };
-    let ret = unsafe { libc::poll(&mut pfd, 1, timeout_ms) };
-    if ret < 0 {
-        let err = io::Error::last_os_error();
-        if err.kind() == io::ErrorKind::Interrupted {
+    loop {
+        let ret = unsafe { libc::poll(&mut pfd, 1, timeout_ms) };
+        if ret < 0 {
+            let err = io::Error::last_os_error();
+            if err.kind() == io::ErrorKind::Interrupted {
+                continue;
+            }
+            return Err(TransportError::Io(err));
+        }
+        if ret == 0 {
             return Ok(false);
         }
-        return Err(TransportError::Io(err));
+        if pfd.revents & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL) != 0 {
+            return Err(TransportError::Io(io::Error::new(
+                io::ErrorKind::ConnectionReset,
+                "poll returned error condition",
+            )));
+        }
+        return Ok(true);
     }
-    if ret == 0 {
-        return Ok(false);
-    }
-    if pfd.revents & (libc::POLLERR | libc::POLLHUP | libc::POLLNVAL)
-        != 0
-    {
-        return Err(TransportError::Io(io::Error::new(
-            io::ErrorKind::ConnectionReset,
-            "poll returned error condition",
-        )));
-    }
-    Ok(true)
 }
 
 /// Detect the appropriate transport for this platform.
@@ -165,9 +151,7 @@ fn detect_transport() -> Result<TransportConfig> {
 
     for path in &socket_paths {
         if Path::new(path).exists() {
-            return Ok(TransportConfig::UnixSocket(
-                PathBuf::from(path),
-            ));
+            return Ok(TransportConfig::UnixSocket(PathBuf::from(path)));
         }
     }
 
@@ -204,16 +188,9 @@ fn open_transport(config: &TransportConfig) -> Result<RawFd> {
 
 /// Connect to a Unix domain socket.
 fn open_socket(path: &Path) -> Result<RawFd> {
-    let stream = UnixStream::connect(path).with_context(|| {
-        format!(
-            "connecting to metadata socket: {}",
-            path.display()
-        )
-    })?;
-    let fd = stream.as_raw_fd();
-    // We manage the fd lifetime ourselves.
-    std::mem::forget(stream);
-    Ok(fd)
+    let stream = UnixStream::connect(path)
+        .with_context(|| format!("connecting to metadata socket: {}", path.display()))?;
+    Ok(stream.into_raw_fd())
 }
 
 /// Open and configure a serial port.
@@ -272,9 +249,7 @@ fn open_serial(path: &Path) -> Result<RawFd> {
     // Clear O_NONBLOCK now that setup is done
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
     if flags >= 0 {
-        unsafe {
-            libc::fcntl(fd, libc::F_SETFL, flags & !libc::O_NONBLOCK)
-        };
+        unsafe { libc::fcntl(fd, libc::F_SETFL, flags & !libc::O_NONBLOCK) };
     }
 
     // Flush any pending data
@@ -291,16 +266,11 @@ fn configure_serial_raw(fd: RawFd) -> Result<()> {
         bail!("tcgetattr failed: {}", io::Error::last_os_error());
     }
 
-    tios.c_iflag &= !(libc::BRKINT
-        | libc::ICRNL
-        | libc::INPCK
-        | libc::ISTRIP
-        | libc::IXON);
+    tios.c_iflag &= !(libc::BRKINT | libc::ICRNL | libc::INPCK | libc::ISTRIP | libc::IXON);
     tios.c_oflag &= !libc::OPOST;
     tios.c_cflag |= libc::CS8;
     tios.c_cflag &= !libc::HUPCL;
-    tios.c_lflag &=
-        !(libc::ECHO | libc::ICANON | libc::IEXTEN | libc::ISIG);
+    tios.c_lflag &= !(libc::ECHO | libc::ICANON | libc::IEXTEN | libc::ISIG);
     tios.c_cc[libc::VMIN] = 0;
     tios.c_cc[libc::VTIME] = 1;
 

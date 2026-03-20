@@ -32,6 +32,17 @@ pub enum TransportError {
     Io(#[from] io::Error),
 }
 
+/// Interface for metadata protocol transports.
+///
+/// Implemented by the platform-specific `Transport` and by
+/// `MockTransport` in tests.
+pub trait MetadataTransport {
+    fn send(&self, data: &str) -> Result<(), TransportError>;
+    fn recv_line(&self, timeout_ms: u64) -> Result<String, TransportError>;
+    fn reconnect(&mut self) -> anyhow::Result<()>;
+    fn is_serial(&self) -> bool;
+}
+
 /// Detected transport configuration.
 #[derive(Clone, Debug)]
 pub enum TransportConfig {
@@ -51,9 +62,20 @@ pub struct Transport {
     handle: windows::RawHandle,
 }
 
-impl Transport {
-    /// Whether this transport is a serial port.
-    pub fn is_serial(&self) -> bool {
+impl MetadataTransport for Transport {
+    fn send(&self, data: &str) -> Result<(), TransportError> {
+        Transport::send(self, data)
+    }
+
+    fn recv_line(&self, timeout_ms: u64) -> Result<String, TransportError> {
+        Transport::recv_line(self, timeout_ms)
+    }
+
+    fn reconnect(&mut self) -> anyhow::Result<()> {
+        Transport::reconnect(self)
+    }
+
+    fn is_serial(&self) -> bool {
         matches!(self.config, TransportConfig::Serial(_))
     }
 }

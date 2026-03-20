@@ -34,9 +34,7 @@ fn run() -> anyhow::Result<i32> {
     if args.len() != 2 {
         eprintln!(
             "Usage: {} <keyname>",
-            args.first()
-                .map(String::as_str)
-                .unwrap_or("mdata-delete"),
+            args.first().map(String::as_str).unwrap_or("mdata-delete"),
         );
         return Ok(exit_code::USAGE_ERROR);
     }
@@ -46,8 +44,6 @@ fn run() -> anyhow::Result<i32> {
 
     match proto.delete(key)? {
         // DELETE of non-existent key is not an error
-        Response::Success(_) | Response::NotFound => {
-            Ok(exit_code::SUCCESS)
-        }
+        Response::Success(_) | Response::NotFound => Ok(exit_code::SUCCESS),
     }
 }

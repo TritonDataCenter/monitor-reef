@@ -11,8 +11,30 @@
 //! It supports communication over Unix domain sockets (zones) and
 //! serial ports (KVM/HVM guests).
 
+use std::fmt;
+
 pub mod protocol;
 pub mod transport;
+
+/// Metadata protocol commands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Command {
+    Get,
+    Put,
+    Delete,
+    Keys,
+}
+
+impl fmt::Display for Command {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Command::Get => write!(f, "GET"),
+            Command::Put => write!(f, "PUT"),
+            Command::Delete => write!(f, "DELETE"),
+            Command::Keys => write!(f, "KEYS"),
+        }
+    }
+}
 
 /// Exit codes matching the original C mdata-client implementation.
 pub mod exit_code {
@@ -23,6 +45,8 @@ pub mod exit_code {
 }
 
 /// Response from a metadata operation.
+#[derive(Debug)]
+#[must_use]
 pub enum Response {
     /// Operation succeeded, with optional data payload.
     Success(Option<String>),

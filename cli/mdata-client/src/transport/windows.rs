@@ -94,10 +94,7 @@ unsafe extern "system" {
     fn GetCommState(h_file: RawHandle, lp_dcb: *mut Dcb) -> i32;
     fn SetCommState(h_file: RawHandle, lp_dcb: *mut Dcb) -> i32;
 
-    fn SetCommTimeouts(
-        h_file: RawHandle,
-        lp_comm_timeouts: *const CommTimeouts,
-    ) -> i32;
+    fn SetCommTimeouts(h_file: RawHandle, lp_comm_timeouts: *const CommTimeouts) -> i32;
 
     fn PurgeComm(h_file: RawHandle, dw_flags: u32) -> i32;
 }
@@ -113,8 +110,7 @@ impl Transport {
     /// On Windows, this always uses COM2 (the virtual serial port
     /// connected to the SmartOS metadata service).
     pub fn open() -> Result<Self> {
-        let config =
-            TransportConfig::Serial(PathBuf::from("\\\\.\\COM2"));
+        let config = TransportConfig::Serial(PathBuf::from("\\\\.\\COM2"));
         let handle = open_serial_port(&config)?;
         Ok(Self { config, handle })
     }
@@ -136,9 +132,7 @@ impl Transport {
                 )
             };
             if ret == 0 {
-                return Err(TransportError::Io(
-                    io::Error::last_os_error(),
-                ));
+                return Err(TransportError::Io(io::Error::last_os_error()));
             }
             total += written as usize;
         }
@@ -149,24 +143,18 @@ impl Transport {
     ///
     /// Uses SetCommTimeouts to enforce the deadline. ReadFile returns
     /// 0 bytes read when the timeout expires.
-    pub fn recv_line(
-        &self,
-        timeout_ms: u64,
-    ) -> Result<String, TransportError> {
-        let deadline =
-            Instant::now() + Duration::from_millis(timeout_ms);
+    pub fn recv_line(&self, timeout_ms: u64) -> Result<String, TransportError> {
+        let deadline = Instant::now() + Duration::from_millis(timeout_ms);
         let mut line = Vec::new();
         let mut byte = [0u8; 1];
 
         loop {
-            let remaining =
-                deadline.saturating_duration_since(Instant::now());
+            let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
                 return Err(TransportError::Timeout);
             }
 
-            let remaining_ms =
-                remaining.as_millis().min(u32::MAX as u128) as u32;
+            let remaining_ms = remaining.as_millis().min(u32::MAX as u128) as u32;
 
             // Set read timeout to remaining time
             let timeouts = CommTimeouts {
@@ -176,12 +164,8 @@ impl Transport {
                 write_total_timeout_multiplier: 0,
                 write_total_timeout_constant: 5000,
             };
-            if unsafe { SetCommTimeouts(self.handle, &timeouts) }
-                == 0
-            {
-                return Err(TransportError::Io(
-                    io::Error::last_os_error(),
-                ));
+            if unsafe { SetCommTimeouts(self.handle, &timeouts) } == 0 {
+                return Err(TransportError::Io(io::Error::last_os_error()));
             }
 
             let mut bytes_read = 0u32;
@@ -196,17 +180,14 @@ impl Transport {
             };
 
             if ret == 0 {
-                return Err(TransportError::Io(
-                    io::Error::last_os_error(),
-                ));
+                return Err(TransportError::Io(io::Error::last_os_error()));
             }
             if bytes_read == 0 {
                 return Err(TransportError::Timeout);
             }
 
             if byte[0] == b'\n' {
-                return String::from_utf8(line)
-                    .map_err(|_| TransportError::InvalidData);
+                return String::from_utf8(line).map_err(|_| TransportError::InvalidData);
             }
             line.push(byte[0]);
         }
@@ -214,9 +195,7 @@ impl Transport {
 
     /// Close and reopen the transport for protocol reset.
     pub fn reconnect(&mut self) -> Result<()> {
-        if !self.handle.is_null()
-            && self.handle != INVALID_HANDLE_VALUE
-        {
+        if !self.handle.is_null() && self.handle != INVALID_HANDLE_VALUE {
             unsafe { CloseHandle(self.handle) };
             self.handle = INVALID_HANDLE_VALUE;
         }
@@ -227,9 +206,7 @@ impl Transport {
 
 impl Drop for Transport {
     fn drop(&mut self) {
-        if !self.handle.is_null()
-            && self.handle != INVALID_HANDLE_VALUE
-        {
+        if !self.handle.is_null() && self.handle != INVALID_HANDLE_VALUE {
             unsafe { CloseHandle(self.handle) };
             self.handle = INVALID_HANDLE_VALUE;
         }
@@ -262,11 +239,7 @@ fn open_serial_port(config: &TransportConfig) -> Result<RawHandle> {
 
     if handle == INVALID_HANDLE_VALUE {
         let err = io::Error::last_os_error();
-        bail!(
-            "failed to open serial port {}: {}",
-            path_str,
-            err,
-        );
+        bail!("failed to open serial port {}: {}", path_str, err,);
     }
 
     // Configure serial port: 8N1, no flow control
@@ -287,23 +260,17 @@ fn configure_serial(handle: RawHandle) -> Result<()> {
     dcb.dcb_length = std::mem::size_of::<Dcb>() as u32;
 
     if unsafe { GetCommState(handle, &mut dcb) } == 0 {
-        bail!(
-            "GetCommState failed: {}",
-            io::Error::last_os_error()
-        );
+        bail!("GetCommState failed: {}", io::Error::last_os_error());
     }
 
     // 8 data bits, no parity, 1 stop bit, binary mode, no flow control
     dcb.byte_size = 8;
-    dcb.parity = 0;    // NOPARITY
+    dcb.parity = 0; // NOPARITY
     dcb.stop_bits = 0; // ONESTOPBIT
     dcb.flags = DCB_FLAGS_BINARY;
 
     if unsafe { SetCommState(handle, &mut dcb) } == 0 {
-        bail!(
-            "SetCommState failed: {}",
-            io::Error::last_os_error()
-        );
+        bail!("SetCommState failed: {}", io::Error::last_os_error());
     }
 
     // Set initial timeouts
@@ -316,10 +283,7 @@ fn configure_serial(handle: RawHandle) -> Result<()> {
     };
 
     if unsafe { SetCommTimeouts(handle, &timeouts) } == 0 {
-        bail!(
-            "SetCommTimeouts failed: {}",
-            io::Error::last_os_error()
-        );
+        bail!("SetCommTimeouts failed: {}", io::Error::last_os_error());
     }
 
     Ok(())

@@ -17,17 +17,15 @@
 //! V2 is negotiated automatically on connection. PUT and DELETE
 //! operations require V2.
 
-use std::fs::File;
-use std::io::Read;
 use std::thread;
 use std::time::Duration;
 
 use anyhow::{Result, bail};
-use base64::engine::general_purpose::STANDARD;
 use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 
-use crate::Response;
-use crate::transport::{Transport, TransportError};
+use crate::transport::{MetadataTransport, Transport, TransportError};
+use crate::{Command, Response};
 
 /// Timeout for V1 commands and protocol negotiation (6 seconds).
 const RECV_TIMEOUT_MS: u64 = 6_000;
@@ -41,67 +39,73 @@ const MAX_RETRIES: u32 = 3;
 /// Maximum number of stale V2 frames to discard before giving up.
 const MAX_STALE_FRAMES: u32 = 5;
 
-/// Protocol handler for metadata operations.
-pub struct Protocol {
-    transport: Transport,
-    version: u8,
+/// Negotiated protocol version.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProtocolVersion {
+    V1,
+    V2,
 }
 
-impl Protocol {
+/// Protocol handler for metadata operations.
+pub struct Protocol<T: MetadataTransport> {
+    transport: T,
+    version: ProtocolVersion,
+}
+
+impl Protocol<Transport> {
     /// Initialize: open transport, negotiate protocol version.
     pub fn init() -> Result<Self> {
         let mut transport = Transport::open()?;
         let version = negotiate(&mut transport)?;
         Ok(Self { transport, version })
     }
+}
 
-    /// The negotiated protocol version (1 or 2).
-    pub fn version(&self) -> u8 {
-        self.version
+impl<T: MetadataTransport> Protocol<T> {
+    /// Create a protocol handler with an existing transport.
+    #[cfg(test)]
+    pub fn with_transport(mut transport: T) -> Result<Self> {
+        let version = negotiate(&mut transport)?;
+        Ok(Self { transport, version })
     }
 
     /// Execute a DELETE command.
     ///
     /// Requires V2 protocol support.
     pub fn delete(&mut self, key: &str) -> Result<Response> {
-        if self.version < 2 {
+        if self.version != ProtocolVersion::V2 {
             bail!(
                 "metadata service does not support V2 protocol \
                  (required for DELETE)"
             );
         }
-        self.execute("DELETE", Some(key))
+        self.execute(Command::Delete, Some(key))
     }
 
     /// Execute a PUT command, encoding the key and value per protocol.
     ///
-    /// The V2 PUT wire format requires `base64(key) + " " + base64(value)`
-    /// as the command argument. This method handles that encoding so
-    /// callers can pass raw strings.
+    /// The V2 PUT wire format uses double base64 encoding:
+    /// the key and value are each individually base64-encoded, joined
+    /// by a space, and then the combined string is base64-encoded again
+    /// as the V2 frame argument. This matches the original C mdata-client.
+    ///
+    /// On the wire: `V2 <len> <crc> <reqid> PUT <b64(b64(key) SP b64(val))>`
     pub fn put(&mut self, key: &str, value: &str) -> Result<Response> {
-        if self.version < 2 {
+        if self.version != ProtocolVersion::V2 {
             bail!(
                 "metadata service does not support V2 protocol \
                  (required for PUT)"
             );
         }
-        let arg = format!(
-            "{} {}",
-            STANDARD.encode(key),
-            STANDARD.encode(value),
-        );
-        self.execute("PUT", Some(&arg))
+        let arg = format!("{} {}", STANDARD.encode(key), STANDARD.encode(value));
+        self.execute(Command::Put, Some(&arg))
     }
 
     /// Execute a metadata command with automatic retry on timeout.
     ///
     /// On timeout, the protocol is reset (transport reconnected and
     /// V2 re-negotiated) and the command is retried.
-    pub fn execute(
-        &mut self,
-        command: &str,
-        arg: Option<&str>,
-    ) -> Result<Response> {
+    pub fn execute(&mut self, command: Command, arg: Option<&str>) -> Result<Response> {
         let mut retries = 0;
         loop {
             match self.try_execute(command, arg) {
@@ -128,24 +132,15 @@ impl Protocol {
         }
     }
 
-    fn try_execute(
-        &mut self,
-        command: &str,
-        arg: Option<&str>,
-    ) -> Result<Response> {
-        if self.version >= 2 {
-            self.execute_v2(command, arg)
-        } else {
-            self.execute_v1(command, arg)
+    fn try_execute(&mut self, command: Command, arg: Option<&str>) -> Result<Response> {
+        match self.version {
+            ProtocolVersion::V2 => self.execute_v2(command, arg),
+            ProtocolVersion::V1 => self.execute_v1(command, arg),
         }
     }
 
     /// Execute a V1 protocol command.
-    fn execute_v1(
-        &mut self,
-        command: &str,
-        arg: Option<&str>,
-    ) -> Result<Response> {
+    fn execute_v1(&mut self, command: Command, arg: Option<&str>) -> Result<Response> {
         let request = match arg {
             Some(a) => format!("{command} {a}\n"),
             None => format!("{command}\n"),
@@ -159,8 +154,7 @@ impl Protocol {
             "SUCCESS" => {
                 let mut data = String::new();
                 loop {
-                    let line =
-                        self.transport.recv_line(RECV_TIMEOUT_MS)?;
+                    let line = self.transport.recv_line(RECV_TIMEOUT_MS)?;
                     if line == "." {
                         break;
                     }
@@ -181,11 +175,7 @@ impl Protocol {
     }
 
     /// Execute a V2 protocol command.
-    fn execute_v2(
-        &mut self,
-        command: &str,
-        arg: Option<&str>,
-    ) -> Result<Response> {
+    fn execute_v2(&mut self, command: Command, arg: Option<&str>) -> Result<Response> {
         let reqid = generate_request_id()?;
 
         let body = match arg {
@@ -205,16 +195,12 @@ impl Protocol {
         // previous timed-out requests (mismatched request IDs)
         let mut stale_count = 0u32;
         loop {
-            let line =
-                self.transport.recv_line(RECV_TIMEOUT_MS_V2)?;
+            let line = self.transport.recv_line(RECV_TIMEOUT_MS_V2)?;
             match parse_v2_frame(&line, &reqid) {
                 Ok(frame) => {
                     return match frame.status.as_str() {
                         "SUCCESS" => {
-                            let data = frame
-                                .payload
-                                .map(|p| decode_b64_payload(&p))
-                                .transpose()?;
+                            let data = frame.payload.map(|p| decode_b64_payload(&p)).transpose()?;
                             Ok(Response::Success(data))
                         }
                         "NOTFOUND" => Ok(Response::NotFound),
@@ -249,9 +235,9 @@ impl Protocol {
 
 /// Negotiate protocol version with the metadata service.
 ///
-/// For serial transports, sends a reset sequence first (`\n` →
+/// For serial transports, sends a reset sequence first (`\n` ->
 /// `invalid command`) to clear any stale state on the port.
-fn negotiate(transport: &mut Transport) -> Result<u8> {
+fn negotiate<T: MetadataTransport>(transport: &mut T) -> Result<ProtocolVersion> {
     if transport.is_serial() {
         // Serial port reset: send a bare newline, expect
         // "invalid command" response to confirm port is alive
@@ -274,8 +260,8 @@ fn negotiate(transport: &mut Transport) -> Result<u8> {
     // Attempt V2 negotiation
     transport.send("NEGOTIATE V2\n")?;
     match transport.recv_line(RECV_TIMEOUT_MS) {
-        Ok(ref line) if line == "V2_OK" => Ok(2),
-        Ok(ref line) if line == "invalid command" => Ok(1),
+        Ok(ref line) if line == "V2_OK" => Ok(ProtocolVersion::V2),
+        Ok(ref line) if line == "invalid command" => Ok(ProtocolVersion::V1),
         Ok(other) => {
             bail!("unexpected negotiation response: {other}")
         }
@@ -305,78 +291,59 @@ struct V2Frame {
 /// Parse a V2 response frame and validate its integrity.
 ///
 /// Frame format: `V2 <body_len> <crc32_hex> <reqid> <status> [<b64_payload>]`
-fn parse_v2_frame(
-    line: &str,
-    expected_reqid: &str,
-) -> std::result::Result<V2Frame, FrameError> {
-    let parse_body =
-        || -> Result<(String, String, Option<String>)> {
-            let mut parts = line.splitn(4, ' ');
+fn parse_v2_frame(line: &str, expected_reqid: &str) -> std::result::Result<V2Frame, FrameError> {
+    let parse_body = || -> Result<(String, String, Option<String>)> {
+        let mut parts = line.splitn(4, ' ');
 
-            let marker = parts.next();
-            let len_str = parts.next();
-            let crc_str = parts.next();
-            let body = parts.next();
+        let marker = parts.next();
+        let len_str = parts.next();
+        let crc_str = parts.next();
+        let body = parts.next();
 
-            let (
-                Some("V2"),
-                Some(len_str),
-                Some(crc_str),
-                Some(body),
-            ) = (marker, len_str, crc_str, body)
-            else {
-                bail!(
-                    "invalid V2 frame: \
+        let (Some("V2"), Some(len_str), Some(crc_str), Some(body)) =
+            (marker, len_str, crc_str, body)
+        else {
+            bail!(
+                "invalid V2 frame: \
                      expected 'V2 <len> <crc> <body>'"
-                );
-            };
+            );
+        };
 
-            let expected_len: usize =
-                len_str.parse().map_err(|_| {
-                    anyhow::anyhow!(
-                        "invalid V2 frame length: {len_str}"
-                    )
-                })?;
+        let expected_len: usize = len_str
+            .parse()
+            .map_err(|_| anyhow::anyhow!("invalid V2 frame length: {len_str}"))?;
 
-            let expected_crc =
-                u32::from_str_radix(crc_str, 16).map_err(|_| {
-                    anyhow::anyhow!(
-                        "invalid V2 frame CRC: {crc_str}"
-                    )
-                })?;
+        let expected_crc = u32::from_str_radix(crc_str, 16)
+            .map_err(|_| anyhow::anyhow!("invalid V2 frame CRC: {crc_str}"))?;
 
-            if body.len() != expected_len {
-                bail!(
-                    "V2 frame length mismatch: \
+        if body.len() != expected_len {
+            bail!(
+                "V2 frame length mismatch: \
                      header says {expected_len}, body is {}",
-                    body.len()
-                );
-            }
+                body.len()
+            );
+        }
 
-            let actual_crc = crc32fast::hash(body.as_bytes());
-            if actual_crc != expected_crc {
-                bail!(
-                    "V2 frame CRC mismatch: \
+        let actual_crc = crc32fast::hash(body.as_bytes());
+        if actual_crc != expected_crc {
+            bail!(
+                "V2 frame CRC mismatch: \
                      expected {expected_crc:08x}, \
                      got {actual_crc:08x}"
-                );
-            }
+            );
+        }
 
-            let mut body_parts = body.splitn(3, ' ');
-            let reqid = body_parts.next().ok_or_else(|| {
-                anyhow::anyhow!("missing request ID in V2 frame")
-            })?;
-            let status = body_parts.next().ok_or_else(|| {
-                anyhow::anyhow!("missing status in V2 frame")
-            })?;
-            let payload = body_parts.next().map(String::from);
+        let mut body_parts = body.splitn(3, ' ');
+        let reqid = body_parts
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("missing request ID in V2 frame"))?;
+        let status = body_parts
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("missing status in V2 frame"))?;
+        let payload = body_parts.next().map(String::from);
 
-            Ok((
-                reqid.to_string(),
-                status.to_string(),
-                payload,
-            ))
-        };
+        Ok((reqid.to_string(), status.to_string(), payload))
+    };
 
     match parse_body() {
         Ok((reqid, status, payload)) => {
@@ -404,20 +371,8 @@ fn decode_b64_payload(encoded: &str) -> Result<String> {
 /// Generate an 8-character hex request ID for V2 protocol frames.
 fn generate_request_id() -> Result<String> {
     let mut buf = [0u8; 4];
-
-    // Try /dev/urandom first (available on all Unix platforms)
-    if let Ok(mut f) = File::open("/dev/urandom")
-        && f.read_exact(&mut buf).is_ok()
-    {
-        return Ok(format!("{:08x}", u32::from_ne_bytes(buf)));
-    }
-
-    // Fallback: derive from current time (should rarely happen)
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u32)
-        .unwrap_or(0xdeadbeef);
-    Ok(format!("{nanos:08x}"))
+    getrandom::fill(&mut buf).map_err(|e| anyhow::anyhow!("failed to generate request ID: {e}"))?;
+    Ok(format!("{:08x}", u32::from_ne_bytes(buf)))
 }
 
 /// Check if an error is a transport timeout.
@@ -429,7 +384,51 @@ fn is_timeout(e: &anyhow::Error) -> bool {
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
+    use std::cell::RefCell;
+
     use super::*;
+
+    /// Mock transport that replays scripted responses.
+    struct MockTransport {
+        responses: RefCell<Vec<String>>,
+        sent: RefCell<Vec<String>>,
+        serial: bool,
+    }
+
+    impl MockTransport {
+        fn new(responses: Vec<&str>, serial: bool) -> Self {
+            // Reverse so we can pop from the end
+            let responses = responses.into_iter().rev().map(String::from).collect();
+            Self {
+                responses: RefCell::new(responses),
+                sent: RefCell::new(Vec::new()),
+                serial,
+            }
+        }
+
+        fn sent_lines(&self) -> Vec<String> {
+            self.sent.borrow().clone()
+        }
+    }
+
+    impl MetadataTransport for MockTransport {
+        fn send(&self, data: &str) -> Result<(), TransportError> {
+            self.sent.borrow_mut().push(data.to_string());
+            Ok(())
+        }
+
+        fn recv_line(&self, _timeout_ms: u64) -> Result<String, TransportError> {
+            self.responses.borrow_mut().pop().ok_or(TransportError::Eof)
+        }
+
+        fn reconnect(&mut self) -> anyhow::Result<()> {
+            Ok(())
+        }
+
+        fn is_serial(&self) -> bool {
+            self.serial
+        }
+    }
 
     #[test]
     fn test_generate_request_id_format() {
@@ -445,13 +444,11 @@ mod tests {
         let payload = STANDARD.encode("hello world");
         let body = format!("{reqid} {status} {payload}");
         let crc = crc32fast::hash(body.as_bytes());
-        let frame =
-            format!("V2 {} {crc:08x} {body}", body.len());
+        let frame = format!("V2 {} {crc:08x} {body}", body.len());
 
         let f = parse_v2_frame(&frame, reqid).unwrap();
         assert_eq!(f.status, "SUCCESS");
-        let decoded =
-            decode_b64_payload(&f.payload.unwrap()).unwrap();
+        let decoded = decode_b64_payload(&f.payload.unwrap()).unwrap();
         assert_eq!(decoded, "hello world");
     }
 
@@ -460,8 +457,7 @@ mod tests {
         let reqid = "abcd1234";
         let body = format!("{reqid} NOTFOUND");
         let crc = crc32fast::hash(body.as_bytes());
-        let frame =
-            format!("V2 {} {crc:08x} {body}", body.len());
+        let frame = format!("V2 {} {crc:08x} {body}", body.len());
 
         let f = parse_v2_frame(&frame, reqid).unwrap();
         assert_eq!(f.status, "NOTFOUND");
@@ -472,8 +468,7 @@ mod tests {
     fn test_parse_v2_frame_bad_crc() {
         let reqid = "dc4fae17";
         let body = format!("{reqid} SUCCESS");
-        let frame =
-            format!("V2 {} 00000000 {body}", body.len());
+        let frame = format!("V2 {} 00000000 {body}", body.len());
 
         let err = parse_v2_frame(&frame, reqid).unwrap_err();
         assert!(matches!(err, FrameError::Other(_)));
@@ -485,15 +480,10 @@ mod tests {
         let reqid = "dc4fae17";
         let body = format!("{reqid} SUCCESS");
         let crc = crc32fast::hash(body.as_bytes());
-        let frame =
-            format!("V2 {} {crc:08x} {body}", body.len());
+        let frame = format!("V2 {} {crc:08x} {body}", body.len());
 
-        let err =
-            parse_v2_frame(&frame, "00000000").unwrap_err();
-        assert!(matches!(
-            err,
-            FrameError::ReqIdMismatch { .. }
-        ));
+        let err = parse_v2_frame(&frame, "00000000").unwrap_err();
+        assert!(matches!(err, FrameError::ReqIdMismatch { .. }));
     }
 
     #[test]
@@ -506,5 +496,57 @@ mod tests {
         let err = parse_v2_frame(&frame, reqid).unwrap_err();
         assert!(matches!(err, FrameError::Other(_)));
         assert!(format!("{err}").contains("length mismatch"));
+    }
+
+    #[test]
+    fn test_v1_get_success() {
+        let mock = MockTransport::new(
+            vec![
+                "SUCCESS",     // V1 response header
+                "hello world", // response data
+                ".",           // terminator
+            ],
+            false,
+        );
+        let mut proto = Protocol {
+            transport: mock,
+            version: ProtocolVersion::V1,
+        };
+
+        let resp = proto.execute(Command::Get, Some("mykey")).unwrap();
+        match resp {
+            Response::Success(Some(data)) => assert_eq!(data, "hello world"),
+            other => panic!("expected Success(Some), got {other:?}"),
+        }
+
+        let sent = proto.transport.sent_lines();
+        assert_eq!(sent.len(), 1);
+        assert_eq!(sent[0], "GET mykey\n");
+    }
+
+    #[test]
+    fn test_v1_get_notfound() {
+        let mock = MockTransport::new(vec!["NOTFOUND"], false);
+        let mut proto = Protocol {
+            transport: mock,
+            version: ProtocolVersion::V1,
+        };
+
+        let resp = proto.execute(Command::Get, Some("nokey")).unwrap();
+        assert!(matches!(resp, Response::NotFound));
+    }
+
+    #[test]
+    fn test_negotiate_v2() {
+        let mock = MockTransport::new(vec!["V2_OK"], false);
+        let proto = Protocol::with_transport(mock).unwrap();
+        assert_eq!(proto.version, ProtocolVersion::V2);
+    }
+
+    #[test]
+    fn test_negotiate_v1_fallback() {
+        let mock = MockTransport::new(vec!["invalid command"], false);
+        let proto = Protocol::with_transport(mock).unwrap();
+        assert_eq!(proto.version, ProtocolVersion::V1);
     }
 }

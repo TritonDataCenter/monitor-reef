@@ -14,7 +14,7 @@
 //!   3 - Usage error
 
 use mdata_client::protocol::Protocol;
-use mdata_client::{Response, exit_code};
+use mdata_client::{Command, Response, exit_code};
 
 fn main() {
     match run() {
@@ -38,7 +38,7 @@ fn run() -> anyhow::Result<i32> {
 
     let mut proto = Protocol::init()?;
 
-    match proto.execute("KEYS", None)? {
+    match proto.execute(Command::Keys, None)? {
         Response::Success(Some(data)) => {
             print!("{data}");
             if !data.ends_with('\n') {
