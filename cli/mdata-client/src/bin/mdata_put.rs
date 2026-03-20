@@ -24,6 +24,7 @@ use mdata_client::protocol::Protocol;
 use mdata_client::{Response, exit_code};
 
 fn main() {
+    mdata_client::init_logging();
     match run() {
         Ok(code) => std::process::exit(code),
         Err(e) => {

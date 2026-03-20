@@ -35,6 +35,8 @@ base64 = { workspace = true }
 crc32fast = { workspace = true }
 getrandom = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 libc = { workspace = true }

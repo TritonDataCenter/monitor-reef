@@ -31,6 +31,7 @@ use std::time::Duration;
 use anyhow::{Result, bail};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
+use tracing::{debug, warn};
 
 use crate::transport::{MetadataTransport, Transport, TransportError};
 use crate::{Command, Response};
@@ -135,9 +136,9 @@ impl<T: MetadataTransport> Protocol<T> {
                                  timeout retries"
                             );
                         }
-                        eprintln!(
+                        warn!(
                             "receive timeout, resetting \
-                             protocol (attempt {retries}/{MAX_RETRIES})..."
+                             protocol (attempt {retries}/{MAX_RETRIES})"
                         );
                         self.reset()?;
                         continue;
@@ -275,8 +276,14 @@ impl<T: MetadataTransport> Protocol<T> {
         // Attempt V2 negotiation
         transport.send("NEGOTIATE V2\n")?;
         match transport.recv_line(RECV_TIMEOUT_MS) {
-            Ok(ref line) if line == "V2_OK" => Ok(ProtocolVersion::V2),
-            Ok(ref line) if line == "invalid command" => Ok(ProtocolVersion::V1),
+            Ok(ref line) if line == "V2_OK" => {
+                debug!("negotiated V2 protocol");
+                Ok(ProtocolVersion::V2)
+            }
+            Ok(ref line) if line == "invalid command" => {
+                debug!("V2 not supported, falling back to V1");
+                Ok(ProtocolVersion::V1)
+            }
             Ok(other) => {
                 bail!("unexpected negotiation response: {other}")
             }

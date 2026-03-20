@@ -16,6 +16,25 @@ use std::fmt;
 pub mod protocol;
 pub mod transport;
 
+/// Initialize tracing for mdata-client tools.
+///
+/// Enables debug output when `MDATA_DEBUG=1` is set, otherwise only
+/// warnings. Output goes to stderr to avoid interfering with stdout
+/// data (which callers may be parsing).
+pub fn init_logging() {
+    let filter = if std::env::var("MDATA_DEBUG").is_ok_and(|v| v == "1") {
+        "mdata_client=debug"
+    } else {
+        "mdata_client=warn"
+    };
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .without_time()
+        .with_target(false)
+        .init();
+}
+
 /// Metadata protocol commands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Command {

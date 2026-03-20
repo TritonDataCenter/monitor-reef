@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+use tracing::debug;
 
 use super::{Transport, TransportConfig, TransportError};
 
@@ -151,6 +152,7 @@ fn detect_transport() -> Result<TransportConfig> {
 
     for path in &socket_paths {
         if Path::new(path).exists() {
+            debug!("detected unix socket transport: {path}");
             return Ok(TransportConfig::UnixSocket(PathBuf::from(path)));
         }
     }
@@ -166,6 +168,7 @@ fn detect_transport() -> Result<TransportConfig> {
 
     for path in &serial_paths {
         if Path::new(path).exists() {
+            debug!("detected serial transport: {path}");
             return Ok(TransportConfig::Serial(PathBuf::from(path)));
         }
     }
