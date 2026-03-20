@@ -448,7 +448,6 @@ fn assignment_recall<S: Into<String>>(
             status,
             bucket_id: row.get(6)?,
             object_name_hash: row.get(7)?,
-            alternate_sources: vec![],
         };
         Ok(t)
     }) {
@@ -1055,85 +1054,46 @@ pub fn process_task(
 
     let tmp_path = manta_tmp_path(&task.owner, &task.object_id);
 
-    // Build the list of URLs to try: primary source first,
-    // then alternate sources as fallbacks.
-    let mut urls = vec![url];
-    for alt in &task.alternate_sources {
-        let alt_url = match (&task.bucket_id, &task.object_name_hash) {
-            (Some(bid), Some(nhash)) => mdapi_download_url(
-                &alt.manta_storage_id,
-                &task.owner,
-                &task.object_id,
-                bid,
-                nhash,
-            ),
-            _ => format!(
-                "http://{}/{}/{}",
-                &alt.manta_storage_id, &task.owner, &task.object_id,
-            ),
-        };
-        urls.push(alt_url);
-    }
-
-    // Try each source URL until one succeeds.
-    let status = {
-        let mut last_err = None;
-        let mut result = None;
-
-        for (i, try_url) in urls.iter().enumerate() {
-            if i > 0 {
-                info!(
-                    "Retrying download from alternate source: {}",
-                    try_url
-                );
+    // Reach out to the storage node to download
+    // the object.
+    let status = match download(
+        &url,
+        &task.owner,
+        &task.object_id,
+        &task.md5sum,
+        client,
+    ) {
+        Ok(bytes) => {
+            if let Some(m) = metrics {
+                counter_inc_by(m, BYTES_COUNT, bytes);
             }
-            match download(
-                try_url,
-                &task.owner,
-                &task.object_id,
-                &task.md5sum,
-                client,
-            ) {
-                Ok(bytes) => {
-                    result = Some(bytes);
-                    break;
-                }
+
+            info!(
+                "owner: {}, object: {}, bytes: {}",
+                &task.owner, &task.object_id, bytes
+            );
+
+            // Upon successful download, move the temporary
+            // object to its rightful location.
+            match file_move(&tmp_path, &file_path) {
+                Ok(()) => TaskStatus::Complete,
                 Err(e) => {
-                    file_remove(&tmp_path);
-                    last_err = Some(e);
+                    error!(
+                        "AgentFSError: file_move {} -> {}: {}",
+                        &tmp_path, &file_path, e
+                    );
+                    TaskStatus::Failed(
+                        ObjectSkippedReason::AgentFSError,
+                    )
                 }
             }
         }
-
-        match result {
-            Some(bytes) => {
-                if let Some(m) = metrics {
-                    counter_inc_by(m, BYTES_COUNT, bytes);
-                }
-                info!(
-                    "owner: {}, object: {}, bytes: {}",
-                    &task.owner, &task.object_id, bytes
-                );
-                match file_move(&tmp_path, &file_path) {
-                    Ok(()) => TaskStatus::Complete,
-                    Err(e) => {
-                        error!(
-                            "AgentFSError: file_move {} -> {}: {}",
-                            &tmp_path, &file_path, e
-                        );
-                        TaskStatus::Failed(
-                            ObjectSkippedReason::AgentFSError,
-                        )
-                    }
-                }
-            }
-            None => {
-                TaskStatus::Failed(
-                    last_err.unwrap_or(
-                        ObjectSkippedReason::SourceOtherError,
-                    ),
-                )
-            }
+        Err(e) => {
+            // If we failed to complete the download, remove
+            // the temporary file so that these kinds of things
+            // do not pile up.
+            file_remove(&tmp_path);
+            TaskStatus::Failed(e)
         }
     };
 
