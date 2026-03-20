@@ -274,12 +274,17 @@ fn open_serial(path: &Path) -> Result<File> {
     // only modify the file status flags on our own descriptor.
     let flags = unsafe { libc::fcntl(fd, libc::F_GETFL) };
     if flags >= 0 {
-        unsafe { libc::fcntl(fd, libc::F_SETFL, flags & !libc::O_NONBLOCK) };
+        let ret = unsafe { libc::fcntl(fd, libc::F_SETFL, flags & !libc::O_NONBLOCK) };
+        if ret < 0 {
+            debug!("failed to clear O_NONBLOCK: {}", io::Error::last_os_error());
+        }
     }
 
     // Flush any pending data from previous sessions.
     // SAFETY: fd is valid, flushing both input and output queues.
-    unsafe { libc::tcflush(fd, libc::TCIOFLUSH) };
+    if unsafe { libc::tcflush(fd, libc::TCIOFLUSH) } < 0 {
+        debug!("tcflush failed: {}", io::Error::last_os_error());
+    }
 
     Ok(file)
 }

@@ -36,7 +36,7 @@ pub fn init_logging() {
 }
 
 /// Metadata protocol commands.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Command {
     Get,
     Put,
@@ -46,12 +46,12 @@ pub enum Command {
 
 impl fmt::Display for Command {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Command::Get => write!(f, "GET"),
-            Command::Put => write!(f, "PUT"),
-            Command::Delete => write!(f, "DELETE"),
-            Command::Keys => write!(f, "KEYS"),
-        }
+        f.write_str(match self {
+            Command::Get => "GET",
+            Command::Put => "PUT",
+            Command::Delete => "DELETE",
+            Command::Keys => "KEYS",
+        })
     }
 }
 
@@ -64,7 +64,7 @@ pub mod exit_code {
 }
 
 /// Response from a metadata operation.
-#[derive(Debug)]
+#[derive(Clone, Debug, PartialEq)]
 #[must_use]
 pub enum Response {
     /// Operation succeeded, with optional data payload.
