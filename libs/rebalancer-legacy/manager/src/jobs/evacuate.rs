@@ -5161,20 +5161,30 @@ fn metadata_update_broker_dynamic(
                     .collect();
 
                 if !remaining.is_empty() {
+                    let drain_count = remaining.len();
                     info!(
                         "Metadata update broker: draining {} \
                          remaining assignments after checker exit",
-                        remaining.len()
+                        drain_count
                     );
                     for ace in remaining {
                         queue.push(DynamicWorkerMsg::Data(ace));
                     }
 
-                    let worker = metadata_update_worker_dynamic(
-                        Arc::clone(&job_action),
-                        Arc::clone(&queue),
+                    // Spawn multiple workers to process the
+                    // drain queue in parallel — a single worker
+                    // may stall on a slow moray connection.
+                    let drain_workers = std::cmp::min(
+                        pool.max_count(),
+                        drain_count,
                     );
-                    pool.execute(worker);
+                    for _ in 0..drain_workers {
+                        let worker = metadata_update_worker_dynamic(
+                            Arc::clone(&job_action),
+                            Arc::clone(&queue),
+                        );
+                        pool.execute(worker);
+                    }
                 }
             }
 
