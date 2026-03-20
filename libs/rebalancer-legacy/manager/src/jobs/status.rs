@@ -31,6 +31,16 @@ use uuid::Uuid;
 static STATUS_COUNT_QUERY: &str = "SELECT status, count(status) \
                                    FROM  evacuateobjects  GROUP BY status";
 
+static ERROR_BREAKDOWN_QUERY: &str = "SELECT error as reason, count(*) as count \
+                                      FROM evacuateobjects \
+                                      WHERE status = 'error' AND error IS NOT NULL \
+                                      GROUP BY error ORDER BY count DESC";
+
+static SKIP_BREAKDOWN_QUERY: &str = "SELECT skipped_reason as reason, count(*) as count \
+                                     FROM evacuateobjects \
+                                     WHERE status = 'skipped' AND skipped_reason IS NOT NULL \
+                                     GROUP BY skipped_reason ORDER BY count DESC";
+
 #[derive(Debug, EnumString)]
 pub enum StatusError {
     DBExists,
@@ -42,6 +52,14 @@ pub enum StatusError {
 struct StatusCount {
     #[sql_type = "Text"]
     status: String,
+    #[sql_type = "BigInt"]
+    count: i64,
+}
+
+#[derive(QueryableByName, Debug)]
+struct ReasonCount {
+    #[sql_type = "Text"]
+    reason: String,
     #[sql_type = "BigInt"]
     count: i64,
 }
@@ -70,7 +88,17 @@ pub struct JobConfigEvacuate {
     pub from_shark: MantaObjectShark,
 }
 
-type JobStatusResultsEvacuate = HashMap<String, i64>;
+#[derive(Debug, Deserialize, Serialize)]
+pub struct JobStatusResultsEvacuate {
+    #[serde(flatten)]
+    pub counts: HashMap<String, i64>,
+
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub error_breakdown: HashMap<String, i64>,
+
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    pub skip_breakdown: HashMap<String, i64>,
+}
 
 fn get_rebalancer_db_conn() -> Result<PgConnection, StatusError> {
     pg_db::connect_or_create_db(REBALANCER_DB).map_err(|e| {
@@ -109,13 +137,11 @@ fn get_job_db_conn_common(uuid: &Uuid) -> Result<PgConnection, StatusError> {
 }
 
 /// Build the status results HashMap from raw status counts and a
-/// duplicate count.  This is the pure aggregation logic extracted
-/// from `get_evacaute_job_status` so it can be tested without a
-/// database connection.
+/// duplicate count.
 fn aggregate_status_counts(
     status_counts: &[StatusCount],
     duplicate_count: i64,
-) -> JobStatusResultsEvacuate {
+) -> HashMap<String, i64> {
     let mut ret = HashMap::new();
     let mut total_count: i64 = 0;
 
@@ -138,6 +164,13 @@ fn aggregate_status_counts(
     ret
 }
 
+fn reason_counts_to_map(reasons: &[ReasonCount]) -> HashMap<String, i64> {
+    reasons
+        .iter()
+        .map(|r| (r.reason.clone(), r.count))
+        .collect()
+}
+
 fn get_evacaute_job_status(
     uuid: &Uuid,
 ) -> Result<JobStatusResultsEvacuate, StatusError> {
@@ -158,10 +191,29 @@ fn get_evacaute_job_status(
             }
         };
 
+    let error_breakdown: Vec<ReasonCount> =
+        sql_query(ERROR_BREAKDOWN_QUERY)
+            .load::<ReasonCount>(&conn)
+            .unwrap_or_default();
+
+    let skip_breakdown: Vec<ReasonCount> =
+        sql_query(SKIP_BREAKDOWN_QUERY)
+            .load::<ReasonCount>(&conn)
+            .unwrap_or_default();
+
     let duplicate_count =
         duplicates.select(count_star()).first(&conn).unwrap_or(0);
 
-    Ok(aggregate_status_counts(&status_counts, duplicate_count))
+    let counts = aggregate_status_counts(
+        &status_counts,
+        duplicate_count,
+    );
+
+    Ok(JobStatusResultsEvacuate {
+        counts,
+        error_breakdown: reason_counts_to_map(&error_breakdown),
+        skip_breakdown: reason_counts_to_map(&skip_breakdown),
+    })
 }
 
 fn get_evacuate_job_config(
