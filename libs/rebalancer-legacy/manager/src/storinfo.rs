@@ -53,7 +53,7 @@ impl Arbitrary for StorageNode {
 }
 
 pub struct Storinfo {
-    sharks: Arc<Mutex<Option<Vec<StorageNode>>>>,
+    sharks: Arc<Mutex<Vec<StorageNode>>>,
     handle: Mutex<Option<JoinHandle<()>>>,
     running: Arc<AtomicBool>,
     host: String,
@@ -114,7 +114,7 @@ impl Storinfo {
         Ok(Storinfo {
             running: Arc::new(AtomicBool::new(true)),
             handle: Mutex::new(None),
-            sharks: Arc::new(Mutex::new(Some(vec![]))),
+            sharks: Arc::new(Mutex::new(vec![])),
             host: storinfo_domain_name,
         })
     }
@@ -124,7 +124,7 @@ impl Storinfo {
         let client = Client::new();
         let mut locked_sharks = self.sharks.lock().unwrap_or_else(|e| e.into_inner());
         // TODO: MANTA-4961, don't start job if picker cannot be reached.
-        *locked_sharks = Some(fetch_sharks(&client, &self.host));
+        *locked_sharks = fetch_sharks(&client, &self.host);
 
         let handle = Self::updater(
             self.host.clone(),
@@ -147,13 +147,13 @@ impl Storinfo {
     }
 
     /// Get the the Vec<sharks> from the storinfo service.
-    pub fn get_sharks(&self) -> Option<Vec<StorageNode>> {
+    pub fn get_sharks(&self) -> Vec<StorageNode> {
         self.sharks.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     fn updater(
         host: String,
-        sharks: Arc<Mutex<Option<Vec<StorageNode>>>>,
+        sharks: Arc<Mutex<Vec<StorageNode>>>,
         running: Arc<AtomicBool>,
     ) -> JoinHandle<()> {
         let updater_sharks = Arc::clone(&sharks);
@@ -169,20 +169,20 @@ impl Storinfo {
                 new_sharks.sort_by(|a, b| a.available_mb.cmp(&b.available_mb));
 
                 let mut old_sharks = updater_sharks.lock().unwrap_or_else(|e| e.into_inner());
-                *old_sharks = Some(new_sharks);
+                *old_sharks = new_sharks;
                 info!("Sharks updated, sleeping for {:?}", sleep_time);
             }
         })
     }
 }
 
-// TODO: MANTA-4519
 impl SharkSource for Storinfo {
     /// Choose the sharks based on the specified algorithm
     fn choose(&self, algo: &ChooseAlgorithm) -> Option<Vec<StorageNode>> {
-        match self.get_sharks() {
-            Some(s) => Some(algo.choose(&s)),
-            None => None,
+        let sharks = self.get_sharks();
+        match sharks.as_slice() {
+            [] => None,
+            s => Some(algo.choose(s)),
         }
     }
 }
