@@ -89,7 +89,7 @@
     "direct_db": {{REBALANCER_DIRECT_DB}},
     {{/REBALANCER_DIRECT_DB}}
     {{^REBALANCER_DIRECT_DB}}
-    "direct_db": false,
+    "direct_db": true,
     {{/REBALANCER_DIRECT_DB}}
 
     "mdapi": {
