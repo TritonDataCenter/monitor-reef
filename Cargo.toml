@@ -9,6 +9,7 @@ members = [
     "apis/bugview-api",
     "apis/cloudapi-api",
     "apis/jira-api",
+    "apis/triton-api",
     "apis/vmapi-api",
     "cli/bugview-cli",
     "cli/triton-cli",
@@ -22,6 +23,7 @@ members = [
     "openapi-manager",
     "services/bugview-service",
     "services/jira-stub-server",
+    "services/triton-api-server",
 
     # To be modernized:
     #"cli/manatee-echo-resolver",

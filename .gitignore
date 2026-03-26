@@ -9,3 +9,9 @@
 
 # Test configuration (contains credentials)
 cli/triton-cli/tests/config.json
+
+# Image build artifacts (eng buildimage/release targets)
+bits/
+proto/
+make_stamps/
+*.tar.gz

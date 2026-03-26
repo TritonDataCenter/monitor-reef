@@ -4329,6 +4329,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "triton-api"
+version = "0.1.0"
+dependencies = [
+ "dropshot",
+ "schemars",
+ "serde",
+]
+
+[[package]]
+name = "triton-api-server"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "dropshot",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "triton-api",
+]
+
+[[package]]
 name = "triton-auth"
 version = "0.1.0"
 dependencies = [
