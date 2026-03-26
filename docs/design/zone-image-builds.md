@@ -17,6 +17,32 @@ images. The existing eng.git build infrastructure (`Makefile.targ`,
 an approach that lets each service define its own image while sharing the
 monorepo's Cargo workspace and eng Makefile machinery.
 
+### What ships and what doesn't
+
+Not every service in the monorepo becomes a zone image. Developer tools like
+`bugview-service` and `jira-stub-server` are run locally or in dev
+environments, not deployed as Triton core services. Only services under
+`images/` are intended for zone image builds.
+
+### Reference repos
+
+These repos contain the build infrastructure and reference implementations
+used by this design:
+
+- **[eng](https://github.com/TritonDataCenter/eng)** — shared Makefile
+  infrastructure (`buildimage`, `bits-upload`, `Makefile.rust.*`,
+  `Makefile.smf.*`). Consumed as `deps/eng` submodule.
+- **[triton-origin-image](https://github.com/TritonDataCenter/triton-origin-image)** —
+  base images that zone images are built on top of. We target
+  `triton-origin-x86_64-24.4.1`.
+- **[jenkins-joylib](https://github.com/TritonDataCenter/jenkins-joylib)** —
+  shared Jenkins pipeline library (`joyBuildImageAndUpload`,
+  `joyCommonLabels`, `joySlackNotifications`). Needs a small change for
+  monorepo support (see below).
+- **[triton-moirai](https://github.com/TritonDataCenter/triton-moirai)** —
+  canonical example of a single-service Rust repo that builds a zone image.
+  Our per-service Makefile and release target are modeled on this.
+
 ### Reference: how a single-service Rust repo does it
 
 triton-moirai (cloud-load-balancer) is the simplest working example:
@@ -359,3 +385,12 @@ images-list:
 5. **Jenkins pipeline strategy**: One Jenkins job per service image
    (recommended), or a single job that builds all images? Per-service jobs are
    simpler and allow independent build/deploy cycles.
+
+## Prerequisites / TODO
+
+- [ ] Commit and push the `joyBuildImageAndUpload` `dir` parameter change to
+  jenkins-joylib (edit exists in local checkout at
+  `~/Workspace/jenkins-joylib/vars/joyBuildImageAndUpload.groovy`)
+- [ ] Initialize `deps/eng` submodule in monitor-reef (`git submodule update --init deps/eng`)
+- [ ] Build and test dummy service on SmartOS to validate the pipeline
+- [ ] Resolve `$(TOP)` compatibility question with hands-on testing
