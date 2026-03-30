@@ -1,11 +1,11 @@
-# Rebalancer-Legacy: Capabilities, Architecture, and Limitations
+# Manta Rebalancer Overview: Capabilities, Architecture, and Limitations
 
 This document provides a high-level overview of the Manta Rebalancer system
 for engineering and operations teams evaluating its capabilities, planning
 evacuations, or assessing gaps for future development.
 
 > **See also:** `devops_operations_guide.md` for step-by-step runbooks and
-> `operators_guide.md` for detailed configuration reference.
+> `devops_operations_guide.md` for detailed configuration reference.
 
 ---
 
@@ -28,13 +28,12 @@ evacuations, or assessing gaps for future development.
 
 The rebalancer is a purpose-built system for **evacuating objects from a Manta
 storage node (shark)**. When a shark needs to be decommissioned or taken out of
-rotation, the rebalancer moves every object off that shark onto healthy
+rotation, the rebalancer moves every object off that shark onto healthy  
 destination sharks while keeping Manta metadata consistent with the objects'
 physical location.
 
 It is **not** a general-purpose data balancer. It does one thing — shark
-evacuation — and is designed to do it safely at scale across millions of
-objects.
+evacuation —. 
 
 ---
 
@@ -42,9 +41,10 @@ objects.
 
 ### Core Features
 
-- **Full shark evacuation** — discovers and moves every object from a source
-  shark to healthy destination sharks, updating metadata so clients
-  transparently read from the new locations.
+- **Full shark evacuation** — discovers and copies every object from a source
+  shark to healthy destination sharks, updating metadata so clients 
+  transparently  read from the new locations, the copied objects are not read 
+  from the evacuated  shark but from it's replicas.
 
 - **Dual metadata backend support** — handles both traditional Manta
   directory-based objects (v1, stored in Moray) and bucket objects (v2, stored
@@ -94,7 +94,8 @@ objects.
   list, update, retry).
 
 - **`pgclone.sh`** — self-contained script for creating and managing
-  read-only PostgreSQL clone VMs from ZFS snapshots.
+  read-only PostgreSQL clone VMs from ZFS snapshots, must be executed
+  from the headnode.
 
 ---
 

@@ -5,7 +5,7 @@
  */
 
 /*
- * Copyright 2025 Edgecast Cloud LLC.
+ * Copyright 2026 Edgecast Cloud LLC.
  */
 
 //! Mdapi Client Module
@@ -248,6 +248,8 @@ pub fn manta_object_to_payload(
     })?;
 
     // Convert vnode from i64 to u64 (negative vnodes are invalid)
+    // negative vnodes should not exists a vnode where the object lands is 
+    // vnode = Md5(key of the object) / 2^96 
     let vnode = u64::try_from(obj.vnode).map_err(|_| {
         Error::Internal(InternalError::new(
             Some(InternalErrorCode::BadMantaObject),
@@ -555,7 +557,7 @@ pub fn put_object(
 /// * `Result<BatchUpdateResult, Error>` - Summary of successful and failed updates
 ///
 /// # Notes
-/// When the server supports the batchupdateobjects RPC (CHG-048), all
+/// When the server supports the batchupdateobjects RPC MANTA-5503, all
 /// objects are sent in a single RPC and the server executes per-vnode
 /// atomic transactions. For older servers, falls back to individual
 /// put_object calls with vnode grouping for cache locality.
@@ -1174,8 +1176,11 @@ pub fn calculate_vnode(owner: &str, bucket: &str, object_key: &str) -> u64 {
     }
 
     // Divide by vnode hash interval to get vnode.
+    // 2^128 is MD5 hash generated (32 hex chars x 4 bit per char)
+    // 2^96 is the DEFAULT_VNODE_HASH_INTERVAL
     // Result is at most 2^128 / 2^96 = 2^32, which fits in u64,
     // but use try_from for defense-in-depth.
+
     let vnode = u64::try_from(hash_value / DEFAULT_VNODE_HASH_INTERVAL)
         .expect("vnode exceeds u64::MAX; hash interval invariant violated");
 
@@ -1486,7 +1491,7 @@ pub fn list_owners(
 /// ```
 ///
 /// # Performance
-/// Cost: O(1) single RPC call to mdapi. For large objects, consider streaming.
+/// Cost: O(1) single RPC call to mdapi
 pub fn get_object_with_content(
     mclient: &MdapiClient,
     owner: Uuid,
@@ -1501,7 +1506,8 @@ pub fn get_object_with_content(
     );
 
     // Calculate vnode for this object
-    let vnode = calculate_vnode(&owner.to_string(), &bucket_id.to_string(), object_name);
+    let vnode = calculate_vnode(&owner.to_string(), 
+                &bucket_id.to_string(), object_name);
 
     // Get object from mdapi
     // Note: rust-libmanta's get_object returns ObjectPayload which includes
@@ -1553,6 +1559,10 @@ pub fn get_object_with_content(
 /// This function is specifically designed for updating JSON-based metadata
 /// objects like MPU upload records. It updates the content field while
 /// preserving all other object metadata (sharks, etag, headers, etc.).
+/// .mpu objects hold the mpu parts metadata, for example in which sharks
+/// does a part lives, so we need to update this to reflect where the .mpu-parts
+/// live now, this means that mpu transfers will survive an evacuation as the parts
+/// now point to their new location.
 ///
 /// # Arguments
 /// * `mclient` - The mdapi client instance
@@ -1606,7 +1616,9 @@ pub fn update_object_content(
     );
 
     // Calculate vnode for this object
-    let vnode = calculate_vnode(&owner.to_string(), &bucket_id.to_string(), object_name);
+    let vnode = calculate_vnode(&owner.to_string(), 
+        &bucket_id.to_string(), 
+        object_name);
 
     // First, get the current object to preserve its metadata
     let (current_object, _old_content) = get_object_with_content(

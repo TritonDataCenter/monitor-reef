@@ -941,7 +941,6 @@ fn file_create(file_path: &str) -> Result<File, String> {
         .map_err(|e| format!("Error creating file {}: {}", file_path, e))
 }
 
-// TODO: Make this return an actual result.
 fn download(
     uri: &str,
     owner: &str,

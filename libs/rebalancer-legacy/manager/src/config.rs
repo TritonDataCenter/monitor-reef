@@ -6,6 +6,7 @@
 
 /*
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2026 Edgecast Cloud LLC.
  */
 
 extern crate clap;
@@ -96,7 +97,7 @@ impl Default for ConfigOptions {
             use_static_md_update_threads: false,
             static_queue_depth: DEFAULT_STATIC_QUEUE_DEPTH,
             max_assignment_age: DEFAULT_MAX_ASSIGNMENT_AGE,
-            use_batched_updates: true,
+            use_batched_updates: false,
             md_read_chunk_size: DEFAULT_METADATA_READ_CHUNK_SIZE,
             max_md_read_threads: DEFAULT_MAX_METADATA_READ_THREADS,
             shark_list_retry_delay_ms: DEFAULT_SHARK_LIST_RETRY_DELAY_MS,

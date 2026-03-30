@@ -6,6 +6,7 @@
 
 /*
  * Copyright 2020 Joyent, Inc.
+ * Copyright 2026 Edgecast Cloud LLC.
  */
 
 use crate::metrics::{
@@ -4675,46 +4676,46 @@ fn get_client_from_hash<'a>(
 // (EAGAIN, connection reset, RPC timeouts) are retried with exponential
 // backoff instead of immediately failing the object.
 fn metadata_update_one(
-    job_action: &Arc<EvacuateJob>,
-    client: MetadataClientOption,
-    object: &EvacuateObjectValue,
-    etag: &str,
-    shard: u32,
+job_action: &Arc<EvacuateJob>,
+client: MetadataClientOption,
+object: &EvacuateObjectValue,
+etag: &str,
+shard: u32,
 ) -> Result<(), Error> {
-    let mclient = match client {
-        MetadataClientOption::Client(c) => c,
-        MetadataClientOption::Hash(client_hash) => {
-            get_client_from_hash(job_action, client_hash, shard)?
-        }
-    };
-
-    let retry_config = mdapi_client::RetryConfig::default();
-
-    let now = std::time::Instant::now();
-    // Retry the raw put_object call so that is_retryable_error sees the
-    // original error variant (e.g. Error::Mdapi(IoError(...))) before it
-    // gets wrapped into MetadataUpdateFailure.
-    let ret = mdapi_client::with_retry_if_retryable(&retry_config, || {
-        mclient.put_object(object, etag)
-    })
-    .map_err(|e| {
-        Error::from(InternalError::new(
-            Some(InternalErrorCode::MetadataUpdateFailure),
-            format!("{}", e),
-        ))
-    });
-
-    if ret.is_err() {
-        error!(
-            "Failed to update 1 object in {}us",
-            now.elapsed().as_micros()
-        );
-    } else {
-        let md_update_time = now.elapsed().as_micros();
-        debug!("Updated 1 object in {}us", md_update_time);
+let mclient = match client {
+    MetadataClientOption::Client(c) => c,
+    MetadataClientOption::Hash(client_hash) => {
+        get_client_from_hash(job_action, client_hash, shard)?
     }
+};
 
-    ret
+let retry_config = mdapi_client::RetryConfig::default();
+
+let now = std::time::Instant::now();
+// Retry the raw put_object call so that is_retryable_error sees the
+// original error variant (e.g. Error::Mdapi(IoError(...))) before it
+// gets wrapped into MetadataUpdateFailure.
+let ret = mdapi_client::with_retry_if_retryable(&retry_config, || {
+    mclient.put_object(object, etag)
+})
+.map_err(|e| {
+    Error::from(InternalError::new(
+        Some(InternalErrorCode::MetadataUpdateFailure),
+        format!("{}", e),
+    ))
+});
+
+if ret.is_err() {
+    error!(
+        "Failed to update 1 object in {}us",
+        now.elapsed().as_micros()
+    );
+} else {
+    let md_update_time = now.elapsed().as_micros();
+    debug!("Updated 1 object in {}us", md_update_time);
+}
+
+ret
 }
 
 // Attempt to update all objects in this assignment in per shard batches.
@@ -4725,213 +4726,218 @@ fn metadata_update_one(
 // If a batch fails this function falls back to updating each object
 // individually for that batch.
 fn metadata_update_batch(
-    job_action: &Arc<EvacuateJob>,
-    client_hash: &mut HashMap<u32, MetadataBackend>,
-    batched_reqs: HashMap<u32, Vec<BatchRequest>>,
-    from_shark: &str,
-    dest_shark: &str,
+job_action: &Arc<EvacuateJob>,
+client_hash: &mut HashMap<u32, MetadataBackend>,
+batched_reqs: HashMap<u32, Vec<BatchRequest>>,
+from_shark: &str,
+dest_shark: &str,
 ) -> Vec<ObjectId> {
-    let mut marked_error = vec![];
-    for (shard, requests) in batched_reqs.into_iter() {
-        let num_reqs = requests.len();
-        info!(
-            "Updating {} objects for shard {} in a single batch",
-            num_reqs, shard
-        );
-        let mclient = match get_client_from_hash(job_action, client_hash, shard)
-        {
-            Ok(c) => c,
-            Err(e) => {
-                // If we can't get the client for these objects there's
-                // nothing we can do.  Mark them all as error.
-                // TODO: want mark_many_objects_error()
-                error!("Could not get client for batch update: {}", e);
-                let eobj_err: EvacuateObjectError = e.into();
-                for r in requests.iter() {
-                    let br = match r {
-                        BatchRequest::Put(br) => br,
-                        _ => {
-                            error!("Unexpected BatchRequest variant in \
-                                    error-marking loop, skipping");
-                            continue;
-                        }
-                    };
+let mut marked_error = vec![];
+for (shard, requests) in batched_reqs.into_iter() {
+    let num_reqs = requests.len();
+    info!(
+        "Updating {} objects for shard {} in a single batch",
+        num_reqs, shard
+    );
+    let mclient = match get_client_from_hash(job_action, client_hash, shard)
+    {
+        Ok(c) => c,
+        Err(e) => {
+            // If we can't get the client for these objects there's
+            // nothing we can do.  Mark them all as error.
+            // TODO: want mark_many_objects_error()
+            error!("Could not get client for batch update: {}", e);
+            let eobj_err: EvacuateObjectError = e.into();
+            for r in requests.iter() {
+                let br = match r {
+                    BatchRequest::Put(br) => br,
+                    _ => {
+                        error!("Unexpected BatchRequest variant in \
+                                error-marking loop, skipping");
+                        continue;
+                    }
+                };
 
-                    let id = common::get_objectId_from_value(&br.value)
-                        .expect("Object Id missing");
+                let id = common::get_objectId_from_value(&br.value)
+                    .expect("Object Id missing");
 
-                    job_action.mark_object_error(&id, eobj_err.clone());
-                    marked_error.push(id);
-                }
-                continue;
+                job_action.mark_object_error(&id, eobj_err.clone());
+                marked_error.push(id);
             }
-        };
-
-        // If we fail the batch, step through the objects and attempt to
-        // update each one individually. For each object that fails to
-        // update mark it as error, and add it to the marked_error Vec to
-        // be trimmed from our list of successful updates later.
-        let now = std::time::Instant::now();
-        if let Err(e) = mclient.batch_update(
-            &requests,
-            &ObjectMethodOptions::default(),
-            from_shark,
-            dest_shark,
-            |_values| {
-                // elapsed() gives us a u128, but unfortunately AtomicU128 is
-                // nightly only.
-                let md_update_time = now.elapsed().as_micros();
-
-                info!(
-                    "Batch updated {} objects in {}us",
-                    num_reqs, md_update_time
-                );
-                Ok(())
-            },
-        ) {
-            error!("Batch update failed, retrying individually: {}", e);
-            retry_batch_update(
-                job_action,
-                requests,
-                shard,
-                mclient,
-                &mut marked_error,
-            );
+            continue;
         }
+    };
+
+    // If we fail the batch, step through the objects and attempt to
+    // update each one individually. For each object that fails to
+    // update mark it as error, and add it to the marked_error Vec to
+    // be trimmed from our list of successful updates later.
+    let now = std::time::Instant::now();
+    if let Err(e) = mclient.batch_update(
+        &requests,
+        &ObjectMethodOptions::default(),
+        from_shark,
+        dest_shark,
+        |_values| {
+            // elapsed() gives us a u128, but unfortunately AtomicU128 is
+            // nightly only.
+            let md_update_time = now.elapsed().as_micros();
+
+            info!(
+                "Batch updated {} objects in {}us",
+                num_reqs, md_update_time
+            );
+            Ok(())
+        },
+    ) {
+        error!("Batch update failed, retrying individually: {}", e);
+        retry_batch_update(
+            job_action,
+            requests,
+            shard,
+            mclient,
+            &mut marked_error,
+        );
     }
-    marked_error
+}
+marked_error
 }
 
 fn retry_batch_update(
-    job_action: &Arc<EvacuateJob>,
-    requests: Vec<BatchRequest>,
-    shard: u32,
-    client: &mut MetadataBackend,
-    marked_error: &mut Vec<ObjectId>,
+job_action: &Arc<EvacuateJob>,
+requests: Vec<BatchRequest>,
+shard: u32,
+client: &mut MetadataBackend,
+marked_error: &mut Vec<ObjectId>,
 ) {
-    for r in requests.into_iter() {
-        let br: BatchPutOp = match r {
-            BatchRequest::Put(br) => br,
-            _ => {
-                error!("Unexpected BatchRequest variant in retry loop, \
-                        skipping");
-                continue;
-            }
-        };
-
-        let etag = br
-            .options
-            .etag
-            .specified_value()
-            .expect("etag should be specified");
-
-        let o = br.value;
-
-        if let Err(muo_err) = metadata_update_one(
-            job_action,
-            MetadataClientOption::Client(client),
-            &o,
-            &etag,
-            shard,
-        ) {
-            let id = common::get_objectId_from_value(&o)
-                .expect("cannot get objectId");
-
-            error!("Error updating object: {}\n{:?}", muo_err, o);
-            job_action.mark_object_error(&id, muo_err.into());
-            marked_error.push(id);
-
+for r in requests.into_iter() {
+    let br: BatchPutOp = match r {
+        BatchRequest::Put(br) => br,
+        _ => {
+            error!("Unexpected BatchRequest variant in retry loop, \
+                    skipping");
             continue;
         }
+    };
+
+    let etag = br
+        .options
+        .etag
+        .specified_value()
+        .expect("etag should be specified");
+
+    let o = br.value;
+
+    if let Err(muo_err) = metadata_update_one(
+        job_action,
+        MetadataClientOption::Client(client),
+        &o,
+        &etag,
+        shard,
+    ) {
+        let id = common::get_objectId_from_value(&o)
+            .expect("cannot get objectId");
+
+        error!("Error updating object: {}\n{:?}", muo_err, o);
+        job_action.mark_object_error(&id, muo_err.into());
+        marked_error.push(id);
+
+        continue;
     }
+}
 }
 
 fn batch_add_putobj(
-    batched_reqs: &mut HashMap<u32, Vec<BatchRequest>>,
-    object: Value,
-    shard: u32,
-    etag: String,
+batched_reqs: &mut HashMap<u32, Vec<BatchRequest>>,
+object: Value,
+shard: u32,
+etag: String,
 ) -> Result<(), Error> {
-    let key = common::get_key_from_object_value(&object)?;
-    let mut options = ObjectMethodOptions::default();
+let key = common::get_key_from_object_value(&object)?;
+let mut options = ObjectMethodOptions::default();
 
-    options.etag = Etag::Specified(etag);
+options.etag = Etag::Specified(etag);
 
-    let put_req = BatchPutOp {
-        bucket: "manta".to_string(),
-        options,
-        key,
-        value: object,
-    };
+let put_req = BatchPutOp {
+    bucket: "manta".to_string(),
+    options,
+    key,
+    value: object,
+};
 
-    batched_reqs
-        .entry(shard)
-        .and_modify(|ent| ent.push(BatchRequest::Put(put_req.clone())))
-        .or_insert_with(|| vec![BatchRequest::Put(put_req)]);
+batched_reqs
+    .entry(shard)
+    .and_modify(|ent| ent.push(BatchRequest::Put(put_req.clone())))
+    .or_insert_with(|| vec![BatchRequest::Put(put_req)]);
 
-    Ok(())
+Ok(())
 }
 
 fn metadata_update_assignment(
-    job_action: &Arc<EvacuateJob>,
-    ace: AssignmentCacheEntry,
-    client_hash: &mut HashMap<u32, MetadataBackend>,
+job_action: &Arc<EvacuateJob>,
+ace: AssignmentCacheEntry,
+client_hash: &mut HashMap<u32, MetadataBackend>,
 ) {
-    info!("Updating metadata for assignment: {}", ace.id);
+info!("Updating metadata for assignment: {}", ace.id);
 
-    // There is one moray client per shard, so when we collect the requests
-    // into a batch we need to know which moray client this is going to based
-    // on the shard number.
-    let mut batched_reqs: HashMap<u32, Vec<BatchRequest>> = HashMap::new();
-    let mut updated_objects = vec![];
-    let dest_shark = &ace.dest_shark;
-    let objects = job_action
-        .load_assignment_objects(&ace.id, EvacuateObjectStatus::PostProcessing);
+// There is one moray client per shard, so when we collect the requests
+// into a batch we need to know which moray client this is going to based
+// on the shard number.
+let mut batched_reqs: HashMap<u32, Vec<BatchRequest>> = HashMap::new();
+let mut updated_objects = vec![];
+let dest_shark = &ace.dest_shark;
+let objects = job_action
+    .load_assignment_objects(&ace.id, EvacuateObjectStatus::PostProcessing);
 
-    trace!("Updating metadata for {} objects", objects.len());
+trace!("Updating metadata for {} objects", objects.len());
 
-    client_hash.shrink_to_fit();
+client_hash.shrink_to_fit();
 
-    for eobj in objects {
-        let etag = eobj.etag.clone();
-        let mobj = eobj.object.clone();
+for eobj in objects {
+    let etag = eobj.etag.clone();
+    let mobj = eobj.object.clone();
 
-        // Unfortunately sqlite only accepts signed integers.  So we
-        // have to do the conversion here and cross our fingers that
-        // we don't have more than 2.1 billion shards.
-        // We do check this value coming in from sharkspotter as well.
-        if eobj.shard < 0 {
-            error!(
-                "Cannot have a negative shard for object {}, marking \
-                 as error and continuing",
-                eobj.id
-            );
-            job_action.mark_object_error(
-                &eobj.id,
-                EvacuateObjectError::BadShardNumber,
-            );
-            continue;
-        }
+    // Unfortunately sqlite only accepts signed integers.  So we
+    // have to do the conversion here and cross our fingers that
+    // we don't have more than 2.1 billion shards.
+    // We do check this value coming in from sharkspotter as well.
+    if eobj.shard < 0 {
+        error!(
+            "Cannot have a negative shard for object {}, marking \
+             as error and continuing",
+            eobj.id
+        );
+        job_action.mark_object_error(
+            &eobj.id,
+            EvacuateObjectError::BadShardNumber,
+        );
+        continue;
+    }
 
-        let shard = eobj.shard as u32;
+    let shard = eobj.shard as u32;
 
-        // This function updates the manta object with the new
-        // sharks, and then returns the updated Manta metadata object.
-        match job_action.update_object_shark(mobj, dest_shark) {
-            Ok(o) => {
-                if job_action.config.options.use_batched_updates {
-                    if let Err(e) =
-                        batch_add_putobj(&mut batched_reqs, o, shard, etag)
-                    {
-                        error!(
-                            "Could not add put object operation to batch ({}): \
-                            {}",
-                            &eobj.id, e
-                        );
-                        job_action.mark_object_error(&eobj.id, e.into());
-                        continue;
-                    }
-                } else if let Err(e) = metadata_update_one(
+    // This function updates the manta object with the new
+    // sharks, and then returns the updated Manta metadata object.
+    match job_action.update_object_shark(mobj, dest_shark) {
+        Ok(o) => {
+            // batched_updates requires MANTA-5503 and MANTA-5504
+            // in buckets-mdapi service, by default this is false
+            // as one object failure causes the whole transaction
+            // to fail, doing one by one object is slower, but 
+            // in case of failure only one object is retried.
+            if job_action.config.options.use_batched_updates {
+                if let Err(e) =
+                    batch_add_putobj(&mut batched_reqs, o, shard, etag)
+                {
+                    error!(
+                        "Could not add put object operation to batch ({}): \
+                        {}",
+                        &eobj.id, e
+                    );
+                    job_action.mark_object_error(&eobj.id, e.into());
+                    continue;
+                }
+            } else if let Err(e) = metadata_update_one(
                     job_action,
                     MetadataClientOption::Hash(client_hash),
                     &o,
