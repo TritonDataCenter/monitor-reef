@@ -4463,7 +4463,33 @@ fn start_assignment_checker(
                                 },
                             );
                         }
-                        _ => continue,
+                        _ => {
+                            // Check if this assignment has exceeded
+                            // twice the max age.  Agents that hold
+                            // assignments in Scheduled/Running state
+                            // indefinitely would otherwise cause the
+                            // checker to poll forever, preventing the
+                            // job from completing.
+                            let max_age =
+                                job_action.config.options.max_assignment_age;
+                            if ace.created_at.elapsed().as_secs() > max_age * 2
+                            {
+                                warn!(
+                                    "Assignment {} stuck in {:?} state \
+                                     for >{}s on {}, timing out",
+                                    ace.id,
+                                    ag_assignment.stats.state,
+                                    max_age * 2,
+                                    ace.dest_shark.manta_storage_id,
+                                );
+                                job_action.skip_assignment(
+                                    &ace.id,
+                                    ObjectSkippedReason::AgentAssignmentTimeout,
+                                    AssignmentState::AgentUnavailable,
+                                );
+                            }
+                            continue;
+                        }
                     }
 
                     found_assignment_count += 1;

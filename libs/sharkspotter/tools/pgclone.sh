@@ -187,6 +187,13 @@ function provision_vm {
         -d@- <<<"${payload}" | json -H)
     wf_job_uuid=$(json job_uuid <<<"${vmapi_result}")
 
+    if [[ -z ${wf_job_uuid} ]]; then
+        echo "FATAL: VMAPI did not return a job_uuid." \
+            "Response:" >&2
+        echo "${vmapi_result}" >&2
+        return 1
+    fi
+
     echo "Waiting for workflow ${wf_job_uuid}..."
     sdc-waitforjob -t 600 "${wf_job_uuid}"
 }
@@ -690,6 +697,16 @@ function do_clone {
             .replace(/${alias_sed_from}/, '${alias_sed_to}')
             .replace(/-[0-9a-f]+$/, '-${NEW_UUID_SHORT}')" \
         alias <<<"${VICTIM_JSON}")
+
+    #
+    # If the alias didn't change (e.g. source VM alias doesn't
+    # match the expected pattern), generate a safe unique alias.
+    #
+    local orig_alias
+    orig_alias=$(json alias <<<"${VICTIM_JSON}")
+    if [[ "${NEW_ALIAS}" == "${orig_alias}" ]]; then
+        NEW_ALIAS="${orig_alias}-rebalancer-${NEW_UUID_SHORT}"
+    fi
 
     echo "Creating Surrogate VM ${NEW_UUID} (${kind})  ${NEWALIAS}"
 

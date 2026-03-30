@@ -419,6 +419,7 @@ pub struct AssignmentCacheEntry {
     dest_shark: StorageNode,
     total_size: u64,
     state: AssignmentState,
+    created_at: std::time::Instant,
 }
 
 impl From<Assignment> for AssignmentCacheEntry {
@@ -428,6 +429,7 @@ impl From<Assignment> for AssignmentCacheEntry {
             dest_shark: assignment.dest_shark,
             total_size: assignment.total_size,
             state: assignment.state,
+            created_at: std::time::Instant::now(),
         }
     }
 }

@@ -188,6 +188,10 @@ pub enum ObjectSkippedReason {
     // The only source available is the shark that is being evacuated.
     SourceIsEvacShark,
 
+    // The assignment was stuck in a non-complete state on the agent for
+    // longer than 2 * max_assignment_age.
+    AgentAssignmentTimeout,
+
     HTTPStatusCode(HttpStatusCode),
 }
 
