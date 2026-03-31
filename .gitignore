@@ -9,3 +9,7 @@
 
 # Test configuration (contains credentials)
 cli/triton-cli/tests/config.json
+
+# Dolt database files (added by bd init)
+.dolt/
+*.db
