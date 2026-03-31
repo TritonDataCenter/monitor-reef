@@ -70,8 +70,8 @@ impl Default for ConfigServer {
         Self {
             host: "0.0.0.0".into(),
             port: 7878,
-            workers: 1,
-            workers_per_assignment: 1,
+            workers: 4,
+            workers_per_assignment: 4,
         }
     }
 }
