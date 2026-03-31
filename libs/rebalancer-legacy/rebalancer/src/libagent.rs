@@ -119,12 +119,16 @@ pub struct Agent {
     quiescing: Arc<Mutex<HashSet<String>>>,
     tx: Arc<Mutex<mpsc::Sender<String>>>,
     metrics: Arc<Mutex<Option<MetricsMap>>>,
+    /// Maximum number of assignments to accept into the queue.
+    /// Assignments beyond this limit are rejected with 503.
+    max_queued: usize,
 }
 
 impl Agent {
     pub fn new(
         tx: Arc<Mutex<mpsc::Sender<String>>>,
         metrics: Arc<Mutex<Option<MetricsMap>>>,
+        max_queued: usize,
     ) -> Agent {
         let assignments = Arc::new(Mutex::new(Assignments::new()));
         let quiescing = Arc::new(Mutex::new(HashSet::new()));
@@ -133,6 +137,7 @@ impl Agent {
             quiescing,
             tx,
             metrics,
+            max_queued,
         }
     }
 
@@ -643,6 +648,34 @@ fn post_assignment_handler(
                         counter_vec_inc(&m, ERROR_COUNT, Some("conflict"));
                     }
 
+                    return future::ok((state, res));
+                }
+
+                // Backpressure: reject new assignments when the
+                // scheduled queue exceeds what the worker pool can
+                // process in a reasonable time.  Without this, the
+                // manager queues hundreds of assignments that rot in
+                // Scheduled state and eventually time out.
+                let scheduled_count = WalkDir::new(REBALANCER_SCHEDULED_DIR)
+                    .min_depth(1)
+                    .into_iter()
+                    .filter_map(|e| e.ok())
+                    .count();
+
+                if scheduled_count >= agent.max_queued {
+                    info!(
+                        "Rejecting assignment {}: {} scheduled \
+                         exceeds max {}",
+                        &uuid, scheduled_count, agent.max_queued
+                    );
+                    // Remove from quiescing set since we won't save it.
+                    agent.quiescing.lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .remove(&uuid);
+                    let res = create_empty_response(
+                        &state,
+                        StatusCode::SERVICE_UNAVAILABLE,
+                    );
                     return future::ok((state, res));
                 }
 
@@ -1306,7 +1339,15 @@ pub fn router(
             mpsc::channel();
         let tx = Arc::new(Mutex::new(w));
         let rx = Arc::new(Mutex::new(r));
-        let agent = Agent::new(tx, Arc::new(Mutex::new(agent_metrics.clone())));
+        // Allow a small buffer beyond the worker count so there's
+        // always work ready when a worker finishes its current
+        // assignment, but don't accept unbounded work.
+        let max_queued = workers * 3;
+        let agent = Agent::new(
+            tx,
+            Arc::new(Mutex::new(agent_metrics.clone())),
+            max_queued,
+        );
         let pool = ThreadPool::new(workers);
 
         create_dir(REBALANCER_SCHEDULED_DIR);

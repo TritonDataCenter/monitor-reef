@@ -2806,12 +2806,31 @@ impl PostAssignment for EvacuateJob {
         };
 
         if !res.status().is_success() {
-            assignment_post_fail(
-                self,
-                &assignment,
-                ObjectSkippedReason::AssignmentRejected,
-                AssignmentState::Rejected,
-            );
+            // 503 Service Unavailable means the agent's queue is
+            // full (backpressure).  Mark the destination shark as
+            // busy so the assignment manager can pick a different
+            // shark, but don't permanently skip the objects —
+            // they'll be retried in a subsequent assignment.
+            if res.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE {
+                warn!(
+                    "Agent {} busy (503), deferring assignment {}",
+                    assignment.dest_shark.manta_storage_id,
+                    payload.id,
+                );
+                assignment_post_fail(
+                    self,
+                    &assignment,
+                    ObjectSkippedReason::AgentBusy,
+                    AssignmentState::Rejected,
+                );
+            } else {
+                assignment_post_fail(
+                    self,
+                    &assignment,
+                    ObjectSkippedReason::AssignmentRejected,
+                    AssignmentState::Rejected,
+                );
+            }
 
             let err = format!(
                 "Error posting assignment {} to {} ({})",
