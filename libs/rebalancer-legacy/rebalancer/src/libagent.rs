@@ -1339,10 +1339,13 @@ pub fn router(
             mpsc::channel();
         let tx = Arc::new(Mutex::new(w));
         let rx = Arc::new(Mutex::new(r));
-        // Allow a small buffer beyond the worker count so there's
-        // always work ready when a worker finishes its current
-        // assignment, but don't accept unbounded work.
-        let max_queued = workers * 3;
+        // Allow a generous buffer beyond the worker count.  The
+        // buffer must be large enough that the manager's post thread
+        // rarely hits 503 (which blocks the entire pipeline), but
+        // bounded so memory doesn't grow without limit.  Each queued
+        // assignment is just a small sqlite file on disk, so 100 per
+        // worker is cheap.
+        let max_queued = workers * 100;
         let agent = Agent::new(
             tx,
             Arc::new(Mutex::new(agent_metrics.clone())),
