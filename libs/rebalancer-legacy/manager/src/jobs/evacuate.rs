@@ -2807,30 +2807,93 @@ impl PostAssignment for EvacuateJob {
 
         if !res.status().is_success() {
             // 503 Service Unavailable means the agent's queue is
-            // full (backpressure).  Mark the destination shark as
-            // busy so the assignment manager can pick a different
-            // shark, but don't permanently skip the objects —
-            // they'll be retried in a subsequent assignment.
+            // full (backpressure).  Back off and retry rather than
+            // skipping the objects.  This is the key flow-control
+            // mechanism: instead of blasting assignments and letting
+            // them time out, we wait for the agent to drain its
+            // queue.
             if res.status() == reqwest::StatusCode::SERVICE_UNAVAILABLE {
-                warn!(
-                    "Agent {} busy (503), deferring assignment {}",
-                    assignment.dest_shark.manta_storage_id,
-                    payload.id,
-                );
+                const MAX_RETRIES: u32 = 60;
+                let mut attempt = 0;
+                let mut last_res = res;
+
+                while attempt < MAX_RETRIES {
+                    attempt += 1;
+                    let backoff = std::cmp::min(5 * attempt, 30);
+                    warn!(
+                        "Agent {} busy (503), retry {}/{} in {}s \
+                         for assignment {}",
+                        assignment.dest_shark.manta_storage_id,
+                        attempt,
+                        MAX_RETRIES,
+                        backoff,
+                        payload.id,
+                    );
+                    thread::sleep(Duration::from_secs(backoff as u64));
+
+                    match self
+                        .post_client
+                        .post(&agent_uri)
+                        .json(&payload)
+                        .send()
+                    {
+                        Ok(r) if r.status().is_success() => {
+                            debug!(
+                                "Post of {} succeeded after {} retries",
+                                payload.id, attempt
+                            );
+                            assignment_post_success(self, assignment);
+                            return Ok(());
+                        }
+                        Ok(r)
+                            if r.status()
+                                == reqwest::StatusCode::SERVICE_UNAVAILABLE =>
+                        {
+                            last_res = r;
+                            continue;
+                        }
+                        Ok(r) => {
+                            last_res = r;
+                            break;
+                        }
+                        Err(e) => {
+                            assignment_post_fail(
+                                self,
+                                &assignment,
+                                ObjectSkippedReason::DestinationUnreachable,
+                                AssignmentState::AgentUnavailable,
+                            );
+                            return Err(e.into());
+                        }
+                    }
+                }
+
+                // Exhausted retries or got a non-503 error.
                 assignment_post_fail(
                     self,
                     &assignment,
                     ObjectSkippedReason::AgentBusy,
                     AssignmentState::Rejected,
                 );
-            } else {
-                assignment_post_fail(
-                    self,
-                    &assignment,
-                    ObjectSkippedReason::AssignmentRejected,
-                    AssignmentState::Rejected,
+
+                let err = format!(
+                    "Error posting assignment {} to {} ({}) \
+                     after {} retries",
+                    payload.id,
+                    assignment.dest_shark.manta_storage_id,
+                    last_res.status(),
+                    attempt,
                 );
+
+                return Err(InternalError::new(None, err).into());
             }
+
+            assignment_post_fail(
+                self,
+                &assignment,
+                ObjectSkippedReason::AssignmentRejected,
+                AssignmentState::Rejected,
+            );
 
             let err = format!(
                 "Error posting assignment {} to {} ({})",
