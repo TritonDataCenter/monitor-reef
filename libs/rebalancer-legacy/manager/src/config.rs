@@ -51,7 +51,7 @@ static DEFAULT_STATIC_QUEUE_DEPTH: usize = 10;
 // memory before it is posted to an agent.  This is not a hard and fast rule.
 // This will only be checked synchronously every time we gather another set of
 // destination sharks.
-static DEFAULT_MAX_ASSIGNMENT_AGE: u64 = 600;
+static DEFAULT_MAX_ASSIGNMENT_AGE: u64 = 3600;
 
 // The chunk size used when scanning the metadata tier or during a retry when
 // reading from the local database.

@@ -48,7 +48,7 @@
         "max_assignment_age": {{REBALANCER_MAX_ASSIGNMENT_AGE}},
         {{/REBALANCER_MAX_ASSIGNMENT_AGE}}
         {{^REBALANCER_MAX_ASSIGNMENT_AGE}}
-        "max_assignment_age": 600,
+        "max_assignment_age": 3600,
         {{/REBALANCER_MAX_ASSIGNMENT_AGE}}
 
 

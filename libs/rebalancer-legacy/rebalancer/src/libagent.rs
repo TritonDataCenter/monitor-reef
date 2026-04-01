@@ -1339,13 +1339,12 @@ pub fn router(
             mpsc::channel();
         let tx = Arc::new(Mutex::new(w));
         let rx = Arc::new(Mutex::new(r));
-        // Accept assignments without limit.  Assignments are small
-        // sqlite files on disk and workers drain them sequentially.
-        // The manager's assignment checker timeout (2 * max_assignment_age)
-        // handles the case where agents are too slow or stuck — it skips
-        // assignments that haven't completed in time rather than blocking
-        // the post pipeline with 503 retries.
-        let max_queued = usize::MAX;
+        // Allow a generous buffer so the manager rarely blocks on
+        // 503 retries, but bounded so the queue doesn't grow beyond
+        // what agents can drain within the checker timeout
+        // (2 * max_assignment_age).  Each queued assignment is a
+        // small sqlite file on disk.
+        let max_queued = workers * 50;
         let agent = Agent::new(
             tx,
             Arc::new(Mutex::new(agent_metrics.clone())),
