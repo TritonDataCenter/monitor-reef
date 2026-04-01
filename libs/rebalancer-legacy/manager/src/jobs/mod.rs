@@ -620,6 +620,40 @@ pub fn create_job_database() -> Result<(), Error> {
     conn.execute(&create_query).map(|_| {}).map_err(Error::from)
 }
 
+/// Mark any jobs left in Running, Setup, or Init state as Failed.
+///
+/// On startup the rebalancer cannot resume in-flight jobs — the
+/// in-memory assignment cache, worker threads, and channel state are
+/// all lost.  Rather than leaving stale "Running" entries that
+/// confuse operators, mark them as Failed so it's clear a new job
+/// is needed.
+pub fn mark_stale_jobs_failed() -> Result<usize, Error> {
+    use self::jobs::dsl::{jobs as jobs_db, state};
+
+    let conn = connect_or_create_db(REBALANCER_DB)?;
+    let stale_states = vec![
+        JobState::Running.to_string(),
+        JobState::Setup.to_string(),
+        JobState::Init.to_string(),
+    ];
+
+    let count = diesel::update(jobs_db)
+        .filter(state.eq_any(&stale_states))
+        .set(state.eq(JobState::Failed.to_string()))
+        .execute(&conn)
+        .map_err(Error::from)?;
+
+    if count > 0 {
+        warn!(
+            "Marked {} stale job(s) as failed (were Running/Setup/Init \
+             from before restart)",
+            count
+        );
+    }
+
+    Ok(count)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

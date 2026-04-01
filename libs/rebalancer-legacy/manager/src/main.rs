@@ -679,6 +679,13 @@ fn main() {
         return;
     }
 
+    // Any jobs left in Running/Setup/Init state from a previous
+    // process are stale — we can't resume them.  Mark them as
+    // Failed so operators know to start new jobs.
+    if let Err(e) = jobs::mark_stale_jobs_failed() {
+        error!("Error marking stale jobs: {}", e);
+    }
+
     let addr = format!(
         "0.0.0.0:{}",
         config.lock().unwrap_or_else(|e| e.into_inner()).listen_port
