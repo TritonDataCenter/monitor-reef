@@ -644,7 +644,6 @@ All values can be set via SAPI metadata. After updating SAPI metadata, run
    MANTA_APP=$(sdc-sapi /applications?name=manta | json -Ha uuid)
    echo '{ "metadata": {
        "REBALANCER_DIRECT_DB": true,
-       "REBALANCER_DIRECT_DB_BUCKETS": true,
        "REBALANCER_BUCKETS_MIN_SHARD": 1,
        "REBALANCER_BUCKETS_MAX_SHARD": 1
    } }' | sapiadm update $MANTA_APP
@@ -772,8 +771,19 @@ Valid range: 1–250.
 
 ### Retrying Failed Objects
 
-After a job completes, objects with `error` or remaining `unprocessed` status
-can be retried:
+There are **no in-job retries**.  Once an object is marked `Skipped` or
+`Error` during an evacuation, it stays that way for the rest of that job.
+The rebalancer makes a single pass through the object list:
+
+```
+Scan → Assign → Copy → Update metadata → Done
+                  ↓ fail
+               Skip/Error (permanent for this job)
+```
+
+**`rebalancer-adm job retry`** retries only `error` and `unprocessed`
+objects from the job's local database.  It does NOT retry `skipped`
+objects (such as `agent_assignment_timeout`):
 
 ```bash
 rebalancer-adm job retry <UUID>
@@ -782,8 +792,46 @@ rebalancer-adm job retry <UUID>
 curl -X POST http://localhost/jobs/<UUID>/retry
 ```
 
-This creates a new job that reads from the original job's database and
-reprocesses only the failed/unprocessed objects.
+**To retry skipped objects, run a new evacuation job with fresh pgclones.**
+The new job re-scans all objects on the source shark and picks up anything
+that wasn't moved.  In practice, 2-3 runs fully evacuates a shark:
+
+| Run | What happens |
+|-----|-------------|
+| **Run 1** | Evacuates the bulk (~55-95% depending on agent throughput) |
+| **Run 2** | Fresh pgclone snapshot, catches timeouts and etag conflicts from run 1 |
+| **Run 3** | Mops up the last few stragglers |
+
+**Multi-run evacuation procedure:**
+
+```bash
+# --- Run 1 ---
+pgclone.sh clone-all --moray-vm <UUID> --buckets-vm <UUID>
+# Start evacuation, wait for completion
+# Check results: note skipped/error counts
+
+# --- Run 2 (if skipped > 0) ---
+pgclone.sh destroy-all
+pgclone.sh clone-all --moray-vm <UUID> --buckets-vm <UUID>
+# Start new evacuation against same shark
+# Fresh etags from new snapshot avoid etag conflicts
+# Smaller object set means agents finish within timeout
+
+# --- Repeat until skipped ≈ 0 ---
+```
+
+**Why etag conflicts happen between runs:** The pgclone snapshot is
+frozen at a point in time.  When run 1 updates metadata in live moray
+(changing `shark1 → shark2` in the sharks array), the etag changes.
+Run 2's snapshot still has the old etag, so those already-evacuated
+objects get etag conflicts.  A fresh pgclone for run 2 has the
+current etags and avoids this.
+
+**Why `agent_assignment_timeout` happens:** The manager sends
+assignments faster than agents can process them.  Assignments that
+agents don't finish within `2 * max_assignment_age` (default 7200s)
+are skipped.  Subsequent runs have fewer objects, so the queue is
+smaller and timeouts decrease.
 
 ### Listing All Jobs
 
