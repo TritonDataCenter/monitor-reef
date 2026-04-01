@@ -185,6 +185,13 @@ pub enum ObjectSkippedReason {
     // contact the source of the object.
     SourceOtherError,
 
+    // The object was not found (404) on the source shark's filesystem.
+    // On re-runs this typically means the object was already evacuated
+    // by a previous job — the metadata was updated but the pgclone
+    // snapshot still references the old shark.  Can also indicate a
+    // genuinely missing file (corruption, garbage collection).
+    SourceObjectNotFound,
+
     // The only source available is the shark that is being evacuated.
     SourceIsEvacShark,
 

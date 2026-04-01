@@ -1091,6 +1091,31 @@ shark in the fresh pgclone snapshot).
 **Fix:** Run `rebalancer-adm job retry <UUID>` after the job completes. The
 retry will pick up objects that failed due to etag conflicts.
 
+#### `source_object_not_found` skips
+
+**Cause:** The object was not found (HTTP 404) on the source shark.
+This is **normal on re-runs** — it means the object was already
+evacuated by a previous job.  The metadata was updated to point to a
+new shark, but the pgclone snapshot (taken before the previous run)
+still lists the old shark.
+
+**How to tell the difference:**
+- **After a restart or re-run:** High `source_object_not_found` counts
+  are expected and harmless.  The objects are already safe on their
+  new sharks.
+- **On a first run with no prior evacuations:** 404s indicate genuinely
+  missing files — potential data corruption or garbage collection.
+  Investigate with:
+  ```bash
+  # Check if the object exists on the source shark
+  ls -la /manta/<owner>/<object_id>
+  # Check live moray for current shark list
+  echo '{"key": "<manta_key>"}' | moraygetobject manta
+  ```
+
+**Fix:** For re-run 404s, no action needed.  For genuinely missing
+files, investigate the source shark's filesystem.
+
 #### `insufficient_space` skips
 
 **Cause:** All destination sharks are too full.

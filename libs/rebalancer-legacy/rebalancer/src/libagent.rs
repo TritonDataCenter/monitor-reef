@@ -993,6 +993,9 @@ fn download(
     let msg = format!("Download response for {} is {}", uri, status);
     if status != reqwest::StatusCode::OK {
         error!("{}", msg);
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Err(ObjectSkippedReason::SourceObjectNotFound);
+        }
         return Err(ObjectSkippedReason::HTTPStatusCode(status.into()));
     }
 
