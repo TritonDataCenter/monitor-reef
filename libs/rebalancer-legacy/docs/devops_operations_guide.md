@@ -1048,6 +1048,40 @@ dig +short _moray._tcp.1.moray.us-east.joyent.us SRV
 
 **Fix:** Verify Moray/MDAPI shards are healthy and DNS resolves correctly.
 
+#### Jobs marked `failed` after rebalancer restart
+
+**Cause:** The rebalancer cannot resume in-flight jobs after a restart.
+On startup, any jobs left in `running`, `setup`, or `init` state are
+automatically marked as `failed`.  This is expected behavior — the
+in-memory assignment cache, worker threads, and channels are lost when
+the process exits.
+
+**What happens to in-flight work:**
+- Objects already **copied** by agents but not yet metadata-updated are
+  orphaned on the destination shark (harmless, just wasted space).
+- Objects in **assigned** state on agents may still be processing, but
+  the manager no longer tracks them.
+- The source shark still has all its objects — nothing is removed during
+  evacuation.
+
+**Recovery:**
+```bash
+# 1. Check which jobs were marked failed
+curl -s http://localhost/jobs | json -a id state action
+
+# 2. Destroy and recreate pgclones (fresh etags)
+pgclone.sh destroy-all
+pgclone.sh clone-all --moray-vm <UUID> --buckets-vm <UUID>
+
+# 3. Start a new evacuation job
+rebalancer-adm job create evacuate --shark <shark>
+```
+
+The new job re-scans all objects on the source shark.  Objects that
+were successfully evacuated before the restart already have updated
+metadata and will be skipped (they no longer appear on the source
+shark in the fresh pgclone snapshot).
+
 #### High `etag_mismatch` errors
 
 **Cause:** Objects are being updated concurrently (normal in active systems).
