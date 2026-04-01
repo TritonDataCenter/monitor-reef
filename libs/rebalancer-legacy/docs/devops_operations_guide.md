@@ -1082,14 +1082,29 @@ were successfully evacuated before the restart already have updated
 metadata and will be skipped (they no longer appear on the source
 shark in the fresh pgclone snapshot).
 
-#### High `etag_mismatch` errors
+#### High `moray.update_failed` / `etag_mismatch` errors
 
-**Cause:** Objects are being updated concurrently (normal in active systems).
+**Cause:** The etag in the pgclone snapshot doesn't match the etag in
+live moray.  Two common scenarios:
 
-**Impact:** Not data-loss; the object simply wasn't updated.
+1. **Re-run after a previous evacuation (expected):** The previous job
+   updated metadata for objects it evacuated, changing their etags.
+   The current pgclone snapshot still has the old etags.  These errors
+   are **harmless** — the objects are already evacuated.
+2. **Active writes on a production system:** Users or services modified
+   the object's metadata between the snapshot and the update.
 
-**Fix:** Run `rebalancer-adm job retry <UUID>` after the job completes. The
-retry will pick up objects that failed due to etag conflicts.
+**Impact:** Not data-loss.  The object data was successfully copied to
+the destination shark, but the metadata update was rejected.  The
+source shark still has the object — nothing is lost.
+
+**How to tell the difference:** If the error count roughly matches the
+number of objects completed by a previous run against the same shark,
+it's scenario 1.
+
+**Fix:** Start a new job with **fresh pgclones**.  Fresh snapshots have
+current etags, eliminating the conflicts.  `rebalancer-adm job retry`
+does NOT help here — it retries from the same stale pgclone etags.
 
 #### `source_object_not_found` skips
 
