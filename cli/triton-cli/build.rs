@@ -4,7 +4,8 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Build metadata
     build_data::set_GIT_COMMIT_SHORT();
 
     // Check git dirty status directly and emit a human-friendly suffix
@@ -17,4 +18,20 @@ fn main() {
     build_data::rerun_if_git_commit_or_branch_changed().ok();
 
     build_data::no_debug_rebuilds();
+
+    // Compile Talos protocol buffers
+    tonic_build::configure()
+        .build_server(false)
+        .compile_protos(
+            &[
+                "../../../kelp-talosctl-gauntlet/talos/api/machine/machine.proto",
+                "../../../kelp-talosctl-gauntlet/talos/api/cluster/cluster.proto",
+            ],
+            &[
+                "../../../kelp-talosctl-gauntlet/talos/api/",
+                "../../../kelp-talosctl-gauntlet/talos/api/vendor/",
+            ],
+        )?;
+
+    Ok(())
 }
