@@ -154,7 +154,10 @@ pub async fn run(args: DeleteArgs, client: &TypedClient) -> Result<()> {
         }
 
         // Wait for instances to be fully deleted before checking fabric
-        if let (false, Some(fabric_id)) = (deleted_ids.is_empty(), cluster.fabric_network_id) {
+        // Only wait for network cleanup if we're not skipping fabric deletion
+        if let (false, false, Some(fabric_id)) =
+            (deleted_ids.is_empty(), args.skip_fabric, cluster.fabric_network_id)
+        {
             println!();
             println!("Waiting for instances to be fully deleted...");
             let _ = std::io::stdout().flush();

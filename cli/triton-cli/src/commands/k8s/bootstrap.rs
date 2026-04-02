@@ -23,6 +23,7 @@ use super::provisioning::{
 };
 use super::state::{ClusterState, ControlPlaneConfig, NodeInfo, NodeRole, WorkerConfig};
 use super::talos;
+use super::talos::config::{SecretsBundle, generate_machine_configs};
 
 #[derive(Args, Clone)]
 pub struct BootstrapArgs {
@@ -755,7 +756,7 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
     Ok(())
 }
 
-/// Generate Talos base configs using talosctl
+/// Generate Talos base configs using native implementation
 ///
 /// The endpoint IP is added to the certificate's Subject Alternative Names (SANs)
 /// so that TLS connections to the Kubernetes API are trusted.
@@ -769,57 +770,46 @@ async fn generate_talos_configs(
     // Note: --install-disk /dev/vda is required for Triton bhyve VMs which use
     // VirtIO disks. Without this, talosctl defaults to /dev/sda which doesn't exist.
     //
-    // --additional-sans adds the endpoint IP to the certificate SANs so that
-    // TLS connections to the Kubernetes API server are trusted.
-    let endpoint_url = format!("https://{}:6443", endpoint);
-    let secrets_str = secrets_path.to_string_lossy();
-    let output_str = output_dir.to_string_lossy();
+    // Additional SANs include the endpoint IP so that TLS connections to the
+    // Kubernetes API server are trusted.
+    logger.info("Generating Talos machine configs (native)");
 
-    let args = [
-        "gen",
-        "config",
-        cluster_name,
-        &endpoint_url,
-        "--with-secrets",
-        &secrets_str,
-        "--output-dir",
-        &output_str,
-        "--install-disk",
-        "/dev/vda",
-        "--additional-sans",
-        endpoint,
-        "--force",
-    ];
-
-    logger.cmd(format_command("talosctl", &args));
-
-    let output = tokio::process::Command::new("talosctl")
-        .arg("gen")
-        .arg("config")
-        .arg(cluster_name)
-        .arg(&endpoint_url)
-        .arg("--with-secrets")
-        .arg(secrets_path)
-        .arg("--output-dir")
-        .arg(output_dir)
-        .arg("--install-disk")
-        .arg("/dev/vda")
-        .arg("--additional-sans")
-        .arg(endpoint)
-        .arg("--force")
-        .output()
+    // Load secrets bundle
+    let secrets = SecretsBundle::load(secrets_path)
         .await
-        .context("Failed to execute talosctl gen config")?;
+        .context("Failed to load secrets bundle")?;
 
-    logger.cmd_output(&output.stdout, &output.stderr);
+    // Generate machine configs with the endpoint IP
+    // The endpoint parameter is just an IP address, not a URL
+    let additional_sans = vec![endpoint.to_string()];
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        logger.error(format!("talosctl gen config failed: {}", stderr));
-        anyhow::bail!("talosctl gen config failed: {}", stderr);
-    }
+    let configs = generate_machine_configs(
+        &secrets,
+        cluster_name,
+        endpoint,
+        "/dev/vda",
+        &additional_sans,
+    )
+    .context("Failed to generate machine configs")?;
 
-    logger.info("talosctl gen config completed successfully");
+    // Write output files
+    let controlplane_path = output_dir.join("controlplane.yaml");
+    let worker_path = output_dir.join("worker.yaml");
+    let talosconfig_path = output_dir.join("talosconfig");
+
+    tokio::fs::write(&controlplane_path, &configs.controlplane_yaml)
+        .await
+        .with_context(|| format!("Failed to write {}", controlplane_path.display()))?;
+
+    tokio::fs::write(&worker_path, &configs.worker_yaml)
+        .await
+        .with_context(|| format!("Failed to write {}", worker_path.display()))?;
+
+    tokio::fs::write(&talosconfig_path, &configs.talosconfig_yaml)
+        .await
+        .with_context(|| format!("Failed to write {}", talosconfig_path.display()))?;
+
+    logger.info("Talos machine configs generated successfully");
     Ok(())
 }
 
