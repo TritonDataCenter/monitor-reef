@@ -12,7 +12,9 @@
 //! - Health checks
 //! - Kubeconfig retrieval
 //! - Secret generation
+//! - Configuration application
 
+pub mod apply_config;
 pub mod bootstrap;
 pub mod client;
 pub mod config;

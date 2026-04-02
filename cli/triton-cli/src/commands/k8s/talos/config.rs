@@ -350,8 +350,8 @@ fn generate_service_account_key() -> Result<ServiceAccountKey> {
 fn generate_rsa_service_account_key() -> Result<ServiceAccountKey> {
     let mut rng = rand::thread_rng();
     let bits = 4096;
-    let private_key = RsaPrivateKey::new(&mut rng, bits)
-        .context("Failed to generate RSA private key")?;
+    let private_key =
+        RsaPrivateKey::new(&mut rng, bits).context("Failed to generate RSA private key")?;
 
     // Encode as PKCS#8 PEM
     let pem = private_key
@@ -553,7 +553,10 @@ struct ClusterSection {
 
     token: String,
 
-    #[serde(rename = "secretboxEncryptionSecret", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "secretboxEncryptionSecret",
+        skip_serializing_if = "Option::is_none"
+    )]
     secretbox_encryption_secret: Option<String>,
 
     ca: CertificateAndKey,
@@ -718,29 +721,15 @@ pub fn generate_machine_configs(
     cert_sans.extend(additional_sans.iter().cloned());
 
     // Generate controlplane configuration
-    let controlplane_config = generate_controlplane_config(
-        secrets,
-        cluster_name,
-        endpoint_ip,
-        install_disk,
-        &cert_sans,
-    )?;
+    let controlplane_config =
+        generate_controlplane_config(secrets, cluster_name, endpoint_ip, install_disk, &cert_sans)?;
 
     // Generate worker configuration
-    let worker_config = generate_worker_config(
-        secrets,
-        cluster_name,
-        endpoint_ip,
-        install_disk,
-        &cert_sans,
-    )?;
+    let worker_config =
+        generate_worker_config(secrets, cluster_name, endpoint_ip, install_disk, &cert_sans)?;
 
     // Generate talosconfig
-    let talosconfig = generate_talosconfig(
-        cluster_name,
-        &secrets.certs.os,
-        &admin_cert,
-    )?;
+    let talosconfig = generate_talosconfig(cluster_name, &secrets.certs.os, &admin_cert)?;
 
     // Serialize to YAML with hostname config appended
     let hostname_config = HostnameConfig {
@@ -866,7 +855,10 @@ fn generate_controlplane_config(
             })),
         }),
         controller_manager: Some(ControllerManagerConfig {
-            image: format!("registry.k8s.io/kube-controller-manager:{}", KUBERNETES_VERSION),
+            image: format!(
+                "registry.k8s.io/kube-controller-manager:{}",
+                KUBERNETES_VERSION
+            ),
         }),
         proxy: Some(ProxyConfig {
             image: format!("registry.k8s.io/kube-proxy:{}", KUBERNETES_VERSION),
@@ -877,9 +869,7 @@ fn generate_controlplane_config(
         discovery: DiscoveryConfig {
             enabled: true,
             registries: DiscoveryRegistriesConfig {
-                kubernetes: KubernetesRegistryConfig {
-                    disabled: true,
-                },
+                kubernetes: KubernetesRegistryConfig { disabled: true },
                 service: HashMap::new(),
             },
         },
@@ -970,9 +960,7 @@ fn generate_worker_config(
         discovery: DiscoveryConfig {
             enabled: true,
             registries: DiscoveryRegistriesConfig {
-                kubernetes: KubernetesRegistryConfig {
-                    disabled: true,
-                },
+                kubernetes: KubernetesRegistryConfig { disabled: true },
                 service: HashMap::new(),
             },
         },

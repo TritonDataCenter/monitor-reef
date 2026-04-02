@@ -13,7 +13,7 @@ use cloudapi_client::TypedClient;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use super::logging::{LogWriter, format_command};
+use super::logging::LogWriter;
 use super::network::generate_network_patch;
 use super::provisioning::{
     create_firewall_rules, detect_user_ip, discover_fabric_network, find_external_ip,
@@ -558,13 +558,20 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
 
         logger.info(format!("Applying config to {} ({})", inst.name, target_ip));
 
-        if let Err(e) = apply_talos_config_with_patches(
+        // Build list of patch files
+        let mut patches: Vec<&std::path::Path> = vec![patch_path.as_ref()];
+        if let Some(ref ep_patch) = endpoint_patch_path {
+            patches.push(ep_patch.as_ref());
+        }
+
+        // Use native gRPC apply config instead of shelling out to talosctl
+        if let Err(e) = talos::apply_config::run(
             &target_ip,
             &controlplane_yaml,
-            &patch_path,
-            endpoint_patch_path.as_ref(),
-            &talosconfig_str,
-            &logger,
+            &patches,
+            Some(&talosconfig_str),
+            true,  // do_retry
+            false, // verbose
         )
         .await
         {
@@ -811,154 +818,4 @@ async fn generate_talos_configs(
 
     logger.info("Talos machine configs generated successfully");
     Ok(())
-}
-
-/// Apply Talos config with a patch using talosctl
-///
-/// Retries up to 6 times with increasing delays to handle:
-/// - Firewall rule propagation delays
-/// - Talos API startup delays after instance boot
-///
-/// Note: This does NOT use --insecure because the nodes already have their
-/// base config delivered via cloud-init user-data. They are running in configured
-/// mode (not maintenance mode), so we use authenticated talosctl with the proper
-/// talosconfig credentials. We use --mode no-reboot to apply the network patch
-/// without restarting the node.
-async fn apply_talos_config_with_patches(
-    node_ip: &str,
-    base_config: &std::path::Path,
-    network_patch: &std::path::Path,
-    endpoint_patch: Option<&std::path::PathBuf>,
-    talosconfig: &str,
-    logger: &LogWriter,
-) -> Result<()> {
-    // Build patch arguments
-    let network_patch_arg = format!("@{}", network_patch.display());
-    let endpoint_patch_arg = endpoint_patch.map(|p| format!("@{}", p.display()));
-    let base_config_str = base_config.to_string_lossy().to_string();
-
-    // Build args for logging
-    let mut args: Vec<&str> = vec![
-        "apply-config",
-        "--mode",
-        "no-reboot",
-        "--endpoints",
-        node_ip,
-        "--nodes",
-        node_ip,
-        "--file",
-        &base_config_str,
-        "--config-patch",
-        &network_patch_arg,
-    ];
-    if let Some(ref ep_arg) = endpoint_patch_arg {
-        args.push("--config-patch");
-        args.push(ep_arg);
-    }
-    args.push("--talosconfig");
-    args.push(talosconfig);
-
-    // Retry delays: 5s, 10s, 15s, 20s, 25s, 30s (total ~105s of waiting)
-    let retry_delays = [5, 10, 15, 20, 25, 30];
-    let mut last_error = String::new();
-
-    for attempt in 0..=retry_delays.len() {
-        if attempt > 0 {
-            let delay = retry_delays[attempt - 1];
-            logger.info(format!(
-                "Retrying apply-config to {} in {}s (attempt {}/{})",
-                node_ip,
-                delay,
-                attempt + 1,
-                retry_delays.len() + 1
-            ));
-            eprintln!(
-                "      Retrying in {}s (attempt {}/{})...",
-                delay,
-                attempt + 1,
-                retry_delays.len() + 1
-            );
-            tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
-        }
-
-        logger.cmd(format_command("talosctl", &args));
-
-        let mut cmd = tokio::process::Command::new("talosctl");
-        cmd.arg("apply-config")
-            .arg("--mode")
-            .arg("no-reboot")
-            .arg("--endpoints")
-            .arg(node_ip)
-            .arg("--nodes")
-            .arg(node_ip)
-            .arg("--file")
-            .arg(base_config)
-            .arg("--config-patch")
-            .arg(format!("@{}", network_patch.display()));
-
-        if let Some(ref ep) = endpoint_patch {
-            cmd.arg("--config-patch")
-                .arg(format!("@{}", ep.display()));
-        }
-
-        cmd.arg("--talosconfig").arg(talosconfig);
-
-        let output = cmd
-            .output()
-            .await
-            .context("Failed to execute talosctl apply-config")?;
-
-        logger.cmd_output(&output.stdout, &output.stderr);
-
-        if output.status.success() {
-            if attempt > 0 {
-                logger.info(format!(
-                    "talosctl apply-config to {} succeeded on attempt {}",
-                    node_ip,
-                    attempt + 1
-                ));
-            } else {
-                logger.info(format!(
-                    "talosctl apply-config to {} completed successfully",
-                    node_ip
-                ));
-            }
-            return Ok(());
-        }
-
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let stdout = String::from_utf8_lossy(&output.stdout);
-
-        logger.error(format!(
-            "talosctl apply-config failed (exit code: {:?})",
-            output.status.code()
-        ));
-        if !stdout.is_empty() {
-            logger.error(format!("stdout: {}", stdout));
-        }
-        if !stderr.is_empty() {
-            logger.error(format!("stderr: {}", stderr));
-        }
-
-        last_error = stderr.to_string();
-
-        // Check if this is a retryable error (connection refused, no route, unavailable)
-        let is_retryable = stderr.contains("connection refused")
-            || stderr.contains("no route to host")
-            || stderr.contains("Unavailable")
-            || stderr.contains("connection error")
-            || stderr.contains("i/o timeout");
-
-        if !is_retryable {
-            // Non-retryable error, fail immediately
-            anyhow::bail!("talosctl apply-config failed: {}", stderr);
-        }
-    }
-
-    // All retries exhausted
-    anyhow::bail!(
-        "talosctl apply-config failed after {} attempts: {}",
-        retry_delays.len() + 1,
-        last_error
-    )
 }

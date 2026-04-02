@@ -128,11 +128,13 @@ impl LogWriter {
     }
 
     /// Log a command execution
+    #[allow(dead_code)]
     pub fn cmd(&self, command: impl Into<String>) {
         self.log(LogLevel::Cmd, command);
     }
 
     /// Log command output (stdout/stderr)
+    #[allow(dead_code)]
     pub fn cmd_output(&self, stdout: &[u8], stderr: &[u8]) {
         if !stdout.is_empty() {
             let stdout_str = String::from_utf8_lossy(stdout);
@@ -252,6 +254,7 @@ impl Drop for LogWriter {
 }
 
 /// Helper to format command arguments for logging
+#[allow(dead_code)]
 pub fn format_command(cmd: &str, args: &[&str]) -> String {
     let mut parts = vec![cmd.to_string()];
     parts.extend(args.iter().map(|s| s.to_string()));
