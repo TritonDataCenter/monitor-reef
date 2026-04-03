@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2026 Edgecast Cloud LLC.
+// Copyright 2025 Edgecast Cloud LLC.
 
 //! Kubernetes cluster management commands
 
@@ -10,12 +10,15 @@ use anyhow::Result;
 use clap::Subcommand;
 use cloudapi_client::TypedClient;
 
+use crate::config::profile::Profile;
+
 pub mod bootstrap;
 pub mod control;
 pub mod create;
 pub mod delete;
 pub mod get;
 pub mod kubeconfig;
+pub mod lb;
 pub mod list;
 pub mod logging;
 pub mod network;
@@ -53,10 +56,14 @@ pub enum K8sCommand {
     /// Manage worker nodes
     #[command(subcommand)]
     Worker(worker::WorkerCommand),
+
+    /// Manage LoadBalancer controller
+    #[command(subcommand, visible_alias = "loadbalancer")]
+    Lb(lb::LbCommand),
 }
 
 impl K8sCommand {
-    pub async fn run(self, client: &TypedClient, json: bool) -> Result<()> {
+    pub async fn run(self, client: &TypedClient, profile: &Profile, json: bool) -> Result<()> {
         match self {
             Self::Create(args) => create::run(args, client, json).await,
             Self::Bootstrap(args) => bootstrap::run(args, client, json).await,
@@ -66,6 +73,7 @@ impl K8sCommand {
             Self::Kubeconfig(args) => kubeconfig::run(args).await,
             Self::Control(cmd) => cmd.run(client, json).await,
             Self::Worker(cmd) => cmd.run(client, json).await,
+            Self::Lb(cmd) => cmd.run(client, profile, json).await,
         }
     }
 }
