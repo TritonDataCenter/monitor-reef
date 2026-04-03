@@ -61,7 +61,7 @@ impl K8sCommand {
             Self::Create(args) => create::run(args, client, json).await,
             Self::Bootstrap(args) => bootstrap::run(args, client, json).await,
             Self::List(args) => list::run(args, json).await,
-            Self::Get(args) => get::run(args, json).await,
+            Self::Get(args) => get::run(args, client, json).await,
             Self::Delete(args) => delete::run(args, client).await,
             Self::Kubeconfig(args) => kubeconfig::run(args).await,
             Self::Control(cmd) => cmd.run(client, json).await,
