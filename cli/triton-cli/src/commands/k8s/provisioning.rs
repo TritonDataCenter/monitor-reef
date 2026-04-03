@@ -921,6 +921,32 @@ pub async fn get_default_external_network(client: &TypedClient) -> Result<Uuid> 
     )
 }
 
+/// Discover CNS suffix from the external network
+///
+/// Queries the network details and returns the first CNS suffix if available.
+/// The suffix is used to construct CNS hostnames like `ctrl.<suffix>`.
+pub async fn discover_cns_suffix(network_id: Uuid, client: &TypedClient) -> Result<Option<String>> {
+    let account = client.effective_account();
+
+    let response = client
+        .inner()
+        .get_network()
+        .account(account)
+        .network(network_id.to_string())
+        .send()
+        .await?;
+
+    let network = response.into_inner();
+
+    // Only use CNS suffix from public, non-fabric networks
+    if !network.public || network.fabric.unwrap_or(false) {
+        return Ok(None);
+    }
+
+    // Return the first suffix if available
+    Ok(network.suffixes.and_then(|s| s.into_iter().next()))
+}
+
 /// Resolve image name or UUID to a UUID
 ///
 /// Accepts either:

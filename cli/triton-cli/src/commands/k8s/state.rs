@@ -59,6 +59,13 @@ pub struct ControlPlaneConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
 
+    /// CNS suffix for constructing load-balanced hostname (e.g. "cns.us-west-1.triton.zone")
+    ///
+    /// When set, the control plane can be accessed via `ctrl.<cns_suffix>` which
+    /// load-balances across all control plane nodes tagged with `triton.cns.services=ctrl`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cns_suffix: Option<String>,
+
     /// Package UUID or name (as specified by user)
     pub package: String,
 

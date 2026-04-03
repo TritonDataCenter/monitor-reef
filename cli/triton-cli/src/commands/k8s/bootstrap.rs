@@ -16,10 +16,10 @@ use uuid::Uuid;
 use super::logging::LogWriter;
 use super::network::generate_network_patch;
 use super::provisioning::{
-    create_firewall_rules, detect_user_ip, discover_fabric_network, find_external_ip,
-    get_default_external_network, preallocate_fabric_ips, provision_control_plane,
-    provision_workers, query_all_instance_nics, resolve_image_id, resolve_package_id,
-    wait_for_all_running,
+    create_firewall_rules, detect_user_ip, discover_cns_suffix, discover_fabric_network,
+    find_external_ip, get_default_external_network, preallocate_fabric_ips,
+    provision_control_plane, provision_workers, query_all_instance_nics, resolve_image_id,
+    resolve_package_id, wait_for_all_running,
 };
 use super::state::{ClusterState, ControlPlaneConfig, NodeInfo, NodeRole, WorkerConfig};
 use super::talos;
@@ -185,7 +185,25 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
         .find(|n| n.role == NodeRole::Control)
         .map(|n| n.fabric_ip.to_string());
 
-    // 4. Generate Talos secrets
+    // 4. Get default external network and discover CNS suffix early
+    // We need the CNS suffix before generating Talos configs so it can be included
+    // in the API server's certificate SANs.
+    eprintln!("==> Finding default external network");
+    let external_network_id = get_default_external_network(client)
+        .await
+        .context("Failed to get default external network")?;
+    eprintln!(
+        "    External network: {}",
+        &external_network_id.to_string()[..8]
+    );
+
+    // Discover CNS suffix from external network for load-balanced control plane access
+    let cns_suffix = discover_cns_suffix(external_network_id, client).await?;
+    if let Some(ref suffix) = cns_suffix {
+        eprintln!("    CNS suffix: {}", suffix);
+    }
+
+    // 5. Generate Talos secrets
     eprintln!("==> Generating Talos secrets");
     logger.info("Generating Talos secrets");
     let secrets =
@@ -199,7 +217,7 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
     eprintln!("    Saved to: {}", secrets_path.display());
     logger.info(format!("Saved secrets to: {}", secrets_path.display()));
 
-    // 5. Generate base control plane and worker configs using talosctl
+    // 6. Generate base control plane and worker configs using talosctl
     // The endpoint IP is the control plane's fabric IP (or a placeholder if no fabric).
     // Workers will connect to the Kubernetes API via this fabric IP.
     eprintln!("==> Generating base Talos configs");
@@ -216,11 +234,15 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
     let worker_yaml = cluster_dir.join("worker.yaml");
     let talosconfig_path = cluster_dir.join("talosconfig");
 
+    // Build the CNS hostname if we have a suffix, for inclusion in certificate SANs
+    let cns_hostname = cns_suffix.as_ref().map(|s| format!("ctrl.{}", s));
+
     generate_talos_configs(
         &state.name,
         endpoint_ip,
         &secrets_path,
         &cluster_dir,
+        cns_hostname.as_deref(),
         &logger,
     )
     .await
@@ -247,16 +269,6 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
     let worker_config = tokio::fs::read_to_string(&worker_yaml)
         .await
         .context("Failed to read worker.yaml")?;
-
-    // 6. Get default external network
-    eprintln!("==> Finding default external network");
-    let external_network_id = get_default_external_network(client)
-        .await
-        .context("Failed to get default external network")?;
-    eprintln!(
-        "    External network: {}",
-        &external_network_id.to_string()[..8]
-    );
 
     // Parse additional worker networks
     let worker_networks: Result<Vec<Uuid>> = args
@@ -683,6 +695,7 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
 
     state.control_plane = Some(ControlPlaneConfig {
         endpoint: Some(control_endpoint.clone()),
+        cns_suffix,
         package: args.control_package.clone(),
         image: args.image.clone(),
         talos_version: args.talos_version.clone(),
@@ -779,20 +792,22 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
 
 /// Generate Talos base configs using native implementation
 ///
-/// The endpoint IP is added to the certificate's Subject Alternative Names (SANs)
-/// so that TLS connections to the Kubernetes API are trusted.
+/// The endpoint IP and optional CNS hostname are added to the certificate's
+/// Subject Alternative Names (SANs) so that TLS connections to the Kubernetes
+/// API are trusted.
 async fn generate_talos_configs(
     cluster_name: &str,
     endpoint: &str,
     secrets_path: &std::path::Path,
     output_dir: &std::path::Path,
+    cns_hostname: Option<&str>,
     logger: &LogWriter,
 ) -> Result<()> {
     // Note: --install-disk /dev/vda is required for Triton bhyve VMs which use
     // VirtIO disks. Without this, talosctl defaults to /dev/sda which doesn't exist.
     //
-    // Additional SANs include the endpoint IP so that TLS connections to the
-    // Kubernetes API server are trusted.
+    // Additional SANs include the endpoint IP (and optionally the CNS hostname)
+    // so that TLS connections to the Kubernetes API server are trusted.
     logger.info("Generating Talos machine configs (native)");
 
     // Load secrets bundle
@@ -800,9 +815,12 @@ async fn generate_talos_configs(
         .await
         .context("Failed to load secrets bundle")?;
 
-    // Generate machine configs with the endpoint IP
+    // Generate machine configs with the endpoint IP and CNS hostname as SANs
     // The endpoint parameter is just an IP address, not a URL
-    let additional_sans = vec![endpoint.to_string()];
+    let mut additional_sans = vec![endpoint.to_string()];
+    if let Some(hostname) = cns_hostname {
+        additional_sans.push(hostname.to_string());
+    }
 
     let configs = generate_machine_configs(
         &secrets,
