@@ -439,7 +439,6 @@ MANTA_APP=$(sdc-sapi /applications?name=manta | json -Ha uuid)
 # Full evacuation (both v1 and v2 via pgclone)
 echo '{ "metadata": {
     "REBALANCER_DIRECT_DB": true,
-    "REBALANCER_DIRECT_DB_BUCKETS": true,
     "REBALANCER_BUCKETS_MIN_SHARD": 1,
     "REBALANCER_BUCKETS_MAX_SHARD": 1
 } }' | sapiadm update $MANTA_APP
@@ -581,8 +580,7 @@ All values can be set via SAPI metadata. After updating SAPI metadata, run
 | `log_level` | `REBALANCER_LOG_LEVEL` | `debug` | critical/error/warning/info/debug/trace |
 | `max_fill_percentage` | `MUSKIE_MAX_UTILIZATION_PCT` | 100 | Max % utilization on destination sharks |
 | `snaplink_cleanup_required` | `SNAPLINK_CLEANUP_REQUIRED` | false | Block jobs until snaplinks cleaned |
-| `direct_db` | `REBALANCER_DIRECT_DB` | false | Use pgclone direct PostgreSQL for moray discovery (requires pgclone moray clone) |
-| `direct_db_buckets` | `REBALANCER_DIRECT_DB_BUCKETS` | false | Use pgclone direct PostgreSQL for bucket discovery (requires pgclone buckets clone) |
+| `direct_db` | `REBALANCER_DIRECT_DB` | true | Use pgclone direct PostgreSQL for moray and bucket discovery (requires pgclone clones) |
 | `buckets_min_shard` | `REBALANCER_BUCKETS_MIN_SHARD` | 1 | First buckets-postgres shard to scan |
 | `buckets_max_shard` | `REBALANCER_BUCKETS_MAX_SHARD` | 1 | Last buckets-postgres shard to scan |
 
@@ -596,7 +594,7 @@ All values can be set via SAPI metadata. After updating SAPI metadata, run
 | `max_sharks` | `REBALANCER_MAX_SHARKS` | 5 | 1+ | Max destination sharks to use |
 | `use_static_md_update_threads` | `REBALANCER_USE_STATIC_MD_UPDATE_THREADS` | false | — | Lock thread count (disables runtime adjustment) |
 | `static_queue_depth` | `REBALANCER_STATIC_QUEUE_DEPTH` | 10 | 1+ | Queue depth for static thread pool |
-| `max_assignment_age` | `REBALANCER_MAX_ASSIGNMENT_AGE` | 600 | seconds | Max wait before posting assignment to agent |
+| `max_assignment_age` | `REBALANCER_MAX_ASSIGNMENT_AGE` | 3600 | seconds | Max wait before posting assignment to agent. The checker timeout is 2× this value (7200s). Assignments not completed by agents within the timeout are skipped. |
 | `use_batched_updates` | `REBALANCER_USE_BATCHED_UPDATES` | false | — | Batch metadata updates |
 | `md_read_chunk_size` | `REBALANCER_MD_READ_CHUNK_SIZE` | 500 | 1+ | Objects per metadata query |
 
@@ -618,8 +616,8 @@ All values can be set via SAPI metadata. After updating SAPI metadata, run
 |-----------|--------------|---------|-------------|
 | `server.host` | — | `0.0.0.0` | Listen address |
 | `server.port` | `REBALANCER_AGENT_PORT` | 7878 | HTTP API port |
-| `server.workers` | `REBALANCER_AGENT_WORKERS` | 1 | Concurrent assignments processed |
-| `server.workers_per_assignment` | `REBALANCER_AGENT_WORKERS_PER_ASSIGNMENT` | 1 | Parallel downloads per assignment |
+| `server.workers` | `REBALANCER_AGENT_WORKERS` | 4 | Concurrent assignments processed |
+| `server.workers_per_assignment` | `REBALANCER_AGENT_WORKERS_PER_ASSIGNMENT` | 4 | Parallel downloads per assignment |
 | `metrics.host` | — | `0.0.0.0` | Metrics listen address |
 | `metrics.port` | `REBALANCER_AGENT_METRICS_PORT` | 8878 | Prometheus metrics port |
 
@@ -900,10 +898,9 @@ total_cluster_parallelism = N_destination_agents × workers × workers_per_assig
 
 | Profile | workers | workers_per_assignment | Parallel Downloads | Use Case |
 |---------|---------|----------------------|-------------------|----------|
-| Conservative | 1 | 1 | 1 | Testing, low-impact |
-| Light | 1 | 4 | 4 | Small evacuations |
-| Medium | 2 | 4 | 8 | Standard production |
-| Aggressive | 4 | 8 | 32 | Large urgent evacuations |
+| Light | 2 | 2 | 4 | Small evacuations, testing |
+| Default | 4 | 4 | 16 | Standard evacuations |
+| Aggressive | 8 | 8 | 64 | Large urgent evacuations |
 
 **How to tune via SAPI:**
 
@@ -930,6 +927,54 @@ svcadm restart svc:/manta/application/rebalancer-agent
 4. Increase `workers_per_assignment` first (more impact per change)
 5. Increase `workers` second (adds assignment-level parallelism)
 6. Watch for user-facing latency regressions on co-located workloads
+
+### Flow Control: Backpressure and Timeouts
+
+The rebalancer uses three mechanisms to prevent agents from being
+overwhelmed:
+
+1. **Agent backpressure (503):** Each agent accepts at most
+   `workers × 50` assignments into its queue.  Beyond that, it
+   returns HTTP 503 Service Unavailable.
+
+2. **Manager retry on 503:** When an agent returns 503, the manager
+   retries with exponential backoff (5s, 10s, 15s... up to 30s, max
+   60 retries).  This makes the manager self-throttle to the agents'
+   processing capacity — scanning pauses until agents have room.
+
+3. **Checker timeout:** Assignments not completed by agents within
+   `2 × max_assignment_age` (default 7200s) are skipped with
+   `agent_assignment_timeout`.  This is a safety net for stuck
+   assignments, not a throughput control.
+
+**How they work together:**
+
+```
+Manager scans objects from pgclone
+  → batches into assignments of 50
+  → POSTs to agent
+    → Agent has room → 200 OK → assignment queued
+    → Agent queue full → 503 → manager sleeps, retries
+      → Agent drains → retry succeeds → next assignment
+  → Checker polls agents for completed assignments
+    → Complete → metadata update → done
+    → Not complete after 7200s → skip (agent_assignment_timeout)
+```
+
+**Tuning the balance:**
+- To go **faster**: increase `workers` on agents (more concurrent
+  assignments, agents fill up less often, fewer 503 retries)
+- To be **safer**: decrease `workers` (slower but less load on storage
+  nodes, more headroom for user traffic)
+- If seeing many `agent_assignment_timeout`: increase
+  `max_assignment_age` or increase `workers`
+
+### Agent Download Retries
+
+The agent retries transient connection errors (refused, timeout, DNS)
+up to 3 times with exponential backoff (1s, 2s, 4s) before
+permanently skipping the object with `source_other_error`.  HTTP
+error responses (404, 500, etc.) fail immediately without retry.
 
 ### Manager Metadata Throughput
 
