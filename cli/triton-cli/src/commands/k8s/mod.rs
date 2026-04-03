@@ -11,6 +11,7 @@ use clap::Subcommand;
 use cloudapi_client::TypedClient;
 
 pub mod bootstrap;
+pub mod control;
 pub mod create;
 pub mod delete;
 pub mod get;
@@ -45,6 +46,10 @@ pub enum K8sCommand {
     /// Output kubeconfig for a cluster
     Kubeconfig(kubeconfig::KubeconfigArgs),
 
+    /// Manage control plane nodes
+    #[command(subcommand)]
+    Control(control::ControlCommand),
+
     /// Manage worker nodes
     #[command(subcommand)]
     Worker(worker::WorkerCommand),
@@ -59,6 +64,7 @@ impl K8sCommand {
             Self::Get(args) => get::run(args, json).await,
             Self::Delete(args) => delete::run(args, client).await,
             Self::Kubeconfig(args) => kubeconfig::run(args).await,
+            Self::Control(cmd) => cmd.run(client, json).await,
             Self::Worker(cmd) => cmd.run(client, json).await,
         }
     }

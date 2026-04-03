@@ -686,6 +686,8 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
         package: args.control_package.clone(),
         image: args.image.clone(),
         talos_version: args.talos_version.clone(),
+        package_id: Some(control_package_id),
+        image_id: Some(image_id),
     });
 
     state.workers = Some(WorkerConfig {

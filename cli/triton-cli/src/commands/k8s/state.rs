@@ -59,14 +59,22 @@ pub struct ControlPlaneConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub endpoint: Option<String>,
 
-    /// Package UUID or name
+    /// Package UUID or name (as specified by user)
     pub package: String,
 
-    /// Image UUID or name
+    /// Image UUID or name (as specified by user)
     pub image: String,
 
     /// Talos version
     pub talos_version: String,
+
+    /// Resolved package UUID (for use when adding control plane nodes)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package_id: Option<Uuid>,
+
+    /// Resolved image UUID (for use when adding control plane nodes)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_id: Option<Uuid>,
 }
 
 /// Worker configuration

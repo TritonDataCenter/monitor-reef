@@ -759,6 +759,50 @@ pub async fn provision_additional_workers(
     Ok(instances)
 }
 
+/// Provision additional control plane instances starting from a specific index
+///
+/// Unlike `provision_control_plane`, this function allows specifying:
+/// - Starting control plane index (for naming: cluster-ctrl-{start_index + i})
+///
+/// This is used when adding control plane nodes to an existing cluster for HA.
+#[allow(clippy::too_many_arguments)]
+pub async fn provision_additional_control_plane(
+    count: u32,
+    start_index: u32,
+    image_id: &str,
+    package_id: &str,
+    external_network_id: Uuid,
+    fabric_network_id: Option<Uuid>,
+    cluster_id: Uuid,
+    cluster_name: &str,
+    user_data: Option<&str>,
+    client: &TypedClient,
+) -> Result<Vec<ProvisionedInstance>> {
+    let mut instances = Vec::new();
+
+    for i in 0..count {
+        let ctrl_index = start_index + i;
+        let name = format!("{}-ctrl-{}", cluster_name, ctrl_index);
+        let instance = create_instance(
+            name,
+            image_id,
+            package_id,
+            NodeRole::Control,
+            external_network_id,
+            fabric_network_id,
+            &[],
+            cluster_id,
+            user_data,
+            None, // fabric_ip - not using pre-allocated IPs
+            client,
+        )
+        .await?;
+        instances.push(instance);
+    }
+
+    Ok(instances)
+}
+
 /// Wait for all instances to be running
 ///
 /// Polls all instances in parallel until they reach running state
