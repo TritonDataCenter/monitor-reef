@@ -981,10 +981,48 @@ fn download(
     csum: &str,
     client: &Client,
 ) -> Result<u64, ObjectSkippedReason> {
-    let mut response = match client.get(uri).send() {
-        Ok(resp) => resp,
-        Err(e) => {
-            error!("Request failed: {}", &e);
+    // Retry transient connection errors (refused, timeout, DNS)
+    // before permanently skipping the object.
+    const MAX_RETRIES: u32 = 3;
+    let mut last_err = String::new();
+    let mut response = None;
+
+    for attempt in 0..=MAX_RETRIES {
+        match client.get(uri).send() {
+            Ok(resp) => {
+                response = Some(resp);
+                break;
+            }
+            Err(e) => {
+                last_err = format!("{}", e);
+                if attempt < MAX_RETRIES {
+                    let backoff = 2u64.pow(attempt); // 1s, 2s, 4s
+                    warn!(
+                        "Request failed (attempt {}/{}), retrying \
+                         in {}s: {} ({})",
+                        attempt + 1,
+                        MAX_RETRIES + 1,
+                        backoff,
+                        uri,
+                        e,
+                    );
+                    std::thread::sleep(
+                        std::time::Duration::from_secs(backoff),
+                    );
+                }
+            }
+        }
+    }
+
+    let mut response = match response {
+        Some(r) => r,
+        None => {
+            error!(
+                "Request failed after {} attempts: {} ({})",
+                MAX_RETRIES + 1,
+                uri,
+                last_err,
+            );
             return Err(ObjectSkippedReason::SourceOtherError);
         }
     };
