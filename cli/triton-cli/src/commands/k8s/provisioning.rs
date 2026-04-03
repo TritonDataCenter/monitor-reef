@@ -714,6 +714,51 @@ pub async fn provision_workers(
     Ok(instances)
 }
 
+/// Provision additional worker instances starting from a specific index
+///
+/// Unlike `provision_workers`, this function allows specifying:
+/// - Starting worker index (for naming: cluster-worker-{start_index + i})
+///
+/// This is used when adding workers to an existing cluster.
+#[allow(clippy::too_many_arguments)]
+pub async fn provision_additional_workers(
+    count: u32,
+    start_index: u32,
+    image_id: &str,
+    package_id: &str,
+    fabric_network_id: Option<Uuid>,
+    additional_networks: &[Uuid],
+    cluster_id: Uuid,
+    cluster_name: &str,
+    external_network_id: Uuid,
+    user_data: Option<&str>,
+    client: &TypedClient,
+) -> Result<Vec<ProvisionedInstance>> {
+    let mut instances = Vec::new();
+
+    for i in 0..count {
+        let worker_index = start_index + i;
+        let name = format!("{}-worker-{}", cluster_name, worker_index);
+        let instance = create_instance(
+            name,
+            image_id,
+            package_id,
+            NodeRole::Worker,
+            external_network_id,
+            fabric_network_id,
+            additional_networks,
+            cluster_id,
+            user_data,
+            None, // fabric_ip - not using pre-allocated IPs
+            client,
+        )
+        .await?;
+        instances.push(instance);
+    }
+
+    Ok(instances)
+}
+
 /// Wait for all instances to be running
 ///
 /// Polls all instances in parallel until they reach running state

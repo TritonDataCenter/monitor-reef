@@ -43,6 +43,13 @@ pub struct ClusterState {
     /// Node information
     #[serde(default)]
     pub nodes: HashMap<String, NodeInfo>,
+
+    /// Last allocated fabric IP offset (for continuing IP allocation when adding workers)
+    ///
+    /// This is the offset from the subnet base address. For example, if the subnet is
+    /// 10.0.0.0/24 and the last allocated IP was 10.0.0.14, this value would be 14.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_fabric_ip_offset: Option<u32>,
 }
 
 /// Control plane configuration
@@ -65,11 +72,19 @@ pub struct ControlPlaneConfig {
 /// Worker configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WorkerConfig {
-    /// Package UUID or name
+    /// Package UUID or name (as specified by user)
     pub package: String,
 
-    /// Image UUID or name
+    /// Image UUID or name (as specified by user)
     pub image: String,
+
+    /// Resolved package UUID (for use when adding workers)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package_id: Option<Uuid>,
+
+    /// Resolved image UUID (for use when adding workers)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub image_id: Option<Uuid>,
 }
 
 /// Node information
@@ -110,6 +125,7 @@ impl ClusterState {
             control_plane: None,
             workers: None,
             nodes: HashMap::new(),
+            last_fabric_ip_offset: None,
         }
     }
 

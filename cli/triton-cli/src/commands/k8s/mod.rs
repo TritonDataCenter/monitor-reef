@@ -21,6 +21,7 @@ pub mod network;
 pub mod provisioning;
 pub mod state;
 pub mod talos;
+pub mod worker;
 
 #[derive(Subcommand, Clone)]
 pub enum K8sCommand {
@@ -43,6 +44,10 @@ pub enum K8sCommand {
 
     /// Output kubeconfig for a cluster
     Kubeconfig(kubeconfig::KubeconfigArgs),
+
+    /// Manage worker nodes
+    #[command(subcommand)]
+    Worker(worker::WorkerCommand),
 }
 
 impl K8sCommand {
@@ -54,6 +59,7 @@ impl K8sCommand {
             Self::Get(args) => get::run(args, json).await,
             Self::Delete(args) => delete::run(args, client).await,
             Self::Kubeconfig(args) => kubeconfig::run(args).await,
+            Self::Worker(cmd) => cmd.run(client, json).await,
         }
     }
 }

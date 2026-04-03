@@ -691,7 +691,19 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
     state.workers = Some(WorkerConfig {
         package: args.worker_package.clone(),
         image: args.image.clone(),
+        package_id: Some(worker_package_id),
+        image_id: Some(image_id),
     });
+
+    // Calculate and store the last fabric IP offset for adding workers later.
+    // IPs are allocated starting at offset 10, with control nodes first, then workers.
+    // The offset for the last worker is: 10 + control_count + worker_count - 1
+    // We store the next available offset (one past the last allocated).
+    if state.fabric_network_id.is_some() {
+        let total_nodes = args.control_nodes + args.worker_nodes;
+        // Starting offset is 10, so next available is 10 + total_nodes
+        state.last_fabric_ip_offset = Some(10 + total_nodes);
+    }
 
     // Build nodes map
     let mut nodes = HashMap::new();
