@@ -12,7 +12,8 @@ use cloudapi_client::TypedClient;
 use std::collections::HashSet;
 use uuid::Uuid;
 
-use super::state::ClusterState;
+use super::state::{ClusterState, list_clusters};
+use crate::commands::network::resolve_fabric_network;
 use crate::output::json;
 
 #[derive(Args, Clone)]
@@ -35,9 +36,16 @@ pub struct CreateArgs {
 }
 
 pub async fn run(args: CreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
-    // Parse fabric network UUID if provided
+    // Check for duplicate cluster name
+    let existing_clusters = list_clusters().await?;
+    if existing_clusters.iter().any(|c| c.name == args.name) {
+        anyhow::bail!("A cluster named '{}' already exists", args.name);
+    }
+
+    // Resolve fabric network ID/name/short-ID if provided
     let fabric_network_id = if let Some(fabric) = &args.fabric {
-        Some(Uuid::parse_str(fabric)?)
+        let (network_id, _name, _vlan_id) = resolve_fabric_network(fabric, client).await?;
+        Some(Uuid::parse_str(&network_id).context("Invalid network UUID from resolution")?)
     } else if args.create_fabric {
         eprintln!("==> Creating fabric network for cluster");
         let network_id = create_fabric_network(&args.name, client).await?;

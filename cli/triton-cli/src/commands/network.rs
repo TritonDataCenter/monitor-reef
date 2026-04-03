@@ -487,7 +487,7 @@ async fn delete_network(args: NetworkDeleteArgs, client: &TypedClient) -> Result
 }
 
 /// Resolve network name or ID to (UUID string, name, vlan_id) for fabric networks
-async fn resolve_fabric_network(
+pub async fn resolve_fabric_network(
     id_or_name: &str,
     client: &TypedClient,
 ) -> Result<(String, String, u16)> {
