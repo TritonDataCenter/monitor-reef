@@ -13,6 +13,7 @@ members = [
     "apis/vmapi-api",
     "cli/bugview-cli",
     "cli/triton-cli",
+    "cli/tritonadm",
     "cli/vmapi-cli",
     "clients/internal/bugview-client",
     "clients/internal/cloudapi-client",

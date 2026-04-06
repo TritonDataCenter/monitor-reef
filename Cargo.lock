@@ -4432,6 +4432,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "tritonadm"
+version = "0.1.0"
+dependencies = [
+ "assert_cmd",
+ "clap",
+ "clap_complete",
+ "predicates",
+]
+
+[[package]]
 name = "try-lock"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
