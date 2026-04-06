@@ -9,8 +9,8 @@
 use anyhow::{Context, Result, bail};
 use clap::Args;
 use serde::Serialize;
-use std::process::Command;
 
+use super::super::kube_client;
 use crate::commands::k8s::state::ClusterState;
 use crate::output::json;
 
@@ -42,88 +42,60 @@ pub async fn run(args: StatusArgs, use_json: bool) -> Result<()> {
         );
     }
 
+    // Create Kubernetes client
+    let k8s_client = kube_client::client_from_kubeconfig(&kubeconfig_path).await?;
+
     // Check if deployment exists
-    let deployment_output = Command::new("kubectl")
-        .arg("--kubeconfig")
-        .arg(&kubeconfig_path)
-        .arg("get")
-        .arg("deployment")
-        .arg("triton-lb-controller")
-        .arg("-n")
-        .arg("kube-system")
-        .arg("-o")
-        .arg("json")
-        .output()
-        .context("Failed to run kubectl")?;
+    let deployment =
+        kube_client::get_deployment(&k8s_client, "triton-lb-controller", "kube-system")
+            .await
+            .context("Failed to get deployment")?;
 
-    if !deployment_output.status.success() {
-        let status = ControllerStatus {
-            installed: false,
-            ready: false,
-            replicas: None,
-            available_replicas: None,
-            pod_status: None,
-        };
+    let status = match deployment {
+        None => {
+            let status = ControllerStatus {
+                installed: false,
+                ready: false,
+                replicas: None,
+                available_replicas: None,
+                pod_status: None,
+            };
 
-        if use_json {
-            json::print_json(&status)?;
-        } else {
-            eprintln!(
-                "LoadBalancer controller is not installed in cluster '{}'",
-                cluster.name
-            );
-            eprintln!();
-            eprintln!("Install it with:");
-            eprintln!("  triton k8s lb install {}", cluster.name);
+            if use_json {
+                json::print_json(&status)?;
+            } else {
+                eprintln!(
+                    "LoadBalancer controller is not installed in cluster '{}'",
+                    cluster.name
+                );
+                eprintln!();
+                eprintln!("Install it with:");
+                eprintln!("  triton k8s lb install {}", cluster.name);
+            }
+            return Ok(());
         }
-        return Ok(());
-    }
+        Some(dep) => {
+            let replicas = dep.spec.as_ref().and_then(|s| s.replicas);
+            let available_replicas = dep.status.as_ref().and_then(|s| s.available_replicas);
+            let ready = available_replicas.unwrap_or(0) >= replicas.unwrap_or(1);
 
-    // Parse deployment status
-    let deployment: serde_json::Value = serde_json::from_slice(&deployment_output.stdout)
-        .context("Failed to parse deployment JSON")?;
+            // Get pod status
+            let pod_status = kube_client::get_pod_status_by_label(
+                &k8s_client,
+                "kube-system",
+                "app=triton-lb-controller",
+            )
+            .await
+            .context("Failed to get pod status")?;
 
-    let replicas = deployment["spec"]["replicas"].as_i64().map(|v| v as i32);
-    let available_replicas = deployment["status"]["availableReplicas"]
-        .as_i64()
-        .map(|v| v as i32);
-
-    let ready = available_replicas.unwrap_or(0) >= replicas.unwrap_or(1);
-
-    // Get pod status
-    let pod_output = Command::new("kubectl")
-        .arg("--kubeconfig")
-        .arg(&kubeconfig_path)
-        .arg("get")
-        .arg("pods")
-        .arg("-n")
-        .arg("kube-system")
-        .arg("-l")
-        .arg("app=triton-lb-controller")
-        .arg("-o")
-        .arg("jsonpath={.items[0].status.phase}")
-        .output()
-        .context("Failed to get pod status")?;
-
-    let pod_status = if pod_output.status.success() {
-        let status = String::from_utf8_lossy(&pod_output.stdout)
-            .trim()
-            .to_string();
-        if status.is_empty() {
-            None
-        } else {
-            Some(status)
+            ControllerStatus {
+                installed: true,
+                ready,
+                replicas,
+                available_replicas,
+                pod_status,
+            }
         }
-    } else {
-        None
-    };
-
-    let status = ControllerStatus {
-        installed: true,
-        ready,
-        replicas,
-        available_replicas,
-        pod_status,
     };
 
     if use_json {

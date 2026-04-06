@@ -9,10 +9,12 @@
 use anyhow::{Context, Result, bail};
 use clap::Args;
 use cloudapi_client::TypedClient;
-use std::io::Write;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
-use std::process::{Command, Stdio};
+use std::time::Duration;
 use uuid::Uuid;
+
+use super::super::kube_client;
 
 use super::{
     DEFAULT_CONTROLLER_IMAGE, DEFAULT_LB_IMAGE_NAME, DEFAULT_LB_PACKAGE, DEPLOYMENT_YAML_TEMPLATE,
@@ -222,31 +224,52 @@ pub async fn run(
 
     eprintln!("==> Installing LoadBalancer controller");
 
+    // Create Kubernetes client
+    let k8s_client = kube_client::client_from_kubeconfig(&kubeconfig_path).await?;
+
     // Apply RBAC
     eprintln!("    Applying RBAC...");
-    kubectl_apply(&kubeconfig_path, RBAC_YAML)?;
+    kube_client::apply_yaml_manifest(&k8s_client, RBAC_YAML).await?;
 
     // Create secret with credentials
     eprintln!("    Creating credentials secret...");
-    create_credentials_secret(&kubeconfig_path, &key_id, &private_key_content)?;
+    let mut secret_data = BTreeMap::new();
+    secret_data.insert("key-id".to_string(), key_id.clone());
+    secret_data.insert("private-key".to_string(), private_key_content.clone());
+    kube_client::create_or_update_secret(
+        &k8s_client,
+        "triton-credentials",
+        "kube-system",
+        secret_data,
+    )
+    .await?;
 
     // Create configmap
     eprintln!("    Creating configuration...");
-    create_config_map(&kubeconfig_path, &config)?;
+    let config_data = build_configmap_data(&config);
+    kube_client::create_or_update_configmap(
+        &k8s_client,
+        "triton-lb-controller-config",
+        "kube-system",
+        config_data,
+    )
+    .await?;
 
     // Apply deployment
     eprintln!("    Deploying controller...");
     let deployment_yaml =
         DEPLOYMENT_YAML_TEMPLATE.replace("{{CONTROLLER_IMAGE}}", &args.controller_image);
-    kubectl_apply(&kubeconfig_path, &deployment_yaml)?;
+    kube_client::apply_yaml_manifest(&k8s_client, &deployment_yaml).await?;
 
     // Wait for rollout
     eprintln!("    Waiting for controller to be ready...");
-    kubectl_rollout_status(
-        &kubeconfig_path,
-        "deployment/triton-lb-controller",
+    kube_client::wait_for_deployment_ready(
+        &k8s_client,
+        "triton-lb-controller",
         "kube-system",
-    )?;
+        Duration::from_secs(180),
+    )
+    .await?;
 
     eprintln!();
     eprintln!("==> LoadBalancer controller installed successfully!");
@@ -270,6 +293,46 @@ pub async fn run(
     eprintln!("EOF");
 
     Ok(())
+}
+
+/// Build the ConfigMap data for the controller configuration.
+fn build_configmap_data(config: &ControllerConfig) -> BTreeMap<String, String> {
+    let mut data = BTreeMap::new();
+    data.insert("triton-url".to_string(), config.triton_url.clone());
+    data.insert("triton-account".to_string(), config.triton_account.clone());
+    data.insert(
+        "triton-insecure".to_string(),
+        config.triton_insecure.to_string(),
+    );
+    data.insert("datacenter".to_string(), config.datacenter.clone());
+    data.insert("cns-suffix".to_string(), config.cns_suffix.clone());
+    data.insert(
+        "external-cns-suffix".to_string(),
+        config.external_cns_suffix.clone(),
+    );
+    data.insert(
+        "default-package".to_string(),
+        config.default_package.clone(),
+    );
+    data.insert(
+        "default-image".to_string(),
+        config.default_image.to_string(),
+    );
+    data.insert(
+        "public-network".to_string(),
+        config.public_network.to_string(),
+    );
+    data.insert(
+        "fabric-network".to_string(),
+        config.fabric_network.to_string(),
+    );
+    data.insert(
+        "worker-cns-name".to_string(),
+        config.worker_cns_name.clone(),
+    );
+    data.insert("cluster-name".to_string(), config.cluster_name.clone());
+    data.insert("requeue-after-seconds".to_string(), "30".to_string());
+    data
 }
 
 /// Discover the first public, non-fabric network
@@ -487,159 +550,4 @@ fn compute_md5_fingerprint(pubkey: &ssh_key::PublicKey) -> Result<String> {
 
     let hex_parts: Vec<String> = result.iter().map(|b| format!("{:02x}", b)).collect();
     Ok(hex_parts.join(":"))
-}
-
-/// Apply a YAML manifest using kubectl
-fn kubectl_apply(kubeconfig: &std::path::Path, yaml: &str) -> Result<()> {
-    let mut child = Command::new("kubectl")
-        .arg("--kubeconfig")
-        .arg(kubeconfig)
-        .arg("apply")
-        .arg("-f")
-        .arg("-")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("Failed to spawn kubectl")?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin
-            .write_all(yaml.as_bytes())
-            .context("Failed to write to kubectl stdin")?;
-    }
-
-    let output = child
-        .wait_with_output()
-        .context("Failed to wait for kubectl")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("kubectl apply failed: {}", stderr);
-    }
-
-    Ok(())
-}
-
-/// Create the credentials secret
-fn create_credentials_secret(
-    kubeconfig: &std::path::Path,
-    key_id: &str,
-    private_key: &str,
-) -> Result<()> {
-    // Use kubectl create secret with --dry-run=client -o yaml | kubectl apply
-    // This makes the operation idempotent
-    let create_output = Command::new("kubectl")
-        .arg("--kubeconfig")
-        .arg(kubeconfig)
-        .arg("create")
-        .arg("secret")
-        .arg("generic")
-        .arg("triton-credentials")
-        .arg("--namespace")
-        .arg("kube-system")
-        .arg(format!("--from-literal=key-id={}", key_id))
-        .arg(format!("--from-literal=private-key={}", private_key))
-        .arg("--dry-run=client")
-        .arg("-o")
-        .arg("yaml")
-        .output()
-        .context("Failed to run kubectl create secret")?;
-
-    if !create_output.status.success() {
-        let stderr = String::from_utf8_lossy(&create_output.stderr);
-        bail!("kubectl create secret failed: {}", stderr);
-    }
-
-    kubectl_apply(kubeconfig, &String::from_utf8_lossy(&create_output.stdout))
-}
-
-/// Create the controller configmap
-fn create_config_map(kubeconfig: &std::path::Path, config: &ControllerConfig) -> Result<()> {
-    let create_output = Command::new("kubectl")
-        .arg("--kubeconfig")
-        .arg(kubeconfig)
-        .arg("create")
-        .arg("configmap")
-        .arg("triton-lb-controller-config")
-        .arg("--namespace")
-        .arg("kube-system")
-        .arg(format!("--from-literal=triton-url={}", config.triton_url))
-        .arg(format!(
-            "--from-literal=triton-account={}",
-            config.triton_account
-        ))
-        .arg(format!(
-            "--from-literal=triton-insecure={}",
-            config.triton_insecure
-        ))
-        .arg(format!("--from-literal=datacenter={}", config.datacenter))
-        .arg(format!("--from-literal=cns-suffix={}", config.cns_suffix))
-        .arg(format!(
-            "--from-literal=external-cns-suffix={}",
-            config.external_cns_suffix
-        ))
-        .arg(format!(
-            "--from-literal=default-package={}",
-            config.default_package
-        ))
-        .arg(format!(
-            "--from-literal=default-image={}",
-            config.default_image
-        ))
-        .arg(format!(
-            "--from-literal=public-network={}",
-            config.public_network
-        ))
-        .arg(format!(
-            "--from-literal=fabric-network={}",
-            config.fabric_network
-        ))
-        .arg(format!(
-            "--from-literal=worker-cns-name={}",
-            config.worker_cns_name
-        ))
-        .arg(format!(
-            "--from-literal=cluster-name={}",
-            config.cluster_name
-        ))
-        .arg("--from-literal=requeue-after-seconds=30")
-        .arg("--dry-run=client")
-        .arg("-o")
-        .arg("yaml")
-        .output()
-        .context("Failed to run kubectl create configmap")?;
-
-    if !create_output.status.success() {
-        let stderr = String::from_utf8_lossy(&create_output.stderr);
-        bail!("kubectl create configmap failed: {}", stderr);
-    }
-
-    kubectl_apply(kubeconfig, &String::from_utf8_lossy(&create_output.stdout))
-}
-
-/// Wait for a deployment rollout to complete
-fn kubectl_rollout_status(
-    kubeconfig: &std::path::Path,
-    resource: &str,
-    namespace: &str,
-) -> Result<()> {
-    let output = Command::new("kubectl")
-        .arg("--kubeconfig")
-        .arg(kubeconfig)
-        .arg("rollout")
-        .arg("status")
-        .arg(resource)
-        .arg("-n")
-        .arg(namespace)
-        .arg("--timeout=180s")
-        .output()
-        .context("Failed to run kubectl rollout status")?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!("kubectl rollout status failed: {}", stderr);
-    }
-
-    Ok(())
 }

@@ -17,6 +17,7 @@ pub mod control;
 pub mod create;
 pub mod delete;
 pub mod get;
+pub mod kube_client;
 pub mod kubeconfig;
 pub mod lb;
 pub mod list;
