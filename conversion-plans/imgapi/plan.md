@@ -499,9 +499,83 @@ Several endpoints create workflow jobs and return `{ image_uuid, job_uuid }`. Th
 IMGAPI is the first client with `Response<Body>` endpoints (action dispatch returns variable response shapes). Progenitor maps these to `ByteStream`. The TypedClient collects the stream into bytes using `futures_util::TryStreamExt` and deserializes to the expected type for each action. Streaming endpoints (Docker/LXD import, push) are left as raw ByteStream for callers to consume incrementally.
 
 
+## Phase 4 Complete
+
+- CLI crate: `cli/imgapi-cli/`
+- Binary name: `imgapi`
+- Commands implemented: 30
+- Build status: SUCCESS
+- Full workspace build: SUCCESS
+- OpenAPI check: PASS
+
+### CLI Commands
+
+**Ping / State:**
+- `imgapi ping` - Health check (with `--error` for testing)
+- `imgapi admin-get-state` - Get admin state snapshot
+- `imgapi admin-drop-caches` - Drop internal caches
+
+**Channels:**
+- `imgapi list-channels` - List channels (`--raw`)
+
+**Images - CRUD:**
+- `imgapi list-images` - List images (filters: `--owner`, `--name`, `--version`, `--state`, `--type`, `--os`, `--public`, `--account`, `--channel`, `--limit`, `--marker`, `--tag`, `--billing-tag`, `--raw`)
+- `imgapi get-image <uuid>` - Get image details (`--account`, `--channel`, `--raw`)
+- `imgapi create-image` - Create image from manifest JSON
+- `imgapi create-image-from-vm` - Create image from VM (returns job)
+- `imgapi delete-image <uuid>` - Delete an image (`--force-all-channels`)
+
+**Image Actions:**
+- `imgapi activate-image <uuid>` - Activate an unactivated image
+- `imgapi enable-image <uuid>` - Enable a disabled image
+- `imgapi disable-image <uuid>` - Disable an active image
+- `imgapi update-image <uuid>` - Update mutable fields (`--name`, `--version`, `--description`, `--homepage`, `--eula`, `--public`, `--tags-json`)
+- `imgapi export-image <uuid>` - Export to Manta
+- `imgapi channel-add-image <uuid>` - Add image to channel
+- `imgapi change-stor <uuid>` - Change storage backend
+- `imgapi import-image <uuid>` - Import manifest (admin)
+- `imgapi import-remote-image <uuid>` - Import from remote IMGAPI (admin, job)
+- `imgapi import-from-datacenter <uuid>` - Import from another DC (job)
+
+**File Management:**
+- `imgapi add-image-file <uuid>` - Upload image file from local path
+- `imgapi add-image-file-from-url <uuid>` - Add file from URL
+- `imgapi get-image-file <uuid>` - Download image file (`-o` for output path)
+
+**Icon Management:**
+- `imgapi add-image-icon <uuid>` - Upload icon
+- `imgapi get-image-icon <uuid>` - Download icon (`-o` for output path)
+- `imgapi delete-image-icon <uuid>` - Delete icon
+
+**ACL Management:**
+- `imgapi add-image-acl <uuid>` - Add UUIDs to ACL
+- `imgapi remove-image-acl <uuid>` - Remove UUIDs from ACL
+
+**Jobs:**
+- `imgapi list-image-jobs <uuid>` - List jobs for an image (`--task`, `--raw`)
+
+**Clone:**
+- `imgapi clone-image <uuid>` - Clone an image (dc mode)
+
+**Admin:**
+- `imgapi admin-push-image <uuid>` - Push Docker image (streaming)
+- `imgapi admin-reload-auth-keys` - Reload auth keys
+
+**Legacy Datasets:**
+- `imgapi list-datasets` - List datasets (redirect)
+- `imgapi get-dataset <arg>` - Get dataset (redirect)
+
+### Notes
+
+- Uses both `Client` (Progenitor direct) and `TypedClient` (action-dispatch wrapper)
+- `types::Image` (Progenitor) and `imgapi_client::Image` (API crate) are distinct types; CLI handles both with separate print helpers
+- Binary file upload/download uses `tokio::fs` for local I/O and `futures_util::TryStreamExt` for streaming
+- Enum CLI args use `types::*` (Progenitor types with `ValueEnum` patch): `ImageState`, `ImageType`, `ImageOs`, `FileCompression`, `StorageType`
+
+
 ## Phase Status
 - [x] Phase 1: Analyze - COMPLETE
 - [x] Phase 2: Generate API - COMPLETE
 - [x] Phase 3: Generate Client - COMPLETE
-- [ ] Phase 4: Generate CLI
+- [x] Phase 4: Generate CLI - COMPLETE
 - [ ] Phase 5: Validate
