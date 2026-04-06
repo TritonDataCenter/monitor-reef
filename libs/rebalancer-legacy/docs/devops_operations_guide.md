@@ -567,6 +567,16 @@ pgclone.sh list
 # Should show: No clones found.
 ```
 
+**Restoring a job database from backup:**
+
+```bash
+createdb -U postgres <job_uuid>
+psql -U postgres <job_uuid> < <job_uuid>.backup
+```
+
+This is useful for post-mortem analysis or re-running a retry job
+against a previous job's object list.
+
 ### Safety Properties
 
 - The source Manatee VM is **never modified** (read-only ZFS snapshot)
@@ -609,6 +619,57 @@ Agents are deployed to every mako (storage) zone. The agent binary and
 config are delivered via the `rebalancer-agent` SAPI service. No local
 database is required — agents persist assignment state to SQLite files
 under `/var/tmp/rebalancer/`.
+
+### Agent Hotpatching
+
+For rapid agent updates without reprovisioning all storage instances,
+use the `manta-hotpatch-rebalancer-agent` tool from the headnode
+global zone.  This is useful during active development when
+reprovisioning hundreds of storage zones for an agent fix is
+impractical.
+
+**Prerequisites:**
+
+```bash
+sdcadm self-update --latest
+sdcadm up manta
+```
+
+**Subcommands:**
+
+| Command | Description |
+|---------|------------|
+| `list` | Show current agent version and hotpatch status on every storage node |
+| `avail` | List available agent builds (from dev channel) newer than what's deployed |
+| `deploy <IMAGE-UUID> -a` | Hotpatch all storage instances with the specified agent image |
+| `undeploy -a` | Revert all hotpatches to the original agent from the storage image |
+
+**Example workflow:**
+
+```bash
+# 1. Check current versions
+manta-hotpatch-rebalancer-agent list
+
+# 2. Find available builds
+manta-hotpatch-rebalancer-agent avail
+
+# 3. Deploy a new agent to all storage nodes
+manta-hotpatch-rebalancer-agent deploy <IMAGE-UUID> -a
+
+# 4. Verify
+manta-hotpatch-rebalancer-agent list
+
+# 5. Revert if needed
+manta-hotpatch-rebalancer-agent undeploy -a
+```
+
+**Notes:**
+- The tool only operates on storage instances in the **current
+  datacenter**. For multi-DC regions, run it separately in each DC.
+- Hotpatching replaces the agent binary and restarts the service.
+  In-flight assignments on agents will complete before the restart.
+- Use `-c` to control concurrency (how many agents are patched in
+  parallel).
 
 ### PostgreSQL Configuration Highlights
 
@@ -825,7 +886,11 @@ curl -X PUT http://localhost/jobs/<UUID> \
   -d '{"action": "set_metadata_threads", "params": 30}'
 ```
 
-Valid range: 1–250.
+Valid range: 1–250.  There is a hard-coded maximum of 100 in the code
+(`MAX_TUNABLE_MD_UPDATE_THREADS`) to minimize accidental impact to the
+metadata tier.  Values above 100 are silently capped.  In practice,
+even 100 is aggressive — start with 10-30 and increase only if the
+metadata tier has headroom.
 
 ### Retrying Failed Objects
 
@@ -925,7 +990,16 @@ pgclone.sh destroy-all
 # 3. Verify no clones remain
 pgclone.sh list
 
-# 4. Clean up completed assignments on agents (only when no jobs running)
+# 4. Clean up completed assignments on agents.
+#    The manager does not auto-cleanup agent assignments after a job
+#    ends.  Each completed assignment is a SQLite file in
+#    /var/tmp/rebalancer/completed/ on every storage node.  Over time
+#    these accumulate and waste disk space.
+#
+#    Check how many are queued:
+manta-oneach -s storage 'ls /var/tmp/rebalancer/completed/ | wc -l'
+#
+#    Remove them ONLY when no rebalancer jobs are running:
 manta-oneach -s storage 'rm /var/tmp/rebalancer/completed/*'
 ```
 
