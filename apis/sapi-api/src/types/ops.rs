@@ -23,29 +23,41 @@ pub enum SapiMode {
     Unknown,
 }
 
+/// SAPI storage backend type
+///
+/// Returned by GET /ping as `storType`. The value is the JavaScript
+/// constructor name of the storage backend.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+pub enum StorageType {
+    /// Local filesystem storage
+    LocalStorage,
+    /// Moray (remote) storage
+    MorayStorage,
+    /// Hybrid Moray + local storage
+    MorayLocalStorage,
+    /// Transitioning between storage backends
+    TransitionStorage,
+    /// Unknown storage type (forward compatibility)
+    #[serde(other)]
+    Unknown,
+}
+
 /// Response for GET /ping
 ///
 /// Note: PingResponse uses a mix of snake_case and camelCase field names.
 /// `storType` and `storAvailable` are camelCase in the wire format.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct PingResponse {
-    /// Current SAPI mode ("proto" or "full")
-    pub mode: String,
+    /// Current SAPI mode
+    pub mode: SapiMode,
 
-    /// Storage backend type (e.g., "MorayLocalStorage")
+    /// Storage backend type
     #[serde(rename = "storType")]
-    pub stor_type: String,
+    pub stor_type: StorageType,
 
     /// Whether the storage backend is available
     #[serde(rename = "storAvailable")]
     pub stor_available: bool,
-}
-
-/// Response for GET /mode
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct ModeResponse {
-    /// Current SAPI mode
-    pub mode: SapiMode,
 }
 
 /// Request body for POST /mode

@@ -509,8 +509,8 @@ async fn main() -> Result<()> {
             if raw {
                 println!("{}", serde_json::to_string_pretty(&ping)?);
             } else {
-                println!("mode: {}", ping.mode);
-                println!("storType: {}", ping.stor_type);
+                println!("mode: {}", enum_to_display(&ping.mode));
+                println!("storType: {}", enum_to_display(&ping.stor_type));
                 println!("storAvailable: {}", ping.stor_available);
             }
         }

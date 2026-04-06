@@ -874,44 +874,6 @@ pub mod types {
         }
     }
 
-    #[doc = "Response for GET /mode"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"description\": \"Response for GET /mode\","]
-    #[doc = "  \"type\": \"object\","]
-    #[doc = "  \"required\": ["]
-    #[doc = "    \"mode\""]
-    #[doc = "  ],"]
-    #[doc = "  \"properties\": {"]
-    #[doc = "    \"mode\": {"]
-    #[doc = "      \"description\": \"Current SAPI mode\","]
-    #[doc = "      \"allOf\": ["]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/SapiMode\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
-    #[doc = "    }"]
-    #[doc = "  }"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(
-        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
-    )]
-    pub struct ModeResponse {
-        #[doc = "Current SAPI mode"]
-        pub mode: SapiMode,
-    }
-
-    impl ModeResponse {
-        pub fn builder() -> builder::ModeResponse {
-            Default::default()
-        }
-    }
-
     #[doc = "Response for GET /ping\n\nNote: PingResponse uses a mix of snake_case and camelCase field names. `storType` and `storAvailable` are camelCase in the wire format."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -927,16 +889,24 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"mode\": {"]
-    #[doc = "      \"description\": \"Current SAPI mode (\\\"proto\\\" or \\\"full\\\")\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"description\": \"Current SAPI mode\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/SapiMode\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"storAvailable\": {"]
     #[doc = "      \"description\": \"Whether the storage backend is available\","]
     #[doc = "      \"type\": \"boolean\""]
     #[doc = "    },"]
     #[doc = "    \"storType\": {"]
-    #[doc = "      \"description\": \"Storage backend type (e.g., \\\"MorayLocalStorage\\\")\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"description\": \"Storage backend type\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/StorageType\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -946,14 +916,14 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct PingResponse {
-        #[doc = "Current SAPI mode (\"proto\" or \"full\")"]
-        pub mode: ::std::string::String,
+        #[doc = "Current SAPI mode"]
+        pub mode: SapiMode,
         #[doc = "Whether the storage backend is available"]
         #[serde(rename = "storAvailable")]
         pub stor_available: bool,
-        #[doc = "Storage backend type (e.g., \"MorayLocalStorage\")"]
+        #[doc = "Storage backend type"]
         #[serde(rename = "storType")]
-        pub stor_type: ::std::string::String,
+        pub stor_type: StorageType,
     }
 
     impl PingResponse {
@@ -1361,6 +1331,130 @@ pub mod types {
     impl SetModeBody {
         pub fn builder() -> builder::SetModeBody {
             Default::default()
+        }
+    }
+
+    #[doc = "SAPI storage backend type\n\nReturned by GET /ping as `storType`. The value is the JavaScript constructor name of the storage backend."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"SAPI storage backend type\\n\\nReturned by GET /ping as `storType`. The value is the JavaScript constructor name of the storage backend.\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Local filesystem storage\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"LocalStorage\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Moray (remote) storage\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"MorayStorage\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Hybrid Moray + local storage\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"MorayLocalStorage\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Transitioning between storage backends\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"TransitionStorage\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown storage type (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"Unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        schemars :: JsonSchema,
+    )]
+    pub enum StorageType {
+        #[doc = "Local filesystem storage"]
+        LocalStorage,
+        #[doc = "Moray (remote) storage"]
+        MorayStorage,
+        #[doc = "Hybrid Moray + local storage"]
+        MorayLocalStorage,
+        #[doc = "Transitioning between storage backends"]
+        TransitionStorage,
+        #[doc = "Unknown storage type (forward compatibility)"]
+        Unknown,
+    }
+
+    impl ::std::fmt::Display for StorageType {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::LocalStorage => f.write_str("LocalStorage"),
+                Self::MorayStorage => f.write_str("MorayStorage"),
+                Self::MorayLocalStorage => f.write_str("MorayLocalStorage"),
+                Self::TransitionStorage => f.write_str("TransitionStorage"),
+                Self::Unknown => f.write_str("Unknown"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for StorageType {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "LocalStorage" => Ok(Self::LocalStorage),
+                "MorayStorage" => Ok(Self::MorayStorage),
+                "MorayLocalStorage" => Ok(Self::MorayLocalStorage),
+                "TransitionStorage" => Ok(Self::TransitionStorage),
+                "Unknown" => Ok(Self::Unknown),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for StorageType {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for StorageType {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for StorageType {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
         }
     }
 
@@ -3098,53 +3192,10 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
-        pub struct ModeResponse {
-            mode: ::std::result::Result<super::SapiMode, ::std::string::String>,
-        }
-
-        impl ::std::default::Default for ModeResponse {
-            fn default() -> Self {
-                Self {
-                    mode: Err("no value supplied for mode".to_string()),
-                }
-            }
-        }
-
-        impl ModeResponse {
-            pub fn mode<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<super::SapiMode>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.mode = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for mode: {e}"));
-                self
-            }
-        }
-
-        impl ::std::convert::TryFrom<ModeResponse> for super::ModeResponse {
-            type Error = super::error::ConversionError;
-            fn try_from(
-                value: ModeResponse,
-            ) -> ::std::result::Result<Self, super::error::ConversionError> {
-                Ok(Self { mode: value.mode? })
-            }
-        }
-
-        impl ::std::convert::From<super::ModeResponse> for ModeResponse {
-            fn from(value: super::ModeResponse) -> Self {
-                Self {
-                    mode: Ok(value.mode),
-                }
-            }
-        }
-
-        #[derive(Clone, Debug)]
         pub struct PingResponse {
-            mode: ::std::result::Result<::std::string::String, ::std::string::String>,
+            mode: ::std::result::Result<super::SapiMode, ::std::string::String>,
             stor_available: ::std::result::Result<bool, ::std::string::String>,
-            stor_type: ::std::result::Result<::std::string::String, ::std::string::String>,
+            stor_type: ::std::result::Result<super::StorageType, ::std::string::String>,
         }
 
         impl ::std::default::Default for PingResponse {
@@ -3160,7 +3211,7 @@ pub mod types {
         impl PingResponse {
             pub fn mode<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<super::SapiMode>,
                 T::Error: ::std::fmt::Display,
             {
                 self.mode = value
@@ -3180,7 +3231,7 @@ pub mod types {
             }
             pub fn stor_type<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<super::StorageType>,
                 T::Error: ::std::fmt::Display,
             {
                 self.stor_type = value

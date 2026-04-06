@@ -261,7 +261,7 @@ fn patch_sapi_get_mode(spec: &mut Value) -> Result<()> {
         .and_then(|aj| aj.get_mut("schema"))
         .ok_or_else(|| anyhow::anyhow!("GET /mode 200 response schema not found"))?;
 
-    // Replace ModeResponse ref with a plain string
+    // Replace SapiMode ref with a plain string
     *response_content = serde_json::json!({
         "type": "string"
     });
@@ -269,28 +269,11 @@ fn patch_sapi_get_mode(spec: &mut Value) -> Result<()> {
     Ok(())
 }
 
-/// POST /mode returns 204 with no body, not 200 with JSON.
-fn patch_sapi_post_mode(spec: &mut Value) -> Result<()> {
-    let responses = spec
-        .get_mut("paths")
-        .and_then(|p| p.get_mut("/mode"))
-        .and_then(|p| p.get_mut("post"))
-        .and_then(|m| m.get_mut("responses"))
-        .ok_or_else(|| anyhow::anyhow!("POST /mode responses not found"))?;
-
-    let responses_obj = responses
-        .as_object_mut()
-        .ok_or_else(|| anyhow::anyhow!("POST /mode responses is not an object"))?;
-
-    // Remove 200, add 204 with no content
-    responses_obj.remove("200");
-    responses_obj.insert(
-        "204".to_string(),
-        serde_json::json!({
-            "description": "successful operation"
-        }),
-    );
-
+/// POST /mode returns 204 with no body.
+///
+/// The trait now uses HttpResponseUpdatedNoContent (204) directly, so this
+/// patch is a no-op. Kept for documentation and as a safety net.
+fn patch_sapi_post_mode(_spec: &mut Value) -> Result<()> {
     Ok(())
 }
 

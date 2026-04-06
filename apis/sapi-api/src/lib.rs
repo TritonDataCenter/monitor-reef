@@ -81,7 +81,7 @@ pub trait SapiApi {
     }]
     async fn get_mode(
         rqctx: RequestContext<Self::Context>,
-    ) -> Result<HttpResponseOk<ModeResponse>, HttpError>;
+    ) -> Result<HttpResponseOk<SapiMode>, HttpError>;
 
     /// Set operating mode
     ///
@@ -95,7 +95,7 @@ pub trait SapiApi {
     async fn set_mode(
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<SetModeBody>,
-    ) -> Result<HttpResponseOk<ModeResponse>, HttpError>;
+    ) -> Result<HttpResponseUpdatedNoContent, HttpError>;
 
     // ========================================================================
     // Log Level Endpoints

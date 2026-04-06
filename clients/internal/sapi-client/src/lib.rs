@@ -58,7 +58,6 @@ pub use sapi_api::{
     // Ops types
     LogLevelResponse,
     Manifest,
-    ModeResponse,
     PingResponse,
     SapiMode,
     Service,
@@ -66,9 +65,9 @@ pub use sapi_api::{
     ServiceType,
     SetLogLevelBody,
     SetModeBody,
+    StorageType,
     UpdateAction,
     UpdateApplicationBody,
-    UpdateAttributesBody,
     UpdateInstanceBody,
     UpdateServiceBody,
     UpgradeInstanceBody,

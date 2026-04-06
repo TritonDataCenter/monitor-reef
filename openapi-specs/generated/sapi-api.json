@@ -823,7 +823,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ModeResponse"
+                  "$ref": "#/components/schemas/SapiMode"
                 }
               }
             }
@@ -854,15 +854,8 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ModeResponse"
-                }
-              }
-            }
+          "204": {
+            "description": "resource updated"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
@@ -1554,8 +1547,8 @@
           "uuid"
         ]
       },
-      "ModeResponse": {
-        "description": "Response for GET /mode",
+      "PingResponse": {
+        "description": "Response for GET /ping\n\nNote: PingResponse uses a mix of snake_case and camelCase field names. `storType` and `storAvailable` are camelCase in the wire format.",
         "type": "object",
         "properties": {
           "mode": {
@@ -1565,27 +1558,18 @@
                 "$ref": "#/components/schemas/SapiMode"
               }
             ]
-          }
-        },
-        "required": [
-          "mode"
-        ]
-      },
-      "PingResponse": {
-        "description": "Response for GET /ping\n\nNote: PingResponse uses a mix of snake_case and camelCase field names. `storType` and `storAvailable` are camelCase in the wire format.",
-        "type": "object",
-        "properties": {
-          "mode": {
-            "description": "Current SAPI mode (\"proto\" or \"full\")",
-            "type": "string"
           },
           "storAvailable": {
             "description": "Whether the storage backend is available",
             "type": "boolean"
           },
           "storType": {
-            "description": "Storage backend type (e.g., \"MorayLocalStorage\")",
-            "type": "string"
+            "description": "Storage backend type",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageType"
+              }
+            ]
           }
         },
         "required": [
@@ -1732,6 +1716,46 @@
         },
         "required": [
           "mode"
+        ]
+      },
+      "StorageType": {
+        "description": "SAPI storage backend type\n\nReturned by GET /ping as `storType`. The value is the JavaScript constructor name of the storage backend.",
+        "oneOf": [
+          {
+            "description": "Local filesystem storage",
+            "type": "string",
+            "enum": [
+              "LocalStorage"
+            ]
+          },
+          {
+            "description": "Moray (remote) storage",
+            "type": "string",
+            "enum": [
+              "MorayStorage"
+            ]
+          },
+          {
+            "description": "Hybrid Moray + local storage",
+            "type": "string",
+            "enum": [
+              "MorayLocalStorage"
+            ]
+          },
+          {
+            "description": "Transitioning between storage backends",
+            "type": "string",
+            "enum": [
+              "TransitionStorage"
+            ]
+          },
+          {
+            "description": "Unknown storage type (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "Unknown"
+            ]
+          }
         ]
       },
       "UpdateAction": {

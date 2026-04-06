@@ -438,8 +438,8 @@
         ],
         "type": "object"
       },
-      "ModeResponse": {
-        "description": "Response for GET /mode",
+      "PingResponse": {
+        "description": "Response for GET /ping\n\nNote: PingResponse uses a mix of snake_case and camelCase field names. `storType` and `storAvailable` are camelCase in the wire format.",
         "properties": {
           "mode": {
             "allOf": [
@@ -448,27 +448,18 @@
               }
             ],
             "description": "Current SAPI mode"
-          }
-        },
-        "required": [
-          "mode"
-        ],
-        "type": "object"
-      },
-      "PingResponse": {
-        "description": "Response for GET /ping\n\nNote: PingResponse uses a mix of snake_case and camelCase field names. `storType` and `storAvailable` are camelCase in the wire format.",
-        "properties": {
-          "mode": {
-            "description": "Current SAPI mode (\"proto\" or \"full\")",
-            "type": "string"
           },
           "storAvailable": {
             "description": "Whether the storage backend is available",
             "type": "boolean"
           },
           "storType": {
-            "description": "Storage backend type (e.g., \"MorayLocalStorage\")",
-            "type": "string"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/StorageType"
+              }
+            ],
+            "description": "Storage backend type"
           }
         },
         "required": [
@@ -617,6 +608,46 @@
           "mode"
         ],
         "type": "object"
+      },
+      "StorageType": {
+        "description": "SAPI storage backend type\n\nReturned by GET /ping as `storType`. The value is the JavaScript constructor name of the storage backend.",
+        "oneOf": [
+          {
+            "description": "Local filesystem storage",
+            "enum": [
+              "LocalStorage"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Moray (remote) storage",
+            "enum": [
+              "MorayStorage"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Hybrid Moray + local storage",
+            "enum": [
+              "MorayLocalStorage"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Transitioning between storage backends",
+            "enum": [
+              "TransitionStorage"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Unknown storage type (forward compatibility)",
+            "enum": [
+              "Unknown"
+            ],
+            "type": "string"
+          }
+        ]
       },
       "UpdateAction": {
         "description": "Action for update endpoints (applications, services, instances)\n\nControls how attributes (`params`, `metadata`, `manifests`, etc.) are modified. Default action is `update` when not specified.",
@@ -1625,7 +1656,7 @@
         },
         "responses": {
           "204": {
-            "description": "successful operation"
+            "description": "resource updated"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
