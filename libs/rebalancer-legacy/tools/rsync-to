@@ -104,9 +104,16 @@ function find_remote_zones {
 
     echo "  Zone '$alias_pat' not found on headnode, querying VMAPI..." >&2
 
+    # Read VMAPI and CNAPI domains from /usbkey/config (standard Triton location)
+    local vmapi_domain cnapi_domain
+    vmapi_domain=$(ssh $SSH_OPTS $HEADNODE "grep ^vmapi_domain= /usbkey/config | cut -d= -f2")
+    cnapi_domain=$(ssh $SSH_OPTS $HEADNODE "grep ^cnapi_domain= /usbkey/config | cut -d= -f2")
+    [[ -n "$vmapi_domain" ]] || fatal "could not read vmapi_domain from /usbkey/config"
+    [[ -n "$cnapi_domain" ]] || fatal "could not read cnapi_domain from /usbkey/config"
+
     local vmapi_json
     vmapi_json=$(ssh $SSH_OPTS $HEADNODE \
-        "curl -sS \"http://vmapi.\$(cat /opt/smartdc/etc/datacenter_name).joyent.us/vms?alias=$alias_pat&state=running\"") \
+        "curl -sS 'http://$vmapi_domain/vms?alias=$alias_pat&state=running'") \
         || fatal "VMAPI query failed"
 
     local count
@@ -126,7 +133,7 @@ function find_remote_zones {
 
         local cn_ip
         cn_ip=$(ssh $SSH_OPTS $HEADNODE \
-            "curl -sS \"http://cnapi.\$(cat /opt/smartdc/etc/datacenter_name).joyent.us/servers/$server_uuid\" | json sysinfo.\"Admin IP\"") \
+            "curl -sS 'http://$cnapi_domain/servers/$server_uuid' | json sysinfo.\"Admin IP\"") \
             || fatal "CNAPI lookup failed for server $server_uuid"
         [[ -n "$cn_ip" ]] || fatal "could not resolve admin IP for server $server_uuid"
         echo "$uuid $cn_ip"
@@ -134,7 +141,12 @@ function find_remote_zones {
 }
 
 function sync_manager {
-    local insts=$(ssh $SSH_OPTS $HEADNODE vmadm lookup alias=~rebalancer state=running)
+    # Match rebalancer zone but not rebalancer-postgres or rebalancer-buckets-postgres
+    local insts=$(ssh $SSH_OPTS $HEADNODE "vmadm lookup alias=~'^rebalancer\.' state=running")
+
+    # Config files from the repo
+    local MGR_CONFIG=${TOP}/manager/src/config.json
+    local PG_CONF=${TOP}/etc/postgresql.conf
 
     if [[ -n "$insts" ]]; then
         # Zone(s) on the headnode — original fast path
@@ -146,13 +158,15 @@ function sync_manager {
                 ${TARGET_DIR}/rebalancer-manager \
                 ${TARGET_DIR}/rebalancer-adm \
                 $HEADNODE:$prefix/bin/
+            [[ ! -f "$MGR_CONFIG" ]] || rsync -av $MGR_CONFIG $HEADNODE:$prefix/config.json
+            [[ ! -f "$PG_CONF" ]]    || rsync -av $PG_CONF    $HEADNODE:$prefix/etc/
             restart_or_clear $inst svc:/manta/application/rebalancer
         done
     else
         # Zone(s) on remote CNs — VMAPI fallback
-        find_remote_zones rebalancer | while read inst cn_ip; do
+        find_remote_zones "rebalancer." | while read inst cn_ip; do
             [[ -n "$inst" ]] || continue
-            echo "==> Syncing manager binaries to $inst (CN $cn_ip)"
+            echo "==> Syncing manager binaries + config to $inst (CN $cn_ip)"
 
             [[ -f "${TARGET_DIR}/rebalancer-manager" ]] || \
                 fatal "rebalancer-manager not found at ${TARGET_DIR}/rebalancer-manager"
@@ -163,6 +177,15 @@ function sync_manager {
                 /opt/smartdc/rebalancer/bin \
                 ${TARGET_DIR}/rebalancer-manager \
                 ${TARGET_DIR}/rebalancer-adm
+
+            [[ ! -f "$MGR_CONFIG" ]] || \
+                sync_files_to_remote_zone "$inst" "$cn_ip" \
+                    /opt/smartdc/rebalancer \
+                    $MGR_CONFIG
+            [[ ! -f "$PG_CONF" ]] || \
+                sync_files_to_remote_zone "$inst" "$cn_ip" \
+                    /opt/smartdc/rebalancer/etc \
+                    $PG_CONF
 
             restart_or_clear_remote "$inst" "$cn_ip" svc:/manta/application/rebalancer
         done

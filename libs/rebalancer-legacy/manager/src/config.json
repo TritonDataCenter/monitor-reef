@@ -1,16 +1,32 @@
 {
-  "domain_name": "east.joyent.us",
-  "shards": [
-      {
-        "host": "2.moray.staging.joyent.us",
-        "last": true
-      }
-   ],
-  "mdapi": {
+    "options": {
+        "max_tasks_per_assignment": 50,
+        "max_metadata_update_threads": 10,
+        "max_md_read_threads": 10,
+        "max_sharks": 5,
+        "use_static_md_update_threads": false,
+        "static_queue_depth": 10,
+        "max_assignment_age": 3600,
+        "use_batched_updates": false,
+        "md_read_chunk_size": 500
+    },
+    "listen_port": 80,
+    "log_level": "debug",
+    "domain_name": "coal.joyent.us",
+    "direct_db": true,
+    "mdapi": {
+        "shards": [
+            { "host": "1.buckets-mdapi.coal.joyent.us" },
+            { "host": "2.buckets-mdapi.coal.joyent.us" }
+        ],
+        "connection_timeout_ms": 5000
+    },
     "shards": [
-        { "host": "1.buckets-mdapi.east.joyent.us" },
-        { "host": "2.buckets-mdapi.east.joyent.us" }
-    ],
-    "connection_timeout_ms": 5000
-  }
+        {
+            "host": "1.moray.coal.joyent.us"
+        },
+        {
+            "host": "2.moray.coal.joyent.us"
+        }
+    ]
 }

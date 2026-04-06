@@ -266,6 +266,46 @@ throughput is `N × workers × workers_per_assignment` parallel copies.
 - The metadata update thread count on the manager side can be adjusted
   dynamically while a job is running (see [Operators Guide](docs/operators_guide.md)).
 
+## TODO
+
+### Skip `.mpu-parts` objects during bucket discovery
+
+**Problem**: The rebalancer's bucket object scanner reads all rows from
+`manta_bucket_object` tables in the pgclone databases. This includes
+`.mpu-parts/<upload-id>/<part-number>` entries created by `buckets-api`
+during S3 multipart uploads. These entries have a `sharks` column
+referencing storage nodes, but no corresponding physical file exists on
+those sharks — the actual part data is assembled into the final committed
+object by mako's `mpu_v2_commit` endpoint and the `.mpu-parts` metadata
+is left behind as a tracking artifact.
+
+**Symptom**: During evacuation jobs, the rebalancer discovers `.mpu-parts`
+objects, assigns them to agents, and the agents get 404 errors trying to
+download the non-existent files. These show up in job results as:
+- `source_object_not_found` — when the agent download returns 404
+- `{http_status_code:404}` — same, via a different code path
+
+In a dc1 multi-shard test evacuation, all bucket-related skips (7 out of
+8 `.mpu-parts` objects across 2 MPU uploads) were caused by this.
+
+**Fix**: Add a filter to the bucket discovery SQL query in the direct_db
+scanner to exclude `.mpu-parts` objects:
+
+```sql
+WHERE name NOT LIKE '.mpu-parts/%'
+  AND sharks::text LIKE '%<evacuating_shark>%'
+```
+
+The relevant code path is in `manager/src/` where the direct_db bucket
+scanner iterates over `manta_bucket_N.manta_bucket_object` tables in
+each pgclone shard. The filter should be added to the SQL query, not
+as a post-fetch filter, to avoid scanning potentially millions of
+`.mpu-parts` rows in production.
+
+**Verification**: After the fix, an evacuation job on a deployment with
+completed multipart uploads should show zero `source_object_not_found`
+or `{http_status_code:404}` skips for bucket objects.
+
 ## Build
 
 ### Binaries

@@ -987,7 +987,7 @@ function do_clone_all {
             failed=1
         fi
         echo ""
-    fi
+    done
 
     if [[ ${failed} -ne 0 ]]; then
         echo "Some clones failed." >&2
