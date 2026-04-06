@@ -105,6 +105,20 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
             api_description: jira_api::jira_api_mod::stub_api_description,
         },
         ManagedApiConfig {
+            ident: "napi-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/napi-api")?,
+            },
+            title: "Triton NAPI",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Triton NAPI - internal HTTP API for managing networking resources in a Triton datacenter",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: napi_api::napi_api_mod::stub_api_description,
+        },
+        ManagedApiConfig {
             ident: "papi-api",
             versions: Versions::Lockstep {
                 version: crate_version("apis/papi-api")?,

@@ -2243,6 +2243,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "napi-api"
+version = "1.4.3"
+dependencies = [
+ "dropshot",
+ "schemars",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "newtype_derive"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2389,6 +2400,7 @@ dependencies = [
  "dropshot-api-manager-types",
  "imgapi-api",
  "jira-api",
+ "napi-api",
  "papi-api",
  "sapi-api",
  "semver 1.0.27",

@@ -612,9 +612,25 @@ NAPI publishes changefeed events for these resources:
 
 The changefeed is published through bootstrap routes: `/aggregations`, `/networks`, `/nic_tags`, `/nics`. These are registered by the `changefeed` npm module, not as explicit NAPI endpoints. In the Rust port, changefeed publishing would be handled by the service implementation, not the API trait.
 
+## Phase 2 Complete
+
+- API crate: `apis/napi-api/`
+- OpenAPI spec: `openapi-specs/generated/napi-api.json`
+- Endpoint count: 42
+- Build status: SUCCESS
+- Enums defined: NicState, BelongsToType, LacpMode, NetworkFamily, MorayServiceStatus, PingStatus (all with `#[serde(other)] Unknown`)
+- Type modules: common, ping, nic, nic_tag, network, pool, ip, aggregation, fabric, manage
+- Notes:
+  - Dropshot requires consistent path variable names at the same level, so `/nic_tags/{oldname}` was unified to `/nic_tags/{name}` (PUT uses same path param as GET/DELETE)
+  - `/networks/{network_uuid}/ips` and `/networks/{network_uuid}/nics` use `/networks/{uuid}/...` to match `/networks/{uuid}` GET/PUT/DELETE
+  - All create endpoints return 200 (HttpResponseOk), not 201
+  - All delete endpoints return 204 (HttpResponseUpdatedNoContent)
+  - No `#[serde(rename_all = "camelCase")]` -- all wire format is snake_case
+  - GcResponse.MemoryUsage has explicit `#[serde(rename = "heapTotal")]` and `#[serde(rename = "heapUsed")]` for Node.js camelCase fields
+
 ## Phase Status
 - [x] Phase 1: Analyze - COMPLETE
-- [ ] Phase 2: Generate API
+- [x] Phase 2: Generate API - COMPLETE
 - [ ] Phase 3: Generate Client
 - [ ] Phase 4: Generate CLI
 - [ ] Phase 5: Validate

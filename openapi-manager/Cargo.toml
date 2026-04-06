@@ -24,6 +24,7 @@ bugview-api = { path = "../apis/bugview-api" }
 cloudapi-api = { path = "../apis/cloudapi-api" }
 imgapi-api = { path = "../apis/imgapi-api" }
 jira-api = { path = "../apis/jira-api" }
+napi-api = { path = "../apis/napi-api" }
 papi-api = { path = "../apis/papi-api" }
 sapi-api = { path = "../apis/sapi-api" }
 triton-api = { path = "../apis/triton-api" }
