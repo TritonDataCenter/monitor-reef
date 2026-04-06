@@ -206,7 +206,7 @@ For each object found, it inserts a row into the job database's
 
 - **Moray objects (v1):** `direct_db: true` — sharkspotter connects to
   `{shard}.rebalancer-postgres.{domain}:5432` (pgclone moray clone)
-- **Bucket objects (v2):** `direct_db_buckets: true` — sharkspotter connects to
+- **Bucket objects (v2):** `direct_db: true` — sharkspotter connects to
   `{shard}.rebalancer-buckets-postgres.{domain}:5432` (pgclone buckets clone)
 - Chunk size controlled by `md_read_chunk_size` (default: 10,000)
 - Parallelism controlled by `max_md_read_threads` (default: 10)
@@ -510,7 +510,7 @@ After updating SAPI, config-agent renders the new config and runs
 
 **Verify current configuration:**
 ```bash
-json direct_db direct_db_buckets shards mdapi.shards \
+json direct_db shards mdapi.shards \
     < /opt/smartdc/rebalancer/config.json
 ```
 

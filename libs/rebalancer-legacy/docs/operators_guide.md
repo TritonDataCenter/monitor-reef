@@ -495,17 +495,17 @@ to the clone instead of the production Manatee:
 | Clone type | Sharkspotter connects to | Config flag |
 |---|---|---|
 | Moray | `{shard}.rebalancer-postgres.{domain}:5432` | `direct_db: true` |
-| Buckets-postgres | `{shard}.rebalancer-buckets-postgres.{domain}:5432` | `direct_db_buckets: true` |
+| Buckets-postgres | `{shard}.rebalancer-buckets-postgres.{domain}:5432` | `direct_db: true` |
 
 The clone is only used for **step 1 (discovery)** of the evacuation pipeline.
 Steps 2 (data transfer) and 3 (metadata update) always go to the real moray
 and mdapi services.  The clone never receives writes — it is a frozen
 point-in-time ZFS snapshot.
 
-Discovery modes are mutually exclusive per object type: when `direct_db` is
-enabled, moray RPC discovery is not used; when `direct_db_buckets` is enabled,
-mdapi RPC discovery is not used.  The RPC endpoints (moray shards, mdapi
-shards) are still used for metadata updates regardless of the discovery mode.
+When `direct_db` is enabled, both moray and mdapi RPC discovery are bypassed
+in favor of direct PostgreSQL queries to the pgclone instances.  The RPC
+endpoints (moray shards, mdapi shards) are still used for metadata updates
+regardless of the discovery mode.
 
 ### Safety Properties
 
@@ -692,20 +692,21 @@ run at the same time.
 
 | Mode | When | Connects to |
 |---|---|---|
-| Direct (pgclone) | `direct_db_buckets: true` | `{shard}.rebalancer-buckets-postgres.{domain}:5432` |
-| Mdapi RPC | `direct_db_buckets: false` and `mdapi.shards` non-empty | mdapi endpoints from config |
-| None | `direct_db_buckets: false` and `mdapi.shards` empty | no bucket discovery |
+| Direct (pgclone) | `direct_db: true` | `{shard}.rebalancer-buckets-postgres.{domain}:5432` |
+| Mdapi RPC | `direct_db: false` and `mdapi.shards` non-empty | mdapi endpoints from config |
+| None | `direct_db: false` and `mdapi.shards` empty | no bucket discovery |
 
-When `direct_db_buckets` is enabled, mdapi RPC discovery is skipped even if
-`mdapi.shards` is configured.  The mdapi shards are still used for **metadata
-updates** (step 3 of the pipeline) — they are only skipped for discovery.
+When `direct_db` is enabled, both moray RPC and mdapi RPC discovery are
+skipped in favor of direct PostgreSQL queries to the pgclone instances.
+The RPC endpoints (moray shards, mdapi shards) are still used for
+**metadata updates** (step 3 of the pipeline) — they are only skipped
+for discovery.
 
-The following SAPI metadata keys control discovery:
+The following SAPI metadata key controls discovery:
 
 | SAPI metadata key | config.json field | Default | Description |
 |---|---|---|---|
-| `REBALANCER_DIRECT_DB` | `direct_db` | `false` | Use direct PostgreSQL for moray object discovery (requires pgclone moray clone) |
-| `REBALANCER_DIRECT_DB_BUCKETS` | `direct_db_buckets` | `false` | Use direct PostgreSQL for bucket object discovery (requires pgclone buckets-postgres clone) |
+| `REBALANCER_DIRECT_DB` | `direct_db` | `true` | Use direct PostgreSQL for moray and bucket object discovery (requires pgclone clones) |
 
 Shard ranges are auto-discovered from SAPI arrays (`INDEX_MORAY_SHARDS` for moray,
 `BUCKETS_MORAY_SHARDS` for buckets). No manual min/max shard configuration is needed.
@@ -743,7 +744,7 @@ You can also tune the mdapi client behaviour:
 
 From the rebalancer zone, inspect the rendered config:
 ```
-json direct_db direct_db_buckets shards mdapi.shards \
+json direct_db shards mdapi.shards \
     < /opt/smartdc/rebalancer/config.json
 ```
 
@@ -775,9 +776,9 @@ This requires both the discovery flag and mdapi shards for metadata updates.
 MANTA_APP=$(sdc-sapi /applications?name=manta | json -Ha uuid)
 sdc-sapi /applications/$MANTA_APP | json metadata.BUCKETS_MORAY_SHARDS
 
-# Enable directdb discovery for bucket objects
+# Enable directdb discovery (covers both moray and bucket objects)
 echo '{ "metadata": {
-    "REBALANCER_DIRECT_DB_BUCKETS": true
+    "REBALANCER_DIRECT_DB": true
 } }' | sapiadm update $MANTA_APP
 ```
 
@@ -786,8 +787,7 @@ echo '{ "metadata": {
 ```
 MANTA_APP=$(sdc-sapi /applications?name=manta | json -Ha uuid)
 echo '{ "metadata": {
-    "REBALANCER_DIRECT_DB": true,
-    "REBALANCER_DIRECT_DB_BUCKETS": true
+    "REBALANCER_DIRECT_DB": true
 } }' | sapiadm update $MANTA_APP
 ```
 
