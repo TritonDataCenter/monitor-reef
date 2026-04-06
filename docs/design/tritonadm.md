@@ -147,26 +147,39 @@ instance, following sdcadm's established `post-setup grafana` pattern
 
 ## API Client Strategy
 
-Internal Triton APIs (SAPI, CNAPI, IMGAPI, NAPI, PAPI) do not have formal
-OpenAPI specs. The strategy for tritonadm clients:
+Every internal Triton API gets the full trait-based pipeline: API trait
+crate (`apis/`) → OpenAPI spec (`openapi-specs/generated/`) →
+Progenitor-generated client (`clients/internal/`). This is the same
+pattern used by cloudapi-api and vmapi-api.
 
-1. **Hand-written minimal clients first**: for each internal API, write a
-   thin client covering only the endpoints needed by the current command.
-   This follows the pattern used by `jira-client` in this repo — a
-   hand-written client for an API without an OpenAPI spec.
+This is intentional even for APIs that don't yet have formal OpenAPI
+specs. Writing the Dropshot API trait for each internal API means:
 
-2. **Promote to full clients later**: as more commands need more endpoints,
-   the hand-written clients grow. If/when an API gets a formal OpenAPI
-   spec (through Rust migration or spec authoring), switch to the
-   Progenitor-generated pattern (API trait -> OpenAPI spec -> generated
-   client).
+- We build toward correct, validated specs from day one
+- Every new tritonadm command exercises and validates the trait
+- When we rewrite those Node.js services in Rust, the trait is already
+  there as the target interface
+- Clients are always generated, never hand-written, so they stay in sync
 
-3. **vmapi-client already exists**: VM operations use the existing
-   Progenitor-generated client in `clients/internal/vmapi-client/`.
+The one exception is `jira-client`, which uses a hand-written client
+because JIRA is a large external API we don't control. Internal Triton
+APIs we own should always get the full treatment.
 
-4. **Client crates live in `clients/internal/`**: following the monorepo
-   convention. Each client only exposes the subset of the API that callers
-   currently need.
+**What exists today:**
+
+| API | Trait crate | Client | Status |
+|-----|-------------|--------|--------|
+| VMAPI | `vmapi-api` | `vmapi-client` | Complete |
+| CloudAPI | `cloudapi-api` | `cloudapi-client` | Complete |
+| SAPI | — | — | Needed for post-setup portal |
+| IMGAPI | — | — | Needed for post-setup portal |
+| NAPI | — | — | Needed for post-setup portal |
+| PAPI | — | — | Needed for post-setup portal |
+| CNAPI | — | — | Needed for platform, create |
+
+**Client crates live in `clients/internal/`**, following the monorepo
+convention. Each API trait starts with the endpoints needed by the
+current command, and grows as more commands are implemented.
 
 ## Open Questions
 
