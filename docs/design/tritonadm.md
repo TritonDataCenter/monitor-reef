@@ -119,8 +119,7 @@ existing VMAPI) unlock several read-only commands as low-hanging fruit:
 
 ## First Target: `post-setup portal`
 
-The portal is a Rust+React web UI for Triton (see
-`docs/design/portal-build-and-deploy.md` in mariana-trench). `post-setup
+The portal is a Rust+React web UI for Triton. `post-setup
 portal` creates the SAPI service definition and provisions the first
 instance, following sdcadm's established `post-setup grafana` pattern
 (AddServiceProcedure + EnsureNicOnInstancesProcedure).
