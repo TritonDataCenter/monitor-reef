@@ -10,6 +10,7 @@ members = [
     "apis/cloudapi-api",
     "apis/imgapi-api",
     "apis/jira-api",
+    "apis/papi-api",
     "apis/sapi-api",
     "apis/triton-api",
     "apis/vmapi-api",

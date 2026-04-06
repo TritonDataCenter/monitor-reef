@@ -2389,6 +2389,7 @@ dependencies = [
  "dropshot-api-manager-types",
  "imgapi-api",
  "jira-api",
+ "papi-api",
  "sapi-api",
  "semver 1.0.27",
  "serde_json",
@@ -2462,6 +2463,17 @@ dependencies = [
  "primeorder",
  "rand_core 0.6.4",
  "sha2",
+]
+
+[[package]]
+name = "papi-api"
+version = "7.2.5"
+dependencies = [
+ "dropshot",
+ "schemars",
+ "serde",
+ "serde_json",
+ "uuid",
 ]
 
 [[package]]

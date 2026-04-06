@@ -105,6 +105,20 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
             api_description: jira_api::jira_api_mod::stub_api_description,
         },
         ManagedApiConfig {
+            ident: "papi-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/papi-api")?,
+            },
+            title: "Triton PAPI",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Triton PAPI - Packages API for managing package definitions (RAM, CPU, disk, etc.) used to provision VMs",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: papi_api::papi_api_mod::stub_api_description,
+        },
+        ManagedApiConfig {
             ident: "sapi-api",
             versions: Versions::Lockstep {
                 version: crate_version("apis/sapi-api")?,
