@@ -573,9 +573,33 @@ IMGAPI is the first client with `Response<Body>` endpoints (action dispatch retu
 - Enum CLI args use `types::*` (Progenitor types with `ValueEnum` patch): `ImageState`, `ImageType`, `ImageOs`, `FileCompression`, `StorageType`
 
 
+## Phase 5 Complete - CONVERSION VALIDATED
+
+- Validation report: `conversion-plans/imgapi/validation.md`
+- Overall status: READY FOR TESTING
+- Endpoint coverage: 22/22 (100%)
+- Issues found: 1 (low priority -- extra `CreateImageAction::ImportFromDatacenter` variant)
+- Build status: All 3 crates build successfully
+- OpenAPI check: PASS
+
 ## Phase Status
 - [x] Phase 1: Analyze - COMPLETE
 - [x] Phase 2: Generate API - COMPLETE
 - [x] Phase 3: Generate Client - COMPLETE
 - [x] Phase 4: Generate CLI - COMPLETE
-- [ ] Phase 5: Validate
+- [x] Phase 5: Validate - COMPLETE
+
+## Conversion Complete
+
+The IMGAPI API has been converted to Rust. See validation.md for details.
+
+### Generated Artifacts
+- API crate: `apis/imgapi-api/`
+- Client crate: `clients/internal/imgapi-client/`
+- CLI crate: `cli/imgapi-cli/`
+- OpenAPI spec: `openapi-specs/generated/imgapi-api.json`
+
+### Next Steps
+1. Run integration tests against live IMGAPI service
+2. Consider removing `CreateImageAction::ImportFromDatacenter` (only valid on POST /images/:uuid)
+3. Deploy Rust service for parallel testing
