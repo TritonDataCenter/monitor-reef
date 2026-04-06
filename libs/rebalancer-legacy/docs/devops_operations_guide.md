@@ -581,8 +581,6 @@ All values can be set via SAPI metadata. After updating SAPI metadata, run
 | `max_fill_percentage` | `MUSKIE_MAX_UTILIZATION_PCT` | 100 | Max % utilization on destination sharks |
 | `snaplink_cleanup_required` | `SNAPLINK_CLEANUP_REQUIRED` | false | Block jobs until snaplinks cleaned |
 | `direct_db` | `REBALANCER_DIRECT_DB` | true | Use pgclone direct PostgreSQL for moray and bucket discovery (requires pgclone clones) |
-| `buckets_min_shard` | `REBALANCER_BUCKETS_MIN_SHARD` | 1 | First buckets-postgres shard to scan |
-| `buckets_max_shard` | `REBALANCER_BUCKETS_MAX_SHARD` | 1 | Last buckets-postgres shard to scan |
 
 #### Job Execution Tunables (`options` block)
 
