@@ -254,7 +254,7 @@ retried via `rebalancer-adm job retry <UUID>`.
 | v1 (directory) | `/manta/{owner_uuid}/{object_id}` |
 | v2 (bucket) | `/manta/v2/{owner_uuid}/{bucket_id}/{prefix}/{object_id},{name_hash}` |
 
-Where `prefix` = first 3 characters of `object_id`.
+Where `prefix` = first 2 characters of `object_id`.
 
 ---
 
@@ -928,6 +928,142 @@ pgclone.sh list
 # 4. Clean up completed assignments on agents (only when no jobs running)
 manta-oneach -s storage 'rm /var/tmp/rebalancer/completed/*'
 ```
+
+### Verifying Evacuation Results
+
+After the job completes, verify the source shark is empty (or near-empty)
+by creating fresh pgclones and querying the metadata:
+
+```bash
+# 1. Create fresh pgclones (with current metadata)
+pgclone.sh destroy-all
+pgclone.sh clone-all --moray-vm <UUID> --buckets-vm <UUID>
+
+# 2. Count remaining moray objects on the evacuated shark
+zlogin <MORAY_CLONE_UUID> \
+  '/opt/postgresql/12.0/bin/psql -U postgres moray -c "
+    SELECT count(*) AS remaining
+    FROM manta WHERE type = '\''object'\''
+    AND _value::text LIKE '\''%<SHARK_HOSTNAME>%'\'';"'
+
+# 3. Count remaining buckets objects (check each vnode schema)
+zlogin <BUCKETS_CLONE_UUID> \
+  '/opt/postgresql/12.0/bin/psql -U buckets_mdapi buckets_metadata -c "
+    SELECT schema_name FROM information_schema.schemata
+    WHERE schema_name LIKE '\''manta_bucket_%'\''
+    ORDER BY schema_name;"'
+# Then for each vnode schema:
+#   SELECT count(*) FROM manta_bucket_N.manta_bucket_object
+#   WHERE sharks::text LIKE '%<SHARK_HOSTNAME>%';
+```
+
+If the count is zero, the shark is fully evacuated. If objects
+remain, they fall into these categories:
+
+| Remaining objects | Cause | Action |
+|------------------|-------|--------|
+| `source_is_evac_shark` objects | Both copies on the same shark — no replica to copy from | Manual intervention: create a new copy on another shark |
+| `source_object_not_found` objects | File missing from disk but metadata still references the shark | Investigate: genuinely missing data or garbage collection race |
+| Small number (<100) | Transient errors during the run | Re-run with fresh pgclones — should complete quickly |
+
+### Cleaning Up Orphaned Files on the Evacuated Shark
+
+Evacuation copies objects to destination sharks and updates metadata,
+but **does not delete the original files** from the source shark.
+After evacuation, the source shark has orphaned files that no metadata
+points to. These waste disk space and should be cleaned up.
+
+**Procedure:**
+
+```bash
+# 1. Get the list of object IDs still referenced in metadata
+#    (from a fresh pgclone — these must NOT be deleted)
+zlogin <MORAY_CLONE_UUID> \
+  '/opt/postgresql/12.0/bin/psql -U postgres moray -t -A -c "
+    SELECT _value::json->>'\''objectId'\''
+    FROM manta WHERE type = '\''object'\''
+    AND _value::text LIKE '\''%<SHARK_HOSTNAME>%'\'';"' \
+  > /zones/<SHARK_UUID>/root/var/tmp/keep_objects.txt
+
+# 2. Count files on disk vs referenced in metadata
+zlogin <SHARK_UUID> 'find /manta -type f 2>/dev/null | wc -l'
+wc -l /zones/<SHARK_UUID>/root/var/tmp/keep_objects.txt
+
+# 3. Build the list of files to delete
+zlogin <SHARK_UUID> '
+  sort /var/tmp/keep_objects.txt > /var/tmp/keep_sorted.txt
+  find /manta -type f -print0 | xargs -0 -n1 basename \
+    | sort > /var/tmp/all_objects.txt
+  comm -23 /var/tmp/all_objects.txt /var/tmp/keep_sorted.txt \
+    > /var/tmp/delete_objects.txt
+  echo "Files to delete: $(wc -l < /var/tmp/delete_objects.txt)"
+  echo "Files to keep:   $(wc -l < /var/tmp/keep_sorted.txt)"'
+
+# 4. Delete orphaned files (this can take a while for large sharks)
+zlogin <SHARK_UUID> '
+  find /manta -type f | while read f; do
+    obj=$(basename "$f")
+    if grep -qF "$obj" /var/tmp/delete_objects.txt; then
+      rm -f "$f"
+    fi
+  done'
+
+# 5. Verify
+zlogin <SHARK_UUID> 'find /manta -type f 2>/dev/null | wc -l'
+# Should be close to the keep_objects.txt count
+```
+
+**Important:**
+- Always use **fresh pgclones** for the keep list — stale snapshots
+  may not reflect the latest metadata updates.
+- The keep list must include objects from **all shards** (moray and
+  buckets). For buckets objects, query each vnode schema and extract
+  the object IDs.
+- On large sharks (millions of files), the delete loop can take hours.
+  Monitor with `zpool list` to track freed space.
+- Do NOT delete files while an evacuation job is running — in-flight
+  metadata updates could reference objects that haven't been copied yet.
+
+### Capacity Planning
+
+Before starting an evacuation, ensure destination sharks have enough
+free space to absorb the evacuated objects.
+
+**Calculate required space:**
+
+```bash
+# Total size of objects on the source shark (from pgclone)
+zlogin <MORAY_CLONE_UUID> \
+  '/opt/postgresql/12.0/bin/psql -U postgres moray -c "
+    SELECT pg_size_pretty(sum((_value::json->>'\''contentLength'\'')::bigint))
+    AS total_size
+    FROM manta WHERE type = '\''object'\''
+    AND _value::text LIKE '\''%<SHARK_HOSTNAME>%'\'';"'
+```
+
+**Check destination capacity:**
+
+```bash
+# From headnode — check all storage nodes
+curl -s http://storinfo.<domain>/storagenodes \
+  | json -a manta_storage_id available_mb percent_used \
+  | sort -k3 -n
+```
+
+**Rules of thumb:**
+
+| Factor | Guideline |
+|--------|-----------|
+| Minimum free space per destination | 1.5× the largest single object |
+| Recommended free space | At least 20% of the total data to evacuate, per destination shark |
+| `max_fill_percentage` | Default 100 — lower to 90 if you want headroom for user writes during evacuation |
+| Single-node (coal) | Evacuation **duplicates** data on the same zpool — free space shrinks by the total size of evacuated objects. Clean up orphans promptly. |
+
+**Single-node warning:** In coal/dev environments where all sharks share
+one ZFS pool, every evacuated object **doubles** its disk usage (original
+stays on source, copy written to destination). Monitor pool usage with
+`zpool list` and clean up orphaned files between runs to avoid filling
+the pool.
 
 ### Stopping a Job
 
