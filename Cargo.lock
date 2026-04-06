@@ -4535,6 +4535,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "clap_complete",
+ "imgapi-client",
  "predicates",
  "sapi-client",
  "serde",

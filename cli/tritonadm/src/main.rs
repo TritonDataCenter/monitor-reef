@@ -47,6 +47,10 @@ struct Cli {
     #[arg(long, env = "SAPI_URL", global = true)]
     sapi_url: Option<String>,
 
+    /// IMGAPI base URL (auto-detected from SDC config if not set)
+    #[arg(long, env = "IMGAPI_URL", global = true)]
+    imgapi_url: Option<String>,
+
     /// VMAPI base URL (auto-detected from SDC config if not set)
     #[arg(long, env = "VMAPI_URL", global = true)]
     vmapi_url: Option<String>,
@@ -70,6 +74,20 @@ impl Cli {
         )
     }
 
+    /// Resolve the IMGAPI URL from CLI flag, env var, or SDC config.
+    fn imgapi_url(&self, sdc_config: &Option<TritonConfig>) -> Result<String> {
+        if let Some(url) = &self.imgapi_url {
+            return Ok(url.clone());
+        }
+        if let Some(cfg) = sdc_config {
+            return Ok(cfg.service_url("imgapi"));
+        }
+        anyhow::bail!(
+            "cannot determine IMGAPI URL: set --imgapi-url, IMGAPI_URL, \
+             or run on a Triton headnode"
+        )
+    }
+
     /// Resolve the VMAPI URL from CLI flag, env var, or SDC config.
     fn vmapi_url(&self, sdc_config: &Option<TritonConfig>) -> Result<String> {
         if let Some(url) = &self.vmapi_url {
@@ -88,7 +106,12 @@ impl Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Display images available for update of Triton services and instances
-    Avail,
+    #[command(alias = "available")]
+    Avail {
+        /// Output full JSON instead of table
+        #[arg(long, short)]
+        json: bool,
+    },
 
     /// Check Triton config in SAPI versus system reality
     CheckConfig,
@@ -173,7 +196,11 @@ async fn main() -> Result<()> {
     let sdc_config = TritonConfig::load();
 
     match cli.command {
-        Commands::Avail => not_yet_implemented("avail"),
+        Commands::Avail { json } => {
+            let sapi_url = cli.sapi_url(&sdc_config)?;
+            let imgapi_url = cli.imgapi_url(&sdc_config)?;
+            cmd_avail(&sapi_url, &imgapi_url, json).await
+        }
         Commands::CheckConfig => not_yet_implemented("check-config"),
         Commands::CheckHealth => not_yet_implemented("check-health"),
         Commands::Completion { shell } => {
@@ -226,6 +253,84 @@ async fn get_instance_counts(
         *counts.entry(inst.service_uuid).or_default() += 1;
     }
     Ok(counts)
+}
+
+async fn cmd_avail(sapi_url: &str, imgapi_url: &str, json: bool) -> Result<()> {
+    let http = triton_tls::build_http_client(false)
+        .await
+        .context("failed to build HTTP client")?;
+    let sapi = sapi_client::Client::new_with_client(sapi_url, http.clone());
+    let imgapi = imgapi_client::Client::new_with_client(imgapi_url, http);
+
+    // Get all SAPI services and their current image UUIDs
+    let services = sapi
+        .list_services()
+        .send()
+        .await
+        .context("failed to list services")?
+        .into_inner();
+
+    #[derive(serde::Serialize)]
+    struct AvailRow {
+        service: String,
+        image: String,
+        version: String,
+    }
+
+    let mut rows: Vec<AvailRow> = Vec::new();
+
+    for svc in &services {
+        // Get current image_uuid from service params
+        let current_image_uuid = svc
+            .params
+            .as_ref()
+            .and_then(|p| p.get("image_uuid"))
+            .and_then(|v| v.as_str());
+
+        let current_uuid = match current_image_uuid {
+            Some(s) => s.to_string(),
+            None => continue,
+        };
+
+        // Look up current image to get its name
+        let parsed_uuid = match sapi_client::Uuid::parse_str(&current_uuid) {
+            Ok(u) => u,
+            Err(_) => continue,
+        };
+        let current_image = match imgapi.get_image().uuid(parsed_uuid).send().await {
+            Ok(resp) => resp.into_inner(),
+            Err(_) => continue,
+        };
+
+        // Query IMGAPI for all images with the same name
+        let candidates = match imgapi.list_images().name(&current_image.name).send().await {
+            Ok(resp) => resp.into_inner(),
+            Err(_) => continue,
+        };
+
+        // Show images that aren't the currently-installed one
+        for img in &candidates {
+            if img.uuid.to_string() != current_uuid {
+                rows.push(AvailRow {
+                    service: svc.name.clone(),
+                    image: img.uuid.to_string(),
+                    version: format!("{}@{}", img.name, img.version),
+                });
+            }
+        }
+    }
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+    } else if rows.is_empty() {
+        println!("Up-to-date.");
+    } else {
+        println!("{:<24} {:<38} VERSION", "SERVICE", "IMAGE");
+        for row in &rows {
+            println!("{:<24} {:<38} {}", row.service, row.image, row.version);
+        }
+    }
+    Ok(())
 }
 
 async fn cmd_services(sapi_url: &str, json: bool) -> Result<()> {
