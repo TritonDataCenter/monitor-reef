@@ -2254,6 +2254,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "napi-client"
+version = "1.4.3"
+dependencies = [
+ "clap",
+ "napi-api",
+ "progenitor-client",
+ "reqwest",
+ "schemars",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "newtype_derive"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"

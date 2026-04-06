@@ -131,6 +131,21 @@ fn configure_papi(settings: &mut GenerationSettings) {
         .with_patch("SortOrder", &value_enum_patch);
 }
 
+fn configure_napi(settings: &mut GenerationSettings) {
+    let value_enum_patch = TypePatch::default().with_derive("clap::ValueEnum").clone();
+
+    settings
+        .with_interface(progenitor::InterfaceStyle::Builder)
+        .with_tag(progenitor::TagStyle::Merged)
+        .with_derive("schemars::JsonSchema")
+        .with_patch("NicState", &value_enum_patch)
+        .with_patch("BelongsToType", &value_enum_patch)
+        .with_patch("LacpMode", &value_enum_patch)
+        .with_patch("NetworkFamily", &value_enum_patch)
+        .with_patch("MorayServiceStatus", &value_enum_patch)
+        .with_patch("PingStatus", &value_enum_patch);
+}
+
 fn configure_jira(settings: &mut GenerationSettings) {
     settings
         .with_interface(progenitor::InterfaceStyle::Builder)
@@ -156,6 +171,12 @@ static CLIENTS: &[ClientConfig] = &[
         spec_path: "openapi-specs/patched/sapi-api.json",
         output_path: "clients/internal/sapi-client/src/generated.rs",
         configure: configure_sapi,
+    },
+    ClientConfig {
+        name: "napi-client",
+        spec_path: "openapi-specs/generated/napi-api.json",
+        output_path: "clients/internal/napi-client/src/generated.rs",
+        configure: configure_napi,
     },
     ClientConfig {
         name: "jira-client",

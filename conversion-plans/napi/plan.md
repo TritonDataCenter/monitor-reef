@@ -628,9 +628,20 @@ The changefeed is published through bootstrap routes: `/aggregations`, `/network
   - No `#[serde(rename_all = "camelCase")]` -- all wire format is snake_case
   - GcResponse.MemoryUsage has explicit `#[serde(rename = "heapTotal")]` and `#[serde(rename = "heapUsed")]` for Node.js camelCase fields
 
+## Phase 3 Complete
+
+- Client crate: `clients/internal/napi-client/`
+- Build status: SUCCESS
+- Typed wrappers: NO (NAPI does not use the action-dispatch pattern)
+- Enums with ValueEnum patches: NicState, BelongsToType, LacpMode, NetworkFamily, MorayServiceStatus, PingStatus
+- Re-exports: All API crate types re-exported from `napi_client` for CLI consumption
+- Notes:
+  - Straightforward Progenitor generation, no action dispatch, no streaming/binary endpoints
+  - All 42 endpoints generated as builder-style methods on `Client`
+
 ## Phase Status
 - [x] Phase 1: Analyze - COMPLETE
 - [x] Phase 2: Generate API - COMPLETE
-- [ ] Phase 3: Generate Client
+- [x] Phase 3: Generate Client - COMPLETE
 - [ ] Phase 4: Generate CLI
 - [ ] Phase 5: Validate
