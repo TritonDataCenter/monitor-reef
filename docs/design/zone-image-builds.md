@@ -120,10 +120,10 @@ includes this before the eng Makefiles:
 
 ```makefile
 # Path back to repo root from images/<service>/
-REPO_ROOT := $(shell git rev-parse --show-toplevel)
+ENGBLD_REPO_ROOT := $(shell git rev-parse --show-toplevel)
 
 # All images use the same eng submodule
-ENGBLD_REQUIRE := $(shell git submodule update --init $(REPO_ROOT)/deps/eng)
+ENGBLD_REQUIRE := $(shell git submodule update --init $(ENGBLD_REPO_ROOT)/deps/eng)
 
 # Default origin image (services can override)
 # triton-origin-x86_64-24.4.1
@@ -148,9 +148,9 @@ NAME = my-service
 DIR_NAME = my-svc
 
 include ../image.defs.mk
-include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.defs
-include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.defs
-include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.smf.defs
+include $(ENGBLD_REPO_ROOT)/deps/eng/tools/mk/Makefile.defs
+include $(ENGBLD_REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.defs
+include $(ENGBLD_REPO_ROOT)/deps/eng/tools/mk/Makefile.smf.defs
 
 ROOT            := $(shell pwd)
 RELEASE_TARBALL := $(NAME)-pkg-$(STAMP).tar.gz
@@ -170,7 +170,7 @@ CLEAN_FILES += bits proto target
 
 .PHONY: release_build
 release_build:
-	cd $(REPO_ROOT) && $(CARGO) build --release -p $(SERVICE_BINS)
+	cd $(ENGBLD_REPO_ROOT) && $(CARGO) build --release -p $(SERVICE_BINS)
 
 .PHONY: all
 all: release_build
@@ -185,7 +185,7 @@ release: all
 	@mkdir -p $(RELSTAGEDIR)/root/opt/smartdc/$(DIR_NAME)/sapi_manifests
 	@mkdir -p $(RELSTAGEDIR)/site
 	@touch $(RELSTAGEDIR)/site/.do-not-delete-me
-	cp $(REPO_ROOT)/target/release/$(SERVICE_BINS) \
+	cp $(ENGBLD_REPO_ROOT)/target/release/$(SERVICE_BINS) \
 	    $(RELSTAGEDIR)/root/opt/triton/$(DIR_NAME)/
 	cp -PR boot/* $(RELSTAGEDIR)/root/opt/triton/boot/
 	cp -PR smf/* $(RELSTAGEDIR)/root/opt/custom/smf/
@@ -198,10 +198,10 @@ publish: release
 	mkdir -p $(ENGBLD_BITS_DIR)/$(NAME)
 	cp $(ROOT)/$(RELEASE_TARBALL) $(ENGBLD_BITS_DIR)/$(NAME)/$(RELEASE_TARBALL)
 
-include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.deps
-include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.targ
-include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.smf.targ
-include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.targ
+include $(ENGBLD_REPO_ROOT)/deps/eng/tools/mk/Makefile.deps
+include $(ENGBLD_REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.targ
+include $(ENGBLD_REPO_ROOT)/deps/eng/tools/mk/Makefile.smf.targ
+include $(ENGBLD_REPO_ROOT)/deps/eng/tools/mk/Makefile.targ
 ```
 
 ### jenkins-joylib change: `dir` parameter for `joyBuildImageAndUpload`
@@ -369,28 +369,28 @@ images-list:
    same Cargo target directory — concurrent image builds of different services
    should be fine since Cargo handles locking internally.
 
-3. **SAPI service registration**: New Triton services need to be registered in
+2. **SAPI service registration**: New Triton services need to be registered in
    SAPI. This typically involves adding a service definition to
    `sdc-headnode/config/sapi/services/<name>/service.json`. The mechanics of
    this registration for new services should be documented once the first
    service is ready to deploy.
 
-4. **eng Makefile compatibility**: The eng Makefiles use `$(TOP)` to refer to
+3. **eng Makefile compatibility**: The eng Makefiles use `$(TOP)` to refer to
    the project root. When running from `images/<service>/`, `$(TOP)` will
-   resolve to that subdirectory, not the repo root. The `REPO_ROOT` variable
-   in `image.defs.mk` provides the actual repo root for Cargo commands. We
-   need to verify that `buildimage`, `bits-upload`, and other eng targets work
-   correctly in this arrangement, or whether `$(TOP)` needs to be overridden.
+   resolve to that subdirectory, not the repo root. The `ENGBLD_REPO_ROOT`
+   variable in `image.defs.mk` provides the actual repo root for Cargo
+   commands and eng submodule paths. We need to verify that `ENGBLD_REPO_ROOT`
+   is sufficient for all eng targets (`buildimage`, `bits-upload`, etc.), or
+   whether `$(TOP)` also needs to be overridden.
 
-5. **Jenkins pipeline strategy**: One Jenkins job per service image
+4. **Jenkins pipeline strategy**: One Jenkins job per service image
    (recommended), or a single job that builds all images? Per-service jobs are
    simpler and allow independent build/deploy cycles.
 
 ## Prerequisites / TODO
 
 - [ ] Commit and push the `joyBuildImageAndUpload` `dir` parameter change to
-  jenkins-joylib (edit exists in local checkout at
-  `~/Workspace/jenkins-joylib/vars/joyBuildImageAndUpload.groovy`)
+  jenkins-joylib
 - [ ] Initialize `deps/eng` submodule in monitor-reef (`git submodule update --init deps/eng`)
 - [ ] Build and test dummy service on SmartOS to validate the pipeline
 - [ ] Resolve `$(TOP)` compatibility question with hands-on testing
