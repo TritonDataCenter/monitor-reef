@@ -62,80 +62,145 @@ libs/sharkspotter/                  # Separate crate for metadata tier scanning
 
 ## 2. Threading Model
 
-The following ASCII diagram shows every thread spawned during an evacuation
-job, the crossbeam channels connecting them, and the messages that flow
-through each channel.
+`EvacuateJob::run()` spawns all threads and wires them together with
+crossbeam channels.  The pipeline has a strict order — each step feeds
+the next:
+
+### Step-by-step thread execution order
+
+**Step 1 — Discovery:** Find objects on the source shark.
 
 ```
-                              +-----------------+
-                              | Gotham HTTP     |
-                              | (1 thread)      |
-                              | main.rs         |
-                              +--------+--------+
-                                       |
-                                       | crossbeam::bounded(5), sends: Job
-                                       v
-                              +-----------------+
-                              | Job Runner      |
-                              | ThreadPool(1)   |
-                              | main.rs         |
-                              +--------+--------+
-                                       |
-                                       | job.run() -> EvacuateJob::run()
-                                       |
-         Spawns all threads below:     |
-    +---------------+------------------+------------------+-----------------+
-    |               |                  |                  |                 |
-    v               v                  v                  v                 v
-
-+--------+   +-----------+   +------------+   +----------+   +-------------+
-| Shark- |   | Shark-    |   | Assignment |   | Assign-  |   | MD Update   |
-| spotter|   | spotter   |   | Manager    |   | ment     |   | Broker      |
-| Thread |   | Translator|   | (single)   |   | Checker  |   | (single)    |
-+---+----+   +-----+-----+   +-----+------+   +----+-----+   +------+------+
-    |               |               |               |                |
-    |  bounded(10)  |  bounded(100) |               |                |
-    |  sends:       |  sends:       |               |                |
-    |  Sharkspotter |  Evacuate     |               |                |
-    |  Message      |  Object       |               |                |
-    +-------->------+-------->------+               |                |
-                                    |               |                |
-            Per-shark channels      |               |                |
-            sends: AssignmentMsg    |  bounded(1)   |                |
-            (Data/Flush/Stop)       |  sends:       |                |
-                                    |  FiniMsg      |                |
-    +------------+------------------+-------->------+                |
-    |            |                                  |                |
-    v            v                                  |  bounded(5)    |
-+------------------------+                          |  sends:        |
-| Shark Assignment       |  bounded(5)              |  Assignment    |
-| Generator Threads      |  sends: Assignment       |  CacheEntry    |
-| (one per dest shark)   +--------------->----------+-------->-------+
-+------------------------+          |                                |
-                                    v                                v
-                             +-----------+                  +----------------+
-                             | Assignment|                  | MD Update      |
-                             | Poster    |                  | Worker Threads |
-                             | (single)  |                  | (dynamic or    |
-                             +-----------+                  |  static pool)  |
-                                    |                       +----------------+
-                                    |
-                                    | HTTP POST to agent
-                                    v
-                             +-----------+
-                             | Storage   |
-                             | Agents    |
-                             | (:7878)   |
-                             +-----------+
++---------------------+   bounded(10)   +---------------------+   bounded(100)
+| Shard Scanner       | Sharkspotter    | Sharkspotter        | EvacuateObject
+| Threads             +---------------->| Translator Thread   +---------------->  (to Step 2)
+| (one per shard)     |    Message      | (single)            |
+| sharkspotter/lib.rs |                 | evacuate.rs         |
++---------------------+                 +---------------------+
+                                           |
+                                           | Converts SharkspotterMessage
+                                           | to EvacuateObject, inserts
+                                           | into job DB as "unprocessed"
 ```
+
+**Step 2 — Assignment creation:** Group objects by destination shark.
+
+```
+                        bounded(100)   +---------------------+
+(from Step 1)  EvacuateObject          | Assignment Manager  |
+              +----------------------->| (single thread)     |
+                                       | evacuate.rs         |
+                                       +--+------+-----------+
+                                          |      |
+                  Per-shark channels      |      |  bounded(1)
+                  sends: AssignmentMsg    |      |  sends: FiniMsg
+                  (Data/Flush/Stop)       |      |  (shutdown signal to checker)
+                            +-------------+      +----------->  (to Step 4)
+                            |
+                            v
+                  +---------------------+
+                  | Shark Assignment    |   bounded(5)
+                  | Generator Threads   |   sends: Assignment
+                  | (one per dest shark)+------------------>  (to Step 3)
+                  | evacuate.rs         |
+                  +---------------------+
+                     |
+                     | Batches objects into assignments of
+                     | max_tasks_per_assignment (default 50).
+                     | Flushes after max_assignment_age (default 3600s).
+```
+
+**Step 3 — Post to agents:** Send assignments to storage node agents.
+
+```
+                     bounded(5)   +---------------------+
+(from Step 2)  Assignment         | Assignment Poster   |
+              +------------------>| (single thread)     |
+                                  | evacuate.rs         |
+                                  +----------+----------+
+                                             |
+                                             | HTTP POST /assignments
+                                             | (with 503 retry + backoff)
+                                             v
+                                  +---------------------+
+                                  | Storage Agents      |
+                                  | (one per shark)     |
+                                  | libagent.rs :7878   |
+                                  +---------------------+
+                                     |
+                                     | Agent downloads objects from
+                                     | source shark, verifies MD5,
+                                     | moves to /manta/.
+```
+
+**Step 4 — Check completion:** Poll agents for finished assignments.
+
+```
+                     bounded(1)   +---------------------+
+(from Step 2)  FiniMsg            | Assignment Checker  |
+(shutdown)    +------------------>| (single thread)     |
+                                  | evacuate.rs         |
+                                  +----------+----------+
+                                             |
+                                             | HTTP GET /assignments/{id}
+                                             | Polls agents every 500ms.
+                                             | Times out after 2 * max_assignment_age.
+                                             |
+                                             |  bounded(5)
+                                             |  sends: AssignmentCacheEntry
+                                             +-------------------->  (to Step 5)
+```
+
+**Step 5 — Metadata update:** Update live moray/mdapi with new shark location.
+
+```
+                     bounded(5)        +---------------------+
+(from Step 4)  AssignmentCacheEntry    | MD Update Broker    |
+              +----------------------->| (single thread)     |
+                                       | evacuate.rs         |
+                                       +----------+----------+
+                                                  |
+                                                  | Dispatches to worker threads
+                                                  v
+                                       +---------------------+
+                                       | MD Update Workers   |
+                                       | (dynamic or static  |
+                                       |  pool, 1-250)       |
+                                       | evacuate.rs         |
+                                       +---------------------+
+                                          |
+                                          | Moray putObject (v1) or
+                                          | MDAPI update (v2) with
+                                          | etag conditional write.
+                                          | Object marked "complete"
+                                          | on success.
+```
+
+### Startup and shutdown
+
+**Startup:** `EvacuateJob::run()` spawns threads in this order:
+1. Metadata update broker (waits on channel)
+2. Assignment checker (waits on channel)
+3. Assignment poster (waits on channel)
+4. Storinfo poller (background refresh every 10s)
+5. Assignment manager (starts consuming objects, spawns per-shark generators)
+6. Sharkspotter thread + translator (starts scanning, feeds objects to step 2)
+
+**Shutdown:** When sharkspotter finishes scanning:
+1. Sharkspotter thread exits → translator drains and exits
+2. `obj_tx` channel closes → assignment manager drains remaining objects
+3. Assignment manager sends `FiniMsg` to checker → exits
+4. Checker drains remaining assigned items → sends to MD broker → exits
+5. `md_update_tx` closes → MD broker drains → exits
+6. `EvacuateJob::run()` joins all threads → job marked `Complete`
 
 ### Channel summary
 
 | Channel | Capacity | Sender | Receiver | Message Type |
 |---------|----------|--------|----------|--------------|
 | Job dispatch | bounded(5) | Gotham HTTP handler | Job runner ThreadPool | `Job` |
-| Object stream | bounded(100) | Sharkspotter translator | Assignment manager | `EvacuateObject` |
-| Sharkspotter internal | bounded(10) | Shard scanner threads | Sharkspotter translator | `SharkspotterMessage` |
+| Sharkspotter internal | bounded(10) | Shard scanner threads | Translator thread | `SharkspotterMessage` |
+| Object stream | bounded(100) | Translator thread | Assignment manager | `EvacuateObject` |
 | Per-shark assignment | unbounded | Assignment manager | Shark assignment generator | `AssignmentMsg` (Data/Flush/Stop) |
 | Full assignment | bounded(5) | Shark assignment generators | Assignment poster | `Assignment` |
 | Checker finish | bounded(1) | Assignment manager | Assignment checker | `FiniMsg` |
