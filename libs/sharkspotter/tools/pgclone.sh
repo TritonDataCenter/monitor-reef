@@ -26,7 +26,7 @@
 #
 #   pgclone.sh clone-moray <manatee VM UUID>
 #   pgclone.sh clone-buckets <buckets-postgres VM UUID>
-#   pgclone.sh clone-all --moray-vm <UUID> --buckets-vm <UUID>
+#   pgclone.sh clone-all --moray-vm <UUID> [--moray-vm ...] --buckets-vm <UUID> [--buckets-vm ...]
 #   pgclone.sh list [--type moray|buckets|all] [--json]
 #   pgclone.sh destroy <clone VM UUID>
 #   pgclone.sh destroy-all [--type moray|buckets]
@@ -891,21 +891,23 @@ function do_destroy_all {
 # Subcommand: clone-all
 # -------------------------------------------------------
 function do_clone_all {
-    local moray_vm="" buckets_vm=""
+    local -a moray_vms=()
+    local -a buckets_vms=()
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --moray-vm)
-                moray_vm="$2"; shift 2 ;;
+                moray_vms+=("$2"); shift 2 ;;
             --buckets-vm)
-                buckets_vm="$2"; shift 2 ;;
+                buckets_vms+=("$2"); shift 2 ;;
             *)
                 echo "Unknown option: $1" >&2
                 usage ;;
         esac
     done
 
-    if [[ -z ${moray_vm} && -z ${buckets_vm} ]]; then
+    if [[ ${#moray_vms[@]} -eq 0 && \
+          ${#buckets_vms[@]} -eq 0 ]]; then
         echo "At least one of --moray-vm or" \
             "--buckets-vm required." >&2
         usage
@@ -913,19 +915,21 @@ function do_clone_all {
 
     local failed=0
 
-    if [[ -n ${moray_vm} ]]; then
-        echo "=== Cloning moray Manatee ==="
+    for moray_vm in "${moray_vms[@]}"; do
+        echo "=== Cloning moray Manatee ${moray_vm} ==="
         if ! do_clone moray "${moray_vm}"; then
-            echo "FAILED: moray clone" >&2
+            echo "FAILED: moray clone ${moray_vm}" >&2
             failed=1
         fi
         echo ""
-    fi
+    done
 
-    if [[ -n ${buckets_vm} ]]; then
-        echo "=== Cloning buckets-postgres Manatee ==="
+    for buckets_vm in "${buckets_vms[@]}"; do
+        echo "=== Cloning buckets-postgres Manatee" \
+            "${buckets_vm} ==="
         if ! do_clone buckets "${buckets_vm}"; then
-            echo "FAILED: buckets-postgres clone" >&2
+            echo "FAILED: buckets-postgres clone" \
+                "${buckets_vm}" >&2
             failed=1
         fi
         echo ""
@@ -949,7 +953,8 @@ function usage {
 Usage:
   $0 clone-moray <manatee VM UUID>
   $0 clone-buckets <buckets-postgres VM UUID>
-  $0 clone-all --moray-vm <UUID> --buckets-vm <UUID>
+  $0 clone-all --moray-vm <UUID> [--moray-vm <UUID> ...] \\
+                --buckets-vm <UUID> [--buckets-vm <UUID> ...]
   $0 list [--type moray|buckets|all] [--json]
   $0 destroy <clone VM UUID>
   $0 destroy-all [--type moray|buckets]
