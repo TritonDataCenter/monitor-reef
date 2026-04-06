@@ -97,9 +97,7 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
             },
             title: "Triton API",
             metadata: ManagedApiMetadata {
-                description: Some(
-                    "Triton API - public-facing HTTP API for the Triton datacenter",
-                ),
+                description: Some("Triton API - public-facing HTTP API for the Triton datacenter"),
                 ..ManagedApiMetadata::default()
             },
             api_description: triton_api::triton_api_mod::stub_api_description,

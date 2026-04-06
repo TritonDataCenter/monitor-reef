@@ -11,7 +11,7 @@
 cli/triton-cli/tests/config.json
 
 # Image build artifacts (eng buildimage/release targets)
-bits/
-proto/
-make_stamps/
-*.tar.gz
+images/*/bits/
+images/*/proto/
+images/*/make_stamps/
+images/*/*.tar.gz
