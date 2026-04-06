@@ -63,7 +63,7 @@
         "md_read_chunk_size": {{REBALANCER_MD_READ_CHUNK_SIZE}}
         {{/REBALANCER_MD_READ_CHUNK_SIZE}}
         {{^REBALANCER_MD_READ_CHUNK_SIZE}}
-        "md_read_chunk_size": 500
+        "md_read_chunk_size": 10000
         {{/REBALANCER_MD_READ_CHUNK_SIZE}}
     },
     "listen_port": 80,

@@ -395,15 +395,16 @@ download the file from the source shark.
 | Skip Reason | Description |
 |---|---|
 | `source_is_evac_shark` | The only copy of the object is on the shark being evacuated. No replica available to download from. These are single-replica objects — a data durability concern. |
-| `{http_status_code:404}` | File not found on the source replica shark. Common causes: (1) coal/test environments with fake replication, (2) orphaned MPU part metadata (file deleted during multipart upload assembly, metadata not cleaned up). |
-| `source_other_error` | Agent could not reach the source shark (connection refused, DNS timeout, TCP timeout, nginx error). Usually transient — retry the job. |
+| `source_object_not_found` | File not found (404) on the source shark. On re-runs this means already evacuated. On first runs it means genuinely missing file. |
+| `source_other_error` | Agent could not reach the source shark after 3 retries (connection refused, DNS timeout, TCP timeout). Usually transient. |
 | `agent_fs_error` | Agent filesystem error writing the downloaded file. Check disk space on the destination storage node. |
+| `agent_assignment_timeout` | Agent didn't complete the assignment within 2 × `max_assignment_age` (default 7200s). Agents were overloaded. |
+| `agent_busy` | Agent rejected the assignment (503) after manager exhausted 60 retries. |
 | `md5_mismatch` | Downloaded file checksum does not match metadata. The source file may be corrupt. |
 | `destination_insufficient_space` | Destination storage node does not have enough free space. |
-| `agent_assignment_no_ent` | Agent does not have the assignment (stale reference from a previous run). |
-| `agent_busy` | Agent rejected the assignment because it is overloaded. |
-| `network_error` | Generic network error contacting the source shark. |
-| `mpu_orphan` | Bucket object (v2) returned 404 — orphaned MPU part metadata where the file was deleted during multipart upload assembly. Harmless. |
+| `destination_unreachable` | Could not connect to destination agent. |
+| `network_error` | Generic network error posting assignment to agent. |
+| `http_status_code(N)` | Source shark returned non-404 HTTP error N. |
 
 ### Interpreting Results
 
@@ -418,7 +419,7 @@ Skipped: 200       # source_is_evac_shark (single-replica objects)
 ```
 Complete: 1200     # Objects with real replicas
 Error: 2           # Rare moray etag races
-Skipped: 1000      # 622 mpu_orphan + 192 single-replica + 186 source_other_error
+Skipped: 1000      # 454 source_object_not_found + 192 source_is_evac_shark + 252 source_other_error + 102 other
 ```
 
 **Stale clone (re-running without fresh pgclone):**

@@ -221,7 +221,7 @@ them into assignments destined for specific sharks:
 - Selection filters: available capacity, datacenter blacklist, `max_fill_percentage`
 - Top N sharks by available space (`max_sharks`, default: 5)
 - Each assignment holds up to `max_tasks_per_assignment` objects (default: 50)
-- Assignments are batched until they reach `max_assignment_age` seconds (default: 600)
+- Assignments are batched until they reach `max_assignment_age` seconds (default: 3600)
 
 **5. Agent Transfer (Phase 3).**
 The manager POSTs each assignment to the rebalancer-agent running on the
@@ -655,7 +655,7 @@ All values can be set via SAPI metadata. After updating SAPI metadata, run
 | `static_queue_depth` | `REBALANCER_STATIC_QUEUE_DEPTH` | 10 | 1+ | Queue depth for static thread pool |
 | `max_assignment_age` | `REBALANCER_MAX_ASSIGNMENT_AGE` | 3600 | seconds | Max wait before posting assignment to agent. The checker timeout is 2× this value (7200s). Assignments not completed by agents within the timeout are skipped. |
 | `use_batched_updates` | `REBALANCER_USE_BATCHED_UPDATES` | false | — | Batch metadata updates |
-| `md_read_chunk_size` | `REBALANCER_MD_READ_CHUNK_SIZE` | 500 | 1+ | Objects per metadata query |
+| `md_read_chunk_size` | `REBALANCER_MD_READ_CHUNK_SIZE` | 10000 | 1+ | Objects per metadata query |
 
 #### MDAPI Settings (Bucket Objects)
 
@@ -1437,24 +1437,27 @@ psql -U postgres -c "DROP DATABASE \"<job-uuid>\";"
 
 ### Object Skip Reasons
 
-| Reason | Source | Description |
-|--------|--------|------------|
-| `InsufficientSpace` | Manager | No destination shark has enough space |
-| `NoDestinationSharks` | Manager | No healthy destination sharks available |
-| `ObjectNotFound` | Manager | Object no longer exists in metadata |
-| `DuplicateObject` | Manager | Same object found on multiple shards |
-| `DuplicateShark` | Manager | Object already exists on would-be destination |
-| `HTTPStatusCode(N)` | Agent | Source shark returned HTTP error N |
-| `AgentFSError` | Agent | Filesystem error on destination (disk full, permissions) |
-| `AgentAssignmentNoEnt` | Agent | Assignment not found on agent |
-| `AgentBusy` | Agent | Agent at capacity |
-| `MD5Mismatch` | Agent | Downloaded data doesn't match expected checksum |
-| `SourceOtherError` | Agent | Connection/network error to source shark |
-| `SourceIsEvacShark` | Agent | Source is the shark being evacuated (circular) |
-| `NetworkError` | Agent | General network failure |
-| `DestinationInsufficientSpace` | Agent | Destination ran out of space during download |
-| `ObjectAlreadyOnDestShark` | Agent | File already exists with correct checksum |
-| `ObjectAlreadyInDatacenter` | Agent | Object copy already in same datacenter |
+These correspond to the `ObjectSkippedReason` enum in the code.
+
+| Reason | Source | Description | Retryable |
+|--------|--------|------------|-----------|
+| `agent_fs_error` | Agent | Filesystem error on destination (disk full, permissions) | Yes |
+| `agent_assignment_no_ent` | Agent | Assignment not found on agent | No |
+| `agent_busy` | Manager | Agent returned 503 (queue full) after exhausting retries | Yes |
+| `agent_assignment_timeout` | Manager | Agent didn't complete assignment within 2 × `max_assignment_age` | Yes |
+| `assignment_error` | Manager | Internal error creating/sending assignment | Yes |
+| `assignment_mismatch` | Manager | Assignment data inconsistent between agent and manager | No |
+| `assignment_rejected` | Agent | Agent rejected assignment (non-503 error) | Yes |
+| `destination_insufficient_space` | Manager | No destination shark has enough space | Yes (if space freed) |
+| `destination_unreachable` | Manager | Could not connect to destination agent | Yes |
+| `md5_mismatch` | Agent | Downloaded data doesn't match expected checksum | No (data issue) |
+| `network_error` | Manager | General network failure posting assignment | Yes |
+| `object_already_on_dest_shark` | Manager | Object already has a copy on the destination shark | No |
+| `object_already_in_datacenter` | Manager | Object copy already in the destination datacenter | No |
+| `source_other_error` | Agent | Connection error to source shark (after 3 retries) | Yes |
+| `source_object_not_found` | Agent | 404 from source shark — file missing or already evacuated | No (if missing) / Yes (re-run) |
+| `source_is_evac_shark` | Manager | Both copies are on the shark being evacuated | No (manual intervention) |
+| `http_status_code(N)` | Agent | Source shark returned non-404 HTTP error N | Depends on error |
 
 ### Job State Transitions
 

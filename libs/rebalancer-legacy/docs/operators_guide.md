@@ -323,11 +323,11 @@ $ svcs -L svc:/manta/application/rebalancer-agent:default
     ```
     2.  Query the `evacuateobjects` table:
     ```
-    SELECT skipped_reason,count(skipped_reason) FROM evacauteobjects WHERE status = 'skipped' GROUP BY skipped_reason;
+    SELECT skipped_reason,count(skipped_reason) FROM evacuateobjects WHERE status = 'skipped' GROUP BY skipped_reason;
     ```
     or 
     ```
-    SELECT error,count(error) FROM evacauteobjects WHERE status = 'error' GROUP BY error;
+    SELECT error,count(error) FROM evacuateobjects WHERE status = 'error' GROUP BY error;
     ```
 
 See [agent documentation](https://github.com/joyent/manta-rebalancer/blob/master/docs/agent.md) for additional details.
