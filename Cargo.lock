@@ -4475,10 +4475,16 @@ dependencies = [
 name = "tritonadm"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "assert_cmd",
  "clap",
  "clap_complete",
  "predicates",
+ "sapi-client",
+ "serde",
+ "serde_json",
+ "tokio",
+ "vmapi-client",
 ]
 
 [[package]]
