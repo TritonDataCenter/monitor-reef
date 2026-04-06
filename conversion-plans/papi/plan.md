@@ -283,9 +283,26 @@ Both `GET /packages` and `GET /packages/:uuid` have `HEAD` variants that use the
 - ValueEnum patches: Brand, AllocServerSpread, BackendStatus, SortOrder
 - Re-exports: All API crate types (enums, structs, Uuid)
 
+## Phase 4 Complete
+
+- CLI crate: `cli/papi-cli/`
+- Binary name: `papi`
+- Commands implemented: 6
+- Build status: SUCCESS
+- Full workspace build: SUCCESS
+- OpenAPI check: SUCCESS
+
+### CLI Commands
+- `papi ping` - Health check endpoint
+- `papi list` - List packages (with filters: --name, --version, --active, --brand, --owner-uuids, --group, --os, --flexible-disk, --filter, --sort, --order, --limit, --offset, --raw)
+- `papi get <uuid>` - Get a package by UUID (--owner-uuids, --raw)
+- `papi create` - Create a new package (all required and optional fields as flags, --raw)
+- `papi update <uuid>` - Update a package (mutable fields as flags, --force, --skip-validation, --raw)
+- `papi delete <uuid>` - Delete a package (--force required)
+
 ## Phase Status
 - [x] Phase 1: Analyze - COMPLETE
 - [x] Phase 2: Generate API - COMPLETE
 - [x] Phase 3: Generate Client - COMPLETE
-- [ ] Phase 4: Generate CLI
+- [x] Phase 4: Generate CLI - COMPLETE
 - [ ] Phase 5: Validate

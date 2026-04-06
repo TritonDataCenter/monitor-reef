@@ -2477,6 +2477,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "papi-cli"
+version = "7.2.5"
+dependencies = [
+ "anyhow",
+ "clap",
+ "papi-api",
+ "papi-client",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "papi-client"
 version = "7.2.5"
 dependencies = [
