@@ -294,9 +294,33 @@ Several list endpoints (`ListApplications`, `ListServices`, `ListInstances`, `Li
 ### Async Instance Creation
 `CreateInstance` accepts an `async` parameter. When true, the endpoint returns immediately with a `job_uuid` in the response. When false (default), it waits for the VM provisioning to complete before responding.
 
+## Phase 2 Complete
+
+- API crate: `apis/sapi-api/`
+- OpenAPI spec: `openapi-specs/generated/sapi-api.json`
+- Endpoint count: 28 (across 15 paths)
+- Build status: SUCCESS
+
+### Type modules created
+- `types/common.rs` -- Uuid alias, UuidPath, UpdateAction enum, UpdateAttributesBody, ServiceType enum
+- `types/application.rs` -- Application, CreateApplicationBody, UpdateApplicationBody, ListApplicationsQuery
+- `types/service.rs` -- Service, CreateServiceBody, UpdateServiceBody, ListServicesQuery
+- `types/instance.rs` -- Instance, CreateInstanceBody, CreateInstanceQuery, UpdateInstanceBody, UpgradeInstanceBody, ListInstancesQuery
+- `types/manifest.rs` -- Manifest, CreateManifestBody, ListManifestsQuery
+- `types/ops.rs` -- SapiMode, PingResponse, ModeResponse, SetModeBody, LogLevelResponse, SetLogLevelBody
+
+### Design decisions
+- Action dispatch for update endpoints uses typed `UpdateApplicationBody`/`UpdateServiceBody`/`UpdateInstanceBody` structs rather than `serde_json::Value`, since the action+fields pattern is uniform and well-defined
+- `ServiceType` enum has `#[serde(other)] Unknown` variant for forward compatibility
+- `SapiMode` enum has `#[serde(other)] Unknown` variant for forward compatibility
+- PingResponse uses explicit `#[serde(rename)]` for camelCase `storType`/`storAvailable` fields
+- Service and Instance `type` fields use `#[serde(rename = "type")]` since `type` is a Rust keyword
+- `sync_cache` returns `HttpResponseUpdatedNoContent` (204) matching the original
+- `get_instance_payload` and `get_config` return `serde_json::Value` since their responses are freeform JSON
+
 ## Phase Status
 - [x] Phase 1: Analyze - COMPLETE
-- [ ] Phase 2: Generate API
+- [x] Phase 2: Generate API - COMPLETE
 - [ ] Phase 3: Generate Client
 - [ ] Phase 4: Generate CLI
 - [ ] Phase 5: Validate
