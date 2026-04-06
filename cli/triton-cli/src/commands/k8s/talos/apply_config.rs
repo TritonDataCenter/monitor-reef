@@ -11,7 +11,7 @@
 use anyhow::{Context, Result, bail};
 use std::path::Path;
 
-use super::client;
+use super::client::{self, NodeTargetInterceptor};
 use super::proto::machine;
 use super::retry;
 
@@ -51,10 +51,47 @@ pub async fn run(
     do_retry: bool,
     verbose: bool,
 ) -> Result<()> {
+    run_via(
+        endpoint,
+        None,
+        base_config_path,
+        patch_paths,
+        talosconfig,
+        do_retry,
+        verbose,
+    )
+    .await
+}
+
+/// Apply a Talos machine configuration via a proxy node.
+///
+/// Similar to `run`, but routes the request through the endpoint to a target node.
+/// This is useful for applying config to worker nodes that are only reachable via
+/// the control plane.
+///
+/// # Arguments
+///
+/// * `endpoint` - The Talos API endpoint to connect to (control plane IP)
+/// * `target_node` - Optional target node IP to route the request to via the endpoint
+/// * `base_config_path` - Path to the base configuration YAML file
+/// * `patch_paths` - Array of paths to patch YAML files to apply
+/// * `talosconfig` - Optional path to talosconfig file
+/// * `do_retry` - Whether to retry the operation on failure
+/// * `verbose` - Whether to print verbose output
+pub async fn run_via(
+    endpoint: &str,
+    target_node: Option<&str>,
+    base_config_path: &Path,
+    patch_paths: &[&Path],
+    talosconfig: Option<&str>,
+    do_retry: bool,
+    verbose: bool,
+) -> Result<()> {
     if do_retry {
         retry::with_retry(verbose, || {
-            apply_config_once(
+            apply_config_once_via(
                 endpoint,
+                target_node,
                 base_config_path,
                 patch_paths,
                 talosconfig,
@@ -63,8 +100,9 @@ pub async fn run(
         })
         .await
     } else {
-        apply_config_once(
+        apply_config_once_via(
             endpoint,
+            target_node,
             base_config_path,
             patch_paths,
             talosconfig,
@@ -74,8 +112,9 @@ pub async fn run(
     }
 }
 
-async fn apply_config_once(
+async fn apply_config_once_via(
     endpoint: &str,
+    target_node: Option<&str>,
     base_config_path: &Path,
     patch_paths: &[&Path],
     talosconfig: Option<&str>,
@@ -88,14 +127,19 @@ async fn apply_config_once(
     let config_yaml = serde_yaml::to_string(&merged_config)
         .context("serializing merged configuration to YAML")?;
 
+    let target_desc = if let Some(target) = target_node {
+        format!("{} (via {})", target, endpoint)
+    } else {
+        endpoint.to_string()
+    };
+
     if verbose {
-        eprintln!("applying configuration to {}", endpoint);
+        eprintln!("applying configuration to {}", target_desc);
         eprintln!("configuration size: {} bytes", config_yaml.len());
     }
 
     // Connect to the Talos node
     let channel = client::connect(endpoint, talosconfig, verbose).await?;
-    let mut client = machine::machine_service_client::MachineServiceClient::new(channel);
 
     // Build the ApplyConfiguration request
     let req = machine::ApplyConfigurationRequest {
@@ -105,12 +149,26 @@ async fn apply_config_once(
         try_mode_timeout: None,
     };
 
-    // Apply the configuration
-    let resp = client
-        .apply_configuration(req)
-        .await
-        .context("applying configuration via gRPC")?
-        .into_inner();
+    // Apply the configuration (with optional proxy routing)
+    let resp = if let Some(target) = target_node {
+        let interceptor = NodeTargetInterceptor::new(&[target]);
+        let mut client = machine::machine_service_client::MachineServiceClient::with_interceptor(
+            channel,
+            interceptor,
+        );
+        client
+            .apply_configuration(req)
+            .await
+            .context("applying configuration via gRPC (proxied)")?
+            .into_inner()
+    } else {
+        let mut client = machine::machine_service_client::MachineServiceClient::new(channel);
+        client
+            .apply_configuration(req)
+            .await
+            .context("applying configuration via gRPC")?
+            .into_inner()
+    };
 
     // Check for errors in the response
     for msg in &resp.messages {
@@ -122,7 +180,7 @@ async fn apply_config_once(
     }
 
     if verbose {
-        eprintln!("configuration applied successfully");
+        eprintln!("configuration applied successfully to {}", target_desc);
     }
 
     Ok(())

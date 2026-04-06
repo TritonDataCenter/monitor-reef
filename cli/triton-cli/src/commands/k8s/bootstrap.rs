@@ -538,13 +538,11 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
         None
     };
 
-    // 13. Apply network persistence patches to control plane nodes only
-    // Workers are fabric-only (no external NIC) and cannot be reached from outside Triton.
-    // They already have complete network config from cloud-init, so no post-boot patching needed.
-    eprintln!("==> Applying network patches to control plane nodes");
-    eprintln!("    (Workers have complete config from cloud-init, skipping)");
-    logger.info("Applying network patches to control plane nodes only");
-    logger.info("Workers skipped - they have complete config from cloud-init");
+    // 13. Apply network persistence patches to all nodes
+    // Network patches must be applied to persist networking across Talos upgrades.
+    // Talos only reads from the STATE partition during upgrades, not the nocloud datasource.
+    eprintln!("==> Applying network patches to all nodes");
+    logger.info("Applying network patches to all nodes (required for upgrade persistence)");
     logger.flush().await?;
 
     let talosconfig_str = talosconfig_path.to_string_lossy().to_string();
@@ -651,7 +649,69 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
         }
     }
 
-    // 15. Retrieve and store kubeconfig
+    // 15. Apply network patches to worker nodes (via control plane)
+    // Workers are fabric-only, so we route through the control plane using the Talos
+    // proxy mechanism (nodes header). This persists network config to the STATE partition
+    // so workers retain networking after Talos upgrades.
+    if !worker_instances.is_empty() {
+        eprintln!("==> Applying network patches to worker nodes (via control plane)");
+        logger.info(format!(
+            "Applying network patches to {} workers via {}",
+            worker_instances.len(),
+            control_endpoint_for_bootstrap
+        ));
+
+        for inst in &worker_instances {
+            let patch_path = cluster_dir.join(format!("{}-network-patch.yaml", inst.name));
+
+            // Get the worker's fabric IP (the target node for routing)
+            let worker_fabric_ip = inst
+                .primary_ip
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("Worker {} has no primary IP", inst.name))?;
+
+            logger.info(format!(
+                "Applying config to {} ({}) via {}",
+                inst.name, worker_fabric_ip, control_endpoint_for_bootstrap
+            ));
+
+            // Apply the patch via the control plane
+            if let Err(e) = talos::apply_config::run_via(
+                &control_endpoint_for_bootstrap,
+                Some(worker_fabric_ip),
+                &worker_yaml,
+                &[patch_path.as_ref()],
+                Some(&talosconfig_str),
+                true,  // do_retry
+                false, // verbose
+            )
+            .await
+            {
+                logger.error(format!("Failed to apply config to {}: {}", inst.name, e));
+                // Don't fail the bootstrap for worker config errors - they can be
+                // fixed later with manual config application
+                eprintln!(
+                    "    WARNING: Failed to apply config to {} ({}): {}",
+                    inst.name, worker_fabric_ip, e
+                );
+                eprintln!("    Workers may lose networking after Talos upgrades.");
+                continue;
+            }
+
+            logger.info(format!(
+                "Successfully applied config to {} ({})",
+                inst.name, worker_fabric_ip
+            ));
+            eprintln!(
+                "    Applied config to {} ({} via {})",
+                inst.name, worker_fabric_ip, control_endpoint_for_bootstrap
+            );
+        }
+
+        logger.flush().await?;
+    }
+
+    // 16. Retrieve and store kubeconfig
     eprintln!("==> Retrieving kubeconfig");
 
     let kubeconfig_path = cluster_dir.join("kubeconfig");

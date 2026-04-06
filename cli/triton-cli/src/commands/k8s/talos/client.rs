@@ -5,10 +5,12 @@
  */
 
 /*
- * Copyright 2025 Edgecast Cloud LLC.
+ * Copyright 2026 Edgecast Cloud LLC.
  */
 
 use anyhow::{Context, Result};
+use tonic::metadata::MetadataValue;
+use tonic::service::Interceptor;
 use tonic::transport::{Channel, ClientTlsConfig, Uri};
 
 use super::talosconfig;
@@ -53,4 +55,33 @@ pub async fn connect(endpoint: &str, talosconfig: Option<&str>, verbose: bool) -
 /// Derive a TLS domain name for the endpoint.
 fn domain_for_endpoint(endpoint: &str) -> String {
     endpoint.to_string()
+}
+
+/// An interceptor that adds the `nodes` metadata header to route requests
+/// to specific target nodes through a Talos API endpoint.
+#[derive(Clone)]
+pub struct NodeTargetInterceptor {
+    target_nodes: String,
+}
+
+impl NodeTargetInterceptor {
+    pub fn new(target_nodes: &[&str]) -> Self {
+        Self {
+            target_nodes: target_nodes.join(","),
+        }
+    }
+}
+
+impl Interceptor for NodeTargetInterceptor {
+    fn call(
+        &mut self,
+        mut request: tonic::Request<()>,
+    ) -> std::result::Result<tonic::Request<()>, tonic::Status> {
+        if !self.target_nodes.is_empty() {
+            let value = MetadataValue::try_from(&self.target_nodes)
+                .map_err(|e| tonic::Status::internal(format!("invalid nodes header: {}", e)))?;
+            request.metadata_mut().insert("nodes", value);
+        }
+        Ok(request)
+    }
 }

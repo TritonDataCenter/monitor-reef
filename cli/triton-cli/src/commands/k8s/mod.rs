@@ -26,6 +26,7 @@ pub mod network;
 pub mod provisioning;
 pub mod state;
 pub mod talos;
+pub mod upgrade;
 pub mod worker;
 
 #[derive(Subcommand, Clone)]
@@ -61,6 +62,9 @@ pub enum K8sCommand {
     /// Manage LoadBalancer controller
     #[command(subcommand, visible_alias = "loadbalancer")]
     Lb(lb::LbCommand),
+
+    /// Upgrade Talos version on cluster nodes
+    Upgrade(upgrade::UpgradeArgs),
 }
 
 impl K8sCommand {
@@ -75,6 +79,7 @@ impl K8sCommand {
             Self::Control(cmd) => cmd.run(client, json).await,
             Self::Worker(cmd) => cmd.run(client, json).await,
             Self::Lb(cmd) => cmd.run(client, profile, json).await,
+            Self::Upgrade(args) => upgrade::run(args, client, json).await,
         }
     }
 }

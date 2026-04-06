@@ -23,3 +23,5 @@ pub mod kubeconfig;
 pub mod proto;
 pub mod retry;
 pub mod talosconfig;
+pub mod upgrade;
+pub mod version;
