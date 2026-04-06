@@ -77,6 +77,20 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
             api_description: cloudapi_api::cloud_api_mod::stub_api_description,
         },
         ManagedApiConfig {
+            ident: "imgapi-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/imgapi-api")?,
+            },
+            title: "Triton IMGAPI",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Triton IMGAPI - internal HTTP API for managing virtual machine images in a Triton datacenter",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: imgapi_api::img_api_mod::stub_api_description,
+        },
+        ManagedApiConfig {
             ident: "jira-api",
             versions: Versions::Lockstep {
                 version: crate_version("apis/jira-api")?,

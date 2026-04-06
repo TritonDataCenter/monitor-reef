@@ -439,9 +439,50 @@ Several endpoints create workflow jobs and return `{ image_uuid, job_uuid }`. Th
 - Auth type configurable: `none`, `signature`
 
 
+## Phase 2 Complete
+
+- API crate: `apis/imgapi-api/`
+- OpenAPI spec: `openapi-specs/generated/imgapi-api.json`
+- Endpoint count: 22 (consolidated from 28 -- excludes static/favicon/docs routes, merges action dispatch into single endpoints)
+- Enums: 9 (ImageState, ImageType, ImageOs, FileCompression, StorageType, ImageAction, CreateImageAction, AclAction, StateAction)
+- Action request types: 12 for POST /images/:uuid actions + CreateImageFromVmRequest for POST /images
+- Binary endpoints: UntypedBody for file/icon upload, Response<Body> for download
+- Streaming endpoints: Response<Body> for docker/lxd import and push
+- Legacy dataset redirects: included as Response<Body> endpoints
+- Build status: SUCCESS (no warnings)
+- OpenAPI check: PASS
+
+### Endpoint mapping
+
+| Trait Method | Original Endpoint | Response Type |
+|-------------|-------------------|---------------|
+| `ping` | GET /ping | `HttpResponseOk<PingResponse>` |
+| `admin_get_state` | GET /state | `HttpResponseOk<serde_json::Value>` |
+| `admin_update_state` | POST /state?action=dropcaches | `HttpResponseAccepted<()>` |
+| `list_channels` | GET /channels | `HttpResponseOk<Vec<Channel>>` |
+| `list_images` | GET /images | `HttpResponseOk<Vec<Image>>` |
+| `get_image` | GET /images/:uuid | `HttpResponseOk<Image>` |
+| `create_image` | POST /images (action dispatch) | `Response<Body>` |
+| `image_action` | POST /images/:uuid (action dispatch) | `Response<Body>` |
+| `delete_image` | DELETE /images/:uuid | `HttpResponseDeleted` |
+| `add_image_file` | PUT /images/:uuid/file | `HttpResponseOk<Image>` |
+| `add_image_file_from_url` | POST /images/:uuid/file/from-url | `HttpResponseOk<Image>` |
+| `get_image_file` | GET /images/:uuid/file | `Response<Body>` |
+| `add_image_icon` | PUT /images/:uuid/icon | `HttpResponseOk<Image>` |
+| `get_image_icon` | GET /images/:uuid/icon | `Response<Body>` |
+| `delete_image_icon` | DELETE /images/:uuid/icon | `HttpResponseOk<Image>` |
+| `image_acl_action` | POST /images/:uuid/acl | `HttpResponseOk<Image>` |
+| `list_image_jobs` | GET /images/:uuid/jobs | `HttpResponseOk<Vec<Value>>` |
+| `clone_image` | POST /images/:uuid/clone | `HttpResponseOk<Image>` |
+| `admin_push_image` | POST /images/:uuid/push | `Response<Body>` |
+| `admin_reload_auth_keys` | POST /authkeys/reload | `HttpResponseOk<Value>` |
+| `list_datasets` | GET /datasets | `Response<Body>` |
+| `get_dataset` | GET /datasets/:arg | `Response<Body>` |
+
+
 ## Phase Status
 - [x] Phase 1: Analyze - COMPLETE
-- [ ] Phase 2: Generate API
+- [x] Phase 2: Generate API - COMPLETE
 - [ ] Phase 3: Generate Client
 - [ ] Phase 4: Generate CLI
 - [ ] Phase 5: Validate

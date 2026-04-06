@@ -1876,6 +1876,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "imgapi-api"
+version = "4.13.1"
+dependencies = [
+ "dropshot",
+ "http",
+ "schemars",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "indent_write"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2343,6 +2355,7 @@ dependencies = [
  "dropshot",
  "dropshot-api-manager",
  "dropshot-api-manager-types",
+ "imgapi-api",
  "jira-api",
  "sapi-api",
  "semver 1.0.27",

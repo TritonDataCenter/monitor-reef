@@ -8,6 +8,7 @@
 members = [
     "apis/bugview-api",
     "apis/cloudapi-api",
+    "apis/imgapi-api",
     "apis/jira-api",
     "apis/sapi-api",
     "apis/triton-api",
