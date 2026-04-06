@@ -275,9 +275,17 @@ Both `GET /packages` and `GET /packages/:uuid` have `HEAD` variants that use the
 - Build status: SUCCESS
 - OpenAPI generation: SUCCESS
 
+## Phase 3 Complete
+
+- Client crate: `clients/internal/papi-client/`
+- Build status: SUCCESS
+- Typed wrappers: NO (no action dispatch endpoints)
+- ValueEnum patches: Brand, AllocServerSpread, BackendStatus, SortOrder
+- Re-exports: All API crate types (enums, structs, Uuid)
+
 ## Phase Status
 - [x] Phase 1: Analyze - COMPLETE
 - [x] Phase 2: Generate API - COMPLETE
-- [ ] Phase 3: Generate Client
+- [x] Phase 3: Generate Client - COMPLETE
 - [ ] Phase 4: Generate CLI
 - [ ] Phase 5: Validate
