@@ -23,6 +23,7 @@ dropshot-api-manager-types = { workspace = true }
 bugview-api = { path = "../apis/bugview-api" }
 cloudapi-api = { path = "../apis/cloudapi-api" }
 jira-api = { path = "../apis/jira-api" }
+triton-api = { path = "../apis/triton-api" }
 vmapi-api = { path = "../apis/vmapi-api" }
 anyhow = { workspace = true }
 camino = { workspace = true }

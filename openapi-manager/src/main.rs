@@ -91,6 +91,20 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
             api_description: jira_api::jira_api_mod::stub_api_description,
         },
         ManagedApiConfig {
+            ident: "triton-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/triton-api")?,
+            },
+            title: "Triton API",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Triton API - public-facing HTTP API for the Triton datacenter",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: triton_api::triton_api_mod::stub_api_description,
+        },
+        ManagedApiConfig {
             ident: "vmapi-api",
             versions: Versions::Lockstep {
                 version: crate_version("apis/vmapi-api")?,
