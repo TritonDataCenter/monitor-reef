@@ -96,13 +96,26 @@ completions all work today.
 become available. Each command implementation is a self-contained change
 that adds real behavior to one stub.
 
-**Priority order** (based on operational need):
+**Portal drives the foundation**: `post-setup portal` is the first real
+command, but the API clients it requires (SAPI, IMGAPI, NAPI, PAPI, plus
+existing VMAPI) unlock several read-only commands as low-hanging fruit:
 
-1. `post-setup portal` — first real command, drives initial API client work
-2. `services` / `instances` — read-only listing, useful for validation
-3. `check-health` — operational monitoring
-4. `post-setup grafana` / `post-setup prometheus` — observability stack
-5. `update` — the core workflow, likely the most complex command
+| API client | Portal needs | Also unlocks |
+|------------|-------------|--------------|
+| **SAPI** | ListServices, CreateService, ListInstances | `services`, `instances`, `check-config` |
+| **IMGAPI** | ListImages (by name) | `avail` |
+| **VMAPI** | GetVm (poll state) | `instances`, `check-health` (already exists) |
+| **NAPI** | ListNetworks | `default-fabric` |
+| **PAPI** | ListPackages | — |
+
+**Priority order:**
+
+1. `post-setup portal` — drives the API client work
+2. `services` / `instances` — free once SAPI client exists (read-only)
+3. `avail` — free once IMGAPI client exists (read-only)
+4. `check-config` / `check-health` — SAPI + VMAPI (read-only)
+5. `post-setup grafana` / `post-setup prometheus` — reuse same APIs
+6. `update` — the core workflow, likely the most complex command
 
 ## First Target: `post-setup portal`
 
