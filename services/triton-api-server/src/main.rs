@@ -22,7 +22,10 @@ impl TritonApi for TritonApiImpl {
     async fn ping(
         _rqctx: RequestContext<Self::Context>,
     ) -> Result<HttpResponseOk<PingResponse>, HttpError> {
-        Ok(HttpResponseOk(PingResponse {}))
+        Ok(HttpResponseOk(PingResponse {
+            status: "OK".to_string(),
+            healthy: Some(true),
+        }))
     }
 }
 

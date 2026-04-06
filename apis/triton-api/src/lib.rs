@@ -4,13 +4,15 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-use dropshot::{HttpError, HttpResponseOk, RequestContext};
-use schemars::JsonSchema;
-use serde::{Deserialize, Serialize};
+//! Triton API trait definition
+//!
+//! This crate defines the API trait for the Triton API service.
+//! It serves as the public-facing HTTP API for the Triton datacenter.
 
-/// Ping response
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct PingResponse {}
+use dropshot::{HttpError, HttpResponseOk, RequestContext};
+
+pub mod types;
+pub use types::*;
 
 /// Triton API
 #[dropshot::api_description]
