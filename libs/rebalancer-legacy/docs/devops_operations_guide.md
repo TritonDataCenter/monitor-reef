@@ -314,12 +314,51 @@ scp libs/sharkspotter/tools/pgclone.sh headnode:/var/tmp/
 |---------|------------|
 | `pgclone.sh clone-moray <manatee_UUID>` | Clone a moray Manatee primary (v1 objects) |
 | `pgclone.sh clone-buckets <buckets_pg_UUID>` | Clone a buckets-postgres primary (v2 objects) |
-| `pgclone.sh clone-all --moray-vm <UUID> --buckets-vm <UUID>` | Clone both at once |
+| `pgclone.sh clone-all --moray-vm <UUID> [--moray-vm ...] --buckets-vm <UUID> [--buckets-vm ...]` | Clone multiple shards at once; accepts repeated flags |
+| `pgclone.sh discover` | Find all postgres VMs across all CNs and shards; outputs a suggested `clone-all` command |
 | `pgclone.sh list [--type moray\|buckets\|all] [--json]` | List active clones |
 | `pgclone.sh destroy <clone_UUID>` | Destroy a single clone |
 | `pgclone.sh destroy-all [--type moray\|buckets]` | Destroy all clones |
 
 For backwards compatibility: `pgclone.sh <manatee_UUID>` is equivalent to `clone-moray`.
+
+### Multi-Shard Deployments
+
+In a multi-shard deployment, one pgclone VM is created per shard. Each clone
+registers in DNS with the shard number preserved from the source VM:
+
+- Moray shard N (`N.postgres.<domain>`) -> clone at `N.rebalancer-postgres.<domain>`
+- Buckets shard N (`N.buckets-postgres.<domain>`) -> clone at `N.rebalancer-buckets-postgres.<domain>`
+
+**Shard discovery is automatic.** Moray shards come from `shards[]` in the
+rebalancer config (populated by SAPI `INDEX_MORAY_SHARDS`). Buckets shards
+come from `mdapi.shards[]` (populated by SAPI `BUCKETS_MORAY_SHARDS`). No
+manual min/max shard configuration is needed.
+
+**Multi-CN caveat:** In multi-CN deployments, postgres VMs for different
+shards may live on different compute nodes. `vmadm list` on the headnode
+won't show them all. Use `pgclone.sh discover` to find every postgres VM
+across all CNs.
+
+**Example: 2-shard deployment**
+
+```bash
+# 1. Discover all postgres VMs across all CNs
+pgclone.sh discover
+
+# 2. Clone all shards (one per shard)
+pgclone.sh clone-all \
+  --moray-vm <shard1-postgres-uuid> \
+  --moray-vm <shard2-postgres-uuid> \
+  --buckets-vm <shard1-buckets-postgres-uuid> \
+  --buckets-vm <shard2-buckets-postgres-uuid>
+
+# 3. Verify clones are running
+pgclone.sh list
+
+# 4. Start evacuation — rebalancer scans all shards automatically
+rebalancer-adm job create evacuate --shark <shark>
+```
 
 ### Pre-Evacuation Procedure (Before Creating Clones)
 
@@ -370,6 +409,12 @@ restarts, it is safe to proceed.
 ### Creating Clones
 
 **Find Manatee primaries:**
+
+For multi-shard or multi-CN deployments, use `pgclone.sh discover` to find
+all postgres VMs across all compute nodes (see
+[Multi-Shard Deployments](#multi-shard-deployments)).
+
+For single-shard deployments:
 ```bash
 # Moray postgres
 sdc-vmapi '/vms?tag.manta_role=postgres&state=running' | json -Ha uuid alias
@@ -380,7 +425,14 @@ sdc-vmapi '/vms?tag.manta_role=buckets-postgres&state=running' | json -Ha uuid a
 
 **Create clones:**
 ```bash
-# Both at once (recommended for full evacuation)
+# Multiple shards (recommended for full evacuation)
+pgclone.sh clone-all \
+    --moray-vm <SHARD1_MORAY_UUID> \
+    --moray-vm <SHARD2_MORAY_UUID> \
+    --buckets-vm <SHARD1_BUCKETS_UUID> \
+    --buckets-vm <SHARD2_BUCKETS_UUID>
+
+# Single shard
 pgclone.sh clone-all \
     --moray-vm <MORAY_MANATEE_UUID> \
     --buckets-vm <BUCKETS_MANATEE_UUID>
@@ -397,10 +449,18 @@ pgclone.sh list
 
 ### Verify DNS Resolution
 
-From the **rebalancer zone**, confirm the clones are reachable:
+From the **rebalancer zone**, confirm the clones are reachable. For
+multi-shard deployments, check each shard number:
 ```bash
+# Single shard
 dig +short 1.rebalancer-postgres.<domain>
 dig +short 1.rebalancer-buckets-postgres.<domain>
+
+# Multi-shard (verify each shard resolves)
+dig +short 1.rebalancer-postgres.<domain>
+dig +short 2.rebalancer-postgres.<domain>
+dig +short 1.rebalancer-buckets-postgres.<domain>
+dig +short 2.rebalancer-buckets-postgres.<domain>
 ```
 
 If DNS does not resolve, check that registrar is running inside the clone zone:
@@ -438,18 +498,19 @@ MANTA_APP=$(sdc-sapi /applications?name=manta | json -Ha uuid)
 
 # Full evacuation (both v1 and v2 via pgclone)
 echo '{ "metadata": {
-    "REBALANCER_DIRECT_DB": true,
-    "REBALANCER_BUCKETS_MIN_SHARD": 1,
-    "REBALANCER_BUCKETS_MAX_SHARD": 1
+    "REBALANCER_DIRECT_DB": true
 } }' | sapiadm update $MANTA_APP
 ```
+
+Shard ranges are auto-discovered from SAPI arrays (`INDEX_MORAY_SHARDS` and
+`BUCKETS_MORAY_SHARDS`) — no manual min/max shard config is needed.
 
 After updating SAPI, config-agent renders the new config and runs
 `svcadm refresh rebalancer`. The new settings take effect on the next job.
 
 **Verify current configuration:**
 ```bash
-json direct_db direct_db_buckets buckets_min_shard buckets_max_shard \
+json direct_db direct_db_buckets shards mdapi.shards \
     < /opt/smartdc/rebalancer/config.json
 ```
 
@@ -633,17 +694,18 @@ All values can be set via SAPI metadata. After updating SAPI metadata, run
    - Flush storinfo cache
    - Restart muskie and buckets-api
    - Wait for writes to drain
-   - Create pgclone clones (`pgclone.sh clone-all ...`)
+   - Run `pgclone.sh discover` to find all postgres VMs (especially
+     important for multi-shard/multi-CN deployments)
+   - Create pgclone clones (`pgclone.sh clone-all ...`) — one per shard
    - Verify DNS resolution from rebalancer zone
 2. **Enable directdb discovery** via SAPI:
    ```bash
    MANTA_APP=$(sdc-sapi /applications?name=manta | json -Ha uuid)
    echo '{ "metadata": {
-       "REBALANCER_DIRECT_DB": true,
-       "REBALANCER_BUCKETS_MIN_SHARD": 1,
-       "REBALANCER_BUCKETS_MAX_SHARD": 1
+       "REBALANCER_DIRECT_DB": true
    } }' | sapiadm update $MANTA_APP
    ```
+   Shards are auto-discovered from SAPI arrays — no min/max shard config needed.
 3. Verify destination sharks have sufficient capacity
 4. Verify the manager service is running:
    ```bash
@@ -802,13 +864,14 @@ that wasn't moved.  In practice, 2-3 runs fully evacuates a shark:
 
 ```bash
 # --- Run 1 ---
-pgclone.sh clone-all --moray-vm <UUID> --buckets-vm <UUID>
+# For multi-shard: use pgclone.sh discover to get UUIDs, then repeat flags
+pgclone.sh clone-all --moray-vm <UUID> [--moray-vm ...] --buckets-vm <UUID> [--buckets-vm ...]
 # Start evacuation, wait for completion
 # Check results: note skipped/error counts
 
 # --- Run 2 (if skipped > 0) ---
 pgclone.sh destroy-all
-pgclone.sh clone-all --moray-vm <UUID> --buckets-vm <UUID>
+pgclone.sh clone-all --moray-vm <UUID> [--moray-vm ...] --buckets-vm <UUID> [--buckets-vm ...]
 # Start new evacuation against same shark
 # Fresh etags from new snapshot avoid etag conflicts
 # Smaller object set means agents finish within timeout

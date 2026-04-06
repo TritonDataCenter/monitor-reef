@@ -17,6 +17,15 @@ These are ZFS snapshots of the live moray and buckets-postgres databases.
 
 ### Find source VMs
 
+For multi-shard or multi-CN deployments, use `pgclone.sh discover` to find
+all postgres VMs across all compute nodes:
+
+```bash
+pgclone.sh discover
+```
+
+For single-shard coal environments, you can also find VMs directly:
+
 ```bash
 # Moray postgres (pick the primary)
 vmadm lookup -j alias=~'^1.postgres' | json -a uuid alias
@@ -28,7 +37,14 @@ vmadm lookup -j alias=~buckets-postgres | json -a uuid alias
 ### Create clones
 
 ```bash
-# Both at once
+# Multiple shards (one --moray-vm / --buckets-vm per shard)
+pgclone.sh clone-all \
+    --moray-vm <SHARD1_MORAY_UUID> \
+    --moray-vm <SHARD2_MORAY_UUID> \
+    --buckets-vm <SHARD1_BUCKETS_UUID> \
+    --buckets-vm <SHARD2_BUCKETS_UUID>
+
+# Single shard
 pgclone.sh clone-all \
     --moray-vm <MORAY_POSTGRES_UUID> \
     --buckets-vm <BUCKETS_POSTGRES_UUID>

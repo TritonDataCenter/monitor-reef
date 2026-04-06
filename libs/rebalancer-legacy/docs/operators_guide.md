@@ -706,8 +706,9 @@ The following SAPI metadata keys control discovery:
 |---|---|---|---|
 | `REBALANCER_DIRECT_DB` | `direct_db` | `false` | Use direct PostgreSQL for moray object discovery (requires pgclone moray clone) |
 | `REBALANCER_DIRECT_DB_BUCKETS` | `direct_db_buckets` | `false` | Use direct PostgreSQL for bucket object discovery (requires pgclone buckets-postgres clone) |
-| `REBALANCER_BUCKETS_MIN_SHARD` | `buckets_min_shard` | `1` | First buckets-postgres shard to scan |
-| `REBALANCER_BUCKETS_MAX_SHARD` | `buckets_max_shard` | `1` | Last buckets-postgres shard to scan |
+
+Shard ranges are auto-discovered from SAPI arrays (`INDEX_MORAY_SHARDS` for moray,
+`BUCKETS_MORAY_SHARDS` for buckets). No manual min/max shard configuration is needed.
 
 #### Metadata update configuration
 
@@ -742,7 +743,7 @@ You can also tune the mdapi client behaviour:
 
 From the rebalancer zone, inspect the rendered config:
 ```
-json direct_db direct_db_buckets buckets_min_shard buckets_max_shard \
+json direct_db direct_db_buckets shards mdapi.shards \
     < /opt/smartdc/rebalancer/config.json
 ```
 
@@ -776,9 +777,7 @@ sdc-sapi /applications/$MANTA_APP | json metadata.BUCKETS_MORAY_SHARDS
 
 # Enable directdb discovery for bucket objects
 echo '{ "metadata": {
-    "REBALANCER_DIRECT_DB_BUCKETS": true,
-    "REBALANCER_BUCKETS_MIN_SHARD": 1,
-    "REBALANCER_BUCKETS_MAX_SHARD": 1
+    "REBALANCER_DIRECT_DB_BUCKETS": true
 } }' | sapiadm update $MANTA_APP
 ```
 
@@ -788,9 +787,7 @@ echo '{ "metadata": {
 MANTA_APP=$(sdc-sapi /applications?name=manta | json -Ha uuid)
 echo '{ "metadata": {
     "REBALANCER_DIRECT_DB": true,
-    "REBALANCER_DIRECT_DB_BUCKETS": true,
-    "REBALANCER_BUCKETS_MIN_SHARD": 1,
-    "REBALANCER_BUCKETS_MAX_SHARD": 1
+    "REBALANCER_DIRECT_DB_BUCKETS": true
 } }' | sapiadm update $MANTA_APP
 ```
 

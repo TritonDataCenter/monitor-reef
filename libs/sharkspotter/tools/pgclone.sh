@@ -25,16 +25,70 @@
 # Subcommands:
 #
 #   pgclone.sh clone-moray <manatee VM UUID>
+#       Clone a single moray postgres VM.
+#
 #   pgclone.sh clone-buckets <buckets-postgres VM UUID>
-#   pgclone.sh clone-all --moray-vm <UUID> [--moray-vm ...] --buckets-vm <UUID> [--buckets-vm ...]
+#       Clone a single buckets-postgres VM.
+#
+#   pgclone.sh clone-all --moray-vm <UUID> [--moray-vm ...] \
+#                        --buckets-vm <UUID> [--buckets-vm ...]
+#       Clone multiple shards at once.  Accepts repeated
+#       --moray-vm and --buckets-vm flags (one per shard).
+#
+#   pgclone.sh discover
+#       Query SAPI/VMAPI to find all postgres VMs across
+#       all CNs and shards.  Outputs UUID, alias, shard
+#       number, server UUID, and state for each VM, then
+#       prints a suggested clone-all command.  Essential
+#       for multi-CN deployments where vmadm on the
+#       headnode won't show VMs on other compute nodes.
+#
 #   pgclone.sh list [--type moray|buckets|all] [--json]
+#       List existing pgclone VMs.
+#
 #   pgclone.sh destroy <clone VM UUID>
+#       Destroy a single clone.
+#
 #   pgclone.sh destroy-all [--type moray|buckets]
+#       Destroy all clones of the given type (or all).
 #
 # For backwards compatibility the bare form still works:
 #
 #   pgclone.sh <manatee VM UUID>
 #       (equivalent to: pgclone.sh clone-moray <UUID>)
+#
+# DNS registration:
+#
+#   Each clone registers in DNS with the shard number
+#   preserved from the source VM's alias:
+#
+#     Moray shard N:   N.postgres.<domain>
+#       -> clone:      N.rebalancer-postgres.<domain>
+#
+#     Buckets shard N: N.buckets-postgres.<domain>
+#       -> clone:      N.rebalancer-buckets-postgres.<domain>
+#
+#   Sharkspotter connects to clones via:
+#     {shard}.rebalancer-postgres.{domain}
+#     {shard}.rebalancer-buckets-postgres.{domain}
+#
+# Multi-shard example (2 shards):
+#
+#   # 1. Discover all postgres VMs across all CNs
+#   pgclone.sh discover
+#
+#   # 2. Clone all shards (one clone per shard)
+#   pgclone.sh clone-all \
+#     --moray-vm <shard1-postgres-uuid> \
+#     --moray-vm <shard2-postgres-uuid> \
+#     --buckets-vm <shard1-buckets-postgres-uuid> \
+#     --buckets-vm <shard2-buckets-postgres-uuid>
+#
+#   # 3. Verify clones
+#   pgclone.sh list
+#
+#   # 4. Start evacuation (scans all shards automatically)
+#   rebalancer-adm job create evacuate --shark <shark>
 #
 #
 
