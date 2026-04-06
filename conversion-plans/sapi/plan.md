@@ -326,9 +326,54 @@ Several list endpoints (`ListApplications`, `ListServices`, `ListInstances`, `Li
 - Re-exports: All API crate types re-exported from `sapi_client` for CLI consumers
 - Client-generator: registered in `client-generator/src/main.rs` with `configure_sapi` (Builder interface, Merged tags, schemars::JsonSchema derive)
 
+## Phase 4 Complete
+
+- CLI crate: `cli/sapi-cli/`
+- Binary name: `sapi`
+- Commands implemented: 24
+- Build status: SUCCESS
+
+### CLI Commands
+- `sapi ping` - Health check endpoint
+- `sapi get-mode` - Get current SAPI mode
+- `sapi set-mode <mode>` - Set SAPI mode (full or proto)
+- `sapi get-log-level` - Get current log level
+- `sapi set-log-level <level>` - Set log level
+- `sapi sync-cache` - Sync the SAPI cache
+- `sapi list-applications` - List applications (filter by --name, --owner-uuid, --include-master)
+- `sapi get-application <uuid>` - Get an application by UUID
+- `sapi create-application` - Create a new application (--name, --owner-uuid required)
+- `sapi update-application <uuid>` - Update an application (--action, --params, --metadata, etc.)
+- `sapi delete-application <uuid>` - Delete an application
+- `sapi list-services` - List services (filter by --name, --application-uuid, --service-type, --include-master)
+- `sapi get-service <uuid>` - Get a service by UUID
+- `sapi create-service` - Create a new service (--name, --application-uuid required)
+- `sapi update-service <uuid>` - Update a service
+- `sapi delete-service <uuid>` - Delete a service
+- `sapi list-instances` - List instances (filter by --service-uuid, --instance-type, --include-master)
+- `sapi get-instance <uuid>` - Get an instance by UUID
+- `sapi create-instance` - Create a new instance (--service-uuid required, --async-create optional)
+- `sapi update-instance <uuid>` - Update an instance
+- `sapi upgrade-instance <uuid>` - Upgrade an instance to a new image (--image-uuid required)
+- `sapi delete-instance <uuid>` - Delete an instance
+- `sapi get-instance-payload <uuid>` - Get assembled zone payload for an instance
+- `sapi list-manifests` - List manifests (--include-master)
+- `sapi get-manifest <uuid>` - Get a manifest by UUID
+- `sapi create-manifest` - Create a new manifest (--name, --path, --template required)
+- `sapi delete-manifest <uuid>` - Delete a manifest
+- `sapi get-config <uuid>` - Get assembled config for an instance
+
+### Design decisions
+- All read commands support `--raw` flag for JSON output
+- JSON map fields (params, metadata, manifests) accepted as JSON strings via `--params '{"key":"value"}'`
+- Service/instance type uses string arg with validation (vm/agent) since Progenitor-generated `ServiceType` lacks `clap::ValueEnum`
+- Update action uses string arg with validation (update/replace/delete)
+- Template content for manifests tries JSON parse first, falls back to plain string
+- Freeform JSON endpoints (get-config, get-instance-payload) always output JSON regardless of --raw
+
 ## Phase Status
 - [x] Phase 1: Analyze - COMPLETE
 - [x] Phase 2: Generate API - COMPLETE
 - [x] Phase 3: Generate Client - COMPLETE
-- [ ] Phase 4: Generate CLI
+- [x] Phase 4: Generate CLI - COMPLETE
 - [ ] Phase 5: Validate

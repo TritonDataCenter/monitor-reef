@@ -15,6 +15,7 @@ members = [
     "cli/bugview-cli",
     "cli/triton-cli",
     "cli/tritonadm",
+    "cli/sapi-cli",
     "cli/vmapi-cli",
     "clients/internal/bugview-client",
     "clients/internal/cloudapi-client",
