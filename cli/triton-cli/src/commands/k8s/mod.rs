@@ -17,6 +17,7 @@ pub mod control;
 pub mod create;
 pub mod delete;
 pub mod get;
+pub mod health;
 pub mod kube_client;
 pub mod kubeconfig;
 pub mod lb;
@@ -65,6 +66,9 @@ pub enum K8sCommand {
 
     /// Upgrade Talos version on cluster nodes
     Upgrade(upgrade::UpgradeArgs),
+
+    /// Show comprehensive cluster health status
+    Health(health::HealthArgs),
 }
 
 impl K8sCommand {
@@ -80,6 +84,7 @@ impl K8sCommand {
             Self::Worker(cmd) => cmd.run(client, json).await,
             Self::Lb(cmd) => cmd.run(client, profile, json).await,
             Self::Upgrade(args) => upgrade::run(args, client, json).await,
+            Self::Health(args) => health::run(args, json).await,
         }
     }
 }
