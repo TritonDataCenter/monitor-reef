@@ -126,7 +126,7 @@ static CLIENTS: &[ClientConfig] = &[
     },
     ClientConfig {
         name: "sapi-client",
-        spec_path: "openapi-specs/generated/sapi-api.json",
+        spec_path: "openapi-specs/patched/sapi-api.json",
         output_path: "clients/internal/sapi-client/src/generated.rs",
         configure: configure_sapi,
     },

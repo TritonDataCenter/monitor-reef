@@ -1,0 +1,1883 @@
+{
+  "components": {
+    "responses": {
+      "Error": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "Error"
+      }
+    },
+    "schemas": {
+      "Application": {
+        "description": "A SAPI application\n\nApplications are the top-level container in SAPI's hierarchy: Application -> Service -> Instance",
+        "properties": {
+          "manifests": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Manifest UUID mappings (name -> manifest UUID)",
+            "nullable": true,
+            "type": "object"
+          },
+          "master": {
+            "description": "Whether this is a master record (from remote datacenter)",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "description": "Key-value metadata",
+            "nullable": true,
+            "type": "object"
+          },
+          "metadata_schema": {
+            "additionalProperties": true,
+            "description": "JSON schema for validating metadata",
+            "nullable": true,
+            "type": "object"
+          },
+          "name": {
+            "description": "Application name (e.g., \"sdc\")",
+            "type": "string"
+          },
+          "owner_uuid": {
+            "description": "Owner UUID",
+            "format": "uuid",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "description": "Zone parameters",
+            "nullable": true,
+            "type": "object"
+          },
+          "uuid": {
+            "description": "Application UUID",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "owner_uuid",
+          "uuid"
+        ],
+        "type": "object"
+      },
+      "CreateApplicationBody": {
+        "description": "Request body for creating an application",
+        "properties": {
+          "manifests": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": null,
+            "description": "Manifest UUID mappings",
+            "nullable": true,
+            "type": "object"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "default": null,
+            "description": "Key-value metadata",
+            "nullable": true,
+            "type": "object"
+          },
+          "metadata_schema": {
+            "additionalProperties": true,
+            "default": null,
+            "description": "JSON schema for validating metadata",
+            "nullable": true,
+            "type": "object"
+          },
+          "name": {
+            "description": "Application name (required)",
+            "type": "string"
+          },
+          "owner_uuid": {
+            "description": "Owner UUID (required)",
+            "format": "uuid",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "default": null,
+            "description": "Zone parameters",
+            "nullable": true,
+            "type": "object"
+          }
+        },
+        "required": [
+          "name",
+          "owner_uuid"
+        ],
+        "type": "object"
+      },
+      "CreateInstanceBody": {
+        "description": "Request body for creating an instance",
+        "properties": {
+          "manifests": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": null,
+            "description": "Manifest UUID mappings",
+            "nullable": true,
+            "type": "object"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "default": null,
+            "description": "Key-value metadata",
+            "nullable": true,
+            "type": "object"
+          },
+          "params": {
+            "additionalProperties": true,
+            "default": null,
+            "description": "Zone parameters",
+            "nullable": true,
+            "type": "object"
+          },
+          "service_uuid": {
+            "description": "Parent service UUID (required)",
+            "format": "uuid",
+            "type": "string"
+          },
+          "uuid": {
+            "default": null,
+            "description": "Instance UUID (optional, auto-generated if not provided)",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "service_uuid"
+        ],
+        "type": "object"
+      },
+      "CreateManifestBody": {
+        "description": "Request body for creating a manifest",
+        "properties": {
+          "name": {
+            "description": "Manifest name (required)",
+            "type": "string"
+          },
+          "path": {
+            "description": "Path where the rendered config file is placed (required)",
+            "type": "string"
+          },
+          "post_cmd": {
+            "default": null,
+            "description": "Command to run after rendering",
+            "nullable": true,
+            "type": "string"
+          },
+          "post_cmd_linux": {
+            "default": null,
+            "description": "Command to run after rendering on Linux",
+            "nullable": true,
+            "type": "string"
+          },
+          "template": {
+            "description": "Template content (required; can be a string or JSON object)"
+          },
+          "version": {
+            "default": null,
+            "description": "Manifest version (defaults to \"1.0.0\")",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "template"
+        ],
+        "type": "object"
+      },
+      "CreateServiceBody": {
+        "description": "Request body for creating a service",
+        "properties": {
+          "application_uuid": {
+            "description": "Parent application UUID (required)",
+            "format": "uuid",
+            "type": "string"
+          },
+          "manifests": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": null,
+            "description": "Manifest UUID mappings",
+            "nullable": true,
+            "type": "object"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "default": null,
+            "description": "Key-value metadata",
+            "nullable": true,
+            "type": "object"
+          },
+          "name": {
+            "description": "Service name (required)",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "default": null,
+            "description": "Zone parameters",
+            "nullable": true,
+            "type": "object"
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceType"
+              }
+            ],
+            "default": null,
+            "description": "Service type: \"vm\" or \"agent\"",
+            "nullable": true
+          }
+        },
+        "required": [
+          "application_uuid",
+          "name"
+        ],
+        "type": "object"
+      },
+      "Error": {
+        "description": "Error information from a response.",
+        "properties": {
+          "error_code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "request_id"
+        ],
+        "type": "object"
+      },
+      "Instance": {
+        "description": "A SAPI instance\n\nInstances are the leaf nodes of SAPI's hierarchy: Application -> Service -> Instance\n\nAn instance typically maps to a VM or agent zone.",
+        "properties": {
+          "job_uuid": {
+            "description": "Job UUID (only present on async create)",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "manifests": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Manifest UUID mappings (name -> manifest UUID)",
+            "nullable": true,
+            "type": "object"
+          },
+          "master": {
+            "description": "Whether this is a master record",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "description": "Key-value metadata",
+            "nullable": true,
+            "type": "object"
+          },
+          "params": {
+            "additionalProperties": true,
+            "description": "Zone parameters",
+            "nullable": true,
+            "type": "object"
+          },
+          "service_uuid": {
+            "description": "Parent service UUID",
+            "format": "uuid",
+            "type": "string"
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceType"
+              }
+            ],
+            "description": "Instance type: \"vm\" or \"agent\" (v2+ only)",
+            "nullable": true
+          },
+          "uuid": {
+            "description": "Instance UUID",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "service_uuid",
+          "uuid"
+        ],
+        "type": "object"
+      },
+      "LogLevelResponse": {
+        "description": "Response for GET /loglevel",
+        "properties": {
+          "level": {
+            "description": "Current log level",
+            "type": "string"
+          }
+        },
+        "required": [
+          "level"
+        ],
+        "type": "object"
+      },
+      "Manifest": {
+        "description": "A SAPI configuration manifest\n\nManifests define templates that are rendered with metadata to produce configuration files for instances.",
+        "properties": {
+          "master": {
+            "description": "Whether this is a master record",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Manifest name",
+            "type": "string"
+          },
+          "path": {
+            "description": "Path where the rendered config file is placed in the zone",
+            "type": "string"
+          },
+          "post_cmd": {
+            "description": "Command to run after rendering the template",
+            "nullable": true,
+            "type": "string"
+          },
+          "post_cmd_linux": {
+            "description": "Command to run after rendering on Linux (lx-branded zones)",
+            "nullable": true,
+            "type": "string"
+          },
+          "template": {
+            "description": "Template content (can be a string template or a JSON object)"
+          },
+          "uuid": {
+            "description": "Manifest UUID",
+            "format": "uuid",
+            "type": "string"
+          },
+          "version": {
+            "description": "Manifest version (semver, defaults to \"1.0.0\")",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "path",
+          "template",
+          "uuid"
+        ],
+        "type": "object"
+      },
+      "ModeResponse": {
+        "description": "Response for GET /mode",
+        "properties": {
+          "mode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SapiMode"
+              }
+            ],
+            "description": "Current SAPI mode"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
+      "PingResponse": {
+        "description": "Response for GET /ping\n\nNote: PingResponse uses a mix of snake_case and camelCase field names. `storType` and `storAvailable` are camelCase in the wire format.",
+        "properties": {
+          "mode": {
+            "description": "Current SAPI mode (\"proto\" or \"full\")",
+            "type": "string"
+          },
+          "storAvailable": {
+            "description": "Whether the storage backend is available",
+            "type": "boolean"
+          },
+          "storType": {
+            "description": "Storage backend type (e.g., \"MorayLocalStorage\")",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mode",
+          "storAvailable",
+          "storType"
+        ],
+        "type": "object"
+      },
+      "SapiMode": {
+        "description": "SAPI operating mode",
+        "oneOf": [
+          {
+            "description": "Prototype mode (initial setup, limited functionality)",
+            "enum": [
+              "proto"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Full mode (normal operation)",
+            "enum": [
+              "full"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Unknown mode (forward compatibility)",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "Service": {
+        "description": "A SAPI service\n\nServices belong to an application and contain instances. Application -> Service -> Instance",
+        "properties": {
+          "application_uuid": {
+            "description": "Parent application UUID",
+            "format": "uuid",
+            "type": "string"
+          },
+          "manifests": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Manifest UUID mappings (name -> manifest UUID)",
+            "nullable": true,
+            "type": "object"
+          },
+          "master": {
+            "description": "Whether this is a master record",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "description": "Key-value metadata",
+            "nullable": true,
+            "type": "object"
+          },
+          "name": {
+            "description": "Service name (e.g., \"manatee\")",
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "description": "Zone parameters",
+            "nullable": true,
+            "type": "object"
+          },
+          "type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ServiceType"
+              }
+            ],
+            "description": "Service type: \"vm\" or \"agent\" (v2+ only)",
+            "nullable": true
+          },
+          "uuid": {
+            "description": "Service UUID",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "application_uuid",
+          "name",
+          "uuid"
+        ],
+        "type": "object"
+      },
+      "ServiceType": {
+        "description": "Service/instance type\n\nDistinguishes between VM-based services and agent services. Agents are only visible in API v2+.",
+        "oneOf": [
+          {
+            "description": "VM-based service (default)",
+            "enum": [
+              "vm"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Agent service (only visible in API v2+)",
+            "enum": [
+              "agent"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Unknown type (forward compatibility)",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "SetLogLevelBody": {
+        "description": "Request body for POST /loglevel",
+        "properties": {
+          "level": {
+            "description": "Log level to set",
+            "type": "string"
+          }
+        },
+        "required": [
+          "level"
+        ],
+        "type": "object"
+      },
+      "SetModeBody": {
+        "description": "Request body for POST /mode",
+        "properties": {
+          "mode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SapiMode"
+              }
+            ],
+            "description": "Mode to set (only \"full\" is accepted)"
+          }
+        },
+        "required": [
+          "mode"
+        ],
+        "type": "object"
+      },
+      "UpdateAction": {
+        "description": "Action for update endpoints (applications, services, instances)\n\nControls how attributes (`params`, `metadata`, `manifests`, etc.) are modified. Default action is `update` when not specified.",
+        "oneOf": [
+          {
+            "description": "Merge changes into existing attributes (default)",
+            "enum": [
+              "update"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Replace entire attribute sections wholesale",
+            "enum": [
+              "replace"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Delete specified keys from attributes",
+            "enum": [
+              "delete"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "UpdateApplicationBody": {
+        "description": "Request body for updating an application\n\nThe `action` field controls how attributes are modified: - `update` (default): merge changes into existing attributes - `replace`: replace entire attribute sections wholesale - `delete`: delete specified keys from attributes",
+        "properties": {
+          "action": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UpdateAction"
+              }
+            ],
+            "default": null,
+            "description": "Action to perform (default: update)",
+            "nullable": true
+          },
+          "manifests": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Manifest UUID mappings",
+            "nullable": true,
+            "type": "object"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "description": "Key-value metadata",
+            "nullable": true,
+            "type": "object"
+          },
+          "metadata_schema": {
+            "additionalProperties": true,
+            "description": "JSON schema for validating metadata",
+            "nullable": true,
+            "type": "object"
+          },
+          "owner_uuid": {
+            "description": "New owner UUID",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "params": {
+            "additionalProperties": true,
+            "description": "Zone parameters",
+            "nullable": true,
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateInstanceBody": {
+        "description": "Request body for updating an instance\n\nThe `action` field controls how attributes are modified: - `update` (default): merge changes into existing attributes - `replace`: replace entire attribute sections wholesale - `delete`: delete specified keys from attributes",
+        "properties": {
+          "action": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UpdateAction"
+              }
+            ],
+            "default": null,
+            "description": "Action to perform (default: update)",
+            "nullable": true
+          },
+          "manifests": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Manifest UUID mappings",
+            "nullable": true,
+            "type": "object"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "description": "Key-value metadata",
+            "nullable": true,
+            "type": "object"
+          },
+          "params": {
+            "additionalProperties": true,
+            "description": "Zone parameters",
+            "nullable": true,
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateServiceBody": {
+        "description": "Request body for updating a service\n\nThe `action` field controls how attributes are modified: - `update` (default): merge changes into existing attributes - `replace`: replace entire attribute sections wholesale - `delete`: delete specified keys from attributes",
+        "properties": {
+          "action": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/UpdateAction"
+              }
+            ],
+            "default": null,
+            "description": "Action to perform (default: update)",
+            "nullable": true
+          },
+          "manifests": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Manifest UUID mappings",
+            "nullable": true,
+            "type": "object"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "description": "Key-value metadata",
+            "nullable": true,
+            "type": "object"
+          },
+          "params": {
+            "additionalProperties": true,
+            "description": "Zone parameters",
+            "nullable": true,
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "UpgradeInstanceBody": {
+        "description": "Request body for upgrading an instance image",
+        "properties": {
+          "image_uuid": {
+            "description": "Image UUID to upgrade to (required)",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "image_uuid"
+        ],
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Triton SAPI - Services and Configuration API for managing applications, services, instances, and configuration manifests",
+    "title": "Triton SAPI",
+    "version": "2.1.3"
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/applications": {
+      "get": {
+        "description": "Returns all applications, optionally filtered by name or owner.",
+        "operationId": "list_applications",
+        "parameters": [
+          {
+            "description": "Include master records from remote datacenter",
+            "in": "query",
+            "name": "include_master",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Filter by application name",
+            "in": "query",
+            "name": "name",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by owner UUID",
+            "in": "query",
+            "name": "owner_uuid",
+            "schema": {
+              "format": "uuid",
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Application"
+                  },
+                  "title": "Array_of_Application",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List applications",
+        "tags": [
+          "applications"
+        ]
+      },
+      "post": {
+        "description": "Creates a new application. Requires `name` and `owner_uuid`.",
+        "operationId": "create_application",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateApplicationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Application"
+                }
+              }
+            },
+            "description": "successful creation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Create an application",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/applications/{uuid}": {
+      "delete": {
+        "description": "Deletes an application by UUID. Returns 204 on success.",
+        "operationId": "delete_application",
+        "parameters": [
+          {
+            "description": "Resource UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Delete an application",
+        "tags": [
+          "applications"
+        ]
+      },
+      "get": {
+        "description": "Returns a single application by UUID.",
+        "operationId": "get_application",
+        "parameters": [
+          {
+            "description": "Resource UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Application"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get an application",
+        "tags": [
+          "applications"
+        ]
+      },
+      "put": {
+        "description": "Updates application attributes. The `action` body field controls how attributes are modified (update/replace/delete). Default is \"update\".",
+        "operationId": "update_application",
+        "parameters": [
+          {
+            "description": "Resource UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateApplicationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Application"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Update an application",
+        "tags": [
+          "applications"
+        ]
+      }
+    },
+    "/cache": {
+      "post": {
+        "description": "Forces a synchronization of cached data. Returns 204 on success.",
+        "operationId": "sync_cache",
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Sync cache",
+        "tags": [
+          "cache"
+        ]
+      }
+    },
+    "/configs/{uuid}": {
+      "get": {
+        "description": "Returns the assembled configuration (manifests + metadata) for a specific instance. The response is freeform JSON since it depends on the instance's application/service/instance configuration hierarchy.\n\nThe original Node.js endpoint also sets an ETag header for conditional request support.",
+        "operationId": "get_config",
+        "parameters": [
+          {
+            "description": "Resource UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get assembled config for an instance",
+        "tags": [
+          "configs"
+        ]
+      }
+    },
+    "/instances": {
+      "get": {
+        "description": "Returns all instances, optionally filtered by service or type.",
+        "operationId": "list_instances",
+        "parameters": [
+          {
+            "description": "Include master records from remote datacenter",
+            "in": "query",
+            "name": "include_master",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Filter by parent service UUID",
+            "in": "query",
+            "name": "service_uuid",
+            "schema": {
+              "format": "uuid",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by instance type (\"vm\" or \"agent\")",
+            "in": "query",
+            "name": "type",
+            "schema": {
+              "$ref": "#/components/schemas/ServiceType"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Instance"
+                  },
+                  "title": "Array_of_Instance",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List instances",
+        "tags": [
+          "instances"
+        ]
+      },
+      "post": {
+        "description": "Creates a new instance. Requires `service_uuid`. If `async=true` query parameter is set, returns immediately with a `job_uuid` instead of waiting for provisioning to complete.",
+        "operationId": "create_instance",
+        "parameters": [
+          {
+            "description": "If true, return immediately with a job_uuid instead of waiting for provisioning to complete. Default: false.",
+            "in": "query",
+            "name": "async",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateInstanceBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            },
+            "description": "successful creation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Create an instance",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/instances/{uuid}": {
+      "delete": {
+        "description": "Deletes an instance by UUID. Returns 204 on success.",
+        "operationId": "delete_instance",
+        "parameters": [
+          {
+            "description": "Resource UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Delete an instance",
+        "tags": [
+          "instances"
+        ]
+      },
+      "get": {
+        "description": "Returns a single instance by UUID.",
+        "operationId": "get_instance",
+        "parameters": [
+          {
+            "description": "Resource UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get an instance",
+        "tags": [
+          "instances"
+        ]
+      },
+      "put": {
+        "description": "Updates instance attributes. The `action` body field controls how attributes are modified (update/replace/delete). Default is \"update\".",
+        "operationId": "update_instance",
+        "parameters": [
+          {
+            "description": "Resource UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateInstanceBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Update an instance",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/instances/{uuid}/payload": {
+      "get": {
+        "description": "Returns the assembled zone parameters for provisioning. This is the merged result of application, service, and instance params/metadata.",
+        "operationId": "get_instance_payload",
+        "parameters": [
+          {
+            "description": "Resource UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get instance payload",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/instances/{uuid}/upgrade": {
+      "put": {
+        "description": "Upgrades an instance to a new image. Requires `image_uuid` in the body.",
+        "operationId": "upgrade_instance",
+        "parameters": [
+          {
+            "description": "Resource UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpgradeInstanceBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Instance"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Upgrade an instance",
+        "tags": [
+          "instances"
+        ]
+      }
+    },
+    "/loglevel": {
+      "get": {
+        "operationId": "get_log_level",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LogLevelResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get current log level",
+        "tags": [
+          "loglevel"
+        ]
+      },
+      "post": {
+        "operationId": "set_log_level",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetLogLevelBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Set log level",
+        "tags": [
+          "loglevel"
+        ]
+      }
+    },
+    "/manifests": {
+      "get": {
+        "description": "Returns all configuration manifests.",
+        "operationId": "list_manifests",
+        "parameters": [
+          {
+            "description": "Include master records from remote datacenter",
+            "in": "query",
+            "name": "include_master",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Manifest"
+                  },
+                  "title": "Array_of_Manifest",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List manifests",
+        "tags": [
+          "manifests"
+        ]
+      },
+      "post": {
+        "description": "Creates a new configuration manifest. Requires `name`, `path`, and `template`.",
+        "operationId": "create_manifest",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateManifestBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Manifest"
+                }
+              }
+            },
+            "description": "successful creation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Create a manifest",
+        "tags": [
+          "manifests"
+        ]
+      }
+    },
+    "/manifests/{uuid}": {
+      "delete": {
+        "description": "Deletes a manifest by UUID. Returns 204 on success.",
+        "operationId": "delete_manifest",
+        "parameters": [
+          {
+            "description": "Resource UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Delete a manifest",
+        "tags": [
+          "manifests"
+        ]
+      },
+      "get": {
+        "description": "Returns a single manifest by UUID.",
+        "operationId": "get_manifest",
+        "parameters": [
+          {
+            "description": "Resource UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Manifest"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get a manifest",
+        "tags": [
+          "manifests"
+        ]
+      }
+    },
+    "/mode": {
+      "get": {
+        "description": "Returns the current SAPI mode (\"proto\" or \"full\").",
+        "operationId": "get_mode",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get current operating mode",
+        "tags": [
+          "mode"
+        ]
+      },
+      "post": {
+        "description": "Transitions SAPI to the specified mode. Only \"full\" is accepted (transition from proto to full mode).",
+        "operationId": "set_mode",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetModeBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Set operating mode",
+        "tags": [
+          "mode"
+        ]
+      }
+    },
+    "/ping": {
+      "get": {
+        "description": "Returns SAPI status including operating mode and storage availability.",
+        "operationId": "ping",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PingResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Health check",
+        "tags": [
+          "health"
+        ]
+      }
+    },
+    "/services": {
+      "get": {
+        "description": "Returns all services, optionally filtered by name, application, or type.",
+        "operationId": "list_services",
+        "parameters": [
+          {
+            "description": "Filter by parent application UUID",
+            "in": "query",
+            "name": "application_uuid",
+            "schema": {
+              "format": "uuid",
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Include master records from remote datacenter",
+            "in": "query",
+            "name": "include_master",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Filter by service name",
+            "in": "query",
+            "name": "name",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by service type (\"vm\" or \"agent\")",
+            "in": "query",
+            "name": "type",
+            "schema": {
+              "$ref": "#/components/schemas/ServiceType"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Service"
+                  },
+                  "title": "Array_of_Service",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List services",
+        "tags": [
+          "services"
+        ]
+      },
+      "post": {
+        "description": "Creates a new service. Requires `name` and `application_uuid`.",
+        "operationId": "create_service",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateServiceBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Service"
+                }
+              }
+            },
+            "description": "successful creation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Create a service",
+        "tags": [
+          "services"
+        ]
+      }
+    },
+    "/services/{uuid}": {
+      "delete": {
+        "description": "Deletes a service by UUID. Returns 204 on success.",
+        "operationId": "delete_service",
+        "parameters": [
+          {
+            "description": "Resource UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "successful deletion"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Delete a service",
+        "tags": [
+          "services"
+        ]
+      },
+      "get": {
+        "description": "Returns a single service by UUID.",
+        "operationId": "get_service",
+        "parameters": [
+          {
+            "description": "Resource UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Service"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get a service",
+        "tags": [
+          "services"
+        ]
+      },
+      "put": {
+        "description": "Updates service attributes. The `action` body field controls how attributes are modified (update/replace/delete). Default is \"update\".",
+        "operationId": "update_service",
+        "parameters": [
+          {
+            "description": "Resource UUID",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateServiceBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Service"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Update a service",
+        "tags": [
+          "services"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "applications"
+    },
+    {
+      "name": "cache"
+    },
+    {
+      "name": "configs"
+    },
+    {
+      "name": "health"
+    },
+    {
+      "name": "instances"
+    },
+    {
+      "name": "loglevel"
+    },
+    {
+      "name": "manifests"
+    },
+    {
+      "name": "mode"
+    },
+    {
+      "name": "services"
+    }
+  ]
+}

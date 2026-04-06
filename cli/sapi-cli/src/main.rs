@@ -524,32 +524,27 @@ async fn main() -> Result<()> {
                 .send()
                 .await
                 .map_err(|e| anyhow::anyhow!("Get mode failed: {e}"))?;
-            let mode_resp = resp.into_inner();
+            let mode = resp.into_inner();
             if raw {
-                println!("{}", serde_json::to_string_pretty(&mode_resp)?);
+                println!("{}", serde_json::to_string_pretty(&mode)?);
             } else {
-                println!("{}", enum_to_display(&mode_resp.mode));
+                println!("{}", mode);
             }
         }
-        Commands::SetMode { mode, raw } => {
+        Commands::SetMode { mode, raw: _ } => {
             let sapi_mode = match mode.as_str() {
                 "full" => types::SapiMode::Full,
                 "proto" => types::SapiMode::Proto,
                 other => anyhow::bail!("Invalid mode: {other}. Must be full or proto"),
             };
             let body = types::SetModeBody { mode: sapi_mode };
-            let resp = client
+            client
                 .set_mode()
                 .body(body)
                 .send()
                 .await
                 .map_err(|e| anyhow::anyhow!("Set mode failed: {e}"))?;
-            let mode_resp = resp.into_inner();
-            if raw {
-                println!("{}", serde_json::to_string_pretty(&mode_resp)?);
-            } else {
-                println!("{}", enum_to_display(&mode_resp.mode));
-            }
+            // Node.js SAPI returns 204 no content
         }
 
         // ====================================================================
@@ -568,20 +563,15 @@ async fn main() -> Result<()> {
                 println!("{}", log_resp.level);
             }
         }
-        Commands::SetLogLevel { level, raw } => {
+        Commands::SetLogLevel { level, raw: _ } => {
             let body = types::SetLogLevelBody { level };
-            let resp = client
+            client
                 .set_log_level()
                 .body(body)
                 .send()
                 .await
                 .map_err(|e| anyhow::anyhow!("Set log level failed: {e}"))?;
-            let log_resp = resp.into_inner();
-            if raw {
-                println!("{}", serde_json::to_string_pretty(&log_resp)?);
-            } else {
-                println!("{}", log_resp.level);
-            }
+            // Node.js SAPI returns empty 200
         }
 
         // ====================================================================

@@ -21,11 +21,19 @@ use serde_json::Value;
 /// and writes patched copies to `patched_dir` (checked into git, read by client build.rs).
 /// This keeps the generated specs pristine so `openapi-check` continues to work.
 pub fn apply_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Result<()> {
-    let source = generated_dir.join("cloudapi-api.json");
-    if source.exists() {
-        std::fs::create_dir_all(patched_dir).context("failed to create patched specs directory")?;
+    std::fs::create_dir_all(patched_dir).context("failed to create patched specs directory")?;
+
+    let cloudapi_source = generated_dir.join("cloudapi-api.json");
+    if cloudapi_source.exists() {
         let dest = patched_dir.join("cloudapi-api.json");
-        transform_cloudapi_spec(&source, &dest).context("failed to transform cloudapi-api.json")?;
+        transform_cloudapi_spec(&cloudapi_source, &dest)
+            .context("failed to transform cloudapi-api.json")?;
+    }
+
+    let sapi_source = generated_dir.join("sapi-api.json");
+    if sapi_source.exists() {
+        let dest = patched_dir.join("sapi-api.json");
+        transform_sapi_spec(&sapi_source, &dest).context("failed to transform sapi-api.json")?;
     }
 
     Ok(())
@@ -35,12 +43,37 @@ pub fn apply_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Res
 ///
 /// Returns true if everything is fresh, false if any patched spec is stale.
 pub fn check_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Result<bool> {
-    let source = generated_dir.join("cloudapi-api.json");
+    let mut all_fresh = true;
+
+    all_fresh &= check_one_transform(
+        generated_dir,
+        patched_dir,
+        "cloudapi-api.json",
+        apply_all_cloudapi_patches,
+    )?;
+
+    all_fresh &= check_one_transform(
+        generated_dir,
+        patched_dir,
+        "sapi-api.json",
+        apply_all_sapi_patches,
+    )?;
+
+    Ok(all_fresh)
+}
+
+fn check_one_transform(
+    generated_dir: &Utf8Path,
+    patched_dir: &Utf8Path,
+    filename: &str,
+    apply_patches: fn(&mut Value) -> Result<()>,
+) -> Result<bool> {
+    let source = generated_dir.join(filename);
     if !source.exists() {
         return Ok(true);
     }
 
-    let dest = patched_dir.join("cloudapi-api.json");
+    let dest = patched_dir.join(filename);
     if !dest.exists() {
         eprintln!(
             "Patched spec missing: {}\n  fix: run `make openapi-generate`",
@@ -49,10 +82,9 @@ pub fn check_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Res
         return Ok(false);
     }
 
-    // Generate what the patched file should look like
     let content = std::fs::read_to_string(&source).context("failed to read source spec")?;
     let mut spec: Value = serde_json::from_str(&content).context("failed to parse spec")?;
-    apply_all_cloudapi_patches(&mut spec)?;
+    apply_patches(&mut spec)?;
     let expected = serde_json::to_string_pretty(&spec).context("failed to serialize")?;
 
     let actual = std::fs::read_to_string(&dest).context("failed to read patched spec")?;
@@ -177,6 +209,102 @@ fn patch_empty_202_responses(spec: &mut Value) -> Result<()> {
         {
             obj.remove("content");
         }
+    }
+
+    Ok(())
+}
+
+// --- SAPI transforms ---
+
+/// Transform sapi-api.json to match Node.js SAPI's actual wire format.
+///
+/// Three differences from Dropshot-generated spec:
+/// - GET /mode returns a bare string ("proto"/"full"), not a JSON object
+/// - POST /mode returns 204 with no body, not 200 with JSON
+/// - POST /loglevel returns an empty 200, not a JSON body
+fn transform_sapi_spec(source: &Utf8Path, dest: &Utf8Path) -> Result<()> {
+    let content = std::fs::read_to_string(source).context("failed to read spec file")?;
+    let mut spec: Value = serde_json::from_str(&content).context("failed to parse spec as JSON")?;
+
+    apply_all_sapi_patches(&mut spec)?;
+
+    let output = serde_json::to_string_pretty(&spec).context("failed to serialize spec")?;
+    std::fs::write(dest, output).context("failed to write patched spec file")?;
+
+    eprintln!("Wrote patched SAPI spec to {}", dest);
+    Ok(())
+}
+
+fn apply_all_sapi_patches(spec: &mut Value) -> Result<()> {
+    patch_sapi_get_mode(spec)?;
+    patch_sapi_post_mode(spec)?;
+    patch_sapi_post_loglevel(spec)?;
+    Ok(())
+}
+
+/// GET /mode returns a bare string ("proto" or "full"), not a ModeResponse JSON object.
+///
+/// We keep the content-type as application/json with a plain string schema so that
+/// Progenitor generates `ResponseValue<String>` (easy to use in CLIs) rather than
+/// `ResponseValue<ByteStream>` (which requires stream collection).
+fn patch_sapi_get_mode(spec: &mut Value) -> Result<()> {
+    let response_content = spec
+        .get_mut("paths")
+        .and_then(|p| p.get_mut("/mode"))
+        .and_then(|p| p.get_mut("get"))
+        .and_then(|m| m.get_mut("responses"))
+        .and_then(|r| r.get_mut("200"))
+        .and_then(|r| r.get_mut("content"))
+        .and_then(|c| c.get_mut("application/json"))
+        .and_then(|aj| aj.get_mut("schema"))
+        .ok_or_else(|| anyhow::anyhow!("GET /mode 200 response schema not found"))?;
+
+    // Replace ModeResponse ref with a plain string
+    *response_content = serde_json::json!({
+        "type": "string"
+    });
+
+    Ok(())
+}
+
+/// POST /mode returns 204 with no body, not 200 with JSON.
+fn patch_sapi_post_mode(spec: &mut Value) -> Result<()> {
+    let responses = spec
+        .get_mut("paths")
+        .and_then(|p| p.get_mut("/mode"))
+        .and_then(|p| p.get_mut("post"))
+        .and_then(|m| m.get_mut("responses"))
+        .ok_or_else(|| anyhow::anyhow!("POST /mode responses not found"))?;
+
+    let responses_obj = responses
+        .as_object_mut()
+        .ok_or_else(|| anyhow::anyhow!("POST /mode responses is not an object"))?;
+
+    // Remove 200, add 204 with no content
+    responses_obj.remove("200");
+    responses_obj.insert(
+        "204".to_string(),
+        serde_json::json!({
+            "description": "successful operation"
+        }),
+    );
+
+    Ok(())
+}
+
+/// POST /loglevel returns an empty 200, not a JSON body.
+fn patch_sapi_post_loglevel(spec: &mut Value) -> Result<()> {
+    let response = spec
+        .get_mut("paths")
+        .and_then(|p| p.get_mut("/loglevel"))
+        .and_then(|p| p.get_mut("post"))
+        .and_then(|m| m.get_mut("responses"))
+        .and_then(|r| r.get_mut("200"));
+
+    if let Some(resp) = response
+        && let Some(obj) = resp.as_object_mut()
+    {
+        obj.remove("content");
     }
 
     Ok(())
