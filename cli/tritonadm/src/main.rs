@@ -13,10 +13,12 @@ use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
 
 mod commands;
+mod config;
 
 use commands::{
     ChannelCommand, DcMaintCommand, ExperimentalCommand, PlatformCommand, PostSetupCommand,
 };
+use config::TritonConfig;
 
 /// Print a "not yet implemented" message and exit with code 1.
 fn not_yet_implemented(command: &str) -> ! {
@@ -41,26 +43,46 @@ fn enum_to_display<T: serde::Serialize + std::fmt::Debug>(val: &T) -> String {
                    This is the Rust successor to the Node.js sdcadm tool."
 )]
 struct Cli {
-    /// SAPI base URL
-    #[arg(
-        long,
-        env = "SAPI_URL",
-        default_value = "http://localhost",
-        global = true
-    )]
-    sapi_url: String,
+    /// SAPI base URL (auto-detected from SDC config if not set)
+    #[arg(long, env = "SAPI_URL", global = true)]
+    sapi_url: Option<String>,
 
-    /// VMAPI base URL
-    #[arg(
-        long,
-        env = "VMAPI_URL",
-        default_value = "http://localhost",
-        global = true
-    )]
-    vmapi_url: String,
+    /// VMAPI base URL (auto-detected from SDC config if not set)
+    #[arg(long, env = "VMAPI_URL", global = true)]
+    vmapi_url: Option<String>,
 
     #[command(subcommand)]
     command: Commands,
+}
+
+impl Cli {
+    /// Resolve the SAPI URL from CLI flag, env var, or SDC config.
+    fn sapi_url(&self, sdc_config: &Option<TritonConfig>) -> Result<String> {
+        if let Some(url) = &self.sapi_url {
+            return Ok(url.clone());
+        }
+        if let Some(cfg) = sdc_config {
+            return Ok(cfg.service_url("sapi"));
+        }
+        anyhow::bail!(
+            "cannot determine SAPI URL: set --sapi-url, SAPI_URL, \
+             or run on a Triton headnode"
+        )
+    }
+
+    /// Resolve the VMAPI URL from CLI flag, env var, or SDC config.
+    fn vmapi_url(&self, sdc_config: &Option<TritonConfig>) -> Result<String> {
+        if let Some(url) = &self.vmapi_url {
+            return Ok(url.clone());
+        }
+        if let Some(cfg) = sdc_config {
+            return Ok(cfg.service_url("vmapi"));
+        }
+        anyhow::bail!(
+            "cannot determine VMAPI URL: set --vmapi-url, VMAPI_URL, \
+             or run on a Triton headnode"
+        )
+    }
 }
 
 #[derive(Subcommand)]
@@ -147,6 +169,9 @@ enum Commands {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
 
+    // Load SDC config from headnode (best-effort — None on non-Triton systems)
+    let sdc_config = TritonConfig::load();
+
     match cli.command {
         Commands::Avail => not_yet_implemented("avail"),
         Commands::CheckConfig => not_yet_implemented("check-config"),
@@ -166,10 +191,17 @@ async fn main() -> Result<()> {
         }
         Commands::Create => not_yet_implemented("create"),
         Commands::DefaultFabric => not_yet_implemented("default-fabric"),
-        Commands::Instances { json } => cmd_instances(&cli.sapi_url, &cli.vmapi_url, json).await,
+        Commands::Instances { json } => {
+            let sapi_url = cli.sapi_url(&sdc_config)?;
+            let vmapi_url = cli.vmapi_url(&sdc_config)?;
+            cmd_instances(&sapi_url, &vmapi_url, json).await
+        }
         Commands::Rollback => not_yet_implemented("rollback"),
         Commands::SelfUpdate => not_yet_implemented("self-update"),
-        Commands::Services { json } => cmd_services(&cli.sapi_url, json).await,
+        Commands::Services { json } => {
+            let sapi_url = cli.sapi_url(&sdc_config)?;
+            cmd_services(&sapi_url, json).await
+        }
         Commands::Update => not_yet_implemented("update"),
         Commands::Channel { command } => command.run(),
         Commands::DcMaint { command } => command.run(),
