@@ -1,8 +1,7 @@
 # Rebalancer Developer Architecture Guide
 
 This document is a code navigation guide for developers working on the
-rebalancer-legacy codebase.  Every claim is referenced to a specific file,
-line number, function, or struct.  Paths are relative to
+rebalancer-legacy codebase.  Paths are relative to
 `libs/rebalancer-legacy/` unless stated otherwise.
 
 ---
@@ -13,7 +12,7 @@ line number, function, or struct.  Paths are relative to
 rebalancer-legacy/
   manager/                          # The rebalancer manager (HTTP server + job orchestration)
     src/
-      main.rs                       # Gotham HTTP server, router(), job dispatch loop (line 570-648)
+      main.rs                       # Gotham HTTP server, router(), job dispatch loop
       config.rs                     # Config, ConfigOptions, MdapiConfig structs and defaults
       jobs/
         mod.rs                      # Job, JobBuilder, JobAction, JobState, Assignment,
@@ -38,26 +37,26 @@ libs/sharkspotter/                  # Separate crate for metadata tier scanning
     pgclone.sh                      # Provision read-only PostgreSQL clones for sharkspotter
 ```
 
-### Key line numbers in `evacuate.rs`
+### Key functions in `evacuate.rs`
 
-| Function / Struct                   | Line   | Purpose |
-|-------------------------------------|--------|---------|
-| `EvacuateObjectStatus` (enum)       | 1004   | Object lifecycle states |
-| `EvacuateObjectError` (enum)        | 1050   | Error classification for objects |
-| `create_evacuateobjects_table()`    | 1281   | DDL for per-job PostgreSQL table |
-| `EvacuateObject` (struct)           | 1340   | Row in `evacuateobjects` table |
-| `EvacuateJob::run()`               | 1638   | Job entry point, thread orchestration |
-| `PostAssignment::post()`           | 2781   | POST assignment to agent, 503 retry loop |
-| `GetAssignment::get()`             | 2914   | GET assignment status from agent |
-| `UpdateMetadata::update_object_shark()` | 2960 | Replace old shark in metadata |
-| `ProcessAssignment::process()`     | 3034   | Handle completed assignment from agent |
-| `start_local_db_generator()`       | 3369   | Thread for retry job local DB reads |
-| `start_sharkspotter()`             | 3384   | Thread for initial object discovery |
-| `start_assignment_manager()`       | 3820   | Thread that distributes objects to sharks |
-| `shark_assignment_generator()`     | 4096   | Per-shark thread that fills assignments |
-| `start_assignment_post()`          | 4346   | Thread that POSTs filled assignments |
-| `start_assignment_checker()`       | 4435   | Thread that polls agents for completion |
-| `start_metadata_update_broker()`   | 5432   | Thread that dispatches metadata updates |
+| Function / Struct                   | Purpose |
+|-------------------------------------|---------|
+| `EvacuateObjectStatus` (enum)       | Object lifecycle states |
+| `EvacuateObjectError` (enum)        | Error classification for objects |
+| `create_evacuateobjects_table()`    | DDL for per-job PostgreSQL table |
+| `EvacuateObject` (struct)           | Row in `evacuateobjects` table |
+| `EvacuateJob::run()`               | Job entry point, thread orchestration |
+| `PostAssignment::post()`           | POST assignment to agent, 503 retry loop |
+| `GetAssignment::get()`             | GET assignment status from agent |
+| `UpdateMetadata::update_object_shark()` | Replace old shark in metadata |
+| `ProcessAssignment::process()`     | Handle completed assignment from agent |
+| `start_local_db_generator()`       | Thread for retry job local DB reads |
+| `start_sharkspotter()`             | Thread for initial object discovery |
+| `start_assignment_manager()`       | Thread that distributes objects to sharks |
+| `shark_assignment_generator()`     | Per-shark thread that fills assignments |
+| `start_assignment_post()`          | Thread that POSTs filled assignments |
+| `start_assignment_checker()`       | Thread that polls agents for completion |
+| `start_metadata_update_broker()`   | Thread that dispatches metadata updates |
 
 ---
 
@@ -71,7 +70,7 @@ through each channel.
                                     +-----------------+
                                     | Gotham HTTP      |
                                     | (1 thread)       |
-                                    | main.rs:697      |
+                                    | main.rs      |
                                     +--------+--------+
                                              |
                                              | crossbeam::bounded(5)
@@ -79,11 +78,11 @@ through each channel.
                                              v
                                     +-----------------+
                                     | Job Runner       |
-                                    | ThreadPool(1)    |  THREAD_COUNT=1 (main.rs:57)
-                                    | main.rs:583-604  |
+                                    | ThreadPool(1)    |  THREAD_COUNT=1 (main.rs)
+                                    | main.rs  |
                                     +--------+--------+
                                              |
-                                             | job.run() -> EvacuateJob::run() (evacuate.rs:1638)
+                                             | job.run() -> EvacuateJob::run() (evacuate.rs)
                                              v
       +-----------------------------+--------+---------+---------------------------+
       |                             |                  |                           |
@@ -92,8 +91,8 @@ through each channel.
 | Sharkspotter|            | Assignment     |   | Assignment  |           | Metadata Update  |
 | Thread      |            | Manager        |   | Poster      |           | Broker           |
 | (evacuate.rs|            | (single)       |   | (single)    |           | (single)         |
-|  :3384)     |            | (evacuate.rs   |   | (evacuate.rs|           | (evacuate.rs     |
-|             |            |  :3820)        |   |  :4346)     |           |  :5432)          |
+|             |            | (evacuate.rs)  |   | (evacuate.rs|           | (evacuate.rs)    |
+|             |            |                |   |             |           |                  |
 +------+------+            +-------+--------+   +------+------+           +--------+---------+
        |                           |                   ^                           |
        | crossbeam::bounded(100)   |                   |                           |
@@ -104,20 +103,20 @@ through each channel.
 | Translator  |                    |                                               |
 | Thread      |                    | Per-shark crossbeam channels                  |
 | (evacuate.rs|                    | sends: AssignmentMsg (Data/Flush/Stop)        |
-|  :3423)     |                    v                                               |
+|             |                    v                                               |
 +-+-----------+       +------------------------+                                   |
   |                   | Shark Assignment       |                                   |
   |   +-------------->| Generator Threads      |                                   |
   |   | (one per      | (one per dest shark)   |                                   |
-  |   |  shard)       | (evacuate.rs:4096)     |                                   |
+  |   |  shard)       | (evacuate.rs)     |                                   |
   |   |               +------------------------+                                   |
   |   |                                                                            |
   |   |                                      +-------------------+                 |
   |   |  ThreadPool("shard_scanner")         | Assignment        |                 |
-  |   |  (sharkspotter/lib.rs:1012)          | Checker           |                 |
+  |   |  (sharkspotter/lib.rs)          | Checker           |                 |
   |   |  one thread per shard                | (single)          |<-----+          |
   |   +--------------------------------------| (evacuate.rs      |      |          |
-  |                                          |  :4435)           |      |          |
+  |                                          |                   |      |          |
   |                                          +--------+----------+      |          |
   |                                                   |                 |          |
   |                                                   | crossbeam      |          |
@@ -132,7 +131,7 @@ through each channel.
   |                                          | (dynamic or      |      |          |
   |                                          |  static pool)    |      |          |
   |                                          | (evacuate.rs     |      |          |
-  |                                          |  :5178 / :5340)  |      |          |
+  |                                          |                  |      |          |
   |                                          +------------------+      |          |
   |                                                                    |          |
   |                   crossbeam::bounded(1)                            |          |
@@ -159,7 +158,7 @@ through each channel.
 
 ### 3.1 EvacuateObject Lifecycle
 
-Defined in `evacuate.rs:1004` as `EvacuateObjectStatus`:
+Defined as `EvacuateObjectStatus`:
 
 ```
                     +---> Skipped (at any point, with ObjectSkippedReason)
@@ -179,18 +178,18 @@ Defined in `evacuate.rs:1004` as `EvacuateObjectStatus`:
 
 | From | To | Thread | Function |
 |------|----|--------|----------|
-| (new) | Unprocessed | Sharkspotter translator | `insert_into_db()` evacuate.rs:2086 |
+| (new) | Unprocessed | Sharkspotter translator | `insert_into_db()` |
 | Unprocessed | Assigned | Shark assignment generator | `insert_assignment_into_db()` |
 | Unprocessed | Skipped | Shark assignment generator | `skip_object()` |
-| Assigned | PostProcessing | Assignment checker | `process()` impl at :3034, then `mark_assignment_objects()` |
+| Assigned | PostProcessing | Assignment checker | `process()` impl, then `mark_assignment_objects()` |
 | Assigned | Skipped | Assignment checker | On agent timeout or error, `skip_assignment()` |
-| PostProcessing | Complete | MD update worker | `mark_many_objects()` at :1821 |
+| PostProcessing | Complete | MD update worker | `mark_many_objects()` |
 | PostProcessing | Error | MD update worker | On moray/mdapi update failure |
 | Any | Error | Various | `mark_object_error()` |
 
 ### 3.2 AssignmentState Transitions
 
-Defined in `jobs/mod.rs:381`:
+Defined in `jobs/mod.rs`:
 
 ```
   Init -----> Assigned -----> AgentComplete -----> PostProcessed
@@ -209,11 +208,11 @@ Defined in `jobs/mod.rs:381`:
 
 ### 3.3 AssignmentCacheEntry Lifecycle
 
-Defined in `jobs/mod.rs:416`.  Created via `From<Assignment>` (line 426)
+Defined in `jobs/mod.rs`.  Created via `From<Assignment>`
 which stamps `created_at: Instant::now()`.
 
 1. Created when shark assignment generator sends a full assignment
-   (`_channel_send_assignment()` at evacuate.rs:3861).
+   (`_channel_send_assignment()`).
 2. Inserted into `EvacuateJob.assignments: RwLock<AssignmentCache>`.
 3. Assignment checker reads the cache, polls agents, transitions states.
 4. On `AgentComplete`, sent to MD update broker via `md_update_tx`.
@@ -235,14 +234,14 @@ The agent rejects new assignments with HTTP 503 when its scheduled queue
 is full.
 
 ```
-// libagent.rs:1388
+// libagent.rs —
 let max_queued = workers * 50;
 ```
 
-In `post_assignment_handler()` (line 615), before accepting an assignment:
+In `post_assignment_handler()`, before accepting an assignment:
 
 ```rust
-// libagent.rs:659-680
+// libagent.rs —
 let scheduled_count = WalkDir::new(REBALANCER_SCHEDULED_DIR)
     .min_depth(1)
     .into_iter()
@@ -259,13 +258,12 @@ agent filesystem.  Each assignment is a SQLite file named by UUID.
 
 ### 4.2 Manager 503 Retry Loop
 
-**File:** `manager/src/jobs/evacuate.rs`, `PostAssignment::post()` at line 2781.
+**File:** `manager/src/jobs/evacuate.rs`, `PostAssignment::post()`.
 
 When the agent returns 503, the manager retries with capped exponential
 backoff:
 
 ```rust
-// evacuate.rs:2816-2832
 const MAX_RETRIES: u32 = 60;
 let backoff = std::cmp::min(5 * attempt, 30);  // seconds: 5, 10, 15, 20, 25, 30, 30, 30...
 thread::sleep(Duration::from_secs(backoff as u64));
@@ -278,13 +276,12 @@ thread::sleep(Duration::from_secs(backoff as u64));
 
 ### 4.3 Checker Timeout
 
-**File:** `manager/src/jobs/evacuate.rs`, `start_assignment_checker()` at line 4435.
+**File:** `manager/src/jobs/evacuate.rs`, `start_assignment_checker()`.
 
 When polling agents, if an assignment has been in `Assigned` state for
 longer than `2 * max_assignment_age`, it is timed out:
 
 ```rust
-// evacuate.rs:4555-4571
 let max_age = job_action.config.options.max_assignment_age;
 if ace.created_at.elapsed().as_secs() > max_age * 2 {
     job_action.skip_assignment(
@@ -296,22 +293,21 @@ if ace.created_at.elapsed().as_secs() > max_age * 2 {
 ```
 
 The `created_at` field is stamped when `AssignmentCacheEntry` is created
-from `Assignment` (jobs/mod.rs:432).  Default `max_assignment_age` is
-3600 seconds (config.rs:54), so the timeout is 7200 seconds (2 hours).
+from `Assignment` (jobs/mod.rs).  Default `max_assignment_age` is
+3600 seconds (config.rs), so the timeout is 7200 seconds (2 hours).
 
 The checker also uses concurrent polling (CHECKER_CONCURRENCY = 8,
-evacuate.rs:4501) to avoid blocking on sequential HTTP GETs across
+evacuate.rs) to avoid blocking on sequential HTTP GETs across
 hundreds of agents.
 
 ### 4.4 Assignment Age Flush
 
-In each shark assignment generator thread (evacuate.rs:4168-4177), on
+In each shark assignment generator thread (evacuate.rs), on
 every `Flush` message from the assignment manager, assignments older than
 `max_assignment_age` are sent to the poster even if they have fewer than
 `max_tasks_per_assignment` tasks:
 
 ```rust
-// evacuate.rs:4168-4170
 if assignment_len > 0
     && assignment_birth_time.elapsed().as_secs() > max_age
 ```
@@ -327,7 +323,7 @@ diesel with the `Pg` backend.
 
 #### `rebalancer` database -- global job registry
 
-Created by `create_job_database()` in `jobs/mod.rs:600`.
+Created by `create_job_database()` in `jobs/mod.rs`.
 
 ```sql
 CREATE TABLE IF NOT EXISTS jobs(
@@ -338,7 +334,7 @@ CREATE TABLE IF NOT EXISTS jobs(
 );
 ```
 
-Diesel schema: `jobs/mod.rs:258-265`.
+Diesel schema: `jobs/mod.rs`.
 
 #### Per-job database (named by job UUID)
 
@@ -346,7 +342,7 @@ Each job creates a database named after its UUID (e.g.,
 `a1b2c3d4-...`).  Created via `connect_or_create_db()`.
 
 **`evacuateobjects` table** -- created by
-`create_evacuateobjects_table()` at evacuate.rs:1281:
+`create_evacuateobjects_table()` at:
 
 ```sql
 CREATE TABLE evacuateobjects(
@@ -365,20 +361,19 @@ CREATE TABLE evacuateobjects(
 CREATE INDEX assignment_id ON evacuateobjects (assignment_id);
 ```
 
-Diesel schema: evacuate.rs:901-914.  Rust struct: `EvacuateObject` at
-evacuate.rs:1340.
+Diesel schema and Rust struct `EvacuateObject` are defined in `evacuate.rs`.
 
 **`config` table** -- stores the from_shark for this job:
 
 ```sql
--- Diesel schema at evacuate.rs:916-922
+-- Diesel schema in evacuate.rs
 config(id INTEGER, from_shark JSONB)
 ```
 
 **`duplicates` table** -- tracks objects seen on multiple shards:
 
 ```sql
--- Diesel schema at evacuate.rs:924-931
+-- Diesel schema in evacuate.rs
 duplicates(id TEXT PRIMARY KEY, key TEXT, shards INTEGER[])
 ```
 
@@ -387,13 +382,13 @@ duplicates(id TEXT PRIMARY KEY, key TEXT, shards INTEGER[])
 The agent stores assignments as SQLite database files on the local
 filesystem.
 
-**Paths** (libagent.rs:46-48):
+**Paths** (libagent.rs):
 - `/var/tmp/rebalancer/scheduled/<assignment-uuid>` -- queued
 - `/var/tmp/rebalancer/completed/<assignment-uuid>` -- finished
 - `/var/tmp/rebalancer/temp/` -- partial downloads (cleaned on startup)
 
 Each SQLite file contains two tables, created in `assignment_save()`
-(libagent.rs:297):
+(libagent.rs):
 
 ```sql
 CREATE TABLE IF NOT EXISTS tasks (
@@ -413,7 +408,7 @@ CREATE TABLE IF NOT EXISTS stats (
 ```
 
 The `stats` column contains JSON-serialized `AgentAssignmentStats`
-(libagent.rs:86-103).
+(libagent.rs).
 
 ---
 
@@ -431,7 +426,7 @@ sharkspotter can find it.
 The script copies the source VM's registrar config and mutates it using
 JavaScript `replace()` expressions passed to `json(1)`.
 
-**For moray clones** (`do_clone()` at pgclone.sh:714-722):
+**For moray clones** (`do_clone()` at pgclone.sh):
 
 ```
 alias_replace:  /\.moray\./, ".rebalancer-postgres."
@@ -442,7 +437,7 @@ Example: source domain `1.moray.us-east.joyent.us` becomes
 `rebalancer-postgres.us-east.joyent.us`, and the alias becomes
 `1.rebalancer-postgres.us-east.joyent.us`.
 
-**For buckets clones** (pgclone.sh:724-731):
+**For buckets clones** (pgclone.sh):
 
 ```
 alias_replace:  /\.(buckets-postgres|buckets-mdapi)\./, ".rebalancer-buckets-postgres."
@@ -459,12 +454,12 @@ The shard number is preserved because the regex replacements only match
 the service name portion after the leading digit.  The `alias` field
 retains the `N.` prefix.  Sharkspotter connects via:
 
-- `{shard}.rebalancer-postgres.{domain}` (directdb.rs:61)
-- `{shard}.rebalancer-buckets-postgres.{domain}` (directdb_buckets.rs:325)
+- `{shard}.rebalancer-postgres.{domain}` (directdb.rs)
+- `{shard}.rebalancer-buckets-postgres.{domain}` (directdb_buckets.rs)
 
 ### 6.3 Startup Sequence
 
-In `generate_setup_script()` (pgclone.sh:361-536), the in-zone
+In `generate_setup_script()` (pgclone.sh), the in-zone
 `setup.sh` performs:
 
 1. Create `postgres` user/group (uid/gid 907).
@@ -487,9 +482,9 @@ In `generate_setup_script()` (pgclone.sh:361-536), the in-zone
 Objects that fail during an evacuation job are marked `Skipped` or
 `Error` in the per-job database and are not retried within the same job
 run.  Instead, the operator starts a new retry job via
-`POST /jobs/<uuid>/retry` (main.rs:638), which reads the previous job's
+`POST /jobs/<uuid>/retry`, which reads the previous job's
 database for objects in non-`Complete` status
-(`start_local_db_generator()` at evacuate.rs:3369).
+(`start_local_db_generator()`).
 
 **Rationale:** The single-pass design avoids infinite retry loops on
 persistent failures (e.g., corrupt objects, permanently dead sharks).
@@ -498,19 +493,19 @@ completion and the channel DAG has a clear shutdown sequence.
 
 ### 7.2 Bounded Agent Queue (workers * 50)
 
-The agent's `max_queued` is set to `workers * 50` (libagent.rs:1388).
+The agent's `max_queued` is set to `workers * 50` (libagent.rs).
 
 **History:** An earlier version used an unlimited queue.  This caused the
 manager to blast hundreds of assignments that sat in `Scheduled` state on
 the agent, consuming disk space and eventually timing out in the checker
 (after `2 * max_assignment_age`).  The bounded queue with 503
-backpressure (libagent.rs:654-680) ensures the manager backs off when
+backpressure (libagent.rs) ensures the manager backs off when
 agents are saturated, and the 503 retry loop in `post()`
-(evacuate.rs:2815-2889) handles the backoff gracefully.
+(evacuate.rs) handles the backoff gracefully.
 
 ### 7.3 max_assignment_age Increased from 600 to 3600
 
-Default is 3600 seconds (config.rs:54,
+Default is 3600 seconds (config.rs,
 `DEFAULT_MAX_ASSIGNMENT_AGE`).
 
 **Rationale:** With the original 600-second (10 minute) max age,
@@ -527,8 +522,8 @@ This is generous enough for agents with large downloads.
 
 ### 7.4 mark_stale_jobs_failed() on Startup
 
-In `main.rs:685`, the manager calls `mark_stale_jobs_failed()`
-(jobs/mod.rs:630) at startup, which transitions any `Running`, `Setup`,
+In `main.rs`, the manager calls `mark_stale_jobs_failed()`
+(jobs/mod.rs) at startup, which transitions any `Running`, `Setup`,
 or `Init` jobs to `Failed`.
 
 **Rationale:** The manager cannot resume in-flight jobs.  The in-memory
@@ -541,7 +536,7 @@ needed.
 ### 7.5 Download Retries (3x) but No Metadata Update Retries Within Assignments
 
 The agent retries downloads up to 3 times with exponential backoff
-(libagent.rs:986-1015):
+(libagent.rs):
 
 ```rust
 const MAX_RETRIES: u32 = 3;
