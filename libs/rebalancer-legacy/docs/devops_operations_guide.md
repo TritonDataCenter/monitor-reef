@@ -999,7 +999,7 @@ overwhelmed:
    returns HTTP 503 Service Unavailable.
 
 2. **Manager retry on 503:** When an agent returns 503, the manager
-   retries with exponential backoff (5s, 10s, 15s... up to 30s, max
+   retries with linear backoff (5s, 10s, 15s, 20s, 25s, 30s, capped at 30s, max
    60 retries).  This makes the manager self-throttle to the agents'
    processing capacity — scanning pauses until agents have room.
 

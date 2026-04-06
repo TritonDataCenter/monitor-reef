@@ -803,7 +803,7 @@ evacuation job.
 ### Step 8: Start the evacuation job
 
 ```
-rebalancer-adm job evacuate <N.stor.domain>
+rebalancer-adm job create evacuate --shark <N.stor.domain>
 ```
 
 The pipeline now runs:

@@ -202,12 +202,12 @@ From the rebalancer zone:
 
 ```bash
 zlogin <REBALANCER_UUID>
-rebalancer-adm evacuate <SHARK_TO_EVACUATE>
+rebalancer-adm job create evacuate --shark <SHARK_TO_EVACUATE>
 ```
 
 Example:
 ```bash
-rebalancer-adm evacuate 2.stor.coal.joyent.us
+rebalancer-adm job create evacuate --shark 2.stor.coal.joyent.us
 ```
 
 ## Step 5: Monitor the Job
