@@ -67,80 +67,66 @@ job, the crossbeam channels connecting them, and the messages that flow
 through each channel.
 
 ```
-                                    +-----------------+
-                                    | Gotham HTTP     |
-                                    | (1 thread)      |
-                                    | main.rs         |
-                                    +--------+--------+
-                                             |
-                                             | crossbeam::bounded(5)
-                                             | sends: Job
-                                             v
-                                    +-----------------+
-                                    | Job Runner      |
-                                    | ThreadPool(1)   |  THREAD_COUNT=1 (main.rs)
-                                    | main.rs         |
-                                    +--------+--------+
-                                             |
-                                             | job.run() -> EvacuateJob::run() (evacuate.rs)
-                                             v
-      +-----------------------------+--------+---------+---------------------------+
-      |                             |                  |                           |
-      v                             v                  v                           v
-+--------------+            +----------------+   +--------------+           +------------------+
-| Sharkspotter |            | Assignment     |   | Assignment   |           | Metadata Update  |
-| Thread       |            | Manager        |   | Poster       |           | Broker           |
-| (evacuate.rs)|            | (single)       |   | (single)     |           | (single)         |
-|              |            | (evacuate.rs)  |   | (evacuate.rs)|           | (evacuate.rs)    |
-+------+-------+            +------+--------+    +-----+--------+           +------+-----------+
-       |                           ^                   ^                           |
-       | crossbeam::bounded(10)    |                   |                           |
-       | sends:                    |                   | crossbeam::bounded(5)     |
-       | SharkspotterMessage       |                   | sends: Assignment         |
-       v                           |                   |                           |
-+--------------+                   |                   |                           |
-| Sharkspotter |  crossbeam       |                   |                           |
-| Translator   |  ::bounded(100)   |                   |                           |
-| Thread       |  sends:          |                   |                           |
-| (evacuate.rs)|  EvacuateObject  |                   |                           |
-|              +----------------->+                   |                           |
-+--------------+                   |                   |                           |
-                                   | Per-shark crossbeam channels                  |
-  +--------------------------------+ sends: AssignmentMsg (Data/Flush/Stop)        |
-  |                                v                                               |
-  |                   +------------------------+                                   |
-  |                   | Shark Assignment       |                                   |
-  |   +-------------->| Generator Threads      |                                   |
-  |   | (one per      | (one per dest shark)   |                                   |
-  |   |  shard)       | (evacuate.rs)          |                                   |
-  |   |               +------------------------+                                   |
-  |   |                                                                            |
-  |   |                                      +-------------------+                 |
-  |   |  ThreadPool("shard_scanner")         | Assignment        |                 |
-  |   |  (sharkspotter/lib.rs)               | Checker           |                 |
-  |   |  one thread per shard                | (single)          |<-----+          |
-  |   +--------------------------------------| (evacuate.rs)     |      |          |
-  |                                          |                   |      |          |
-  |                                          +--------+----------+      |          |
-  |                                                   |                 |          |
-  |                                                   | crossbeam       |          |
-  |                                                   | ::bounded(5)    |          |
-  |                                                   | sends:          |          |
-  |                                                   | Assignment-     |          |
-  |                                                   | CacheEntry      |          |
-  |                                                   v                 |          |
-  |                                          +------------------+       |          |
-  |                                          | MD Update Worker |       |          |
-  |                                          | Threads          |       |          |
-  |                                          | (dynamic or      |       |          |
-  |                                          |  static pool)    |       |          |
-  |                                          | (evacuate.rs)    |       |          |
-  |                                          +------------------+       |          |
-  |                                                                     |          |
-  |                   crossbeam::bounded(1)                             |          |
-  |                   sends: FiniMsg (shutdown signal)                  |          |
-  |                   assignment_manager --> checker                    +----------+
-  +                                                                    md_update_tx
+                              +-----------------+
+                              | Gotham HTTP     |
+                              | (1 thread)      |
+                              | main.rs         |
+                              +--------+--------+
+                                       |
+                                       | crossbeam::bounded(5), sends: Job
+                                       v
+                              +-----------------+
+                              | Job Runner      |
+                              | ThreadPool(1)   |
+                              | main.rs         |
+                              +--------+--------+
+                                       |
+                                       | job.run() -> EvacuateJob::run()
+                                       |
+         Spawns all threads below:     |
+    +---------------+------------------+------------------+-----------------+
+    |               |                  |                  |                 |
+    v               v                  v                  v                 v
+
++--------+   +-----------+   +------------+   +----------+   +-------------+
+| Shark- |   | Shark-    |   | Assignment |   | Assign-  |   | MD Update   |
+| spotter|   | spotter   |   | Manager    |   | ment     |   | Broker      |
+| Thread |   | Translator|   | (single)   |   | Checker  |   | (single)    |
++---+----+   +-----+-----+   +-----+------+   +----+-----+   +------+------+
+    |               |               |               |                |
+    |  bounded(10)  |  bounded(100) |               |                |
+    |  sends:       |  sends:       |               |                |
+    |  Sharkspotter |  Evacuate     |               |                |
+    |  Message      |  Object       |               |                |
+    +-------->------+-------->------+               |                |
+                                    |               |                |
+            Per-shark channels      |               |                |
+            sends: AssignmentMsg    |  bounded(1)   |                |
+            (Data/Flush/Stop)       |  sends:       |                |
+                                    |  FiniMsg      |                |
+    +------------+------------------+-------->------+                |
+    |            |                                  |                |
+    v            v                                  |  bounded(5)    |
++------------------------+                          |  sends:        |
+| Shark Assignment       |  bounded(5)              |  Assignment    |
+| Generator Threads      |  sends: Assignment       |  CacheEntry    |
+| (one per dest shark)   +--------------->----------+-------->-------+
++------------------------+          |                                |
+                                    v                                v
+                             +-----------+                  +----------------+
+                             | Assignment|                  | MD Update      |
+                             | Poster    |                  | Worker Threads |
+                             | (single)  |                  | (dynamic or    |
+                             +-----------+                  |  static pool)  |
+                                    |                       +----------------+
+                                    |
+                                    | HTTP POST to agent
+                                    v
+                             +-----------+
+                             | Storage   |
+                             | Agents    |
+                             | (:7878)   |
+                             +-----------+
 ```
 
 ### Channel summary
