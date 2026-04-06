@@ -171,6 +171,13 @@ pub mod types {
     #[doc = "        \"type\": \"string\""]
     #[doc = "      }"]
     #[doc = "    },"]
+    #[doc = "    \"master\": {"]
+    #[doc = "      \"description\": \"Whether this is a master record (from remote datacenter)\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"boolean\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"metadata\": {"]
     #[doc = "      \"description\": \"Key-value metadata\","]
     #[doc = "      \"type\": ["]
@@ -203,6 +210,14 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ],"]
     #[doc = "      \"additionalProperties\": true"]
+    #[doc = "    },"]
+    #[doc = "    \"uuid\": {"]
+    #[doc = "      \"description\": \"Application UUID (optional, auto-generated if not provided)\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -217,6 +232,9 @@ pub mod types {
         pub manifests: ::std::option::Option<
             ::std::collections::HashMap<::std::string::String, ::std::string::String>,
         >,
+        #[doc = "Whether this is a master record (from remote datacenter)"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub master: ::std::option::Option<bool>,
         #[doc = "Key-value metadata"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub metadata:
@@ -233,6 +251,9 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub params:
             ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        #[doc = "Application UUID (optional, auto-generated if not provided)"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub uuid: ::std::option::Option<::uuid::Uuid>,
     }
 
     impl CreateApplicationBody {
@@ -262,6 +283,13 @@ pub mod types {
     #[doc = "      \"additionalProperties\": {"]
     #[doc = "        \"type\": \"string\""]
     #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"master\": {"]
+    #[doc = "      \"description\": \"Whether this is a master record (from remote datacenter)\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"boolean\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"metadata\": {"]
     #[doc = "      \"description\": \"Key-value metadata\","]
@@ -305,6 +333,9 @@ pub mod types {
         pub manifests: ::std::option::Option<
             ::std::collections::HashMap<::std::string::String, ::std::string::String>,
         >,
+        #[doc = "Whether this is a master record (from remote datacenter)"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub master: ::std::option::Option<bool>,
         #[doc = "Key-value metadata"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub metadata:
@@ -340,6 +371,13 @@ pub mod types {
     #[doc = "    \"template\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"master\": {"]
+    #[doc = "      \"description\": \"Whether this is a master record (from remote datacenter)\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"boolean\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"description\": \"Manifest name (required)\","]
     #[doc = "      \"type\": \"string\""]
@@ -365,6 +403,14 @@ pub mod types {
     #[doc = "    \"template\": {"]
     #[doc = "      \"description\": \"Template content (required; can be a string or JSON object)\""]
     #[doc = "    },"]
+    #[doc = "    \"uuid\": {"]
+    #[doc = "      \"description\": \"Manifest UUID (optional, auto-generated if not provided)\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    },"]
     #[doc = "    \"version\": {"]
     #[doc = "      \"description\": \"Manifest version (defaults to \\\"1.0.0\\\")\","]
     #[doc = "      \"type\": ["]
@@ -380,6 +426,9 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct CreateManifestBody {
+        #[doc = "Whether this is a master record (from remote datacenter)"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub master: ::std::option::Option<bool>,
         #[doc = "Manifest name (required)"]
         pub name: ::std::string::String,
         #[doc = "Path where the rendered config file is placed (required)"]
@@ -392,6 +441,9 @@ pub mod types {
         pub post_cmd_linux: ::std::option::Option<::std::string::String>,
         #[doc = "Template content (required; can be a string or JSON object)"]
         pub template: ::serde_json::Value,
+        #[doc = "Manifest UUID (optional, auto-generated if not provided)"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub uuid: ::std::option::Option<::uuid::Uuid>,
         #[doc = "Manifest version (defaults to \"1.0.0\")"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub version: ::std::option::Option<::std::string::String>,
@@ -431,6 +483,13 @@ pub mod types {
     #[doc = "        \"type\": \"string\""]
     #[doc = "      }"]
     #[doc = "    },"]
+    #[doc = "    \"master\": {"]
+    #[doc = "      \"description\": \"Whether this is a master record (from remote datacenter)\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"boolean\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"metadata\": {"]
     #[doc = "      \"description\": \"Key-value metadata\","]
     #[doc = "      \"type\": ["]
@@ -465,6 +524,14 @@ pub mod types {
     #[doc = "          ]"]
     #[doc = "        }"]
     #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"uuid\": {"]
+    #[doc = "      \"description\": \"Service UUID (optional, auto-generated if not provided)\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"uuid\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -481,6 +548,9 @@ pub mod types {
         pub manifests: ::std::option::Option<
             ::std::collections::HashMap<::std::string::String, ::std::string::String>,
         >,
+        #[doc = "Whether this is a master record (from remote datacenter)"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub master: ::std::option::Option<bool>,
         #[doc = "Key-value metadata"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub metadata:
@@ -498,6 +568,9 @@ pub mod types {
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub type_: ::std::option::Option<ServiceType>,
+        #[doc = "Service UUID (optional, auto-generated if not provided)"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub uuid: ::std::option::Option<::uuid::Uuid>,
     }
 
     impl CreateServiceBody {
@@ -673,21 +746,20 @@ pub mod types {
         }
     }
 
-    #[doc = "Response for GET /loglevel"]
+    #[doc = "Response for GET /loglevel\n\nBunyan's `log.level()` returns an integer (e.g., 30 for \"info\"), so `level` is a generic JSON value rather than a string."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Response for GET /loglevel\","]
+    #[doc = "  \"description\": \"Response for GET /loglevel\\n\\nBunyan's `log.level()` returns an integer (e.g., 30 for \\\"info\\\"), so `level` is a generic JSON value rather than a string.\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"level\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"level\": {"]
-    #[doc = "      \"description\": \"Current log level\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"description\": \"Current log level (integer from Bunyan)\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -697,8 +769,8 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct LogLevelResponse {
-        #[doc = "Current log level"]
-        pub level: ::std::string::String,
+        #[doc = "Current log level (integer from Bunyan)"]
+        pub level: ::serde_json::Value,
     }
 
     impl LogLevelResponse {
@@ -1234,8 +1306,7 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"level\": {"]
-    #[doc = "      \"description\": \"Log level to set\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"description\": \"Log level to set (string name or integer)\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -1245,8 +1316,8 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct SetLogLevelBody {
-        #[doc = "Log level to set"]
-        pub level: ::std::string::String,
+        #[doc = "Log level to set (string name or integer)"]
+        pub level: ::serde_json::Value,
     }
 
     impl SetLogLevelBody {
@@ -1929,6 +2000,7 @@ pub mod types {
                 >,
                 ::std::string::String,
             >,
+            master: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             metadata: ::std::result::Result<
                 ::std::option::Option<
                     ::serde_json::Map<::std::string::String, ::serde_json::Value>,
@@ -1949,17 +2021,20 @@ pub mod types {
                 >,
                 ::std::string::String,
             >,
+            uuid: ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
         }
 
         impl ::std::default::Default for CreateApplicationBody {
             fn default() -> Self {
                 Self {
                     manifests: Ok(Default::default()),
+                    master: Ok(Default::default()),
                     metadata: Ok(Default::default()),
                     metadata_schema: Ok(Default::default()),
                     name: Err("no value supplied for name".to_string()),
                     owner_uuid: Err("no value supplied for owner_uuid".to_string()),
                     params: Ok(Default::default()),
+                    uuid: Ok(Default::default()),
                 }
             }
         }
@@ -1980,6 +2055,16 @@ pub mod types {
                 self.manifests = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for manifests: {e}"));
+                self
+            }
+            pub fn master<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.master = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for master: {e}"));
                 self
             }
             pub fn metadata<T>(mut self, value: T) -> Self
@@ -2044,6 +2129,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for params: {e}"));
                 self
             }
+            pub fn uuid<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.uuid = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for uuid: {e}"));
+                self
+            }
         }
 
         impl ::std::convert::TryFrom<CreateApplicationBody> for super::CreateApplicationBody {
@@ -2053,11 +2148,13 @@ pub mod types {
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
                     manifests: value.manifests?,
+                    master: value.master?,
                     metadata: value.metadata?,
                     metadata_schema: value.metadata_schema?,
                     name: value.name?,
                     owner_uuid: value.owner_uuid?,
                     params: value.params?,
+                    uuid: value.uuid?,
                 })
             }
         }
@@ -2066,11 +2163,13 @@ pub mod types {
             fn from(value: super::CreateApplicationBody) -> Self {
                 Self {
                     manifests: Ok(value.manifests),
+                    master: Ok(value.master),
                     metadata: Ok(value.metadata),
                     metadata_schema: Ok(value.metadata_schema),
                     name: Ok(value.name),
                     owner_uuid: Ok(value.owner_uuid),
                     params: Ok(value.params),
+                    uuid: Ok(value.uuid),
                 }
             }
         }
@@ -2083,6 +2182,7 @@ pub mod types {
                 >,
                 ::std::string::String,
             >,
+            master: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             metadata: ::std::result::Result<
                 ::std::option::Option<
                     ::serde_json::Map<::std::string::String, ::serde_json::Value>,
@@ -2103,6 +2203,7 @@ pub mod types {
             fn default() -> Self {
                 Self {
                     manifests: Ok(Default::default()),
+                    master: Ok(Default::default()),
                     metadata: Ok(Default::default()),
                     params: Ok(Default::default()),
                     service_uuid: Err("no value supplied for service_uuid".to_string()),
@@ -2127,6 +2228,16 @@ pub mod types {
                 self.manifests = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for manifests: {e}"));
+                self
+            }
+            pub fn master<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.master = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for master: {e}"));
                 self
             }
             pub fn metadata<T>(mut self, value: T) -> Self
@@ -2186,6 +2297,7 @@ pub mod types {
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
                     manifests: value.manifests?,
+                    master: value.master?,
                     metadata: value.metadata?,
                     params: value.params?,
                     service_uuid: value.service_uuid?,
@@ -2198,6 +2310,7 @@ pub mod types {
             fn from(value: super::CreateInstanceBody) -> Self {
                 Self {
                     manifests: Ok(value.manifests),
+                    master: Ok(value.master),
                     metadata: Ok(value.metadata),
                     params: Ok(value.params),
                     service_uuid: Ok(value.service_uuid),
@@ -2208,6 +2321,7 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct CreateManifestBody {
+            master: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             path: ::std::result::Result<::std::string::String, ::std::string::String>,
             post_cmd: ::std::result::Result<
@@ -2219,6 +2333,7 @@ pub mod types {
                 ::std::string::String,
             >,
             template: ::std::result::Result<::serde_json::Value, ::std::string::String>,
+            uuid: ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             version: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
@@ -2228,17 +2343,29 @@ pub mod types {
         impl ::std::default::Default for CreateManifestBody {
             fn default() -> Self {
                 Self {
+                    master: Ok(Default::default()),
                     name: Err("no value supplied for name".to_string()),
                     path: Err("no value supplied for path".to_string()),
                     post_cmd: Ok(Default::default()),
                     post_cmd_linux: Ok(Default::default()),
                     template: Err("no value supplied for template".to_string()),
+                    uuid: Ok(Default::default()),
                     version: Ok(Default::default()),
                 }
             }
         }
 
         impl CreateManifestBody {
+            pub fn master<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.master = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for master: {e}"));
+                self
+            }
             pub fn name<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::string::String>,
@@ -2289,6 +2416,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for template: {e}"));
                 self
             }
+            pub fn uuid<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.uuid = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for uuid: {e}"));
+                self
+            }
             pub fn version<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
@@ -2307,11 +2444,13 @@ pub mod types {
                 value: CreateManifestBody,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    master: value.master?,
                     name: value.name?,
                     path: value.path?,
                     post_cmd: value.post_cmd?,
                     post_cmd_linux: value.post_cmd_linux?,
                     template: value.template?,
+                    uuid: value.uuid?,
                     version: value.version?,
                 })
             }
@@ -2320,11 +2459,13 @@ pub mod types {
         impl ::std::convert::From<super::CreateManifestBody> for CreateManifestBody {
             fn from(value: super::CreateManifestBody) -> Self {
                 Self {
+                    master: Ok(value.master),
                     name: Ok(value.name),
                     path: Ok(value.path),
                     post_cmd: Ok(value.post_cmd),
                     post_cmd_linux: Ok(value.post_cmd_linux),
                     template: Ok(value.template),
+                    uuid: Ok(value.uuid),
                     version: Ok(value.version),
                 }
             }
@@ -2339,6 +2480,7 @@ pub mod types {
                 >,
                 ::std::string::String,
             >,
+            master: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             metadata: ::std::result::Result<
                 ::std::option::Option<
                     ::serde_json::Map<::std::string::String, ::serde_json::Value>,
@@ -2356,6 +2498,7 @@ pub mod types {
                 ::std::option::Option<super::ServiceType>,
                 ::std::string::String,
             >,
+            uuid: ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
         }
 
         impl ::std::default::Default for CreateServiceBody {
@@ -2363,10 +2506,12 @@ pub mod types {
                 Self {
                     application_uuid: Err("no value supplied for application_uuid".to_string()),
                     manifests: Ok(Default::default()),
+                    master: Ok(Default::default()),
                     metadata: Ok(Default::default()),
                     name: Err("no value supplied for name".to_string()),
                     params: Ok(Default::default()),
                     type_: Ok(Default::default()),
+                    uuid: Ok(Default::default()),
                 }
             }
         }
@@ -2397,6 +2542,16 @@ pub mod types {
                 self.manifests = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for manifests: {e}"));
+                self
+            }
+            pub fn master<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.master = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for master: {e}"));
                 self
             }
             pub fn metadata<T>(mut self, value: T) -> Self
@@ -2447,6 +2602,16 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for type_: {e}"));
                 self
             }
+            pub fn uuid<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::uuid::Uuid>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.uuid = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for uuid: {e}"));
+                self
+            }
         }
 
         impl ::std::convert::TryFrom<CreateServiceBody> for super::CreateServiceBody {
@@ -2457,10 +2622,12 @@ pub mod types {
                 Ok(Self {
                     application_uuid: value.application_uuid?,
                     manifests: value.manifests?,
+                    master: value.master?,
                     metadata: value.metadata?,
                     name: value.name?,
                     params: value.params?,
                     type_: value.type_?,
+                    uuid: value.uuid?,
                 })
             }
         }
@@ -2470,10 +2637,12 @@ pub mod types {
                 Self {
                     application_uuid: Ok(value.application_uuid),
                     manifests: Ok(value.manifests),
+                    master: Ok(value.master),
                     metadata: Ok(value.metadata),
                     name: Ok(value.name),
                     params: Ok(value.params),
                     type_: Ok(value.type_),
+                    uuid: Ok(value.uuid),
                 }
             }
         }
@@ -2733,7 +2902,7 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct LogLevelResponse {
-            level: ::std::result::Result<::std::string::String, ::std::string::String>,
+            level: ::std::result::Result<::serde_json::Value, ::std::string::String>,
         }
 
         impl ::std::default::Default for LogLevelResponse {
@@ -2747,7 +2916,7 @@ pub mod types {
         impl LogLevelResponse {
             pub fn level<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::serde_json::Value>,
                 T::Error: ::std::fmt::Display,
             {
                 self.level = value
@@ -3222,7 +3391,7 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct SetLogLevelBody {
-            level: ::std::result::Result<::std::string::String, ::std::string::String>,
+            level: ::std::result::Result<::serde_json::Value, ::std::string::String>,
         }
 
         impl ::std::default::Default for SetLogLevelBody {
@@ -3236,7 +3405,7 @@ pub mod types {
         impl SetLogLevelBody {
             pub fn level<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::serde_json::Value>,
                 T::Error: ::std::fmt::Display,
             {
                 self.level = value
@@ -4143,7 +4312,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                201u16 => ResponseValue::from_response(response).await,
+                200u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -4708,7 +4877,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                201u16 => ResponseValue::from_response(response).await,
+                200u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -5394,7 +5563,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                201u16 => ResponseValue::from_response(response).await,
+                200u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -5916,7 +6085,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                201u16 => ResponseValue::from_response(response).await,
+                200u16 => ResponseValue::from_response(response).await,
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),

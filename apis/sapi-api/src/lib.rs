@@ -26,8 +26,8 @@
 //! has camelCase `storType` and `storAvailable` fields.
 
 use dropshot::{
-    HttpError, HttpResponseCreated, HttpResponseDeleted, HttpResponseOk,
-    HttpResponseUpdatedNoContent, Path, Query, RequestContext, TypedBody,
+    HttpError, HttpResponseDeleted, HttpResponseOk, HttpResponseUpdatedNoContent, Path, Query,
+    RequestContext, TypedBody,
 };
 
 pub mod types;
@@ -150,7 +150,7 @@ pub trait SapiApi {
     async fn create_application(
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<CreateApplicationBody>,
-    ) -> Result<HttpResponseCreated<Application>, HttpError>;
+    ) -> Result<HttpResponseOk<Application>, HttpError>;
 
     /// Get an application
     ///
@@ -221,7 +221,7 @@ pub trait SapiApi {
     async fn create_service(
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<CreateServiceBody>,
-    ) -> Result<HttpResponseCreated<Service>, HttpError>;
+    ) -> Result<HttpResponseOk<Service>, HttpError>;
 
     /// Get a service
     ///
@@ -295,7 +295,7 @@ pub trait SapiApi {
         rqctx: RequestContext<Self::Context>,
         query: Query<CreateInstanceQuery>,
         body: TypedBody<CreateInstanceBody>,
-    ) -> Result<HttpResponseCreated<Instance>, HttpError>;
+    ) -> Result<HttpResponseOk<Instance>, HttpError>;
 
     /// Get an instance
     ///
@@ -394,7 +394,7 @@ pub trait SapiApi {
     async fn create_manifest(
         rqctx: RequestContext<Self::Context>,
         body: TypedBody<CreateManifestBody>,
-    ) -> Result<HttpResponseCreated<Manifest>, HttpError>;
+    ) -> Result<HttpResponseOk<Manifest>, HttpError>;
 
     /// Get a manifest
     ///

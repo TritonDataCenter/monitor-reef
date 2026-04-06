@@ -58,6 +58,10 @@ pub struct CreateApplicationBody {
     /// Owner UUID (required)
     pub owner_uuid: Uuid,
 
+    /// Application UUID (optional, auto-generated if not provided)
+    #[serde(default)]
+    pub uuid: Option<Uuid>,
+
     /// Zone parameters
     #[serde(default)]
     pub params: Option<HashMap<String, Value>>,
@@ -73,6 +77,10 @@ pub struct CreateApplicationBody {
     /// Manifest UUID mappings
     #[serde(default)]
     pub manifests: Option<HashMap<String, String>>,
+
+    /// Whether this is a master record (from remote datacenter)
+    #[serde(default)]
+    pub master: Option<bool>,
 }
 
 /// Request body for updating an application

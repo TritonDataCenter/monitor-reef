@@ -58,6 +58,10 @@ pub struct CreateServiceBody {
     /// Parent application UUID (required)
     pub application_uuid: Uuid,
 
+    /// Service UUID (optional, auto-generated if not provided)
+    #[serde(default)]
+    pub uuid: Option<Uuid>,
+
     /// Zone parameters
     #[serde(default)]
     pub params: Option<HashMap<String, Value>>,
@@ -73,6 +77,10 @@ pub struct CreateServiceBody {
     /// Service type: "vm" or "agent"
     #[serde(default, rename = "type")]
     pub service_type: Option<ServiceType>,
+
+    /// Whether this is a master record (from remote datacenter)
+    #[serde(default)]
+    pub master: Option<bool>,
 }
 
 /// Request body for updating a service

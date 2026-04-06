@@ -73,6 +73,10 @@ pub struct CreateInstanceBody {
     /// Instance UUID (optional, auto-generated if not provided)
     #[serde(default)]
     pub uuid: Option<Uuid>,
+
+    /// Whether this is a master record (from remote datacenter)
+    #[serde(default)]
+    pub master: Option<bool>,
 }
 
 /// Query parameters for creating an instance

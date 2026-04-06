@@ -239,6 +239,8 @@ fn apply_all_sapi_patches(spec: &mut Value) -> Result<()> {
     patch_sapi_get_mode(spec)?;
     patch_sapi_post_mode(spec)?;
     patch_sapi_post_loglevel(spec)?;
+    patch_sapi_ping_500(spec)?;
+    patch_sapi_create_status_codes(spec)?;
     Ok(())
 }
 
@@ -305,6 +307,54 @@ fn patch_sapi_post_loglevel(spec: &mut Value) -> Result<()> {
         && let Some(obj) = resp.as_object_mut()
     {
         obj.remove("content");
+    }
+
+    Ok(())
+}
+
+/// GET /ping: Node.js returns PingResponse with status 500 when storage is
+/// unavailable (not an Error body). Progenitor can't handle multiple response
+/// types for the same endpoint, so we leave the 5XX Error reference in place.
+/// The client will receive an error on 500 — callers needing the PingResponse
+/// body on failure should use the raw HTTP client directly.
+///
+/// This is a known limitation documented in the validation report.
+fn patch_sapi_ping_500(_spec: &mut Value) -> Result<()> {
+    // No-op: Progenitor doesn't support multiple success body types.
+    // Keeping this function as documentation of the known discrepancy.
+    Ok(())
+}
+
+/// Create endpoints return 200 in Node.js SAPI (Restify default), not 201.
+///
+/// The Rust trait uses HttpResponseOk (200) already, but this patch ensures the
+/// OpenAPI spec doesn't have any leftover 201 status codes from prior generations.
+fn patch_sapi_create_status_codes(spec: &mut Value) -> Result<()> {
+    let create_endpoints: &[(&str, &str)] = &[
+        ("/applications", "post"),
+        ("/services", "post"),
+        ("/instances", "post"),
+        ("/manifests", "post"),
+    ];
+
+    let paths = spec
+        .get_mut("paths")
+        .ok_or_else(|| anyhow::anyhow!("paths not found in spec"))?;
+
+    for (path, method) in create_endpoints {
+        let responses = paths
+            .get_mut(*path)
+            .and_then(|p| p.get_mut(*method))
+            .and_then(|m| m.get_mut("responses"));
+
+        if let Some(resp_obj) = responses
+            && let Some(obj) = resp_obj.as_object_mut()
+        {
+            // If there's a 201, move its content to 200
+            if let Some(created) = obj.remove("201") {
+                obj.insert("200".to_string(), created);
+            }
+        }
     }
 
     Ok(())

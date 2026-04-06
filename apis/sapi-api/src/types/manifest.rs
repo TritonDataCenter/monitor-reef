@@ -59,6 +59,10 @@ pub struct CreateManifestBody {
     /// Template content (required; can be a string or JSON object)
     pub template: Value,
 
+    /// Manifest UUID (optional, auto-generated if not provided)
+    #[serde(default)]
+    pub uuid: Option<Uuid>,
+
     /// Command to run after rendering
     #[serde(default)]
     pub post_cmd: Option<String>,
@@ -70,6 +74,10 @@ pub struct CreateManifestBody {
     /// Manifest version (defaults to "1.0.0")
     #[serde(default)]
     pub version: Option<String>,
+
+    /// Whether this is a master record (from remote datacenter)
+    #[serde(default)]
+    pub master: Option<bool>,
 }
 
 /// Query parameters for listing manifests

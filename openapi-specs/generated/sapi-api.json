@@ -85,8 +85,8 @@
           "required": true
         },
         "responses": {
-          "201": {
-            "description": "successful creation",
+          "200": {
+            "description": "successful operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -371,8 +371,8 @@
           "required": true
         },
         "responses": {
-          "201": {
-            "description": "successful creation",
+          "200": {
+            "description": "successful operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -719,8 +719,8 @@
           "required": true
         },
         "responses": {
-          "201": {
-            "description": "successful creation",
+          "200": {
+            "description": "successful operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -988,8 +988,8 @@
           "required": true
         },
         "responses": {
-          "201": {
-            "description": "successful creation",
+          "200": {
+            "description": "successful operation",
             "content": {
               "application/json": {
                 "schema": {
@@ -1198,6 +1198,12 @@
               "type": "string"
             }
           },
+          "master": {
+            "nullable": true,
+            "description": "Whether this is a master record (from remote datacenter)",
+            "default": null,
+            "type": "boolean"
+          },
           "metadata": {
             "nullable": true,
             "description": "Key-value metadata",
@@ -1227,6 +1233,13 @@
             "default": null,
             "type": "object",
             "additionalProperties": true
+          },
+          "uuid": {
+            "nullable": true,
+            "description": "Application UUID (optional, auto-generated if not provided)",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [
@@ -1246,6 +1259,12 @@
             "additionalProperties": {
               "type": "string"
             }
+          },
+          "master": {
+            "nullable": true,
+            "description": "Whether this is a master record (from remote datacenter)",
+            "default": null,
+            "type": "boolean"
           },
           "metadata": {
             "nullable": true,
@@ -1282,6 +1301,12 @@
         "description": "Request body for creating a manifest",
         "type": "object",
         "properties": {
+          "master": {
+            "nullable": true,
+            "description": "Whether this is a master record (from remote datacenter)",
+            "default": null,
+            "type": "boolean"
+          },
           "name": {
             "description": "Manifest name (required)",
             "type": "string"
@@ -1304,6 +1329,13 @@
           },
           "template": {
             "description": "Template content (required; can be a string or JSON object)"
+          },
+          "uuid": {
+            "nullable": true,
+            "description": "Manifest UUID (optional, auto-generated if not provided)",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
           },
           "version": {
             "nullable": true,
@@ -1336,6 +1368,12 @@
               "type": "string"
             }
           },
+          "master": {
+            "nullable": true,
+            "description": "Whether this is a master record (from remote datacenter)",
+            "default": null,
+            "type": "boolean"
+          },
           "metadata": {
             "nullable": true,
             "description": "Key-value metadata",
@@ -1363,6 +1401,13 @@
                 "$ref": "#/components/schemas/ServiceType"
               }
             ]
+          },
+          "uuid": {
+            "nullable": true,
+            "description": "Service UUID (optional, auto-generated if not provided)",
+            "default": null,
+            "type": "string",
+            "format": "uuid"
           }
         },
         "required": [
@@ -1450,12 +1495,11 @@
         ]
       },
       "LogLevelResponse": {
-        "description": "Response for GET /loglevel",
+        "description": "Response for GET /loglevel\n\nBunyan's `log.level()` returns an integer (e.g., 30 for \"info\"), so `level` is a generic JSON value rather than a string.",
         "type": "object",
         "properties": {
           "level": {
-            "description": "Current log level",
-            "type": "string"
+            "description": "Current log level (integer from Bunyan)"
           }
         },
         "required": [
@@ -1666,8 +1710,7 @@
         "type": "object",
         "properties": {
           "level": {
-            "description": "Log level to set",
-            "type": "string"
+            "description": "Log level to set (string name or integer)"
           }
         },
         "required": [

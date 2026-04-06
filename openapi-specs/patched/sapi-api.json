@@ -81,6 +81,12 @@
             "nullable": true,
             "type": "object"
           },
+          "master": {
+            "default": null,
+            "description": "Whether this is a master record (from remote datacenter)",
+            "nullable": true,
+            "type": "boolean"
+          },
           "metadata": {
             "additionalProperties": true,
             "default": null,
@@ -110,6 +116,13 @@
             "description": "Zone parameters",
             "nullable": true,
             "type": "object"
+          },
+          "uuid": {
+            "default": null,
+            "description": "Application UUID (optional, auto-generated if not provided)",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
           }
         },
         "required": [
@@ -129,6 +142,12 @@
             "description": "Manifest UUID mappings",
             "nullable": true,
             "type": "object"
+          },
+          "master": {
+            "default": null,
+            "description": "Whether this is a master record (from remote datacenter)",
+            "nullable": true,
+            "type": "boolean"
           },
           "metadata": {
             "additionalProperties": true,
@@ -165,6 +184,12 @@
       "CreateManifestBody": {
         "description": "Request body for creating a manifest",
         "properties": {
+          "master": {
+            "default": null,
+            "description": "Whether this is a master record (from remote datacenter)",
+            "nullable": true,
+            "type": "boolean"
+          },
           "name": {
             "description": "Manifest name (required)",
             "type": "string"
@@ -187,6 +212,13 @@
           },
           "template": {
             "description": "Template content (required; can be a string or JSON object)"
+          },
+          "uuid": {
+            "default": null,
+            "description": "Manifest UUID (optional, auto-generated if not provided)",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
           },
           "version": {
             "default": null,
@@ -219,6 +251,12 @@
             "nullable": true,
             "type": "object"
           },
+          "master": {
+            "default": null,
+            "description": "Whether this is a master record (from remote datacenter)",
+            "nullable": true,
+            "type": "boolean"
+          },
           "metadata": {
             "additionalProperties": true,
             "default": null,
@@ -246,6 +284,13 @@
             "default": null,
             "description": "Service type: \"vm\" or \"agent\"",
             "nullable": true
+          },
+          "uuid": {
+            "default": null,
+            "description": "Service UUID (optional, auto-generated if not provided)",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
           }
         },
         "required": [
@@ -334,11 +379,10 @@
         "type": "object"
       },
       "LogLevelResponse": {
-        "description": "Response for GET /loglevel",
+        "description": "Response for GET /loglevel\n\nBunyan's `log.level()` returns an integer (e.g., 30 for \"info\"), so `level` is a generic JSON value rather than a string.",
         "properties": {
           "level": {
-            "description": "Current log level",
-            "type": "string"
+            "description": "Current log level (integer from Bunyan)"
           }
         },
         "required": [
@@ -549,8 +593,7 @@
         "description": "Request body for POST /loglevel",
         "properties": {
           "level": {
-            "description": "Log level to set",
-            "type": "string"
+            "description": "Log level to set (string name or integer)"
           }
         },
         "required": [
@@ -819,7 +862,7 @@
           "required": true
         },
         "responses": {
-          "201": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
@@ -827,7 +870,7 @@
                 }
               }
             },
-            "description": "successful creation"
+            "description": "successful operation"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
@@ -1105,7 +1148,7 @@
           "required": true
         },
         "responses": {
-          "201": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1113,7 +1156,7 @@
                 }
               }
             },
-            "description": "successful creation"
+            "description": "successful operation"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
@@ -1446,7 +1489,7 @@
           "required": true
         },
         "responses": {
-          "201": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1454,7 +1497,7 @@
                 }
               }
             },
-            "description": "successful creation"
+            "description": "successful operation"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
@@ -1708,7 +1751,7 @@
           "required": true
         },
         "responses": {
-          "201": {
+          "200": {
             "content": {
               "application/json": {
                 "schema": {
@@ -1716,7 +1759,7 @@
                 }
               }
             },
-            "description": "successful creation"
+            "description": "successful operation"
           },
           "4XX": {
             "$ref": "#/components/responses/Error"

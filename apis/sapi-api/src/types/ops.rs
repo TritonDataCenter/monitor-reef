@@ -8,6 +8,7 @@
 
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 /// SAPI operating mode
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -55,15 +56,18 @@ pub struct SetModeBody {
 }
 
 /// Response for GET /loglevel
+///
+/// Bunyan's `log.level()` returns an integer (e.g., 30 for "info"),
+/// so `level` is a generic JSON value rather than a string.
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
 pub struct LogLevelResponse {
-    /// Current log level
-    pub level: String,
+    /// Current log level (integer from Bunyan)
+    pub level: Value,
 }
 
 /// Request body for POST /loglevel
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SetLogLevelBody {
-    /// Log level to set
-    pub level: String,
+    /// Log level to set (string name or integer)
+    pub level: Value,
 }

@@ -564,7 +564,9 @@ async fn main() -> Result<()> {
             }
         }
         Commands::SetLogLevel { level, raw: _ } => {
-            let body = types::SetLogLevelBody { level };
+            let level_value: serde_json::Value =
+                serde_json::from_str(&level).unwrap_or(serde_json::Value::String(level));
+            let body = types::SetLogLevelBody { level: level_value };
             client
                 .set_log_level()
                 .body(body)
@@ -649,10 +651,12 @@ async fn main() -> Result<()> {
             let body = types::CreateApplicationBody {
                 name,
                 owner_uuid,
+                uuid: None,
                 params: params.as_deref().map(parse_json_map).transpose()?,
                 metadata: metadata.as_deref().map(parse_json_map).transpose()?,
                 metadata_schema: metadata_schema.as_deref().map(parse_json_map).transpose()?,
                 manifests: manifests.as_deref().map(parse_string_map).transpose()?,
+                master: None,
             };
             let resp = client
                 .create_application()
@@ -780,6 +784,7 @@ async fn main() -> Result<()> {
             let body = types::CreateServiceBody {
                 name,
                 application_uuid,
+                uuid: None,
                 type_: service_type
                     .as_deref()
                     .map(parse_service_type)
@@ -787,6 +792,7 @@ async fn main() -> Result<()> {
                 params: params.as_deref().map(parse_json_map).transpose()?,
                 metadata: metadata.as_deref().map(parse_json_map).transpose()?,
                 manifests: manifests.as_deref().map(parse_string_map).transpose()?,
+                master: None,
             };
             let resp = client
                 .create_service()
@@ -911,6 +917,7 @@ async fn main() -> Result<()> {
                 params: params.as_deref().map(parse_json_map).transpose()?,
                 metadata: metadata.as_deref().map(parse_json_map).transpose()?,
                 manifests: manifests.as_deref().map(parse_string_map).transpose()?,
+                master: None,
             };
             let mut req = client.create_instance().body(body);
             if async_create {
@@ -1063,9 +1070,11 @@ async fn main() -> Result<()> {
                 name,
                 path,
                 template: template_value,
+                uuid: None,
                 post_cmd,
                 post_cmd_linux,
                 version,
+                master: None,
             };
             let resp = client
                 .create_manifest()
