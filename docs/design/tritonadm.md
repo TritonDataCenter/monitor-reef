@@ -96,12 +96,14 @@ completions all work today.
 become available. Each command implementation is a self-contained change
 that adds real behavior to one stub.
 
-**Portal drives the foundation**: `post-setup portal` is the first real
-command, but the API clients it requires (SAPI, IMGAPI, NAPI, PAPI, plus
-existing VMAPI) unlock several read-only commands as low-hanging fruit:
+**Grafana drives the foundation**: `post-setup grafana` is the first real
+command because sdcadm already has a working implementation to validate
+against. The API clients it requires (SAPI, IMGAPI, NAPI, PAPI, plus
+existing VMAPI) are the same ones portal needs, and they also unlock
+several read-only commands as low-hanging fruit:
 
-| API client | Portal needs | Also unlocks |
-|------------|-------------|--------------|
+| API client | post-setup needs | Also unlocks |
+|------------|-----------------|--------------|
 | **SAPI** | ListServices, CreateService, ListInstances | `services`, `instances`, `check-config` |
 | **IMGAPI** | ListImages (by name) | `avail` |
 | **VMAPI** | GetVm (poll state) | `instances`, `check-health` (already exists) |
@@ -110,33 +112,60 @@ existing VMAPI) unlock several read-only commands as low-hanging fruit:
 
 **Priority order:**
 
-1. `post-setup portal` — drives the API client work
+1. `post-setup grafana` — first real command, validates against sdcadm
 2. `services` / `instances` — free once SAPI client exists (read-only)
 3. `avail` — free once IMGAPI client exists (read-only)
 4. `check-config` / `check-health` — SAPI + VMAPI (read-only)
-5. `post-setup grafana` / `post-setup prometheus` — reuse same APIs
-6. `update` — the core workflow, likely the most complex command
+5. `post-setup portal` — same APIs as grafana, new service
+6. `post-setup prometheus` — reuses same APIs
+7. `update` — the core workflow, likely the most complex command
 
-## First Target: `post-setup portal`
+## First Target: `post-setup grafana`
 
-The portal is a Rust+React web UI for Triton. `post-setup
-portal` creates the SAPI service definition and provisions the first
-instance, following sdcadm's established `post-setup grafana` pattern
-(AddServiceProcedure + EnsureNicOnInstancesProcedure).
+Grafana already works via `sdcadm post-setup grafana`, making it the
+ideal first command — we can test on a real Triton DC and compare
+results against the known-good Node.js implementation. The flow is
+identical to what portal will need, so grafana validates the API clients
+and the post-setup pattern before we apply them to a brand-new service.
 
 ### What it does
 
-1. Check if a `portal` service already exists in SAPI — bail if so
-2. Look up the latest `user-portal` image in IMGAPI (or use `--image` flag)
+1. Check if a `grafana` service already exists in SAPI — bail if so
+2. Look up the latest `grafana` image in IMGAPI (or use `--image` flag)
 3. Look up the `sdc_1024` package in PAPI
 4. Get the admin and external network UUIDs from NAPI
-5. Create the SAPI service definition (name=portal, type=vm, params with
-   image, package, networks, billing_tag, firewall_enabled)
+5. Create the SAPI service definition (name=grafana, type=vm, params
+   with image, package, networks, delegated dataset, firewall)
 6. SAPI automatically provisions the first instance on the headnode
 7. Wait for the VM to reach "running" state (poll VMAPI)
 8. Ensure the instance has a NIC on the external network
+9. Optionally add manta NIC if manta network exists (non-fatal)
 
 ### Service configuration
+
+| Property | Value |
+|----------|-------|
+| Service name | `grafana` |
+| Image name | `grafana` |
+| Package | `sdc_1024` (1 GB) |
+| Networks | admin + external (primary), manta (optional) |
+| Delegated dataset | Yes |
+| Firewall | Enabled (external-facing) |
+
+### APIs needed
+
+| API | Operations |
+|-----|------------|
+| **SAPI** | ListServices, CreateService, ListInstances, GetApplication |
+| **IMGAPI** | ListImages (filter by name=grafana) |
+| **PAPI** | ListPackages (filter by name=sdc_1024) |
+| **NAPI** | ListNetworks (filter by name), ListNics, CreateNic |
+| **VMAPI** | GetVm (poll for running state) |
+
+## Second Target: `post-setup portal`
+
+Once grafana validates the API clients and post-setup pattern, portal
+uses the same flow with different service configuration:
 
 | Property | Value |
 |----------|-------|
@@ -146,16 +175,6 @@ instance, following sdcadm's established `post-setup grafana` pattern
 | Networks | admin + external (primary) |
 | Delegated dataset | No (stateless) |
 | Firewall | Enabled (external-facing) |
-
-### APIs needed
-
-| API | Operations |
-|-----|------------|
-| **SAPI** | ListServices, CreateService, ListInstances |
-| **IMGAPI** | ListImages (filter by name=user-portal) |
-| **PAPI** | ListPackages (filter by name=sdc_1024) |
-| **NAPI** | ListNetworks (filter by name) |
-| **VMAPI** | GetVm (poll for running state) |
 
 ## API Client Strategy
 
