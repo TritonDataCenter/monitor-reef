@@ -229,7 +229,10 @@ async fn get_instance_counts(
 }
 
 async fn cmd_services(sapi_url: &str, json: bool) -> Result<()> {
-    let sapi = sapi_client::Client::new(sapi_url);
+    let http = triton_tls::build_http_client(false)
+        .await
+        .context("failed to build HTTP client")?;
+    let sapi = sapi_client::Client::new_with_client(sapi_url, http);
     let services = sapi
         .list_services()
         .send()
@@ -265,8 +268,11 @@ async fn cmd_services(sapi_url: &str, json: bool) -> Result<()> {
 }
 
 async fn cmd_instances(sapi_url: &str, vmapi_url: &str, json: bool) -> Result<()> {
-    let sapi = sapi_client::Client::new(sapi_url);
-    let vmapi = vmapi_client::Client::new(vmapi_url);
+    let http = triton_tls::build_http_client(false)
+        .await
+        .context("failed to build HTTP client")?;
+    let sapi = sapi_client::Client::new_with_client(sapi_url, http.clone());
+    let vmapi = vmapi_client::Client::new_with_client(vmapi_url, http);
 
     // Fetch instances and services from SAPI
     let instances = sapi

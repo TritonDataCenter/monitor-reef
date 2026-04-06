@@ -4452,8 +4452,6 @@ dependencies = [
  "reqwest",
  "rpassword",
  "rustls 0.23.37",
- "rustls-native-certs",
- "rustls-pemfile",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -4467,7 +4465,20 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "triton-auth",
+ "triton-tls",
  "uuid",
+]
+
+[[package]]
+name = "triton-tls"
+version = "0.1.0"
+dependencies = [
+ "reqwest",
+ "rustls 0.23.37",
+ "rustls-native-certs",
+ "rustls-pemfile",
+ "tokio",
+ "tracing",
  "webpki-roots 1.0.6",
 ]
 
@@ -4484,6 +4495,7 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "triton-tls",
  "vmapi-client",
 ]
 

@@ -23,6 +23,7 @@ members = [
     "clients/internal/sapi-client",
     "clients/internal/vmapi-client",
     "libs/triton-auth",
+    "libs/triton-tls",
     "client-generator",
     "openapi-manager",
     "services/bugview-service",

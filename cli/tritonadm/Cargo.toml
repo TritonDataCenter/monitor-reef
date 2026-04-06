@@ -25,6 +25,7 @@ sapi-client = { path = "../../clients/internal/sapi-client" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
+triton-tls = { path = "../../libs/triton-tls" }
 vmapi-client = { path = "../../clients/internal/vmapi-client" }
 
 [dev-dependencies]

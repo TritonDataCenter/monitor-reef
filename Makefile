@@ -23,6 +23,7 @@ include ./deps/eng/tools/mk/Makefile.rust.defs
 include ./deps/eng/tools/mk/Makefile.rust.targ
 
 .PHONY: help build build-release test clean lint format audit audit-update
+.PHONY: tritonadm-portable
 .PHONY: api-new service-new client-new
 .PHONY: service-build service-test service-run
 .PHONY: client-build client-test
@@ -55,6 +56,14 @@ build: | $(CARGO_EXEC) ## Build all APIs, services and clients
 
 build-release: | $(CARGO_EXEC) ## Build all APIs, services and clients
 	$(CARGO) build --release
+
+tritonadm-portable: | $(CARGO_EXEC) ## Build portable tritonadm binary (no pkgsrc deps)
+	$(CARGO) build --release --bin tritonadm
+	cp ./target/release/tritonadm ./tritonadm
+	/usr/bin/elfedit -e 'dyn:delete RUNPATH' ./tritonadm
+	/usr/bin/elfedit -e 'dyn:delete RPATH' ./tritonadm
+	@echo "Built portable binary: ./tritonadm"
+	@ldd ./tritonadm
 
 test: | $(CARGO_NEXTEST_EXEC) ## Run all tests
 	TRITON_CONFIG_DIR=/nonexistent $(CARGO) nextest run

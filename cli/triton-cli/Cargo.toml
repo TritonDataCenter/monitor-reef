@@ -19,6 +19,7 @@ path = "src/main.rs"
 
 [dependencies]
 triton-auth = { path = "../../libs/triton-auth" }
+triton-tls = { path = "../../libs/triton-tls" }
 cloudapi-client = { path = "../../clients/internal/cloudapi-client" }
 cloudapi-api = { path = "../../apis/cloudapi-api" }
 clap = { workspace = true, features = ["derive", "env"] }
@@ -42,11 +43,6 @@ chrono = { workspace = true }
 reqwest = { workspace = true }
 strum = { workspace = true }
 
-# TLS certificate fallback for platforms where native cert probing fails (e.g., illumos)
-rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }
-rustls-native-certs = "0.8"
-rustls-pemfile = "2"
-webpki-roots = "1"
 
 # VNC proxy dependencies
 tokio-tungstenite = { workspace = true }
@@ -66,4 +62,5 @@ pretty_assertions = "1.4" # Better diff output for test failures
 hostname = "0.4"          # Get hostname for unique test resource names
 regex = "1.10"            # Regex for extracting UUIDs from output
 rcgen = { version = "0.14", features = ["pem"] }  # Self-signed certs for TLS tests
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }
 tokio-rustls = "0.26"     # TLS server for insecure-mode tests
