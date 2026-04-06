@@ -19,14 +19,14 @@ set -o xtrace
 set -o errexit
 set -o pipefail
 
+. /lib/svc/share/smf_include.sh
+
 MARKER=/var/tmp/.first-boot-done
 
 if [[ -f "$MARKER" ]]; then
     echo "Already completed first boot setup."
-    exit 0
+    exit $SMF_EXIT_OK
 fi
-
-. /lib/svc/share/smf_include.sh
 
 # Import the triton-api service manifest
 /usr/sbin/svccfg import /opt/custom/smf/manifests/triton-api.xml

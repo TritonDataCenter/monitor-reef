@@ -52,10 +52,9 @@ async fn main() -> Result<()> {
         .to_logger("triton-api-server")
         .map_err(|error| anyhow::anyhow!("failed to create logger: {}", error))?;
 
-    let server =
-        HttpServerStarter::new(&config_dropshot, api, ApiContext {}, &log)
-            .map_err(|error| anyhow::anyhow!("failed to create server: {}", error))?
-            .start();
+    let server = HttpServerStarter::new(&config_dropshot, api, ApiContext {}, &log)
+        .map_err(|error| anyhow::anyhow!("failed to create server: {}", error))?
+        .start();
 
     info!("triton-api-server listening on http://127.0.0.1:8080");
 
