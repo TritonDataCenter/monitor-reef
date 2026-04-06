@@ -97,6 +97,13 @@ fn configure_cloudapi(settings: &mut GenerationSettings) {
         .with_patch("AccessKeyStatus", &value_enum_patch);
 }
 
+fn configure_sapi(settings: &mut GenerationSettings) {
+    settings
+        .with_interface(progenitor::InterfaceStyle::Builder)
+        .with_tag(progenitor::TagStyle::Merged)
+        .with_derive("schemars::JsonSchema");
+}
+
 fn configure_jira(settings: &mut GenerationSettings) {
     settings
         .with_interface(progenitor::InterfaceStyle::Builder)
@@ -116,6 +123,12 @@ static CLIENTS: &[ClientConfig] = &[
         spec_path: "openapi-specs/patched/cloudapi-api.json",
         output_path: "clients/internal/cloudapi-client/src/generated.rs",
         configure: configure_cloudapi,
+    },
+    ClientConfig {
+        name: "sapi-client",
+        spec_path: "openapi-specs/generated/sapi-api.json",
+        output_path: "clients/internal/sapi-client/src/generated.rs",
+        configure: configure_sapi,
     },
     ClientConfig {
         name: "jira-client",

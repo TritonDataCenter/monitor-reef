@@ -318,9 +318,17 @@ Several list endpoints (`ListApplications`, `ListServices`, `ListInstances`, `Li
 - `sync_cache` returns `HttpResponseUpdatedNoContent` (204) matching the original
 - `get_instance_payload` and `get_config` return `serde_json::Value` since their responses are freeform JSON
 
+## Phase 3 Complete
+
+- Client crate: `clients/internal/sapi-client/`
+- Build status: SUCCESS
+- Typed wrappers: NO -- SAPI update endpoints use typed body structs with an `action` field directly (no action-dispatch pattern requiring TypedClient wrappers)
+- Re-exports: All API crate types re-exported from `sapi_client` for CLI consumers
+- Client-generator: registered in `client-generator/src/main.rs` with `configure_sapi` (Builder interface, Merged tags, schemars::JsonSchema derive)
+
 ## Phase Status
 - [x] Phase 1: Analyze - COMPLETE
 - [x] Phase 2: Generate API - COMPLETE
-- [ ] Phase 3: Generate Client
+- [x] Phase 3: Generate Client - COMPLETE
 - [ ] Phase 4: Generate CLI
 - [ ] Phase 5: Validate
