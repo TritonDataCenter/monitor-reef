@@ -946,6 +946,120 @@ function do_clone_all {
 }
 
 # -------------------------------------------------------
+# Subcommand: discover
+#
+# Query SAPI and VMAPI to find all postgres VMs suitable
+# for cloning, across all CNs and shards.
+# -------------------------------------------------------
+function do_discover {
+    echo "Discovering postgres VMs for pgclone..."
+    echo ""
+
+    local manta_app
+    manta_app=$(sdc-sapi "/applications?name=manta" \
+        | json -Ha uuid)
+
+    if [[ -z ${manta_app} ]]; then
+        echo "FATAL: Could not find manta application" \
+            "in SAPI." >&2
+        return 1
+    fi
+
+    # --- Moray postgres (manta_role=postgres) ---
+    echo "=== Moray Postgres VMs ==="
+    printf "%-36s  %-50s  %-6s  %-36s  %s\n" \
+        "UUID" "ALIAS" "SHARD" "SERVER" "STATE"
+    printf "%-36s  %-50s  %-6s  %-36s  %s\n" \
+        "----" "-----" "-----" "------" "-----"
+
+    local pg_svc_uuid
+    pg_svc_uuid=$(sdc-sapi "/services?name=postgres" \
+        | json -Ha uuid)
+
+    if [[ -n ${pg_svc_uuid} ]]; then
+        sdc-sapi "/instances?service_uuid=${pg_svc_uuid}" \
+            | json -Ha uuid params.alias metadata.SHARD \
+            | while read -r uuid alias shard; do
+            local vm_json state server
+            vm_json=$(sdc-vmapi "/vms/${uuid}" | json -H)
+            state=$(json state <<<"${vm_json}")
+            server=$(json server_uuid <<<"${vm_json}")
+            printf "%-36s  %-50s  %-6s  %-36s  %s\n" \
+                "${uuid}" "${alias}" "${shard}" \
+                "${server}" "${state}"
+        done
+    else
+        echo "  (no postgres service found in SAPI)"
+    fi
+
+    echo ""
+
+    # --- Buckets postgres (manta_role=buckets-postgres) ---
+    echo "=== Buckets Postgres VMs ==="
+    printf "%-36s  %-50s  %-6s  %-36s  %s\n" \
+        "UUID" "ALIAS" "SHARD" "SERVER" "STATE"
+    printf "%-36s  %-50s  %-6s  %-36s  %s\n" \
+        "----" "-----" "-----" "------" "-----"
+
+    local bp_svc_uuid
+    bp_svc_uuid=$(sdc-sapi \
+        "/services?name=buckets-postgres" \
+        | json -Ha uuid)
+
+    if [[ -n ${bp_svc_uuid} ]]; then
+        sdc-sapi \
+            "/instances?service_uuid=${bp_svc_uuid}" \
+            | json -Ha uuid params.alias metadata.SHARD \
+            | while read -r uuid alias shard; do
+            local vm_json state server
+            vm_json=$(sdc-vmapi "/vms/${uuid}" | json -H)
+            state=$(json state <<<"${vm_json}")
+            server=$(json server_uuid <<<"${vm_json}")
+            printf "%-36s  %-50s  %-6s  %-36s  %s\n" \
+                "${uuid}" "${alias}" "${shard}" \
+                "${server}" "${state}"
+        done
+    else
+        echo "  (no buckets-postgres service found in SAPI)"
+    fi
+
+    echo ""
+
+    # --- Suggested clone-all command ---
+    echo "=== Suggested clone-all command ==="
+    echo "# Pick one VM per shard (prefer sync/async," \
+        "not primary):"
+    echo -n "$0 clone-all"
+
+    if [[ -n ${pg_svc_uuid} ]]; then
+        # One per unique shard
+        sdc-sapi \
+            "/instances?service_uuid=${pg_svc_uuid}" \
+            | json -Ha uuid metadata.SHARD \
+            | sort -t$'\t' -k2 -u \
+            | while read -r uuid shard; do
+            echo -n " \\"
+            echo ""
+            echo -n "  --moray-vm ${uuid}"
+        done
+    fi
+
+    if [[ -n ${bp_svc_uuid} ]]; then
+        sdc-sapi \
+            "/instances?service_uuid=${bp_svc_uuid}" \
+            | json -Ha uuid metadata.SHARD \
+            | sort -t$'\t' -k2 -u \
+            | while read -r uuid shard; do
+            echo -n " \\"
+            echo ""
+            echo -n "  --buckets-vm ${uuid}"
+        done
+    fi
+
+    echo ""
+}
+
+# -------------------------------------------------------
 # Usage
 # -------------------------------------------------------
 function usage {
@@ -955,12 +1069,17 @@ Usage:
   $0 clone-buckets <buckets-postgres VM UUID>
   $0 clone-all --moray-vm <UUID> [--moray-vm <UUID> ...] \\
                 --buckets-vm <UUID> [--buckets-vm <UUID> ...]
+  $0 discover
   $0 list [--type moray|buckets|all] [--json]
   $0 destroy <clone VM UUID>
   $0 destroy-all [--type moray|buckets]
 
   $0 <manatee VM UUID>
       (backwards compat, same as clone-moray)
+
+Subcommands:
+  discover    Find all postgres VMs across all CNs and shards.
+              Outputs a suggested clone-all command.
 EOF
     exit 2
 }
@@ -998,6 +1117,9 @@ case "$1" in
     destroy-all)
         shift
         do_destroy_all "$@"
+        ;;
+    discover)
+        do_discover
         ;;
     -h|--help)
         usage
