@@ -100,7 +100,46 @@ This pattern is mandatory for any enum that represents server-side state. See
 
 **Don't assume camelCase everywhere.** Check the plan's "Field Naming Exceptions" section for fields that use snake_case or other conventions in the actual API.
 
-### 3b. Create Action-Specific Request Types (CRITICAL)
+### 3b. Use Enums From Phase 1 Plan
+
+Check the plan's "Enum Opportunities" section and create typed enums for every
+identified field. Common patterns:
+
+- Response fields with known value sets → enum on the response struct field
+- Response fields that echo a request enum → reuse the same enum type
+- `constructor.name` values → enum with variants matching the class names exactly
+- Boolean-like string fields (`"proto"` / `"full"`) → enum
+
+Every enum should have `#[serde(other)] Unknown` unless the set of values is
+truly fixed and controlled by the client (like `UpdateAction`).
+
+Cross-reference response structs against request enums. If `PingResponse` has a
+`mode` field and `SetModeBody` uses a `SapiMode` enum, the response should use the
+same `SapiMode` type — not `String`.
+
+### 3c. Match Restify Response Patterns to Dropshot Types
+
+Check the plan's "Patch Requirements" section and choose the right Dropshot return
+type for each endpoint:
+
+| Plan says | Dropshot return type | Needs patch? |
+|-----------|---------------------|-------------|
+| `res.send(obj)` (default 200) | `HttpResponseOk<T>` | No |
+| `res.send(201, obj)` | `HttpResponseCreated<T>` | No |
+| `res.send(204)` | `HttpResponseUpdatedNoContent` | No |
+| `res.send()` (empty 200) | `HttpResponseOk<T>` | Yes: remove content from 200 |
+| `res.send('string')` (bare text) | `HttpResponseOk<SomeEnum>` | Yes: replace schema with `{"type":"string"}` |
+| `res.send(cond ? 200 : 500, obj)` | `HttpResponseOk<T>` | Document limitation |
+
+Restify's default status for `res.send(obj)` is 200, not 201. Use `HttpResponseOk`,
+not `HttpResponseCreated`, for create endpoints unless the Node.js code explicitly
+sets status 201.
+
+Don't create wrapper types just for Dropshot. If an endpoint returns a bare string
+that maps to an existing enum, use the enum directly as the return type and patch the
+spec to a string afterward. This avoids dead types like `ModeResponse`.
+
+### 3d. Create Action-Specific Request Types (CRITICAL)
 
 For action dispatch endpoints, create a **separate typed struct for each action**:
 
@@ -264,8 +303,13 @@ Add to `conversion-plans/<service>/plan.md`:
 Phase 2 is complete when:
 - [ ] API crate structure created
 - [ ] All type modules implemented
+- [ ] Every enum from Phase 1 plan created (check "Enum Opportunities" section)
+- [ ] Response structs use typed enums (not String) for fields with known value sets
+- [ ] Dropshot return types match Restify patterns (200 not 201 for default `res.send(obj)`)
+- [ ] No unnecessary wrapper types (don't create FooResponse just for Dropshot)
 - [ ] **Every action has a dedicated typed request struct** (check plan's action dispatch table)
 - [ ] Action-specific optional fields captured (idempotent, sync, signal, etc.)
+- [ ] All create body fields included (including hidden optional fields like uuid, master)
 - [ ] Field naming exceptions from plan applied (snake_case fields, hyphenated names)
 - [ ] WebSocket/channel endpoints implemented (check plan)
 - [ ] API trait with all endpoints implemented
