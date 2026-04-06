@@ -7,18 +7,42 @@ of the Manta Rebalancer system for production environments.
 
 ## Table of Contents
 
-1. [Architecture Overview](#architecture-overview)
-2. [Component Inventory](#component-inventory)
-3. [How Evacuation Works](#how-evacuation-works)
-4. [pgclone: Read-Only PostgreSQL Clones for Discovery](#pgclone-read-only-postgresql-clones-for-discovery)
-5. [Deployment and Boot Sequence](#deployment-and-boot-sequence)
-6. [Configuration Reference](#configuration-reference)
-7. [Operating Procedures](#operating-procedures)
-8. [Performance Tuning](#performance-tuning)
-9. [Monitoring and Alerting](#monitoring-and-alerting)
-10. [Troubleshooting](#troubleshooting)
-11. [Database Operations](#database-operations)
-12. [Appendix: Error and Skip Reason Reference](#appendix-error-and-skip-reason-reference)
+1. [Performance](#performance)
+2. [Architecture Overview](#architecture-overview)
+3. [Component Inventory](#component-inventory)
+4. [How Evacuation Works](#how-evacuation-works)
+5. [pgclone: Read-Only PostgreSQL Clones for Discovery](#pgclone-read-only-postgresql-clones-for-discovery)
+6. [Deployment and Boot Sequence](#deployment-and-boot-sequence)
+7. [Configuration Reference](#configuration-reference)
+8. [Operating Procedures](#operating-procedures)
+9. [Performance Tuning](#performance-tuning)
+10. [Monitoring and Alerting](#monitoring-and-alerting)
+11. [Troubleshooting](#troubleshooting)
+12. [Database Operations](#database-operations)
+13. [Appendix: Error and Skip Reason Reference](#appendix-error-and-skip-reason-reference)
+
+---
+
+## Performance
+
+The performance of the rebalancer is primarily dependent on the allowable impact
+on the metadata tier.  With the tunables discussed below it is possible to
+increase the performance of both the metadata tier and the object download
+concurrency to a level that would result in degradation of the user experience.
+
+During testing we did notice some delays in overall job time if storage nodes
+were not available.  This applies to both the destination storage nodes where
+the rebalancer agent runs as well as the source storage nodes where objects are
+copied from.  If we start to see a significant increase in `skip` level errors
+it is worth investigating the manager and agent logs.  Some relevant Jira issues
+are:
+
+* [MANTA-5326](https://mnx.atlassian.net/browse/MANTA-5326)
+* [MANTA-5330](https://mnx.atlassian.net/browse/MANTA-5330)
+* [MANTA-5231](https://mnx.atlassian.net/browse/MANTA-5231)
+* [MANTA-5119](https://mnx.atlassian.net/browse/MANTA-5119)
+* [MANTA-5159](https://mnx.atlassian.net/browse/MANTA-5159)
+* See also `rebalancer-performance` Jira label
 
 ---
 
@@ -600,6 +624,19 @@ against a previous job's object list.
 
 ## Deployment and Boot Sequence
 
+### Build and Deployment
+
+The rebalancer manager is part of the default manta v2 deployment, and is built
+using Jenkins.
+
+The rebalancer manager can be deployed/upgraded in the same way as other manta
+components using `manta-adm update -f <update_file>` where the `<update_file>`
+specifies the image uuid of the rebalancer image to update to.
+
+The rebalancer manager places its local postgres database in a delegated dataset
+so that it will be maintained across reprovisions.  The memory requirements are
+defined in the [sdc-manta repository](https://github.com/joyent/sdc-manta).
+
 ### Manager Zone Boot (`boot/setup.sh`)
 
 1. Common Manta zone pre-setup (`manta_common_presetup`)
@@ -622,54 +659,135 @@ under `/var/tmp/rebalancer/`.
 
 ### Agent Hotpatching
 
-For rapid agent updates without reprovisioning all storage instances,
-use the `manta-hotpatch-rebalancer-agent` tool from the headnode
-global zone.  This is useful during active development when
-reprovisioning hundreds of storage zones for an agent fix is
-impractical.
+As part of [MANTA-5293](https://mnx.atlassian.net/browse/MANTA-5293) a new
+`manta-hotpatch-rebalancer-agent` tool was added to the headnode global zone.
+This is useful during active development when reprovisioning hundreds of
+storage zones for an agent fix is impractical.
 
-**Prerequisites:**
+To install it requires a recent `sdcadm` and an update of your manta-deployment
+zone (a.k.a. the "manta0" zone):
 
-```bash
-sdcadm self-update --latest
-sdcadm up manta
-```
+    sdcadm self-update --latest
+    sdcadm up manta
 
-**Subcommands:**
+Using the hotpatch tool should hopefully be obvious from its help output:
 
-| Command | Description |
-|---------|------------|
-| `list` | Show current agent version and hotpatch status on every storage node |
-| `avail` | List available agent builds (from dev channel) newer than what's deployed |
-| `deploy <IMAGE-UUID> -a` | Hotpatch all storage instances with the specified agent image |
-| `undeploy -a` | Revert all hotpatches to the original agent from the storage image |
+    [root@headnode (nightly-2) ~]# manta-hotpatch-rebalancer-agent help
+    Hotpatch rebalancer-agent in deployed "storage" instances.
 
-**Example workflow:**
+    Usage:
+        manta-hotpatch-rebalancer-agent [OPTIONS] COMMAND [ARGS...]
+        manta-hotpatch-rebalancer-agent help COMMAND
 
-```bash
-# 1. Check current versions
-manta-hotpatch-rebalancer-agent list
+    Options:
+        -h, --help      Print this help and exit.
+        --version       Print version and exit.
+        -v, --verbose   Verbose trace logging.
 
-# 2. Find available builds
-manta-hotpatch-rebalancer-agent avail
+    Commands:
+        help (?)        Help on a specific sub-command.
 
-# 3. Deploy a new agent to all storage nodes
-manta-hotpatch-rebalancer-agent deploy <IMAGE-UUID> -a
+        list            List running rebalancer-agent versions.
+        avail           List newer available images for hotpatching rebalancer-agent.
+        deploy          Deploy the given rebalancer-agent image hotpatch to storage instances.
+        undeploy        Undo the rebalancer-agent hotpatch on storage instances.
 
-# 4. Verify
-manta-hotpatch-rebalancer-agent list
+    Use this tool to hotpatch the "rebalancer-agent" service that runs in each Manta
+    "storage" service instance. While hotpatching is discouraged, this tool exists
+    during active Rebalancer development because reprovisioning all "storage"
+    instances in a large datacenter solely for a rebalancer-agent fix can be
+    painful.
 
-# 5. Revert if needed
-manta-hotpatch-rebalancer-agent undeploy -a
-```
+    Typical usage is:
 
-**Notes:**
-- The tool only operates on storage instances in the **current
-  datacenter**. For multi-DC regions, run it separately in each DC.
-- Hotpatching replaces the agent binary and restarts the service.
-  In-flight assignments on agents will complete before the restart.
-- Use `-c` to control concurrency (how many agents are patched in
-  parallel).
+    1. List the current version of all rebalancer-agents:
+            manta-hotpatch-rebalancer-agent list
+
+    2. List available rebalancer-agent builds (in the "dev" channel of
+       updates.joyent.com) to import and use for hotpatching. This only lists
+       builds newer than the current oldest rebalancer-agent.
+            manta-hotpatch-rebalancer-agent avail
+       Alternatively a rebalancer-agent build can be manually imported
+       into the local IMGAPI.
+
+    3. Hotpatch a rebalancer-agent image in all storage instances in this DC:
+            manta-hotpatch-rebalancer-agent deploy -a IMAGE-UUID
+
+    4. If needed, revert any hotpatches and restore the storage image's original
+       rebalancer-agent.
+            manta-hotpatch-rebalancer-agent undeploy -a
+
+Note that this tool only operates on instances in the current datacenter. As
+with most Manta tooling, to perform upgrades across an entire region requires
+running the tooling in each DC separately.
+
+#### Example Usage
+
+The rest of this section is an example of running this tool in nightly-2
+(a small test Triton datacenter). Each subcommand has other options that are not
+all shown here, e.g. controlling concurrency, selecting particular storage
+instances to hotpatch, etc.
+
+The "list" command will show the current rebalancer-agent version and whether
+it is hotpatched in every storage node:
+
+    [root@headnode (nightly-2) ~]# manta-hotpatch-rebalancer-agent list
+    STORAGE NODE                          VERSION                                   HOTPATCHED
+    64052e9d-c379-44ae-9036-2293b88baa7c  0.1.0 (master-20200616T185217Z-g82b8008)  false
+    a83343ec-1d91-467b-b938-a0af7f86e92c  0.1.0 (master-20200616T185217Z-g82b8008)  false
+    a8aaa7c4-2699-40ed-83e5-aabec7d55b3d  0.1.0 (master-20200616T185217Z-g82b8008)  false
+
+The "avail" command lists any available rebalancer-agent builds at or newer
+than what is currently deployed:
+
+    [root@headnode (nightly-2) ~]# manta-hotpatch-rebalancer-agent avail
+    UUID                                  NAME                      VERSION                           PUBLISHED_AT
+    7a5529e2-3d8b-4c9c-84af-46a1f6e0bb95  mantav2-rebalancer-agent  master-20200617T234037Z-g6dc482c  2020-06-18T00:09:27.901Z
+
+The "deploy" command does the hotpatching:
+
+    [root@headnode (nightly-2) ~]# manta-hotpatch-rebalancer-agent deploy 7a5529e2-3d8b-4c9c-84af-46a1f6e0bb95 -a
+    This will do the following:
+    - Import rebalancer-agent image 7a5529e2-3d8b-4c9c-84af-46a1f6e0bb95
+      (master-20200617T234037Z-g6dc482c) from updates.joyent.com.
+    - Hotpatch rebalancer-agent image 7a5529e2-3d8b-4c9c-84af-46a1f6e0bb95
+      (master-20200617T234037Z-g6dc482c) on all 3 storage instances in this DC
+
+    Would you like to hotpatch? [y/N] y
+    Trace logging to "/var/tmp/manta-hotpatch-rebalancer-agent.20200619T180117Z.deploy.log"
+    Importing image 7a5529e2-3d8b-4c9c-84af-46a1f6e0bb95 from updates.joyent.com
+    Imported image
+    Hotpatched storage instance a8aaa7c4-2699-40ed-83e5-aabec7d55b3d
+    Hotpatched storage instance a83343ec-1d91-467b-b938-a0af7f86e92c
+    Hotpatching 3 storage insts       [================================================================>] 100%        3
+    Hotpatched storage instance 64052e9d-c379-44ae-9036-2293b88baa7c
+    Successfully hotpatched.
+
+    [root@headnode (nightly-2) ~]# manta-hotpatch-rebalancer-agent list
+    STORAGE NODE                          VERSION                                   HOTPATCHED
+    64052e9d-c379-44ae-9036-2293b88baa7c  0.1.0 (master-20200617T234037Z-g6dc482c)  true
+    a83343ec-1d91-467b-b938-a0af7f86e92c  0.1.0 (master-20200617T234037Z-g6dc482c)  true
+    a8aaa7c4-2699-40ed-83e5-aabec7d55b3d  0.1.0 (master-20200617T234037Z-g6dc482c)  true
+
+The "undeploy" command can be used to revert back to the original
+rebalancer-agent in a storage instance (i.e. to undo any hotpatching):
+
+    [root@headnode (nightly-2) ~]# manta-hotpatch-rebalancer-agent undeploy -a
+    This will revert any rebalancer-agent hotpatches on all 3 storage instances in this DC
+
+    Would you like to continue? [y/N] y
+    Trace logging to "/var/tmp/manta-hotpatch-rebalancer-agent.20200619T180148Z.undeploy.log"
+    Unhotpatched storage instance 64052e9d-c379-44ae-9036-2293b88baa7c
+    Unhotpatched storage instance a83343ec-1d91-467b-b938-a0af7f86e92c
+    Unhotpatching 3 storage insts     [================================================================>] 100%        3
+    Unhotpatched storage instance a8aaa7c4-2699-40ed-83e5-aabec7d55b3d
+    Successfully reverted hotpatches.
+
+    [root@headnode (nightly-2) ~]# manta-hotpatch-rebalancer-agent list
+    STORAGE NODE                          VERSION                                   HOTPATCHED
+    64052e9d-c379-44ae-9036-2293b88baa7c  0.1.0 (master-20200616T185217Z-g82b8008)  false
+    a83343ec-1d91-467b-b938-a0af7f86e92c  0.1.0 (master-20200616T185217Z-g82b8008)  false
+    a8aaa7c4-2699-40ed-83e5-aabec7d55b3d  0.1.0 (master-20200616T185217Z-g82b8008)  false
 
 ### PostgreSQL Configuration Highlights
 
@@ -689,8 +807,20 @@ manta-hotpatch-rebalancer-agent undeploy -a
 
 ### Manager Configuration (`/opt/smartdc/rebalancer/config.json`)
 
-All values can be set via SAPI metadata. After updating SAPI metadata, run
-`svcadm refresh rebalancer` or send SIGUSR1 to the manager process.
+All values can be set via SAPI metadata.  For example:
+
+```bash
+MANTA_APP=$(sdc-sapi /applications?name=manta | json -Ha uuid)
+echo '{ "metadata": {"REBALANCER_LOG_LEVEL": "trace" } }' | sapiadm update $MANTA_APP
+```
+
+After updating SAPI metadata, config-agent renders the new values into
+`/opt/smartdc/rebalancer/config.json` and runs `svcadm refresh rebalancer`.
+Most tunables take effect on the next job without a restart.
+
+> **Important:** A `log_level` change is the only tunable that requires a full
+> service restart (`svcadm restart rebalancer`).  All other tunables are picked
+> up by config-agent's `svcadm refresh` and applied to the next job that is run.
 
 #### Core Settings
 
