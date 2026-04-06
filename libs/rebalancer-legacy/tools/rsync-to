@@ -31,8 +31,7 @@ set -o errexit
 set -o pipefail
 
 TOP=$(cd $(dirname $0)/../; pwd)
-SSH_OPTS=(-q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
-CN_SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
+SSH_OPTS="-q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
 PROFILE=${RELEASE:+release}
 PROFILE=${PROFILE:-debug}
 # Workspace root is two levels above libs/rebalancer-legacy/
@@ -44,156 +43,135 @@ function fatal {
     exit 1
 }
 
-# Discover zones by alias pattern. Returns "uuid cn_ip" per line.
-# cn_ip is "local" when the zone is on the headnode.
-#
-# Tries vmadm on the headnode first. If no results, falls back to
-# VMAPI + CNAPI to find zones on remote compute nodes.
-function find_zones {
+function restart_or_clear {
+    local inst=$1 fmri=$2
+    state=$(ssh $SSH_OPTS $HEADNODE svcs -z $inst -H -o state $fmri 2>/dev/null || echo "unknown")
+    if echo "$state" | grep "maintenance" >/dev/null; then
+        ssh $SSH_OPTS $HEADNODE svcadm -z $inst clear $fmri
+    elif echo "$state" | grep "online" >/dev/null; then
+        ssh $SSH_OPTS $HEADNODE svcadm -z $inst restart $fmri
+    fi
+}
+
+# Restart or clear a service on a remote CN, hopping through the headnode.
+function restart_or_clear_remote {
+    local inst=$1 cn_ip=$2 fmri=$3
+    local cn_ssh="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+    state=$(ssh $SSH_OPTS $HEADNODE \
+        "ssh $cn_ssh -i /root/.ssh/sdc.id_rsa $cn_ip \
+         svcs -z $inst -H -o state $fmri" 2>/dev/null || echo "unknown")
+    if echo "$state" | grep "maintenance" >/dev/null; then
+        ssh $SSH_OPTS $HEADNODE \
+            "ssh $cn_ssh -i /root/.ssh/sdc.id_rsa $cn_ip \
+             svcadm -z $inst clear $fmri"
+    elif echo "$state" | grep "online" >/dev/null; then
+        ssh $SSH_OPTS $HEADNODE \
+            "ssh $cn_ssh -i /root/.ssh/sdc.id_rsa $cn_ip \
+             svcadm -z $inst restart $fmri"
+    fi
+}
+
+# Sync files to a zone on a remote CN by staging on the headnode first.
+# Usage: sync_files_to_remote_zone <zone_uuid> <cn_ip> <dest_dir> <file1> [file2...]
+function sync_files_to_remote_zone {
+    local inst=$1 cn_ip=$2 dest_dir=$3
+    shift 3
+    local files=("$@")
+    local cn_ssh="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+    local staging=/tmp/rsync-to-$$
+
+    ssh $SSH_OPTS $HEADNODE "mkdir -p $staging"
+    rsync -av "${files[@]}" $HEADNODE:$staging/
+
+    for f in "${files[@]}"; do
+        local base=$(basename "$f")
+        ssh $SSH_OPTS $HEADNODE \
+            "scp $cn_ssh -i /root/.ssh/sdc.id_rsa \
+             $staging/$base $cn_ip:/tmp/$base && \
+             ssh $cn_ssh -i /root/.ssh/sdc.id_rsa $cn_ip \
+             'cp /tmp/$base /zones/$inst/root${dest_dir}/$base && \
+              rm /tmp/$base'"
+    done
+
+    ssh $SSH_OPTS $HEADNODE "rm -rf $staging"
+}
+
+# Find zones on remote CNs via VMAPI + CNAPI.
+# Returns "uuid cn_admin_ip" per line.
+# Usage: find_remote_zones <alias_pattern>
+function find_remote_zones {
     local alias_pat=$1
 
-    # Fast path: vmadm on the headnode (works for single-CN and zones on HN)
-    local local_insts
-    local_insts=$(ssh "${SSH_OPTS[@]}" $HEADNODE vmadm lookup alias=~$alias_pat state=running) || true
-
-    if [[ -n "$local_insts" ]]; then
-        for inst in $local_insts; do
-            echo "$inst local"
-        done
-        return
-    fi
-
-    # Zone not on headnode — query VMAPI for DC-wide lookup, then resolve
-    # each zone's server_uuid to a CN admin IP via CNAPI.
-    echo "  Zone '$alias_pat' not on headnode, querying VMAPI..." >&2
-
-    local headnode_uuid
-    headnode_uuid=$(ssh "${SSH_OPTS[@]}" $HEADNODE sysinfo | json UUID)
+    echo "  Zone '$alias_pat' not found on headnode, querying VMAPI..." >&2
 
     local vmapi_json
-    vmapi_json=$(ssh "${SSH_OPTS[@]}" $HEADNODE \
-        "curl -sS http://\$(cat /opt/smartdc/etc/vmapi_domain)/vms?alias=$alias_pat\&state=running") \
+    vmapi_json=$(ssh $SSH_OPTS $HEADNODE \
+        "curl -sS \"http://vmapi.\$(cat /opt/smartdc/etc/datacenter_name).joyent.us/vms?alias=$alias_pat&state=running\"") \
         || fatal "VMAPI query failed"
 
     local count
     count=$(echo "$vmapi_json" | json length 2>/dev/null)
     [[ "${count:-0}" -gt 0 ]] || fatal "no running '$alias_pat' instances found on any CN"
 
+    local headnode_uuid
+    headnode_uuid=$(ssh $SSH_OPTS $HEADNODE "sysinfo | json UUID")
+
     for idx in $(seq 0 $(( count - 1 ))); do
         local uuid server_uuid
         uuid=$(echo "$vmapi_json" | json $idx.uuid)
         server_uuid=$(echo "$vmapi_json" | json $idx.server_uuid)
 
-        if [[ "$server_uuid" == "$headnode_uuid" ]]; then
-            echo "$uuid local"
-        else
-            local cn_ip
-            cn_ip=$(ssh "${SSH_OPTS[@]}" $HEADNODE \
-                "curl -sS http://\$(cat /opt/smartdc/etc/cnapi_domain)/servers/$server_uuid | json sysinfo.\"Admin IP\"") \
-                || fatal "CNAPI lookup failed for server $server_uuid"
-            [[ -n "$cn_ip" ]] || fatal "could not resolve admin IP for server $server_uuid"
-            echo "$uuid $cn_ip"
-        fi
+        # Skip zones on the headnode (vmadm should have found those)
+        [[ "$server_uuid" != "$headnode_uuid" ]] || continue
+
+        local cn_ip
+        cn_ip=$(ssh $SSH_OPTS $HEADNODE \
+            "curl -sS \"http://cnapi.\$(cat /opt/smartdc/etc/datacenter_name).joyent.us/servers/$server_uuid\" | json sysinfo.\"Admin IP\"") \
+            || fatal "CNAPI lookup failed for server $server_uuid"
+        [[ -n "$cn_ip" ]] || fatal "could not resolve admin IP for server $server_uuid"
+        echo "$uuid $cn_ip"
     done
-}
-
-# Restart or clear a service inside a zone.
-# Usage: restart_or_clear <zone_uuid> <cn_ip> <fmri>
-function restart_or_clear {
-    local inst=$1 cn_ip=$2 fmri=$3
-
-    # CN_SSH_OPTS as a string for use inside double-quoted remote commands
-    local cn_ssh_str="${CN_SSH_OPTS[*]}"
-
-    if [[ "$cn_ip" == "local" ]]; then
-        local state
-        state=$(ssh "${SSH_OPTS[@]}" $HEADNODE svcs -z $inst -H -o state $fmri 2>/dev/null || echo "unknown")
-        if echo "$state" | grep -q "maintenance"; then
-            ssh "${SSH_OPTS[@]}" $HEADNODE svcadm -z $inst clear $fmri
-        elif echo "$state" | grep -q "online"; then
-            ssh "${SSH_OPTS[@]}" $HEADNODE svcadm -z $inst restart $fmri
-        fi
-    else
-        local state
-        state=$(ssh "${SSH_OPTS[@]}" $HEADNODE \
-            "ssh $cn_ssh_str -i /root/.ssh/sdc.id_rsa $cn_ip \
-             svcs -z $inst -H -o state $fmri" 2>/dev/null || echo "unknown")
-        if echo "$state" | grep -q "maintenance"; then
-            ssh "${SSH_OPTS[@]}" $HEADNODE \
-                "ssh $cn_ssh_str -i /root/.ssh/sdc.id_rsa $cn_ip \
-                 svcadm -z $inst clear $fmri"
-        elif echo "$state" | grep -q "online"; then
-            ssh "${SSH_OPTS[@]}" $HEADNODE \
-                "ssh $cn_ssh_str -i /root/.ssh/sdc.id_rsa $cn_ip \
-                 svcadm -z $inst restart $fmri"
-        fi
-    fi
-}
-
-# Sync files into a zone. For local zones, rsync directly into the zone
-# filesystem. For remote CN zones, stage on headnode then push to CN.
-#
-# Usage: sync_files_to_zone <zone_uuid> <cn_ip> <dest_dir> <file1> [file2...]
-function sync_files_to_zone {
-    local inst=$1 cn_ip=$2 dest_dir=$3
-    shift 3
-    local files=("$@")
-
-    # CN_SSH_OPTS as a string for use inside double-quoted remote commands
-    local cn_ssh_str="${CN_SSH_OPTS[*]}"
-
-    if [[ "$cn_ip" == "local" ]]; then
-        rsync -av "${files[@]}" $HEADNODE:/zones/$inst/root${dest_dir}/
-    else
-        # Stage files on headnode, then scp to CN and copy into zone
-        local staging=/tmp/rsync-to-$$
-        ssh "${SSH_OPTS[@]}" $HEADNODE "mkdir -p $staging"
-        rsync -av "${files[@]}" $HEADNODE:$staging/
-
-        for f in "${files[@]}"; do
-            local base=$(basename "$f")
-            ssh "${SSH_OPTS[@]}" $HEADNODE \
-                "scp $cn_ssh_str -i /root/.ssh/sdc.id_rsa \
-                 $staging/$base $cn_ip:/tmp/$base && \
-                 ssh $cn_ssh_str -i /root/.ssh/sdc.id_rsa $cn_ip \
-                 'cp /tmp/$base /zones/$inst/root${dest_dir}/$base && \
-                  rm /tmp/$base'"
-        done
-
-        ssh "${SSH_OPTS[@]}" $HEADNODE "rm -rf $staging"
-    fi
 }
 
 function sync_manager {
-    echo "==> Looking for rebalancer manager zones..."
-    local zone_info
-    zone_info=$(find_zones rebalancer)
+    local insts=$(ssh $SSH_OPTS $HEADNODE vmadm lookup alias=~rebalancer state=running)
 
-    echo "$zone_info" | while read inst cn_ip; do
-        [[ -n "$inst" ]] || continue
-        local label="headnode"
-        [[ "$cn_ip" != "local" ]] && label="CN $cn_ip"
-        echo "==> Syncing manager binaries to $inst ($label)"
+    if [[ -n "$insts" ]]; then
+        # Zone(s) on the headnode — original fast path
+        echo "rebalancer instances: $insts"
+        for inst in $insts; do
+            local prefix=/zones/$inst/root/opt/smartdc/rebalancer
+            echo "==> Syncing manager binaries + config to $inst"
+            rsync -av \
+                ${TARGET_DIR}/rebalancer-manager \
+                ${TARGET_DIR}/rebalancer-adm \
+                $HEADNODE:$prefix/bin/
+            restart_or_clear $inst svc:/manta/application/rebalancer
+        done
+    else
+        # Zone(s) on remote CNs — VMAPI fallback
+        find_remote_zones rebalancer | while read inst cn_ip; do
+            [[ -n "$inst" ]] || continue
+            echo "==> Syncing manager binaries to $inst (CN $cn_ip)"
 
-        [[ -f "${TARGET_DIR}/rebalancer-manager" ]] || \
-            fatal "rebalancer-manager not found at ${TARGET_DIR}/rebalancer-manager"
-        [[ -f "${TARGET_DIR}/rebalancer-adm" ]] || \
-            fatal "rebalancer-adm not found at ${TARGET_DIR}/rebalancer-adm"
+            [[ -f "${TARGET_DIR}/rebalancer-manager" ]] || \
+                fatal "rebalancer-manager not found at ${TARGET_DIR}/rebalancer-manager"
+            [[ -f "${TARGET_DIR}/rebalancer-adm" ]] || \
+                fatal "rebalancer-adm not found at ${TARGET_DIR}/rebalancer-adm"
 
-        sync_files_to_zone "$inst" "$cn_ip" \
-            /opt/smartdc/rebalancer/bin \
-            ${TARGET_DIR}/rebalancer-manager \
-            ${TARGET_DIR}/rebalancer-adm
+            sync_files_to_remote_zone "$inst" "$cn_ip" \
+                /opt/smartdc/rebalancer/bin \
+                ${TARGET_DIR}/rebalancer-manager \
+                ${TARGET_DIR}/rebalancer-adm
 
-        restart_or_clear "$inst" "$cn_ip" svc:/manta/application/rebalancer
-    done
+            restart_or_clear_remote "$inst" "$cn_ip" svc:/manta/application/rebalancer
+        done
+    fi
 }
 
 function sync_agent {
     local alias=${STORAGE_ALIAS:-storage}
-    echo "==> Looking for storage zones (alias ~$alias)..."
-    local zone_info
-    zone_info=$(find_zones "$alias")
+    local insts=$(ssh $SSH_OPTS $HEADNODE vmadm lookup alias=~$alias state=running)
 
     # Use only the isolated agent build (no libpq).
     # Do NOT fall back to target/ — that binary has postgres linked.
@@ -201,18 +179,30 @@ function sync_agent {
     [[ -f "$AGENT_BIN" ]] || fatal "rebalancer-agent not found at ${AGENT_BIN}
     Run 'make build-legacy' or 'make -C libs/rebalancer-legacy agent' first."
 
-    echo "$zone_info" | while read inst cn_ip; do
-        [[ -n "$inst" ]] || continue
-        local label="headnode"
-        [[ "$cn_ip" != "local" ]] && label="CN $cn_ip"
-        echo "==> Syncing agent binary to $inst ($label)"
+    if [[ -n "$insts" ]]; then
+        # Zone(s) on the headnode — original fast path
+        echo "$alias instances: $insts"
+        for inst in $insts; do
+            local prefix=/zones/$inst/root/opt/smartdc/rebalancer-agent
+            echo "==> Syncing agent binary to $inst"
+            rsync -av \
+                ${AGENT_BIN} \
+                $HEADNODE:$prefix/bin/
+            restart_or_clear $inst svc:/manta/application/rebalancer-agent
+        done
+    else
+        # Zone(s) on remote CNs — VMAPI fallback
+        find_remote_zones "$alias" | while read inst cn_ip; do
+            [[ -n "$inst" ]] || continue
+            echo "==> Syncing agent binary to $inst (CN $cn_ip)"
 
-        sync_files_to_zone "$inst" "$cn_ip" \
-            /opt/smartdc/rebalancer-agent/bin \
-            ${AGENT_BIN}
+            sync_files_to_remote_zone "$inst" "$cn_ip" \
+                /opt/smartdc/rebalancer-agent/bin \
+                ${AGENT_BIN}
 
-        restart_or_clear "$inst" "$cn_ip" svc:/manta/application/rebalancer-agent
-    done
+            restart_or_clear_remote "$inst" "$cn_ip" svc:/manta/application/rebalancer-agent
+        done
+    fi
 }
 
 # ---- mainline
