@@ -729,7 +729,8 @@ pub fn generate_machine_configs(
         generate_worker_config(secrets, cluster_name, endpoint_ip, install_disk, &cert_sans)?;
 
     // Generate talosconfig
-    let talosconfig = generate_talosconfig(cluster_name, &secrets.certs.os, &admin_cert)?;
+    let talosconfig =
+        generate_talosconfig(cluster_name, endpoint_ip, &secrets.certs.os, &admin_cert)?;
 
     // Serialize to YAML with hostname config appended
     let hostname_config = HostnameConfig {
@@ -981,11 +982,12 @@ fn generate_worker_config(
 /// Generate talosconfig (client configuration)
 fn generate_talosconfig(
     cluster_name: &str,
+    endpoint_ip: &str,
     os_ca: &CertificateAndKey,
     admin_cert: &CertificateAndKey,
 ) -> Result<TalosClientConfig> {
     let context = TalosContext {
-        endpoints: Vec::new(),
+        endpoints: vec![endpoint_ip.to_string()],
         ca: os_ca.crt.clone(),
         crt: admin_cert.crt.clone(),
         key: admin_cert.key.clone(),
