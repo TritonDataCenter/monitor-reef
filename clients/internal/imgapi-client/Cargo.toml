@@ -1,0 +1,30 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "imgapi-client"
+version = "4.13.1"
+edition.workspace = true
+description = "IMGAPI client library (Progenitor-generated)"
+
+[lints]
+workspace = true
+
+[lib]
+name = "imgapi_client"
+path = "src/lib.rs"
+
+[dependencies]
+clap = { workspace = true }
+bytes = "1"
+futures-util = "0.3"
+progenitor-client = { workspace = true }
+reqwest = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+imgapi-api = { path = "../../../apis/imgapi-api" }

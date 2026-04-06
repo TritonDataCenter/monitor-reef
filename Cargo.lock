@@ -1888,6 +1888,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "imgapi-client"
+version = "4.13.1"
+dependencies = [
+ "bytes",
+ "clap",
+ "futures-util",
+ "imgapi-api",
+ "progenitor-client",
+ "reqwest",
+ "schemars",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "indent_write"
 version = "2.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

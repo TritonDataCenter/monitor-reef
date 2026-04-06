@@ -480,9 +480,28 @@ Several endpoints create workflow jobs and return `{ image_uuid, job_uuid }`. Th
 | `get_dataset` | GET /datasets/:arg | `Response<Body>` |
 
 
+## Phase 3 Complete
+
+- Client crate: `clients/internal/imgapi-client/`
+- Build status: SUCCESS
+- Typed wrappers: YES (TypedClient with ActionError)
+  - POST /images/:uuid actions: import_image, import_remote_image, import_from_datacenter, change_stor, export_image, activate_image, enable_image, disable_image, channel_add_image, update_image
+  - POST /images actions: create_image_from_manifest, create_image_from_vm
+  - POST /images/:uuid/acl actions: add_image_acl, remove_image_acl
+  - POST /state actions: drop_caches
+  - Streaming actions (import-docker-image, import-lxd-image, push) left as raw ByteStream via inner()
+- ValueEnum patches: ImageState, ImageType, ImageOs, FileCompression, StorageType
+- Re-exports: 50 types from imgapi-api
+- Dependencies: bytes, futures-util (for ByteStream consumption), clap, schemars (for generated code)
+
+### ByteStream handling
+
+IMGAPI is the first client with `Response<Body>` endpoints (action dispatch returns variable response shapes). Progenitor maps these to `ByteStream`. The TypedClient collects the stream into bytes using `futures_util::TryStreamExt` and deserializes to the expected type for each action. Streaming endpoints (Docker/LXD import, push) are left as raw ByteStream for callers to consume incrementally.
+
+
 ## Phase Status
 - [x] Phase 1: Analyze - COMPLETE
 - [x] Phase 2: Generate API - COMPLETE
-- [ ] Phase 3: Generate Client
+- [x] Phase 3: Generate Client - COMPLETE
 - [ ] Phase 4: Generate CLI
 - [ ] Phase 5: Validate

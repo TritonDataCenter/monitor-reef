@@ -20,6 +20,7 @@ members = [
     "cli/vmapi-cli",
     "clients/internal/bugview-client",
     "clients/internal/cloudapi-client",
+    "clients/internal/imgapi-client",
     "clients/internal/jira-client",
     "clients/internal/sapi-client",
     "clients/internal/vmapi-client",

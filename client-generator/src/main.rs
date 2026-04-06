@@ -104,6 +104,20 @@ fn configure_sapi(settings: &mut GenerationSettings) {
         .with_derive("schemars::JsonSchema");
 }
 
+fn configure_imgapi(settings: &mut GenerationSettings) {
+    let value_enum_patch = TypePatch::default().with_derive("clap::ValueEnum").clone();
+
+    settings
+        .with_interface(progenitor::InterfaceStyle::Builder)
+        .with_tag(progenitor::TagStyle::Merged)
+        .with_derive("schemars::JsonSchema")
+        .with_patch("ImageState", &value_enum_patch)
+        .with_patch("ImageType", &value_enum_patch)
+        .with_patch("ImageOs", &value_enum_patch)
+        .with_patch("FileCompression", &value_enum_patch)
+        .with_patch("StorageType", &value_enum_patch);
+}
+
 fn configure_jira(settings: &mut GenerationSettings) {
     settings
         .with_interface(progenitor::InterfaceStyle::Builder)
@@ -135,6 +149,12 @@ static CLIENTS: &[ClientConfig] = &[
         spec_path: "openapi-specs/generated/jira-api.json",
         output_path: "clients/internal/jira-client/src/generated.rs",
         configure: configure_jira,
+    },
+    ClientConfig {
+        name: "imgapi-client",
+        spec_path: "openapi-specs/generated/imgapi-api.json",
+        output_path: "clients/internal/imgapi-client/src/generated.rs",
+        configure: configure_imgapi,
     },
     ClientConfig {
         name: "vmapi-client",
