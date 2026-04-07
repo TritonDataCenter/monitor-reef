@@ -31,8 +31,24 @@ pub struct PostSetupUrls {
 
 #[derive(Subcommand)]
 pub enum PostSetupCommand {
-    /// Set up CloudAPI
-    Cloudapi,
+    /// Create a first CloudAPI instance
+    Cloudapi {
+        /// Skip confirmation prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
+        /// Dry run (preview without executing)
+        #[arg(long, short = 'n')]
+        dry_run: bool,
+        /// Server UUID to place the instance on (default: headnode)
+        #[arg(long, short = 's')]
+        server: Option<String>,
+        /// Image UUID, "latest" (from updates server), or "current" (local only)
+        #[arg(long, short = 'i', default_value = "latest")]
+        image: String,
+        /// Updates server channel (default: from SAPI config or remote default)
+        #[arg(long, short = 'C')]
+        channel: Option<String>,
+    },
     /// Add external NICs to HEAD node SDC services
     CommonExternalNics,
     /// Set up underlay NICs for compute nodes
@@ -106,7 +122,27 @@ pub enum PostSetupCommand {
 impl PostSetupCommand {
     pub async fn run(self, urls: PostSetupUrls) -> Result<()> {
         match self {
-            Self::Cloudapi => not_yet_implemented("post-setup cloudapi"),
+            Self::Cloudapi {
+                yes,
+                dry_run,
+                server,
+                image,
+                channel,
+            } => {
+                cmd_add_service(
+                    &CLOUDAPI_CONFIG,
+                    &urls,
+                    SetupOpts {
+                        yes,
+                        dry_run,
+                        server,
+                        image,
+                        channel,
+                        extra_metadata: None,
+                    },
+                )
+                .await
+            }
             Self::CommonExternalNics => cmd_common_external_nics(&urls).await,
             Self::UnderlayNics => not_yet_implemented("post-setup underlay-nics"),
             Self::HaBinder => not_yet_implemented("post-setup ha-binder"),
@@ -179,6 +215,15 @@ struct ServiceConfig {
     firewall_enabled: bool,
     ensure_manta_nic: bool,
 }
+
+const CLOUDAPI_CONFIG: ServiceConfig = ServiceConfig {
+    name: "cloudapi",
+    image_name: "cloudapi",
+    package_name: "sdc_1024",
+    delegate_dataset: true,
+    firewall_enabled: false,
+    ensure_manta_nic: false,
+};
 
 const GRAFANA_CONFIG: ServiceConfig = ServiceConfig {
     name: "grafana",
