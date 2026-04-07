@@ -190,7 +190,7 @@ pub async fn run(args: AddArgs, client: &TypedClient, _use_json: bool) -> Result
             })
             .collect();
 
-        let patch_yaml = generate_network_patch(&nics, &nameservers, true)
+        let patch_yaml = generate_network_patch(&nics, &nameservers, true, state.fabric_network_id)
             .with_context(|| format!("Failed to generate network patch for {}", inst.name))?;
 
         let patch_path = cluster_dir.join(format!("{}-network-patch.yaml", inst.name));

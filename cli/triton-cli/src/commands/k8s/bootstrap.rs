@@ -455,8 +455,9 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
             })
             .collect();
 
-        let patch_yaml = generate_network_patch(&nics, &nameservers, is_control)
-            .with_context(|| format!("Failed to generate network patch for {}", inst.name))?;
+        let patch_yaml =
+            generate_network_patch(&nics, &nameservers, is_control, state.fabric_network_id)
+                .with_context(|| format!("Failed to generate network patch for {}", inst.name))?;
 
         let patch_path = cluster_dir.join(format!("{}-network-patch.yaml", inst.name));
         tokio::fs::write(&patch_path, patch_yaml)
@@ -837,8 +838,9 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
     eprintln!();
     eprintln!("Talos access:");
     eprintln!(
-        "  talosctl --talosconfig {} --nodes {} dashboard",
+        "  talosctl --talosconfig {} --endpoints {} --nodes {} dashboard",
         talosconfig_path.to_string_lossy(),
+        control_endpoint_for_bootstrap,
         control_endpoint_for_bootstrap
     );
 

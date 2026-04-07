@@ -32,8 +32,8 @@
 //!
 //! let nameservers = vec!["8.8.8.8".to_string()];
 //!
-//! // Generate network patch for a worker node
-//! let yaml = generate_network_patch(&nics, &nameservers, false)?;
+//! // Generate network patch for a worker node (None = use primary NIC subnet)
+//! let yaml = generate_network_patch(&nics, &nameservers, false, None)?;
 //!
 //! // Write to file and apply with: talosctl apply-config --file <file>
 //! # Ok(())
@@ -184,9 +184,21 @@ pub fn calculate_network_cidr(ip: &str, netmask: &str) -> Result<String> {
 /// * `nics` - Array of NICs from Triton (from `triton instance nic list -j`)
 /// * `nameservers` - DNS nameservers to use
 /// * `is_control_plane` - Whether this is a control plane node (adds etcd config)
+/// * `fabric_network_id` - UUID of the fabric network (used to determine which
+///   subnet to use for kubelet nodeIP and etcd advertisedSubnets)
 ///
 /// # Returns
 /// Talos network configuration patch as YAML string
+///
+/// # Network Selection Logic
+///
+/// For dual-homed control plane nodes (e.g. with both external and fabric NICs),
+/// the kubelet nodeIP and etcd advertisedSubnets must use the **fabric network**
+/// subnet. This ensures workers on the fabric network can reach the control plane's
+/// Kubernetes API via ClusterIP routing.
+///
+/// If `fabric_network_id` is provided and matches a NIC, that NIC's subnet is used.
+/// Otherwise, falls back to the primary NIC's subnet.
 ///
 /// # Errors
 /// Returns an error if:
@@ -198,19 +210,32 @@ pub fn generate_network_patch(
     nics: &[Nic],
     nameservers: &[String],
     is_control_plane: bool,
+    fabric_network_id: Option<uuid::Uuid>,
 ) -> Result<String> {
     if nics.is_empty() {
         bail!("no NICs provided");
     }
 
-    // Find primary NIC for subnet calculation
+    // Find primary NIC for fallback
     let primary_nic = nics
         .iter()
         .find(|n| n.primary)
         .ok_or_else(|| anyhow!("no primary NIC found"))?;
 
-    // Calculate network CIDR from primary NIC
-    let network_cidr = calculate_network_cidr(&primary_nic.ip, &primary_nic.netmask)?;
+    // For kubelet nodeIP and etcd advertisedSubnets, prefer the fabric network
+    // if specified. This is critical for dual-homed control plane nodes where
+    // the external IP is used for management but the fabric IP must be used
+    // for intra-cluster communication.
+    let node_ip_nic = if let Some(fabric_id) = fabric_network_id {
+        nics.iter()
+            .find(|n| n.network == fabric_id)
+            .unwrap_or(primary_nic)
+    } else {
+        primary_nic
+    };
+
+    // Calculate network CIDR from the selected NIC
+    let network_cidr = calculate_network_cidr(&node_ip_nic.ip, &node_ip_nic.netmask)?;
 
     let mut interfaces = Vec::new();
 
@@ -320,7 +345,7 @@ mod tests {
 
         let nameservers = vec!["8.8.8.8".to_string()];
 
-        let yaml = generate_network_patch(&nics, &nameservers, false).unwrap();
+        let yaml = generate_network_patch(&nics, &nameservers, false, None).unwrap();
 
         // Verify YAML structure - use more flexible matching
         assert!(yaml.contains("machine:"));
@@ -359,7 +384,7 @@ mod tests {
 
         let nameservers = vec!["8.8.8.8".to_string()];
 
-        let yaml = generate_network_patch(&nics, &nameservers, true).unwrap();
+        let yaml = generate_network_patch(&nics, &nameservers, true, None).unwrap();
 
         // Should have cluster config for control plane
         assert!(yaml.contains("cluster:"));
@@ -393,7 +418,7 @@ mod tests {
 
         let nameservers = vec!["8.8.8.8".to_string(), "8.8.4.4".to_string()];
 
-        let yaml = generate_network_patch(&nics, &nameservers, false).unwrap();
+        let yaml = generate_network_patch(&nics, &nameservers, false, None).unwrap();
 
         // Should have both NICs - use flexible matching
         assert!(yaml.contains("90:b8:d0:2f:1a:62"));
@@ -411,7 +436,7 @@ mod tests {
         let nics: Vec<Nic> = vec![];
         let nameservers = vec!["8.8.8.8".to_string()];
 
-        let result = generate_network_patch(&nics, &nameservers, false);
+        let result = generate_network_patch(&nics, &nameservers, false, None);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("no NICs"));
     }
@@ -430,7 +455,7 @@ mod tests {
 
         let nameservers = vec!["8.8.8.8".to_string()];
 
-        let result = generate_network_patch(&nics, &nameservers, false);
+        let result = generate_network_patch(&nics, &nameservers, false, None);
         assert!(result.is_err());
         assert!(
             result
@@ -454,8 +479,98 @@ mod tests {
 
         let nameservers = vec!["8.8.8.8".to_string()];
 
-        let result = generate_network_patch(&nics, &nameservers, false);
+        let result = generate_network_patch(&nics, &nameservers, false, None);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("missing gateway"));
+    }
+
+    #[test]
+    fn test_generate_network_patch_dual_homed_control_plane() {
+        // Simulates a control plane with:
+        // - Primary NIC on external network (172.16.x.x) for management access
+        // - Secondary NIC on fabric network (192.168.x.x) shared with workers
+        let external_network_id: uuid::Uuid =
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa".parse().unwrap();
+        let fabric_network_id: uuid::Uuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb".parse().unwrap();
+
+        let nics = vec![
+            Nic {
+                mac: "90:b8:d0:f2:49:d4".to_string(),
+                primary: true,
+                ip: "172.16.27.229".to_string(),
+                netmask: "255.255.248.0".to_string(),
+                gateway: Some("172.16.26.1".to_string()),
+                network: external_network_id,
+                state: None,
+            },
+            Nic {
+                mac: "90:b8:d0:1f:57:0d".to_string(),
+                primary: false,
+                ip: "192.168.129.239".to_string(),
+                netmask: "255.255.252.0".to_string(),
+                gateway: Some("192.168.128.1".to_string()),
+                network: fabric_network_id,
+                state: None,
+            },
+        ];
+
+        let nameservers = vec!["8.8.8.8".to_string()];
+
+        // When fabric_network_id is specified, nodeIP and etcd should use fabric subnet
+        let yaml =
+            generate_network_patch(&nics, &nameservers, true, Some(fabric_network_id)).unwrap();
+
+        // validSubnets should be the fabric network (192.168.128.0/22), NOT external (172.16.24.0/21)
+        assert!(yaml.contains("validSubnets:"));
+        assert!(yaml.contains("192.168.128.0/22"));
+        assert!(!yaml.contains("172.16.24.0/21"));
+
+        // advertisedSubnets should also be the fabric network
+        assert!(yaml.contains("advertisedSubnets:"));
+
+        // Both interfaces should still be configured
+        assert!(yaml.contains("90:b8:d0:f2:49:d4"));
+        assert!(yaml.contains("90:b8:d0:1f:57:0d"));
+        assert!(yaml.contains("172.16.27.229/21"));
+        assert!(yaml.contains("192.168.129.239/22"));
+    }
+
+    #[test]
+    fn test_generate_network_patch_dual_homed_no_fabric_specified() {
+        // Same dual-homed setup but without specifying fabric_network_id
+        // Should fall back to primary NIC (external network)
+        let external_network_id: uuid::Uuid =
+            "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa".parse().unwrap();
+        let fabric_network_id: uuid::Uuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb".parse().unwrap();
+
+        let nics = vec![
+            Nic {
+                mac: "90:b8:d0:f2:49:d4".to_string(),
+                primary: true,
+                ip: "172.16.27.229".to_string(),
+                netmask: "255.255.248.0".to_string(),
+                gateway: Some("172.16.26.1".to_string()),
+                network: external_network_id,
+                state: None,
+            },
+            Nic {
+                mac: "90:b8:d0:1f:57:0d".to_string(),
+                primary: false,
+                ip: "192.168.129.239".to_string(),
+                netmask: "255.255.252.0".to_string(),
+                gateway: Some("192.168.128.1".to_string()),
+                network: fabric_network_id,
+                state: None,
+            },
+        ];
+
+        let nameservers = vec!["8.8.8.8".to_string()];
+
+        // When fabric_network_id is None, falls back to primary NIC
+        let yaml = generate_network_patch(&nics, &nameservers, true, None).unwrap();
+
+        // validSubnets should be the external network (fallback to primary)
+        assert!(yaml.contains("172.16.24.0/21"));
+        assert!(!yaml.contains("192.168.128.0/22"));
     }
 }
