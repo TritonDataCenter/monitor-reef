@@ -195,12 +195,14 @@ async fn main() -> Result<()> {
     // Load SDC config from headnode (best-effort — None on non-Triton systems)
     let sdc_config = TritonConfig::load();
 
+    // Resolve API URLs eagerly (lazy resolution per-command would hit
+    // borrow-checker issues when match arms destructure cli.command).
+    let sapi_url = cli.sapi_url(&sdc_config);
+    let imgapi_url = cli.imgapi_url(&sdc_config);
+    let vmapi_url = cli.vmapi_url(&sdc_config);
+
     match cli.command {
-        Commands::Avail { json } => {
-            let sapi_url = cli.sapi_url(&sdc_config)?;
-            let imgapi_url = cli.imgapi_url(&sdc_config)?;
-            cmd_avail(&sapi_url, &imgapi_url, json).await
-        }
+        Commands::Avail { json } => cmd_avail(&sapi_url?, &imgapi_url?, json).await,
         Commands::CheckConfig => not_yet_implemented("check-config"),
         Commands::CheckHealth => not_yet_implemented("check-health"),
         Commands::Completion { shell } => {
@@ -218,20 +220,13 @@ async fn main() -> Result<()> {
         }
         Commands::Create => not_yet_implemented("create"),
         Commands::DefaultFabric => not_yet_implemented("default-fabric"),
-        Commands::Instances { json } => {
-            let sapi_url = cli.sapi_url(&sdc_config)?;
-            let vmapi_url = cli.vmapi_url(&sdc_config)?;
-            cmd_instances(&sapi_url, &vmapi_url, json).await
-        }
+        Commands::Instances { json } => cmd_instances(&sapi_url?, &vmapi_url?, json).await,
         Commands::Rollback => not_yet_implemented("rollback"),
         Commands::SelfUpdate => not_yet_implemented("self-update"),
-        Commands::Services { json } => {
-            let sapi_url = cli.sapi_url(&sdc_config)?;
-            cmd_services(&sapi_url, json).await
-        }
+        Commands::Services { json } => cmd_services(&sapi_url?, json).await,
         Commands::Update => not_yet_implemented("update"),
         Commands::Channel { command } => command.run(),
-        Commands::DcMaint { command } => command.run(),
+        Commands::DcMaint { command } => command.run(&sapi_url?).await,
         Commands::Platform { command } => command.run(),
         Commands::PostSetup { command } => command.run(),
         Commands::Experimental { command } => command.run(),
