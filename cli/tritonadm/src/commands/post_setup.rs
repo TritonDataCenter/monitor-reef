@@ -92,7 +92,7 @@ impl PostSetupCommand {
     pub async fn run(self, urls: PostSetupUrls) -> Result<()> {
         match self {
             Self::Cloudapi => not_yet_implemented("post-setup cloudapi"),
-            Self::CommonExternalNics => not_yet_implemented("post-setup common-external-nics"),
+            Self::CommonExternalNics => cmd_common_external_nics(&urls).await,
             Self::UnderlayNics => not_yet_implemented("post-setup underlay-nics"),
             Self::HaBinder => not_yet_implemented("post-setup ha-binder"),
             Self::HaManatee => not_yet_implemented("post-setup ha-manatee"),
@@ -650,6 +650,119 @@ async fn wait_for_image_active(imgapi: &imgapi_client::Client, uuid: uuid::Uuid)
     }
 }
 
+/// Add external NICs to adminui and imgapi zones.
+///
+/// Matches sdcadm's `post-setup common-external-nics`. Required before
+/// IMGAPI can reach the updates server to import images.
+async fn cmd_common_external_nics(urls: &PostSetupUrls) -> Result<()> {
+    let http = triton_tls::build_http_client(false)
+        .await
+        .context("failed to build HTTP client")?;
+
+    let sapi = sapi_client::Client::new_with_client(&urls.sapi_url, http.clone());
+    let vmapi = vmapi_client::TypedClient::new_with_client(&urls.vmapi_url, http.clone());
+    let napi = napi_client::Client::new_with_client(&urls.napi_url, http);
+
+    // Find the external network
+    let networks = napi
+        .list_networks()
+        .name("external")
+        .send()
+        .await
+        .context("failed to list networks")?
+        .into_inner();
+    let external_net = networks
+        .first()
+        .context("no 'external' network found in NAPI")?;
+    let net_uuid = uuid::Uuid::parse_str(&external_net.uuid.to_string())
+        .context("failed to parse external network UUID")?;
+
+    let svc_names = ["imgapi", "adminui"];
+    let mut changed = false;
+
+    for svc_name in &svc_names {
+        let instances = get_service_instances(&sapi, svc_name).await?;
+        for inst in &instances {
+            if add_nic_if_missing(&napi, &vmapi, inst.uuid, "external", net_uuid, svc_name).await? {
+                changed = true;
+            }
+        }
+    }
+
+    if !changed {
+        eprintln!("All imgapi and adminui instances already have external NICs.");
+    }
+    Ok(())
+}
+
+/// Get instances of a named service from SAPI.
+async fn get_service_instances(
+    sapi: &sapi_client::Client,
+    svc_name: &str,
+) -> Result<Vec<sapi_client::types::Instance>> {
+    let services = sapi
+        .list_services()
+        .name(svc_name)
+        .send()
+        .await
+        .with_context(|| format!("failed to list services for {svc_name}"))?
+        .into_inner();
+    let svc = match services.first() {
+        Some(s) => s,
+        None => return Ok(Vec::new()),
+    };
+    let instances = sapi
+        .list_instances()
+        .service_uuid(svc.uuid)
+        .send()
+        .await
+        .with_context(|| format!("failed to list instances for {svc_name}"))?
+        .into_inner();
+    Ok(instances)
+}
+
+/// Add a NIC to an instance if it doesn't already have one with the given nic_tag.
+/// Returns true if a NIC was added.
+async fn add_nic_if_missing(
+    napi: &napi_client::Client,
+    vmapi: &vmapi_client::TypedClient,
+    inst_uuid: sapi_client::Uuid,
+    nic_tag: &str,
+    net_uuid: uuid::Uuid,
+    svc_name: &str,
+) -> Result<bool> {
+    let nics = napi
+        .list_nics()
+        .belongs_to_uuid(inst_uuid.to_string())
+        .send()
+        .await
+        .with_context(|| format!("failed to list NICs for {svc_name} instance {inst_uuid}"))?
+        .into_inner();
+
+    if nics
+        .iter()
+        .any(|nic| nic.nic_tag.as_deref() == Some(nic_tag))
+    {
+        return Ok(false);
+    }
+
+    eprintln!("Adding {nic_tag} NIC to {svc_name} instance {inst_uuid}...");
+    vmapi
+        .add_nics(
+            &inst_uuid,
+            &vmapi_client::AddNicsRequest {
+                networks: Some(vec![net_uuid]),
+                macs: None,
+            },
+        )
+        .await
+        .with_context(|| {
+            format!("failed to add {nic_tag} NIC to {svc_name} instance {inst_uuid}")
+        })?;
+    eprintln!("Added {nic_tag} NIC to {svc_name} instance {inst_uuid}.");
+    Ok(true)
+}
+
 /// Ensure the grafana instance has a NIC on the manta network (non-fatal).
 async fn ensure_manta_nic(
     napi: &napi_client::Client,
@@ -659,7 +772,7 @@ async fn ensure_manta_nic(
     // Check if manta network exists
     let manta_networks = match napi.list_networks().name("manta").send().await {
         Ok(resp) => resp.into_inner(),
-        Err(_) => return, // Can't reach NAPI — skip silently
+        Err(_) => return,
     };
     let manta_net = match manta_networks.first() {
         Some(net) => net,
@@ -669,45 +782,18 @@ async fn ensure_manta_nic(
         }
     };
 
-    // Check if instance already has a manta NIC
-    let nics = match napi
-        .list_nics()
-        .belongs_to_uuid(inst_uuid.to_string())
-        .send()
-        .await
-    {
-        Ok(resp) => resp.into_inner(),
-        Err(_) => return,
-    };
-
-    let has_manta_nic = nics
-        .iter()
-        .any(|nic| nic.nic_tag.as_deref() == Some("manta"));
-    if has_manta_nic {
-        return;
-    }
-
-    // Add manta NIC
-    eprintln!("Adding manta NIC to instance {inst_uuid}...");
-    let manta_uuid = uuid::Uuid::parse_str(&manta_net.uuid.to_string());
-    let manta_uuid = match manta_uuid {
+    let manta_uuid = match uuid::Uuid::parse_str(&manta_net.uuid.to_string()) {
         Ok(u) => u,
         Err(e) => {
             eprintln!("Warning: failed to parse manta network UUID: {e}");
             return;
         }
     };
-    match vmapi
-        .add_nics(
-            &inst_uuid,
-            &vmapi_client::AddNicsRequest {
-                networks: Some(vec![manta_uuid]),
-                macs: None,
-            },
-        )
-        .await
-    {
-        Ok(_) => eprintln!("Added manta NIC to instance {inst_uuid}"),
-        Err(e) => eprintln!("Warning: failed to add manta NIC: {e}"),
+
+    // Non-fatal: ignore errors from add_nic_if_missing
+    match add_nic_if_missing(napi, vmapi, inst_uuid, "manta", manta_uuid, "grafana").await {
+        Ok(false) => {}
+        Ok(true) => {}
+        Err(e) => eprintln!("Warning: {e}"),
     }
 }
