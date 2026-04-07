@@ -63,7 +63,6 @@ tritonadm-portable: | $(CARGO_EXEC) ## Build portable tritonadm binary (no pkgsr
 	/usr/bin/elfedit -e 'dyn:delete RUNPATH' ./tritonadm
 	/usr/bin/elfedit -e 'dyn:delete RPATH' ./tritonadm
 	@echo "Built portable binary: ./tritonadm"
-	@ldd ./tritonadm
 
 test: | $(CARGO_NEXTEST_EXEC) ## Run all tests
 	TRITON_CONFIG_DIR=/nonexistent $(CARGO) nextest run
