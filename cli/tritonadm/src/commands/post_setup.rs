@@ -229,9 +229,9 @@ struct ImageSelection {
 
 /// Build portal-specific SAPI metadata.
 ///
-/// Generates a JWT secret, reads the admin SSH key fingerprint from the
-/// headnode, and builds a single-datacenter entry pointing at the local
-/// CloudAPI.
+/// Generates a JWT secret, reads the admin SSH key and fingerprint from
+/// the headnode, and builds a single-datacenter entry pointing at the
+/// local CloudAPI.
 async fn build_portal_metadata(
     urls: &PostSetupUrls,
 ) -> Result<serde_json::Map<String, serde_json::Value>> {
@@ -247,6 +247,16 @@ async fn build_portal_metadata(
          ensure /root/.ssh/sdc.id_rsa.pub exists on the headnode",
     )?;
     meta.insert("USER_PORTAL_KEY_ID".into(), json!(key_id));
+
+    // Read the private key so config-agent can render it into the zone
+    // (sapi_manifests/sdc-key/template → /opt/smartdc/portal/etc/sdc_key)
+    let sdc_key = tokio::fs::read_to_string("/root/.ssh/sdc.id_rsa")
+        .await
+        .context(
+            "failed to read /root/.ssh/sdc.id_rsa; \
+             ensure the admin SSH private key exists on the headnode",
+        )?;
+    meta.insert("USER_PORTAL_SDC_KEY".into(), json!(sdc_key));
 
     // Build datacenters array from SDC config
     if let Some(cfg) = &urls.sdc_config {
