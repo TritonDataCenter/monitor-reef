@@ -16,6 +16,9 @@ use crate::not_yet_implemented;
 /// Embedded user-script for zone boot (same as sdcadm's etc/setup/user-script).
 const USER_SCRIPT: &str = include_str!("../../etc/setup/user-script");
 
+/// Default updates server URL (same as sdcadm's default).
+const DEFAULT_UPDATES_URL: &str = "https://updates.tritondatacenter.com";
+
 /// Resolved API URLs and config needed by post-setup commands.
 pub struct PostSetupUrls {
     pub sapi_url: String,
@@ -23,6 +26,7 @@ pub struct PostSetupUrls {
     pub vmapi_url: String,
     pub papi_url: String,
     pub napi_url: String,
+    pub updates_url: Option<String>,
     pub sdc_config: Option<TritonConfig>,
 }
 
@@ -69,9 +73,12 @@ pub enum PostSetupCommand {
         /// Server UUID to place the instance on (default: headnode)
         #[arg(long, short = 's')]
         server: Option<String>,
-        /// Image UUID or "latest" (default: latest in local IMGAPI)
+        /// Image UUID, "latest" (from updates server), or "current" (local only)
         #[arg(long, short = 'i', default_value = "latest")]
         image: String,
+        /// Updates server channel (default: from SAPI config or remote default)
+        #[arg(long, short = 'C')]
+        channel: Option<String>,
     },
     /// Set up firewall logger agent
     FirewallLoggerAgent,
@@ -104,7 +111,8 @@ impl PostSetupCommand {
                 dry_run,
                 server,
                 image,
-            } => cmd_post_setup_grafana(urls, yes, dry_run, server, image).await,
+                channel,
+            } => cmd_post_setup_grafana(urls, yes, dry_run, server, image, channel).await,
             Self::FirewallLoggerAgent => not_yet_implemented("post-setup firewall-logger-agent"),
             Self::Manta => not_yet_implemented("post-setup manta"),
             Self::Portal => not_yet_implemented("post-setup portal"),
@@ -114,6 +122,7 @@ impl PostSetupCommand {
 
 /// Actions determined by the prepare phase.
 enum GrafanaAction {
+    ImportImage,
     CreateService,
     CreateInstance {
         server_uuid: String,
@@ -124,12 +133,19 @@ enum GrafanaAction {
     },
 }
 
+/// Result of finding an image — the manifest and whether it needs downloading.
+struct ImageSelection {
+    image: imgapi_client::types::Image,
+    needs_download: bool,
+}
+
 async fn cmd_post_setup_grafana(
     urls: PostSetupUrls,
     yes: bool,
     dry_run: bool,
     server_opt: Option<String>,
     image_arg: String,
+    channel_opt: Option<String>,
 ) -> Result<()> {
     // Build shared HTTP client
     let http = triton_tls::build_http_client(false)
@@ -137,10 +153,16 @@ async fn cmd_post_setup_grafana(
         .context("failed to build HTTP client")?;
 
     let sapi = sapi_client::Client::new_with_client(&urls.sapi_url, http.clone());
-    let imgapi = imgapi_client::Client::new_with_client(&urls.imgapi_url, http.clone());
+    let local_imgapi = imgapi_client::Client::new_with_client(&urls.imgapi_url, http.clone());
+    let local_imgapi_typed =
+        imgapi_client::TypedClient::new_with_client(&urls.imgapi_url, http.clone());
     let vmapi = vmapi_client::TypedClient::new_with_client(&urls.vmapi_url, http.clone());
     let papi = papi_client::Client::new_with_client(&urls.papi_url, http.clone());
-    let napi = napi_client::Client::new_with_client(&urls.napi_url, http);
+    let napi = napi_client::Client::new_with_client(&urls.napi_url, http.clone());
+
+    // Updates server client (another IMGAPI instance)
+    let updates_url = urls.updates_url.as_deref().unwrap_or(DEFAULT_UPDATES_URL);
+    let updates_imgapi = imgapi_client::Client::new_with_client(updates_url, http);
 
     // ── Phase 1: Gather information ──
 
@@ -167,6 +189,9 @@ async fn cmd_post_setup_grafana(
         .and_then(|v| v.as_str())
         .context("sdc metadata missing dns_domain")?;
     let service_domain = format!("grafana.{datacenter_name}.{dns_domain}");
+
+    // Resolve channel for updates server queries
+    let channel = resolve_channel(channel_opt, sdc_metadata, &updates_imgapi).await?;
 
     // Look up sdc_1024 package
     let packages = papi
@@ -218,13 +243,13 @@ async fn cmd_post_setup_grafana(
         None
     };
 
-    // Find grafana image
-    let target_image = find_image(&imgapi, &image_arg).await?;
+    // Find grafana image (local or remote)
+    let selection = find_image(&local_imgapi, &updates_imgapi, &image_arg, &channel).await?;
+    let target_image = &selection.image;
 
     // Resolve server UUID
     let server_uuid = match server_opt {
         Some(s) => {
-            // Validate it looks like a UUID
             uuid::Uuid::parse_str(&s).context("--server must be a valid UUID")?;
             s
         }
@@ -239,6 +264,10 @@ async fn cmd_post_setup_grafana(
 
     let mut actions: Vec<GrafanaAction> = Vec::new();
 
+    if selection.needs_download {
+        actions.push(GrafanaAction::ImportImage);
+    }
+
     if existing_svc.is_none() {
         actions.push(GrafanaAction::CreateService);
     }
@@ -250,7 +279,6 @@ async fn cmd_post_setup_grafana(
             });
         }
         Some(inst) if existing_instances.len() == 1 => {
-            // Check if the single instance needs reprovisioning
             if let Some(vm) = &existing_vm
                 && vm.image_uuid.map(|u| u.to_string()) != Some(target_image.uuid.to_string())
             {
@@ -274,6 +302,13 @@ async fn cmd_post_setup_grafana(
     eprintln!("The following changes will be made:");
     for action in &actions {
         match action {
+            GrafanaAction::ImportImage => {
+                eprintln!(
+                    "  - Import image {} ({}@{})\n    \
+                     from updates server using channel \"{channel}\"",
+                    target_image.uuid, target_image.name, target_image.version
+                );
+            }
             GrafanaAction::CreateService => {
                 eprintln!("  - Create \"grafana\" service in SAPI");
             }
@@ -316,6 +351,21 @@ async fn cmd_post_setup_grafana(
 
     for action in &actions {
         match action {
+            GrafanaAction::ImportImage => {
+                eprintln!(
+                    "Importing image {} ({}@{})...",
+                    target_image.uuid, target_image.name, target_image.version
+                );
+                let source_url = format!("{updates_url}?channel={channel}");
+                local_imgapi_typed
+                    .import_remote_image(&target_image.uuid, &source_url, true)
+                    .await
+                    .context("failed to import image from updates server")?;
+
+                // Poll until the image is active
+                wait_for_image_active(&local_imgapi, target_image.uuid).await?;
+                eprintln!("Image imported.");
+            }
             GrafanaAction::CreateService => {
                 eprintln!("Creating \"grafana\" service...");
                 let mut params = serde_json::Map::new();
@@ -418,47 +468,167 @@ async fn cmd_post_setup_grafana(
     Ok(())
 }
 
-/// Find the target grafana image in local IMGAPI.
-async fn find_image(
-    imgapi: &imgapi_client::Client,
-    image_arg: &str,
-) -> Result<imgapi_client::types::Image> {
-    if image_arg == "latest" || image_arg == "current" {
-        let images = imgapi
-            .list_images()
-            .name("grafana")
-            .send()
-            .await
-            .context("failed to list grafana images in IMGAPI")?
-            .into_inner();
+/// Resolve the updates channel.
+///
+/// Priority: --channel flag > SAPI sdc metadata `update_channel` > remote default.
+async fn resolve_channel(
+    channel_opt: Option<String>,
+    sdc_metadata: &serde_json::Map<String, serde_json::Value>,
+    updates_imgapi: &imgapi_client::Client,
+) -> Result<String> {
+    // 1. Explicit --channel flag
+    if let Some(ch) = channel_opt {
+        return Ok(ch);
+    }
 
-        if images.is_empty() {
+    // 2. SAPI sdc application metadata
+    if let Some(ch) = sdc_metadata.get("update_channel").and_then(|v| v.as_str()) {
+        return Ok(ch.to_string());
+    }
+
+    // 3. Query updates server for default channel
+    match updates_imgapi.list_channels().send().await {
+        Ok(resp) => {
+            let channels = resp.into_inner();
+            for ch in &channels {
+                if ch.default == Some(true) {
+                    return Ok(ch.name.clone());
+                }
+            }
+            if let Some(first) = channels.first() {
+                return Ok(first.name.clone());
+            }
             anyhow::bail!(
-                "no 'grafana' images found in IMGAPI — import one first \
-                 (e.g., via imgapi-cli or sdc-imgadm)"
-            );
+                "updates server has no channels configured; \
+                 use --channel to specify one"
+            )
         }
+        Err(e) => {
+            anyhow::bail!(
+                "failed to query updates server for default channel: {e}\n\
+                 Use --channel to specify one, or --image current to skip the updates server"
+            )
+        }
+    }
+}
 
-        // Pick the latest by published_at
-        let mut best = &images[0];
-        for img in &images[1..] {
-            if img.published_at > best.published_at {
-                best = img;
+/// Find the target grafana image, checking local IMGAPI and/or the updates server.
+async fn find_image(
+    local_imgapi: &imgapi_client::Client,
+    updates_imgapi: &imgapi_client::Client,
+    image_arg: &str,
+    channel: &str,
+) -> Result<ImageSelection> {
+    match image_arg {
+        "current" => {
+            // Local IMGAPI only
+            let images = local_imgapi
+                .list_images()
+                .name("grafana")
+                .send()
+                .await
+                .context("failed to list grafana images in local IMGAPI")?
+                .into_inner();
+
+            if images.is_empty() {
+                anyhow::bail!(
+                    "no 'grafana' images found in local IMGAPI; \
+                     use --image latest to fetch from the updates server"
+                );
+            }
+
+            Ok(ImageSelection {
+                image: pick_latest(images)?,
+                needs_download: false,
+            })
+        }
+        "latest" => {
+            // Query updates server for the latest image
+            let remote_images = updates_imgapi
+                .list_images()
+                .name("grafana")
+                .channel(channel)
+                .send()
+                .await
+                .context("failed to list grafana images on updates server")?
+                .into_inner();
+
+            if remote_images.is_empty() {
+                anyhow::bail!(
+                    "no 'grafana' images found on updates server (channel: {channel}); \
+                     try --image current to use a locally-available image"
+                );
+            }
+
+            let best = pick_latest(remote_images)?;
+
+            // Check if it already exists locally
+            let needs_download = local_imgapi
+                .get_image()
+                .uuid(best.uuid)
+                .send()
+                .await
+                .is_err();
+
+            Ok(ImageSelection {
+                image: best,
+                needs_download,
+            })
+        }
+        uuid_str => {
+            // Treat as UUID — try local first, fall back to remote
+            let uuid = uuid::Uuid::parse_str(uuid_str)
+                .context("--image must be 'latest', 'current', or a valid UUID")?;
+
+            match local_imgapi.get_image().uuid(uuid).send().await {
+                Ok(resp) => Ok(ImageSelection {
+                    image: resp.into_inner(),
+                    needs_download: false,
+                }),
+                Err(_) => {
+                    // Try updates server
+                    let image = updates_imgapi
+                        .get_image()
+                        .uuid(uuid)
+                        .channel(channel)
+                        .send()
+                        .await
+                        .context("image not found in local IMGAPI or updates server")?
+                        .into_inner();
+                    Ok(ImageSelection {
+                        image,
+                        needs_download: true,
+                    })
+                }
             }
         }
-        Ok(best.clone())
-    } else {
-        // Treat as UUID
-        let uuid = uuid::Uuid::parse_str(image_arg)
-            .context("--image must be 'latest', 'current', or a valid UUID")?;
-        let image = imgapi
+    }
+}
+
+/// Pick the image with the latest published_at from a list.
+fn pick_latest(images: Vec<imgapi_client::types::Image>) -> Result<imgapi_client::types::Image> {
+    images
+        .into_iter()
+        .max_by(|a, b| a.published_at.cmp(&b.published_at))
+        .context("no images to choose from")
+}
+
+/// Poll local IMGAPI until the image reaches "active" state.
+async fn wait_for_image_active(imgapi: &imgapi_client::Client, uuid: uuid::Uuid) -> Result<()> {
+    loop {
+        let img = imgapi
             .get_image()
             .uuid(uuid)
             .send()
             .await
-            .context("failed to get image from IMGAPI")?
+            .context("failed to check image state during import")?
             .into_inner();
-        Ok(image)
+        if img.state == imgapi_client::types::ImageState::Active {
+            return Ok(());
+        }
+        eprint!(".");
+        std::io::stderr().flush().ok();
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
 }
 

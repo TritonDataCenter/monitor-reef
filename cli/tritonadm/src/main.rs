@@ -63,6 +63,10 @@ struct Cli {
     #[arg(long, env = "NAPI_URL", global = true)]
     napi_url: Option<String>,
 
+    /// Updates server URL (default: https://updates.tritondatacenter.com)
+    #[arg(long, env = "UPDATES_URL", global = true)]
+    updates_url: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -274,6 +278,7 @@ async fn main() -> Result<()> {
                     vmapi_url: vmapi_url?,
                     papi_url: papi_url?,
                     napi_url: napi_url?,
+                    updates_url: cli.updates_url,
                     sdc_config,
                 })
                 .await
