@@ -23,10 +23,13 @@ clap = { workspace = true, features = ["derive", "env"] }
 clap_complete = "4.4"
 imgapi-client = { path = "../../clients/internal/imgapi-client" }
 sapi-client = { path = "../../clients/internal/sapi-client" }
+napi-client = { path = "../../clients/internal/napi-client" }
+papi-client = { path = "../../clients/internal/papi-client" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 triton-tls = { path = "../../libs/triton-tls" }
+uuid = { workspace = true }
 vmapi-client = { path = "../../clients/internal/vmapi-client" }
 
 [dev-dependencies]

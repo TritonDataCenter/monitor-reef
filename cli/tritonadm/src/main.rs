@@ -55,6 +55,14 @@ struct Cli {
     #[arg(long, env = "VMAPI_URL", global = true)]
     vmapi_url: Option<String>,
 
+    /// PAPI base URL (auto-detected from SDC config if not set)
+    #[arg(long, env = "PAPI_URL", global = true)]
+    papi_url: Option<String>,
+
+    /// NAPI base URL (auto-detected from SDC config if not set)
+    #[arg(long, env = "NAPI_URL", global = true)]
+    napi_url: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -98,6 +106,34 @@ impl Cli {
         }
         anyhow::bail!(
             "cannot determine VMAPI URL: set --vmapi-url, VMAPI_URL, \
+             or run on a Triton headnode"
+        )
+    }
+
+    /// Resolve the PAPI URL from CLI flag, env var, or SDC config.
+    fn papi_url(&self, sdc_config: &Option<TritonConfig>) -> Result<String> {
+        if let Some(url) = &self.papi_url {
+            return Ok(url.clone());
+        }
+        if let Some(cfg) = sdc_config {
+            return Ok(cfg.service_url("papi"));
+        }
+        anyhow::bail!(
+            "cannot determine PAPI URL: set --papi-url, PAPI_URL, \
+             or run on a Triton headnode"
+        )
+    }
+
+    /// Resolve the NAPI URL from CLI flag, env var, or SDC config.
+    fn napi_url(&self, sdc_config: &Option<TritonConfig>) -> Result<String> {
+        if let Some(url) = &self.napi_url {
+            return Ok(url.clone());
+        }
+        if let Some(cfg) = sdc_config {
+            return Ok(cfg.service_url("napi"));
+        }
+        anyhow::bail!(
+            "cannot determine NAPI URL: set --napi-url, NAPI_URL, \
              or run on a Triton headnode"
         )
     }
@@ -200,6 +236,8 @@ async fn main() -> Result<()> {
     let sapi_url = cli.sapi_url(&sdc_config);
     let imgapi_url = cli.imgapi_url(&sdc_config);
     let vmapi_url = cli.vmapi_url(&sdc_config);
+    let papi_url = cli.papi_url(&sdc_config);
+    let napi_url = cli.napi_url(&sdc_config);
 
     match cli.command {
         Commands::Avail { json } => cmd_avail(&sapi_url?, &imgapi_url?, json).await,
@@ -228,7 +266,18 @@ async fn main() -> Result<()> {
         Commands::Channel { command } => command.run(),
         Commands::DcMaint { command } => command.run(&sapi_url?).await,
         Commands::Platform { command } => command.run(),
-        Commands::PostSetup { command } => command.run(),
+        Commands::PostSetup { command } => {
+            command
+                .run(commands::PostSetupUrls {
+                    sapi_url: sapi_url?,
+                    imgapi_url: imgapi_url?,
+                    vmapi_url: vmapi_url?,
+                    papi_url: papi_url?,
+                    napi_url: napi_url?,
+                    sdc_config,
+                })
+                .await
+        }
         Commands::Experimental { command } => command.run(),
     }
 }

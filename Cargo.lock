@@ -4616,12 +4616,15 @@ dependencies = [
  "clap",
  "clap_complete",
  "imgapi-client",
+ "napi-client",
+ "papi-client",
  "predicates",
  "sapi-client",
  "serde",
  "serde_json",
  "tokio",
  "triton-tls",
+ "uuid",
  "vmapi-client",
 ]
 

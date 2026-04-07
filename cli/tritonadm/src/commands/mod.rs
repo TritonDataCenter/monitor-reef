@@ -16,4 +16,4 @@ pub use channel::ChannelCommand;
 pub use dc_maint::DcMaintCommand;
 pub use experimental::ExperimentalCommand;
 pub use platform::PlatformCommand;
-pub use post_setup::PostSetupCommand;
+pub use post_setup::{PostSetupCommand, PostSetupUrls};

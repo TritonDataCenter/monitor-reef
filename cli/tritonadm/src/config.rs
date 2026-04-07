@@ -19,6 +19,8 @@ use std::process::Command;
 pub struct TritonConfig {
     pub datacenter_name: String,
     pub dns_domain: String,
+    /// Headnode server UUID (from sysinfo, if available)
+    pub server_uuid: Option<String>,
 }
 
 impl TritonConfig {
@@ -41,10 +43,24 @@ impl TritonConfig {
         let datacenter_name = parsed.get("datacenter_name")?.as_str()?.to_string();
         let dns_domain = parsed.get("dns_domain")?.as_str()?.to_string();
 
+        // Try to get server UUID from sysinfo
+        let server_uuid = Self::load_server_uuid();
+
         Some(Self {
             datacenter_name,
             dns_domain,
+            server_uuid,
         })
+    }
+
+    /// Try to get the headnode's server UUID from `sysinfo`.
+    fn load_server_uuid() -> Option<String> {
+        let output = Command::new("/usr/bin/sysinfo").output().ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let parsed: serde_json::Value = serde_json::from_slice(&output.stdout).ok()?;
+        parsed.get("UUID")?.as_str().map(String::from)
     }
 
     /// Construct an internal service URL from the SDC config.
@@ -67,6 +83,7 @@ mod tests {
         let cfg = TritonConfig {
             datacenter_name: "us-east-1".to_string(),
             dns_domain: "triton.zone".to_string(),
+            server_uuid: None,
         };
         assert_eq!(cfg.service_url("sapi"), "http://sapi.us-east-1.triton.zone");
         assert_eq!(
