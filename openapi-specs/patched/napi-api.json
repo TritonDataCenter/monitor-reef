@@ -1,0 +1,4021 @@
+{
+  "components": {
+    "responses": {
+      "Error": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "Error"
+      }
+    },
+    "schemas": {
+      "Aggregation": {
+        "description": "A link aggregation (bond)",
+        "properties": {
+          "belongs_to_uuid": {
+            "description": "UUID of the server this aggregation belongs to",
+            "format": "uuid",
+            "type": "string"
+          },
+          "id": {
+            "description": "Aggregation ID (format: `{belongs_to_uuid}-{name}`)",
+            "type": "string"
+          },
+          "lacp_mode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LacpMode"
+              }
+            ],
+            "description": "LACP mode"
+          },
+          "macs": {
+            "description": "MAC addresses of member NICs (colon-separated strings)",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "Aggregation name",
+            "type": "string"
+          },
+          "nic_tags_provided": {
+            "description": "NIC tags this aggregation provides",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "required": [
+          "belongs_to_uuid",
+          "id",
+          "lacp_mode",
+          "macs",
+          "name"
+        ],
+        "type": "object"
+      },
+      "BelongsToType": {
+        "description": "What type of object owns this NIC",
+        "oneOf": [
+          {
+            "enum": [
+              "other",
+              "server",
+              "zone"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Catch-all for types added after this client was compiled",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "CreateAggregationBody": {
+        "description": "Request body for creating an aggregation (POST /aggregations)",
+        "properties": {
+          "lacp_mode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LacpMode"
+              }
+            ],
+            "default": null,
+            "description": "LACP mode (defaults to \"off\")",
+            "nullable": true
+          },
+          "macs": {
+            "description": "MAC addresses of member NICs (required)",
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "name": {
+            "description": "Aggregation name (required)",
+            "type": "string"
+          },
+          "nic_tags_provided": {
+            "default": null,
+            "description": "NIC tags this aggregation provides",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "required": [
+          "macs",
+          "name"
+        ],
+        "type": "object"
+      },
+      "CreateFabricNetworkBody": {
+        "description": "Request body for creating a fabric network (POST /fabrics/:owner_uuid/vlans/:vlan_id/networks)\n\nMTU, nic_tag, and vnet_id are auto-set from the VLAN.",
+        "properties": {
+          "description": {
+            "default": null,
+            "description": "Human-readable description",
+            "nullable": true,
+            "type": "string"
+          },
+          "gateway": {
+            "default": null,
+            "description": "Gateway IP address",
+            "nullable": true,
+            "type": "string"
+          },
+          "internet_nat": {
+            "default": null,
+            "description": "Whether to enable internet NAT (default: true for IPv4)",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "name": {
+            "description": "Network name (required)",
+            "type": "string"
+          },
+          "provision_end_ip": {
+            "description": "End of provisionable IP range (required)",
+            "type": "string"
+          },
+          "provision_start_ip": {
+            "description": "Start of provisionable IP range (required)",
+            "type": "string"
+          },
+          "resolvers": {
+            "default": null,
+            "description": "DNS resolvers",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "routes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": null,
+            "description": "Static routes (destination -> gateway)",
+            "nullable": true,
+            "type": "object"
+          },
+          "subnet": {
+            "description": "Subnet CIDR (required)",
+            "type": "string"
+          },
+          "uuid": {
+            "default": null,
+            "description": "UUID (auto-generated if omitted)",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "provision_end_ip",
+          "provision_start_ip",
+          "subnet"
+        ],
+        "type": "object"
+      },
+      "CreateFabricVlanBody": {
+        "description": "Request body for creating a fabric VLAN (POST /fabrics/:owner_uuid/vlans)",
+        "properties": {
+          "description": {
+            "default": null,
+            "description": "Human-readable description",
+            "nullable": true,
+            "type": "string"
+          },
+          "fields": {
+            "default": null,
+            "description": "Fields to include in response",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "name": {
+            "default": null,
+            "description": "VLAN name",
+            "nullable": true,
+            "type": "string"
+          },
+          "vlan_id": {
+            "description": "VLAN ID (required, 0-4094)",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "vlan_id"
+        ],
+        "type": "object"
+      },
+      "CreateNetworkBody": {
+        "description": "Request body for creating a network (POST /networks)",
+        "properties": {
+          "description": {
+            "default": null,
+            "description": "Human-readable description",
+            "nullable": true,
+            "type": "string"
+          },
+          "fabric": {
+            "default": null,
+            "description": "Whether this is a fabric network",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "family": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NetworkFamily"
+              }
+            ],
+            "default": null,
+            "description": "Address family for subnet allocation",
+            "nullable": true
+          },
+          "fields": {
+            "default": null,
+            "description": "Fields to include in response",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "gateway": {
+            "default": null,
+            "description": "Gateway IP address",
+            "nullable": true,
+            "type": "string"
+          },
+          "internet_nat": {
+            "default": null,
+            "description": "Whether to enable internet NAT",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "mtu": {
+            "default": null,
+            "description": "MTU (defaults based on NIC tag)",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "name": {
+            "description": "Network name (required)",
+            "type": "string"
+          },
+          "nic_tag": {
+            "description": "NIC tag to use (required)",
+            "type": "string"
+          },
+          "owner_uuids": {
+            "default": null,
+            "description": "UUIDs of owners who can provision on this network",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "provision_end_ip": {
+            "default": null,
+            "description": "End of provisionable IP range",
+            "nullable": true,
+            "type": "string"
+          },
+          "provision_start_ip": {
+            "default": null,
+            "description": "Start of provisionable IP range",
+            "nullable": true,
+            "type": "string"
+          },
+          "resolvers": {
+            "default": null,
+            "description": "DNS resolvers",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "routes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": null,
+            "description": "Static routes (destination -> gateway)",
+            "nullable": true,
+            "type": "object"
+          },
+          "subnet": {
+            "default": null,
+            "description": "Subnet CIDR (required unless subnet_alloc is true)",
+            "nullable": true,
+            "type": "string"
+          },
+          "subnet_alloc": {
+            "default": null,
+            "description": "Whether to automatically allocate a subnet",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "subnet_prefix": {
+            "default": null,
+            "description": "Subnet prefix length for subnet allocation",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "uuid": {
+            "default": null,
+            "description": "UUID (auto-generated if omitted)",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "vlan_id": {
+            "description": "VLAN ID (required)",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "vnet_id": {
+            "default": null,
+            "description": "VXLAN Network Identifier",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "nic_tag",
+          "vlan_id"
+        ],
+        "type": "object"
+      },
+      "CreateNetworkNicBody": {
+        "description": "Request body for provisioning a NIC on a specific network (POST /networks/:network_uuid/nics)",
+        "properties": {
+          "allow_dhcp_spoofing": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "allow_ip_spoofing": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "allow_mac_spoofing": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "allow_restricted_traffic": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "allow_unfiltered_promisc": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "belongs_to_type": {
+            "$ref": "#/components/schemas/BelongsToType"
+          },
+          "belongs_to_uuid": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "check_owner": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "cn_uuid": {
+            "default": null,
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "ip": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "mac": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "model": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "nic_tag": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "nic_tags_provided": {
+            "default": null,
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "owner_uuid": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "primary": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "reserved": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "state": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NicState"
+              }
+            ],
+            "default": null,
+            "nullable": true
+          },
+          "underlay": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "vlan_id": {
+            "default": null,
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "belongs_to_type",
+          "belongs_to_uuid",
+          "owner_uuid"
+        ],
+        "type": "object"
+      },
+      "CreateNetworkPoolBody": {
+        "description": "Request body for creating a network pool (POST /network_pools)",
+        "properties": {
+          "description": {
+            "default": null,
+            "description": "Human-readable description",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "Pool name (required)",
+            "type": "string"
+          },
+          "networks": {
+            "description": "Network UUIDs to include (required)",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "owner_uuids": {
+            "default": null,
+            "description": "UUIDs of owners who can provision from this pool",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "uuid": {
+            "default": null,
+            "description": "UUID (auto-generated if omitted)",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name",
+          "networks"
+        ],
+        "type": "object"
+      },
+      "CreateNicBody": {
+        "description": "Request body for creating a NIC (POST /nics)",
+        "properties": {
+          "allow_dhcp_spoofing": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "allow_ip_spoofing": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "allow_mac_spoofing": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "allow_restricted_traffic": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "allow_unfiltered_promisc": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "belongs_to_type": {
+            "$ref": "#/components/schemas/BelongsToType"
+          },
+          "belongs_to_uuid": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "check_owner": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "cn_uuid": {
+            "default": null,
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "ip": {
+            "default": null,
+            "description": "IP address to assign (auto-assigned if omitted)",
+            "nullable": true,
+            "type": "string"
+          },
+          "mac": {
+            "default": null,
+            "description": "MAC address (auto-generated if omitted)",
+            "nullable": true,
+            "type": "string"
+          },
+          "model": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "network_uuid": {
+            "default": null,
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "nic_tag": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "nic_tags_available": {
+            "default": null,
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "nic_tags_provided": {
+            "default": null,
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "owner_uuid": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "primary": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "reserved": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "state": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NicState"
+              }
+            ],
+            "default": null,
+            "nullable": true
+          },
+          "underlay": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "vlan_id": {
+            "default": null,
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "belongs_to_type",
+          "belongs_to_uuid",
+          "owner_uuid"
+        ],
+        "type": "object"
+      },
+      "CreateNicTagBody": {
+        "description": "Request body for creating a NIC tag (POST /nic_tags)",
+        "properties": {
+          "mtu": {
+            "default": null,
+            "description": "MTU (defaults to 1500 if omitted)",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "name": {
+            "description": "NIC tag name (required)",
+            "type": "string"
+          },
+          "uuid": {
+            "default": null,
+            "description": "UUID (auto-generated if omitted)",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      },
+      "Error": {
+        "description": "Error response from a Node.js Triton service",
+        "properties": {
+          "code": {
+            "description": "Error code (e.g., \"ResourceNotFound\", \"InvalidArgument\")",
+            "type": "string"
+          },
+          "message": {
+            "description": "Human-readable error message",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Request ID for tracing (optional, not always present)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "FabricVlan": {
+        "description": "A fabric VLAN",
+        "properties": {
+          "description": {
+            "description": "Human-readable description",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "description": "VLAN name",
+            "nullable": true,
+            "type": "string"
+          },
+          "owner_uuid": {
+            "description": "Owner UUID",
+            "format": "uuid",
+            "type": "string"
+          },
+          "vlan_id": {
+            "description": "VLAN ID (0-4094)",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "vnet_id": {
+            "description": "VXLAN Network Identifier",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "owner_uuid",
+          "vlan_id",
+          "vnet_id"
+        ],
+        "type": "object"
+      },
+      "GcResponse": {
+        "description": "Response from the garbage collection endpoint (GET /manage/gc)",
+        "properties": {
+          "end": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MemoryUsage"
+              }
+            ],
+            "description": "Memory usage after GC"
+          },
+          "start": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MemoryUsage"
+              }
+            ],
+            "description": "Memory usage before GC"
+          }
+        },
+        "required": [
+          "end",
+          "start"
+        ],
+        "type": "object"
+      },
+      "Ip": {
+        "description": "An IP address record within a network",
+        "properties": {
+          "belongs_to_type": {
+            "description": "Type of object this IP is assigned to (when assigned)",
+            "nullable": true,
+            "type": "string"
+          },
+          "belongs_to_uuid": {
+            "description": "UUID of the object this IP is assigned to (when assigned)",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "free": {
+            "description": "Whether this IP is free (unassigned)",
+            "type": "boolean"
+          },
+          "ip": {
+            "description": "IP address string",
+            "type": "string"
+          },
+          "network_uuid": {
+            "description": "UUID of the network this IP belongs to",
+            "format": "uuid",
+            "type": "string"
+          },
+          "owner_uuid": {
+            "description": "UUID of the owner (when assigned)",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "reserved": {
+            "description": "Whether this IP is reserved",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "free",
+          "ip",
+          "network_uuid",
+          "reserved"
+        ],
+        "type": "object"
+      },
+      "LacpMode": {
+        "description": "LACP (Link Aggregation Control Protocol) mode",
+        "oneOf": [
+          {
+            "enum": [
+              "off",
+              "active",
+              "passive"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Catch-all for modes added after this client was compiled",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "MemoryUsage": {
+        "description": "Node.js process.memoryUsage() snapshot\n\nNote: `heapTotal` and `heapUsed` use camelCase because they come from Node.js `process.memoryUsage()` which returns camelCase field names.",
+        "properties": {
+          "heapTotal": {
+            "description": "Total heap size in bytes",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "heapUsed": {
+            "description": "Used heap size in bytes",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "rss": {
+            "description": "Resident set size in bytes",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "time": {
+            "description": "Timestamp (milliseconds)",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "heapTotal",
+          "heapUsed",
+          "rss",
+          "time"
+        ],
+        "type": "object"
+      },
+      "MorayServiceStatus": {
+        "description": "Moray service connectivity status",
+        "oneOf": [
+          {
+            "enum": [
+              "online",
+              "offline"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Catch-all for statuses added after this client was compiled",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "Network": {
+        "description": "A network",
+        "properties": {
+          "description": {
+            "description": "Human-readable description",
+            "nullable": true,
+            "type": "string"
+          },
+          "fabric": {
+            "description": "Whether this is a fabric network",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "family": {
+            "$ref": "#/components/schemas/NetworkFamily"
+          },
+          "gateway": {
+            "description": "Gateway IP address",
+            "nullable": true,
+            "type": "string"
+          },
+          "gateway_provisioned": {
+            "description": "Whether the gateway has been provisioned",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "internet_nat": {
+            "description": "Whether internet NAT is enabled (fabric networks only)",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "mtu": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "type": "string"
+          },
+          "netmask": {
+            "description": "Netmask (IPv4 only)",
+            "nullable": true,
+            "type": "string"
+          },
+          "nic_tag": {
+            "type": "string"
+          },
+          "owner_uuid": {
+            "description": "Owner UUID (only present for fabric network serialization)",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "owner_uuids": {
+            "description": "UUIDs of owners who can provision on this network",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "provision_end_ip": {
+            "type": "string"
+          },
+          "provision_start_ip": {
+            "type": "string"
+          },
+          "resolvers": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "routes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Static routes (destination -> gateway)",
+            "nullable": true,
+            "type": "object"
+          },
+          "subnet": {
+            "type": "string"
+          },
+          "uuid": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "vlan_id": {
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "vnet_id": {
+            "description": "VXLAN Network Identifier (fabric networks only)",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "family",
+          "mtu",
+          "name",
+          "nic_tag",
+          "provision_end_ip",
+          "provision_start_ip",
+          "resolvers",
+          "subnet",
+          "uuid",
+          "vlan_id"
+        ],
+        "type": "object"
+      },
+      "NetworkFamily": {
+        "description": "Network address family",
+        "oneOf": [
+          {
+            "enum": [
+              "ipv4",
+              "ipv6"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Catch-all for families added after this client was compiled",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "NetworkPool": {
+        "description": "A network pool (grouping of networks for provisioning)",
+        "properties": {
+          "description": {
+            "nullable": true,
+            "type": "string"
+          },
+          "family": {
+            "$ref": "#/components/schemas/NetworkFamily"
+          },
+          "name": {
+            "type": "string"
+          },
+          "networks": {
+            "description": "Network UUIDs in this pool",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "nic_tag": {
+            "description": "Backwards compatibility: first NIC tag from nic_tags_present",
+            "nullable": true,
+            "type": "string"
+          },
+          "nic_tags_present": {
+            "description": "NIC tags present across networks in this pool",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "owner_uuids": {
+            "description": "UUIDs of owners who can provision from this pool",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "uuid": {
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "family",
+          "name",
+          "networks",
+          "uuid"
+        ],
+        "type": "object"
+      },
+      "Nic": {
+        "description": "A NIC (network interface card) record",
+        "properties": {
+          "allow_dhcp_spoofing": {
+            "description": "Allow DHCP spoofing",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "allow_ip_spoofing": {
+            "description": "Allow IP spoofing",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "allow_mac_spoofing": {
+            "description": "Allow MAC spoofing",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "allow_restricted_traffic": {
+            "description": "Allow restricted traffic",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "allow_unfiltered_promisc": {
+            "description": "Allow unfiltered promiscuous mode",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "belongs_to_type": {
+            "$ref": "#/components/schemas/BelongsToType"
+          },
+          "belongs_to_uuid": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "cn_uuid": {
+            "description": "Compute node UUID",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "created_timestamp": {
+            "description": "ISO 8601 creation timestamp",
+            "type": "string"
+          },
+          "fabric": {
+            "description": "Whether the NIC is on a fabric network",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "gateway": {
+            "description": "Gateway IP from the network",
+            "nullable": true,
+            "type": "string"
+          },
+          "gateway_provisioned": {
+            "description": "Whether the gateway has been provisioned",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "internet_nat": {
+            "description": "Whether internet NAT is enabled",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "ip": {
+            "description": "IP address (present when NIC is on a network)",
+            "nullable": true,
+            "type": "string"
+          },
+          "mac": {
+            "description": "MAC address as colon-separated string (e.g., \"90:b8:d0:c0:ff:ee\")",
+            "type": "string"
+          },
+          "model": {
+            "description": "NIC model (e.g., \"virtio\")",
+            "nullable": true,
+            "type": "string"
+          },
+          "modified_timestamp": {
+            "description": "ISO 8601 last-modified timestamp",
+            "type": "string"
+          },
+          "mtu": {
+            "description": "MTU from the network",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "netmask": {
+            "description": "Netmask from the network",
+            "nullable": true,
+            "type": "string"
+          },
+          "network_uuid": {
+            "description": "UUID of the network this NIC is on",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "nic_tag": {
+            "description": "NIC tag from the network",
+            "nullable": true,
+            "type": "string"
+          },
+          "nic_tags_provided": {
+            "description": "NIC tags this NIC provides",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "owner_uuid": {
+            "format": "uuid",
+            "type": "string"
+          },
+          "primary": {
+            "description": "Whether this is the primary NIC",
+            "type": "boolean"
+          },
+          "resolvers": {
+            "description": "DNS resolvers from the network",
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "routes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Static routes from the network",
+            "nullable": true,
+            "type": "object"
+          },
+          "state": {
+            "$ref": "#/components/schemas/NicState"
+          },
+          "underlay": {
+            "description": "Whether this is an underlay NIC",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "vlan_id": {
+            "description": "VLAN ID from the network",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "belongs_to_type",
+          "belongs_to_uuid",
+          "created_timestamp",
+          "mac",
+          "modified_timestamp",
+          "owner_uuid",
+          "primary",
+          "state"
+        ],
+        "type": "object"
+      },
+      "NicState": {
+        "description": "NIC state",
+        "oneOf": [
+          {
+            "enum": [
+              "provisioning",
+              "stopped",
+              "running"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Catch-all for states added after this client was compiled",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "NicTag": {
+        "description": "A NIC tag",
+        "properties": {
+          "mtu": {
+            "description": "MTU for the NIC tag",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "name": {
+            "description": "Name of the NIC tag",
+            "type": "string"
+          },
+          "uuid": {
+            "description": "Unique identifier",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "mtu",
+          "name",
+          "uuid"
+        ],
+        "type": "object"
+      },
+      "PingConfig": {
+        "description": "NAPI configuration flags reported in ping",
+        "properties": {
+          "fabrics_enabled": {
+            "description": "Whether fabric networking (overlay) is enabled",
+            "type": "boolean"
+          },
+          "subnet_alloc_enabled": {
+            "description": "Whether automatic subnet allocation is enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "fabrics_enabled",
+          "subnet_alloc_enabled"
+        ],
+        "type": "object"
+      },
+      "PingResponse": {
+        "description": "Health check response",
+        "properties": {
+          "config": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PingConfig"
+              }
+            ],
+            "description": "Configuration flags"
+          },
+          "healthy": {
+            "description": "Whether the service is healthy overall",
+            "type": "boolean"
+          },
+          "services": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PingServices"
+              }
+            ],
+            "description": "Status of backing services"
+          },
+          "status": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PingStatus"
+              }
+            ],
+            "description": "Overall status"
+          }
+        },
+        "required": [
+          "config",
+          "healthy",
+          "services",
+          "status"
+        ],
+        "type": "object"
+      },
+      "PingServices": {
+        "description": "Status of backing services",
+        "properties": {
+          "moray": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MorayServiceStatus"
+              }
+            ],
+            "description": "Moray (metadata store) connectivity status"
+          }
+        },
+        "required": [
+          "moray"
+        ],
+        "type": "object"
+      },
+      "PingStatus": {
+        "description": "Overall ping status",
+        "oneOf": [
+          {
+            "description": "Service is healthy and ready",
+            "enum": [
+              "OK"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Service is still starting up",
+            "enum": [
+              "initializing"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Catch-all for statuses added after this client was compiled",
+            "enum": [
+              "Unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "UpdateAggregationBody": {
+        "description": "Request body for updating an aggregation (PUT /aggregations/:id)",
+        "properties": {
+          "lacp_mode": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/LacpMode"
+              }
+            ],
+            "default": null,
+            "nullable": true
+          },
+          "macs": {
+            "default": null,
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "nic_tags_provided": {
+            "default": null,
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateFabricNetworkBody": {
+        "description": "Request body for updating a fabric network (PUT /fabrics/:owner_uuid/vlans/:vlan_id/networks/:uuid)",
+        "properties": {
+          "description": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "gateway": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "provision_end_ip": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "provision_start_ip": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "resolvers": {
+            "default": null,
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "routes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": null,
+            "nullable": true,
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateFabricVlanBody": {
+        "description": "Request body for updating a fabric VLAN (PUT /fabrics/:owner_uuid/vlans/:vlan_id)",
+        "properties": {
+          "description": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateIpBody": {
+        "description": "Request body for updating an IP (PUT /networks/:network_uuid/ips/:ip_addr)\n\nSetting `free=true` triggers deletion (unassignment) of the IP rather than an update. The `unassign` parameter is mutually exclusive with `free`.",
+        "properties": {
+          "belongs_to_type": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "belongs_to_uuid": {
+            "default": null,
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "check_owner": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "free": {
+            "default": null,
+            "description": "Set to true to free (unassign) this IP",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "owner_uuid": {
+            "default": null,
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "reserved": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "unassign": {
+            "default": null,
+            "description": "Set to true to unassign this IP (mutually exclusive with `free`)",
+            "nullable": true,
+            "type": "boolean"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateNetworkBody": {
+        "description": "Request body for updating a network (PUT /networks/:uuid)",
+        "properties": {
+          "description": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "gateway": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "owner_uuids": {
+            "default": null,
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "provision_end_ip": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "provision_start_ip": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "resolvers": {
+            "default": null,
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "routes": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": null,
+            "nullable": true,
+            "type": "object"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateNetworkPoolBody": {
+        "description": "Request body for updating a network pool (PUT /network_pools/:uuid)",
+        "properties": {
+          "description": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "networks": {
+            "default": null,
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "owner_uuids": {
+            "default": null,
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateNicBody": {
+        "description": "Request body for updating a NIC (PUT /nics/:mac)",
+        "properties": {
+          "allow_dhcp_spoofing": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "allow_ip_spoofing": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "allow_mac_spoofing": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "allow_restricted_traffic": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "allow_unfiltered_promisc": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "belongs_to_type": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BelongsToType"
+              }
+            ],
+            "default": null,
+            "nullable": true
+          },
+          "belongs_to_uuid": {
+            "default": null,
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "check_owner": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "cn_uuid": {
+            "default": null,
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "ip": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "model": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "network_uuid": {
+            "default": null,
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "nic_tag": {
+            "default": null,
+            "nullable": true,
+            "type": "string"
+          },
+          "nic_tags_provided": {
+            "default": null,
+            "items": {
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "owner_uuid": {
+            "default": null,
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "primary": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "reserved": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "state": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NicState"
+              }
+            ],
+            "default": null,
+            "nullable": true
+          },
+          "underlay": {
+            "default": null,
+            "nullable": true,
+            "type": "boolean"
+          },
+          "vlan_id": {
+            "default": null,
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      },
+      "UpdateNicTagBody": {
+        "description": "Request body for updating a NIC tag (PUT /nic_tags/:oldname)",
+        "properties": {
+          "mtu": {
+            "default": null,
+            "description": "New MTU",
+            "format": "uint32",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "name": {
+            "default": null,
+            "description": "New name for the NIC tag",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Triton NAPI - internal HTTP API for managing networking resources in a Triton datacenter",
+    "title": "Triton NAPI",
+    "version": "1.4.3"
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/aggregations": {
+      "get": {
+        "operationId": "list_aggregations",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "belongs_to_uuid",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "macs",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "nic_tags_provided",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Aggregation"
+                  },
+                  "title": "Array_of_Aggregation",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List aggregations",
+        "tags": [
+          "aggregations"
+        ]
+      },
+      "post": {
+        "description": "Returns 200 (not 201) on success.",
+        "operationId": "create_aggregation",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAggregationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Aggregation"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Create an aggregation",
+        "tags": [
+          "aggregations"
+        ]
+      }
+    },
+    "/aggregations/{id}": {
+      "delete": {
+        "operationId": "delete_aggregation",
+        "parameters": [
+          {
+            "description": "Aggregation ID (format: `{belongs_to_uuid}-{name}`)",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Delete an aggregation",
+        "tags": [
+          "aggregations"
+        ]
+      },
+      "get": {
+        "operationId": "get_aggregation",
+        "parameters": [
+          {
+            "description": "Aggregation ID (format: `{belongs_to_uuid}-{name}`)",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Aggregation"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get an aggregation",
+        "tags": [
+          "aggregations"
+        ]
+      },
+      "put": {
+        "operationId": "update_aggregation",
+        "parameters": [
+          {
+            "description": "Aggregation ID (format: `{belongs_to_uuid}-{name}`)",
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAggregationBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Aggregation"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Update an aggregation",
+        "tags": [
+          "aggregations"
+        ]
+      }
+    },
+    "/fabrics/{owner_uuid}/vlans": {
+      "get": {
+        "description": "Requires overlays (fabrics) to be enabled.",
+        "operationId": "list_fabric_vlans",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Fields to include in response",
+            "in": "query",
+            "name": "fields",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FabricVlan"
+                  },
+                  "title": "Array_of_FabricVlan",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List fabric VLANs for an owner",
+        "tags": [
+          "fabric_vlans"
+        ]
+      },
+      "post": {
+        "description": "Returns 200 (not 201) on success. Requires overlays to be enabled.",
+        "operationId": "create_fabric_vlan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFabricVlanBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FabricVlan"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Create a fabric VLAN",
+        "tags": [
+          "fabric_vlans"
+        ]
+      }
+    },
+    "/fabrics/{owner_uuid}/vlans/{vlan_id}": {
+      "delete": {
+        "description": "Fails if there are networks on this VLAN.",
+        "operationId": "delete_fabric_vlan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vlan_id",
+            "required": true,
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Delete a fabric VLAN",
+        "tags": [
+          "fabric_vlans"
+        ]
+      },
+      "get": {
+        "operationId": "get_fabric_vlan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vlan_id",
+            "required": true,
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FabricVlan"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get a fabric VLAN",
+        "tags": [
+          "fabric_vlans"
+        ]
+      },
+      "put": {
+        "operationId": "update_fabric_vlan",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vlan_id",
+            "required": true,
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFabricVlanBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FabricVlan"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Update a fabric VLAN",
+        "tags": [
+          "fabric_vlans"
+        ]
+      }
+    },
+    "/fabrics/{owner_uuid}/vlans/{vlan_id}/networks": {
+      "get": {
+        "operationId": "list_fabric_networks",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vlan_id",
+            "required": true,
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Network"
+                  },
+                  "title": "Array_of_Network",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List fabric networks on a VLAN",
+        "tags": [
+          "fabric_networks"
+        ]
+      },
+      "post": {
+        "description": "MTU, nic_tag, and vnet_id are auto-set from the VLAN. Returns 200 (not 201) on success.",
+        "operationId": "create_fabric_network",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vlan_id",
+            "required": true,
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFabricNetworkBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Network"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Create a fabric network on a VLAN",
+        "tags": [
+          "fabric_networks"
+        ]
+      }
+    },
+    "/fabrics/{owner_uuid}/vlans/{vlan_id}/networks/{uuid}": {
+      "delete": {
+        "operationId": "delete_fabric_network",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vlan_id",
+            "required": true,
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Delete a fabric network",
+        "tags": [
+          "fabric_networks"
+        ]
+      },
+      "get": {
+        "operationId": "get_fabric_network",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vlan_id",
+            "required": true,
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Network"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get a fabric network",
+        "tags": [
+          "fabric_networks"
+        ]
+      },
+      "put": {
+        "operationId": "update_fabric_network",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "owner_uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "vlan_id",
+            "required": true,
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFabricNetworkBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Network"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Update a fabric network",
+        "tags": [
+          "fabric_networks"
+        ]
+      }
+    },
+    "/manage/gc": {
+      "get": {
+        "description": "Returns 501 NotImplemented if GC is not exposed.",
+        "operationId": "run_gc",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GcResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Run garbage collection",
+        "tags": [
+          "manage"
+        ]
+      }
+    },
+    "/network_pools": {
+      "get": {
+        "operationId": "list_network_pools",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "family",
+            "schema": {
+              "$ref": "#/components/schemas/NetworkFamily"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by network UUID membership",
+            "in": "query",
+            "name": "networks",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "UUID of owner to check provisionability",
+            "in": "query",
+            "name": "provisionable_by",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "UUID prefix filter",
+            "in": "query",
+            "name": "uuid",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NetworkPool"
+                  },
+                  "title": "Array_of_NetworkPool",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List network pools",
+        "tags": [
+          "network_pools"
+        ]
+      },
+      "post": {
+        "description": "Returns 200 (not 201) on success.",
+        "operationId": "create_network_pool",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateNetworkPoolBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkPool"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Create a network pool",
+        "tags": [
+          "network_pools"
+        ]
+      }
+    },
+    "/network_pools/{uuid}": {
+      "delete": {
+        "operationId": "delete_network_pool",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Delete a network pool",
+        "tags": [
+          "network_pools"
+        ]
+      },
+      "get": {
+        "operationId": "get_network_pool",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkPool"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get a network pool",
+        "tags": [
+          "network_pools"
+        ]
+      },
+      "put": {
+        "operationId": "update_network_pool",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNetworkPoolBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NetworkPool"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Update a network pool",
+        "tags": [
+          "network_pools"
+        ]
+      }
+    },
+    "/networks": {
+      "get": {
+        "operationId": "list_networks",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "fabric",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "family",
+            "schema": {
+              "$ref": "#/components/schemas/NetworkFamily"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "nic_tag",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "owner_uuid",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "UUID of owner to check provisionability",
+            "in": "query",
+            "name": "provisionable_by",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "UUID prefix filter",
+            "in": "query",
+            "name": "uuid",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "vlan_id",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Network"
+                  },
+                  "title": "Array_of_Network",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List networks",
+        "tags": [
+          "networks"
+        ]
+      },
+      "post": {
+        "description": "Returns 200 (not 201) on success.",
+        "operationId": "create_network",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateNetworkBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Network"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Create a network",
+        "tags": [
+          "networks"
+        ]
+      }
+    },
+    "/networks/{uuid}": {
+      "delete": {
+        "description": "Fails if the network is in a pool.",
+        "operationId": "delete_network",
+        "parameters": [
+          {
+            "description": "Network UUID (or \"admin\" for the admin network)",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Delete a network",
+        "tags": [
+          "networks"
+        ]
+      },
+      "get": {
+        "description": "The UUID parameter can also be the literal string \"admin\" to look up the admin network.",
+        "operationId": "get_network",
+        "parameters": [
+          {
+            "description": "Network UUID (or \"admin\" for the admin network)",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Network"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get a network",
+        "tags": [
+          "networks"
+        ]
+      },
+      "put": {
+        "operationId": "update_network",
+        "parameters": [
+          {
+            "description": "Network UUID (or \"admin\" for the admin network)",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNetworkBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Network"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Update a network",
+        "tags": [
+          "networks"
+        ]
+      }
+    },
+    "/networks/{uuid}/ips": {
+      "get": {
+        "operationId": "list_ips",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "belongs_to_type",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "belongs_to_uuid",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "owner_uuid",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Ip"
+                  },
+                  "title": "Array_of_Ip",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List IPs in a network",
+        "tags": [
+          "ips"
+        ]
+      }
+    },
+    "/networks/{uuid}/ips/{ip_addr}": {
+      "get": {
+        "description": "Returns an IP object even if the IP is not stored in Moray (synthesizes a \"free\" IP record).",
+        "operationId": "get_ip",
+        "parameters": [
+          {
+            "description": "IP address string",
+            "in": "path",
+            "name": "ip_addr",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ip"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get an IP in a network",
+        "tags": [
+          "ips"
+        ]
+      },
+      "put": {
+        "description": "Creates or updates an IP record. Setting `free=true` deletes the assignment instead.",
+        "operationId": "update_ip",
+        "parameters": [
+          {
+            "description": "IP address string",
+            "in": "path",
+            "name": "ip_addr",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateIpBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ip"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Update (or free) an IP in a network",
+        "tags": [
+          "ips"
+        ]
+      }
+    },
+    "/networks/{uuid}/nics": {
+      "post": {
+        "description": "Returns 200 (not 201) on success.",
+        "operationId": "create_network_nic",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateNetworkNicBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Nic"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Provision a NIC on a specific network",
+        "tags": [
+          "nics"
+        ]
+      }
+    },
+    "/nic_tags": {
+      "get": {
+        "operationId": "list_nic_tags",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/NicTag"
+                  },
+                  "title": "Array_of_NicTag",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List NIC tags",
+        "tags": [
+          "nic_tags"
+        ]
+      },
+      "post": {
+        "description": "Returns 200 (not 201) on success.",
+        "operationId": "create_nic_tag",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateNicTagBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NicTag"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Create a NIC tag",
+        "tags": [
+          "nic_tags"
+        ]
+      }
+    },
+    "/nic_tags/{name}": {
+      "delete": {
+        "operationId": "delete_nic_tag",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Delete a NIC tag",
+        "tags": [
+          "nic_tags"
+        ]
+      },
+      "get": {
+        "operationId": "get_nic_tag",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NicTag"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get a NIC tag by name",
+        "tags": [
+          "nic_tags"
+        ]
+      },
+      "put": {
+        "description": "The path parameter is the current (old) name of the NIC tag.",
+        "operationId": "update_nic_tag",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "name",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNicTagBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NicTag"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Rename/update a NIC tag",
+        "tags": [
+          "nic_tags"
+        ]
+      }
+    },
+    "/nics": {
+      "get": {
+        "description": "Returns an array of NIC objects matching the query filters.",
+        "operationId": "list_nics",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "allow_dhcp_spoofing",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "allow_ip_spoofing",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "allow_mac_spoofing",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "allow_restricted_traffic",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "allow_unfiltered_promisc",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "belongs_to_type",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "belongs_to_uuid",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cn_uuid",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "network_uuid",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "nic_tag",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "nic_tags_provided",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "format": "uint32",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "owner_uuid",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "state",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "underlay",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Nic"
+                  },
+                  "title": "Array_of_Nic",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List NICs",
+        "tags": [
+          "nics"
+        ]
+      },
+      "post": {
+        "description": "Provisions a new NIC. Returns 200 (not 201) on success.",
+        "operationId": "create_nic",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateNicBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Nic"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Create a NIC",
+        "tags": [
+          "nics"
+        ]
+      }
+    },
+    "/nics/{mac}": {
+      "delete": {
+        "operationId": "delete_nic",
+        "parameters": [
+          {
+            "description": "MAC address (colon-separated, dash-separated, or bare hex)",
+            "in": "path",
+            "name": "mac",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Delete a NIC",
+        "tags": [
+          "nics"
+        ]
+      },
+      "get": {
+        "description": "The MAC address can be colon-separated, dash-separated, or bare hex.",
+        "operationId": "get_nic",
+        "parameters": [
+          {
+            "description": "MAC address (colon-separated, dash-separated, or bare hex)",
+            "in": "path",
+            "name": "mac",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Nic"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get a NIC by MAC address",
+        "tags": [
+          "nics"
+        ]
+      },
+      "put": {
+        "operationId": "update_nic",
+        "parameters": [
+          {
+            "description": "MAC address (colon-separated, dash-separated, or bare hex)",
+            "in": "path",
+            "name": "mac",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNicBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Nic"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Update a NIC",
+        "tags": [
+          "nics"
+        ]
+      }
+    },
+    "/ping": {
+      "get": {
+        "operationId": "ping",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PingResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Health check endpoint",
+        "tags": [
+          "ping"
+        ]
+      }
+    },
+    "/search/ips": {
+      "get": {
+        "description": "Returns 404 if no matching IP is found.",
+        "operationId": "search_ips",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "belongs_to_type",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "belongs_to_uuid",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "fabric",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "IP address to search for (required)",
+            "in": "query",
+            "name": "ip",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "owner_uuid",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Ip"
+                  },
+                  "title": "Array_of_Ip",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Search for an IP across all networks",
+        "tags": [
+          "search"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "aggregations"
+    },
+    {
+      "name": "fabric_networks"
+    },
+    {
+      "name": "fabric_vlans"
+    },
+    {
+      "name": "ips"
+    },
+    {
+      "name": "manage"
+    },
+    {
+      "name": "network_pools"
+    },
+    {
+      "name": "networks"
+    },
+    {
+      "name": "nic_tags"
+    },
+    {
+      "name": "nics"
+    },
+    {
+      "name": "ping"
+    },
+    {
+      "name": "search"
+    }
+  ]
+}

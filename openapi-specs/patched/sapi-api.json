@@ -300,21 +300,23 @@
         "type": "object"
       },
       "Error": {
-        "description": "Error information from a response.",
+        "description": "Error response from a Node.js Triton service",
         "properties": {
-          "error_code": {
+          "code": {
+            "description": "Error code (e.g., \"ResourceNotFound\", \"InvalidArgument\")",
             "type": "string"
           },
           "message": {
+            "description": "Human-readable error message",
             "type": "string"
           },
           "request_id": {
+            "description": "Request ID for tracing (optional, not always present)",
             "type": "string"
           }
         },
         "required": [
-          "message",
-          "request_id"
+          "code"
         ],
         "type": "object"
       },

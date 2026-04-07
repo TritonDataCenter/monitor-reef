@@ -579,26 +579,28 @@ pub mod types {
         }
     }
 
-    #[doc = "Error information from a response."]
+    #[doc = "Error response from a Node.js Triton service"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Error information from a response.\","]
+    #[doc = "  \"description\": \"Error response from a Node.js Triton service\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
-    #[doc = "    \"message\","]
-    #[doc = "    \"request_id\""]
+    #[doc = "    \"code\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"error_code\": {"]
+    #[doc = "    \"code\": {"]
+    #[doc = "      \"description\": \"Error code (e.g., \\\"ResourceNotFound\\\", \\\"InvalidArgument\\\")\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"message\": {"]
+    #[doc = "      \"description\": \"Human-readable error message\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"request_id\": {"]
+    #[doc = "      \"description\": \"Request ID for tracing (optional, not always present)\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -609,10 +611,14 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct Error {
+        #[doc = "Error code (e.g., \"ResourceNotFound\", \"InvalidArgument\")"]
+        pub code: ::std::string::String,
+        #[doc = "Human-readable error message"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub error_code: ::std::option::Option<::std::string::String>,
-        pub message: ::std::string::String,
-        pub request_id: ::std::string::String,
+        pub message: ::std::option::Option<::std::string::String>,
+        #[doc = "Request ID for tracing (optional, not always present)"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub request_id: ::std::option::Option<::std::string::String>,
     }
 
     impl Error {
@@ -2743,38 +2749,41 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct Error {
-            error_code: ::std::result::Result<
+            code: ::std::result::Result<::std::string::String, ::std::string::String>,
+            message: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
-            message: ::std::result::Result<::std::string::String, ::std::string::String>,
-            request_id: ::std::result::Result<::std::string::String, ::std::string::String>,
+            request_id: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
         }
 
         impl ::std::default::Default for Error {
             fn default() -> Self {
                 Self {
-                    error_code: Ok(Default::default()),
-                    message: Err("no value supplied for message".to_string()),
-                    request_id: Err("no value supplied for request_id".to_string()),
+                    code: Err("no value supplied for code".to_string()),
+                    message: Ok(Default::default()),
+                    request_id: Ok(Default::default()),
                 }
             }
         }
 
         impl Error {
-            pub fn error_code<T>(mut self, value: T) -> Self
+            pub fn code<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<::std::string::String>,
                 T::Error: ::std::fmt::Display,
             {
-                self.error_code = value
+                self.code = value
                     .try_into()
-                    .map_err(|e| format!("error converting supplied value for error_code: {e}"));
+                    .map_err(|e| format!("error converting supplied value for code: {e}"));
                 self
             }
             pub fn message<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.message = value
@@ -2784,7 +2793,7 @@ pub mod types {
             }
             pub fn request_id<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.request_id = value
@@ -2800,7 +2809,7 @@ pub mod types {
                 value: Error,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
-                    error_code: value.error_code?,
+                    code: value.code?,
                     message: value.message?,
                     request_id: value.request_id?,
                 })
@@ -2810,7 +2819,7 @@ pub mod types {
         impl ::std::convert::From<super::Error> for Error {
             fn from(value: super::Error) -> Self {
                 Self {
-                    error_code: Ok(value.error_code),
+                    code: Ok(value.code),
                     message: Ok(value.message),
                     request_id: Ok(value.request_id),
                 }

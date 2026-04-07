@@ -400,20 +400,20 @@ pub mod types {
         }
     }
 
-    #[doc = "IMGAPI error response"]
+    #[doc = "Error response from a Node.js Triton service"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"IMGAPI error response\","]
+    #[doc = "  \"description\": \"Error response from a Node.js Triton service\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"required\": ["]
     #[doc = "    \"code\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"code\": {"]
-    #[doc = "      \"description\": \"Error code (e.g., \\\"ResourceNotFound\\\", \\\"RemoteSourceError\\\")\","]
+    #[doc = "      \"description\": \"Error code (e.g., \\\"ResourceNotFound\\\", \\\"InvalidArgument\\\")\","]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"message\": {"]
@@ -432,7 +432,7 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct Error {
-        #[doc = "Error code (e.g., \"ResourceNotFound\", \"RemoteSourceError\")"]
+        #[doc = "Error code (e.g., \"ResourceNotFound\", \"InvalidArgument\")"]
         pub code: ::std::string::String,
         #[doc = "Human-readable error message"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]

@@ -43,6 +43,16 @@ pub fn apply_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Res
             .context("failed to transform imgapi-api.json")?;
     }
 
+    // NAPI, PAPI, VMAPI all need the same error schema patch
+    for api_name in ["napi-api", "papi-api", "vmapi-api"] {
+        let source = generated_dir.join(format!("{api_name}.json"));
+        if source.exists() {
+            let dest = patched_dir.join(format!("{api_name}.json"));
+            transform_with_error_patch(api_name, &source, &dest)
+                .with_context(|| format!("failed to transform {api_name}.json"))?;
+        }
+    }
+
     Ok(())
 }
 
@@ -72,6 +82,15 @@ pub fn check_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Res
         "imgapi-api.json",
         apply_all_imgapi_patches,
     )?;
+
+    for api_name in ["napi-api", "papi-api", "vmapi-api"] {
+        all_fresh &= check_one_transform(
+            generated_dir,
+            patched_dir,
+            &format!("{api_name}.json"),
+            patch_node_triton_error_schema,
+        )?;
+    }
 
     Ok(all_fresh)
 }
@@ -155,42 +174,8 @@ fn transform_cloudapi_spec(source: &Utf8Path, dest: &Utf8Path) -> Result<()> {
 
 /// Apply all CloudAPI patches to a parsed spec.
 fn apply_all_cloudapi_patches(spec: &mut Value) -> Result<()> {
-    patch_cloudapi_error_schema(spec)?;
+    patch_node_triton_error_schema(spec)?;
     patch_empty_202_responses(spec)?;
-    Ok(())
-}
-
-/// Patch the Error schema in a parsed OpenAPI spec to match CloudAPI's wire format.
-fn patch_cloudapi_error_schema(spec: &mut Value) -> Result<()> {
-    let error_schema = spec
-        .get_mut("components")
-        .and_then(|c| c.get_mut("schemas"))
-        .and_then(|s| s.get_mut("Error"));
-
-    let error = error_schema.ok_or_else(|| {
-        anyhow::anyhow!("Error schema not found in spec; expected components.schemas.Error")
-    })?;
-
-    *error = serde_json::json!({
-        "description": "CloudAPI error response",
-        "type": "object",
-        "properties": {
-            "code": {
-                "description": "Error code (e.g., \"InvalidCredentials\", \"ResourceNotFound\")",
-                "type": "string"
-            },
-            "message": {
-                "description": "Human-readable error message",
-                "type": "string"
-            },
-            "request_id": {
-                "description": "Request ID for tracing (optional, not always present)",
-                "type": "string"
-            }
-        },
-        "required": ["code"]
-    });
-
     Ok(())
 }
 
@@ -250,6 +235,7 @@ fn transform_sapi_spec(source: &Utf8Path, dest: &Utf8Path) -> Result<()> {
 }
 
 fn apply_all_sapi_patches(spec: &mut Value) -> Result<()> {
+    patch_node_triton_error_schema(spec)?;
     patch_sapi_get_mode(spec)?;
     patch_sapi_post_mode(spec)?;
     patch_sapi_post_loglevel(spec)?;
@@ -357,34 +343,15 @@ fn patch_sapi_create_status_codes(spec: &mut Value) -> Result<()> {
     Ok(())
 }
 
-// --- IMGAPI transforms ---
+// --- Shared Node.js Triton error schema patch ---
 
-/// Transform imgapi-api.json to match Node.js IMGAPI's actual error format.
+/// Patch the Error schema to match Node.js Triton services' actual error format.
 ///
-/// The real IMGAPI returns `{"code": "ResourceNotFound", "message": "..."}`,
-/// not Dropshot's `{"message": "...", "request_id": "...", "error_code": "..."}`.
-fn transform_imgapi_spec(source: &Utf8Path, dest: &Utf8Path) -> Result<()> {
-    let content = std::fs::read_to_string(source).context("failed to read spec file")?;
-    let mut spec: Value = serde_json::from_str(&content).context("failed to parse spec as JSON")?;
-
-    apply_all_imgapi_patches(&mut spec)?;
-
-    let output = serde_json::to_string_pretty(&spec).context("failed to serialize spec")?;
-    std::fs::write(dest, output).context("failed to write patched spec file")?;
-
-    eprintln!("Wrote patched IMGAPI spec to {}", dest);
-    Ok(())
-}
-
-fn apply_all_imgapi_patches(spec: &mut Value) -> Result<()> {
-    patch_imgapi_error_schema(spec)?;
-    Ok(())
-}
-
-/// Patch the Error schema to match IMGAPI's actual error format.
-///
-/// Same fix as CloudAPI: `code` instead of `error_code`, `request_id` optional.
-fn patch_imgapi_error_schema(spec: &mut Value) -> Result<()> {
+/// All Node.js Triton services (IMGAPI, NAPI, PAPI, VMAPI, etc.) return errors as
+/// `{"code": "ResourceNotFound", "message": "..."}`. Dropshot generates an Error
+/// schema with `error_code` and a required `request_id` which these services don't
+/// include. This patch makes `request_id` optional and uses `code` instead.
+fn patch_node_triton_error_schema(spec: &mut Value) -> Result<()> {
     let error_schema = spec
         .get_mut("components")
         .and_then(|c| c.get_mut("schemas"))
@@ -395,11 +362,11 @@ fn patch_imgapi_error_schema(spec: &mut Value) -> Result<()> {
     })?;
 
     *error = serde_json::json!({
-        "description": "IMGAPI error response",
+        "description": "Error response from a Node.js Triton service",
         "type": "object",
         "properties": {
             "code": {
-                "description": "Error code (e.g., \"ResourceNotFound\", \"RemoteSourceError\")",
+                "description": "Error code (e.g., \"ResourceNotFound\", \"InvalidArgument\")",
                 "type": "string"
             },
             "message": {
@@ -414,6 +381,41 @@ fn patch_imgapi_error_schema(spec: &mut Value) -> Result<()> {
         "required": ["code"]
     });
 
+    Ok(())
+}
+
+/// Transform a spec that only needs the Node.js error schema patch.
+fn transform_with_error_patch(api_name: &str, source: &Utf8Path, dest: &Utf8Path) -> Result<()> {
+    let content = std::fs::read_to_string(source).context("failed to read spec file")?;
+    let mut spec: Value = serde_json::from_str(&content).context("failed to parse spec as JSON")?;
+
+    patch_node_triton_error_schema(&mut spec)?;
+
+    let output = serde_json::to_string_pretty(&spec).context("failed to serialize spec")?;
+    std::fs::write(dest, output).context("failed to write patched spec file")?;
+
+    eprintln!("Wrote patched {} spec to {}", api_name, dest);
+    Ok(())
+}
+
+// --- IMGAPI transforms ---
+
+/// Transform imgapi-api.json — currently only needs the error schema patch.
+fn transform_imgapi_spec(source: &Utf8Path, dest: &Utf8Path) -> Result<()> {
+    let content = std::fs::read_to_string(source).context("failed to read spec file")?;
+    let mut spec: Value = serde_json::from_str(&content).context("failed to parse spec as JSON")?;
+
+    apply_all_imgapi_patches(&mut spec)?;
+
+    let output = serde_json::to_string_pretty(&spec).context("failed to serialize spec")?;
+    std::fs::write(dest, output).context("failed to write patched spec file")?;
+
+    eprintln!("Wrote patched IMGAPI spec to {}", dest);
+    Ok(())
+}
+
+fn apply_all_imgapi_patches(spec: &mut Value) -> Result<()> {
+    patch_node_triton_error_schema(spec)?;
     Ok(())
 }
 
@@ -453,9 +455,9 @@ mod tests {
     }
 
     #[test]
-    fn test_patch_cloudapi_error_schema() {
+    fn test_patch_node_triton_error_schema() {
         let mut spec = dropshot_error_spec();
-        patch_cloudapi_error_schema(&mut spec).unwrap();
+        patch_node_triton_error_schema(&mut spec).unwrap();
 
         let error = &spec["components"]["schemas"]["Error"];
 
@@ -479,7 +481,7 @@ mod tests {
                 "schemas": {}
             }
         });
-        let result = patch_cloudapi_error_schema(&mut spec);
+        let result = patch_node_triton_error_schema(&mut spec);
         assert!(result.is_err());
         assert!(
             result

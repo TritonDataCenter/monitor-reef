@@ -1,0 +1,1119 @@
+{
+  "components": {
+    "responses": {
+      "Error": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        },
+        "description": "Error"
+      }
+    },
+    "schemas": {
+      "AllocServerSpread": {
+        "description": "Server allocation spread strategy.",
+        "oneOf": [
+          {
+            "enum": [
+              "min-ram",
+              "random",
+              "min-owner"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Catch-all for strategies added after this client was compiled.",
+            "enum": [
+              "Unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "BackendStatus": {
+        "description": "Backend health status from the ping endpoint.",
+        "oneOf": [
+          {
+            "enum": [
+              "up",
+              "down"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Catch-all for statuses added after this client was compiled.",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "Brand": {
+        "description": "VM brand for a package.\n\nDetermines which virtualization technology is used.",
+        "oneOf": [
+          {
+            "enum": [
+              "bhyve",
+              "joyent",
+              "joyent-minimal",
+              "kvm",
+              "lx"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Catch-all for brands added after this client was compiled.",
+            "enum": [
+              "Unknown"
+            ],
+            "type": "string"
+          }
+        ]
+      },
+      "CreatePackageRequest": {
+        "description": "Request body for creating a new package.",
+        "properties": {
+          "active": {
+            "description": "Whether the package is active for provisioning.",
+            "type": "boolean"
+          },
+          "alloc_server_spread": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AllocServerSpread"
+              }
+            ],
+            "default": null,
+            "description": "Server allocation spread strategy.",
+            "nullable": true
+          },
+          "billing_tag": {
+            "default": null,
+            "description": "Billing tag.",
+            "nullable": true,
+            "type": "string"
+          },
+          "brand": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Brand"
+              }
+            ],
+            "default": null,
+            "description": "VM brand.",
+            "nullable": true
+          },
+          "common_name": {
+            "default": null,
+            "description": "Display name in portal.",
+            "nullable": true,
+            "type": "string"
+          },
+          "cpu_burst_ratio": {
+            "default": null,
+            "description": "CPU burst ratio.",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "cpu_cap": {
+            "default": null,
+            "description": "CPU cap value.",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "default": {
+            "default": null,
+            "description": "Deprecated: SDC 6.5 default flag.",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "description": {
+            "default": null,
+            "description": "Human-readable description.",
+            "nullable": true,
+            "type": "string"
+          },
+          "disks": {
+            "default": null,
+            "description": "Disk specifications (only valid when flexible_disk is true).",
+            "items": {
+              "$ref": "#/components/schemas/DiskSpec"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "flexible_disk": {
+            "default": null,
+            "description": "Enable flexible disk mode (bhyve only).",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "fss": {
+            "default": null,
+            "description": "CPU shares.",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "group": {
+            "default": null,
+            "description": "Package grouping.",
+            "nullable": true,
+            "type": "string"
+          },
+          "max_lwps": {
+            "description": "Maximum number of lightweight processes (min: 250).",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_physical_memory": {
+            "description": "Maximum physical memory in MiB (min: 64).",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_swap": {
+            "description": "Maximum swap in MiB (min: 128, must be >= max_physical_memory).",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "min_platform": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": null,
+            "description": "Minimum platform versions.",
+            "nullable": true,
+            "type": "object"
+          },
+          "name": {
+            "description": "Package name.",
+            "type": "string"
+          },
+          "networks": {
+            "default": null,
+            "description": "Network UUIDs.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "os": {
+            "default": null,
+            "description": "Operating system.",
+            "nullable": true,
+            "type": "string"
+          },
+          "owner_uuids": {
+            "default": null,
+            "description": "Owner UUIDs. Absent means universal package.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "parent": {
+            "default": null,
+            "description": "Parent package name or UUID.",
+            "nullable": true,
+            "type": "string"
+          },
+          "quota": {
+            "description": "Disk quota in MiB (min: 1024, must be multiple of 1024).",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ram_ratio": {
+            "default": null,
+            "description": "RAM ratio.",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "skip_validation": {
+            "default": null,
+            "description": "Skip validation step.",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "traits": {
+            "default": null,
+            "description": "Freeform DAPI traits object.",
+            "nullable": true
+          },
+          "uuid": {
+            "default": null,
+            "description": "Package UUID (auto-generated if not provided).",
+            "format": "uuid",
+            "nullable": true,
+            "type": "string"
+          },
+          "vcpus": {
+            "default": null,
+            "description": "Number of virtual CPUs (1..64).",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "version": {
+            "description": "Semver version string.",
+            "type": "string"
+          },
+          "zfs_io_priority": {
+            "description": "ZFS I/O priority (0..16383).",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active",
+          "max_lwps",
+          "max_physical_memory",
+          "max_swap",
+          "name",
+          "quota",
+          "version",
+          "zfs_io_priority"
+        ],
+        "type": "object"
+      },
+      "DiskSize": {
+        "anyOf": [
+          {
+            "description": "Size in MiB.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DiskSizeRemaining"
+              }
+            ],
+            "description": "Use all remaining disk space."
+          }
+        ],
+        "description": "Disk size: either a positive integer (MiB) or the literal string \"remaining\"."
+      },
+      "DiskSizeRemaining": {
+        "description": "Helper enum for the \"remaining\" string variant of DiskSize.",
+        "enum": [
+          "remaining"
+        ],
+        "type": "string"
+      },
+      "DiskSpec": {
+        "description": "A disk specification within a package (used with flexible_disk).",
+        "properties": {
+          "size": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DiskSize"
+              }
+            ],
+            "description": "Disk size in MiB, or \"remaining\" to use all remaining space.",
+            "nullable": true
+          }
+        },
+        "type": "object"
+      },
+      "Error": {
+        "description": "Error response from a Node.js Triton service",
+        "properties": {
+          "code": {
+            "description": "Error code (e.g., \"ResourceNotFound\", \"InvalidArgument\")",
+            "type": "string"
+          },
+          "message": {
+            "description": "Human-readable error message",
+            "type": "string"
+          },
+          "request_id": {
+            "description": "Request ID for tracing (optional, not always present)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "type": "object"
+      },
+      "Package": {
+        "description": "A package definition.\n\nPackages define resource allocations (RAM, CPU, disk, etc.) used by other services to provision VMs.",
+        "properties": {
+          "active": {
+            "description": "Whether the package can be used for provisioning.",
+            "type": "boolean"
+          },
+          "alloc_server_spread": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AllocServerSpread"
+              }
+            ],
+            "description": "Server allocation spread strategy.",
+            "nullable": true
+          },
+          "billing_tag": {
+            "description": "Opaque billing tag string.",
+            "nullable": true,
+            "type": "string"
+          },
+          "brand": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Brand"
+              }
+            ],
+            "description": "VM brand.",
+            "nullable": true
+          },
+          "common_name": {
+            "description": "Display name shown in the portal.",
+            "nullable": true,
+            "type": "string"
+          },
+          "cpu_burst_ratio": {
+            "description": "CPU burst ratio.",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "cpu_cap": {
+            "description": "CPU cap value.",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "created_at": {
+            "description": "Creation timestamp (ISO 8601).",
+            "nullable": true,
+            "type": "string"
+          },
+          "default": {
+            "description": "Deprecated: SDC 6.5 default flag.",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "description": {
+            "description": "Human-readable description.",
+            "nullable": true,
+            "type": "string"
+          },
+          "disks": {
+            "description": "Disk specifications (only valid when flexible_disk is true).",
+            "items": {
+              "$ref": "#/components/schemas/DiskSpec"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "flexible_disk": {
+            "description": "Whether flexible disk mode is enabled (bhyve only).",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "fss": {
+            "description": "CPU shares (aka cpu_shares).",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "group": {
+            "description": "Package grouping name.",
+            "nullable": true,
+            "type": "string"
+          },
+          "max_lwps": {
+            "description": "Maximum number of lightweight processes.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_physical_memory": {
+            "description": "Maximum physical memory in MiB.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "max_swap": {
+            "description": "Maximum swap in MiB.",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "min_platform": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Minimum platform versions: maps SDC version to platform date.",
+            "nullable": true,
+            "type": "object"
+          },
+          "name": {
+            "description": "Package name.",
+            "type": "string"
+          },
+          "networks": {
+            "description": "Network UUIDs available to this package.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "os": {
+            "description": "Operating system.",
+            "nullable": true,
+            "type": "string"
+          },
+          "owner_uuids": {
+            "description": "Owner UUIDs that can use this package. Absent means universal.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "parent": {
+            "description": "Parent package name or UUID.",
+            "nullable": true,
+            "type": "string"
+          },
+          "quota": {
+            "description": "Disk quota in MiB (must be a multiple of 1024).",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          },
+          "ram_ratio": {
+            "description": "RAM ratio.",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "traits": {
+            "description": "Freeform JSON object for DAPI traits.",
+            "nullable": true
+          },
+          "updated_at": {
+            "description": "Last update timestamp (ISO 8601).",
+            "nullable": true,
+            "type": "string"
+          },
+          "uuid": {
+            "description": "Unique package identifier.",
+            "format": "uuid",
+            "type": "string"
+          },
+          "v": {
+            "description": "Schema version (always 1).",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "vcpus": {
+            "description": "Number of virtual CPUs (1..64).",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "version": {
+            "description": "Semver version string.",
+            "type": "string"
+          },
+          "zfs_io_priority": {
+            "description": "ZFS I/O priority (0..16383).",
+            "format": "uint64",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "active",
+          "max_lwps",
+          "max_physical_memory",
+          "max_swap",
+          "name",
+          "quota",
+          "uuid",
+          "version",
+          "zfs_io_priority"
+        ],
+        "type": "object"
+      },
+      "PingResponse": {
+        "description": "Response from the /ping health check endpoint.",
+        "properties": {
+          "backend": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BackendStatus"
+              }
+            ],
+            "description": "Backend (Moray) health status."
+          },
+          "backend_error": {
+            "description": "Backend error message, if backend is down.",
+            "nullable": true,
+            "type": "string"
+          },
+          "pid": {
+            "description": "Process ID of the PAPI service.",
+            "format": "uint32",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "backend",
+          "pid"
+        ],
+        "type": "object"
+      },
+      "SortOrder": {
+        "description": "Sort order for list queries.",
+        "enum": [
+          "ASC",
+          "DESC"
+        ],
+        "type": "string"
+      },
+      "UpdatePackageRequest": {
+        "description": "Request body for updating a package.\n\nAll fields are optional. Immutable fields can only be changed when `force` is true.",
+        "properties": {
+          "active": {
+            "default": null,
+            "description": "Whether the package is active for provisioning.",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "alloc_server_spread": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AllocServerSpread"
+              }
+            ],
+            "default": null,
+            "description": "Server allocation spread strategy.",
+            "nullable": true
+          },
+          "billing_tag": {
+            "default": null,
+            "description": "Billing tag.",
+            "nullable": true,
+            "type": "string"
+          },
+          "common_name": {
+            "default": null,
+            "description": "Display name in portal.",
+            "nullable": true,
+            "type": "string"
+          },
+          "cpu_burst_ratio": {
+            "default": null,
+            "description": "CPU burst ratio.",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "default": {
+            "default": null,
+            "description": "Deprecated: SDC 6.5 default flag.",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "description": {
+            "default": null,
+            "description": "Human-readable description.",
+            "nullable": true,
+            "type": "string"
+          },
+          "disks": {
+            "default": null,
+            "description": "Disk specifications (only valid when flexible_disk is true).",
+            "items": {
+              "$ref": "#/components/schemas/DiskSpec"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "flexible_disk": {
+            "default": null,
+            "description": "Enable flexible disk mode (bhyve only).",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "force": {
+            "default": null,
+            "description": "Allow modifying immutable fields.",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "fss": {
+            "default": null,
+            "description": "CPU shares.",
+            "format": "uint64",
+            "minimum": 0,
+            "nullable": true,
+            "type": "integer"
+          },
+          "group": {
+            "default": null,
+            "description": "Package grouping.",
+            "nullable": true,
+            "type": "string"
+          },
+          "min_platform": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "default": null,
+            "description": "Minimum platform versions.",
+            "nullable": true,
+            "type": "object"
+          },
+          "networks": {
+            "default": null,
+            "description": "Network UUIDs.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "owner_uuids": {
+            "default": null,
+            "description": "Owner UUIDs.",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "parent": {
+            "default": null,
+            "description": "Parent package name or UUID.",
+            "nullable": true,
+            "type": "string"
+          },
+          "ram_ratio": {
+            "default": null,
+            "description": "RAM ratio.",
+            "format": "double",
+            "nullable": true,
+            "type": "number"
+          },
+          "skip_validation": {
+            "default": null,
+            "description": "Skip validation step.",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "traits": {
+            "default": null,
+            "description": "Freeform DAPI traits object.",
+            "nullable": true
+          }
+        },
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "description": "Triton PAPI - Packages API for managing package definitions (RAM, CPU, disk, etc.) used to provision VMs",
+    "title": "Triton PAPI",
+    "version": "7.2.5"
+  },
+  "openapi": "3.0.3",
+  "paths": {
+    "/packages": {
+      "get": {
+        "description": "Returns an array of packages matching the query filters. Supports filtering by any package field, sorting, and pagination.",
+        "operationId": "list_packages",
+        "parameters": [
+          {
+            "description": "Filter by active status.",
+            "in": "query",
+            "name": "active",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Filter by brand.",
+            "in": "query",
+            "name": "brand",
+            "schema": {
+              "$ref": "#/components/schemas/Brand"
+            }
+          },
+          {
+            "description": "Raw LDAP search filter (bypasses param-based filter).",
+            "in": "query",
+            "name": "filter",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by flexible_disk.",
+            "in": "query",
+            "name": "flexible_disk",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Filter by group.",
+            "in": "query",
+            "name": "group",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Limit result count.",
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "format": "uint64",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter by package name.",
+            "in": "query",
+            "name": "name",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Skip N results.",
+            "in": "query",
+            "name": "offset",
+            "schema": {
+              "format": "uint64",
+              "minimum": 0,
+              "nullable": true,
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Sort order (ASC or DESC).",
+            "in": "query",
+            "name": "order",
+            "schema": {
+              "$ref": "#/components/schemas/SortOrder"
+            }
+          },
+          {
+            "description": "Filter by OS.",
+            "in": "query",
+            "name": "os",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by owner UUIDs. Also returns packages with no owner_uuids.",
+            "in": "query",
+            "name": "owner_uuids",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Field name to sort by.",
+            "in": "query",
+            "name": "sort",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          },
+          {
+            "description": "Filter by version.",
+            "in": "query",
+            "name": "version",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/Package"
+                  },
+                  "title": "Array_of_Package",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "List packages",
+        "tags": [
+          "packages"
+        ]
+      },
+      "post": {
+        "description": "Creates a package with the given resource definitions. Returns the created package with server-assigned fields (uuid if not provided, timestamps, version number).",
+        "operationId": "create_package",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreatePackageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Package"
+                }
+              }
+            },
+            "description": "successful creation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Create a new package",
+        "tags": [
+          "packages"
+        ]
+      }
+    },
+    "/packages/{uuid}": {
+      "delete": {
+        "description": "Deletes a package. Requires `force=true` as a query parameter; otherwise returns 405.",
+        "operationId": "delete_package",
+        "parameters": [
+          {
+            "description": "Package UUID.",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Must be true to allow deletion. Returns 405 if not set.",
+            "in": "query",
+            "name": "force",
+            "schema": {
+              "nullable": true,
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Delete a package",
+        "tags": [
+          "packages"
+        ]
+      },
+      "get": {
+        "description": "Returns a single package. The optional `owner_uuids` query parameter can be used to filter by ownership.",
+        "operationId": "get_package",
+        "parameters": [
+          {
+            "description": "Package UUID.",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Owner UUIDs for access filtering (JSON-encoded array or single UUID).",
+            "in": "query",
+            "name": "owner_uuids",
+            "schema": {
+              "nullable": true,
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Package"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Get a package by UUID",
+        "tags": [
+          "packages"
+        ]
+      },
+      "put": {
+        "description": "Updates mutable fields on a package. Immutable fields can only be changed when `force` is set to true in the request body.",
+        "operationId": "update_package",
+        "parameters": [
+          {
+            "description": "Package UUID.",
+            "in": "path",
+            "name": "uuid",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePackageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Package"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Update a package",
+        "tags": [
+          "packages"
+        ]
+      }
+    },
+    "/ping": {
+      "get": {
+        "description": "Returns the service process ID and backend (Moray) health status.",
+        "operationId": "ping",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PingResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Ping the PAPI service",
+        "tags": [
+          "health"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "health"
+    },
+    {
+      "name": "packages"
+    }
+  ]
+}

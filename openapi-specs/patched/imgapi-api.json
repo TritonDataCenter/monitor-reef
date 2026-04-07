@@ -142,10 +142,10 @@
         ]
       },
       "Error": {
-        "description": "IMGAPI error response",
+        "description": "Error response from a Node.js Triton service",
         "properties": {
           "code": {
-            "description": "Error code (e.g., \"ResourceNotFound\", \"RemoteSourceError\")",
+            "description": "Error code (e.g., \"ResourceNotFound\", \"InvalidArgument\")",
             "type": "string"
           },
           "message": {

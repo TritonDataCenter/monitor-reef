@@ -174,7 +174,7 @@ static CLIENTS: &[ClientConfig] = &[
     },
     ClientConfig {
         name: "napi-client",
-        spec_path: "openapi-specs/generated/napi-api.json",
+        spec_path: "openapi-specs/patched/napi-api.json",
         output_path: "clients/internal/napi-client/src/generated.rs",
         configure: configure_napi,
     },
@@ -192,13 +192,13 @@ static CLIENTS: &[ClientConfig] = &[
     },
     ClientConfig {
         name: "papi-client",
-        spec_path: "openapi-specs/generated/papi-api.json",
+        spec_path: "openapi-specs/patched/papi-api.json",
         output_path: "clients/internal/papi-client/src/generated.rs",
         configure: configure_papi,
     },
     ClientConfig {
         name: "vmapi-client",
-        spec_path: "openapi-specs/generated/vmapi-api.json",
+        spec_path: "openapi-specs/patched/vmapi-api.json",
         output_path: "clients/internal/vmapi-client/src/generated.rs",
         configure: configure_vmapi,
     },
