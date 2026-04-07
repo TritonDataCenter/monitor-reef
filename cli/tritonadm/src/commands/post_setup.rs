@@ -632,22 +632,26 @@ fn pick_latest(images: Vec<imgapi_client::types::Image>) -> Result<imgapi_client
 }
 
 /// Poll local IMGAPI until the image reaches "active" state.
+///
+/// The import-remote action is async — the image may not exist yet when
+/// we start polling (404), then appear as "unactivated", then become "active".
 async fn wait_for_image_active(imgapi: &imgapi_client::Client, uuid: uuid::Uuid) -> Result<()> {
-    loop {
-        let img = imgapi
-            .get_image()
-            .uuid(uuid)
-            .send()
-            .await
-            .context("failed to check image state during import")?
-            .into_inner();
-        if img.state == imgapi_client::types::ImageState::Active {
-            return Ok(());
+    for _ in 0..120 {
+        match imgapi.get_image().uuid(uuid).send().await {
+            Ok(resp) => {
+                if resp.into_inner().state == imgapi_client::types::ImageState::Active {
+                    return Ok(());
+                }
+            }
+            Err(_) => {
+                // Image may not exist yet (404) — keep polling
+            }
         }
         eprint!(".");
         std::io::stderr().flush().ok();
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
+    anyhow::bail!("timed out waiting for image {uuid} to become active (4 minutes)")
 }
 
 /// Add external NICs to adminui and imgapi zones.

@@ -36,6 +36,13 @@ pub fn apply_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Res
         transform_sapi_spec(&sapi_source, &dest).context("failed to transform sapi-api.json")?;
     }
 
+    let imgapi_source = generated_dir.join("imgapi-api.json");
+    if imgapi_source.exists() {
+        let dest = patched_dir.join("imgapi-api.json");
+        transform_imgapi_spec(&imgapi_source, &dest)
+            .context("failed to transform imgapi-api.json")?;
+    }
+
     Ok(())
 }
 
@@ -57,6 +64,13 @@ pub fn check_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Res
         patched_dir,
         "sapi-api.json",
         apply_all_sapi_patches,
+    )?;
+
+    all_fresh &= check_one_transform(
+        generated_dir,
+        patched_dir,
+        "imgapi-api.json",
+        apply_all_imgapi_patches,
     )?;
 
     Ok(all_fresh)
@@ -339,6 +353,66 @@ fn patch_sapi_create_status_codes(spec: &mut Value) -> Result<()> {
             }
         }
     }
+
+    Ok(())
+}
+
+// --- IMGAPI transforms ---
+
+/// Transform imgapi-api.json to match Node.js IMGAPI's actual error format.
+///
+/// The real IMGAPI returns `{"code": "ResourceNotFound", "message": "..."}`,
+/// not Dropshot's `{"message": "...", "request_id": "...", "error_code": "..."}`.
+fn transform_imgapi_spec(source: &Utf8Path, dest: &Utf8Path) -> Result<()> {
+    let content = std::fs::read_to_string(source).context("failed to read spec file")?;
+    let mut spec: Value = serde_json::from_str(&content).context("failed to parse spec as JSON")?;
+
+    apply_all_imgapi_patches(&mut spec)?;
+
+    let output = serde_json::to_string_pretty(&spec).context("failed to serialize spec")?;
+    std::fs::write(dest, output).context("failed to write patched spec file")?;
+
+    eprintln!("Wrote patched IMGAPI spec to {}", dest);
+    Ok(())
+}
+
+fn apply_all_imgapi_patches(spec: &mut Value) -> Result<()> {
+    patch_imgapi_error_schema(spec)?;
+    Ok(())
+}
+
+/// Patch the Error schema to match IMGAPI's actual error format.
+///
+/// Same fix as CloudAPI: `code` instead of `error_code`, `request_id` optional.
+fn patch_imgapi_error_schema(spec: &mut Value) -> Result<()> {
+    let error_schema = spec
+        .get_mut("components")
+        .and_then(|c| c.get_mut("schemas"))
+        .and_then(|s| s.get_mut("Error"));
+
+    let error = error_schema.ok_or_else(|| {
+        anyhow::anyhow!("Error schema not found in spec; expected components.schemas.Error")
+    })?;
+
+    *error = serde_json::json!({
+        "description": "IMGAPI error response",
+        "type": "object",
+        "properties": {
+            "code": {
+                "description": "Error code (e.g., \"ResourceNotFound\", \"RemoteSourceError\")",
+                "type": "string"
+            },
+            "message": {
+                "description": "Human-readable error message",
+                "type": "string"
+            },
+            "request_id": {
+                "description": "Request ID for tracing (optional, not always present)",
+                "type": "string"
+            }
+        },
+        "required": ["code"]
+    });
 
     Ok(())
 }

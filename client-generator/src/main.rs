@@ -186,7 +186,7 @@ static CLIENTS: &[ClientConfig] = &[
     },
     ClientConfig {
         name: "imgapi-client",
-        spec_path: "openapi-specs/generated/imgapi-api.json",
+        spec_path: "openapi-specs/patched/imgapi-api.json",
         output_path: "clients/internal/imgapi-client/src/generated.rs",
         configure: configure_imgapi,
     },
