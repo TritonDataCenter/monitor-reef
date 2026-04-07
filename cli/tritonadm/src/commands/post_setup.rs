@@ -154,15 +154,16 @@ async fn cmd_post_setup_grafana(
 
     let sapi = sapi_client::Client::new_with_client(&urls.sapi_url, http.clone());
     let local_imgapi = imgapi_client::Client::new_with_client(&urls.imgapi_url, http.clone());
-    let local_imgapi_typed =
-        imgapi_client::TypedClient::new_with_client(&urls.imgapi_url, http.clone());
     let vmapi = vmapi_client::TypedClient::new_with_client(&urls.vmapi_url, http.clone());
     let papi = papi_client::Client::new_with_client(&urls.papi_url, http.clone());
     let napi = napi_client::Client::new_with_client(&urls.napi_url, http.clone());
 
     // Updates server client (another IMGAPI instance)
     let updates_url = urls.updates_url.as_deref().unwrap_or(DEFAULT_UPDATES_URL);
-    let updates_imgapi = imgapi_client::Client::new_with_client(updates_url, http);
+    let updates_imgapi = imgapi_client::Client::new_with_client(updates_url, http.clone());
+
+    // Keep raw HTTP client for direct IMGAPI import-remote requests
+    let http_client = http;
 
     // ── Phase 1: Gather information ──
 
@@ -356,11 +357,28 @@ async fn cmd_post_setup_grafana(
                     "Importing image {} ({}@{})...",
                     target_image.uuid, target_image.name, target_image.version
                 );
+                // The real Node.js IMGAPI expects source and skip_owner_check
+                // as query parameters, not in the body. Use a direct HTTP POST
+                // since the TypedClient sends them in the body instead.
                 let source_url = format!("{updates_url}?channel={channel}");
-                local_imgapi_typed
-                    .import_remote_image(&target_image.uuid, &source_url, true)
+                let import_url = format!("{}/images/{}", urls.imgapi_url, target_image.uuid,);
+                let resp = http_client
+                    .post(&import_url)
+                    .query(&[
+                        ("action", "import-remote"),
+                        ("source", &source_url),
+                        ("skip_owner_check", "true"),
+                    ])
+                    .header("content-type", "application/json")
+                    .body("{}")
+                    .send()
                     .await
-                    .context("failed to import image from updates server")?;
+                    .context("failed to send import request to IMGAPI")?;
+                if !resp.status().is_success() {
+                    let status = resp.status();
+                    let body = resp.text().await.unwrap_or_default();
+                    anyhow::bail!("IMGAPI import-remote returned {status}: {body}");
+                }
 
                 // Poll until the image is active
                 wait_for_image_active(&local_imgapi, target_image.uuid).await?;
