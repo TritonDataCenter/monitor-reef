@@ -632,15 +632,27 @@ impl ImageCommand {
                     .parse()
                     .map_err(|e| anyhow::anyhow!("invalid UUID in manifest: {}", e))?;
 
-                // Step 1: Import the manifest
+                // Step 1: Import the manifest (send raw JSON to preserve all fields)
                 eprintln!("Importing image manifest {uuid}...");
-                let import_req: ImportImageRequest = serde_json::from_value(manifest_value)
-                    .map_err(|e| anyhow::anyhow!("failed to parse manifest: {}", e))?;
-                let image = typed_client
-                    .import_image(&uuid, &import_req)
+                let name = manifest_value
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                let version = manifest_value
+                    .get("version")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown")
+                    .to_string();
+                client
+                    .image_action()
+                    .uuid(uuid)
+                    .action(imgapi_client::types::ImageAction::Import)
+                    .body(manifest_value)
+                    .send()
                     .await
                     .map_err(|e| anyhow::anyhow!("failed to import manifest: {}", e))?;
-                eprintln!("Imported: {} v{}", image.name, image.version);
+                eprintln!("Imported: {name} v{version}");
 
                 // Step 2: Upload the file
                 eprintln!("Uploading image file...");
