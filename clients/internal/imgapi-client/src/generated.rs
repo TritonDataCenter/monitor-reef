@@ -3658,7 +3658,7 @@ impl Client {
         builder::GetImage::new(self)
     }
 
-    #[doc = "Update/action on an existing image (action dispatch)\n\nThis endpoint dispatches to different handlers based on the `action` query parameter. The action may also be sent in the request body.\n\nSupported actions: - `import`: Import image manifest (admin-only) - `import-remote`: Import from remote IMGAPI (admin-only, creates job) - `import-from-datacenter`: Import from datacenter (creates job) - `import-docker-image`: Import Docker image (streaming, admin-only) - `import-lxd-image`: Import LXD image (streaming, admin-only) - `change-stor`: Change storage backend (admin-only) - `export`: Export to Manta - `activate`: Activate an unactivated image - `enable`: Enable a disabled image - `disable`: Disable an active image - `channel-add`: Add image to a channel - `update`: Update mutable image fields\n\nResponse varies by action (Image, JobResponse, ExportImageResponse, or streaming JSON).\n\nSends a `POST` request to `/images/{uuid}`\n\nArguments:\n- `uuid`: Image UUID\n- `account`: Account UUID\n- `action`: Action to perform\n- `channel`: Channel name\n- `body`\n```ignore\nlet response = client.image_action()\n    .uuid(uuid)\n    .account(account)\n    .action(action)\n    .channel(channel)\n    .body(body)\n    .send()\n    .await;\n```"]
+    #[doc = "Update/action on an existing image (action dispatch)\n\nThis endpoint dispatches to different handlers based on the `action` query parameter. The action may also be sent in the request body.\n\nSupported actions: - `import`: Import image manifest (admin-only) - `import-remote`: Import from remote IMGAPI (admin-only, creates job) - `import-from-datacenter`: Import from datacenter (creates job) - `import-docker-image`: Import Docker image (streaming, admin-only) - `import-lxd-image`: Import LXD image (streaming, admin-only) - `change-stor`: Change storage backend (admin-only) - `export`: Export to Manta - `activate`: Activate an unactivated image - `enable`: Enable a disabled image - `disable`: Disable an active image - `channel-add`: Add image to a channel - `update`: Update mutable image fields\n\nResponse varies by action (Image, JobResponse, ExportImageResponse, or streaming JSON).\n\nSends a `POST` request to `/images/{uuid}`\n\nArguments:\n- `uuid`: Image UUID\n- `account`: Account UUID\n- `action`: Action to perform\n- `channel`: Channel name\n- `skip_owner_check`: Skip owner check (used by import-remote and import actions)\n- `source`: Source IMGAPI URL (used by import-remote and import actions)\n- `body`\n```ignore\nlet response = client.image_action()\n    .uuid(uuid)\n    .account(account)\n    .action(action)\n    .channel(channel)\n    .skip_owner_check(skip_owner_check)\n    .source(source)\n    .body(body)\n    .send()\n    .await;\n```"]
     pub fn image_action(&self) -> builder::ImageAction<'_> {
         builder::ImageAction::new(self)
     }
@@ -4415,6 +4415,8 @@ pub mod builder {
         account: Result<Option<::uuid::Uuid>, String>,
         action: Result<Option<types::ImageAction>, String>,
         channel: Result<Option<::std::string::String>, String>,
+        skip_owner_check: Result<Option<bool>, String>,
+        source: Result<Option<::std::string::String>, String>,
         body: Result<::serde_json::Value, String>,
     }
 
@@ -4426,6 +4428,8 @@ pub mod builder {
                 account: Ok(None),
                 action: Ok(None),
                 channel: Ok(None),
+                skip_owner_check: Ok(None),
+                source: Ok(None),
                 body: Err("body was not initialized".to_string()),
             }
         }
@@ -4472,6 +4476,27 @@ pub mod builder {
             self
         }
 
+        pub fn skip_owner_check<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<bool>,
+        {
+            self.skip_owner_check = value
+                .try_into()
+                .map(Some)
+                .map_err(|_| "conversion to `bool` for skip_owner_check failed".to_string());
+            self
+        }
+
+        pub fn source<V>(mut self, value: V) -> Self
+        where
+            V: std::convert::TryInto<::std::string::String>,
+        {
+            self.source = value.try_into().map(Some).map_err(|_| {
+                "conversion to `:: std :: string :: String` for source failed".to_string()
+            });
+            self
+        }
+
         pub fn body<V>(mut self, value: V) -> Self
         where
             V: std::convert::TryInto<::serde_json::Value>,
@@ -4490,12 +4515,16 @@ pub mod builder {
                 account,
                 action,
                 channel,
+                skip_owner_check,
+                source,
                 body,
             } = self;
             let uuid = uuid.map_err(Error::InvalidRequest)?;
             let account = account.map_err(Error::InvalidRequest)?;
             let action = action.map_err(Error::InvalidRequest)?;
             let channel = channel.map_err(Error::InvalidRequest)?;
+            let skip_owner_check = skip_owner_check.map_err(Error::InvalidRequest)?;
+            let source = source.map_err(Error::InvalidRequest)?;
             let body = body.map_err(Error::InvalidRequest)?;
             let url = format!(
                 "{}/images/{}",
@@ -4515,6 +4544,11 @@ pub mod builder {
                 .query(&progenitor_client::QueryParam::new("account", &account))
                 .query(&progenitor_client::QueryParam::new("action", &action))
                 .query(&progenitor_client::QueryParam::new("channel", &channel))
+                .query(&progenitor_client::QueryParam::new(
+                    "skip_owner_check",
+                    &skip_owner_check,
+                ))
+                .query(&progenitor_client::QueryParam::new("source", &source))
                 .headers(header_map)
                 .build()?;
             let info = OperationInfo {

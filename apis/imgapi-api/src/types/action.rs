@@ -67,6 +67,12 @@ pub struct ImageActionQuery {
     /// Account UUID
     #[serde(default)]
     pub account: Option<Uuid>,
+    /// Source IMGAPI URL (used by import-remote and import actions)
+    #[serde(default)]
+    pub source: Option<String>,
+    /// Skip owner check (used by import-remote and import actions)
+    #[serde(default)]
+    pub skip_owner_check: Option<bool>,
 }
 
 // ============================================================================

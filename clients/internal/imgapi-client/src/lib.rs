@@ -227,21 +227,28 @@ impl TypedClient {
     }
 
     /// Import an image from a remote IMGAPI (admin-only, creates workflow job)
+    ///
+    /// The real Node.js IMGAPI expects `source` and `skip_owner_check` as
+    /// query parameters, not body fields.
     pub async fn import_remote_image(
         &self,
         uuid: &Uuid,
         source: &str,
         skip_owner_check: bool,
     ) -> Result<JobResponse, ActionError> {
-        self.image_action_json(
-            uuid,
-            types::ImageAction::ImportRemote,
-            &serde_json::json!({
-                "source": source,
-                "skip_owner_check": if skip_owner_check { Some(true) } else { None::<bool> },
-            }),
-        )
-        .await
+        let mut req = self
+            .inner
+            .image_action()
+            .uuid(*uuid)
+            .action(types::ImageAction::ImportRemote)
+            .source(source)
+            .body(serde_json::json!({}));
+        if skip_owner_check {
+            req = req.skip_owner_check(true);
+        }
+        let resp = req.send().await.map_err(ActionError::ByteStream)?;
+        let bytes = collect_byte_stream(resp.into_inner()).await?;
+        serde_json::from_slice(&bytes).map_err(ActionError::Deserialize)
     }
 
     /// Import an image from another datacenter (creates workflow job)
