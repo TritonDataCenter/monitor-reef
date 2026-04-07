@@ -232,7 +232,7 @@ pub enum ImageCommand {
     },
 
     /// Delete an image
-    #[command(name = "delete-image")]
+    #[command(name = "delete-image", alias = "delete")]
     DeleteImage {
         /// Image UUID
         uuid: Uuid,
