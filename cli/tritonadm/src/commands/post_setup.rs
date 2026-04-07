@@ -16,8 +16,7 @@ use crate::not_yet_implemented;
 /// Embedded user-script for zone boot (same as sdcadm's etc/setup/user-script).
 const USER_SCRIPT: &str = include_str!("../../etc/setup/user-script");
 
-/// Default updates server URL (same as sdcadm's default).
-const DEFAULT_UPDATES_URL: &str = "https://updates.tritondatacenter.com";
+use crate::DEFAULT_UPDATES_URL;
 
 /// Resolved API URLs and config needed by post-setup commands.
 pub struct PostSetupUrls {

@@ -600,7 +600,7 @@ pub enum ImageCommand {
 }
 
 impl ImageCommand {
-    pub async fn run(self, imgapi_url: &str) -> Result<()> {
+    pub async fn run(self, imgapi_url: &str, updates_url: Option<&str>) -> Result<()> {
         let http = triton_tls::build_http_client(false)
             .await
             .map_err(|e| anyhow::anyhow!("failed to build HTTP client: {}", e))?;
@@ -632,8 +632,6 @@ impl ImageCommand {
                     .parse()
                     .map_err(|e| anyhow::anyhow!("invalid UUID in manifest: {}", e))?;
 
-                // Step 1: Import the manifest (send raw JSON to preserve all fields)
-                eprintln!("Importing image manifest {uuid}...");
                 let name = manifest_value
                     .get("name")
                     .and_then(|v| v.as_str())
@@ -644,6 +642,35 @@ impl ImageCommand {
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown")
                     .to_string();
+
+                // Step 0: Ensure origin image exists locally
+                if let Some(origin_str) = manifest_value.get("origin").and_then(|v| v.as_str()) {
+                    let origin_uuid: Uuid = origin_str
+                        .parse()
+                        .map_err(|e| anyhow::anyhow!("invalid origin UUID: {}", e))?;
+
+                    // Check if origin exists locally
+                    if client.get_image().uuid(origin_uuid).send().await.is_err() {
+                        let source = updates_url.unwrap_or(crate::DEFAULT_UPDATES_URL);
+                        eprintln!(
+                            "Origin image {origin_uuid} not found locally, \
+                             importing from {source}..."
+                        );
+                        typed_client
+                            .import_remote_image(&origin_uuid, source, true)
+                            .await
+                            .map_err(|e| {
+                                anyhow::anyhow!("failed to import origin image {origin_uuid}: {e}")
+                            })?;
+
+                        // Poll until origin is active
+                        wait_for_image_active(&client, origin_uuid).await?;
+                        eprintln!("Origin image {origin_uuid} imported.");
+                    }
+                }
+
+                // Step 1: Import the manifest (send raw JSON to preserve all fields)
+                eprintln!("Importing image manifest {uuid}...");
                 client
                     .image_action()
                     .uuid(uuid)
@@ -661,7 +688,6 @@ impl ImageCommand {
                     .map_err(|e| anyhow::anyhow!("failed to read file '{}': {}", file, e))?;
 
                 let mut req = client.add_image_file().uuid(uuid).body(file_bytes);
-                // Use compression from flag, or from manifest files[0].compression
                 if let Some(c) = compression {
                     req = req.compression(c);
                 }
@@ -1409,4 +1435,21 @@ impl ImageCommand {
 
         Ok(())
     }
+}
+
+/// Poll local IMGAPI until the image reaches "active" state.
+async fn wait_for_image_active(client: &imgapi_client::Client, uuid: Uuid) -> Result<()> {
+    use std::io::Write;
+    for _ in 0..120 {
+        if let Ok(resp) = client.get_image().uuid(uuid).send().await
+            && resp.into_inner().state == imgapi_client::types::ImageState::Active
+        {
+            eprintln!();
+            return Ok(());
+        }
+        eprint!(".");
+        std::io::stderr().flush().ok();
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+    anyhow::bail!("timed out waiting for image {uuid} to become active (4 minutes)")
 }

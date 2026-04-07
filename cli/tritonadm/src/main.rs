@@ -21,6 +21,9 @@ use commands::{
 };
 use config::TritonConfig;
 
+/// Default updates server URL (used when --updates-url / UPDATES_URL not set).
+pub const DEFAULT_UPDATES_URL: &str = "https://updates.tritondatacenter.com";
+
 /// Print a "not yet implemented" message and exit with code 1.
 fn not_yet_implemented(command: &str) -> ! {
     eprintln!("tritonadm {command}: not yet implemented");
@@ -255,6 +258,7 @@ async fn main() -> Result<()> {
     let vmapi_url = cli.vmapi_url(&sdc_config);
     let papi_url = cli.papi_url(&sdc_config);
     let napi_url = cli.napi_url(&sdc_config);
+    let updates_url = cli.updates_url;
 
     match cli.command {
         Commands::Avail { json } => cmd_avail(&sapi_url?, &imgapi_url?, json).await,
@@ -291,13 +295,13 @@ async fn main() -> Result<()> {
                     vmapi_url: vmapi_url?,
                     papi_url: papi_url?,
                     napi_url: napi_url?,
-                    updates_url: cli.updates_url,
+                    updates_url: updates_url.clone(),
                     sdc_config,
                 })
                 .await
         }
         Commands::Experimental { command } => command.run(),
-        Commands::Image { command } => command.run(&imgapi_url?).await,
+        Commands::Image { command } => command.run(&imgapi_url?, updates_url.as_deref()).await,
         Commands::Dev { command } => command.run(&sapi_url?, &vmapi_url?, &napi_url?).await,
     }
 }
