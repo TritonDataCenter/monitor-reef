@@ -683,7 +683,11 @@ async fn cmd_common_external_nics(urls: &PostSetupUrls) -> Result<()> {
     for svc_name in &svc_names {
         let instances = get_service_instances(&sapi, svc_name).await?;
         for inst in &instances {
-            if add_nic_if_missing(&napi, &vmapi, inst.uuid, "external", net_uuid, svc_name).await? {
+            if add_nic_if_missing(
+                &napi, &vmapi, inst.uuid, "external", net_uuid, true, svc_name,
+            )
+            .await?
+            {
                 changed = true;
             }
         }
@@ -729,6 +733,7 @@ async fn add_nic_if_missing(
     inst_uuid: sapi_client::Uuid,
     nic_tag: &str,
     net_uuid: uuid::Uuid,
+    primary: bool,
     svc_name: &str,
 ) -> Result<bool> {
     let nics = napi
@@ -747,11 +752,16 @@ async fn add_nic_if_missing(
     }
 
     eprintln!("Adding {nic_tag} NIC to {svc_name} instance {inst_uuid}...");
+    let net_entry = if primary {
+        json!({"uuid": net_uuid.to_string(), "primary": true})
+    } else {
+        json!(net_uuid.to_string())
+    };
     vmapi
         .add_nics(
             &inst_uuid,
             &vmapi_client::AddNicsRequest {
-                networks: Some(vec![net_uuid]),
+                networks: Some(vec![net_entry]),
                 macs: None,
             },
         )
@@ -791,7 +801,11 @@ async fn ensure_manta_nic(
     };
 
     // Non-fatal: ignore errors from add_nic_if_missing
-    match add_nic_if_missing(napi, vmapi, inst_uuid, "manta", manta_uuid, "grafana").await {
+    match add_nic_if_missing(
+        napi, vmapi, inst_uuid, "manta", manta_uuid, false, "grafana",
+    )
+    .await
+    {
         Ok(false) => {}
         Ok(true) => {}
         Err(e) => eprintln!("Warning: {e}"),
