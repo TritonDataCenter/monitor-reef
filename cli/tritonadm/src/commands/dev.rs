@@ -14,6 +14,7 @@ use clap::Subcommand;
 use super::post_setup::get_service_instances;
 
 #[derive(Subcommand)]
+#[allow(clippy::enum_variant_names)]
 pub enum DevCommand {
     /// Remove external NICs from imgapi and adminui (undo common-external-nics)
     RemoveExternalNics,

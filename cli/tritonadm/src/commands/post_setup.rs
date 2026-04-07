@@ -128,7 +128,19 @@ impl PostSetupCommand {
                 image,
                 channel,
             } => {
-                cmd_add_service(&GRAFANA_CONFIG, &urls, yes, dry_run, server, image, channel).await
+                cmd_add_service(
+                    &GRAFANA_CONFIG,
+                    &urls,
+                    SetupOpts {
+                        yes,
+                        dry_run,
+                        server,
+                        image,
+                        channel,
+                        extra_metadata: None,
+                    },
+                )
+                .await
             }
             Self::FirewallLoggerAgent => not_yet_implemented("post-setup firewall-logger-agent"),
             Self::Manta => not_yet_implemented("post-setup manta"),
@@ -138,7 +150,22 @@ impl PostSetupCommand {
                 server,
                 image,
                 channel,
-            } => cmd_add_service(&PORTAL_CONFIG, &urls, yes, dry_run, server, image, channel).await,
+            } => {
+                let extra = build_portal_metadata(&urls).await?;
+                cmd_add_service(
+                    &PORTAL_CONFIG,
+                    &urls,
+                    SetupOpts {
+                        yes,
+                        dry_run,
+                        server,
+                        image,
+                        channel,
+                        extra_metadata: Some(extra),
+                    },
+                )
+                .await
+            }
         }
     }
 }
@@ -184,21 +211,110 @@ enum AddServiceAction {
     },
 }
 
+/// Common CLI options for service setup commands.
+struct SetupOpts {
+    yes: bool,
+    dry_run: bool,
+    server: Option<String>,
+    image: String,
+    channel: Option<String>,
+    extra_metadata: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
 /// Result of finding an image — the manifest and whether it needs downloading.
 struct ImageSelection {
     image: imgapi_client::types::Image,
     needs_download: bool,
 }
 
+/// Build portal-specific SAPI metadata.
+///
+/// Generates a JWT secret, reads the admin SSH key fingerprint from the
+/// headnode, and builds a single-datacenter entry pointing at the local
+/// CloudAPI.
+async fn build_portal_metadata(
+    urls: &PostSetupUrls,
+) -> Result<serde_json::Map<String, serde_json::Value>> {
+    let mut meta = serde_json::Map::new();
+
+    // Generate a random JWT secret (64 hex chars)
+    let jwt_secret = generate_hex_secret(32).await?;
+    meta.insert("USER_PORTAL_JWT_SECRET".into(), json!(jwt_secret));
+
+    // Get admin SSH key fingerprint from headnode
+    let key_id = get_ssh_key_fingerprint().context(
+        "failed to get admin SSH key fingerprint; \
+         ensure /root/.ssh/sdc.id_rsa.pub exists on the headnode",
+    )?;
+    meta.insert("USER_PORTAL_KEY_ID".into(), json!(key_id));
+
+    // Build datacenters array from SDC config
+    if let Some(cfg) = &urls.sdc_config {
+        let cloudapi_url = cfg.service_url("cloudapi");
+        meta.insert(
+            "USER_PORTAL_DATACENTERS".into(),
+            json!([{
+                "name": cfg.datacenter_name,
+                "url": cloudapi_url,
+                "last": true,
+            }]),
+        );
+    }
+
+    Ok(meta)
+}
+
+/// Generate a hex-encoded random secret of the given byte length.
+async fn generate_hex_secret(bytes: usize) -> Result<String> {
+    use tokio::io::AsyncReadExt;
+    let mut buf = vec![0u8; bytes];
+    let mut f = tokio::fs::File::open("/dev/urandom")
+        .await
+        .context("failed to open /dev/urandom")?;
+    f.read_exact(&mut buf)
+        .await
+        .context("failed to read from /dev/urandom")?;
+    Ok(buf.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+/// Read the admin SSH key fingerprint from the headnode.
+fn get_ssh_key_fingerprint() -> Result<String> {
+    let output = std::process::Command::new("ssh-keygen")
+        .args(["-l", "-f", "/root/.ssh/sdc.id_rsa.pub", "-E", "md5"])
+        .output()
+        .context("failed to run ssh-keygen")?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "ssh-keygen failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    // Output format: "2048 MD5:xx:xx:xx:... comment (RSA)"
+    // We want the "MD5:xx:xx:xx:..." part, but CloudAPI expects just the
+    // fingerprint without the "MD5:" prefix for MD5 format, or the full
+    // SHA256 fingerprint. Let's use the full field as-is.
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let fingerprint = stdout
+        .split_whitespace()
+        .nth(1)
+        .context("unexpected ssh-keygen output format")?
+        .to_string();
+    Ok(fingerprint)
+}
+
 async fn cmd_add_service(
     config: &ServiceConfig,
     urls: &PostSetupUrls,
-    yes: bool,
-    dry_run: bool,
-    server_opt: Option<String>,
-    image_arg: String,
-    channel_opt: Option<String>,
+    opts: SetupOpts,
 ) -> Result<()> {
+    let SetupOpts {
+        yes,
+        dry_run,
+        server: server_opt,
+        image: image_arg,
+        channel: channel_opt,
+        extra_metadata,
+    } = opts;
     // Build shared HTTP client
     let http = triton_tls::build_http_client(false)
         .await
@@ -456,6 +572,11 @@ async fn cmd_add_service(
                 metadata.insert("SERVICE_NAME".into(), json!(config.name));
                 metadata.insert("SERVICE_DOMAIN".into(), json!(service_domain));
                 metadata.insert("user-script".into(), json!(USER_SCRIPT));
+                if let Some(ref extra) = extra_metadata {
+                    for (k, v) in extra {
+                        metadata.insert(k.clone(), v.clone());
+                    }
+                }
 
                 let svc = sapi
                     .create_service()
