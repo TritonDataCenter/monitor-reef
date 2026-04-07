@@ -85,7 +85,23 @@ pub enum PostSetupCommand {
     /// Set up Manta object storage
     Manta,
     /// Set up Portal web UI
-    Portal,
+    Portal {
+        /// Skip confirmation prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
+        /// Dry run (preview without executing)
+        #[arg(long, short = 'n')]
+        dry_run: bool,
+        /// Server UUID to place the instance on (default: headnode)
+        #[arg(long, short = 's')]
+        server: Option<String>,
+        /// Image UUID, "latest" (from updates server), or "current" (local only)
+        #[arg(long, short = 'i', default_value = "current")]
+        image: String,
+        /// Updates server channel (default: from SAPI config or remote default)
+        #[arg(long, short = 'C')]
+        channel: Option<String>,
+    },
 }
 
 impl PostSetupCommand {
@@ -112,16 +128,52 @@ impl PostSetupCommand {
                 server,
                 image,
                 channel,
-            } => cmd_post_setup_grafana(urls, yes, dry_run, server, image, channel).await,
+            } => {
+                cmd_add_service(&GRAFANA_CONFIG, &urls, yes, dry_run, server, image, channel).await
+            }
             Self::FirewallLoggerAgent => not_yet_implemented("post-setup firewall-logger-agent"),
             Self::Manta => not_yet_implemented("post-setup manta"),
-            Self::Portal => not_yet_implemented("post-setup portal"),
+            Self::Portal {
+                yes,
+                dry_run,
+                server,
+                image,
+                channel,
+            } => cmd_add_service(&PORTAL_CONFIG, &urls, yes, dry_run, server, image, channel).await,
         }
     }
 }
 
+/// Configuration for a service that can be set up via `post-setup`.
+struct ServiceConfig {
+    name: &'static str,
+    image_name: &'static str,
+    package_name: &'static str,
+    delegate_dataset: bool,
+    firewall_enabled: bool,
+    ensure_manta_nic: bool,
+}
+
+const GRAFANA_CONFIG: ServiceConfig = ServiceConfig {
+    name: "grafana",
+    image_name: "grafana",
+    package_name: "sdc_1024",
+    delegate_dataset: true,
+    firewall_enabled: false,
+    ensure_manta_nic: true,
+};
+
+const PORTAL_CONFIG: ServiceConfig = ServiceConfig {
+    name: "portal",
+    image_name: "user-portal",
+    package_name: "sdc_1024",
+    delegate_dataset: false,
+    firewall_enabled: true,
+    ensure_manta_nic: false,
+};
+
 /// Actions determined by the prepare phase.
-enum GrafanaAction {
+enum AddServiceAction {
     ImportImage,
     CreateService,
     CreateInstance {
@@ -139,8 +191,9 @@ struct ImageSelection {
     needs_download: bool,
 }
 
-async fn cmd_post_setup_grafana(
-    urls: PostSetupUrls,
+async fn cmd_add_service(
+    config: &ServiceConfig,
+    urls: &PostSetupUrls,
     yes: bool,
     dry_run: bool,
     server_opt: Option<String>,
@@ -189,35 +242,38 @@ async fn cmd_post_setup_grafana(
         .get("dns_domain")
         .and_then(|v| v.as_str())
         .context("sdc metadata missing dns_domain")?;
-    let service_domain = format!("grafana.{datacenter_name}.{dns_domain}");
+    let service_domain = format!("{}.{datacenter_name}.{dns_domain}", config.name);
 
     // Resolve channel for updates server queries
     let channel = resolve_channel(channel_opt, sdc_metadata, &updates_imgapi).await?;
 
-    // Look up sdc_1024 package
+    // Look up the package
     let packages = papi
         .list_packages()
-        .name("sdc_1024")
+        .name(config.package_name)
         .active(true)
         .send()
         .await
-        .context("failed to list packages")?
+        .with_context(|| format!("failed to list '{}' packages", config.package_name))?
         .into_inner();
     let pkg = match packages.len() {
         1 => &packages[0],
-        0 => anyhow::bail!("no active 'sdc_1024' package found in PAPI"),
-        n => anyhow::bail!("{n} 'sdc_1024' packages found in PAPI, expected exactly 1"),
+        0 => anyhow::bail!("no active '{}' package found in PAPI", config.package_name),
+        n => anyhow::bail!(
+            "{n} '{}' packages found in PAPI, expected exactly 1",
+            config.package_name
+        ),
     };
     let billing_id = pkg.uuid.to_string();
 
-    // Check if grafana service already exists
+    // Check if the service already exists
     let services = sapi
         .list_services()
-        .name("grafana")
+        .name(config.name)
         .application_uuid(sdc_app.uuid)
         .send()
         .await
-        .context("failed to list services")?
+        .with_context(|| format!("failed to list '{}' services", config.name))?
         .into_inner();
     let existing_svc = services.first();
 
@@ -244,8 +300,15 @@ async fn cmd_post_setup_grafana(
         None
     };
 
-    // Find grafana image (local or remote)
-    let selection = find_image(&local_imgapi, &updates_imgapi, &image_arg, &channel).await?;
+    // Find the target image (local or remote)
+    let selection = find_image(
+        &local_imgapi,
+        &updates_imgapi,
+        config.image_name,
+        &image_arg,
+        &channel,
+    )
+    .await?;
     let target_image = &selection.image;
 
     // Resolve server UUID
@@ -263,19 +326,19 @@ async fn cmd_post_setup_grafana(
 
     // ── Phase 2: Determine actions ──
 
-    let mut actions: Vec<GrafanaAction> = Vec::new();
+    let mut actions: Vec<AddServiceAction> = Vec::new();
 
     if selection.needs_download {
-        actions.push(GrafanaAction::ImportImage);
+        actions.push(AddServiceAction::ImportImage);
     }
 
     if existing_svc.is_none() {
-        actions.push(GrafanaAction::CreateService);
+        actions.push(AddServiceAction::CreateService);
     }
 
     match existing_inst {
         None => {
-            actions.push(GrafanaAction::CreateInstance {
+            actions.push(AddServiceAction::CreateInstance {
                 server_uuid: server_uuid.clone(),
             });
         }
@@ -284,7 +347,7 @@ async fn cmd_post_setup_grafana(
                 && vm.image_uuid.map(|u| u.to_string()) != Some(target_image.uuid.to_string())
             {
                 let alias = vm.alias.clone().unwrap_or_default();
-                actions.push(GrafanaAction::ReprovisionInstance {
+                actions.push(AddServiceAction::ReprovisionInstance {
                     inst_uuid: inst.uuid,
                     alias,
                 });
@@ -294,7 +357,10 @@ async fn cmd_post_setup_grafana(
     }
 
     if actions.is_empty() {
-        eprintln!("Nothing to do — grafana service and instance are up to date.");
+        eprintln!(
+            "Nothing to do — {} service and instance are up to date.",
+            config.name
+        );
         return Ok(());
     }
 
@@ -303,24 +369,24 @@ async fn cmd_post_setup_grafana(
     eprintln!("The following changes will be made:");
     for action in &actions {
         match action {
-            GrafanaAction::ImportImage => {
+            AddServiceAction::ImportImage => {
                 eprintln!(
                     "  - Import image {} ({}@{})\n    \
                      from updates server using channel \"{channel}\"",
                     target_image.uuid, target_image.name, target_image.version
                 );
             }
-            GrafanaAction::CreateService => {
-                eprintln!("  - Create \"grafana\" service in SAPI");
+            AddServiceAction::CreateService => {
+                eprintln!("  - Create \"{}\" service in SAPI", config.name);
             }
-            GrafanaAction::CreateInstance { server_uuid } => {
+            AddServiceAction::CreateInstance { server_uuid } => {
                 eprintln!(
-                    "  - Create \"grafana\" instance on server {server_uuid}\n    \
+                    "  - Create \"{}\" instance on server {server_uuid}\n    \
                      with image {} ({}@{})",
-                    target_image.uuid, target_image.name, target_image.version
+                    config.name, target_image.uuid, target_image.name, target_image.version
                 );
             }
-            GrafanaAction::ReprovisionInstance { inst_uuid, alias } => {
+            AddServiceAction::ReprovisionInstance { inst_uuid, alias } => {
                 eprintln!(
                     "  - Reprovision instance {inst_uuid} ({alias})\n    \
                      with image {} ({}@{})",
@@ -352,7 +418,7 @@ async fn cmd_post_setup_grafana(
 
     for action in &actions {
         match action {
-            GrafanaAction::ImportImage => {
+            AddServiceAction::ImportImage => {
                 eprintln!(
                     "Importing image {} ({}@{})...",
                     target_image.uuid, target_image.name, target_image.version
@@ -384,13 +450,13 @@ async fn cmd_post_setup_grafana(
                 wait_for_image_active(&local_imgapi, target_image.uuid).await?;
                 eprintln!("Image imported.");
             }
-            GrafanaAction::CreateService => {
-                eprintln!("Creating \"grafana\" service...");
+            AddServiceAction::CreateService => {
+                eprintln!("Creating \"{}\" service...", config.name);
                 let mut params = serde_json::Map::new();
                 params.insert("billing_id".into(), json!(billing_id));
                 params.insert("image_uuid".into(), json!(target_image.uuid.to_string()));
                 params.insert("archive_on_delete".into(), json!(true));
-                params.insert("delegate_dataset".into(), json!(true));
+                params.insert("delegate_dataset".into(), json!(config.delegate_dataset));
                 params.insert("maintain_resolvers".into(), json!(true));
                 params.insert(
                     "networks".into(),
@@ -399,21 +465,21 @@ async fn cmd_post_setup_grafana(
                         {"name": "external", "primary": true}
                     ]),
                 );
-                params.insert("firewall_enabled".into(), json!(false));
+                params.insert("firewall_enabled".into(), json!(config.firewall_enabled));
                 params.insert(
                     "tags".into(),
-                    json!({"smartdc_role": "grafana", "smartdc_type": "core"}),
+                    json!({"smartdc_role": config.name, "smartdc_type": "core"}),
                 );
 
                 let mut metadata = serde_json::Map::new();
-                metadata.insert("SERVICE_NAME".into(), json!("grafana"));
+                metadata.insert("SERVICE_NAME".into(), json!(config.name));
                 metadata.insert("SERVICE_DOMAIN".into(), json!(service_domain));
                 metadata.insert("user-script".into(), json!(USER_SCRIPT));
 
                 let svc = sapi
                     .create_service()
                     .body(sapi_client::types::CreateServiceBody {
-                        name: "grafana".into(),
+                        name: config.name.into(),
                         application_uuid: sdc_app.uuid,
                         params: Some(params),
                         metadata: Some(metadata),
@@ -424,18 +490,21 @@ async fn cmd_post_setup_grafana(
                     })
                     .send()
                     .await
-                    .context("failed to create grafana service")?
+                    .with_context(|| format!("failed to create {} service", config.name))?
                     .into_inner();
                 eprintln!("Created service {} ({})", svc.uuid, svc.name);
                 svc_uuid = Some(svc.uuid);
             }
-            GrafanaAction::CreateInstance { server_uuid } => {
+            AddServiceAction::CreateInstance { server_uuid } => {
                 let svc_id =
                     svc_uuid.context("service UUID not available for instance creation")?;
-                eprintln!("Creating \"grafana\" instance on server {server_uuid}...");
+                eprintln!(
+                    "Creating \"{}\" instance on server {server_uuid}...",
+                    config.name
+                );
 
                 let mut inst_params = serde_json::Map::new();
-                inst_params.insert("alias".into(), json!("grafana0"));
+                inst_params.insert("alias".into(), json!(format!("{}0", config.name)));
                 inst_params.insert("server_uuid".into(), json!(server_uuid));
 
                 let inst = sapi
@@ -450,14 +519,16 @@ async fn cmd_post_setup_grafana(
                     })
                     .send()
                     .await
-                    .context("failed to create grafana instance")?
+                    .with_context(|| format!("failed to create {} instance", config.name))?
                     .into_inner();
                 eprintln!("Created instance {}", inst.uuid);
 
-                // Ensure manta NIC on the newly created instance
-                ensure_manta_nic(&napi, &vmapi, inst.uuid).await;
+                // Ensure manta NIC on the newly created instance (if configured)
+                if config.ensure_manta_nic {
+                    ensure_manta_nic(&napi, &vmapi, inst.uuid, config.name).await;
+                }
             }
-            GrafanaAction::ReprovisionInstance { inst_uuid, alias } => {
+            AddServiceAction::ReprovisionInstance { inst_uuid, alias } => {
                 eprintln!("Reprovisioning instance {inst_uuid} ({alias})...");
                 sapi.upgrade_instance()
                     .uuid(*inst_uuid)
@@ -466,7 +537,7 @@ async fn cmd_post_setup_grafana(
                     })
                     .send()
                     .await
-                    .context("failed to reprovision grafana instance")?;
+                    .with_context(|| format!("failed to reprovision {} instance", config.name))?;
                 eprintln!("Reprovisioned instance {inst_uuid}");
             }
         }
@@ -474,12 +545,13 @@ async fn cmd_post_setup_grafana(
 
     // If we didn't just create the instance (which already handles manta NIC),
     // check manta NIC on existing instances
-    if let Some(inst) = existing_inst
+    if config.ensure_manta_nic
+        && let Some(inst) = existing_inst
         && !actions
             .iter()
-            .any(|a| matches!(a, GrafanaAction::CreateInstance { .. }))
+            .any(|a| matches!(a, AddServiceAction::CreateInstance { .. }))
     {
-        ensure_manta_nic(&napi, &vmapi, inst.uuid).await;
+        ensure_manta_nic(&napi, &vmapi, inst.uuid, config.name).await;
     }
 
     eprintln!("Done.");
@@ -530,10 +602,11 @@ async fn resolve_channel(
     }
 }
 
-/// Find the target grafana image, checking local IMGAPI and/or the updates server.
+/// Find the target image, checking local IMGAPI and/or the updates server.
 async fn find_image(
     local_imgapi: &imgapi_client::Client,
     updates_imgapi: &imgapi_client::Client,
+    image_name: &str,
     image_arg: &str,
     channel: &str,
 ) -> Result<ImageSelection> {
@@ -542,15 +615,15 @@ async fn find_image(
             // Local IMGAPI only
             let images = local_imgapi
                 .list_images()
-                .name("grafana")
+                .name(image_name)
                 .send()
                 .await
-                .context("failed to list grafana images in local IMGAPI")?
+                .with_context(|| format!("failed to list '{image_name}' images in local IMGAPI"))?
                 .into_inner();
 
             if images.is_empty() {
                 anyhow::bail!(
-                    "no 'grafana' images found in local IMGAPI; \
+                    "no '{image_name}' images found in local IMGAPI; \
                      use --image latest to fetch from the updates server"
                 );
             }
@@ -564,16 +637,16 @@ async fn find_image(
             // Query updates server for the latest image
             let remote_images = updates_imgapi
                 .list_images()
-                .name("grafana")
+                .name(image_name)
                 .channel(channel)
                 .send()
                 .await
-                .context("failed to list grafana images on updates server")?
+                .with_context(|| format!("failed to list '{image_name}' images on updates server"))?
                 .into_inner();
 
             if remote_images.is_empty() {
                 anyhow::bail!(
-                    "no 'grafana' images found on updates server (channel: {channel}); \
+                    "no '{image_name}' images found on updates server (channel: {channel}); \
                      try --image current to use a locally-available image"
                 );
             }
@@ -777,11 +850,12 @@ async fn add_nic_if_missing(
     Ok(true)
 }
 
-/// Ensure the grafana instance has a NIC on the manta network (non-fatal).
+/// Ensure an instance has a NIC on the manta network (non-fatal).
 async fn ensure_manta_nic(
     napi: &napi_client::Client,
     vmapi: &vmapi_client::TypedClient,
     inst_uuid: sapi_client::Uuid,
+    svc_name: &str,
 ) {
     // Check if manta network exists
     let manta_networks = match napi.list_networks().name("manta").send().await {
@@ -805,11 +879,7 @@ async fn ensure_manta_nic(
     };
 
     // Non-fatal: ignore errors from add_nic_if_missing
-    match add_nic_if_missing(
-        napi, vmapi, inst_uuid, "manta", manta_uuid, false, "grafana",
-    )
-    .await
-    {
+    match add_nic_if_missing(napi, vmapi, inst_uuid, "manta", manta_uuid, false, svc_name).await {
         Ok(false) => {}
         Ok(true) => {}
         Err(e) => eprintln!("Warning: {e}"),
