@@ -8,12 +8,14 @@
 
 mod channel;
 mod dc_maint;
+mod dev;
 mod experimental;
 mod platform;
 mod post_setup;
 
 pub use channel::ChannelCommand;
 pub use dc_maint::DcMaintCommand;
+pub use dev::DevCommand;
 pub use experimental::ExperimentalCommand;
 pub use platform::PlatformCommand;
 pub use post_setup::{PostSetupCommand, PostSetupUrls};

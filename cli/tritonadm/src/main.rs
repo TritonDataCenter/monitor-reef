@@ -226,6 +226,12 @@ enum Commands {
         #[command(subcommand)]
         command: ExperimentalCommand,
     },
+
+    /// Development helpers (not part of sdcadm)
+    Dev {
+        #[command(subcommand)]
+        command: commands::DevCommand,
+    },
 }
 
 #[tokio::main]
@@ -284,6 +290,7 @@ async fn main() -> Result<()> {
                 .await
         }
         Commands::Experimental { command } => command.run(),
+        Commands::Dev { command } => command.run(&sapi_url?, &vmapi_url?, &napi_url?).await,
     }
 }
 

@@ -700,7 +700,7 @@ async fn cmd_common_external_nics(urls: &PostSetupUrls) -> Result<()> {
 }
 
 /// Get instances of a named service from SAPI.
-async fn get_service_instances(
+pub async fn get_service_instances(
     sapi: &sapi_client::Client,
     svc_name: &str,
 ) -> Result<Vec<sapi_client::types::Instance>> {
