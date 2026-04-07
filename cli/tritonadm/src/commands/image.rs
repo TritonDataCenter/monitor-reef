@@ -643,6 +643,15 @@ impl ImageCommand {
                     .unwrap_or("unknown")
                     .to_string();
 
+                // Extract compression from manifest files[0] as fallback
+                let manifest_compression = manifest_value
+                    .get("files")
+                    .and_then(|f| f.as_array())
+                    .and_then(|a| a.first())
+                    .and_then(|f| f.get("compression"))
+                    .and_then(|c| c.as_str())
+                    .map(String::from);
+
                 // Step 0: Ensure origin image exists locally
                 if let Some(origin_str) = manifest_value.get("origin").and_then(|v| v.as_str()) {
                     let origin_uuid: Uuid = origin_str
@@ -690,6 +699,8 @@ impl ImageCommand {
                 let mut req = client.add_image_file().uuid(uuid).body(file_bytes);
                 if let Some(c) = compression {
                     req = req.compression(c);
+                } else if let Some(ref c) = manifest_compression {
+                    req = req.compression(c.as_str());
                 }
                 req.send()
                     .await
