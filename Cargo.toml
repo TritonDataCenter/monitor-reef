@@ -19,7 +19,6 @@ members = [
     "cli/triton-cli",
     "cli/tritonadm",
     "cli/sapi-cli",
-    "cli/imgapi-cli",
     "cli/napi-cli",
     "cli/papi-cli",
     "cli/vmapi-cli",
