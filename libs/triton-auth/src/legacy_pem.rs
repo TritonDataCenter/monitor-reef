@@ -812,7 +812,8 @@ mod tests {
 
     #[test]
     fn test_normalize_pem_strips_leading_content() {
-        let input = "\n\n  junk\n-----BEGIN RSA PRIVATE KEY-----\ndata\n-----END RSA PRIVATE KEY-----\n";
+        let input =
+            "\n\n  junk\n-----BEGIN RSA PRIVATE KEY-----\ndata\n-----END RSA PRIVATE KEY-----\n";
         assert_eq!(
             normalize_pem(input),
             "-----BEGIN RSA PRIVATE KEY-----\ndata\n-----END RSA PRIVATE KEY-----\n"
