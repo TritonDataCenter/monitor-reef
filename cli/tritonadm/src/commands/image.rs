@@ -129,7 +129,7 @@ pub enum ImageCommand {
     // Images - CRUD
     // ========================================================================
     /// List images
-    #[command(name = "list-images")]
+    #[command(name = "list-images", alias = "list")]
     ListImages {
         /// Filter by owner UUID
         #[arg(long)]
@@ -777,22 +777,39 @@ impl ImageCommand {
                 if raw {
                     println!("{}", serde_json::to_string_pretty(&images)?);
                 } else {
+                    // Match sdc-imgadm list format
+                    println!(
+                        "{:<38} {:<32} {:<45} {:<6} {:<8} PUBLISHED",
+                        "UUID", "NAME", "VERSION", "FLAGS", "OS"
+                    );
                     for img in &images {
-                        let type_str = img
-                            .type_
+                        let mut flags = String::new();
+                        if !img.public {
+                            flags.push('P');
+                        }
+                        if img.state == types::ImageState::Active {
+                            // no flag for active
+                        } else if img.state == types::ImageState::Disabled {
+                            flags.push('D');
+                        } else if img.state == types::ImageState::Unactivated {
+                            flags.push('I');
+                        } else {
+                            flags.push('X');
+                        }
+                        if flags.is_empty() {
+                            flags.push('-');
+                        }
+                        let os = img
+                            .os
                             .as_ref()
                             .map(crate::enum_to_display)
-                            .unwrap_or_default();
+                            .unwrap_or_else(|| "-".to_string());
+                        let published = img.published_at.as_deref().unwrap_or("-");
                         println!(
-                            "{}: {} v{} ({}, {})",
-                            img.uuid,
-                            img.name,
-                            img.version,
-                            crate::enum_to_display(&img.state),
-                            type_str,
+                            "{:<38} {:<32} {:<45} {:<6} {:<8} {}",
+                            img.uuid, img.name, img.version, flags, os, published,
                         );
                     }
-                    println!("\nTotal: {} images", images.len());
                 }
             }
 
