@@ -222,162 +222,116 @@ impl TypedClient {
         uuid: &Uuid,
         request: &ImportImageRequest,
     ) -> Result<Image, ActionError> {
-        let body = ActionBody {
-            action: ImageAction::Import,
-            body: request,
-        };
-        self.image_action_json(uuid, &body).await
+        self.image_action_json(uuid, types::ImageAction::Import, request)
+            .await
     }
 
     /// Import an image from a remote IMGAPI (admin-only, creates workflow job)
-    ///
-    /// # Arguments
-    /// * `uuid` - Image UUID
-    /// * `source` - Source IMGAPI URL
-    /// * `skip_owner_check` - Skip owner check if true
     pub async fn import_remote_image(
         &self,
         uuid: &Uuid,
         source: &str,
         skip_owner_check: bool,
     ) -> Result<JobResponse, ActionError> {
-        let body = ActionBody {
-            action: ImageAction::ImportRemote,
-            body: serde_json::json!({
+        self.image_action_json(
+            uuid,
+            types::ImageAction::ImportRemote,
+            &serde_json::json!({
                 "source": source,
                 "skip_owner_check": if skip_owner_check { Some(true) } else { None::<bool> },
             }),
-        };
-        self.image_action_json(uuid, &body).await
+        )
+        .await
     }
 
     /// Import an image from another datacenter (creates workflow job)
-    ///
-    /// # Arguments
-    /// * `uuid` - Image UUID
-    /// * `datacenter` - Datacenter name
-    /// * `account` - Account UUID
     pub async fn import_from_datacenter(
         &self,
         uuid: &Uuid,
         datacenter: &str,
         account: &Uuid,
     ) -> Result<JobResponse, ActionError> {
-        let body = ActionBody {
-            action: ImageAction::ImportFromDatacenter,
-            body: serde_json::json!({
+        self.image_action_json(
+            uuid,
+            types::ImageAction::ImportFromDatacenter,
+            &serde_json::json!({
                 "datacenter": datacenter,
                 "account": account,
             }),
-        };
-        self.image_action_json(uuid, &body).await
+        )
+        .await
     }
 
     /// Change storage backend for an image (admin-only)
-    ///
-    /// # Arguments
-    /// * `uuid` - Image UUID
-    /// * `stor` - Target storage backend
     pub async fn change_stor(&self, uuid: &Uuid, stor: StorageType) -> Result<Image, ActionError> {
-        let body = ActionBody {
-            action: ImageAction::ChangeStor,
-            body: serde_json::json!({ "stor": stor }),
-        };
-        self.image_action_json(uuid, &body).await
+        self.image_action_json(
+            uuid,
+            types::ImageAction::ChangeStor,
+            &serde_json::json!({ "stor": stor }),
+        )
+        .await
     }
 
     /// Export an image to Manta
-    ///
-    /// # Arguments
-    /// * `uuid` - Image UUID
-    /// * `manta_path` - Manta path to export to
-    /// * `account` - Optional account UUID
     pub async fn export_image(
         &self,
         uuid: &Uuid,
         manta_path: &str,
         account: Option<&Uuid>,
     ) -> Result<ExportImageResponse, ActionError> {
-        let body = ActionBody {
-            action: ImageAction::Export,
-            body: serde_json::json!({
+        self.image_action_json(
+            uuid,
+            types::ImageAction::Export,
+            &serde_json::json!({
                 "manta_path": manta_path,
                 "account": account,
             }),
-        };
-        self.image_action_json(uuid, &body).await
+        )
+        .await
     }
 
     /// Activate an unactivated image
-    ///
-    /// # Arguments
-    /// * `uuid` - Image UUID
     pub async fn activate_image(&self, uuid: &Uuid) -> Result<Image, ActionError> {
-        let body = ActionBody {
-            action: ImageAction::Activate,
-            body: ActivateImageRequest {},
-        };
-        self.image_action_json(uuid, &body).await
+        self.image_action_json(uuid, types::ImageAction::Activate, &ActivateImageRequest {})
+            .await
     }
 
     /// Enable a disabled image
-    ///
-    /// # Arguments
-    /// * `uuid` - Image UUID
     pub async fn enable_image(&self, uuid: &Uuid) -> Result<Image, ActionError> {
-        let body = ActionBody {
-            action: ImageAction::Enable,
-            body: EnableImageRequest {},
-        };
-        self.image_action_json(uuid, &body).await
+        self.image_action_json(uuid, types::ImageAction::Enable, &EnableImageRequest {})
+            .await
     }
 
     /// Disable an active image
-    ///
-    /// # Arguments
-    /// * `uuid` - Image UUID
     pub async fn disable_image(&self, uuid: &Uuid) -> Result<Image, ActionError> {
-        let body = ActionBody {
-            action: ImageAction::Disable,
-            body: DisableImageRequest {},
-        };
-        self.image_action_json(uuid, &body).await
+        self.image_action_json(uuid, types::ImageAction::Disable, &DisableImageRequest {})
+            .await
     }
 
     /// Add an image to a channel
-    ///
-    /// # Arguments
-    /// * `uuid` - Image UUID
-    /// * `channel` - Channel name to add the image to
     pub async fn channel_add_image(
         &self,
         uuid: &Uuid,
         channel: &str,
     ) -> Result<Image, ActionError> {
-        let body = ActionBody {
-            action: ImageAction::ChannelAdd,
-            body: ChannelAddImageRequest {
+        self.image_action_json(
+            uuid,
+            types::ImageAction::ChannelAdd,
+            &ChannelAddImageRequest {
                 channel: channel.to_string(),
             },
-        };
-        self.image_action_json(uuid, &body).await
+        )
+        .await
     }
 
     /// Update mutable image fields
-    ///
-    /// # Arguments
-    /// * `uuid` - Image UUID
-    /// * `request` - Update request with fields to change
     pub async fn update_image(
         &self,
         uuid: &Uuid,
         request: &UpdateImageRequest,
     ) -> Result<Image, ActionError> {
-        let body = ActionBody {
-            action: ImageAction::Update,
-            body: request,
-        };
-        self.image_action_json(uuid, &body).await
+        self.image_action_json(uuid, types::ImageAction::Update, request)
+            .await
     }
 
     // Note: import-docker-image, import-lxd-image are streaming responses
@@ -509,16 +463,25 @@ impl TypedClient {
     // Helper methods
     // ========================================================================
 
-    /// Send an image action and parse the JSON response
-    async fn image_action_json<T, B>(&self, uuid: &Uuid, body: &B) -> Result<T, ActionError>
+    /// Send an image action and parse the JSON response.
+    ///
+    /// The action is sent as a query parameter (matching the real Node.js
+    /// IMGAPI's expected wire format) and the body contains only the
+    /// action-specific fields.
+    async fn image_action_json<T>(
+        &self,
+        uuid: &Uuid,
+        action: types::ImageAction,
+        body: &impl serde::Serialize,
+    ) -> Result<T, ActionError>
     where
         T: serde::de::DeserializeOwned,
-        B: serde::Serialize,
     {
         let resp = self
             .inner
             .image_action()
             .uuid(*uuid)
+            .action(action)
             .body(to_json_value(body))
             .send()
             .await
