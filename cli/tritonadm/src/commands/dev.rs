@@ -18,6 +18,8 @@ use super::post_setup::get_service_instances;
 pub enum DevCommand {
     /// Remove external NICs from imgapi and adminui (undo common-external-nics)
     RemoveExternalNics,
+    /// Remove CloudAPI instances (undo post-setup cloudapi, keeps service)
+    RemoveCloudapi,
     /// Remove grafana service and instance (undo post-setup grafana)
     RemoveGrafana,
     /// Remove portal service and instance (undo post-setup portal)
@@ -34,6 +36,9 @@ impl DevCommand {
         match self {
             Self::RemoveExternalNics => {
                 cmd_remove_external_nics(sapi_url, vmapi_url, napi_url).await
+            }
+            Self::RemoveCloudapi => {
+                cmd_remove_instances_only(sapi_url, vmapi_url, "cloudapi").await
             }
             Self::RemoveGrafana => cmd_remove_service(sapi_url, vmapi_url, "grafana").await,
             Self::RemovePortal => cmd_remove_service(sapi_url, vmapi_url, "portal").await,
@@ -100,6 +105,56 @@ async fn cmd_remove_external_nics(sapi_url: &str, vmapi_url: &str, napi_url: &st
     if !removed {
         eprintln!("No external NICs found to remove.");
     }
+    Ok(())
+}
+
+/// Remove all instances of a service without deleting the service itself.
+///
+/// Used for core services (like CloudAPI) whose SAPI service definition is
+/// created by headnode setup and should not be deleted.
+async fn cmd_remove_instances_only(
+    sapi_url: &str,
+    vmapi_url: &str,
+    svc_name: &str,
+) -> Result<()> {
+    let http = triton_tls::build_http_client(false)
+        .await
+        .context("failed to build HTTP client")?;
+
+    let sapi = sapi_client::Client::new_with_client(sapi_url, http.clone());
+    let vmapi = vmapi_client::TypedClient::new_with_client(vmapi_url, http);
+
+    let instances = get_service_instances(&sapi, svc_name).await?;
+
+    if instances.is_empty() {
+        eprintln!("No {svc_name} instances found.");
+        return Ok(());
+    }
+
+    for inst in &instances {
+        eprintln!("Destroying {svc_name} VM {}...", inst.uuid);
+        vmapi
+            .inner()
+            .delete_vm()
+            .uuid(inst.uuid)
+            .send()
+            .await
+            .with_context(|| format!("failed to delete VM {}", inst.uuid))?;
+        eprintln!("Deleted VM {}.", inst.uuid);
+
+        eprintln!("Deleting SAPI instance {}...", inst.uuid);
+        sapi.delete_instance()
+            .uuid(inst.uuid)
+            .send()
+            .await
+            .with_context(|| format!("failed to delete SAPI instance {}", inst.uuid))?;
+        eprintln!("Deleted SAPI instance {}.", inst.uuid);
+    }
+
+    eprintln!(
+        "Removed {} {svc_name} instance(s). Service definition kept.",
+        instances.len()
+    );
     Ok(())
 }
 
