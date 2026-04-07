@@ -162,13 +162,12 @@ pub async fn run(args: AddArgs, client: &TypedClient, _use_json: bool) -> Result
     // 11. Generate network patches for each new control plane node
     eprintln!("==> Generating network patches");
 
-    // Get nameservers from existing control plane nodes or use defaults
+    // Get nameservers from fabric network resolvers, fall back to Google DNS
     let nameservers: Vec<String> = if let Some(fabric_id) = state.fabric_network_id {
-        // Query fabric network for resolvers
         use crate::commands::k8s::provisioning::discover_fabric_network;
         match discover_fabric_network(fabric_id, client).await {
-            Ok(info) => info.resolvers,
-            Err(_) => vec!["8.8.8.8".to_string(), "8.8.4.4".to_string()],
+            Ok(info) if !info.resolvers.is_empty() => info.resolvers,
+            _ => vec!["8.8.8.8".to_string(), "8.8.4.4".to_string()],
         }
     } else {
         vec!["8.8.8.8".to_string(), "8.8.4.4".to_string()]
@@ -190,8 +189,14 @@ pub async fn run(args: AddArgs, client: &TypedClient, _use_json: bool) -> Result
             })
             .collect();
 
-        let patch_yaml = generate_network_patch(&nics, &nameservers, true, state.fabric_network_id)
-            .with_context(|| format!("Failed to generate network patch for {}", inst.name))?;
+        let patch_yaml = generate_network_patch(
+            &nics,
+            &nameservers,
+            true,
+            state.fabric_network_id,
+            Some(&inst.name),
+        )
+        .with_context(|| format!("Failed to generate network patch for {}", inst.name))?;
 
         let patch_path = cluster_dir.join(format!("{}-network-patch.yaml", inst.name));
         tokio::fs::write(&patch_path, patch_yaml)

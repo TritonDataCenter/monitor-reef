@@ -33,7 +33,8 @@
 //! let nameservers = vec!["8.8.8.8".to_string()];
 //!
 //! // Generate network patch for a worker node (None = use primary NIC subnet)
-//! let yaml = generate_network_patch(&nics, &nameservers, false, None)?;
+//! // The hostname parameter ensures the node name persists across upgrades
+//! let yaml = generate_network_patch(&nics, &nameservers, false, None, Some("my-cluster-worker-0"))?;
 //!
 //! // Write to file and apply with: talosctl apply-config --file <file>
 //! # Ok(())
@@ -75,6 +76,10 @@ pub struct NodeIpConfig {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NetworkConfig {
+    /// Hostname for this node. Persists across reboots and upgrades.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub hostname: Option<String>,
+
     pub nameservers: Vec<String>,
 
     pub interfaces: Vec<InterfaceConfig>,
@@ -186,6 +191,8 @@ pub fn calculate_network_cidr(ip: &str, netmask: &str) -> Result<String> {
 /// * `is_control_plane` - Whether this is a control plane node (adds etcd config)
 /// * `fabric_network_id` - UUID of the fabric network (used to determine which
 ///   subnet to use for kubelet nodeIP and etcd advertisedSubnets)
+/// * `hostname` - Optional hostname for the node. If provided, persists across
+///   reboots and upgrades. If None, Talos generates a hostname from the IP.
 ///
 /// # Returns
 /// Talos network configuration patch as YAML string
@@ -211,6 +218,7 @@ pub fn generate_network_patch(
     nameservers: &[String],
     is_control_plane: bool,
     fabric_network_id: Option<uuid::Uuid>,
+    hostname: Option<&str>,
 ) -> Result<String> {
     if nics.is_empty() {
         bail!("no NICs provided");
@@ -242,29 +250,40 @@ pub fn generate_network_patch(
     for nic in nics {
         let prefix = netmask_to_prefix(&nic.netmask)?;
 
-        // Determine default route
-        // IPv4: 0.0.0.0/0
-        // IPv6: ::/0
-        let default_route = if nic.ip.contains(':') {
-            "::/0"
-        } else {
-            "0.0.0.0/0"
-        };
-
         let gateway = nic
             .gateway
             .as_ref()
             .ok_or_else(|| anyhow!("NIC {} missing gateway", nic.mac))?;
+
+        // Only the primary NIC gets the default route (0.0.0.0/0).
+        // Secondary NICs only get a route for their local subnet.
+        // This avoids duplicate default route errors when Talos applies
+        // the config (EEXIST / "file exists" from netlink).
+        let routes = if nic.primary {
+            let default_route = if nic.ip.contains(':') {
+                "::/0"
+            } else {
+                "0.0.0.0/0"
+            };
+            vec![RouteConfig {
+                network: default_route.to_string(),
+                gateway: gateway.clone(),
+            }]
+        } else {
+            // For secondary NICs, route only the local subnet through the gateway
+            let local_cidr = calculate_network_cidr(&nic.ip, &nic.netmask)?;
+            vec![RouteConfig {
+                network: local_cidr,
+                gateway: gateway.clone(),
+            }]
+        };
 
         interfaces.push(InterfaceConfig {
             device_selector: DeviceSelector {
                 hardware_addr: nic.mac.clone(),
             },
             addresses: vec![format!("{}/{}", nic.ip, prefix)],
-            routes: vec![RouteConfig {
-                network: default_route.to_string(),
-                gateway: gateway.clone(),
-            }],
+            routes,
         });
     }
 
@@ -276,6 +295,7 @@ pub fn generate_network_patch(
                 },
             },
             network: NetworkConfig {
+                hostname: hostname.map(|s| s.to_string()),
                 nameservers: nameservers.to_vec(),
                 interfaces,
             },
@@ -345,7 +365,14 @@ mod tests {
 
         let nameservers = vec!["8.8.8.8".to_string()];
 
-        let yaml = generate_network_patch(&nics, &nameservers, false, None).unwrap();
+        let yaml = generate_network_patch(
+            &nics,
+            &nameservers,
+            false,
+            None,
+            Some("my-cluster-worker-0"),
+        )
+        .unwrap();
 
         // Verify YAML structure - use more flexible matching
         assert!(yaml.contains("machine:"));
@@ -354,6 +381,7 @@ mod tests {
         assert!(yaml.contains("validSubnets:"));
         assert!(yaml.contains("192.168.128.0/21"));
         assert!(yaml.contains("network:"));
+        assert!(yaml.contains("hostname: my-cluster-worker-0"));
         assert!(yaml.contains("nameservers:"));
         assert!(yaml.contains("8.8.8.8"));
         assert!(yaml.contains("interfaces:"));
@@ -371,6 +399,27 @@ mod tests {
     }
 
     #[test]
+    fn test_generate_network_patch_worker_no_hostname() {
+        // Test that omitting hostname results in no hostname field in YAML
+        let nics = vec![Nic {
+            mac: "90:b8:d0:2f:1a:62".to_string(),
+            primary: true,
+            ip: "192.168.129.200".to_string(),
+            netmask: "255.255.248.0".to_string(),
+            gateway: Some("192.168.128.1".to_string()),
+            network: "12345678-1234-1234-1234-123456789012".parse().unwrap(),
+            state: None,
+        }];
+
+        let nameservers = vec!["8.8.8.8".to_string()];
+
+        let yaml = generate_network_patch(&nics, &nameservers, false, None, None).unwrap();
+
+        // Should not have hostname field
+        assert!(!yaml.contains("hostname:"));
+    }
+
+    #[test]
     fn test_generate_network_patch_control_plane() {
         let nics = vec![Nic {
             mac: "90:b8:d0:2f:1a:62".to_string(),
@@ -384,7 +433,12 @@ mod tests {
 
         let nameservers = vec!["8.8.8.8".to_string()];
 
-        let yaml = generate_network_patch(&nics, &nameservers, true, None).unwrap();
+        let yaml =
+            generate_network_patch(&nics, &nameservers, true, None, Some("my-cluster-ctrl-0"))
+                .unwrap();
+
+        // Should have hostname
+        assert!(yaml.contains("hostname: my-cluster-ctrl-0"));
 
         // Should have cluster config for control plane
         assert!(yaml.contains("cluster:"));
@@ -418,17 +472,28 @@ mod tests {
 
         let nameservers = vec!["8.8.8.8".to_string(), "8.8.4.4".to_string()];
 
-        let yaml = generate_network_patch(&nics, &nameservers, false, None).unwrap();
+        let yaml = generate_network_patch(&nics, &nameservers, false, None, Some("multi-nic-node"))
+            .unwrap();
 
-        // Should have both NICs - use flexible matching
+        // Should have both NICs
         assert!(yaml.contains("90:b8:d0:2f:1a:62"));
         assert!(yaml.contains("90:b8:d0:2f:1a:63"));
         assert!(yaml.contains("192.168.129.200/21"));
         assert!(yaml.contains("10.0.1.50/24"));
 
+        // Should have hostname
+        assert!(yaml.contains("hostname: multi-nic-node"));
+
         // Network CIDR should be based on primary NIC
         assert!(yaml.contains("validSubnets:"));
         assert!(yaml.contains("192.168.128.0/21"));
+
+        // Primary NIC should have default route (0.0.0.0/0)
+        assert!(yaml.contains("0.0.0.0/0"));
+
+        // Secondary NIC should have local subnet route (10.0.1.0/24), NOT default route
+        // This avoids duplicate default route errors in the kernel
+        assert!(yaml.contains("10.0.1.0/24"));
     }
 
     #[test]
@@ -436,7 +501,7 @@ mod tests {
         let nics: Vec<Nic> = vec![];
         let nameservers = vec!["8.8.8.8".to_string()];
 
-        let result = generate_network_patch(&nics, &nameservers, false, None);
+        let result = generate_network_patch(&nics, &nameservers, false, None, None);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("no NICs"));
     }
@@ -455,7 +520,7 @@ mod tests {
 
         let nameservers = vec!["8.8.8.8".to_string()];
 
-        let result = generate_network_patch(&nics, &nameservers, false, None);
+        let result = generate_network_patch(&nics, &nameservers, false, None, None);
         assert!(result.is_err());
         assert!(
             result
@@ -479,7 +544,7 @@ mod tests {
 
         let nameservers = vec!["8.8.8.8".to_string()];
 
-        let result = generate_network_patch(&nics, &nameservers, false, None);
+        let result = generate_network_patch(&nics, &nameservers, false, None, None);
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("missing gateway"));
     }
@@ -517,8 +582,17 @@ mod tests {
         let nameservers = vec!["8.8.8.8".to_string()];
 
         // When fabric_network_id is specified, nodeIP and etcd should use fabric subnet
-        let yaml =
-            generate_network_patch(&nics, &nameservers, true, Some(fabric_network_id)).unwrap();
+        let yaml = generate_network_patch(
+            &nics,
+            &nameservers,
+            true,
+            Some(fabric_network_id),
+            Some("dual-homed-ctrl-0"),
+        )
+        .unwrap();
+
+        // Should have hostname
+        assert!(yaml.contains("hostname: dual-homed-ctrl-0"));
 
         // validSubnets should be the fabric network (192.168.128.0/22), NOT external (172.16.24.0/21)
         assert!(yaml.contains("validSubnets:"));
@@ -533,12 +607,21 @@ mod tests {
         assert!(yaml.contains("90:b8:d0:1f:57:0d"));
         assert!(yaml.contains("172.16.27.229/21"));
         assert!(yaml.contains("192.168.129.239/22"));
+
+        // Primary NIC (external) gets the default route
+        assert!(yaml.contains("0.0.0.0/0"));
+        assert!(yaml.contains("172.16.26.1")); // external gateway
+
+        // Secondary NIC (fabric) gets only its local subnet route, NOT default route
+        // This prevents duplicate default route errors (EEXIST from netlink)
+        assert!(yaml.contains("192.168.128.0/22")); // fabric subnet route
+        assert!(yaml.contains("192.168.128.1")); // fabric gateway
     }
 
     #[test]
     fn test_generate_network_patch_dual_homed_no_fabric_specified() {
         // Same dual-homed setup but without specifying fabric_network_id
-        // Should fall back to primary NIC (external network)
+        // Should fall back to primary NIC (external network) for validSubnets
         let external_network_id: uuid::Uuid =
             "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa".parse().unwrap();
         let fabric_network_id: uuid::Uuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb".parse().unwrap();
@@ -566,11 +649,30 @@ mod tests {
 
         let nameservers = vec!["8.8.8.8".to_string()];
 
-        // When fabric_network_id is None, falls back to primary NIC
-        let yaml = generate_network_patch(&nics, &nameservers, true, None).unwrap();
+        // When fabric_network_id is None, falls back to primary NIC for validSubnets
+        let yaml =
+            generate_network_patch(&nics, &nameservers, true, None, Some("no-fabric-ctrl-0"))
+                .unwrap();
+
+        // Parse YAML and check validSubnets specifically
+        let patch: TalosNetworkPatch = serde_yaml::from_str(&yaml).unwrap();
+
+        // Should have hostname
+        assert_eq!(
+            patch.machine.network.hostname,
+            Some("no-fabric-ctrl-0".to_string())
+        );
 
         // validSubnets should be the external network (fallback to primary)
-        assert!(yaml.contains("172.16.24.0/21"));
-        assert!(!yaml.contains("192.168.128.0/22"));
+        assert_eq!(
+            patch.machine.kubelet.node_ip.valid_subnets,
+            vec!["172.16.24.0/21"]
+        );
+
+        // Primary NIC gets the default route
+        assert!(yaml.contains("0.0.0.0/0"));
+
+        // Secondary NIC gets its local subnet route (this is a route, not validSubnets)
+        assert!(yaml.contains("192.168.128.0/22"));
     }
 }

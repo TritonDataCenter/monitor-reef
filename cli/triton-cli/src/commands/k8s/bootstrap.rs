@@ -65,6 +65,13 @@ pub struct BootstrapArgs {
     /// "192.168.1.100,10.0.0.50"). Defaults to "auto".
     #[arg(long, default_value = "auto")]
     pub firewall_allow: String,
+
+    /// DNS nameservers for nodes (comma-separated).
+    ///
+    /// Overrides the default behavior of using fabric network resolvers
+    /// or falling back to Google DNS (8.8.8.8, 8.8.4.4).
+    #[arg(long, value_delimiter = ',')]
+    pub nameservers: Option<Vec<String>>,
 }
 
 pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> Result<()> {
@@ -430,10 +437,19 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
     // 10. Generate per-node network patches
     eprintln!("==> Generating network patches for all nodes");
 
-    let nameservers = fabric_info
-        .as_ref()
-        .map(|f| f.resolvers.clone())
-        .unwrap_or_default();
+    // Use --nameservers if provided, otherwise fabric network resolvers, otherwise Google DNS
+    let nameservers = if let Some(ref ns) = args.nameservers {
+        eprintln!("    Using custom nameservers: {}", ns.join(", "));
+        ns.clone()
+    } else {
+        let ns = fabric_info
+            .as_ref()
+            .map(|f| f.resolvers.clone())
+            .filter(|r| !r.is_empty())
+            .unwrap_or_else(|| vec!["8.8.8.8".to_string(), "8.8.4.4".to_string()]);
+        eprintln!("    Using nameservers: {}", ns.join(", "));
+        ns
+    };
 
     for inst in &all_instances {
         let is_control = control_instances
@@ -455,9 +471,14 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
             })
             .collect();
 
-        let patch_yaml =
-            generate_network_patch(&nics, &nameservers, is_control, state.fabric_network_id)
-                .with_context(|| format!("Failed to generate network patch for {}", inst.name))?;
+        let patch_yaml = generate_network_patch(
+            &nics,
+            &nameservers,
+            is_control,
+            state.fabric_network_id,
+            Some(&inst.name),
+        )
+        .with_context(|| format!("Failed to generate network patch for {}", inst.name))?;
 
         let patch_path = cluster_dir.join(format!("{}-network-patch.yaml", inst.name));
         tokio::fs::write(&patch_path, patch_yaml)
