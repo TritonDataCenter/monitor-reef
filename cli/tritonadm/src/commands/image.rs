@@ -81,6 +81,22 @@ fn print_export_response(resp: &ExportImageResponse) {
 #[derive(Subcommand)]
 pub enum ImageCommand {
     // ========================================================================
+    // Convenience
+    // ========================================================================
+    /// Import an image from manifest + file (like sdc-imgadm import -m -f)
+    Import {
+        /// Path to image manifest JSON file
+        #[arg(short = 'm', long)]
+        manifest: String,
+        /// Path to image file (ZFS dataset, etc.)
+        #[arg(short = 'f', long)]
+        file: String,
+        /// File compression type (default: auto-detect from manifest)
+        #[arg(short = 'c', long, value_enum)]
+        compression: Option<types::FileCompression>,
+    },
+
+    // ========================================================================
     // Ping / State
     // ========================================================================
     /// Health check endpoint
@@ -592,6 +608,65 @@ impl ImageCommand {
         let typed_client = imgapi_client::TypedClient::new_with_client(imgapi_url, http);
 
         match self {
+            // ================================================================
+            // Convenience
+            // ================================================================
+            ImageCommand::Import {
+                manifest,
+                file,
+                compression,
+            } => {
+                // Read and parse the manifest file
+                let manifest_str = tokio::fs::read_to_string(&manifest).await.map_err(|e| {
+                    anyhow::anyhow!("failed to read manifest '{}': {}", manifest, e)
+                })?;
+                let manifest_value: serde_json::Value = serde_json::from_str(&manifest_str)
+                    .map_err(|e| anyhow::anyhow!("invalid manifest JSON: {}", e))?;
+
+                // Extract UUID from manifest
+                let uuid_str = manifest_value
+                    .get("uuid")
+                    .and_then(|v| v.as_str())
+                    .ok_or_else(|| anyhow::anyhow!("manifest missing 'uuid' field"))?;
+                let uuid: Uuid = uuid_str
+                    .parse()
+                    .map_err(|e| anyhow::anyhow!("invalid UUID in manifest: {}", e))?;
+
+                // Step 1: Import the manifest
+                eprintln!("Importing image manifest {uuid}...");
+                let import_req: ImportImageRequest = serde_json::from_value(manifest_value)
+                    .map_err(|e| anyhow::anyhow!("failed to parse manifest: {}", e))?;
+                let image = typed_client
+                    .import_image(&uuid, &import_req)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("failed to import manifest: {}", e))?;
+                eprintln!("Imported: {} v{}", image.name, image.version);
+
+                // Step 2: Upload the file
+                eprintln!("Uploading image file...");
+                let file_bytes = tokio::fs::read(&file)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("failed to read file '{}': {}", file, e))?;
+
+                let mut req = client.add_image_file().uuid(uuid).body(file_bytes);
+                // Use compression from flag, or from manifest files[0].compression
+                if let Some(c) = compression {
+                    req = req.compression(c);
+                }
+                req.send()
+                    .await
+                    .map_err(|e| anyhow::anyhow!("failed to upload image file: {}", e))?;
+                eprintln!("Image file uploaded.");
+
+                // Step 3: Activate the image
+                eprintln!("Activating image...");
+                typed_client
+                    .activate_image(&uuid)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("failed to activate image: {}", e))?;
+                eprintln!("Image {uuid} imported and activated.");
+            }
+
             // ================================================================
             // Ping / State
             // ================================================================
