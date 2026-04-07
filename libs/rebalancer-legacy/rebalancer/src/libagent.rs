@@ -63,6 +63,13 @@ pub struct ConfigServer {
     pub workers: usize,
     // Maximum number of worker threads per assignment.
     pub workers_per_assignment: usize,
+    // HTTP timeout in seconds for downloading objects from source sharks.
+    #[serde(default = "default_download_timeout_secs")]
+    pub download_timeout_secs: u64,
+}
+
+fn default_download_timeout_secs() -> u64 {
+    120
 }
 
 impl Default for ConfigServer {
@@ -72,6 +79,7 @@ impl Default for ConfigServer {
             port: 7878,
             workers: 4,
             workers_per_assignment: 4,
+            download_timeout_secs: default_download_timeout_secs(),
         }
     }
 }
@@ -1367,11 +1375,13 @@ pub fn router(
         let mut agent_metrics: Option<MetricsMap> = None;
         let mut workers = 1;
         let mut workers_per_assignment = 1;
+        let mut download_timeout_secs = default_download_timeout_secs();
 
         if let Some(c) = config {
             agent_metrics = Some(agent_start_metrics_server(&c));
             workers = c.server.workers;
             workers_per_assignment = c.server.workers_per_assignment;
+            download_timeout_secs = c.server.download_timeout_secs;
         }
 
         assert!(workers > 0 && workers_per_assignment > 0);
@@ -1405,11 +1415,19 @@ pub fn router(
 
         create_dir(REBALANCER_TEMP_DIR);
 
+        info!(
+            "download_timeout_secs={}, workers={}, workers_per_assignment={}",
+            download_timeout_secs, workers, workers_per_assignment,
+        );
+
         for _ in 0..workers {
             let rx = Arc::clone(&rx);
             let assignments = Arc::clone(&agent.assignments);
             let m = agent_metrics.clone();
-            let client = reqwest::Client::new();
+            let client = reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(download_timeout_secs))
+                .build()
+                .expect("failed to build reqwest client");
             let worker_pool = ThreadPool::new(workers_per_assignment);
 
             pool.execute(move || loop {

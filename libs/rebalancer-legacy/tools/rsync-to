@@ -148,12 +148,17 @@ function sync_manager {
     local MGR_CONFIG=${TOP}/manager/src/config.json
     local PG_CONF=${TOP}/etc/postgresql.conf
 
+    [[ -f "${TARGET_DIR}/rebalancer-manager" ]] || \
+        fatal "rebalancer-manager not found at ${TARGET_DIR}/rebalancer-manager"
+    [[ -f "${TARGET_DIR}/rebalancer-adm" ]] || \
+        fatal "rebalancer-adm not found at ${TARGET_DIR}/rebalancer-adm"
+
+    # Sync to local rebalancer zones on the headnode
     if [[ -n "$insts" ]]; then
-        # Zone(s) on the headnode — original fast path
-        echo "rebalancer instances: $insts"
+        echo "rebalancer instances (headnode): $insts"
         for inst in $insts; do
             local prefix=/zones/$inst/root/opt/smartdc/rebalancer
-            echo "==> Syncing manager binaries + config to $inst"
+            echo "==> Syncing manager binaries + config to $inst (headnode)"
             rsync -av \
                 ${TARGET_DIR}/rebalancer-manager \
                 ${TARGET_DIR}/rebalancer-adm \
@@ -162,33 +167,41 @@ function sync_manager {
             [[ ! -f "$PG_CONF" ]]    || rsync -av $PG_CONF    $HEADNODE:$prefix/etc/
             restart_or_clear $inst svc:/manta/application/rebalancer
         done
-    else
-        # Zone(s) on remote CNs — VMAPI fallback
-        find_remote_zones "rebalancer." | while read inst cn_ip; do
+    fi
+
+    # Also sync to rebalancer zones on remote CNs
+    echo "==> Checking for rebalancer zones on remote CNs..."
+    local remote_zones
+    remote_zones=$(find_remote_zones "rebalancer.") || true
+    if [[ -n "$remote_zones" ]]; then
+        local zone_count=$(echo "$remote_zones" | wc -l | tr -d ' ')
+        echo "  Found remote rebalancer zones: $zone_count"
+        while IFS= read -r line <&3; do
+            local inst cn_ip
+            inst=$(echo "$line" | awk '{print $1}')
+            cn_ip=$(echo "$line" | awk '{print $2}')
             [[ -n "$inst" ]] || continue
             echo "==> Syncing manager binaries + config to $inst (CN $cn_ip)"
 
-            [[ -f "${TARGET_DIR}/rebalancer-manager" ]] || \
-                fatal "rebalancer-manager not found at ${TARGET_DIR}/rebalancer-manager"
-            [[ -f "${TARGET_DIR}/rebalancer-adm" ]] || \
-                fatal "rebalancer-adm not found at ${TARGET_DIR}/rebalancer-adm"
-
-            sync_files_to_remote_zone "$inst" "$cn_ip" \
-                /opt/smartdc/rebalancer/bin \
-                ${TARGET_DIR}/rebalancer-manager \
-                ${TARGET_DIR}/rebalancer-adm
-
-            [[ ! -f "$MGR_CONFIG" ]] || \
+            (
+                set +o errexit
                 sync_files_to_remote_zone "$inst" "$cn_ip" \
-                    /opt/smartdc/rebalancer \
-                    $MGR_CONFIG
-            [[ ! -f "$PG_CONF" ]] || \
-                sync_files_to_remote_zone "$inst" "$cn_ip" \
-                    /opt/smartdc/rebalancer/etc \
-                    $PG_CONF
+                    /opt/smartdc/rebalancer/bin \
+                    ${TARGET_DIR}/rebalancer-manager \
+                    ${TARGET_DIR}/rebalancer-adm
 
-            restart_or_clear_remote "$inst" "$cn_ip" svc:/manta/application/rebalancer
-        done
+                [[ ! -f "$MGR_CONFIG" ]] || \
+                    sync_files_to_remote_zone "$inst" "$cn_ip" \
+                        /opt/smartdc/rebalancer \
+                        $MGR_CONFIG
+                [[ ! -f "$PG_CONF" ]] || \
+                    sync_files_to_remote_zone "$inst" "$cn_ip" \
+                        /opt/smartdc/rebalancer/etc \
+                        $PG_CONF
+
+                restart_or_clear_remote "$inst" "$cn_ip" svc:/manta/application/rebalancer
+            ) || echo "  WARNING: failed for $inst on $cn_ip, continuing..."
+        done 3<<< "$remote_zones"
     fi
 }
 
@@ -202,29 +215,45 @@ function sync_agent {
     [[ -f "$AGENT_BIN" ]] || fatal "rebalancer-agent not found at ${AGENT_BIN}
     Run 'make build-legacy' or 'make -C libs/rebalancer-legacy agent' first."
 
+    # Sync to local storage zones on the headnode
     if [[ -n "$insts" ]]; then
-        # Zone(s) on the headnode — original fast path
-        echo "$alias instances: $insts"
+        echo "$alias instances (headnode): $insts"
         for inst in $insts; do
             local prefix=/zones/$inst/root/opt/smartdc/rebalancer-agent
-            echo "==> Syncing agent binary to $inst"
+            echo "==> Syncing agent binary to $inst (headnode)"
             rsync -av \
                 ${AGENT_BIN} \
                 $HEADNODE:$prefix/bin/
             restart_or_clear $inst svc:/manta/application/rebalancer-agent
         done
-    else
-        # Zone(s) on remote CNs — VMAPI fallback
-        find_remote_zones "$alias" | while read inst cn_ip; do
+    fi
+
+    # Also sync to storage zones on remote CNs.
+    # Unlike the rebalancer manager (one zone), storage zones are typically
+    # spread across all CNs.  We must check remote CNs even when some
+    # storage zones exist on the headnode.
+    echo "==> Checking for storage zones on remote CNs..."
+    local remote_zones
+    remote_zones=$(find_remote_zones "$alias") || true
+    if [[ -n "$remote_zones" ]]; then
+        local zone_count=$(echo "$remote_zones" | wc -l | tr -d ' ')
+        echo "  Found remote storage zones: $zone_count"
+        # Use fd 3 so ssh/rsync inside the loop don't consume the input
+        while IFS= read -r line <&3; do
+            local inst cn_ip
+            inst=$(echo "$line" | awk '{print $1}')
+            cn_ip=$(echo "$line" | awk '{print $2}')
             [[ -n "$inst" ]] || continue
             echo "==> Syncing agent binary to $inst (CN $cn_ip)"
 
-            sync_files_to_remote_zone "$inst" "$cn_ip" \
-                /opt/smartdc/rebalancer-agent/bin \
-                ${AGENT_BIN}
-
-            restart_or_clear_remote "$inst" "$cn_ip" svc:/manta/application/rebalancer-agent
-        done
+            (
+                set +o errexit
+                sync_files_to_remote_zone "$inst" "$cn_ip" \
+                    /opt/smartdc/rebalancer-agent/bin \
+                    ${AGENT_BIN}
+                restart_or_clear_remote "$inst" "$cn_ip" svc:/manta/application/rebalancer-agent
+            ) || echo "  WARNING: failed for $inst on $cn_ip, continuing..."
+        done 3<<< "$remote_zones"
     fi
 }
 
