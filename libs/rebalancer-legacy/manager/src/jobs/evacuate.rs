@@ -1906,11 +1906,59 @@ impl EvacuateJob {
         );
     }
 
+    /// Check if a skipped object is an orphaned .mpu-parts entry and
+    /// reclassify if so.  Looks up the object JSON in the job database
+    /// to check the name and bucket_id fields.
+    fn maybe_reclassify_mpu_skip(
+        &self,
+        object_id: &str,
+        reason: ObjectSkippedReason,
+    ) -> ObjectSkippedReason {
+        match &reason {
+            ObjectSkippedReason::SourceObjectNotFound
+            | ObjectSkippedReason::HTTPStatusCode(_) => {}
+            _ => return reason,
+        }
+
+        // Look up the object JSON from the job database
+        use self::evacuateobjects::dsl::{
+            evacuateobjects, id as eo_id, object as eo_object,
+        };
+        let locked_conn =
+            self.conn.lock().unwrap_or_else(|e| e.into_inner());
+        let obj_json: Option<Value> = evacuateobjects
+            .filter(eo_id.eq(object_id))
+            .select(eo_object)
+            .first(&*locked_conn)
+            .ok();
+
+        if let Some(ref obj) = obj_json {
+            if is_bucket_object(obj) {
+                let name = obj
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+                if name.starts_with(".mpu-parts/") {
+                    debug!(
+                        "Reclassifying skip for .mpu-parts object {}: \
+                         orphaned metadata after MPU commit",
+                        object_id
+                    );
+                    return ObjectSkippedReason::MpuPartNoData;
+                }
+            }
+        }
+
+        reason
+    }
+
     fn skip_object(
         &self,
         eobj: &mut EvacuateObject,
         reason: ObjectSkippedReason,
     ) {
+        let reason = self.maybe_reclassify_mpu_skip(&eobj.id, reason);
+
         info!("Skipping object {}: {}.", &eobj.id, reason);
         metrics_skip_inc(Some(&reason.to_string()));
 
@@ -2440,6 +2488,18 @@ impl EvacuateJob {
 
         for t in task_vec {
             if let TaskStatus::Failed(reason) = t.status {
+                // Reclassify 404 skips on .mpu-parts objects.
+                // When buckets-api completes a multipart upload, mako
+                // deletes the physical part data from the sharks, but
+                // the metadata entries in manta_bucket_object are left
+                // orphaned with stale shark references.  There is no
+                // data to evacuate.  We cannot filter .mpu-parts
+                // during discovery because in-progress (uncommitted)
+                // MPU parts DO have physical data that must be
+                // evacuated.
+                let reason = self.maybe_reclassify_mpu_skip(
+                    &t.object_id, reason,
+                );
                 let entry = updates.entry(reason).or_insert_with(|| vec![]);
                 entry.push(t.object_id);
             } else {
@@ -2512,6 +2572,9 @@ impl EvacuateJob {
 
         for t in failed_tasks {
             if let TaskStatus::Failed(reason) = t.status {
+                let reason = self.maybe_reclassify_mpu_skip(
+                    &t.object_id, reason,
+                );
                 let entry =
                     skip_updates.entry(reason).or_insert_with(|| vec![]);
                 entry.push(t.object_id);

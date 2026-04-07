@@ -195,6 +195,13 @@ pub enum ObjectSkippedReason {
     // The only source available is the shark that is being evacuated.
     SourceIsEvacShark,
 
+    // The object is an .mpu-parts entry whose physical data was deleted
+    // by mako after multipart upload completion (v2 commit).  The metadata
+    // in manta_bucket_object is orphaned — the sharks column references
+    // storage nodes but the files no longer exist.  This is expected and
+    // not a real error; there is no data to evacuate.
+    MpuPartNoData,
+
     // The assignment was stuck in a non-complete state on the agent for
     // longer than 2 * max_assignment_age.
     AgentAssignmentTimeout,
