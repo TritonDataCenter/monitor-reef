@@ -16,7 +16,8 @@ mod commands;
 mod config;
 
 use commands::{
-    ChannelCommand, DcMaintCommand, ExperimentalCommand, PlatformCommand, PostSetupCommand,
+    ChannelCommand, DcMaintCommand, ExperimentalCommand, ImageCommand, PlatformCommand,
+    PostSetupCommand,
 };
 use config::TritonConfig;
 
@@ -227,6 +228,12 @@ enum Commands {
         command: ExperimentalCommand,
     },
 
+    /// Manage images in IMGAPI
+    Image {
+        #[command(subcommand)]
+        command: ImageCommand,
+    },
+
     /// Development helpers (not part of sdcadm)
     Dev {
         #[command(subcommand)]
@@ -290,6 +297,7 @@ async fn main() -> Result<()> {
                 .await
         }
         Commands::Experimental { command } => command.run(),
+        Commands::Image { command } => command.run(&imgapi_url?).await,
         Commands::Dev { command } => command.run(&sapi_url?, &vmapi_url?, &napi_url?).await,
     }
 }

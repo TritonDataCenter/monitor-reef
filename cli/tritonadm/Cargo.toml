@@ -19,8 +19,11 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+bytes = "1"
 clap = { workspace = true, features = ["derive", "env"] }
 clap_complete = "4.4"
+futures-util = "0.3"
+imgapi-api = { path = "../../apis/imgapi-api" }
 imgapi-client = { path = "../../clients/internal/imgapi-client" }
 sapi-client = { path = "../../clients/internal/sapi-client" }
 napi-client = { path = "../../clients/internal/napi-client" }
