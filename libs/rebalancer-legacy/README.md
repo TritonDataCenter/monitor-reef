@@ -268,43 +268,61 @@ throughput is `N × workers × workers_per_assignment` parallel copies.
 
 ## TODO
 
-### Skip `.mpu-parts` objects during bucket discovery
+### Categorize `.mpu-parts` skips separately from real errors
 
-**Problem**: The rebalancer's bucket object scanner reads all rows from
-`manta_bucket_object` tables in the pgclone databases. This includes
-`.mpu-parts/<upload-id>/<part-number>` entries created by `buckets-api`
-during S3 multipart uploads. These entries have a `sharks` column
-referencing storage nodes, but no corresponding physical file exists on
-those sharks — the actual part data is assembled into the final committed
-object by mako's `mpu_v2_commit` endpoint and the `.mpu-parts` metadata
-is left behind as a tracking artifact.
+**Background**: `buckets-api` creates `.mpu-parts/<upload-id>/<part-number>`
+entries in `manta_bucket_object` during S3 multipart uploads. Each part
+has a `sharks` column referencing the storage nodes where the part data
+was written. When the MPU completes, mako's `mpu_v2_commit` endpoint
+assembles the parts into the final object and **deletes the physical part
+data from the sharks**. However, the `.mpu-parts` metadata entries are
+left orphaned in the database — the `sharks` column still references
+storage nodes, but the files no longer exist.
 
-**Symptom**: During evacuation jobs, the rebalancer discovers `.mpu-parts`
-objects, assigns them to agents, and the agents get 404 errors trying to
-download the non-existent files. These show up in job results as:
-- `source_object_not_found` — when the agent download returns 404
-- `{http_status_code:404}` — same, via a different code path
+There is no metadata field to distinguish committed (orphaned) `.mpu-parts`
+from in-progress ones. Both have identical schemas, same `content_type`
+(`application/octet-stream`), same non-empty `sharks` arrays. The only
+distinction is whether the physical file still exists on the shark.
 
-In a dc1 multi-shard test evacuation, all bucket-related skips (7 out of
-8 `.mpu-parts` objects across 2 MPU uploads) were caused by this.
+**Why we cannot filter them out during discovery**: In-progress MPU parts
+that have NOT been committed **do** have physical data on the sharks and
+must be evacuated. Filtering all `.mpu-parts` from the discovery query
+would skip real data that needs to be moved.
 
-**Fix**: Add a filter to the bucket discovery SQL query in the direct_db
-scanner to exclude `.mpu-parts` objects:
+**Current behavior**: The rebalancer discovers `.mpu-parts` objects,
+assigns them to agents, and the agents get 404 trying to download the
+files. These show up in job results as `source_object_not_found` or
+`{http_status_code:404}`. This is correct behavior — there is no data
+to evacuate, and no data is lost.
 
-```sql
-WHERE name NOT LIKE '.mpu-parts/%'
-  AND sharks::text LIKE '%<evacuating_shark>%'
+**Fix**: In the agent, when a download returns 404 for an object whose
+name starts with `.mpu-parts/`, categorize the skip as
+`mpu_part_no_data` (or similar) instead of `source_object_not_found`.
+This separates expected MPU orphan skips from real missing-file errors
+in the job results, making the skip breakdown useful for monitoring.
+
+The relevant code path is in `rebalancer/src/libagent.rs` in the
+`download()` function where `StatusCode::NOT_FOUND` is handled.
+The object name is available via the task's key/path.
+
+```rust
+// Workaround for orphaned .mpu-parts metadata.
+// When buckets-api completes a multipart upload, mako deletes
+// the physical part data from the sharks, but the metadata
+// entries in manta_bucket_object are left behind with stale
+// shark references.  There is no data to evacuate — this is
+// expected and not a real error.
+if status == reqwest::StatusCode::NOT_FOUND
+    && object_name.starts_with(".mpu-parts/")
+{
+    return Err(ObjectSkippedReason::MpuPartNoData);
+}
 ```
 
-The relevant code path is in `manager/src/` where the direct_db bucket
-scanner iterates over `manta_bucket_N.manta_bucket_object` tables in
-each pgclone shard. The filter should be added to the SQL query, not
-as a post-fetch filter, to avoid scanning potentially millions of
-`.mpu-parts` rows in production.
-
 **Verification**: After the fix, an evacuation job on a deployment with
-completed multipart uploads should show zero `source_object_not_found`
-or `{http_status_code:404}` skips for bucket objects.
+completed multipart uploads should show `.mpu-parts` skips under a
+distinct `mpu_part_no_data` category, separate from real
+`source_object_not_found` errors.
 
 ## Build
 

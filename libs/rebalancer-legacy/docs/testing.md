@@ -244,6 +244,87 @@ The response includes:
 }
 ```
 
+### Direct SQL queries for job status accounting
+
+Each evacuation job gets its own PostgreSQL database on the rebalancer
+zone's local postgres instance, named by the job UUID. The
+`evacuateobjects` table has one row per discovered object with `status`,
+`error`, and `skipped_reason` columns. The status API (`/jobs/<uuid>`)
+runs these three queries to produce its response.
+
+Connect to a job's database:
+
+```bash
+zlogin <REBALANCER_UUID> \
+    '/opt/postgresql/12.4/bin/psql -U postgres <JOB_UUID>'
+```
+
+**Status counts** (the main totals — Complete, Assigned, Skipped, etc.):
+
+```sql
+SELECT status, count(status)
+FROM evacuateobjects
+GROUP BY status;
+```
+
+The `status` column values are: `unprocessed`, `assigned`, `complete`,
+`error`, `skipped`, `post_processing`. The API adds a `Duplicates` count
+from the separate `duplicates` table and computes `Total` as the sum.
+
+**Error breakdown** (why metadata updates failed):
+
+```sql
+SELECT error AS reason, count(*) AS count
+FROM evacuateobjects
+WHERE status = 'error' AND error IS NOT NULL
+GROUP BY error
+ORDER BY count DESC;
+```
+
+Error reasons are prefixed by backend: `moray_update_failed`,
+`mdapi_etag_mismatch`, `mdapi_object_not_found`, etc. The API groups
+them by prefix (e.g., `{"moray": {"update_failed": 23}}`).
+
+**Skip breakdown** (why agents couldn't copy objects):
+
+```sql
+SELECT skipped_reason AS reason, count(*) AS count
+FROM evacuateobjects
+WHERE status = 'skipped' AND skipped_reason IS NOT NULL
+GROUP BY skipped_reason
+ORDER BY count DESC;
+```
+
+Skip reasons include: `source_object_not_found`, `source_other_error`,
+`source_is_evac_shark`, `{http_status_code:404}`, `md5_mismatch`, etc.
+
+**List all objects with a specific status** (useful for debugging):
+
+```sql
+-- Show all skipped objects and why
+SELECT id, object, owner, skipped_reason
+FROM evacuateobjects
+WHERE status = 'skipped'
+ORDER BY skipped_reason;
+
+-- Show all errored objects and why
+SELECT id, object, owner, error
+FROM evacuateobjects
+WHERE status = 'error'
+ORDER BY error;
+
+-- Show objects still assigned (not yet processed by agents)
+SELECT count(*) FROM evacuateobjects WHERE status = 'assigned';
+```
+
+**Duplicates count**:
+
+```sql
+SELECT count(*) FROM duplicates;
+```
+
+Objects discovered from multiple moray shards are deduplicated here.
+
 ### Monitor rebalancer manager logs
 
 ```bash
