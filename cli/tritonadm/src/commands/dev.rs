@@ -19,6 +19,13 @@ pub enum DevCommand {
     RemoveExternalNics,
     /// Remove grafana service and instance (undo post-setup grafana)
     RemoveGrafana,
+    /// Remove portal service and instance (undo post-setup portal)
+    RemovePortal,
+    /// Remove a named service and its instances
+    RemoveService {
+        /// Service name to remove
+        name: String,
+    },
 }
 
 impl DevCommand {
@@ -27,7 +34,9 @@ impl DevCommand {
             Self::RemoveExternalNics => {
                 cmd_remove_external_nics(sapi_url, vmapi_url, napi_url).await
             }
-            Self::RemoveGrafana => cmd_remove_grafana(sapi_url, vmapi_url).await,
+            Self::RemoveGrafana => cmd_remove_service(sapi_url, vmapi_url, "grafana").await,
+            Self::RemovePortal => cmd_remove_service(sapi_url, vmapi_url, "portal").await,
+            Self::RemoveService { name } => cmd_remove_service(sapi_url, vmapi_url, &name).await,
         }
     }
 }
@@ -93,7 +102,7 @@ async fn cmd_remove_external_nics(sapi_url: &str, vmapi_url: &str, napi_url: &st
     Ok(())
 }
 
-async fn cmd_remove_grafana(sapi_url: &str, vmapi_url: &str) -> Result<()> {
+async fn cmd_remove_service(sapi_url: &str, vmapi_url: &str, svc_name: &str) -> Result<()> {
     let http = triton_tls::build_http_client(false)
         .await
         .context("failed to build HTTP client")?;
@@ -101,34 +110,32 @@ async fn cmd_remove_grafana(sapi_url: &str, vmapi_url: &str) -> Result<()> {
     let sapi = sapi_client::Client::new_with_client(sapi_url, http.clone());
     let vmapi = vmapi_client::TypedClient::new_with_client(vmapi_url, http);
 
-    // Find grafana service
     let services = sapi
         .list_services()
-        .name("grafana")
+        .name(svc_name)
         .send()
         .await
-        .context("failed to list services")?
+        .with_context(|| format!("failed to list {svc_name} services"))?
         .into_inner();
 
     let svc = match services.first() {
         Some(s) => s,
         None => {
-            eprintln!("No grafana service found.");
+            eprintln!("No {svc_name} service found.");
             return Ok(());
         }
     };
 
-    // Delete instances first
     let instances = sapi
         .list_instances()
         .service_uuid(svc.uuid)
         .send()
         .await
-        .context("failed to list grafana instances")?
+        .with_context(|| format!("failed to list {svc_name} instances"))?
         .into_inner();
 
     for inst in &instances {
-        eprintln!("Destroying grafana VM {}...", inst.uuid);
+        eprintln!("Destroying {svc_name} VM {}...", inst.uuid);
         vmapi
             .inner()
             .delete_vm()
@@ -147,14 +154,13 @@ async fn cmd_remove_grafana(sapi_url: &str, vmapi_url: &str) -> Result<()> {
         eprintln!("Deleted SAPI instance {}.", inst.uuid);
     }
 
-    // Delete service
-    eprintln!("Deleting grafana service {}...", svc.uuid);
+    eprintln!("Deleting {svc_name} service {}...", svc.uuid);
     sapi.delete_service()
         .uuid(svc.uuid)
         .send()
         .await
-        .context("failed to delete grafana service")?;
-    eprintln!("Deleted grafana service.");
+        .with_context(|| format!("failed to delete {svc_name} service"))?;
+    eprintln!("Deleted {svc_name} service.");
 
     Ok(())
 }
