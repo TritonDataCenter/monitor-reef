@@ -639,9 +639,68 @@ The changefeed is published through bootstrap routes: `/aggregations`, `/network
   - Straightforward Progenitor generation, no action dispatch, no streaming/binary endpoints
   - All 42 endpoints generated as builder-style methods on `Client`
 
+## Phase 4 Complete
+
+- CLI crate: `cli/napi-cli/`
+- Binary name: `napi`
+- Commands implemented: 42 (covering all API endpoints)
+- Build status: SUCCESS
+- Subcommand groups: nic, nic-tag, network, pool, ip, aggregation, fabric-vlan, fabric-network
+- Enums used as CLI args with value_enum: BelongsToType, NicState, LacpMode, NetworkFamily
+- Notes:
+  - 8 resource subcommand groups plus top-level `ping`, `search-ips`, `gc`
+  - `nic create-on-network` covers the POST /networks/{uuid}/nics endpoint
+  - `UpdateFabricNetworkBody` does not include `internet_nat` (not updatable), so omitted from `fabric-network update`
+  - All list/get commands support `--raw` for JSON output
+  - Environment variable: `NAPI_URL` for base URL
+
+### CLI Commands
+- `napi ping` - Health check
+- `napi nic list` - List NICs (with extensive filters)
+- `napi nic get <mac>` - Get NIC by MAC address
+- `napi nic create` - Create a NIC
+- `napi nic update <mac>` - Update a NIC
+- `napi nic delete <mac>` - Delete a NIC
+- `napi nic create-on-network` - Provision NIC on a specific network
+- `napi nic-tag list` - List NIC tags
+- `napi nic-tag get <name>` - Get NIC tag by name
+- `napi nic-tag create` - Create a NIC tag
+- `napi nic-tag update <name>` - Update a NIC tag
+- `napi nic-tag delete <name>` - Delete a NIC tag
+- `napi network list` - List networks
+- `napi network get <uuid>` - Get network (or "admin")
+- `napi network create` - Create a network
+- `napi network update <uuid>` - Update a network
+- `napi network delete <uuid>` - Delete a network
+- `napi pool list` - List network pools
+- `napi pool get <uuid>` - Get network pool
+- `napi pool create` - Create a network pool
+- `napi pool update <uuid>` - Update a network pool
+- `napi pool delete <uuid>` - Delete a network pool
+- `napi ip list` - List IPs on a network
+- `napi ip get` - Get an IP on a network
+- `napi ip update` - Update an IP on a network
+- `napi aggregation list` - List aggregations
+- `napi aggregation get <id>` - Get aggregation
+- `napi aggregation create` - Create an aggregation
+- `napi aggregation update <id>` - Update an aggregation
+- `napi aggregation delete <id>` - Delete an aggregation
+- `napi fabric-vlan list` - List fabric VLANs
+- `napi fabric-vlan get <vlan_id>` - Get fabric VLAN
+- `napi fabric-vlan create` - Create a fabric VLAN
+- `napi fabric-vlan update <vlan_id>` - Update a fabric VLAN
+- `napi fabric-vlan delete` - Delete a fabric VLAN
+- `napi fabric-network list` - List fabric networks
+- `napi fabric-network get <uuid>` - Get fabric network
+- `napi fabric-network create` - Create a fabric network
+- `napi fabric-network update <uuid>` - Update a fabric network
+- `napi fabric-network delete` - Delete a fabric network
+- `napi search-ips <ip>` - Search for IP across all networks
+- `napi gc` - Run garbage collection
+
 ## Phase Status
 - [x] Phase 1: Analyze - COMPLETE
 - [x] Phase 2: Generate API - COMPLETE
 - [x] Phase 3: Generate Client - COMPLETE
-- [ ] Phase 4: Generate CLI
+- [x] Phase 4: Generate CLI - COMPLETE
 - [ ] Phase 5: Validate

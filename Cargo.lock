@@ -2254,6 +2254,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "napi-cli"
+version = "1.4.3"
+dependencies = [
+ "anyhow",
+ "clap",
+ "napi-api",
+ "napi-client",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "napi-client"
 version = "1.4.3"
 dependencies = [
