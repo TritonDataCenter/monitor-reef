@@ -63,6 +63,39 @@ impl PemKeyFormat {
     }
 }
 
+/// Extract the PEM block from input that may contain surrounding content.
+///
+/// Many PEM parsers (notably `pem-rfc7468`) strictly enforce RFC 7468 and
+/// reject any non-whitespace content before the `-----BEGIN` line.  Keys
+/// provisioned via config-agent templates, manual copy-paste, or tools like
+/// `cat` can easily acquire leading/trailing artifacts (BOM, blank lines,
+/// shell prompts, etc.).
+///
+/// This function finds the first `-----BEGIN …-----` line and the
+/// corresponding `-----END …-----` line and returns only that slice,
+/// preserving internal content exactly.  Returns the input unchanged if no
+/// PEM boundaries are found (so that downstream parsers can produce their
+/// usual "unknown format" errors).
+pub fn normalize_pem(input: &str) -> &str {
+    let Some(begin_offset) = input.find("-----BEGIN ") else {
+        return input;
+    };
+    // Find the end of the -----END ...----- line (including its trailing newline
+    // if present).  We search for "-----END " starting after the BEGIN marker.
+    let after_begin = &input[begin_offset..];
+    let end_marker_offset = after_begin.find("-----END ");
+    let end = match end_marker_offset {
+        Some(rel) => {
+            // Include through the closing "-----" and optional trailing newline
+            let rest = &after_begin[rel..];
+            let line_end = rest.find('\n').map(|n| n + 1).unwrap_or(rest.len());
+            begin_offset + rel + line_end
+        }
+        None => input.len(),
+    };
+    &input[begin_offset..end]
+}
+
 /// A private key loaded from traditional PEM format
 ///
 /// This enum holds keys parsed from various PEM formats that can be used
@@ -83,6 +116,7 @@ pub enum LegacyPrivateKey {
 impl LegacyPrivateKey {
     /// Load a private key from PEM data, detecting format automatically
     pub fn from_pem(pem_data: &str, passphrase: Option<&str>) -> Result<Self, AuthError> {
+        let pem_data = normalize_pem(pem_data);
         let format = PemKeyFormat::detect(pem_data);
 
         match format {
@@ -768,6 +802,62 @@ mod tests {
             ),
             PemKeyFormat::EncryptedPkcs1
         );
+    }
+
+    #[test]
+    fn test_normalize_pem_clean_passthrough() {
+        let pem = "-----BEGIN RSA PRIVATE KEY-----\ndata\n-----END RSA PRIVATE KEY-----\n";
+        assert_eq!(normalize_pem(pem), pem);
+    }
+
+    #[test]
+    fn test_normalize_pem_strips_leading_content() {
+        let input = "\n\n  junk\n-----BEGIN RSA PRIVATE KEY-----\ndata\n-----END RSA PRIVATE KEY-----\n";
+        assert_eq!(
+            normalize_pem(input),
+            "-----BEGIN RSA PRIVATE KEY-----\ndata\n-----END RSA PRIVATE KEY-----\n"
+        );
+    }
+
+    #[test]
+    fn test_normalize_pem_strips_trailing_content() {
+        let input =
+            "-----BEGIN RSA PRIVATE KEY-----\ndata\n-----END RSA PRIVATE KEY-----\nextra stuff\n";
+        assert_eq!(
+            normalize_pem(input),
+            "-----BEGIN RSA PRIVATE KEY-----\ndata\n-----END RSA PRIVATE KEY-----\n"
+        );
+    }
+
+    #[test]
+    fn test_normalize_pem_strips_utf8_bom() {
+        let input =
+            "\u{FEFF}-----BEGIN RSA PRIVATE KEY-----\ndata\n-----END RSA PRIVATE KEY-----\n";
+        assert_eq!(
+            normalize_pem(input),
+            "-----BEGIN RSA PRIVATE KEY-----\ndata\n-----END RSA PRIVATE KEY-----\n"
+        );
+    }
+
+    #[test]
+    fn test_normalize_pem_no_begin_returns_input() {
+        let input = "not a pem file at all";
+        assert_eq!(normalize_pem(input), input);
+    }
+
+    #[test]
+    fn test_normalize_pem_no_end_returns_from_begin() {
+        let input = "junk\n-----BEGIN RSA PRIVATE KEY-----\ndata\n";
+        assert_eq!(
+            normalize_pem(input),
+            "-----BEGIN RSA PRIVATE KEY-----\ndata\n"
+        );
+    }
+
+    #[test]
+    fn test_normalize_pem_no_trailing_newline() {
+        let input = "-----BEGIN RSA PRIVATE KEY-----\ndata\n-----END RSA PRIVATE KEY-----";
+        assert_eq!(normalize_pem(input), input);
     }
 
     #[test]

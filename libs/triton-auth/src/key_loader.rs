@@ -156,15 +156,19 @@ impl KeyLoader {
         path: &Path,
         passphrase: Option<&String>,
     ) -> Result<PrivateKey, AuthError> {
-        let key_data = tokio::fs::read_to_string(path).await.map_err(|e| {
+        let raw_data = tokio::fs::read_to_string(path).await.map_err(|e| {
             AuthError::KeyLoadError(format!("Failed to read {}: {}", path.display(), e))
         })?;
 
+        // Normalize PEM to strip leading/trailing artifacts (BOM, config-agent
+        // rendering leftovers, copy-paste noise) before the strict parsers see it.
+        let key_data = crate::legacy_pem::normalize_pem(&raw_data);
+
         // Check if this is OpenSSH format
-        let format = PemKeyFormat::detect(&key_data);
+        let format = PemKeyFormat::detect(key_data);
         if format != PemKeyFormat::OpenSsh {
             // For non-OpenSSH formats, try to load via legacy_pem and convert
-            let legacy_key = LegacyPrivateKey::from_pem(&key_data, passphrase.map(|s| s.as_str()))?;
+            let legacy_key = LegacyPrivateKey::from_pem(key_data, passphrase.map(|s| s.as_str()))?;
 
             // If it's already an OpenSSH key wrapped in LegacyPrivateKey, unwrap it
             if let LegacyPrivateKey::OpenSsh(key) = legacy_key {
