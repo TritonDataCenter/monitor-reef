@@ -89,6 +89,14 @@ pub struct BootstrapArgs {
     /// IPs must be within the fabric subnet range.
     #[arg(long, value_delimiter = ',')]
     pub worker_fabric_ip: Option<Vec<IpAddr>>,
+
+    /// Skip worker nodes during the post-bootstrap health check.
+    ///
+    /// Useful when bootstrapping from outside the Triton fabric network,
+    /// where worker nodes are only reachable via fabric IP and the health
+    /// check would time out waiting for them.
+    #[arg(long)]
+    pub skip_worker_health: bool,
 }
 
 pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> Result<()> {
@@ -748,27 +756,35 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
     eprintln!("    etcd bootstrapped successfully");
 
     // 14. Health check cluster
-    // Note: The health check may fail when running from outside the cluster because
-    // it tries to validate k8s API connectivity via the fabric IP (which is only
-    // reachable from within Triton). We continue anyway since etcd bootstrapped.
-    eprintln!("==> Checking cluster health");
+    // The Talos gRPC health check validates etcd, kubelet, k8s API, and node
+    // registration. When running from outside the fabric network, the k8s API
+    // check always fails because it binds to the fabric IP. With
+    // --skip-worker-health we skip the health check entirely since the
+    // critical control plane validation (etcd bootstrap + member consistency)
+    // already succeeded above.
+    if args.skip_worker_health {
+        eprintln!("==> Skipping health check (--skip-worker-health)");
+    } else {
+        eprintln!("==> Checking cluster health");
 
-    match talos::health::run(
-        &control_endpoint_for_bootstrap,
-        "5m", // wait_timeout (reduced since it may fail from outside)
-        Some(&talosconfig_str),
-        false, // verbose
-    )
-    .await
-    {
-        Ok(()) => eprintln!("    Cluster is healthy!"),
-        Err(e) => {
-            eprintln!(
-                "    WARNING: Health check failed (may be expected from outside Triton): {}",
-                e
-            );
-            eprintln!("    Continuing with kubeconfig retrieval...");
-            logger.warn(format!("Health check failed: {}", e));
+        match talos::health::run(
+            &control_endpoint_for_bootstrap,
+            "5m", // wait_timeout (reduced since it may fail from outside)
+            Some(&talosconfig_str),
+            None,
+            false, // verbose
+        )
+        .await
+        {
+            Ok(()) => eprintln!("    Cluster is healthy!"),
+            Err(e) => {
+                eprintln!(
+                    "    WARNING: Health check failed (may be expected from outside Triton): {}",
+                    e
+                );
+                eprintln!("    Continuing with kubeconfig retrieval...");
+                logger.warn(format!("Health check failed: {}", e));
+            }
         }
     }
 

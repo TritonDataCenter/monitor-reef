@@ -260,8 +260,14 @@ pub async fn run(args: UpgradeArgs, json: bool) -> Result<()> {
                     args.health_timeout
                 );
             }
-            match talos::health::run(endpoint, &args.health_timeout, Some(&talosconfig), false)
-                .await
+            match talos::health::run(
+                endpoint,
+                &args.health_timeout,
+                Some(&talosconfig),
+                None,
+                false,
+            )
+            .await
             {
                 Ok(()) => {
                     if !json {
@@ -410,7 +416,8 @@ pub async fn run(args: UpgradeArgs, json: bool) -> Result<()> {
 
         // For control plane nodes, do a health check before proceeding
         if status.role == "control" {
-            match talos::health::run(&status.endpoint, "60s", Some(&talosconfig), false).await {
+            match talos::health::run(&status.endpoint, "60s", Some(&talosconfig), None, false).await
+            {
                 Ok(()) => {
                     if !json {
                         eprintln!("    Node health: OK");

@@ -14,10 +14,20 @@ use tokio_stream::StreamExt;
 use super::client;
 use super::proto::cluster;
 
+/// Cluster topology hint for the health check. When provided, tells
+/// the Talos health checker which nodes to expect and where to reach
+/// the k8s API.
+pub struct ClusterInfo {
+    pub control_plane_nodes: Vec<String>,
+    pub worker_nodes: Vec<String>,
+    pub force_endpoint: String,
+}
+
 pub async fn run(
     endpoint: &str,
     wait_timeout: &str,
     talosconfig: Option<&str>,
+    cluster_info: Option<ClusterInfo>,
     verbose: bool,
 ) -> Result<()> {
     let timeout_dur = parse_duration(wait_timeout)?;
@@ -25,12 +35,18 @@ pub async fn run(
     let channel = client::connect(endpoint, talosconfig, verbose).await?;
     let mut client = cluster::cluster_service_client::ClusterServiceClient::new(channel);
 
+    let proto_cluster_info = cluster_info.map(|ci| cluster::ClusterInfo {
+        control_plane_nodes: ci.control_plane_nodes,
+        worker_nodes: ci.worker_nodes,
+        force_endpoint: ci.force_endpoint,
+    });
+
     let req = cluster::HealthCheckRequest {
         wait_timeout: Some(prost_types::Duration {
             seconds: timeout_dur.as_secs() as i64,
             nanos: 0,
         }),
-        cluster_info: None,
+        cluster_info: proto_cluster_info,
     };
 
     let stream_result = tokio::time::timeout(timeout_dur, async {
