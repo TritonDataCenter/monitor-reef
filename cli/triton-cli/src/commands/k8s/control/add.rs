@@ -2,19 +2,21 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 //
-// Copyright 2025 Edgecast Cloud LLC.
+// Copyright 2026 Edgecast Cloud LLC.
 
 //! Add control plane nodes to an existing cluster for HA
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Args;
 use cloudapi_api::types::network::Nic;
 use cloudapi_client::TypedClient;
+use std::net::IpAddr;
 
 use crate::commands::k8s::network::generate_network_patch;
 use crate::commands::k8s::provisioning::{
-    find_external_ip, get_default_external_network, provision_additional_control_plane,
-    query_all_instance_nics, resolve_package_id, wait_for_all_running,
+    discover_fabric_network, find_external_ip, get_default_external_network,
+    provision_additional_control_plane, query_all_instance_nics, resolve_package_id,
+    validate_ip_in_subnet, wait_for_all_running,
 };
 use crate::commands::k8s::state::{ClusterState, NodeInfo, NodeRole};
 use crate::commands::k8s::talos;
@@ -31,6 +33,14 @@ pub struct AddArgs {
     /// Package for control plane nodes (defaults to cluster's control package)
     #[arg(long)]
     pub package: Option<String>,
+
+    /// Explicit fabric IP addresses for new control plane nodes (comma-separated).
+    ///
+    /// Must provide exactly --count IPs. When specified, these IPs
+    /// are requested from Triton instead of relying on DHCP assignment.
+    /// IPs must be within the fabric subnet range.
+    #[arg(long, value_delimiter = ',')]
+    pub fabric_ip: Option<Vec<IpAddr>>,
 }
 
 pub async fn run(args: AddArgs, client: &TypedClient, _use_json: bool) -> Result<()> {
@@ -92,6 +102,28 @@ pub async fn run(args: AddArgs, client: &TypedClient, _use_json: bool) -> Result
         next_ctrl_index
     );
 
+    // 4b. Validate explicit fabric IPs if provided
+    if let Some(ref ips) = args.fabric_ip {
+        if state.fabric_network_id.is_none() {
+            bail!("Cannot specify --fabric-ip without a fabric network configured");
+        }
+        if ips.len() as u32 != args.count {
+            bail!(
+                "--fabric-ip: expected {} IPs (matching --count), got {}",
+                args.count,
+                ips.len()
+            );
+        }
+        if let Some(fabric_id) = state.fabric_network_id {
+            let fabric = discover_fabric_network(fabric_id, client)
+                .await
+                .context("Failed to discover fabric network for IP validation")?;
+            for ip in ips {
+                validate_ip_in_subnet(ip, &fabric.subnet)?;
+            }
+        }
+    }
+
     // 5. Resolve package (use stored or override)
     let package_id = if let Some(ref pkg_override) = args.package {
         eprintln!("==> Resolving package override '{}'", pkg_override);
@@ -142,6 +174,7 @@ pub async fn run(args: AddArgs, client: &TypedClient, _use_json: bool) -> Result
         state.uuid,
         &state.name,
         Some(&controlplane_config_yaml),
+        args.fabric_ip.as_deref(),
         client,
     )
     .await
@@ -164,7 +197,6 @@ pub async fn run(args: AddArgs, client: &TypedClient, _use_json: bool) -> Result
 
     // Get nameservers from fabric network resolvers, fall back to Google DNS
     let nameservers: Vec<String> = if let Some(fabric_id) = state.fabric_network_id {
-        use crate::commands::k8s::provisioning::discover_fabric_network;
         match discover_fabric_network(fabric_id, client).await {
             Ok(info) if !info.resolvers.is_empty() => info.resolvers,
             _ => vec!["8.8.8.8".to_string(), "8.8.4.4".to_string()],

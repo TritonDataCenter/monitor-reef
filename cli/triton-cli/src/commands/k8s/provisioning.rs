@@ -161,6 +161,61 @@ pub fn preallocate_fabric_ips(
     Ok(preallocated)
 }
 
+/// Validate that an IP address is within a given subnet
+///
+/// # Arguments
+/// * `ip` - The IP address to validate
+/// * `fabric_subnet` - CIDR notation subnet string (e.g. "10.0.0.0/24")
+///
+/// # Returns
+/// Ok(()) if the IP is within the subnet, Err with descriptive message otherwise.
+pub fn validate_ip_in_subnet(ip: &IpAddr, fabric_subnet: &str) -> Result<()> {
+    let ip_v4 = match ip {
+        IpAddr::V4(v4) => v4,
+        IpAddr::V6(_) => bail!("IPv6 fabric IPs are not supported"),
+    };
+
+    let parts: Vec<&str> = fabric_subnet.split('/').collect();
+    if parts.len() != 2 {
+        bail!(
+            "Invalid subnet format '{}', expected CIDR notation (e.g. 10.0.0.0/24)",
+            fabric_subnet
+        );
+    }
+
+    let base_ip: Ipv4Addr = parts[0]
+        .parse()
+        .context("Failed to parse subnet IP address")?;
+
+    let prefix_len: u8 = parts[1]
+        .parse()
+        .context("Failed to parse subnet prefix length")?;
+
+    if prefix_len > 32 {
+        bail!("Invalid prefix length {}, must be <= 32", prefix_len);
+    }
+
+    // Build the network mask and check that ip & mask == base & mask
+    let mask = if prefix_len == 0 {
+        0u32
+    } else {
+        !0u32 << (32 - prefix_len)
+    };
+
+    let base_u32 = u32::from(base_ip);
+    let ip_u32 = u32::from(*ip_v4);
+
+    if (ip_u32 & mask) != (base_u32 & mask) {
+        bail!(
+            "Fabric IP {} is not within fabric subnet {}",
+            ip,
+            fabric_subnet
+        );
+    }
+
+    Ok(())
+}
+
 /// Discover and validate fabric network
 ///
 /// Queries fabric network details via CloudAPI and validates it exists
@@ -647,12 +702,14 @@ pub async fn provision_control_plane(
     cluster_id: Uuid,
     cluster_name: &str,
     user_data: Option<&str>,
+    fabric_ips: Option<&[IpAddr]>,
     client: &TypedClient,
 ) -> Result<Vec<ProvisionedInstance>> {
     let mut instances = Vec::new();
 
     for i in 0..count {
         let name = format!("{}-ctrl-{}", cluster_name, i);
+        let fabric_ip = fabric_ips.map(|ips| &ips[i as usize]);
         let instance = create_instance(
             name,
             image_id,
@@ -663,7 +720,7 @@ pub async fn provision_control_plane(
             &[],
             cluster_id,
             user_data,
-            None, // fabric_ip - not using pre-allocated IPs for control plane yet
+            fabric_ip,
             client,
         )
         .await?;
@@ -688,12 +745,14 @@ pub async fn provision_workers(
     cluster_name: &str,
     external_network_id: Uuid,
     user_data: Option<&str>,
+    fabric_ips: Option<&[IpAddr]>,
     client: &TypedClient,
 ) -> Result<Vec<ProvisionedInstance>> {
     let mut instances = Vec::new();
 
     for i in 0..count {
         let name = format!("{}-worker-{}", cluster_name, i);
+        let fabric_ip = fabric_ips.map(|ips| &ips[i as usize]);
         let instance = create_instance(
             name,
             image_id,
@@ -704,7 +763,7 @@ pub async fn provision_workers(
             additional_networks,
             cluster_id,
             user_data,
-            None, // fabric_ip - not using pre-allocated IPs yet
+            fabric_ip,
             client,
         )
         .await?;
@@ -732,6 +791,7 @@ pub async fn provision_additional_workers(
     cluster_name: &str,
     external_network_id: Uuid,
     user_data: Option<&str>,
+    fabric_ips: Option<&[IpAddr]>,
     client: &TypedClient,
 ) -> Result<Vec<ProvisionedInstance>> {
     let mut instances = Vec::new();
@@ -739,6 +799,7 @@ pub async fn provision_additional_workers(
     for i in 0..count {
         let worker_index = start_index + i;
         let name = format!("{}-worker-{}", cluster_name, worker_index);
+        let fabric_ip = fabric_ips.map(|ips| &ips[i as usize]);
         let instance = create_instance(
             name,
             image_id,
@@ -749,7 +810,7 @@ pub async fn provision_additional_workers(
             additional_networks,
             cluster_id,
             user_data,
-            None, // fabric_ip - not using pre-allocated IPs
+            fabric_ip,
             client,
         )
         .await?;
@@ -776,6 +837,7 @@ pub async fn provision_additional_control_plane(
     cluster_id: Uuid,
     cluster_name: &str,
     user_data: Option<&str>,
+    fabric_ips: Option<&[IpAddr]>,
     client: &TypedClient,
 ) -> Result<Vec<ProvisionedInstance>> {
     let mut instances = Vec::new();
@@ -783,6 +845,7 @@ pub async fn provision_additional_control_plane(
     for i in 0..count {
         let ctrl_index = start_index + i;
         let name = format!("{}-ctrl-{}", cluster_name, ctrl_index);
+        let fabric_ip = fabric_ips.map(|ips| &ips[i as usize]);
         let instance = create_instance(
             name,
             image_id,
@@ -793,7 +856,7 @@ pub async fn provision_additional_control_plane(
             &[],
             cluster_id,
             user_data,
-            None, // fabric_ip - not using pre-allocated IPs
+            fabric_ip,
             client,
         )
         .await?;

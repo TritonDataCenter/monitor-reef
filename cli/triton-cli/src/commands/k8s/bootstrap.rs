@@ -6,11 +6,12 @@
 
 //! Bootstrap cluster nodes
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::Args;
 use cloudapi_api::types::network::Nic;
 use cloudapi_client::TypedClient;
 use std::collections::HashMap;
+use std::net::IpAddr;
 use uuid::Uuid;
 
 use super::logging::LogWriter;
@@ -19,7 +20,7 @@ use super::provisioning::{
     create_firewall_rules, detect_user_ip, discover_cns_suffix, discover_fabric_network,
     find_external_ip, get_default_external_network, preallocate_fabric_ips,
     provision_control_plane, provision_workers, query_all_instance_nics, resolve_image_id,
-    resolve_package_id, wait_for_all_running,
+    resolve_package_id, validate_ip_in_subnet, wait_for_all_running,
 };
 use super::state::{ClusterState, ControlPlaneConfig, NodeInfo, NodeRole, WorkerConfig};
 use super::talos;
@@ -72,6 +73,22 @@ pub struct BootstrapArgs {
     /// or falling back to Google DNS (8.8.8.8, 8.8.4.4).
     #[arg(long, value_delimiter = ',')]
     pub nameservers: Option<Vec<String>>,
+
+    /// Explicit fabric IP addresses for control plane nodes (comma-separated).
+    ///
+    /// Must provide exactly --control-nodes IPs. When specified, these IPs
+    /// are requested from Triton instead of relying on DHCP assignment.
+    /// IPs must be within the fabric subnet range.
+    #[arg(long, value_delimiter = ',')]
+    pub control_fabric_ip: Option<Vec<IpAddr>>,
+
+    /// Explicit fabric IP addresses for worker nodes (comma-separated).
+    ///
+    /// Must provide exactly --worker-nodes IPs. When specified, these IPs
+    /// are requested from Triton instead of relying on DHCP assignment.
+    /// IPs must be within the fabric subnet range.
+    #[arg(long, value_delimiter = ',')]
+    pub worker_fabric_ip: Option<Vec<IpAddr>>,
 }
 
 pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> Result<()> {
@@ -155,42 +172,114 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
         None
     };
 
-    // 3. Pre-allocate fabric IPs for all nodes
-    // The first control plane's fabric IP will be used as the Kubernetes API endpoint.
-    // This IP is reachable by all nodes on the fabric network.
-    let preallocated_nodes = if let Some(ref fabric) = fabric_info {
-        eprintln!("==> Pre-allocating fabric IPs");
-        let nodes = preallocate_fabric_ips(
-            &fabric.subnet,
-            args.control_nodes,
-            args.worker_nodes,
-            &state.name,
-        )
-        .context("Failed to pre-allocate fabric IPs")?;
+    // 3. Validate explicit fabric IPs if provided
+    if (args.control_fabric_ip.is_some() || args.worker_fabric_ip.is_some())
+        && fabric_info.is_none()
+    {
+        bail!(
+            "Cannot specify --control-fabric-ip or --worker-fabric-ip \
+             without a fabric network configured"
+        );
+    }
 
-        for node in &nodes {
-            eprintln!("    {}: {}", node.name, node.fabric_ip);
+    if let Some(ref ips) = args.control_fabric_ip {
+        if ips.len() as u32 != args.control_nodes {
+            bail!(
+                "--control-fabric-ip: expected {} IPs (matching --control-nodes), got {}",
+                args.control_nodes,
+                ips.len()
+            );
         }
-        logger.info(format!(
-            "Pre-allocated {} fabric IPs starting from {}",
-            nodes.len(),
-            nodes
-                .first()
-                .map(|n| n.fabric_ip.to_string())
-                .unwrap_or_default()
-        ));
-        nodes
-    } else {
-        Vec::new()
-    };
+        if let Some(ref fabric) = fabric_info {
+            for ip in ips {
+                validate_ip_in_subnet(ip, &fabric.subnet)?;
+            }
+        }
+    }
+
+    if let Some(ref ips) = args.worker_fabric_ip {
+        if ips.len() as u32 != args.worker_nodes {
+            bail!(
+                "--worker-fabric-ip: expected {} IPs (matching --worker-nodes), got {}",
+                args.worker_nodes,
+                ips.len()
+            );
+        }
+        if let Some(ref fabric) = fabric_info {
+            for ip in ips {
+                validate_ip_in_subnet(ip, &fabric.subnet)?;
+            }
+        }
+    }
+
+    // 4. Resolve fabric IPs for control plane and workers.
+    // When explicit IPs are provided, use them directly.
+    // When no explicit IPs are given but a fabric network exists, auto-allocate
+    // sequential IPs starting at .10 in the subnet.
+    let (control_fabric_ips, worker_fabric_ips, used_auto_allocation) =
+        if let Some(ref fabric) = fabric_info {
+            let explicit_ctrl = args.control_fabric_ip.is_some();
+            let explicit_worker = args.worker_fabric_ip.is_some();
+
+            if explicit_ctrl || explicit_worker {
+                // At least one role has explicit IPs
+                let ctrl_ips = args.control_fabric_ip.clone().unwrap_or_default();
+                let worker_ips = args.worker_fabric_ip.clone().unwrap_or_default();
+
+                eprintln!("==> Using fabric IPs");
+                for ip in &ctrl_ips {
+                    eprintln!("    ctrl: {} (explicit)", ip);
+                }
+                for ip in &worker_ips {
+                    eprintln!("    worker: {} (explicit)", ip);
+                }
+
+                (ctrl_ips, worker_ips, false)
+            } else {
+                // Auto-allocate all IPs from fabric subnet
+                eprintln!("==> Pre-allocating fabric IPs");
+                let nodes = preallocate_fabric_ips(
+                    &fabric.subnet,
+                    args.control_nodes,
+                    args.worker_nodes,
+                    &state.name,
+                )
+                .context("Failed to pre-allocate fabric IPs")?;
+
+                let ctrl_ips: Vec<IpAddr> = nodes
+                    .iter()
+                    .filter(|n| n.role == NodeRole::Control)
+                    .map(|n| n.fabric_ip)
+                    .collect();
+
+                let worker_ips: Vec<IpAddr> = nodes
+                    .iter()
+                    .filter(|n| n.role == NodeRole::Worker)
+                    .map(|n| n.fabric_ip)
+                    .collect();
+
+                for node in &nodes {
+                    eprintln!("    {}: {}", node.name, node.fabric_ip);
+                }
+                logger.info(format!(
+                    "Pre-allocated {} fabric IPs starting from {}",
+                    nodes.len(),
+                    nodes
+                        .first()
+                        .map(|n| n.fabric_ip.to_string())
+                        .unwrap_or_default()
+                ));
+
+                (ctrl_ips, worker_ips, true)
+            }
+        } else {
+            (Vec::new(), Vec::new(), false)
+        };
 
     // Determine the control plane endpoint IP.
     // When using a fabric network, use the first control plane's fabric IP.
     // This is the IP that workers will use to reach the Kubernetes API.
-    let control_endpoint_ip = preallocated_nodes
-        .iter()
-        .find(|n| n.role == NodeRole::Control)
-        .map(|n| n.fabric_ip.to_string());
+    let control_endpoint_ip = control_fabric_ips.first().map(|ip| ip.to_string());
 
     // 4. Get default external network and discover CNS suffix early
     // We need the CNS suffix before generating Talos configs so it can be included
@@ -327,6 +416,11 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
         "==> Provisioning {} control plane node(s)",
         args.control_nodes
     );
+    let ctrl_ips_ref = if control_fabric_ips.is_empty() {
+        None
+    } else {
+        Some(control_fabric_ips.as_slice())
+    };
     let mut control_instances = provision_control_plane(
         args.control_nodes,
         &image_id.to_string(),
@@ -336,6 +430,7 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
         state.uuid,
         &state.name,
         Some(&controlplane_config),
+        ctrl_ips_ref,
         client,
     )
     .await
@@ -394,6 +489,11 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
     // 9. Provision worker instances with corrected config
     // Pass the worker config as cloud-init user-data so Talos boots with its config
     eprintln!("==> Provisioning {} worker node(s)", args.worker_nodes);
+    let worker_ips_ref = if worker_fabric_ips.is_empty() {
+        None
+    } else {
+        Some(worker_fabric_ips.as_slice())
+    };
     let mut worker_instances = provision_workers(
         args.worker_nodes,
         &image_id.to_string(),
@@ -404,6 +504,7 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
         &state.name,
         external_network_id,
         Some(&worker_config),
+        worker_ips_ref,
         client,
     )
     .await
@@ -793,12 +894,11 @@ pub async fn run(args: BootstrapArgs, client: &TypedClient, _use_json: bool) -> 
     });
 
     // Calculate and store the last fabric IP offset for adding workers later.
-    // IPs are allocated starting at offset 10, with control nodes first, then workers.
-    // The offset for the last worker is: 10 + control_count + worker_count - 1
-    // We store the next available offset (one past the last allocated).
-    if state.fabric_network_id.is_some() {
+    // Only meaningful when auto-allocation was used (sequential IPs from .10).
+    // When explicit IPs were provided, the offset is not updated since user-chosen
+    // IPs may be non-sequential.
+    if state.fabric_network_id.is_some() && used_auto_allocation {
         let total_nodes = args.control_nodes + args.worker_nodes;
-        // Starting offset is 10, so next available is 10 + total_nodes
         state.last_fabric_ip_offset = Some(10 + total_nodes);
     }
 
