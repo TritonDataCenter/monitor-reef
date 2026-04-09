@@ -64,6 +64,10 @@ fn test_env_bash_uses_double_quotes() {
             "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
         )
         .env("HOME", "/nonexistent")
+        // Prevent the host's Triton config/profile from leaking into tests,
+        // which would cause failures when env vars alone should drive output.
+        .env("TRITON_CONFIG_DIR", "/nonexistent/.triton")
+        .env_remove("TRITON_PROFILE")
         .output()
         .expect("Failed to run command");
 
@@ -125,6 +129,8 @@ fn test_env_bash_user_double_quotes() {
         )
         .env("TRITON_USER", "subuser")
         .env("HOME", "/nonexistent")
+        .env("TRITON_CONFIG_DIR", "/nonexistent/.triton")
+        .env_remove("TRITON_PROFILE")
         .output()
         .expect("Failed to run command");
 
@@ -152,6 +158,8 @@ fn test_env_bash_unset_user() {
         .env_remove("TRITON_USER")
         .env_remove("SDC_USER")
         .env("HOME", "/nonexistent")
+        .env("TRITON_CONFIG_DIR", "/nonexistent/.triton")
+        .env_remove("TRITON_PROFILE")
         .output()
         .expect("Failed to run command");
 
@@ -265,6 +273,8 @@ fn test_env_bash_no_docker_setup() {
             "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
         )
         .env("HOME", "/nonexistent")
+        .env("TRITON_CONFIG_DIR", "/nonexistent/.triton")
+        .env_remove("TRITON_PROFILE")
         .output()
         .expect("Failed to run command");
 
@@ -335,9 +345,14 @@ fn run_env_with_args_insecure(args: &[&str], insecure: bool) -> String {
             "TRITON_KEY_ID",
             "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
         )
-        .env("HOME", "/nonexistent");
+        .env("HOME", "/nonexistent")
+        .env("TRITON_CONFIG_DIR", "/nonexistent/.triton")
+        .env_remove("TRITON_PROFILE");
     if insecure {
         cmd.env("TRITON_TLS_INSECURE", "true");
+    } else {
+        cmd.env_remove("TRITON_TLS_INSECURE");
+        cmd.env_remove("SDC_TLS_INSECURE");
     }
     let output = cmd.output().expect("Failed to run command");
 
@@ -747,6 +762,8 @@ fn test_env_docker_explicit_no_setup_errors() {
             "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff",
         )
         .env("HOME", "/nonexistent")
+        .env("TRITON_CONFIG_DIR", "/nonexistent/.triton")
+        .env_remove("TRITON_PROFILE")
         .output()
         .expect("Failed to run command");
 

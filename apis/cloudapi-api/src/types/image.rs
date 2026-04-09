@@ -11,6 +11,52 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use vmapi_api::Brand as VmapiBrand;
 
+/// List of account UUIDs authorised to use a private image
+/// (shared across Image, CreateImageRequest, UpdateImageRequest).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ImageAcl(pub Vec<Uuid>);
+
+impl std::ops::Deref for ImageAcl {
+    type Target = Vec<Uuid>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for ImageAcl {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl From<Vec<Uuid>> for ImageAcl {
+    fn from(v: Vec<Uuid>) -> Self {
+        ImageAcl(v)
+    }
+}
+
+impl FromIterator<Uuid> for ImageAcl {
+    fn from_iter<I: IntoIterator<Item = Uuid>>(iter: I) -> Self {
+        ImageAcl(iter.into_iter().collect())
+    }
+}
+
+impl IntoIterator for ImageAcl {
+    type Item = Uuid;
+    type IntoIter = std::vec::IntoIter<Uuid>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a ImageAcl {
+    type Item = &'a Uuid;
+    type IntoIter = std::slice::Iter<'a, Uuid>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
 /// Path parameter for image operations
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ImagePath {
@@ -147,7 +193,7 @@ pub struct Image {
     pub eula: Option<String>,
     /// ACL - list of account UUIDs with access (API version >= 7.1.0)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub acl: Option<Vec<Uuid>>,
+    pub acl: Option<ImageAcl>,
     /// Origin image UUID (API version >= 7.1.0)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<Uuid>,
@@ -185,7 +231,7 @@ pub struct CreateImageRequest {
     pub eula: Option<String>,
     /// ACL
     #[serde(default)]
-    pub acl: Option<Vec<Uuid>>,
+    pub acl: Option<ImageAcl>,
     /// Tags
     #[serde(default)]
     pub tags: Option<Tags>,
@@ -237,7 +283,7 @@ pub struct UpdateImageRequest {
     pub eula: Option<String>,
     /// ACL
     #[serde(default)]
-    pub acl: Option<Vec<Uuid>>,
+    pub acl: Option<ImageAcl>,
     /// Tags
     #[serde(default)]
     pub tags: Option<Tags>,

@@ -5,19 +5,15 @@ package cloudapi
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"path"
 	"strings"
 	"time"
 
-	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/oapi-codegen/runtime"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
@@ -760,40 +756,40 @@ func (e SnapshotState1) Valid() bool {
 	}
 }
 
-// Defines values for VmBrand0.
+// Defines values for VMBrand0.
 const (
-	VmBrand0Bhyve         VmBrand0 = "bhyve"
-	VmBrand0Joyent        VmBrand0 = "joyent"
-	VmBrand0JoyentMinimal VmBrand0 = "joyent-minimal"
-	VmBrand0Kvm           VmBrand0 = "kvm"
-	VmBrand0Lx            VmBrand0 = "lx"
+	VMBrand0Bhyve         VMBrand0 = "bhyve"
+	VMBrand0Joyent        VMBrand0 = "joyent"
+	VMBrand0JoyentMinimal VMBrand0 = "joyent-minimal"
+	VMBrand0Kvm           VMBrand0 = "kvm"
+	VMBrand0Lx            VMBrand0 = "lx"
 )
 
-// Valid indicates whether the value is a known member of the VmBrand0 enum.
-func (e VmBrand0) Valid() bool {
+// Valid indicates whether the value is a known member of the VMBrand0 enum.
+func (e VMBrand0) Valid() bool {
 	switch e {
-	case VmBrand0Bhyve:
+	case VMBrand0Bhyve:
 		return true
-	case VmBrand0Joyent:
+	case VMBrand0Joyent:
 		return true
-	case VmBrand0JoyentMinimal:
+	case VMBrand0JoyentMinimal:
 		return true
-	case VmBrand0Kvm:
+	case VMBrand0Kvm:
 		return true
-	case VmBrand0Lx:
+	case VMBrand0Lx:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for VmBrand1.
+// Defines values for VMBrand1.
 const (
-	Builder VmBrand1 = "builder"
+	Builder VMBrand1 = "builder"
 )
 
-// Valid indicates whether the value is a known member of the VmBrand1 enum.
-func (e VmBrand1) Valid() bool {
+// Valid indicates whether the value is a known member of the VMBrand1 enum.
+func (e VMBrand1) Valid() bool {
 	switch e {
 	case Builder:
 		return true
@@ -802,15 +798,15 @@ func (e VmBrand1) Valid() bool {
 	}
 }
 
-// Defines values for VmBrand2.
+// Defines values for VMBrand2.
 const (
-	VmBrand2Unknown VmBrand2 = "unknown"
+	VMBrand2Unknown VMBrand2 = "unknown"
 )
 
-// Valid indicates whether the value is a known member of the VmBrand2 enum.
-func (e VmBrand2) Valid() bool {
+// Valid indicates whether the value is a known member of the VMBrand2 enum.
+func (e VMBrand2) Valid() bool {
 	switch e {
-	case VmBrand2Unknown:
+	case VMBrand2Unknown:
 		return true
 	default:
 		return false
@@ -981,8 +977,8 @@ type Account struct {
 	// FirstName First name
 	FirstName *string `json:"firstName,omitempty"`
 
-	// Id Account UUID
-	Id openapi_types.UUID `json:"id"`
+	// ID Account UUID
+	ID openapi_types.UUID `json:"id"`
 
 	// LastName Last name
 	LastName *string `json:"lastName,omitempty"`
@@ -1011,8 +1007,8 @@ type AddForeignDatacenterRequest struct {
 	// Name Datacenter name
 	Name string `json:"name"`
 
-	// Url Datacenter URL
-	Url string `json:"url"`
+	// URL Datacenter URL
+	URL string `json:"url"`
 }
 
 // AddMetadataRequest Request to add machine metadata
@@ -1026,6 +1022,11 @@ type AddNicRequest struct {
 	// Primary Make this NIC the primary NIC for the instance
 	Primary *bool `json:"primary,omitempty"`
 }
+
+// AffinityRules Affinity rule strings (used by CreateMachineRequest and MigrateRequest).
+//
+// Newtype wrapper rather than a type alias so the generated OpenAPI spec carries a single named `AffinityRules` schema shared between machine provisioning and migration.
+type AffinityRules = []string
 
 // AuditEntry Audit entry for a machine
 type AuditEntry struct {
@@ -1060,6 +1061,9 @@ type ChangePasswordRequest struct {
 	// PasswordConfirmation New password
 	PasswordConfirmation string `json:"password_confirmation"`
 }
+
+// CloneImageRequest Request to clone an image
+type CloneImageRequest = map[string]interface{}
 
 // Config Configuration settings
 type Config struct {
@@ -1099,14 +1103,14 @@ type CreateFabricNetworkRequest struct {
 	// Name Network name
 	Name string `json:"name"`
 
-	// ProvisionEndIp Provision end IP
-	ProvisionEndIp string `json:"provision_end_ip"`
+	// ProvisionEndIP Provision end IP
+	ProvisionEndIP string `json:"provision_end_ip"`
 
-	// ProvisionStartIp Provision start IP
-	ProvisionStartIp string `json:"provision_start_ip"`
+	// ProvisionStartIP Provision start IP
+	ProvisionStartIP string `json:"provision_start_ip"`
 
 	// Resolvers Resolvers
-	Resolvers *[]string `json:"resolvers,omitempty"`
+	Resolvers *Resolvers `json:"resolvers,omitempty"`
 
 	// Routes Routes
 	Routes interface{} `json:"routes,omitempty"`
@@ -1123,8 +1127,8 @@ type CreateFabricVlanRequest struct {
 	// Name VLAN name
 	Name string `json:"name"`
 
-	// VlanId VLAN ID
-	VlanId uint16 `json:"vlan_id"`
+	// VlanID VLAN ID
+	VlanID uint16 `json:"vlan_id"`
 }
 
 // CreateFirewallRuleRequest Request to create firewall rule
@@ -1155,7 +1159,7 @@ type CreateMachineRequest struct {
 	// Rules follow the pattern: `<key><operator><value>` where: - key: 'instance', 'container', or a tag name - operator: '==' (must), '!=' (must not), '==~' (prefer), '!=~' (prefer not) - value: exact string, glob pattern (*), or regex (/pattern/)
 	//
 	// Examples: `instance==myvm`, `role!=database`, `instance!=~foo*`
-	Affinity *[]string `json:"affinity,omitempty"`
+	Affinity *AffinityRules `json:"affinity,omitempty"`
 
 	// AllowSharedImages Allow using images shared with this account (not owned by it)
 	AllowSharedImages *bool `json:"allow_shared_images,omitempty"`
@@ -1185,7 +1189,7 @@ type CreateMachineRequest struct {
 	Locality interface{} `json:"locality,omitempty"`
 
 	// Metadata Metadata (modern format - nested object)
-	Metadata *map[string]interface{} `json:"metadata,omitempty"`
+	Metadata *MetadataObject `json:"metadata,omitempty"`
 
 	// Name Machine alias/name
 	Name *string `json:"name,omitempty"`
@@ -1197,7 +1201,7 @@ type CreateMachineRequest struct {
 	Package string `json:"package"`
 
 	// Tags Tags (modern format - nested object)
-	Tags *map[string]interface{} `json:"tags,omitempty"`
+	Tags *Tags `json:"tags,omitempty"`
 
 	// Volumes Volumes to mount on the instance
 	Volumes *[]VolumeMount `json:"volumes,omitempty"`
@@ -1212,7 +1216,7 @@ type CreatePolicyRequest struct {
 	Name string `json:"name"`
 
 	// Rules Policy rules (array of rule strings)
-	Rules []string `json:"rules"`
+	Rules PolicyRules `json:"rules"`
 }
 
 // CreateRoleRequest Request to create role
@@ -1233,8 +1237,8 @@ type CreateSnapshotRequest struct {
 	Name *string `json:"name,omitempty"`
 }
 
-// CreateSshKeyRequest Request to create SSH key
-type CreateSshKeyRequest struct {
+// CreateSSHKeyRequest Request to create SSH key
+type CreateSSHKeyRequest struct {
 	// Key SSH public key material
 	Key string `json:"key"`
 
@@ -1287,13 +1291,13 @@ type CreateVolumeRequest struct {
 	Name *string `json:"name,omitempty"`
 
 	// Networks Networks (array of UUIDs)
-	Networks *[]openapi_types.UUID `json:"networks,omitempty"`
+	Networks *NetworkIds `json:"networks,omitempty"`
 
-	// Size Size in MiB
-	Size uint64 `json:"size"`
+	// Size Size in MiB. Optional — when omitted, CloudAPI selects the smallest available volume size from the billing packages.
+	Size *uint64 `json:"size,omitempty"`
 
 	// Tags Tags
-	Tags *map[string]interface{} `json:"tags,omitempty"`
+	Tags *Tags `json:"tags,omitempty"`
 
 	// Type Volume type
 	Type *VolumeType `json:"type,omitempty"`
@@ -1307,8 +1311,8 @@ type Datacenter struct {
 	// Name Datacenter name
 	Name string `json:"name"`
 
-	// Url Datacenter URL
-	Url string `json:"url"`
+	// URL Datacenter URL
+	URL string `json:"url"`
 }
 
 // Datacenters Datacenter map: name -> URL
@@ -1317,6 +1321,18 @@ type Datacenter struct {
 //
 // This is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Datacenters = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Datacenters map[string]string` in Go).
 type Datacenters map[string]string
+
+// DisableDeletionProtectionRequest Request to disable deletion protection
+type DisableDeletionProtectionRequest struct {
+	// Origin Origin identifier (defaults to 'cloudapi')
+	Origin *string `json:"origin,omitempty"`
+}
+
+// DisableFirewallRequest Request to disable firewall
+type DisableFirewallRequest struct {
+	// Origin Origin identifier (defaults to 'cloudapi')
+	Origin *string `json:"origin,omitempty"`
+}
 
 // Disk Disk information
 //
@@ -1328,8 +1344,8 @@ type Disk struct {
 	// Boot Boot disk
 	Boot *bool `json:"boot,omitempty"`
 
-	// Id Disk UUID
-	Id openapi_types.UUID `json:"id"`
+	// ID Disk UUID
+	ID openapi_types.UUID `json:"id"`
 
 	// PciSlot PCI slot
 	PciSlot *string `json:"pci_slot,omitempty"`
@@ -1383,6 +1399,18 @@ type DiskSpec struct {
 // DiskState Disk state
 type DiskState string
 
+// EnableDeletionProtectionRequest Request to enable deletion protection
+type EnableDeletionProtectionRequest struct {
+	// Origin Origin identifier (defaults to 'cloudapi')
+	Origin *string `json:"origin,omitempty"`
+}
+
+// EnableFirewallRequest Request to enable firewall
+type EnableFirewallRequest struct {
+	// Origin Origin identifier (defaults to 'cloudapi')
+	Origin *string `json:"origin,omitempty"`
+}
+
 // Error CloudAPI error response
 type Error struct {
 	// Code Error code (e.g., "InvalidCredentials", "ResourceNotFound")
@@ -1391,8 +1419,14 @@ type Error struct {
 	// Message Human-readable error message
 	Message *string `json:"message,omitempty"`
 
-	// RequestId Request ID for tracing (optional, not always present)
-	RequestId *string `json:"request_id,omitempty"`
+	// RequestID Request ID for tracing (optional, not always present)
+	RequestID *string `json:"request_id,omitempty"`
+}
+
+// ExportImageRequest Request to export an image
+type ExportImageRequest struct {
+	// MantaPath Manta path for export destination
+	MantaPath string `json:"manta_path"`
 }
 
 // FabricVlan Fabric VLAN information
@@ -1403,8 +1437,8 @@ type FabricVlan struct {
 	// Name VLAN name
 	Name string `json:"name"`
 
-	// VlanId VLAN ID
-	VlanId uint16 `json:"vlan_id"`
+	// VlanID VLAN ID
+	VlanID uint16 `json:"vlan_id"`
 }
 
 // FirewallRule Firewall rule
@@ -1421,14 +1455,14 @@ type FirewallRule struct {
 	// Global Global rule
 	Global *bool `json:"global,omitempty"`
 
-	// Id Rule UUID
-	Id openapi_types.UUID `json:"id"`
+	// ID Rule UUID
+	ID openapi_types.UUID `json:"id"`
 
 	// Log Enable TCP connection logging for this rule
 	Log *bool `json:"log,omitempty"`
 
 	// RoleTag Role tags for RBAC
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 
 	// Rule Rule text
 	Rule string `json:"rule"`
@@ -1439,8 +1473,8 @@ type FirewallRule struct {
 
 // Image Image/dataset information
 type Image struct {
-	// Acl ACL - list of account UUIDs with access (API version >= 7.1.0)
-	Acl *[]openapi_types.UUID `json:"acl,omitempty"`
+	// ACL ACL - list of account UUIDs with access (API version >= 7.1.0)
+	ACL *ImageACL `json:"acl,omitempty"`
 
 	// Description Description
 	Description *string `json:"description,omitempty"`
@@ -1457,8 +1491,8 @@ type Image struct {
 	// Homepage Homepage URL
 	Homepage *string `json:"homepage,omitempty"`
 
-	// Id Image UUID
-	Id openapi_types.UUID `json:"id"`
+	// ID Image UUID
+	ID openapi_types.UUID `json:"id"`
 
 	// ImageSize Image size in bytes (zvol images only)
 	ImageSize *uint64 `json:"image_size,omitempty"`
@@ -1485,13 +1519,13 @@ type Image struct {
 	Requirements *ImageRequirements `json:"requirements,omitempty"`
 
 	// RoleTag Role tags for RBAC
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 
 	// State Image state (API version >= 7.1.0)
 	State *ImageState `json:"state,omitempty"`
 
 	// Tags Tags
-	Tags *map[string]interface{} `json:"tags,omitempty"`
+	Tags *Tags `json:"tags,omitempty"`
 
 	// Type Image type
 	Type ImageType `json:"type"`
@@ -1499,6 +1533,9 @@ type Image struct {
 	// Version Image version
 	Version string `json:"version"`
 }
+
+// ImageACL List of account UUIDs authorised to use a private image (shared across Image, CreateImageRequest, UpdateImageRequest).
+type ImageACL = []openapi_types.UUID
 
 // ImageAction Image action for action dispatch
 type ImageAction struct {
@@ -1540,19 +1577,19 @@ type ImageRequirements struct {
 	Bootrom *string `json:"bootrom,omitempty"`
 
 	// Brand Required brand
-	Brand *VmBrand `json:"brand,omitempty"`
+	Brand *VMBrand `json:"brand,omitempty"`
 
 	// MaxMemory Maximum memory (alias for max_ram)
 	MaxMemory *uint64 `json:"max_memory,omitempty"`
 
-	// MaxRam Maximum RAM in MB
-	MaxRam *uint64 `json:"max_ram,omitempty"`
+	// MaxRAM Maximum RAM in MB
+	MaxRAM *uint64 `json:"max_ram,omitempty"`
 
 	// MinMemory Minimum memory (alias for min_ram)
 	MinMemory *uint64 `json:"min_memory,omitempty"`
 
-	// MinRam Minimum RAM in MB
-	MinRam *uint64 `json:"min_ram,omitempty"`
+	// MinRAM Minimum RAM in MB
+	MinRAM *uint64 `json:"min_ram,omitempty"`
 }
 
 // ImageState Image state
@@ -1577,12 +1614,21 @@ type ImageType0 string
 // ImageType1 Unknown type (forward compatibility)
 type ImageType1 string
 
+// ImportImageRequest Request to import image from datacenter
+type ImportImageRequest struct {
+	// Datacenter Source datacenter name
+	Datacenter string `json:"datacenter"`
+
+	// ID Image UUID in source datacenter
+	ID openapi_types.UUID `json:"id"`
+}
+
 // Machine Machine information
 type Machine struct {
 	// Brand Brand (joyent, kvm, bhyve, lx, joyent-minimal, and internal-only brands)
 	//
 	// Uses VMAPI's Brand enum to support internal-only brands like "builder" that may be returned by VMAPI but cannot be provisioned via CloudAPI.
-	Brand VmBrand `json:"brand"`
+	Brand VMBrand `json:"brand"`
 
 	// ComputeNode Compute node UUID (server hosting the VM)
 	ComputeNode *openapi_types.UUID `json:"compute_node,omitempty"`
@@ -1602,8 +1648,8 @@ type Machine struct {
 	// Disks Disks (bhyve VMs only)
 	Disks *[]MachineDisk `json:"disks,omitempty"`
 
-	// DnsNames DNS names (CNS feature)
-	DnsNames *[]string `json:"dns_names,omitempty"`
+	// DNSNames DNS names (CNS feature)
+	DNSNames *[]string `json:"dns_names,omitempty"`
 
 	// Docker Docker container
 	Docker *bool `json:"docker,omitempty"`
@@ -1620,8 +1666,8 @@ type Machine struct {
 	// FreeSpace Free space in bytes (bhyve with flexible disk, may be negative)
 	FreeSpace *int64 `json:"free_space,omitempty"`
 
-	// Id Machine UUID
-	Id openapi_types.UUID `json:"id"`
+	// ID Machine UUID
+	ID openapi_types.UUID `json:"id"`
 
 	// Image Image UUID
 	Image openapi_types.UUID `json:"image"`
@@ -1633,13 +1679,13 @@ type Machine struct {
 	Memory *uint64 `json:"memory,omitempty"`
 
 	// Metadata Metadata
-	Metadata map[string]interface{} `json:"metadata"`
+	Metadata MetadataObject `json:"metadata"`
 
 	// Name Machine alias/name
 	Name string `json:"name"`
 
 	// Networks Network UUIDs (API version >= 7.1.0)
-	Networks *[]openapi_types.UUID `json:"networks,omitempty"`
+	Networks *NetworkIds `json:"networks,omitempty"`
 
 	// Nics Network interfaces
 	Nics *[]MachineNic `json:"nics,omitempty"`
@@ -1647,17 +1693,17 @@ type Machine struct {
 	// Package Package name
 	Package string `json:"package"`
 
-	// PrimaryIp Primary IP address
-	PrimaryIp *string `json:"primaryIp,omitempty"`
+	// PrimaryIP Primary IP address
+	PrimaryIP *string `json:"primaryIp,omitempty"`
 
 	// RoleTag Role tags for RBAC
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 
 	// State Current state
 	State MachineState `json:"state"`
 
 	// Tags Tags
-	Tags map[string]interface{} `json:"tags"`
+	Tags Tags `json:"tags"`
 
 	// Type Machine type (smartmachine or virtualmachine)
 	Type MachineType `json:"type"`
@@ -1687,8 +1733,8 @@ type MachineDisk struct {
 	// Boot Boot disk
 	Boot *bool `json:"boot,omitempty"`
 
-	// Id Disk UUID
-	Id *openapi_types.UUID `json:"id,omitempty"`
+	// ID Disk UUID
+	ID *openapi_types.UUID `json:"id,omitempty"`
 
 	// Image Image UUID (for image-backed disks)
 	Image *openapi_types.UUID `json:"image,omitempty"`
@@ -1702,8 +1748,8 @@ type MachineNic struct {
 	// Gateway Gateway
 	Gateway *string `json:"gateway,omitempty"`
 
-	// Ip IP address
-	Ip string `json:"ip"`
+	// IP IP address
+	IP string `json:"ip"`
 
 	// Mac MAC address
 	Mac string `json:"mac"`
@@ -1744,8 +1790,8 @@ type MemberRef struct {
 	// Default Whether this member is a default member
 	Default *bool `json:"default,omitempty"`
 
-	// Id Member UUID
-	Id *openapi_types.UUID `json:"id,omitempty"`
+	// ID Member UUID
+	ID *openapi_types.UUID `json:"id,omitempty"`
 
 	// Login Member login name
 	Login *string `json:"login,omitempty"`
@@ -1764,6 +1810,11 @@ type MemberType0 string
 
 // MemberType1 Unknown type (forward compatibility)
 type MemberType1 string
+
+// MetadataObject Key-value metadata (values can be strings, booleans, or numbers)
+//
+// Newtype wrapper rather than a type alias so the generated OpenAPI spec carries `MetadataObject` as a named schema rather than an anonymous `additionalProperties` object. See the note on `Tags` below for the full rationale.
+type MetadataObject map[string]interface{}
 
 // MigrateRequest Migration request
 //
@@ -1785,7 +1836,7 @@ type MigrateRequest struct {
 	// Affinity Affinity rules (only valid for "begin" and "automatic" actions)
 	//
 	// These rules influence which server the instance will be migrated to.
-	Affinity *[]string `json:"affinity,omitempty"`
+	Affinity *AffinityRules `json:"affinity,omitempty"`
 }
 
 // Migration Migration information
@@ -1922,8 +1973,8 @@ type Network struct {
 	// Gateway Gateway
 	Gateway *string `json:"gateway,omitempty"`
 
-	// Id Network UUID
-	Id openapi_types.UUID `json:"id"`
+	// ID Network UUID
+	ID openapi_types.UUID `json:"id"`
 
 	// InternetNat Internet NAT
 	InternetNat *bool `json:"internet_nat,omitempty"`
@@ -1934,20 +1985,20 @@ type Network struct {
 	// Netmask Netmask
 	Netmask *string `json:"netmask,omitempty"`
 
-	// ProvisionEndIp Provision end IP
-	ProvisionEndIp *string `json:"provision_end_ip,omitempty"`
+	// ProvisionEndIP Provision end IP
+	ProvisionEndIP *string `json:"provision_end_ip,omitempty"`
 
-	// ProvisionStartIp Provision start IP
-	ProvisionStartIp *string `json:"provision_start_ip,omitempty"`
+	// ProvisionStartIP Provision start IP
+	ProvisionStartIP *string `json:"provision_start_ip,omitempty"`
 
 	// Public Public network
 	Public bool `json:"public"`
 
 	// Resolvers Resolvers
-	Resolvers *[]string `json:"resolvers,omitempty"`
+	Resolvers *Resolvers `json:"resolvers,omitempty"`
 
 	// RoleTag Role tags for RBAC
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 
 	// Routes Routes
 	Routes interface{} `json:"routes,omitempty"`
@@ -1958,28 +2009,33 @@ type Network struct {
 	// Suffixes DNS suffixes for CNS
 	Suffixes *[]string `json:"suffixes,omitempty"`
 
-	// VlanId VLAN ID
-	VlanId *uint16 `json:"vlan_id,omitempty"`
+	// VlanID VLAN ID
+	VlanID *uint16 `json:"vlan_id,omitempty"`
 }
 
-// NetworkIp Network IP information
+// NetworkIds List of network UUIDs a resource is attached to.
+//
+// Newtype wrapper so Machine / Volume / CreateVolumeRequest all reference the same named `NetworkIds` schema rather than each carrying an anonymous `Vec<Uuid>` field. Different shape from `CreateMachineRequest.networks: Option<Vec<NetworkObject>>`, which uses a richer per-entry struct -- only the UUID-list form is unified here.
+type NetworkIds = []openapi_types.UUID
+
+// NetworkIP Network IP information
 //
 // Note: CloudAPI's `translateIp()` (networks.js) copies NAPI fields directly, so multi-word fields stay in snake_case (owner_uuid, belongs_to_uuid, etc.).
-type NetworkIp struct {
+type NetworkIP struct {
 	// BelongsToType Belongs to type
 	BelongsToType *string `json:"belongs_to_type,omitempty"`
 
-	// BelongsToUuid Belongs to UUID
-	BelongsToUuid *openapi_types.UUID `json:"belongs_to_uuid,omitempty"`
+	// BelongsToUUID Belongs to UUID
+	BelongsToUUID *openapi_types.UUID `json:"belongs_to_uuid,omitempty"`
 
-	// Ip IP address
-	Ip string `json:"ip"`
+	// IP IP address
+	IP string `json:"ip"`
 
 	// Managed Managed
 	Managed *bool `json:"managed,omitempty"`
 
-	// OwnerUuid Owner UUID
-	OwnerUuid *openapi_types.UUID `json:"owner_uuid,omitempty"`
+	// OwnerUUID Owner UUID
+	OwnerUUID *openapi_types.UUID `json:"owner_uuid,omitempty"`
 
 	// Reserved Reserved
 	Reserved bool `json:"reserved"`
@@ -1992,8 +2048,8 @@ type NetworkObject struct {
 	// Ipv4Ips IP addresses (array with max 1 element, matching CloudAPI format)
 	Ipv4Ips *[]string `json:"ipv4_ips,omitempty"`
 
-	// Ipv4Uuid Network UUID
-	Ipv4Uuid openapi_types.UUID `json:"ipv4_uuid"`
+	// Ipv4UUID Network UUID
+	Ipv4UUID openapi_types.UUID `json:"ipv4_uuid"`
 
 	// Primary Mark as primary NIC
 	Primary *bool `json:"primary,omitempty"`
@@ -2004,8 +2060,8 @@ type Nic struct {
 	// Gateway Gateway
 	Gateway *string `json:"gateway,omitempty"`
 
-	// Ip IP address
-	Ip string `json:"ip"`
+	// IP IP address
+	IP string `json:"ip"`
 
 	// Mac MAC address
 	Mac string `json:"mac"`
@@ -2031,7 +2087,7 @@ type Package struct {
 	// Brand Brand (joyent, bhyve, kvm, etc., including internal-only brands)
 	//
 	// Uses VMAPI's Brand enum to support internal-only brands like "builder" that may exist in the system.
-	Brand *VmBrand `json:"brand,omitempty"`
+	Brand *VMBrand `json:"brand,omitempty"`
 
 	// Default Default package
 	Default *bool `json:"default,omitempty"`
@@ -2051,8 +2107,8 @@ type Package struct {
 	// Group Group
 	Group *string `json:"group,omitempty"`
 
-	// Id Package UUID
-	Id openapi_types.UUID `json:"id"`
+	// ID Package UUID
+	ID openapi_types.UUID `json:"id"`
 
 	// Lwps Lightweight processes limit
 	Lwps *uint32 `json:"lwps,omitempty"`
@@ -2064,7 +2120,7 @@ type Package struct {
 	Name string `json:"name"`
 
 	// RoleTag Role tags for RBAC
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 
 	// Swap Swap in MB
 	Swap uint64 `json:"swap"`
@@ -2092,68 +2148,135 @@ type Policy struct {
 	// Description Description
 	Description *string `json:"description,omitempty"`
 
-	// Id Policy UUID
-	Id openapi_types.UUID `json:"id"`
+	// ID Policy UUID
+	ID openapi_types.UUID `json:"id"`
 
 	// Name Policy name
 	Name string `json:"name"`
 
 	// RoleTag Role tags for RBAC
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 
 	// Rules Policy rules (array of rule strings)
-	Rules []string `json:"rules"`
+	Rules PolicyRules `json:"rules"`
 }
 
 // PolicyRef A structured policy reference for role create/update requests.
 //
 // CloudAPI v9.0.0+ requires policies as structured objects rather than plain strings.
 type PolicyRef struct {
-	// Id Policy UUID
-	Id *openapi_types.UUID `json:"id,omitempty"`
+	// ID Policy UUID
+	ID *openapi_types.UUID `json:"id,omitempty"`
 
 	// Name Policy name
 	Name *string `json:"name,omitempty"`
 }
 
-// ProvisioningLimits Provisioning limits for an account
-type ProvisioningLimits struct {
-	// Disk Maximum disk space in MB
-	Disk *int64 `json:"disk,omitempty"`
+// PolicyRules Aperture policy rule strings (shared across Policy, CreatePolicyRequest, UpdatePolicyRequest so all three reference the same named schema).
+type PolicyRules = []string
 
-	// Machines Maximum number of machines
-	Machines *int64 `json:"machines,omitempty"`
+// ProvisioningLimit A single provisioning limit entry.
+//
+// Each limit constrains a specific dimension (VM count, RAM, or disk quota), optionally filtered by brand, image, or OS. A `value` of `-1` blocks all matching provisions; `0` means unlimited (filtered out before the response reaches the client).
+//
+// Units for `value` and `used` depend on `by`: - absent / `"machines"` → count of VMs - `"ram"` → MiB - `"quota"` → GiB
+type ProvisioningLimit struct {
+	// Brand Brand filter value (when `check` is `"brand"`).
+	Brand *string `json:"brand,omitempty"`
 
-	// Ram Maximum RAM in MB
-	Ram *int64 `json:"ram,omitempty"`
+	// By What dimension the limit counts: `"ram"`, `"quota"`, or `"machines"`. When absent, defaults to counting VMs.
+	By *string `json:"by,omitempty"`
+
+	// Check Type of filter applied: `"brand"`, `"image"`, or `"os"`.
+	Check *string `json:"check,omitempty"`
+
+	// Image Image filter value (when `check` is `"image"`).
+	Image *string `json:"image,omitempty"`
+
+	// Os OS filter value (when `check` is `"os"`).
+	Os *string `json:"os,omitempty"`
+
+	// Used Current usage against this limit.
+	Used *int64 `json:"used,omitempty"`
+
+	// Value The limit value (threshold).
+	Value int64 `json:"value"`
+}
+
+// ProvisioningLimits Provisioning limits for an account — an array of limit entries.
+//
+// Newtype wrapper rather than a type alias so the generated OpenAPI spec carries `ProvisioningLimits` as a named schema rather than an anonymous array-of-ProvisioningLimit on the single endpoint that returns it.
+type ProvisioningLimits = []ProvisioningLimit
+
+// RebootMachineRequest Request to reboot a machine
+type RebootMachineRequest struct {
+	// Origin Origin identifier (defaults to 'cloudapi')
+	Origin *string `json:"origin,omitempty"`
+}
+
+// RenameMachineRequest Request to rename a machine
+type RenameMachineRequest struct {
+	// Name New machine alias/name (max 189 chars, or 63 if CNS enabled)
+	Name string `json:"name"`
+
+	// Origin Origin identifier (defaults to 'cloudapi')
+	Origin *string `json:"origin,omitempty"`
 }
 
 // ReplaceRoleTagsRequest Request to replace role tags
 type ReplaceRoleTagsRequest struct {
 	// RoleTag Role tags (list of role names)
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 }
+
+// ResizeDiskRequest Request to resize disk
+type ResizeDiskRequest struct {
+	// DangerousAllowShrink Allow dangerous shrink operation
+	DangerousAllowShrink *bool `json:"dangerous_allow_shrink,omitempty"`
+
+	// Size New size in MB
+	Size uint64 `json:"size"`
+}
+
+// ResizeMachineRequest Request to resize a machine
+type ResizeMachineRequest struct {
+	// Origin Origin identifier (defaults to 'cloudapi')
+	Origin *string `json:"origin,omitempty"`
+
+	// Package New package name or UUID
+	Package string `json:"package"`
+}
+
+// Resolvers List of DNS resolver addresses for a fabric network.
+//
+// Newtype wrapper rather than a type alias so generated clients see a single named `Resolvers` type across all fabric-network schemas (Network, CreateFabricNetworkRequest, UpdateFabricNetworkRequest).
+type Resolvers = []string
 
 // Role Role information
 type Role struct {
-	// DefaultMembers Default members (user UUIDs or logins)
-	DefaultMembers *[]string `json:"default_members,omitempty"`
+	// DefaultMembers Default members (structured member references)
+	DefaultMembers *[]MemberRef `json:"default_members,omitempty"`
 
-	// Id Role UUID
-	Id openapi_types.UUID `json:"id"`
+	// ID Role UUID
+	ID openapi_types.UUID `json:"id"`
 
-	// Members Members (user UUIDs or logins)
-	Members *[]string `json:"members,omitempty"`
+	// Members Members (structured member references)
+	Members *[]MemberRef `json:"members,omitempty"`
 
 	// Name Role name
 	Name string `json:"name"`
 
-	// Policies Policies (policy UUIDs or names)
-	Policies *[]string `json:"policies,omitempty"`
+	// Policies Policies attached to this role
+	Policies *[]PolicyRef `json:"policies,omitempty"`
 
 	// RoleTag Role tags for RBAC
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 }
+
+// RoleTags Role tags for RBAC
+//
+// Newtype wrapper rather than a type alias so the generated OpenAPI spec carries `RoleTags` as a named schema. Every RBAC-taggable resource (FirewallRule, Image, Machine, Network, Package, Policy, Role, SshKey, User, plus the bulk replace-role-tags request/ response) carries a `role-tag` field — with an alias, each was inlined as an anonymous `Vec<String>` per field. The newtype preserves the name so all clients see a single `RoleTags` type.
+type RoleTags = []string
 
 // RoleTagsResponse Response after replacing role tags on a resource
 type RoleTagsResponse struct {
@@ -2161,7 +2284,7 @@ type RoleTagsResponse struct {
 	Name string `json:"name"`
 
 	// RoleTag List of role names assigned to the resource
-	RoleTag []string `json:"role-tag"`
+	RoleTag RoleTags `json:"role-tag"`
 }
 
 // Services Services map: name -> URL
@@ -2197,8 +2320,8 @@ type SnapshotState0 string
 // SnapshotState1 Unknown state (forward compatibility)
 type SnapshotState1 string
 
-// SshKey SSH key information
-type SshKey struct {
+// SSHKey SSH key information
+type SSHKey struct {
 	// Created Creation timestamp
 	Created *time.Time `json:"created,omitempty"`
 
@@ -2212,8 +2335,25 @@ type SshKey struct {
 	Name string `json:"name"`
 
 	// RoleTag Role tags for RBAC
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 }
+
+// StartMachineRequest Request to start a machine
+type StartMachineRequest struct {
+	// Origin Origin identifier (defaults to 'cloudapi')
+	Origin *string `json:"origin,omitempty"`
+}
+
+// StopMachineRequest Request to stop a machine
+type StopMachineRequest struct {
+	// Origin Origin identifier (defaults to 'cloudapi')
+	Origin *string `json:"origin,omitempty"`
+}
+
+// Tags Key-value tags (values can be strings, booleans, or numbers)
+//
+// Newtype wrapper rather than a type alias so the generated OpenAPI spec carries `Tags` as a named schema rather than an anonymous `additionalProperties` object. A `pub type Tags = HashMap<String, Value>` is erased by schemars at compile time, causing every field typed `Tags` to inline the map shape and downstream code generators (Progenitor, oapi-codegen) to emit unnamed `serde_json::Map` / `map[string]interface{}` types per field. The newtype preserves the name so all clients see a single `Tags` type.
+type Tags map[string]interface{}
 
 // TagsRequest Request to add/replace machine tags
 type TagsRequest map[string]interface{}
@@ -2280,14 +2420,14 @@ type UpdateFabricNetworkRequest struct {
 	// Name Network name
 	Name *string `json:"name,omitempty"`
 
-	// ProvisionEndIp Provision end IP
-	ProvisionEndIp *string `json:"provision_end_ip,omitempty"`
+	// ProvisionEndIP Provision end IP
+	ProvisionEndIP *string `json:"provision_end_ip,omitempty"`
 
-	// ProvisionStartIp Provision start IP
-	ProvisionStartIp *string `json:"provision_start_ip,omitempty"`
+	// ProvisionStartIP Provision start IP
+	ProvisionStartIP *string `json:"provision_start_ip,omitempty"`
 
 	// Resolvers Resolvers
-	Resolvers *[]string `json:"resolvers,omitempty"`
+	Resolvers *Resolvers `json:"resolvers,omitempty"`
 
 	// Routes Routes
 	Routes interface{} `json:"routes,omitempty"`
@@ -2317,8 +2457,32 @@ type UpdateFirewallRuleRequest struct {
 	Rule *string `json:"rule,omitempty"`
 }
 
-// UpdateNetworkIpRequest Request to update network IP
-type UpdateNetworkIpRequest struct {
+// UpdateImageRequest Request to update an image
+type UpdateImageRequest struct {
+	// ACL ACL
+	ACL *ImageACL `json:"acl,omitempty"`
+
+	// Description Description
+	Description *string `json:"description,omitempty"`
+
+	// Eula EULA URL
+	Eula *string `json:"eula,omitempty"`
+
+	// Homepage Homepage URL
+	Homepage *string `json:"homepage,omitempty"`
+
+	// Name Image name
+	Name *string `json:"name,omitempty"`
+
+	// Tags Tags
+	Tags *Tags `json:"tags,omitempty"`
+
+	// Version Image version
+	Version *string `json:"version,omitempty"`
+}
+
+// UpdateNetworkIPRequest Request to update network IP
+type UpdateNetworkIPRequest struct {
 	// Reserved Reserved
 	Reserved bool `json:"reserved"`
 }
@@ -2332,7 +2496,7 @@ type UpdatePolicyRequest struct {
 	Name *string `json:"name,omitempty"`
 
 	// Rules Policy rules (array of rule strings)
-	Rules *[]string `json:"rules,omitempty"`
+	Rules *PolicyRules `json:"rules,omitempty"`
 }
 
 // UpdateRoleRequest Request to update role
@@ -2380,6 +2544,12 @@ type UpdateUserRequest struct {
 	State *string `json:"state,omitempty"`
 }
 
+// UpdateVolumeRequest Request to update volume
+type UpdateVolumeRequest struct {
+	// Name Volume name
+	Name *string `json:"name,omitempty"`
+}
+
 // User User information
 type User struct {
 	// CompanyName Company name
@@ -2394,8 +2564,8 @@ type User struct {
 	// FirstName First name
 	FirstName *string `json:"firstName,omitempty"`
 
-	// Id User UUID
-	Id openapi_types.UUID `json:"id"`
+	// ID User UUID
+	ID openapi_types.UUID `json:"id"`
 
 	// LastName Last name
 	LastName *string `json:"lastName,omitempty"`
@@ -2407,27 +2577,27 @@ type User struct {
 	Phone *string `json:"phone,omitempty"`
 
 	// RoleTag Role tags for RBAC
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 
 	// Updated Last update timestamp
 	Updated time.Time `json:"updated"`
 }
 
-// VmBrand VM/Container brand as returned by VMAPI.
+// VMBrand VM/Container brand as returned by VMAPI.
 //
 // The brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)
-type VmBrand struct {
+type VMBrand struct {
 	union json.RawMessage
 }
 
-// VmBrand0 defines model for VmBrand.0.
-type VmBrand0 string
+// VMBrand0 defines model for VMBrand.0.
+type VMBrand0 string
 
-// VmBrand1 Internal brand for image build zones (not provisionable via CloudAPI)
-type VmBrand1 string
+// VMBrand1 Internal brand for image build zones (not provisionable via CloudAPI)
+type VMBrand1 string
 
-// VmBrand2 Unknown brand (forward compatibility)
-type VmBrand2 string
+// VMBrand2 Unknown brand (forward compatibility)
+type VMBrand2 string
 
 // Volume Volume information
 type Volume struct {
@@ -2437,17 +2607,17 @@ type Volume struct {
 	// FilesystemPath Filesystem path
 	FilesystemPath *string `json:"filesystem_path,omitempty"`
 
-	// Id Volume UUID
-	Id openapi_types.UUID `json:"id"`
+	// ID Volume UUID
+	ID openapi_types.UUID `json:"id"`
 
 	// Name Volume name
 	Name string `json:"name"`
 
 	// Networks Networks (array of UUIDs)
-	Networks *[]openapi_types.UUID `json:"networks,omitempty"`
+	Networks *NetworkIds `json:"networks,omitempty"`
 
-	// OwnerUuid Owner UUID
-	OwnerUuid openapi_types.UUID `json:"owner_uuid"`
+	// OwnerUUID Owner UUID
+	OwnerUUID openapi_types.UUID `json:"owner_uuid"`
 
 	// Refs References (machines using this volume)
 	Refs *[]openapi_types.UUID `json:"refs,omitempty"`
@@ -2459,7 +2629,7 @@ type Volume struct {
 	State VolumeState `json:"state"`
 
 	// Tags Tags
-	Tags *map[string]interface{} `json:"tags,omitempty"`
+	Tags *Tags `json:"tags,omitempty"`
 
 	// Type Volume type
 	Type VolumeType `json:"type"`
@@ -2570,8 +2740,8 @@ type CreateOrImportImageParams struct {
 	// Datacenter Source datacenter name (for import-from-datacenter)
 	Datacenter *string `form:"datacenter,omitempty" json:"datacenter,omitempty"`
 
-	// Id Image UUID in the source datacenter (for import-from-datacenter)
-	Id *openapi_types.UUID `form:"id,omitempty" json:"id,omitempty"`
+	// ID Image UUID in the source datacenter (for import-from-datacenter)
+	ID *openapi_types.UUID `form:"id,omitempty" json:"id,omitempty"`
 }
 
 // UpdateImageJSONBody defines parameters for UpdateImage.
@@ -2586,7 +2756,7 @@ type UpdateImageParams struct {
 // ListMachinesParams defines parameters for ListMachines.
 type ListMachinesParams struct {
 	// Brand Filter by brand (accepts any brand including internal-only brands)
-	Brand *VmBrand `form:"brand,omitempty" json:"brand,omitempty"`
+	Brand *VMBrand `form:"brand,omitempty" json:"brand,omitempty"`
 
 	// Credentials Include generated credentials in response
 	Credentials *bool `form:"credentials,omitempty" json:"credentials,omitempty"`
@@ -2625,7 +2795,7 @@ type ListMachinesParams struct {
 // HeadMachinesParams defines parameters for HeadMachines.
 type HeadMachinesParams struct {
 	// Brand Filter by brand (accepts any brand including internal-only brands)
-	Brand *VmBrand `form:"brand,omitempty" json:"brand,omitempty"`
+	Brand *VMBrand `form:"brand,omitempty" json:"brand,omitempty"`
 
 	// Credentials Include generated credentials in response
 	Credentials *bool `form:"credentials,omitempty" json:"credentials,omitempty"`
@@ -2746,7 +2916,7 @@ type UpdateImageJSONRequestBody = UpdateImageJSONBody
 type ReplaceImageRoleTagsJSONRequestBody = ReplaceRoleTagsRequest
 
 // CreateKeyJSONRequestBody defines body for CreateKey for application/json ContentType.
-type CreateKeyJSONRequestBody = CreateSshKeyRequest
+type CreateKeyJSONRequestBody = CreateSSHKeyRequest
 
 // ReplaceKeysCollectionRoleTagsJSONRequestBody defines body for ReplaceKeysCollectionRoleTags for application/json ContentType.
 type ReplaceKeysCollectionRoleTagsJSONRequestBody = ReplaceRoleTagsRequest
@@ -2793,8 +2963,8 @@ type ReplaceNetworksCollectionRoleTagsJSONRequestBody = ReplaceRoleTagsRequest
 // ReplaceNetworkRoleTagsJSONRequestBody defines body for ReplaceNetworkRoleTags for application/json ContentType.
 type ReplaceNetworkRoleTagsJSONRequestBody = ReplaceRoleTagsRequest
 
-// UpdateNetworkIpJSONRequestBody defines body for UpdateNetworkIp for application/json ContentType.
-type UpdateNetworkIpJSONRequestBody = UpdateNetworkIpRequest
+// UpdateNetworkIPJSONRequestBody defines body for UpdateNetworkIP for application/json ContentType.
+type UpdateNetworkIPJSONRequestBody = UpdateNetworkIPRequest
 
 // ReplacePackagesCollectionRoleTagsJSONRequestBody defines body for ReplacePackagesCollectionRoleTags for application/json ContentType.
 type ReplacePackagesCollectionRoleTagsJSONRequestBody = ReplaceRoleTagsRequest
@@ -2851,7 +3021,7 @@ type UpdateUserAccessKeyJSONRequestBody = UpdateAccessKeyRequest
 type ChangeUserPasswordJSONRequestBody = ChangePasswordRequest
 
 // CreateUserKeyJSONRequestBody defines body for CreateUserKey for application/json ContentType.
-type CreateUserKeyJSONRequestBody = CreateSshKeyRequest
+type CreateUserKeyJSONRequestBody = CreateSSHKeyRequest
 
 // ReplaceUserKeysCollectionRoleTagsJSONRequestBody defines body for ReplaceUserKeysCollectionRoleTags for application/json ContentType.
 type ReplaceUserKeysCollectionRoleTagsJSONRequestBody = ReplaceRoleTagsRequest
@@ -3791,22 +3961,22 @@ func (t *SnapshotState) UnmarshalJSON(b []byte) error {
 	return err
 }
 
-// AsVmBrand0 returns the union data inside the VmBrand as a VmBrand0
-func (t VmBrand) AsVmBrand0() (VmBrand0, error) {
-	var body VmBrand0
+// AsVMBrand0 returns the union data inside the VMBrand as a VMBrand0
+func (t VMBrand) AsVMBrand0() (VMBrand0, error) {
+	var body VMBrand0
 	err := json.Unmarshal(t.union, &body)
 	return body, err
 }
 
-// FromVmBrand0 overwrites any union data inside the VmBrand as the provided VmBrand0
-func (t *VmBrand) FromVmBrand0(v VmBrand0) error {
+// FromVMBrand0 overwrites any union data inside the VMBrand as the provided VMBrand0
+func (t *VMBrand) FromVMBrand0(v VMBrand0) error {
 	b, err := json.Marshal(v)
 	t.union = b
 	return err
 }
 
-// MergeVmBrand0 performs a merge with any union data inside the VmBrand, using the provided VmBrand0
-func (t *VmBrand) MergeVmBrand0(v VmBrand0) error {
+// MergeVMBrand0 performs a merge with any union data inside the VMBrand, using the provided VMBrand0
+func (t *VMBrand) MergeVMBrand0(v VMBrand0) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -3817,22 +3987,22 @@ func (t *VmBrand) MergeVmBrand0(v VmBrand0) error {
 	return err
 }
 
-// AsVmBrand1 returns the union data inside the VmBrand as a VmBrand1
-func (t VmBrand) AsVmBrand1() (VmBrand1, error) {
-	var body VmBrand1
+// AsVMBrand1 returns the union data inside the VMBrand as a VMBrand1
+func (t VMBrand) AsVMBrand1() (VMBrand1, error) {
+	var body VMBrand1
 	err := json.Unmarshal(t.union, &body)
 	return body, err
 }
 
-// FromVmBrand1 overwrites any union data inside the VmBrand as the provided VmBrand1
-func (t *VmBrand) FromVmBrand1(v VmBrand1) error {
+// FromVMBrand1 overwrites any union data inside the VMBrand as the provided VMBrand1
+func (t *VMBrand) FromVMBrand1(v VMBrand1) error {
 	b, err := json.Marshal(v)
 	t.union = b
 	return err
 }
 
-// MergeVmBrand1 performs a merge with any union data inside the VmBrand, using the provided VmBrand1
-func (t *VmBrand) MergeVmBrand1(v VmBrand1) error {
+// MergeVMBrand1 performs a merge with any union data inside the VMBrand, using the provided VMBrand1
+func (t *VMBrand) MergeVMBrand1(v VMBrand1) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -3843,22 +4013,22 @@ func (t *VmBrand) MergeVmBrand1(v VmBrand1) error {
 	return err
 }
 
-// AsVmBrand2 returns the union data inside the VmBrand as a VmBrand2
-func (t VmBrand) AsVmBrand2() (VmBrand2, error) {
-	var body VmBrand2
+// AsVMBrand2 returns the union data inside the VMBrand as a VMBrand2
+func (t VMBrand) AsVMBrand2() (VMBrand2, error) {
+	var body VMBrand2
 	err := json.Unmarshal(t.union, &body)
 	return body, err
 }
 
-// FromVmBrand2 overwrites any union data inside the VmBrand as the provided VmBrand2
-func (t *VmBrand) FromVmBrand2(v VmBrand2) error {
+// FromVMBrand2 overwrites any union data inside the VMBrand as the provided VMBrand2
+func (t *VMBrand) FromVMBrand2(v VMBrand2) error {
 	b, err := json.Marshal(v)
 	t.union = b
 	return err
 }
 
-// MergeVmBrand2 performs a merge with any union data inside the VmBrand, using the provided VmBrand2
-func (t *VmBrand) MergeVmBrand2(v VmBrand2) error {
+// MergeVMBrand2 performs a merge with any union data inside the VMBrand, using the provided VMBrand2
+func (t *VMBrand) MergeVMBrand2(v VMBrand2) error {
 	b, err := json.Marshal(v)
 	if err != nil {
 		return err
@@ -3869,12 +4039,12 @@ func (t *VmBrand) MergeVmBrand2(v VmBrand2) error {
 	return err
 }
 
-func (t VmBrand) MarshalJSON() ([]byte, error) {
+func (t VMBrand) MarshalJSON() ([]byte, error) {
 	b, err := t.union.MarshalJSON()
 	return b, err
 }
 
-func (t *VmBrand) UnmarshalJSON(b []byte) error {
+func (t *VMBrand) UnmarshalJSON(b []byte) error {
 	err := t.union.UnmarshalJSON(b)
 	return err
 }
@@ -4154,43 +4324,43 @@ type ClientInterface interface {
 	CreateFabricVlan(ctx context.Context, account string, body CreateFabricVlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DeleteFabricVlan request
-	DeleteFabricVlan(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*http.Response, error)
+	DeleteFabricVlan(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetFabricVlan request
-	GetFabricVlan(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetFabricVlan(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// HeadFabricVlan request
-	HeadFabricVlan(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*http.Response, error)
+	HeadFabricVlan(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UpdateFabricVlanWithBody request with any body
-	UpdateFabricVlanWithBody(ctx context.Context, account string, vlanId uint16, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	UpdateFabricVlanWithBody(ctx context.Context, account string, vlanID uint16, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	UpdateFabricVlan(ctx context.Context, account string, vlanId uint16, body UpdateFabricVlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	UpdateFabricVlan(ctx context.Context, account string, vlanID uint16, body UpdateFabricVlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListFabricNetworks request
-	ListFabricNetworks(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ListFabricNetworks(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// HeadFabricNetworks request
-	HeadFabricNetworks(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*http.Response, error)
+	HeadFabricNetworks(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateFabricNetworkWithBody request with any body
-	CreateFabricNetworkWithBody(ctx context.Context, account string, vlanId uint16, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	CreateFabricNetworkWithBody(ctx context.Context, account string, vlanID uint16, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	CreateFabricNetwork(ctx context.Context, account string, vlanId uint16, body CreateFabricNetworkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	CreateFabricNetwork(ctx context.Context, account string, vlanID uint16, body CreateFabricNetworkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DeleteFabricNetwork request
-	DeleteFabricNetwork(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+	DeleteFabricNetwork(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetFabricNetwork request
-	GetFabricNetwork(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetFabricNetwork(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// HeadFabricNetwork request
-	HeadFabricNetwork(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+	HeadFabricNetwork(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UpdateFabricNetworkWithBody request with any body
-	UpdateFabricNetworkWithBody(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	UpdateFabricNetworkWithBody(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	UpdateFabricNetwork(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, body UpdateFabricNetworkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	UpdateFabricNetwork(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, body UpdateFabricNetworkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListForeignDatacenters request
 	ListForeignDatacenters(ctx context.Context, account string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -4524,16 +4694,16 @@ type ClientInterface interface {
 	// HeadNetworkIps request
 	HeadNetworkIps(ctx context.Context, account string, network openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetNetworkIp request
-	GetNetworkIp(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// GetNetworkIP request
+	GetNetworkIP(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// HeadNetworkIp request
-	HeadNetworkIp(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// HeadNetworkIP request
+	HeadNetworkIP(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// UpdateNetworkIpWithBody request with any body
-	UpdateNetworkIpWithBody(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// UpdateNetworkIPWithBody request with any body
+	UpdateNetworkIPWithBody(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	UpdateNetworkIp(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, body UpdateNetworkIpJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	UpdateNetworkIP(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, body UpdateNetworkIPJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListPackages request
 	ListPackages(ctx context.Context, account string, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -5089,8 +5259,8 @@ func (c *Client) CreateFabricVlan(ctx context.Context, account string, body Crea
 	return c.Client.Do(req)
 }
 
-func (c *Client) DeleteFabricVlan(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteFabricVlanRequest(c.Server, account, vlanId)
+func (c *Client) DeleteFabricVlan(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteFabricVlanRequest(c.Server, account, vlanID)
 	if err != nil {
 		return nil, err
 	}
@@ -5101,8 +5271,8 @@ func (c *Client) DeleteFabricVlan(ctx context.Context, account string, vlanId ui
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetFabricVlan(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetFabricVlanRequest(c.Server, account, vlanId)
+func (c *Client) GetFabricVlan(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFabricVlanRequest(c.Server, account, vlanID)
 	if err != nil {
 		return nil, err
 	}
@@ -5113,8 +5283,8 @@ func (c *Client) GetFabricVlan(ctx context.Context, account string, vlanId uint1
 	return c.Client.Do(req)
 }
 
-func (c *Client) HeadFabricVlan(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewHeadFabricVlanRequest(c.Server, account, vlanId)
+func (c *Client) HeadFabricVlan(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewHeadFabricVlanRequest(c.Server, account, vlanID)
 	if err != nil {
 		return nil, err
 	}
@@ -5125,8 +5295,8 @@ func (c *Client) HeadFabricVlan(ctx context.Context, account string, vlanId uint
 	return c.Client.Do(req)
 }
 
-func (c *Client) UpdateFabricVlanWithBody(ctx context.Context, account string, vlanId uint16, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUpdateFabricVlanRequestWithBody(c.Server, account, vlanId, contentType, body)
+func (c *Client) UpdateFabricVlanWithBody(ctx context.Context, account string, vlanID uint16, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateFabricVlanRequestWithBody(c.Server, account, vlanID, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -5137,8 +5307,8 @@ func (c *Client) UpdateFabricVlanWithBody(ctx context.Context, account string, v
 	return c.Client.Do(req)
 }
 
-func (c *Client) UpdateFabricVlan(ctx context.Context, account string, vlanId uint16, body UpdateFabricVlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUpdateFabricVlanRequest(c.Server, account, vlanId, body)
+func (c *Client) UpdateFabricVlan(ctx context.Context, account string, vlanID uint16, body UpdateFabricVlanJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateFabricVlanRequest(c.Server, account, vlanID, body)
 	if err != nil {
 		return nil, err
 	}
@@ -5149,8 +5319,8 @@ func (c *Client) UpdateFabricVlan(ctx context.Context, account string, vlanId ui
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListFabricNetworks(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListFabricNetworksRequest(c.Server, account, vlanId)
+func (c *Client) ListFabricNetworks(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListFabricNetworksRequest(c.Server, account, vlanID)
 	if err != nil {
 		return nil, err
 	}
@@ -5161,8 +5331,8 @@ func (c *Client) ListFabricNetworks(ctx context.Context, account string, vlanId 
 	return c.Client.Do(req)
 }
 
-func (c *Client) HeadFabricNetworks(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewHeadFabricNetworksRequest(c.Server, account, vlanId)
+func (c *Client) HeadFabricNetworks(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewHeadFabricNetworksRequest(c.Server, account, vlanID)
 	if err != nil {
 		return nil, err
 	}
@@ -5173,8 +5343,8 @@ func (c *Client) HeadFabricNetworks(ctx context.Context, account string, vlanId 
 	return c.Client.Do(req)
 }
 
-func (c *Client) CreateFabricNetworkWithBody(ctx context.Context, account string, vlanId uint16, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateFabricNetworkRequestWithBody(c.Server, account, vlanId, contentType, body)
+func (c *Client) CreateFabricNetworkWithBody(ctx context.Context, account string, vlanID uint16, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateFabricNetworkRequestWithBody(c.Server, account, vlanID, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -5185,8 +5355,8 @@ func (c *Client) CreateFabricNetworkWithBody(ctx context.Context, account string
 	return c.Client.Do(req)
 }
 
-func (c *Client) CreateFabricNetwork(ctx context.Context, account string, vlanId uint16, body CreateFabricNetworkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateFabricNetworkRequest(c.Server, account, vlanId, body)
+func (c *Client) CreateFabricNetwork(ctx context.Context, account string, vlanID uint16, body CreateFabricNetworkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateFabricNetworkRequest(c.Server, account, vlanID, body)
 	if err != nil {
 		return nil, err
 	}
@@ -5197,8 +5367,8 @@ func (c *Client) CreateFabricNetwork(ctx context.Context, account string, vlanId
 	return c.Client.Do(req)
 }
 
-func (c *Client) DeleteFabricNetwork(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteFabricNetworkRequest(c.Server, account, vlanId, id)
+func (c *Client) DeleteFabricNetwork(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteFabricNetworkRequest(c.Server, account, vlanID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -5209,8 +5379,8 @@ func (c *Client) DeleteFabricNetwork(ctx context.Context, account string, vlanId
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetFabricNetwork(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetFabricNetworkRequest(c.Server, account, vlanId, id)
+func (c *Client) GetFabricNetwork(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetFabricNetworkRequest(c.Server, account, vlanID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -5221,8 +5391,8 @@ func (c *Client) GetFabricNetwork(ctx context.Context, account string, vlanId ui
 	return c.Client.Do(req)
 }
 
-func (c *Client) HeadFabricNetwork(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewHeadFabricNetworkRequest(c.Server, account, vlanId, id)
+func (c *Client) HeadFabricNetwork(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewHeadFabricNetworkRequest(c.Server, account, vlanID, id)
 	if err != nil {
 		return nil, err
 	}
@@ -5233,8 +5403,8 @@ func (c *Client) HeadFabricNetwork(ctx context.Context, account string, vlanId u
 	return c.Client.Do(req)
 }
 
-func (c *Client) UpdateFabricNetworkWithBody(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUpdateFabricNetworkRequestWithBody(c.Server, account, vlanId, id, contentType, body)
+func (c *Client) UpdateFabricNetworkWithBody(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateFabricNetworkRequestWithBody(c.Server, account, vlanID, id, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -5245,8 +5415,8 @@ func (c *Client) UpdateFabricNetworkWithBody(ctx context.Context, account string
 	return c.Client.Do(req)
 }
 
-func (c *Client) UpdateFabricNetwork(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, body UpdateFabricNetworkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUpdateFabricNetworkRequest(c.Server, account, vlanId, id, body)
+func (c *Client) UpdateFabricNetwork(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, body UpdateFabricNetworkJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateFabricNetworkRequest(c.Server, account, vlanID, id, body)
 	if err != nil {
 		return nil, err
 	}
@@ -6685,8 +6855,8 @@ func (c *Client) HeadNetworkIps(ctx context.Context, account string, network ope
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetNetworkIp(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetNetworkIpRequest(c.Server, account, network, ipAddress)
+func (c *Client) GetNetworkIP(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetNetworkIPRequest(c.Server, account, network, ipAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -6697,8 +6867,8 @@ func (c *Client) GetNetworkIp(ctx context.Context, account string, network opena
 	return c.Client.Do(req)
 }
 
-func (c *Client) HeadNetworkIp(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewHeadNetworkIpRequest(c.Server, account, network, ipAddress)
+func (c *Client) HeadNetworkIP(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewHeadNetworkIPRequest(c.Server, account, network, ipAddress)
 	if err != nil {
 		return nil, err
 	}
@@ -6709,8 +6879,8 @@ func (c *Client) HeadNetworkIp(ctx context.Context, account string, network open
 	return c.Client.Do(req)
 }
 
-func (c *Client) UpdateNetworkIpWithBody(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUpdateNetworkIpRequestWithBody(c.Server, account, network, ipAddress, contentType, body)
+func (c *Client) UpdateNetworkIPWithBody(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateNetworkIPRequestWithBody(c.Server, account, network, ipAddress, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -6721,8 +6891,8 @@ func (c *Client) UpdateNetworkIpWithBody(ctx context.Context, account string, ne
 	return c.Client.Do(req)
 }
 
-func (c *Client) UpdateNetworkIp(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, body UpdateNetworkIpJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUpdateNetworkIpRequest(c.Server, account, network, ipAddress, body)
+func (c *Client) UpdateNetworkIP(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, body UpdateNetworkIPJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateNetworkIPRequest(c.Server, account, network, ipAddress, body)
 	if err != nil {
 		return nil, err
 	}
@@ -8534,7 +8704,7 @@ func NewCreateFabricVlanRequestWithBody(server string, account string, contentTy
 }
 
 // NewDeleteFabricVlanRequest generates requests for DeleteFabricVlan
-func NewDeleteFabricVlanRequest(server string, account string, vlanId uint16) (*http.Request, error) {
+func NewDeleteFabricVlanRequest(server string, account string, vlanID uint16) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8546,7 +8716,7 @@ func NewDeleteFabricVlanRequest(server string, account string, vlanId uint16) (*
 
 	var pathParam1 string
 
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
 	if err != nil {
 		return nil, err
 	}
@@ -8575,7 +8745,7 @@ func NewDeleteFabricVlanRequest(server string, account string, vlanId uint16) (*
 }
 
 // NewGetFabricVlanRequest generates requests for GetFabricVlan
-func NewGetFabricVlanRequest(server string, account string, vlanId uint16) (*http.Request, error) {
+func NewGetFabricVlanRequest(server string, account string, vlanID uint16) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8587,7 +8757,7 @@ func NewGetFabricVlanRequest(server string, account string, vlanId uint16) (*htt
 
 	var pathParam1 string
 
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
 	if err != nil {
 		return nil, err
 	}
@@ -8616,7 +8786,7 @@ func NewGetFabricVlanRequest(server string, account string, vlanId uint16) (*htt
 }
 
 // NewHeadFabricVlanRequest generates requests for HeadFabricVlan
-func NewHeadFabricVlanRequest(server string, account string, vlanId uint16) (*http.Request, error) {
+func NewHeadFabricVlanRequest(server string, account string, vlanID uint16) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8628,7 +8798,7 @@ func NewHeadFabricVlanRequest(server string, account string, vlanId uint16) (*ht
 
 	var pathParam1 string
 
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
 	if err != nil {
 		return nil, err
 	}
@@ -8657,18 +8827,18 @@ func NewHeadFabricVlanRequest(server string, account string, vlanId uint16) (*ht
 }
 
 // NewUpdateFabricVlanRequest calls the generic UpdateFabricVlan builder with application/json body
-func NewUpdateFabricVlanRequest(server string, account string, vlanId uint16, body UpdateFabricVlanJSONRequestBody) (*http.Request, error) {
+func NewUpdateFabricVlanRequest(server string, account string, vlanID uint16, body UpdateFabricVlanJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewUpdateFabricVlanRequestWithBody(server, account, vlanId, "application/json", bodyReader)
+	return NewUpdateFabricVlanRequestWithBody(server, account, vlanID, "application/json", bodyReader)
 }
 
 // NewUpdateFabricVlanRequestWithBody generates requests for UpdateFabricVlan with any type of body
-func NewUpdateFabricVlanRequestWithBody(server string, account string, vlanId uint16, contentType string, body io.Reader) (*http.Request, error) {
+func NewUpdateFabricVlanRequestWithBody(server string, account string, vlanID uint16, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8680,7 +8850,7 @@ func NewUpdateFabricVlanRequestWithBody(server string, account string, vlanId ui
 
 	var pathParam1 string
 
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
 	if err != nil {
 		return nil, err
 	}
@@ -8711,7 +8881,7 @@ func NewUpdateFabricVlanRequestWithBody(server string, account string, vlanId ui
 }
 
 // NewListFabricNetworksRequest generates requests for ListFabricNetworks
-func NewListFabricNetworksRequest(server string, account string, vlanId uint16) (*http.Request, error) {
+func NewListFabricNetworksRequest(server string, account string, vlanID uint16) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8723,7 +8893,7 @@ func NewListFabricNetworksRequest(server string, account string, vlanId uint16) 
 
 	var pathParam1 string
 
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
 	if err != nil {
 		return nil, err
 	}
@@ -8752,7 +8922,7 @@ func NewListFabricNetworksRequest(server string, account string, vlanId uint16) 
 }
 
 // NewHeadFabricNetworksRequest generates requests for HeadFabricNetworks
-func NewHeadFabricNetworksRequest(server string, account string, vlanId uint16) (*http.Request, error) {
+func NewHeadFabricNetworksRequest(server string, account string, vlanID uint16) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8764,7 +8934,7 @@ func NewHeadFabricNetworksRequest(server string, account string, vlanId uint16) 
 
 	var pathParam1 string
 
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
 	if err != nil {
 		return nil, err
 	}
@@ -8793,18 +8963,18 @@ func NewHeadFabricNetworksRequest(server string, account string, vlanId uint16) 
 }
 
 // NewCreateFabricNetworkRequest calls the generic CreateFabricNetwork builder with application/json body
-func NewCreateFabricNetworkRequest(server string, account string, vlanId uint16, body CreateFabricNetworkJSONRequestBody) (*http.Request, error) {
+func NewCreateFabricNetworkRequest(server string, account string, vlanID uint16, body CreateFabricNetworkJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewCreateFabricNetworkRequestWithBody(server, account, vlanId, "application/json", bodyReader)
+	return NewCreateFabricNetworkRequestWithBody(server, account, vlanID, "application/json", bodyReader)
 }
 
 // NewCreateFabricNetworkRequestWithBody generates requests for CreateFabricNetwork with any type of body
-func NewCreateFabricNetworkRequestWithBody(server string, account string, vlanId uint16, contentType string, body io.Reader) (*http.Request, error) {
+func NewCreateFabricNetworkRequestWithBody(server string, account string, vlanID uint16, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8816,7 +8986,7 @@ func NewCreateFabricNetworkRequestWithBody(server string, account string, vlanId
 
 	var pathParam1 string
 
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
 	if err != nil {
 		return nil, err
 	}
@@ -8847,7 +9017,7 @@ func NewCreateFabricNetworkRequestWithBody(server string, account string, vlanId
 }
 
 // NewDeleteFabricNetworkRequest generates requests for DeleteFabricNetwork
-func NewDeleteFabricNetworkRequest(server string, account string, vlanId uint16, id openapi_types.UUID) (*http.Request, error) {
+func NewDeleteFabricNetworkRequest(server string, account string, vlanID uint16, id openapi_types.UUID) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8859,7 +9029,7 @@ func NewDeleteFabricNetworkRequest(server string, account string, vlanId uint16,
 
 	var pathParam1 string
 
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
 	if err != nil {
 		return nil, err
 	}
@@ -8895,7 +9065,7 @@ func NewDeleteFabricNetworkRequest(server string, account string, vlanId uint16,
 }
 
 // NewGetFabricNetworkRequest generates requests for GetFabricNetwork
-func NewGetFabricNetworkRequest(server string, account string, vlanId uint16, id openapi_types.UUID) (*http.Request, error) {
+func NewGetFabricNetworkRequest(server string, account string, vlanID uint16, id openapi_types.UUID) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8907,7 +9077,7 @@ func NewGetFabricNetworkRequest(server string, account string, vlanId uint16, id
 
 	var pathParam1 string
 
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
 	if err != nil {
 		return nil, err
 	}
@@ -8943,7 +9113,7 @@ func NewGetFabricNetworkRequest(server string, account string, vlanId uint16, id
 }
 
 // NewHeadFabricNetworkRequest generates requests for HeadFabricNetwork
-func NewHeadFabricNetworkRequest(server string, account string, vlanId uint16, id openapi_types.UUID) (*http.Request, error) {
+func NewHeadFabricNetworkRequest(server string, account string, vlanID uint16, id openapi_types.UUID) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -8955,7 +9125,7 @@ func NewHeadFabricNetworkRequest(server string, account string, vlanId uint16, i
 
 	var pathParam1 string
 
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
 	if err != nil {
 		return nil, err
 	}
@@ -8991,18 +9161,18 @@ func NewHeadFabricNetworkRequest(server string, account string, vlanId uint16, i
 }
 
 // NewUpdateFabricNetworkRequest calls the generic UpdateFabricNetwork builder with application/json body
-func NewUpdateFabricNetworkRequest(server string, account string, vlanId uint16, id openapi_types.UUID, body UpdateFabricNetworkJSONRequestBody) (*http.Request, error) {
+func NewUpdateFabricNetworkRequest(server string, account string, vlanID uint16, id openapi_types.UUID, body UpdateFabricNetworkJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewUpdateFabricNetworkRequestWithBody(server, account, vlanId, id, "application/json", bodyReader)
+	return NewUpdateFabricNetworkRequestWithBody(server, account, vlanID, id, "application/json", bodyReader)
 }
 
 // NewUpdateFabricNetworkRequestWithBody generates requests for UpdateFabricNetwork with any type of body
-func NewUpdateFabricNetworkRequestWithBody(server string, account string, vlanId uint16, id openapi_types.UUID, contentType string, body io.Reader) (*http.Request, error) {
+func NewUpdateFabricNetworkRequestWithBody(server string, account string, vlanID uint16, id openapi_types.UUID, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -9014,7 +9184,7 @@ func NewUpdateFabricNetworkRequestWithBody(server string, account string, vlanId
 
 	var pathParam1 string
 
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "vlan_id", vlanID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "uint16"})
 	if err != nil {
 		return nil, err
 	}
@@ -10065,9 +10235,9 @@ func NewCreateOrImportImageRequestWithBody(server string, account string, params
 
 		}
 
-		if params.Id != nil {
+		if params.ID != nil {
 
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "id", *params.Id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "id", *params.ID, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
 				return nil, err
 			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
 				return nil, err
@@ -13947,8 +14117,8 @@ func NewHeadNetworkIpsRequest(server string, account string, network openapi_typ
 	return req, nil
 }
 
-// NewGetNetworkIpRequest generates requests for GetNetworkIp
-func NewGetNetworkIpRequest(server string, account string, network openapi_types.UUID, ipAddress string) (*http.Request, error) {
+// NewGetNetworkIPRequest generates requests for GetNetworkIP
+func NewGetNetworkIPRequest(server string, account string, network openapi_types.UUID, ipAddress string) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -13995,8 +14165,8 @@ func NewGetNetworkIpRequest(server string, account string, network openapi_types
 	return req, nil
 }
 
-// NewHeadNetworkIpRequest generates requests for HeadNetworkIp
-func NewHeadNetworkIpRequest(server string, account string, network openapi_types.UUID, ipAddress string) (*http.Request, error) {
+// NewHeadNetworkIPRequest generates requests for HeadNetworkIP
+func NewHeadNetworkIPRequest(server string, account string, network openapi_types.UUID, ipAddress string) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -14043,19 +14213,19 @@ func NewHeadNetworkIpRequest(server string, account string, network openapi_type
 	return req, nil
 }
 
-// NewUpdateNetworkIpRequest calls the generic UpdateNetworkIp builder with application/json body
-func NewUpdateNetworkIpRequest(server string, account string, network openapi_types.UUID, ipAddress string, body UpdateNetworkIpJSONRequestBody) (*http.Request, error) {
+// NewUpdateNetworkIPRequest calls the generic UpdateNetworkIP builder with application/json body
+func NewUpdateNetworkIPRequest(server string, account string, network openapi_types.UUID, ipAddress string, body UpdateNetworkIPJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
 	bodyReader = bytes.NewReader(buf)
-	return NewUpdateNetworkIpRequestWithBody(server, account, network, ipAddress, "application/json", bodyReader)
+	return NewUpdateNetworkIPRequestWithBody(server, account, network, ipAddress, "application/json", bodyReader)
 }
 
-// NewUpdateNetworkIpRequestWithBody generates requests for UpdateNetworkIp with any type of body
-func NewUpdateNetworkIpRequestWithBody(server string, account string, network openapi_types.UUID, ipAddress string, contentType string, body io.Reader) (*http.Request, error) {
+// NewUpdateNetworkIPRequestWithBody generates requests for UpdateNetworkIP with any type of body
+func NewUpdateNetworkIPRequestWithBody(server string, account string, network openapi_types.UUID, ipAddress string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -16799,43 +16969,43 @@ type ClientWithResponsesInterface interface {
 	CreateFabricVlanWithResponse(ctx context.Context, account string, body CreateFabricVlanJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFabricVlanResponse, error)
 
 	// DeleteFabricVlanWithResponse request
-	DeleteFabricVlanWithResponse(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*DeleteFabricVlanResponse, error)
+	DeleteFabricVlanWithResponse(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*DeleteFabricVlanResponse, error)
 
 	// GetFabricVlanWithResponse request
-	GetFabricVlanWithResponse(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*GetFabricVlanResponse, error)
+	GetFabricVlanWithResponse(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*GetFabricVlanResponse, error)
 
 	// HeadFabricVlanWithResponse request
-	HeadFabricVlanWithResponse(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*HeadFabricVlanResponse, error)
+	HeadFabricVlanWithResponse(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*HeadFabricVlanResponse, error)
 
 	// UpdateFabricVlanWithBodyWithResponse request with any body
-	UpdateFabricVlanWithBodyWithResponse(ctx context.Context, account string, vlanId uint16, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateFabricVlanResponse, error)
+	UpdateFabricVlanWithBodyWithResponse(ctx context.Context, account string, vlanID uint16, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateFabricVlanResponse, error)
 
-	UpdateFabricVlanWithResponse(ctx context.Context, account string, vlanId uint16, body UpdateFabricVlanJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFabricVlanResponse, error)
+	UpdateFabricVlanWithResponse(ctx context.Context, account string, vlanID uint16, body UpdateFabricVlanJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFabricVlanResponse, error)
 
 	// ListFabricNetworksWithResponse request
-	ListFabricNetworksWithResponse(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*ListFabricNetworksResponse, error)
+	ListFabricNetworksWithResponse(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*ListFabricNetworksResponse, error)
 
 	// HeadFabricNetworksWithResponse request
-	HeadFabricNetworksWithResponse(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*HeadFabricNetworksResponse, error)
+	HeadFabricNetworksWithResponse(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*HeadFabricNetworksResponse, error)
 
 	// CreateFabricNetworkWithBodyWithResponse request with any body
-	CreateFabricNetworkWithBodyWithResponse(ctx context.Context, account string, vlanId uint16, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFabricNetworkResponse, error)
+	CreateFabricNetworkWithBodyWithResponse(ctx context.Context, account string, vlanID uint16, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFabricNetworkResponse, error)
 
-	CreateFabricNetworkWithResponse(ctx context.Context, account string, vlanId uint16, body CreateFabricNetworkJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFabricNetworkResponse, error)
+	CreateFabricNetworkWithResponse(ctx context.Context, account string, vlanID uint16, body CreateFabricNetworkJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFabricNetworkResponse, error)
 
 	// DeleteFabricNetworkWithResponse request
-	DeleteFabricNetworkWithResponse(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteFabricNetworkResponse, error)
+	DeleteFabricNetworkWithResponse(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteFabricNetworkResponse, error)
 
 	// GetFabricNetworkWithResponse request
-	GetFabricNetworkWithResponse(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetFabricNetworkResponse, error)
+	GetFabricNetworkWithResponse(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetFabricNetworkResponse, error)
 
 	// HeadFabricNetworkWithResponse request
-	HeadFabricNetworkWithResponse(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*HeadFabricNetworkResponse, error)
+	HeadFabricNetworkWithResponse(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*HeadFabricNetworkResponse, error)
 
 	// UpdateFabricNetworkWithBodyWithResponse request with any body
-	UpdateFabricNetworkWithBodyWithResponse(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateFabricNetworkResponse, error)
+	UpdateFabricNetworkWithBodyWithResponse(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateFabricNetworkResponse, error)
 
-	UpdateFabricNetworkWithResponse(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, body UpdateFabricNetworkJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFabricNetworkResponse, error)
+	UpdateFabricNetworkWithResponse(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, body UpdateFabricNetworkJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFabricNetworkResponse, error)
 
 	// ListForeignDatacentersWithResponse request
 	ListForeignDatacentersWithResponse(ctx context.Context, account string, reqEditors ...RequestEditorFn) (*ListForeignDatacentersResponse, error)
@@ -17169,16 +17339,16 @@ type ClientWithResponsesInterface interface {
 	// HeadNetworkIpsWithResponse request
 	HeadNetworkIpsWithResponse(ctx context.Context, account string, network openapi_types.UUID, reqEditors ...RequestEditorFn) (*HeadNetworkIpsResponse, error)
 
-	// GetNetworkIpWithResponse request
-	GetNetworkIpWithResponse(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, reqEditors ...RequestEditorFn) (*GetNetworkIpResponse, error)
+	// GetNetworkIPWithResponse request
+	GetNetworkIPWithResponse(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, reqEditors ...RequestEditorFn) (*GetNetworkIPResponse, error)
 
-	// HeadNetworkIpWithResponse request
-	HeadNetworkIpWithResponse(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, reqEditors ...RequestEditorFn) (*HeadNetworkIpResponse, error)
+	// HeadNetworkIPWithResponse request
+	HeadNetworkIPWithResponse(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, reqEditors ...RequestEditorFn) (*HeadNetworkIPResponse, error)
 
-	// UpdateNetworkIpWithBodyWithResponse request with any body
-	UpdateNetworkIpWithBodyWithResponse(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateNetworkIpResponse, error)
+	// UpdateNetworkIPWithBodyWithResponse request with any body
+	UpdateNetworkIPWithBodyWithResponse(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateNetworkIPResponse, error)
 
-	UpdateNetworkIpWithResponse(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, body UpdateNetworkIpJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateNetworkIpResponse, error)
+	UpdateNetworkIPWithResponse(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, body UpdateNetworkIPJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateNetworkIPResponse, error)
 
 	// ListPackagesWithResponse request
 	ListPackagesWithResponse(ctx context.Context, account string, reqEditors ...RequestEditorFn) (*ListPackagesResponse, error)
@@ -17425,9 +17595,6 @@ func (r GetAccountResponse) StatusCode() int {
 type HeadAccountResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *Account
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -17521,9 +17688,6 @@ func (r ListAccessKeysResponse) StatusCode() int {
 type HeadAccessKeysResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]AccessKey
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -17616,9 +17780,6 @@ func (r GetAccessKeyResponse) StatusCode() int {
 type HeadAccessKeyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *AccessKey
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -17709,9 +17870,6 @@ func (r GetConfigResponse) StatusCode() int {
 type HeadConfigResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *Config
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -17805,7 +17963,6 @@ func (r ReplaceDatacentersCollectionRoleTagsResponse) StatusCode() int {
 type GetDatacenterResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *string
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -17853,9 +18010,6 @@ func (r ListFabricVlansResponse) StatusCode() int {
 type HeadFabricVlansResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]FabricVlan
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -17948,9 +18102,6 @@ func (r GetFabricVlanResponse) StatusCode() int {
 type HeadFabricVlanResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *FabricVlan
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -18020,9 +18171,6 @@ func (r ListFabricNetworksResponse) StatusCode() int {
 type HeadFabricNetworksResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]Network
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -18115,9 +18263,6 @@ func (r GetFabricNetworkResponse) StatusCode() int {
 type HeadFabricNetworkResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *Network
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -18235,9 +18380,6 @@ func (r ListFirewallRulesResponse) StatusCode() int {
 type HeadFirewallRulesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]FirewallRule
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -18354,9 +18496,6 @@ func (r GetFirewallRuleResponse) StatusCode() int {
 type HeadFirewallRuleResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *FirewallRule
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -18498,9 +18637,6 @@ func (r ListFirewallRuleMachinesResponse) StatusCode() int {
 type HeadFirewallRuleMachinesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]Machine
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -18546,9 +18682,6 @@ func (r ListImagesResponse) StatusCode() int {
 type HeadImagesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]Image
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -18665,9 +18798,6 @@ func (r GetImageResponse) StatusCode() int {
 type HeadImageResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *Image
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -18737,7 +18867,7 @@ func (r ReplaceImageRoleTagsResponse) StatusCode() int {
 type ListKeysResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]SshKey
+	JSON200      *[]SSHKey
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -18761,9 +18891,6 @@ func (r ListKeysResponse) StatusCode() int {
 type HeadKeysResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]SshKey
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -18785,7 +18912,7 @@ func (r HeadKeysResponse) StatusCode() int {
 type CreateKeyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON201      *SshKey
+	JSON201      *SSHKey
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -18856,7 +18983,7 @@ func (r DeleteKeyResponse) StatusCode() int {
 type GetKeyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *SshKey
+	JSON200      *SSHKey
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -18880,9 +19007,6 @@ func (r GetKeyResponse) StatusCode() int {
 type HeadKeyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *SshKey
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -18976,9 +19100,6 @@ func (r ListMachinesResponse) StatusCode() int {
 type HeadMachinesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]Machine
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -19071,9 +19192,6 @@ func (r GetMachineResponse) StatusCode() int {
 type HeadMachineResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *Machine
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -19166,9 +19284,6 @@ func (r MachineAuditResponse) StatusCode() int {
 type HeadAuditResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]AuditEntry
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -19214,9 +19329,6 @@ func (r ListMachineDisksResponse) StatusCode() int {
 type HeadMachineDisksResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]Disk
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -19309,9 +19421,6 @@ func (r GetMachineDiskResponse) StatusCode() int {
 type HeadMachineDiskResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *Disk
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -19381,9 +19490,6 @@ func (r ListMachineFirewallRulesResponse) StatusCode() int {
 type HeadMachineFirewallRulesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]FirewallRule
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -19428,7 +19534,7 @@ func (r DeleteAllMachineMetadataResponse) StatusCode() int {
 type ListMachineMetadataResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *map[string]interface{}
+	JSON200      *MetadataObject
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -19452,9 +19558,6 @@ func (r ListMachineMetadataResponse) StatusCode() int {
 type HeadMachineMetadataResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *map[string]interface{}
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -19476,7 +19579,7 @@ func (r HeadMachineMetadataResponse) StatusCode() int {
 type AddMachineMetadataResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *map[string]interface{}
+	JSON200      *MetadataObject
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -19547,9 +19650,6 @@ func (r GetMachineMetadataResponse) StatusCode() int {
 type HeadMachineMetadataKeyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *string
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -19643,9 +19743,6 @@ func (r ListNicsResponse) StatusCode() int {
 type HeadNicsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]Nic
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -19738,9 +19835,6 @@ func (r GetNicResponse) StatusCode() int {
 type HeadNicResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *Nic
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -19786,9 +19880,6 @@ func (r ListMachineSnapshotsResponse) StatusCode() int {
 type HeadMachineSnapshotsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]Snapshot
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -19881,9 +19972,6 @@ func (r GetMachineSnapshotResponse) StatusCode() int {
 type HeadMachineSnapshotResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *Snapshot
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -19951,7 +20039,7 @@ func (r DeleteMachineTagsResponse) StatusCode() int {
 type ListMachineTagsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *map[string]interface{}
+	JSON200      *Tags
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -19975,9 +20063,6 @@ func (r ListMachineTagsResponse) StatusCode() int {
 type HeadMachineTagsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *map[string]interface{}
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -19999,7 +20084,7 @@ func (r HeadMachineTagsResponse) StatusCode() int {
 type AddMachineTagsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *map[string]interface{}
+	JSON200      *Tags
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -20023,7 +20108,7 @@ func (r AddMachineTagsResponse) StatusCode() int {
 type ReplaceMachineTagsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *map[string]interface{}
+	JSON200      *Tags
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -20094,9 +20179,6 @@ func (r GetMachineTagResponse) StatusCode() int {
 type HeadMachineTagResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *string
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -20232,9 +20314,6 @@ func (r ListNetworksResponse) StatusCode() int {
 type HeadNetworksResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]Network
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -20304,9 +20383,6 @@ func (r GetNetworkResponse) StatusCode() int {
 type HeadNetworkResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *Network
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -20352,7 +20428,7 @@ func (r ReplaceNetworkRoleTagsResponse) StatusCode() int {
 type ListNetworkIpsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]NetworkIp
+	JSON200      *[]NetworkIP
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -20376,9 +20452,6 @@ func (r ListNetworkIpsResponse) StatusCode() int {
 type HeadNetworkIpsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]NetworkIp
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -20397,16 +20470,16 @@ func (r HeadNetworkIpsResponse) StatusCode() int {
 	return 0
 }
 
-type GetNetworkIpResponse struct {
+type GetNetworkIPResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *NetworkIp
+	JSON200      *NetworkIP
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
-func (r GetNetworkIpResponse) Status() string {
+func (r GetNetworkIPResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -20414,23 +20487,20 @@ func (r GetNetworkIpResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r GetNetworkIpResponse) StatusCode() int {
+func (r GetNetworkIPResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type HeadNetworkIpResponse struct {
+type HeadNetworkIPResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *NetworkIp
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
-func (r HeadNetworkIpResponse) Status() string {
+func (r HeadNetworkIPResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -20438,23 +20508,23 @@ func (r HeadNetworkIpResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r HeadNetworkIpResponse) StatusCode() int {
+func (r HeadNetworkIPResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
 	return 0
 }
 
-type UpdateNetworkIpResponse struct {
+type UpdateNetworkIPResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *NetworkIp
+	JSON200      *NetworkIP
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
-func (r UpdateNetworkIpResponse) Status() string {
+func (r UpdateNetworkIPResponse) Status() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Status
 	}
@@ -20462,7 +20532,7 @@ func (r UpdateNetworkIpResponse) Status() string {
 }
 
 // StatusCode returns HTTPResponse.StatusCode
-func (r UpdateNetworkIpResponse) StatusCode() int {
+func (r UpdateNetworkIPResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -20496,9 +20566,6 @@ func (r ListPackagesResponse) StatusCode() int {
 type HeadPackagesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]Package
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -20568,9 +20635,6 @@ func (r GetPackageResponse) StatusCode() int {
 type HeadPackageResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *Package
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -20640,9 +20704,6 @@ func (r ListPoliciesResponse) StatusCode() int {
 type HeadPoliciesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]Policy
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -20759,9 +20820,6 @@ func (r GetPolicyResponse) StatusCode() int {
 type HeadPolicyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *Policy
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -20855,9 +20913,6 @@ func (r ListRolesResponse) StatusCode() int {
 type HeadRolesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]Role
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -20974,9 +21029,6 @@ func (r GetRoleResponse) StatusCode() int {
 type HeadRoleResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *Role
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -21118,9 +21170,6 @@ func (r ListUsersResponse) StatusCode() int {
 type HeadUsersResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]User
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -21237,9 +21286,6 @@ func (r GetUserResponse) StatusCode() int {
 type HeadUserResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *User
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -21333,9 +21379,6 @@ func (r ListUserAccessKeysResponse) StatusCode() int {
 type HeadUserAccessKeysResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]AccessKey
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -21428,9 +21471,6 @@ func (r GetUserAccessKeyResponse) StatusCode() int {
 type HeadUserAccessKeyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *AccessKey
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -21500,7 +21540,7 @@ func (r ChangeUserPasswordResponse) StatusCode() int {
 type ListUserKeysResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]SshKey
+	JSON200      *[]SSHKey
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -21524,9 +21564,6 @@ func (r ListUserKeysResponse) StatusCode() int {
 type HeadUserKeysResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]SshKey
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -21548,7 +21585,7 @@ func (r HeadUserKeysResponse) StatusCode() int {
 type CreateUserKeyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON201      *SshKey
+	JSON201      *SSHKey
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -21619,7 +21656,7 @@ func (r DeleteUserKeyResponse) StatusCode() int {
 type GetUserKeyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *SshKey
+	JSON200      *SSHKey
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -21643,9 +21680,6 @@ func (r GetUserKeyResponse) StatusCode() int {
 type HeadUserKeyResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *SshKey
-	JSON4XX      *Error
-	JSON5XX      *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -22077,8 +22111,8 @@ func (c *ClientWithResponses) CreateFabricVlanWithResponse(ctx context.Context, 
 }
 
 // DeleteFabricVlanWithResponse request returning *DeleteFabricVlanResponse
-func (c *ClientWithResponses) DeleteFabricVlanWithResponse(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*DeleteFabricVlanResponse, error) {
-	rsp, err := c.DeleteFabricVlan(ctx, account, vlanId, reqEditors...)
+func (c *ClientWithResponses) DeleteFabricVlanWithResponse(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*DeleteFabricVlanResponse, error) {
+	rsp, err := c.DeleteFabricVlan(ctx, account, vlanID, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -22086,8 +22120,8 @@ func (c *ClientWithResponses) DeleteFabricVlanWithResponse(ctx context.Context, 
 }
 
 // GetFabricVlanWithResponse request returning *GetFabricVlanResponse
-func (c *ClientWithResponses) GetFabricVlanWithResponse(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*GetFabricVlanResponse, error) {
-	rsp, err := c.GetFabricVlan(ctx, account, vlanId, reqEditors...)
+func (c *ClientWithResponses) GetFabricVlanWithResponse(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*GetFabricVlanResponse, error) {
+	rsp, err := c.GetFabricVlan(ctx, account, vlanID, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -22095,8 +22129,8 @@ func (c *ClientWithResponses) GetFabricVlanWithResponse(ctx context.Context, acc
 }
 
 // HeadFabricVlanWithResponse request returning *HeadFabricVlanResponse
-func (c *ClientWithResponses) HeadFabricVlanWithResponse(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*HeadFabricVlanResponse, error) {
-	rsp, err := c.HeadFabricVlan(ctx, account, vlanId, reqEditors...)
+func (c *ClientWithResponses) HeadFabricVlanWithResponse(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*HeadFabricVlanResponse, error) {
+	rsp, err := c.HeadFabricVlan(ctx, account, vlanID, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -22104,16 +22138,16 @@ func (c *ClientWithResponses) HeadFabricVlanWithResponse(ctx context.Context, ac
 }
 
 // UpdateFabricVlanWithBodyWithResponse request with arbitrary body returning *UpdateFabricVlanResponse
-func (c *ClientWithResponses) UpdateFabricVlanWithBodyWithResponse(ctx context.Context, account string, vlanId uint16, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateFabricVlanResponse, error) {
-	rsp, err := c.UpdateFabricVlanWithBody(ctx, account, vlanId, contentType, body, reqEditors...)
+func (c *ClientWithResponses) UpdateFabricVlanWithBodyWithResponse(ctx context.Context, account string, vlanID uint16, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateFabricVlanResponse, error) {
+	rsp, err := c.UpdateFabricVlanWithBody(ctx, account, vlanID, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseUpdateFabricVlanResponse(rsp)
 }
 
-func (c *ClientWithResponses) UpdateFabricVlanWithResponse(ctx context.Context, account string, vlanId uint16, body UpdateFabricVlanJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFabricVlanResponse, error) {
-	rsp, err := c.UpdateFabricVlan(ctx, account, vlanId, body, reqEditors...)
+func (c *ClientWithResponses) UpdateFabricVlanWithResponse(ctx context.Context, account string, vlanID uint16, body UpdateFabricVlanJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFabricVlanResponse, error) {
+	rsp, err := c.UpdateFabricVlan(ctx, account, vlanID, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -22121,8 +22155,8 @@ func (c *ClientWithResponses) UpdateFabricVlanWithResponse(ctx context.Context, 
 }
 
 // ListFabricNetworksWithResponse request returning *ListFabricNetworksResponse
-func (c *ClientWithResponses) ListFabricNetworksWithResponse(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*ListFabricNetworksResponse, error) {
-	rsp, err := c.ListFabricNetworks(ctx, account, vlanId, reqEditors...)
+func (c *ClientWithResponses) ListFabricNetworksWithResponse(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*ListFabricNetworksResponse, error) {
+	rsp, err := c.ListFabricNetworks(ctx, account, vlanID, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -22130,8 +22164,8 @@ func (c *ClientWithResponses) ListFabricNetworksWithResponse(ctx context.Context
 }
 
 // HeadFabricNetworksWithResponse request returning *HeadFabricNetworksResponse
-func (c *ClientWithResponses) HeadFabricNetworksWithResponse(ctx context.Context, account string, vlanId uint16, reqEditors ...RequestEditorFn) (*HeadFabricNetworksResponse, error) {
-	rsp, err := c.HeadFabricNetworks(ctx, account, vlanId, reqEditors...)
+func (c *ClientWithResponses) HeadFabricNetworksWithResponse(ctx context.Context, account string, vlanID uint16, reqEditors ...RequestEditorFn) (*HeadFabricNetworksResponse, error) {
+	rsp, err := c.HeadFabricNetworks(ctx, account, vlanID, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -22139,16 +22173,16 @@ func (c *ClientWithResponses) HeadFabricNetworksWithResponse(ctx context.Context
 }
 
 // CreateFabricNetworkWithBodyWithResponse request with arbitrary body returning *CreateFabricNetworkResponse
-func (c *ClientWithResponses) CreateFabricNetworkWithBodyWithResponse(ctx context.Context, account string, vlanId uint16, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFabricNetworkResponse, error) {
-	rsp, err := c.CreateFabricNetworkWithBody(ctx, account, vlanId, contentType, body, reqEditors...)
+func (c *ClientWithResponses) CreateFabricNetworkWithBodyWithResponse(ctx context.Context, account string, vlanID uint16, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateFabricNetworkResponse, error) {
+	rsp, err := c.CreateFabricNetworkWithBody(ctx, account, vlanID, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseCreateFabricNetworkResponse(rsp)
 }
 
-func (c *ClientWithResponses) CreateFabricNetworkWithResponse(ctx context.Context, account string, vlanId uint16, body CreateFabricNetworkJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFabricNetworkResponse, error) {
-	rsp, err := c.CreateFabricNetwork(ctx, account, vlanId, body, reqEditors...)
+func (c *ClientWithResponses) CreateFabricNetworkWithResponse(ctx context.Context, account string, vlanID uint16, body CreateFabricNetworkJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateFabricNetworkResponse, error) {
+	rsp, err := c.CreateFabricNetwork(ctx, account, vlanID, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -22156,8 +22190,8 @@ func (c *ClientWithResponses) CreateFabricNetworkWithResponse(ctx context.Contex
 }
 
 // DeleteFabricNetworkWithResponse request returning *DeleteFabricNetworkResponse
-func (c *ClientWithResponses) DeleteFabricNetworkWithResponse(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteFabricNetworkResponse, error) {
-	rsp, err := c.DeleteFabricNetwork(ctx, account, vlanId, id, reqEditors...)
+func (c *ClientWithResponses) DeleteFabricNetworkWithResponse(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteFabricNetworkResponse, error) {
+	rsp, err := c.DeleteFabricNetwork(ctx, account, vlanID, id, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -22165,8 +22199,8 @@ func (c *ClientWithResponses) DeleteFabricNetworkWithResponse(ctx context.Contex
 }
 
 // GetFabricNetworkWithResponse request returning *GetFabricNetworkResponse
-func (c *ClientWithResponses) GetFabricNetworkWithResponse(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetFabricNetworkResponse, error) {
-	rsp, err := c.GetFabricNetwork(ctx, account, vlanId, id, reqEditors...)
+func (c *ClientWithResponses) GetFabricNetworkWithResponse(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetFabricNetworkResponse, error) {
+	rsp, err := c.GetFabricNetwork(ctx, account, vlanID, id, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -22174,8 +22208,8 @@ func (c *ClientWithResponses) GetFabricNetworkWithResponse(ctx context.Context, 
 }
 
 // HeadFabricNetworkWithResponse request returning *HeadFabricNetworkResponse
-func (c *ClientWithResponses) HeadFabricNetworkWithResponse(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*HeadFabricNetworkResponse, error) {
-	rsp, err := c.HeadFabricNetwork(ctx, account, vlanId, id, reqEditors...)
+func (c *ClientWithResponses) HeadFabricNetworkWithResponse(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*HeadFabricNetworkResponse, error) {
+	rsp, err := c.HeadFabricNetwork(ctx, account, vlanID, id, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -22183,16 +22217,16 @@ func (c *ClientWithResponses) HeadFabricNetworkWithResponse(ctx context.Context,
 }
 
 // UpdateFabricNetworkWithBodyWithResponse request with arbitrary body returning *UpdateFabricNetworkResponse
-func (c *ClientWithResponses) UpdateFabricNetworkWithBodyWithResponse(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateFabricNetworkResponse, error) {
-	rsp, err := c.UpdateFabricNetworkWithBody(ctx, account, vlanId, id, contentType, body, reqEditors...)
+func (c *ClientWithResponses) UpdateFabricNetworkWithBodyWithResponse(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateFabricNetworkResponse, error) {
+	rsp, err := c.UpdateFabricNetworkWithBody(ctx, account, vlanID, id, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseUpdateFabricNetworkResponse(rsp)
 }
 
-func (c *ClientWithResponses) UpdateFabricNetworkWithResponse(ctx context.Context, account string, vlanId uint16, id openapi_types.UUID, body UpdateFabricNetworkJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFabricNetworkResponse, error) {
-	rsp, err := c.UpdateFabricNetwork(ctx, account, vlanId, id, body, reqEditors...)
+func (c *ClientWithResponses) UpdateFabricNetworkWithResponse(ctx context.Context, account string, vlanID uint16, id openapi_types.UUID, body UpdateFabricNetworkJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateFabricNetworkResponse, error) {
+	rsp, err := c.UpdateFabricNetwork(ctx, account, vlanID, id, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -23245,39 +23279,39 @@ func (c *ClientWithResponses) HeadNetworkIpsWithResponse(ctx context.Context, ac
 	return ParseHeadNetworkIpsResponse(rsp)
 }
 
-// GetNetworkIpWithResponse request returning *GetNetworkIpResponse
-func (c *ClientWithResponses) GetNetworkIpWithResponse(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, reqEditors ...RequestEditorFn) (*GetNetworkIpResponse, error) {
-	rsp, err := c.GetNetworkIp(ctx, account, network, ipAddress, reqEditors...)
+// GetNetworkIPWithResponse request returning *GetNetworkIPResponse
+func (c *ClientWithResponses) GetNetworkIPWithResponse(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, reqEditors ...RequestEditorFn) (*GetNetworkIPResponse, error) {
+	rsp, err := c.GetNetworkIP(ctx, account, network, ipAddress, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseGetNetworkIpResponse(rsp)
+	return ParseGetNetworkIPResponse(rsp)
 }
 
-// HeadNetworkIpWithResponse request returning *HeadNetworkIpResponse
-func (c *ClientWithResponses) HeadNetworkIpWithResponse(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, reqEditors ...RequestEditorFn) (*HeadNetworkIpResponse, error) {
-	rsp, err := c.HeadNetworkIp(ctx, account, network, ipAddress, reqEditors...)
+// HeadNetworkIPWithResponse request returning *HeadNetworkIPResponse
+func (c *ClientWithResponses) HeadNetworkIPWithResponse(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, reqEditors ...RequestEditorFn) (*HeadNetworkIPResponse, error) {
+	rsp, err := c.HeadNetworkIP(ctx, account, network, ipAddress, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseHeadNetworkIpResponse(rsp)
+	return ParseHeadNetworkIPResponse(rsp)
 }
 
-// UpdateNetworkIpWithBodyWithResponse request with arbitrary body returning *UpdateNetworkIpResponse
-func (c *ClientWithResponses) UpdateNetworkIpWithBodyWithResponse(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateNetworkIpResponse, error) {
-	rsp, err := c.UpdateNetworkIpWithBody(ctx, account, network, ipAddress, contentType, body, reqEditors...)
+// UpdateNetworkIPWithBodyWithResponse request with arbitrary body returning *UpdateNetworkIPResponse
+func (c *ClientWithResponses) UpdateNetworkIPWithBodyWithResponse(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateNetworkIPResponse, error) {
+	rsp, err := c.UpdateNetworkIPWithBody(ctx, account, network, ipAddress, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseUpdateNetworkIpResponse(rsp)
+	return ParseUpdateNetworkIPResponse(rsp)
 }
 
-func (c *ClientWithResponses) UpdateNetworkIpWithResponse(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, body UpdateNetworkIpJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateNetworkIpResponse, error) {
-	rsp, err := c.UpdateNetworkIp(ctx, account, network, ipAddress, body, reqEditors...)
+func (c *ClientWithResponses) UpdateNetworkIPWithResponse(ctx context.Context, account string, network openapi_types.UUID, ipAddress string, body UpdateNetworkIPJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateNetworkIPResponse, error) {
+	rsp, err := c.UpdateNetworkIP(ctx, account, network, ipAddress, body, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
-	return ParseUpdateNetworkIpResponse(rsp)
+	return ParseUpdateNetworkIPResponse(rsp)
 }
 
 // ListPackagesWithResponse request returning *ListPackagesResponse
@@ -24030,30 +24064,6 @@ func ParseHeadAccountResponse(rsp *http.Response) (*HeadAccountResponse, error) 
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Account
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -24190,30 +24200,6 @@ func ParseHeadAccessKeysResponse(rsp *http.Response) (*HeadAccessKeysResponse, e
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []AccessKey
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -24343,30 +24329,6 @@ func ParseHeadAccessKeyResponse(rsp *http.Response) (*HeadAccessKeyResponse, err
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest AccessKey
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -24477,30 +24439,6 @@ func ParseHeadConfigResponse(rsp *http.Response) (*HeadConfigResponse, error) {
 	response := &HeadConfigResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Config
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
 	}
 
 	return response, nil
@@ -24640,13 +24578,6 @@ func ParseGetDatacenterResponse(rsp *http.Response) (*GetDatacenterResponse, err
 	}
 
 	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest string
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
 		var dest Error
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -24717,30 +24648,6 @@ func ParseHeadFabricVlansResponse(rsp *http.Response) (*HeadFabricVlansResponse,
 	response := &HeadFabricVlansResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []FabricVlan
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
 	}
 
 	return response, nil
@@ -24872,30 +24779,6 @@ func ParseHeadFabricVlanResponse(rsp *http.Response) (*HeadFabricVlanResponse, e
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest FabricVlan
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -24990,30 +24873,6 @@ func ParseHeadFabricNetworksResponse(rsp *http.Response) (*HeadFabricNetworksRes
 	response := &HeadFabricNetworksResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []Network
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
 	}
 
 	return response, nil
@@ -25143,30 +25002,6 @@ func ParseHeadFabricNetworkResponse(rsp *http.Response) (*HeadFabricNetworkRespo
 	response := &HeadFabricNetworkResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Network
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
 	}
 
 	return response, nil
@@ -25345,30 +25180,6 @@ func ParseHeadFirewallRulesResponse(rsp *http.Response) (*HeadFirewallRulesRespo
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []FirewallRule
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -25536,30 +25347,6 @@ func ParseHeadFirewallRuleResponse(rsp *http.Response) (*HeadFirewallRuleRespons
 	response := &HeadFirewallRuleResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest FirewallRule
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
 	}
 
 	return response, nil
@@ -25778,30 +25565,6 @@ func ParseHeadFirewallRuleMachinesResponse(rsp *http.Response) (*HeadFirewallRul
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []Machine
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -25856,30 +25619,6 @@ func ParseHeadImagesResponse(rsp *http.Response) (*HeadImagesResponse, error) {
 	response := &HeadImagesResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []Image
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
 	}
 
 	return response, nil
@@ -26051,30 +25790,6 @@ func ParseHeadImageResponse(rsp *http.Response) (*HeadImageResponse, error) {
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Image
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -26173,7 +25888,7 @@ func ParseListKeysResponse(rsp *http.Response) (*ListKeysResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []SshKey
+		var dest []SSHKey
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -26211,30 +25926,6 @@ func ParseHeadKeysResponse(rsp *http.Response) (*HeadKeysResponse, error) {
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []SshKey
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -26253,7 +25944,7 @@ func ParseCreateKeyResponse(rsp *http.Response) (*CreateKeyResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest SshKey
+		var dest SSHKey
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -26366,7 +26057,7 @@ func ParseGetKeyResponse(rsp *http.Response) (*GetKeyResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SshKey
+		var dest SSHKey
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -26402,30 +26093,6 @@ func ParseHeadKeyResponse(rsp *http.Response) (*HeadKeyResponse, error) {
 	response := &HeadKeyResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SshKey
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
 	}
 
 	return response, nil
@@ -26564,30 +26231,6 @@ func ParseHeadMachinesResponse(rsp *http.Response) (*HeadMachinesResponse, error
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []Machine
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -26715,30 +26358,6 @@ func ParseHeadMachineResponse(rsp *http.Response) (*HeadMachineResponse, error) 
 	response := &HeadMachineResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Machine
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
 	}
 
 	return response, nil
@@ -26870,30 +26489,6 @@ func ParseHeadAuditResponse(rsp *http.Response) (*HeadAuditResponse, error) {
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []AuditEntry
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -26948,30 +26543,6 @@ func ParseHeadMachineDisksResponse(rsp *http.Response) (*HeadMachineDisksRespons
 	response := &HeadMachineDisksResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []Disk
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
 	}
 
 	return response, nil
@@ -27103,30 +26674,6 @@ func ParseHeadMachineDiskResponse(rsp *http.Response) (*HeadMachineDiskResponse,
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Disk
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -27223,30 +26770,6 @@ func ParseHeadMachineFirewallRulesResponse(rsp *http.Response) (*HeadMachineFire
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []FirewallRule
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -27298,7 +26821,7 @@ func ParseListMachineMetadataResponse(rsp *http.Response) (*ListMachineMetadataR
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest map[string]interface{}
+		var dest MetadataObject
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -27336,30 +26859,6 @@ func ParseHeadMachineMetadataResponse(rsp *http.Response) (*HeadMachineMetadataR
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest map[string]interface{}
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -27378,7 +26877,7 @@ func ParseAddMachineMetadataResponse(rsp *http.Response) (*AddMachineMetadataRes
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest map[string]interface{}
+		var dest MetadataObject
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -27487,30 +26986,6 @@ func ParseHeadMachineMetadataKeyResponse(rsp *http.Response) (*HeadMachineMetada
 	response := &HeadMachineMetadataKeyResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest string
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
 	}
 
 	return response, nil
@@ -27649,30 +27124,6 @@ func ParseHeadNicsResponse(rsp *http.Response) (*HeadNicsResponse, error) {
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []Nic
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -27802,30 +27253,6 @@ func ParseHeadNicResponse(rsp *http.Response) (*HeadNicResponse, error) {
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Nic
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -27880,30 +27307,6 @@ func ParseHeadMachineSnapshotsResponse(rsp *http.Response) (*HeadMachineSnapshot
 	response := &HeadMachineSnapshotsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []Snapshot
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
 	}
 
 	return response, nil
@@ -28035,30 +27438,6 @@ func ParseHeadMachineSnapshotResponse(rsp *http.Response) (*HeadMachineSnapshotR
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Snapshot
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -28143,7 +27522,7 @@ func ParseListMachineTagsResponse(rsp *http.Response) (*ListMachineTagsResponse,
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest map[string]interface{}
+		var dest Tags
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -28181,30 +27560,6 @@ func ParseHeadMachineTagsResponse(rsp *http.Response) (*HeadMachineTagsResponse,
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest map[string]interface{}
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -28223,7 +27578,7 @@ func ParseAddMachineTagsResponse(rsp *http.Response) (*AddMachineTagsResponse, e
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest map[string]interface{}
+		var dest Tags
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -28263,7 +27618,7 @@ func ParseReplaceMachineTagsResponse(rsp *http.Response) (*ReplaceMachineTagsRes
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest map[string]interface{}
+		var dest Tags
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -28372,30 +27727,6 @@ func ParseHeadMachineTagResponse(rsp *http.Response) (*HeadMachineTagResponse, e
 	response := &HeadMachineTagResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest string
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
 	}
 
 	return response, nil
@@ -28566,30 +27897,6 @@ func ParseHeadNetworksResponse(rsp *http.Response) (*HeadNetworksResponse, error
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []Network
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -28686,30 +27993,6 @@ func ParseHeadNetworkResponse(rsp *http.Response) (*HeadNetworkResponse, error) 
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Network
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -28768,7 +28051,7 @@ func ParseListNetworkIpsResponse(rsp *http.Response) (*ListNetworkIpsResponse, e
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []NetworkIp
+		var dest []NetworkIP
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -28806,9 +28089,25 @@ func ParseHeadNetworkIpsResponse(rsp *http.Response) (*HeadNetworkIpsResponse, e
 		HTTPResponse: rsp,
 	}
 
+	return response, nil
+}
+
+// ParseGetNetworkIPResponse parses an HTTP response from a GetNetworkIPWithResponse call
+func ParseGetNetworkIPResponse(rsp *http.Response) (*GetNetworkIPResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetNetworkIPResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []NetworkIp
+		var dest NetworkIP
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -28833,102 +28132,38 @@ func ParseHeadNetworkIpsResponse(rsp *http.Response) (*HeadNetworkIpsResponse, e
 	return response, nil
 }
 
-// ParseGetNetworkIpResponse parses an HTTP response from a GetNetworkIpWithResponse call
-func ParseGetNetworkIpResponse(rsp *http.Response) (*GetNetworkIpResponse, error) {
+// ParseHeadNetworkIPResponse parses an HTTP response from a HeadNetworkIPWithResponse call
+func ParseHeadNetworkIPResponse(rsp *http.Response) (*HeadNetworkIPResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &GetNetworkIpResponse{
+	response := &HeadNetworkIPResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest NetworkIp
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
 	}
 
 	return response, nil
 }
 
-// ParseHeadNetworkIpResponse parses an HTTP response from a HeadNetworkIpWithResponse call
-func ParseHeadNetworkIpResponse(rsp *http.Response) (*HeadNetworkIpResponse, error) {
+// ParseUpdateNetworkIPResponse parses an HTTP response from a UpdateNetworkIPWithResponse call
+func ParseUpdateNetworkIPResponse(rsp *http.Response) (*UpdateNetworkIPResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
 	defer func() { _ = rsp.Body.Close() }()
 	if err != nil {
 		return nil, err
 	}
 
-	response := &HeadNetworkIpResponse{
+	response := &UpdateNetworkIPResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest NetworkIp
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseUpdateNetworkIpResponse parses an HTTP response from a UpdateNetworkIpWithResponse call
-func ParseUpdateNetworkIpResponse(rsp *http.Response) (*UpdateNetworkIpResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &UpdateNetworkIpResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest NetworkIp
+		var dest NetworkIP
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -29004,30 +28239,6 @@ func ParseHeadPackagesResponse(rsp *http.Response) (*HeadPackagesResponse, error
 	response := &HeadPackagesResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []Package
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
 	}
 
 	return response, nil
@@ -29126,30 +28337,6 @@ func ParseHeadPackageResponse(rsp *http.Response) (*HeadPackageResponse, error) 
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Package
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -29244,30 +28431,6 @@ func ParseHeadPoliciesResponse(rsp *http.Response) (*HeadPoliciesResponse, error
 	response := &HeadPoliciesResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []Policy
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
 	}
 
 	return response, nil
@@ -29439,30 +28602,6 @@ func ParseHeadPolicyResponse(rsp *http.Response) (*HeadPolicyResponse, error) {
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Policy
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -29597,30 +28736,6 @@ func ParseHeadRolesResponse(rsp *http.Response) (*HeadRolesResponse, error) {
 	response := &HeadRolesResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []Role
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
 	}
 
 	return response, nil
@@ -29790,30 +28905,6 @@ func ParseHeadRoleResponse(rsp *http.Response) (*HeadRoleResponse, error) {
 	response := &HeadRoleResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest Role
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
 	}
 
 	return response, nil
@@ -30032,30 +29123,6 @@ func ParseHeadUsersResponse(rsp *http.Response) (*HeadUsersResponse, error) {
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []User
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -30225,30 +29292,6 @@ func ParseHeadUserResponse(rsp *http.Response) (*HeadUserResponse, error) {
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest User
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -30385,30 +29428,6 @@ func ParseHeadUserAccessKeysResponse(rsp *http.Response) (*HeadUserAccessKeysRes
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []AccessKey
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -30538,30 +29557,6 @@ func ParseHeadUserAccessKeyResponse(rsp *http.Response) (*HeadUserAccessKeyRespo
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest AccessKey
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -30660,7 +29655,7 @@ func ParseListUserKeysResponse(rsp *http.Response) (*ListUserKeysResponse, error
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []SshKey
+		var dest []SSHKey
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -30698,30 +29693,6 @@ func ParseHeadUserKeysResponse(rsp *http.Response) (*HeadUserKeysResponse, error
 		HTTPResponse: rsp,
 	}
 
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []SshKey
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
-	}
-
 	return response, nil
 }
 
@@ -30740,7 +29711,7 @@ func ParseCreateUserKeyResponse(rsp *http.Response) (*CreateUserKeyResponse, err
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest SshKey
+		var dest SSHKey
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -30853,7 +29824,7 @@ func ParseGetUserKeyResponse(rsp *http.Response) (*GetUserKeyResponse, error) {
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SshKey
+		var dest SSHKey
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -30889,30 +29860,6 @@ func ParseHeadUserKeyResponse(rsp *http.Response) (*HeadUserKeyResponse, error) 
 	response := &HeadUserKeyResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SshKey
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 4:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON4XX = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode/100 == 5:
-		var dest Error
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON5XX = &dest
-
 	}
 
 	return response, nil
@@ -31189,345 +30136,4 @@ func ParseListVolumeSizesResponse(rsp *http.Response) (*ListVolumeSizesResponse,
 	}
 
 	return response, nil
-}
-
-// Base64 encoded, gzipped, json marshaled Swagger object
-var swaggerSpec = []string{
-
-	"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",
-}
-
-// GetSwagger returns the content of the embedded swagger specification file
-// or error if failed to decode
-func decodeSpec() ([]byte, error) {
-	zipped, err := base64.StdEncoding.DecodeString(strings.Join(swaggerSpec, ""))
-	if err != nil {
-		return nil, fmt.Errorf("error base64 decoding spec: %w", err)
-	}
-	zr, err := gzip.NewReader(bytes.NewReader(zipped))
-	if err != nil {
-		return nil, fmt.Errorf("error decompressing spec: %w", err)
-	}
-	var buf bytes.Buffer
-	_, err = buf.ReadFrom(zr)
-	if err != nil {
-		return nil, fmt.Errorf("error decompressing spec: %w", err)
-	}
-
-	return buf.Bytes(), nil
-}
-
-var rawSpec = decodeSpecCached()
-
-// a naive cached of a decoded swagger spec
-func decodeSpecCached() func() ([]byte, error) {
-	data, err := decodeSpec()
-	return func() ([]byte, error) {
-		return data, err
-	}
-}
-
-// Constructs a synthetic filesystem for resolving external references when loading openapi specifications.
-func PathToRawSpec(pathToFile string) map[string]func() ([]byte, error) {
-	res := make(map[string]func() ([]byte, error))
-	if len(pathToFile) > 0 {
-		res[pathToFile] = rawSpec
-	}
-
-	return res
-}
-
-// GetSwagger returns the Swagger specification corresponding to the generated code
-// in this file. The external references of Swagger specification are resolved.
-// The logic of resolving external references is tightly connected to "import-mapping" feature.
-// Externally referenced files must be embedded in the corresponding golang packages.
-// Urls can be supported but this task was out of the scope.
-func GetSwagger() (swagger *openapi3.T, err error) {
-	resolvePath := PathToRawSpec("")
-
-	loader := openapi3.NewLoader()
-	loader.IsExternalRefsAllowed = true
-	loader.ReadFromURIFunc = func(loader *openapi3.Loader, url *url.URL) ([]byte, error) {
-		pathToFile := url.String()
-		pathToFile = path.Clean(pathToFile)
-		getSpec, ok := resolvePath[pathToFile]
-		if !ok {
-			err1 := fmt.Errorf("path not found: %s", pathToFile)
-			return nil, err1
-		}
-		return getSpec()
-	}
-	var specData []byte
-	specData, err = rawSpec()
-	if err != nil {
-		return
-	}
-	swagger, err = loader.LoadFromData(specData)
-	if err != nil {
-		return
-	}
-	return
 }

@@ -1,0 +1,25 @@
+{
+    "id": "d906f945-9f88-43b8-9b79-559321bb9b2d",
+    "name": "MantaWriter",
+    "members": [
+        {
+            "id": "4f7afff0-a651-c643-ee01-ae536b30b59d",
+            "login": "manta.www",
+            "type": "subuser"
+        }
+    ],
+    "default_members": [
+        {
+            "id": "7b2c1e3a-8d4f-4a6b-9c5e-1234567890ab",
+            "login": "ops.admin",
+            "type": "account",
+            "default": true
+        }
+    ],
+    "policies": [
+        {
+            "id": "968a8ee4-6a08-4e0d-b490-f68ff6c3f385",
+            "name": "MantaObjRW"
+        }
+    ]
+}

@@ -18,6 +18,18 @@ use crate::output::table::{TableBuilder, TableFormatArgs};
 
 use super::editor;
 
+/// Extract a display name from a MemberRef (prefer login, fall back to UUID)
+fn member_display_name(m: &MemberRef) -> String {
+    m.login
+        .clone()
+        .unwrap_or_else(|| m.id.map(|id| id.to_string()).unwrap_or_default())
+}
+
+/// Format a slice of MemberRef as a comma-separated display string
+fn member_names(members: &[MemberRef]) -> Vec<String> {
+    members.iter().map(member_display_name).collect()
+}
+
 /// Role subcommands (modern pattern)
 #[derive(Subcommand, Clone)]
 pub enum RoleSubcommand {
@@ -204,8 +216,8 @@ pub async fn list_roles(
         define_columns! {
             RoleColumn for cloudapi_client::types::Role, long_from: 3, {
                 Name("NAME") => |role| role.name.clone(),
-                Policies("POLICIES") => |role| role.policies.join(", "),
-                Members("MEMBERS") => |role| role.members.join(", "),
+                Policies("POLICIES") => |role| role.policies.iter().filter_map(|p| p.name.as_deref()).collect::<Vec<_>>().join(", "),
+                Members("MEMBERS") => |role| member_names(&role.members).join(", "),
                 // --- long-only columns below ---
                 Id("ID") => |role| role.id.to_string(),
             }
@@ -241,7 +253,11 @@ async fn get_role(args: RoleGetArgs, client: &TypedClient, use_json: bool) -> Re
             if role.policies.is_empty() {
                 "-".to_string()
             } else {
-                role.policies.join(", ")
+                role.policies
+                    .iter()
+                    .filter_map(|p| p.name.as_deref())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             }
         );
         println!(
@@ -249,7 +265,7 @@ async fn get_role(args: RoleGetArgs, client: &TypedClient, use_json: bool) -> Re
             if role.members.is_empty() {
                 "-".to_string()
             } else {
-                role.members.join(", ")
+                member_names(&role.members).join(", ")
             }
         );
         println!(
@@ -257,7 +273,7 @@ async fn get_role(args: RoleGetArgs, client: &TypedClient, use_json: bool) -> Re
             if role.default_members.is_empty() {
                 "-".to_string()
             } else {
-                role.default_members.join(", ")
+                member_names(&role.default_members).join(", ")
             }
         );
     }
@@ -615,9 +631,16 @@ struct RoleEdit {
 
 /// Convert a Role to commented YAML for editing
 fn role_to_commented_yaml(role: &cloudapi_client::types::Role, account: &str) -> String {
-    let members = editor::format_yaml_list(&role.members, "  ");
-    let policies = editor::format_yaml_list(&role.policies, "  ");
-    let default_members = editor::format_yaml_list(&role.default_members, "  ");
+    let member_strs = member_names(&role.members);
+    let members = editor::format_yaml_list(&member_strs, "  ");
+    let policy_names: Vec<String> = role
+        .policies
+        .iter()
+        .filter_map(|p| p.name.clone())
+        .collect();
+    let policies = editor::format_yaml_list(&policy_names, "  ");
+    let default_member_strs = member_names(&role.default_members);
+    let default_members = editor::format_yaml_list(&default_member_strs, "  ");
 
     format!(
         r#"# Role: {name}

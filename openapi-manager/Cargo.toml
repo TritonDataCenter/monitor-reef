@@ -30,6 +30,7 @@ cargo_toml = { workspace = true }
 clap = { workspace = true }
 semver = { workspace = true }
 serde_json = { workspace = true }
+schemars = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

@@ -1,0 +1,11 @@
+{
+    "id": "d7e6ec33-26af-e2e3-c47a-e35b747ed764",
+    "name": "PortalUser",
+    "members": [],
+    "policies": [
+        {
+            "id": "11279a34-5be5-4990-814a-c64f016b76c3",
+            "name": "PortalLogin"
+        }
+    ]
+}

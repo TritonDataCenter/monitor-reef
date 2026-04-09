@@ -9,4 +9,11 @@ output: clients/external/cloudapi-client/golang/cloudapi.gen.go
 generate:
   client: true
   models: true
-  embedded-spec: true
+  embedded-spec: false
+output-options:
+  name-normalizer: ToCamelCaseWithInitialisms
+  # Emit orphan schemas in components.schemas. Needed because the
+  # action-dispatch request structs (StartMachineRequest, ExportImageRequest,
+  # etc.) are injected by openapi-manager for the typed-wrapper layer but are
+  # not referenced by any endpoint body. See docs/design/action-dispatch-openapi.md.
+  skip-prune: true

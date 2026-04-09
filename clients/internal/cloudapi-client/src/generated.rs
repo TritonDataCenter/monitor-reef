@@ -914,6 +914,46 @@ pub mod types {
         }
     }
 
+    #[doc = "Request to clone an image"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"CloneImageRequest\","]
+    #[doc = "  \"description\": \"Request to clone an image\","]
+    #[doc = "  \"type\": \"object\""]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    #[serde(transparent)]
+    pub struct CloneImageRequest(pub ::serde_json::Map<::std::string::String, ::serde_json::Value>);
+    impl ::std::ops::Deref for CloneImageRequest {
+        type Target = ::serde_json::Map<::std::string::String, ::serde_json::Value>;
+        fn deref(&self) -> &::serde_json::Map<::std::string::String, ::serde_json::Value> {
+            &self.0
+        }
+    }
+
+    impl ::std::convert::From<CloneImageRequest>
+        for ::serde_json::Map<::std::string::String, ::serde_json::Value>
+    {
+        fn from(value: CloneImageRequest) -> Self {
+            value.0
+        }
+    }
+
+    impl ::std::convert::From<::serde_json::Map<::std::string::String, ::serde_json::Value>>
+        for CloneImageRequest
+    {
+        fn from(value: ::serde_json::Map<::std::string::String, ::serde_json::Value>) -> Self {
+            Self(value)
+        }
+    }
+
     #[doc = "Configuration settings"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -1116,13 +1156,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"resolvers\": {"]
     #[doc = "      \"description\": \"Resolvers\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Resolvers\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"routes\": {"]
     #[doc = "      \"description\": \"Routes\""]
@@ -1156,7 +1201,7 @@ pub mod types {
         pub provision_start_ip: ::std::string::String,
         #[doc = "Resolvers"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub resolvers: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub resolvers: ::std::option::Option<cloudapi_api::Resolvers>,
         #[doc = "Routes"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub routes: ::std::option::Option<::serde_json::Value>,
@@ -1302,13 +1347,18 @@ pub mod types {
     #[doc = "  \"properties\": {"]
     #[doc = "    \"affinity\": {"]
     #[doc = "      \"description\": \"Affinity rules for instance placement (added in CloudAPI v8.3.0)\\n\\nRules follow the pattern: `<key><operator><value>` where: - key: 'instance', 'container', or a tag name - operator: '==' (must), '!=' (must not), '==~' (prefer), '!=~' (prefer not) - value: exact string, glob pattern (*), or regex (/pattern/)\\n\\nExamples: `instance==myvm`, `role!=database`, `instance!=~foo*`\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/AffinityRules\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"allow_shared_images\": {"]
     #[doc = "      \"description\": \"Allow using images shared with this account (not owned by it)\","]
@@ -1380,11 +1430,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"metadata\": {"]
     #[doc = "      \"description\": \"Metadata (modern format - nested object)\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/MetadataObject\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"description\": \"Machine alias/name\","]
@@ -1409,11 +1466,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"tags\": {"]
     #[doc = "      \"description\": \"Tags (modern format - nested object)\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Tags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"volumes\": {"]
     #[doc = "      \"description\": \"Volumes to mount on the instance\","]
@@ -1435,7 +1499,7 @@ pub mod types {
     pub struct CreateMachineRequest {
         #[doc = "Affinity rules for instance placement (added in CloudAPI v8.3.0)\n\nRules follow the pattern: `<key><operator><value>` where: - key: 'instance', 'container', or a tag name - operator: '==' (must), '!=' (must not), '==~' (prefer), '!=~' (prefer not) - value: exact string, glob pattern (*), or regex (/pattern/)\n\nExamples: `instance==myvm`, `role!=database`, `instance!=~foo*`"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub affinity: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub affinity: ::std::option::Option<cloudapi_api::AffinityRules>,
         #[doc = "Allow using images shared with this account (not owned by it)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub allow_shared_images: ::std::option::Option<bool>,
@@ -1464,8 +1528,7 @@ pub mod types {
         pub locality: ::std::option::Option<::serde_json::Value>,
         #[doc = "Metadata (modern format - nested object)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub metadata:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub metadata: ::std::option::Option<cloudapi_api::Metadata>,
         #[doc = "Machine alias/name"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub name: ::std::option::Option<::std::string::String>,
@@ -1476,8 +1539,7 @@ pub mod types {
         pub package: ::std::string::String,
         #[doc = "Tags (modern format - nested object)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub tags:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub tags: ::std::option::Option<cloudapi_api::Tags>,
         #[doc = "Volumes to mount on the instance"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub volumes: ::std::option::Option<::std::vec::Vec<VolumeMount>>,
@@ -1515,10 +1577,11 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"rules\": {"]
     #[doc = "      \"description\": \"Policy rules (array of rule strings)\","]
-    #[doc = "      \"type\": \"array\","]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/PolicyRules\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -1534,7 +1597,7 @@ pub mod types {
         #[doc = "Policy name"]
         pub name: ::std::string::String,
         #[doc = "Policy rules (array of rule strings)"]
-        pub rules: ::std::vec::Vec<::std::string::String>,
+        pub rules: cloudapi_api::PolicyRules,
     }
 
     impl CreatePolicyRequest {
@@ -1849,9 +1912,6 @@ pub mod types {
     #[doc = "{"]
     #[doc = "  \"description\": \"Request to create volume\","]
     #[doc = "  \"type\": \"object\","]
-    #[doc = "  \"required\": ["]
-    #[doc = "    \"size\""]
-    #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"description\": \"Volume name\","]
@@ -1862,28 +1922,42 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"networks\": {"]
     #[doc = "      \"description\": \"Networks (array of UUIDs)\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\","]
-    #[doc = "        \"format\": \"uuid\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/NetworkIds\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"size\": {"]
-    #[doc = "      \"description\": \"Size in MiB\","]
-    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"description\": \"Size in MiB. Optional — when omitted, CloudAPI selects the smallest available volume size from the billing packages.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"integer\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
     #[doc = "      \"format\": \"uint64\","]
     #[doc = "      \"minimum\": 0.0"]
     #[doc = "    },"]
     #[doc = "    \"tags\": {"]
     #[doc = "      \"description\": \"Tags\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Tags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"type\": {"]
     #[doc = "      \"description\": \"Volume type\","]
@@ -1913,13 +1987,13 @@ pub mod types {
         pub name: ::std::option::Option<::std::string::String>,
         #[doc = "Networks (array of UUIDs)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub networks: ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
-        #[doc = "Size in MiB"]
-        pub size: u64,
+        pub networks: ::std::option::Option<cloudapi_api::NetworkIds>,
+        #[doc = "Size in MiB. Optional — when omitted, CloudAPI selects the smallest available volume size from the billing packages."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub size: ::std::option::Option<u64>,
         #[doc = "Tags"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub tags:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub tags: ::std::option::Option<cloudapi_api::Tags>,
         #[doc = "Volume type"]
         #[serde(
             rename = "type",
@@ -1927,6 +2001,18 @@ pub mod types {
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub type_: ::std::option::Option<VolumeType>,
+    }
+
+    impl ::std::default::Default for CreateVolumeRequest {
+        fn default() -> Self {
+            Self {
+                name: Default::default(),
+                networks: Default::default(),
+                size: Default::default(),
+                tags: Default::default(),
+                type_: Default::default(),
+            }
+        }
     }
 
     impl CreateVolumeRequest {
@@ -2108,6 +2194,94 @@ pub mod types {
             value: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
         ) -> Self {
             Self(value)
+        }
+    }
+
+    #[doc = "Request to disable deletion protection"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"DisableDeletionProtectionRequest\","]
+    #[doc = "  \"description\": \"Request to disable deletion protection\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"origin\": {"]
+    #[doc = "      \"description\": \"Origin identifier (defaults to 'cloudapi')\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct DisableDeletionProtectionRequest {
+        #[doc = "Origin identifier (defaults to 'cloudapi')"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub origin: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for DisableDeletionProtectionRequest {
+        fn default() -> Self {
+            Self {
+                origin: Default::default(),
+            }
+        }
+    }
+
+    impl DisableDeletionProtectionRequest {
+        pub fn builder() -> builder::DisableDeletionProtectionRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request to disable firewall"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"DisableFirewallRequest\","]
+    #[doc = "  \"description\": \"Request to disable firewall\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"origin\": {"]
+    #[doc = "      \"description\": \"Origin identifier (defaults to 'cloudapi')\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct DisableFirewallRequest {
+        #[doc = "Origin identifier (defaults to 'cloudapi')"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub origin: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for DisableFirewallRequest {
+        fn default() -> Self {
+            Self {
+                origin: Default::default(),
+            }
+        }
+    }
+
+    impl DisableFirewallRequest {
+        pub fn builder() -> builder::DisableFirewallRequest {
+            Default::default()
         }
     }
 
@@ -2524,6 +2698,94 @@ pub mod types {
         }
     }
 
+    #[doc = "Request to enable deletion protection"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"EnableDeletionProtectionRequest\","]
+    #[doc = "  \"description\": \"Request to enable deletion protection\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"origin\": {"]
+    #[doc = "      \"description\": \"Origin identifier (defaults to 'cloudapi')\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct EnableDeletionProtectionRequest {
+        #[doc = "Origin identifier (defaults to 'cloudapi')"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub origin: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for EnableDeletionProtectionRequest {
+        fn default() -> Self {
+            Self {
+                origin: Default::default(),
+            }
+        }
+    }
+
+    impl EnableDeletionProtectionRequest {
+        pub fn builder() -> builder::EnableDeletionProtectionRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request to enable firewall"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"EnableFirewallRequest\","]
+    #[doc = "  \"description\": \"Request to enable firewall\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"origin\": {"]
+    #[doc = "      \"description\": \"Origin identifier (defaults to 'cloudapi')\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct EnableFirewallRequest {
+        #[doc = "Origin identifier (defaults to 'cloudapi')"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub origin: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for EnableFirewallRequest {
+        fn default() -> Self {
+            Self {
+                origin: Default::default(),
+            }
+        }
+    }
+
+    impl EnableFirewallRequest {
+        pub fn builder() -> builder::EnableFirewallRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "CloudAPI error response"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -2568,6 +2830,41 @@ pub mod types {
 
     impl Error {
         pub fn builder() -> builder::Error {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request to export an image"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"ExportImageRequest\","]
+    #[doc = "  \"description\": \"Request to export an image\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"manta_path\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"manta_path\": {"]
+    #[doc = "      \"description\": \"Manta path for export destination\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ExportImageRequest {
+        #[doc = "Manta path for export destination"]
+        pub manta_path: ::std::string::String,
+    }
+
+    impl ExportImageRequest {
+        pub fn builder() -> builder::ExportImageRequest {
             Default::default()
         }
     }
@@ -2677,13 +2974,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"rule\": {"]
     #[doc = "      \"description\": \"Rule text\","]
@@ -2727,7 +3029,7 @@ pub mod types {
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
         #[doc = "Rule text"]
         pub rule: ::std::string::String,
         #[doc = "Last update timestamp"]
@@ -2759,14 +3061,18 @@ pub mod types {
     #[doc = "  \"properties\": {"]
     #[doc = "    \"acl\": {"]
     #[doc = "      \"description\": \"ACL - list of account UUIDs with access (API version >= 7.1.0)\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\","]
-    #[doc = "        \"format\": \"uuid\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/ImageAcl\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"description\": {"]
     #[doc = "      \"description\": \"Description\","]
@@ -2878,13 +3184,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"state\": {"]
     #[doc = "      \"description\": \"Image state (API version >= 7.1.0)\","]
@@ -2903,11 +3214,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"tags\": {"]
     #[doc = "      \"description\": \"Tags\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Tags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"type\": {"]
     #[doc = "      \"description\": \"Image type\","]
@@ -2931,7 +3249,7 @@ pub mod types {
     pub struct Image {
         #[doc = "ACL - list of account UUIDs with access (API version >= 7.1.0)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub acl: ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
+        pub acl: ::std::option::Option<cloudapi_api::ImageAcl>,
         #[doc = "Description"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub description: ::std::option::Option<::std::string::String>,
@@ -2977,14 +3295,13 @@ pub mod types {
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
         #[doc = "Image state (API version >= 7.1.0)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub state: ::std::option::Option<ImageState>,
         #[doc = "Tags"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub tags:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub tags: ::std::option::Option<cloudapi_api::Tags>,
         #[doc = "Image type"]
         #[serde(rename = "type")]
         pub type_: ImageType,
@@ -3546,6 +3863,49 @@ pub mod types {
         }
     }
 
+    #[doc = "Request to import image from datacenter"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"ImportImageRequest\","]
+    #[doc = "  \"description\": \"Request to import image from datacenter\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"datacenter\","]
+    #[doc = "    \"id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"datacenter\": {"]
+    #[doc = "      \"description\": \"Source datacenter name\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"description\": \"Image UUID in source datacenter\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ImportImageRequest {
+        #[doc = "Source datacenter name"]
+        pub datacenter: ::std::string::String,
+        #[doc = "Image UUID in source datacenter"]
+        pub id: ::uuid::Uuid,
+    }
+
+    impl ImportImageRequest {
+        pub fn builder() -> builder::ImportImageRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "Machine information"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -3695,8 +4055,11 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"metadata\": {"]
     #[doc = "      \"description\": \"Metadata\","]
-    #[doc = "      \"type\": \"object\","]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/MetadataObject\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"description\": \"Machine alias/name\","]
@@ -3704,14 +4067,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"networks\": {"]
     #[doc = "      \"description\": \"Network UUIDs (API version >= 7.1.0)\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\","]
-    #[doc = "        \"format\": \"uuid\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/NetworkIds\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"nics\": {"]
     #[doc = "      \"description\": \"Network interfaces\","]
@@ -3733,13 +4100,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"state\": {"]
     #[doc = "      \"description\": \"Current state\","]
@@ -3751,8 +4123,11 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"tags\": {"]
     #[doc = "      \"description\": \"Tags\","]
-    #[doc = "      \"type\": \"object\","]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/Tags\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"type\": {"]
     #[doc = "      \"description\": \"Machine type (smartmachine or virtualmachine)\","]
@@ -3821,12 +4196,12 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub memory: ::std::option::Option<u64>,
         #[doc = "Metadata"]
-        pub metadata: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+        pub metadata: cloudapi_api::Metadata,
         #[doc = "Machine alias/name"]
         pub name: ::std::string::String,
         #[doc = "Network UUIDs (API version >= 7.1.0)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub networks: ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
+        pub networks: ::std::option::Option<cloudapi_api::NetworkIds>,
         #[doc = "Network interfaces"]
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
         pub nics: ::std::vec::Vec<MachineNic>,
@@ -3845,11 +4220,11 @@ pub mod types {
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
         #[doc = "Current state"]
         pub state: MachineState,
         #[doc = "Tags"]
-        pub tags: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+        pub tags: cloudapi_api::Tags,
         #[doc = "Machine type (smartmachine or virtualmachine)"]
         #[serde(rename = "type")]
         pub type_: MachineType,
@@ -4576,13 +4951,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"affinity\": {"]
     #[doc = "      \"description\": \"Affinity rules (only valid for \\\"begin\\\" and \\\"automatic\\\" actions)\\n\\nThese rules influence which server the instance will be migrated to.\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/AffinityRules\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -4596,7 +4976,7 @@ pub mod types {
         pub action: MigrationAction,
         #[doc = "Affinity rules (only valid for \"begin\" and \"automatic\" actions)\n\nThese rules influence which server the instance will be migrated to."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub affinity: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub affinity: ::std::option::Option<cloudapi_api::AffinityRules>,
     }
 
     impl MigrateRequest {
@@ -5417,23 +5797,33 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"resolvers\": {"]
     #[doc = "      \"description\": \"Resolvers\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Resolvers\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"routes\": {"]
     #[doc = "      \"description\": \"Routes\""]
@@ -5501,14 +5891,14 @@ pub mod types {
         pub public: bool,
         #[doc = "Resolvers"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub resolvers: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub resolvers: ::std::option::Option<cloudapi_api::Resolvers>,
         #[doc = "Role tags for RBAC"]
         #[serde(
             rename = "role-tag",
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
         #[doc = "Routes"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub routes: ::std::option::Option<::serde_json::Value>,
@@ -5951,13 +6341,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"swap\": {"]
     #[doc = "      \"description\": \"Swap in MB\","]
@@ -6022,7 +6417,7 @@ pub mod types {
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
         #[doc = "Swap in MB"]
         pub swap: u64,
         #[doc = "VCPUs (defaults to 0)"]
@@ -6135,20 +6530,26 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"rules\": {"]
     #[doc = "      \"description\": \"Policy rules (array of rule strings)\","]
-    #[doc = "      \"type\": \"array\","]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/PolicyRules\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -6171,9 +6572,9 @@ pub mod types {
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
         #[doc = "Policy rules (array of rule strings)"]
-        pub rules: ::std::vec::Vec<::std::string::String>,
+        pub rules: cloudapi_api::PolicyRules,
     }
 
     impl Policy {
@@ -6237,37 +6638,64 @@ pub mod types {
         }
     }
 
-    #[doc = "Provisioning limits for an account"]
+    #[doc = "A single provisioning limit entry.\n\nEach limit constrains a specific dimension (VM count, RAM, or disk quota), optionally filtered by brand, image, or OS. A `value` of `-1` blocks all matching provisions; `0` means unlimited (filtered out before the response reaches the client).\n\nUnits for `value` and `used` depend on `by`: - absent / `\"machines\"` → count of VMs - `\"ram\"` → MiB - `\"quota\"` → GiB"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Provisioning limits for an account\","]
+    #[doc = "  \"description\": \"A single provisioning limit entry.\\n\\nEach limit constrains a specific dimension (VM count, RAM, or disk quota), optionally filtered by brand, image, or OS. A `value` of `-1` blocks all matching provisions; `0` means unlimited (filtered out before the response reaches the client).\\n\\nUnits for `value` and `used` depend on `by`: - absent / `\\\"machines\\\"` → count of VMs - `\\\"ram\\\"` → MiB - `\\\"quota\\\"` → GiB\","]
     #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"value\""]
+    #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"disk\": {"]
-    #[doc = "      \"description\": \"Maximum disk space in MB\","]
+    #[doc = "    \"brand\": {"]
+    #[doc = "      \"description\": \"Brand filter value (when `check` is `\\\"brand\\\"`).\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"by\": {"]
+    #[doc = "      \"description\": \"What dimension the limit counts: `\\\"ram\\\"`, `\\\"quota\\\"`, or `\\\"machines\\\"`. When absent, defaults to counting VMs.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"check\": {"]
+    #[doc = "      \"description\": \"Type of filter applied: `\\\"brand\\\"`, `\\\"image\\\"`, or `\\\"os\\\"`.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"image\": {"]
+    #[doc = "      \"description\": \"Image filter value (when `check` is `\\\"image\\\"`).\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"os\": {"]
+    #[doc = "      \"description\": \"OS filter value (when `check` is `\\\"os\\\"`).\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"used\": {"]
+    #[doc = "      \"description\": \"Current usage against this limit.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"integer\","]
     #[doc = "        \"null\""]
     #[doc = "      ],"]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
-    #[doc = "    \"machines\": {"]
-    #[doc = "      \"description\": \"Maximum number of machines\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"integer\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"format\": \"int64\""]
-    #[doc = "    },"]
-    #[doc = "    \"ram\": {"]
-    #[doc = "      \"description\": \"Maximum RAM in MB\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"integer\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
+    #[doc = "    \"value\": {"]
+    #[doc = "      \"description\": \"The limit value (threshold).\","]
+    #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -6277,30 +6705,120 @@ pub mod types {
     #[derive(
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
-    pub struct ProvisioningLimits {
-        #[doc = "Maximum disk space in MB"]
+    pub struct ProvisioningLimit {
+        #[doc = "Brand filter value (when `check` is `\"brand\"`)."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub disk: ::std::option::Option<i64>,
-        #[doc = "Maximum number of machines"]
+        pub brand: ::std::option::Option<::std::string::String>,
+        #[doc = "What dimension the limit counts: `\"ram\"`, `\"quota\"`, or `\"machines\"`. When absent, defaults to counting VMs."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub machines: ::std::option::Option<i64>,
-        #[doc = "Maximum RAM in MB"]
+        pub by: ::std::option::Option<::std::string::String>,
+        #[doc = "Type of filter applied: `\"brand\"`, `\"image\"`, or `\"os\"`."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub ram: ::std::option::Option<i64>,
+        pub check: ::std::option::Option<::std::string::String>,
+        #[doc = "Image filter value (when `check` is `\"image\"`)."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub image: ::std::option::Option<::std::string::String>,
+        #[doc = "OS filter value (when `check` is `\"os\"`)."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub os: ::std::option::Option<::std::string::String>,
+        #[doc = "Current usage against this limit."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub used: ::std::option::Option<i64>,
+        #[doc = "The limit value (threshold)."]
+        pub value: i64,
     }
 
-    impl ::std::default::Default for ProvisioningLimits {
+    impl ProvisioningLimit {
+        pub fn builder() -> builder::ProvisioningLimit {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request to reboot a machine"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"RebootMachineRequest\","]
+    #[doc = "  \"description\": \"Request to reboot a machine\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"origin\": {"]
+    #[doc = "      \"description\": \"Origin identifier (defaults to 'cloudapi')\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct RebootMachineRequest {
+        #[doc = "Origin identifier (defaults to 'cloudapi')"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub origin: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for RebootMachineRequest {
         fn default() -> Self {
             Self {
-                disk: Default::default(),
-                machines: Default::default(),
-                ram: Default::default(),
+                origin: Default::default(),
             }
         }
     }
 
-    impl ProvisioningLimits {
-        pub fn builder() -> builder::ProvisioningLimits {
+    impl RebootMachineRequest {
+        pub fn builder() -> builder::RebootMachineRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request to rename a machine"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"RenameMachineRequest\","]
+    #[doc = "  \"description\": \"Request to rename a machine\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"name\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"description\": \"New machine alias/name (max 189 chars, or 63 if CNS enabled)\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"origin\": {"]
+    #[doc = "      \"description\": \"Origin identifier (defaults to 'cloudapi')\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct RenameMachineRequest {
+        #[doc = "New machine alias/name (max 189 chars, or 63 if CNS enabled)"]
+        pub name: ::std::string::String,
+        #[doc = "Origin identifier (defaults to 'cloudapi')"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub origin: ::std::option::Option<::std::string::String>,
+    }
+
+    impl RenameMachineRequest {
+        pub fn builder() -> builder::RenameMachineRequest {
             Default::default()
         }
     }
@@ -6317,10 +6835,11 @@ pub mod types {
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags (list of role names)\","]
     #[doc = "      \"default\": [],"]
-    #[doc = "      \"type\": \"array\","]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -6333,22 +6852,113 @@ pub mod types {
         #[doc = "Role tags (list of role names)"]
         #[serde(
             rename = "role-tag",
-            default,
-            skip_serializing_if = "::std::vec::Vec::is_empty"
+            default = "defaults::replace_role_tags_request_role_tag"
         )]
-        pub role_tag: ::std::vec::Vec<::std::string::String>,
+        pub role_tag: cloudapi_api::RoleTags,
     }
 
     impl ::std::default::Default for ReplaceRoleTagsRequest {
         fn default() -> Self {
             Self {
-                role_tag: Default::default(),
+                role_tag: defaults::replace_role_tags_request_role_tag(),
             }
         }
     }
 
     impl ReplaceRoleTagsRequest {
         pub fn builder() -> builder::ReplaceRoleTagsRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request to resize disk"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"ResizeDiskRequest\","]
+    #[doc = "  \"description\": \"Request to resize disk\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"size\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"dangerous_allow_shrink\": {"]
+    #[doc = "      \"description\": \"Allow dangerous shrink operation\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"boolean\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"size\": {"]
+    #[doc = "      \"description\": \"New size in MB\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ResizeDiskRequest {
+        #[doc = "Allow dangerous shrink operation"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub dangerous_allow_shrink: ::std::option::Option<bool>,
+        #[doc = "New size in MB"]
+        pub size: u64,
+    }
+
+    impl ResizeDiskRequest {
+        pub fn builder() -> builder::ResizeDiskRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request to resize a machine"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"ResizeMachineRequest\","]
+    #[doc = "  \"description\": \"Request to resize a machine\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"package\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"origin\": {"]
+    #[doc = "      \"description\": \"Origin identifier (defaults to 'cloudapi')\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"package\": {"]
+    #[doc = "      \"description\": \"New package name or UUID\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ResizeMachineRequest {
+        #[doc = "Origin identifier (defaults to 'cloudapi')"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub origin: ::std::option::Option<::std::string::String>,
+        #[doc = "New package name or UUID"]
+        pub package: ::std::string::String,
+    }
+
+    impl ResizeMachineRequest {
+        pub fn builder() -> builder::ResizeMachineRequest {
             Default::default()
         }
     }
@@ -6367,11 +6977,11 @@ pub mod types {
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
     #[doc = "    \"default_members\": {"]
-    #[doc = "      \"description\": \"Default members (user UUIDs or logins)\","]
+    #[doc = "      \"description\": \"Default members (structured member references)\","]
     #[doc = "      \"default\": [],"]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
+    #[doc = "        \"$ref\": \"#/components/schemas/MemberRef\""]
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"id\": {"]
@@ -6380,11 +6990,11 @@ pub mod types {
     #[doc = "      \"format\": \"uuid\""]
     #[doc = "    },"]
     #[doc = "    \"members\": {"]
-    #[doc = "      \"description\": \"Members (user UUIDs or logins)\","]
+    #[doc = "      \"description\": \"Members (structured member references)\","]
     #[doc = "      \"default\": [],"]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
+    #[doc = "        \"$ref\": \"#/components/schemas/MemberRef\""]
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
@@ -6392,22 +7002,27 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"policies\": {"]
-    #[doc = "      \"description\": \"Policies (policy UUIDs or names)\","]
+    #[doc = "      \"description\": \"Policies attached to this role\","]
     #[doc = "      \"default\": [],"]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
+    #[doc = "        \"$ref\": \"#/components/schemas/PolicyRef\""]
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -6417,26 +7032,26 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct Role {
-        #[doc = "Default members (user UUIDs or logins)"]
+        #[doc = "Default members (structured member references)"]
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
-        pub default_members: ::std::vec::Vec<::std::string::String>,
+        pub default_members: ::std::vec::Vec<MemberRef>,
         #[doc = "Role UUID"]
         pub id: ::uuid::Uuid,
-        #[doc = "Members (user UUIDs or logins)"]
+        #[doc = "Members (structured member references)"]
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
-        pub members: ::std::vec::Vec<::std::string::String>,
+        pub members: ::std::vec::Vec<MemberRef>,
         #[doc = "Role name"]
         pub name: ::std::string::String,
-        #[doc = "Policies (policy UUIDs or names)"]
+        #[doc = "Policies attached to this role"]
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
-        pub policies: ::std::vec::Vec<::std::string::String>,
+        pub policies: ::std::vec::Vec<PolicyRef>,
         #[doc = "Role tags for RBAC"]
         #[serde(
             rename = "role-tag",
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
     }
 
     impl Role {
@@ -6464,10 +7079,11 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"List of role names assigned to the resource\","]
-    #[doc = "      \"type\": \"array\","]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -6481,7 +7097,7 @@ pub mod types {
         pub name: ::std::string::String,
         #[doc = "List of role names assigned to the resource"]
         #[serde(rename = "role-tag")]
-        pub role_tag: ::std::vec::Vec<::std::string::String>,
+        pub role_tag: cloudapi_api::RoleTags,
     }
 
     impl RoleTagsResponse {
@@ -6755,13 +7371,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -6786,11 +7407,99 @@ pub mod types {
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
     }
 
     impl SshKey {
         pub fn builder() -> builder::SshKey {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request to start a machine"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"StartMachineRequest\","]
+    #[doc = "  \"description\": \"Request to start a machine\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"origin\": {"]
+    #[doc = "      \"description\": \"Origin identifier (defaults to 'cloudapi')\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StartMachineRequest {
+        #[doc = "Origin identifier (defaults to 'cloudapi')"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub origin: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for StartMachineRequest {
+        fn default() -> Self {
+            Self {
+                origin: Default::default(),
+            }
+        }
+    }
+
+    impl StartMachineRequest {
+        pub fn builder() -> builder::StartMachineRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request to stop a machine"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"StopMachineRequest\","]
+    #[doc = "  \"description\": \"Request to stop a machine\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"origin\": {"]
+    #[doc = "      \"description\": \"Origin identifier (defaults to 'cloudapi')\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StopMachineRequest {
+        #[doc = "Origin identifier (defaults to 'cloudapi')"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub origin: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for StopMachineRequest {
+        fn default() -> Self {
+            Self {
+                origin: Default::default(),
+            }
+        }
+    }
+
+    impl StopMachineRequest {
+        pub fn builder() -> builder::StopMachineRequest {
             Default::default()
         }
     }
@@ -7156,13 +7865,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"resolvers\": {"]
     #[doc = "      \"description\": \"Resolvers\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Resolvers\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"routes\": {"]
     #[doc = "      \"description\": \"Routes\""]
@@ -7192,7 +7906,7 @@ pub mod types {
         pub provision_start_ip: ::std::option::Option<::std::string::String>,
         #[doc = "Resolvers"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub resolvers: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub resolvers: ::std::option::Option<cloudapi_api::Resolvers>,
         #[doc = "Routes"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub routes: ::std::option::Option<::serde_json::Value>,
@@ -7348,6 +8062,132 @@ pub mod types {
         }
     }
 
+    #[doc = "Request to update an image"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"UpdateImageRequest\","]
+    #[doc = "  \"description\": \"Request to update an image\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"acl\": {"]
+    #[doc = "      \"description\": \"ACL\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/ImageAcl\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"description\": \"Description\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"eula\": {"]
+    #[doc = "      \"description\": \"EULA URL\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"homepage\": {"]
+    #[doc = "      \"description\": \"Homepage URL\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"description\": \"Image name\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"tags\": {"]
+    #[doc = "      \"description\": \"Tags\","]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Tags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"version\": {"]
+    #[doc = "      \"description\": \"Image version\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct UpdateImageRequest {
+        #[doc = "ACL"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub acl: ::std::option::Option<cloudapi_api::ImageAcl>,
+        #[doc = "Description"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub description: ::std::option::Option<::std::string::String>,
+        #[doc = "EULA URL"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub eula: ::std::option::Option<::std::string::String>,
+        #[doc = "Homepage URL"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub homepage: ::std::option::Option<::std::string::String>,
+        #[doc = "Image name"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub name: ::std::option::Option<::std::string::String>,
+        #[doc = "Tags"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub tags: ::std::option::Option<cloudapi_api::Tags>,
+        #[doc = "Image version"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub version: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for UpdateImageRequest {
+        fn default() -> Self {
+            Self {
+                acl: Default::default(),
+                description: Default::default(),
+                eula: Default::default(),
+                homepage: Default::default(),
+                name: Default::default(),
+                tags: Default::default(),
+                version: Default::default(),
+            }
+        }
+    }
+
+    impl UpdateImageRequest {
+        pub fn builder() -> builder::UpdateImageRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "Request to update network IP"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -7407,13 +8247,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"rules\": {"]
     #[doc = "      \"description\": \"Policy rules (array of rule strings)\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/PolicyRules\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -7431,7 +8276,7 @@ pub mod types {
         pub name: ::std::option::Option<::std::string::String>,
         #[doc = "Policy rules (array of rule strings)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub rules: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub rules: ::std::option::Option<cloudapi_api::PolicyRules>,
     }
 
     impl ::std::default::Default for UpdatePolicyRequest {
@@ -7679,6 +8524,50 @@ pub mod types {
         }
     }
 
+    #[doc = "Request to update volume"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"UpdateVolumeRequest\","]
+    #[doc = "  \"description\": \"Request to update volume\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"description\": \"Volume name\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct UpdateVolumeRequest {
+        #[doc = "Volume name"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub name: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for UpdateVolumeRequest {
+        fn default() -> Self {
+            Self {
+                name: Default::default(),
+            }
+        }
+    }
+
+    impl UpdateVolumeRequest {
+        pub fn builder() -> builder::UpdateVolumeRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "User information"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -7743,13 +8632,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"updated\": {"]
     #[doc = "      \"description\": \"Last update timestamp\","]
@@ -7802,7 +8696,7 @@ pub mod types {
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
         #[doc = "Last update timestamp"]
         pub updated: ::chrono::DateTime<::chrono::offset::Utc>,
     }
@@ -7979,11 +8873,11 @@ pub mod types {
     #[doc = "    \"networks\": {"]
     #[doc = "      \"description\": \"Networks (array of UUIDs)\","]
     #[doc = "      \"default\": [],"]
-    #[doc = "      \"type\": \"array\","]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\","]
-    #[doc = "        \"format\": \"uuid\""]
-    #[doc = "      }"]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/NetworkIds\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"owner_uuid\": {"]
     #[doc = "      \"description\": \"Owner UUID\","]
@@ -8016,8 +8910,11 @@ pub mod types {
     #[doc = "    \"tags\": {"]
     #[doc = "      \"description\": \"Tags\","]
     #[doc = "      \"default\": {},"]
-    #[doc = "      \"type\": \"object\","]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/Tags\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"type\": {"]
     #[doc = "      \"description\": \"Volume type\","]
@@ -8045,8 +8942,8 @@ pub mod types {
         #[doc = "Volume name"]
         pub name: ::std::string::String,
         #[doc = "Networks (array of UUIDs)"]
-        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
-        pub networks: ::std::vec::Vec<::uuid::Uuid>,
+        #[serde(default = "defaults::volume_networks")]
+        pub networks: cloudapi_api::NetworkIds,
         #[doc = "Owner UUID"]
         pub owner_uuid: ::uuid::Uuid,
         #[doc = "References (machines using this volume)"]
@@ -8057,8 +8954,8 @@ pub mod types {
         #[doc = "State"]
         pub state: VolumeState,
         #[doc = "Tags"]
-        #[serde(default, skip_serializing_if = "::serde_json::Map::is_empty")]
-        pub tags: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+        #[serde(default = "defaults::volume_tags")]
+        pub tags: cloudapi_api::Tags,
         #[doc = "Volume type"]
         #[serde(rename = "type")]
         pub type_: VolumeType,
@@ -9507,7 +10404,7 @@ pub mod types {
             provision_end_ip: ::std::result::Result<::std::string::String, ::std::string::String>,
             provision_start_ip: ::std::result::Result<::std::string::String, ::std::string::String>,
             resolvers: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::Resolvers>,
                 ::std::string::String,
             >,
             routes: ::std::result::Result<
@@ -9596,9 +10493,7 @@ pub mod types {
             }
             pub fn resolvers<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::Resolvers>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.resolvers = value
@@ -9832,7 +10727,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct CreateMachineRequest {
             affinity: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::AffinityRules>,
                 ::std::string::String,
             >,
             allow_shared_images:
@@ -9856,9 +10751,7 @@ pub mod types {
                 ::std::string::String,
             >,
             metadata: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<cloudapi_api::Metadata>,
                 ::std::string::String,
             >,
             name: ::std::result::Result<
@@ -9871,9 +10764,7 @@ pub mod types {
             >,
             package: ::std::result::Result<::std::string::String, ::std::string::String>,
             tags: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<cloudapi_api::Tags>,
                 ::std::string::String,
             >,
             volumes: ::std::result::Result<
@@ -9908,9 +10799,7 @@ pub mod types {
         impl CreateMachineRequest {
             pub fn affinity<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::AffinityRules>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.affinity = value
@@ -10010,11 +10899,7 @@ pub mod types {
             }
             pub fn metadata<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::Metadata>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.metadata = value
@@ -10056,11 +10941,7 @@ pub mod types {
             }
             pub fn tags<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::Tags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.tags = value
@@ -10138,10 +11019,7 @@ pub mod types {
                 ::std::string::String,
             >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
-            rules: ::std::result::Result<
-                ::std::vec::Vec<::std::string::String>,
-                ::std::string::String,
-            >,
+            rules: ::std::result::Result<cloudapi_api::PolicyRules, ::std::string::String>,
         }
 
         impl ::std::default::Default for CreatePolicyRequest {
@@ -10177,7 +11055,7 @@ pub mod types {
             }
             pub fn rules<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T: ::std::convert::TryInto<cloudapi_api::PolicyRules>,
                 T::Error: ::std::fmt::Display,
             {
                 self.rules = value
@@ -10631,14 +11509,12 @@ pub mod types {
                 ::std::string::String,
             >,
             networks: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
+                ::std::option::Option<cloudapi_api::NetworkIds>,
                 ::std::string::String,
             >,
-            size: ::std::result::Result<u64, ::std::string::String>,
+            size: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
             tags: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<cloudapi_api::Tags>,
                 ::std::string::String,
             >,
             type_: ::std::result::Result<
@@ -10652,7 +11528,7 @@ pub mod types {
                 Self {
                     name: Ok(Default::default()),
                     networks: Ok(Default::default()),
-                    size: Err("no value supplied for size".to_string()),
+                    size: Ok(Default::default()),
                     tags: Ok(Default::default()),
                     type_: Ok(Default::default()),
                 }
@@ -10672,7 +11548,7 @@ pub mod types {
             }
             pub fn networks<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::vec::Vec<::uuid::Uuid>>>,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::NetworkIds>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.networks = value
@@ -10682,7 +11558,7 @@ pub mod types {
             }
             pub fn size<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<u64>,
+                T: ::std::convert::TryInto<::std::option::Option<u64>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.size = value
@@ -10692,11 +11568,7 @@ pub mod types {
             }
             pub fn tags<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::Tags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.tags = value
@@ -10798,6 +11670,106 @@ pub mod types {
                 Self {
                     name: Ok(value.name),
                     url: Ok(value.url),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct DisableDeletionProtectionRequest {
+            origin: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for DisableDeletionProtectionRequest {
+            fn default() -> Self {
+                Self {
+                    origin: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl DisableDeletionProtectionRequest {
+            pub fn origin<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.origin = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for origin: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<DisableDeletionProtectionRequest>
+            for super::DisableDeletionProtectionRequest
+        {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: DisableDeletionProtectionRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    origin: value.origin?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::DisableDeletionProtectionRequest>
+            for DisableDeletionProtectionRequest
+        {
+            fn from(value: super::DisableDeletionProtectionRequest) -> Self {
+                Self {
+                    origin: Ok(value.origin),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct DisableFirewallRequest {
+            origin: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for DisableFirewallRequest {
+            fn default() -> Self {
+                Self {
+                    origin: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl DisableFirewallRequest {
+            pub fn origin<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.origin = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for origin: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<DisableFirewallRequest> for super::DisableFirewallRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: DisableFirewallRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    origin: value.origin?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::DisableFirewallRequest> for DisableFirewallRequest {
+            fn from(value: super::DisableFirewallRequest) -> Self {
+                Self {
+                    origin: Ok(value.origin),
                 }
             }
         }
@@ -11010,6 +11982,106 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct EnableDeletionProtectionRequest {
+            origin: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for EnableDeletionProtectionRequest {
+            fn default() -> Self {
+                Self {
+                    origin: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl EnableDeletionProtectionRequest {
+            pub fn origin<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.origin = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for origin: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<EnableDeletionProtectionRequest>
+            for super::EnableDeletionProtectionRequest
+        {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: EnableDeletionProtectionRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    origin: value.origin?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::EnableDeletionProtectionRequest>
+            for EnableDeletionProtectionRequest
+        {
+            fn from(value: super::EnableDeletionProtectionRequest) -> Self {
+                Self {
+                    origin: Ok(value.origin),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct EnableFirewallRequest {
+            origin: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for EnableFirewallRequest {
+            fn default() -> Self {
+                Self {
+                    origin: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl EnableFirewallRequest {
+            pub fn origin<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.origin = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for origin: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<EnableFirewallRequest> for super::EnableFirewallRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: EnableFirewallRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    origin: value.origin?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::EnableFirewallRequest> for EnableFirewallRequest {
+            fn from(value: super::EnableFirewallRequest) -> Self {
+                Self {
+                    origin: Ok(value.origin),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Error {
             code: ::std::result::Result<::std::string::String, ::std::string::String>,
             message: ::std::result::Result<
@@ -11084,6 +12156,51 @@ pub mod types {
                     code: Ok(value.code),
                     message: Ok(value.message),
                     request_id: Ok(value.request_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct ExportImageRequest {
+            manta_path: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ExportImageRequest {
+            fn default() -> Self {
+                Self {
+                    manta_path: Err("no value supplied for manta_path".to_string()),
+                }
+            }
+        }
+
+        impl ExportImageRequest {
+            pub fn manta_path<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.manta_path = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for manta_path: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ExportImageRequest> for super::ExportImageRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ExportImageRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    manta_path: value.manta_path?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ExportImageRequest> for ExportImageRequest {
+            fn from(value: super::ExportImageRequest) -> Self {
+                Self {
+                    manta_path: Ok(value.manta_path),
                 }
             }
         }
@@ -11179,7 +12296,7 @@ pub mod types {
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             log: ::std::result::Result<bool, ::std::string::String>,
             role_tag: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
             rule: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -11270,9 +12387,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::RoleTags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -11342,7 +12457,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct Image {
             acl: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
+                ::std::option::Option<cloudapi_api::ImageAcl>,
                 ::std::string::String,
             >,
             description: ::std::result::Result<
@@ -11380,7 +12495,7 @@ pub mod types {
             >,
             requirements: ::std::result::Result<super::ImageRequirements, ::std::string::String>,
             role_tag: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
             state: ::std::result::Result<
@@ -11388,9 +12503,7 @@ pub mod types {
                 ::std::string::String,
             >,
             tags: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<cloudapi_api::Tags>,
                 ::std::string::String,
             >,
             type_: ::std::result::Result<super::ImageType, ::std::string::String>,
@@ -11427,7 +12540,7 @@ pub mod types {
         impl Image {
             pub fn acl<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::vec::Vec<::uuid::Uuid>>>,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::ImageAcl>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.acl = value
@@ -11581,9 +12694,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::RoleTags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -11603,11 +12714,7 @@ pub mod types {
             }
             pub fn tags<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::Tags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.tags = value
@@ -11949,6 +13056,65 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct ImportImageRequest {
+            datacenter: ::std::result::Result<::std::string::String, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ImportImageRequest {
+            fn default() -> Self {
+                Self {
+                    datacenter: Err("no value supplied for datacenter".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                }
+            }
+        }
+
+        impl ImportImageRequest {
+            pub fn datacenter<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.datacenter = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for datacenter: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ImportImageRequest> for super::ImportImageRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ImportImageRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    datacenter: value.datacenter?,
+                    id: value.id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ImportImageRequest> for ImportImageRequest {
+            fn from(value: super::ImportImageRequest) -> Self {
+                Self {
+                    datacenter: Ok(value.datacenter),
+                    id: Ok(value.id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Machine {
             brand: ::std::result::Result<super::VmBrand, ::std::string::String>,
             compute_node:
@@ -11983,13 +13149,10 @@ pub mod types {
                 ::std::string::String,
             >,
             memory: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
-            metadata: ::std::result::Result<
-                ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                ::std::string::String,
-            >,
+            metadata: ::std::result::Result<cloudapi_api::Metadata, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             networks: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
+                ::std::option::Option<cloudapi_api::NetworkIds>,
                 ::std::string::String,
             >,
             nics: ::std::result::Result<::std::vec::Vec<super::MachineNic>, ::std::string::String>,
@@ -11999,14 +13162,11 @@ pub mod types {
                 ::std::string::String,
             >,
             role_tag: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
             state: ::std::result::Result<super::MachineState, ::std::string::String>,
-            tags: ::std::result::Result<
-                ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                ::std::string::String,
-            >,
+            tags: ::std::result::Result<cloudapi_api::Tags, ::std::string::String>,
             type_: ::std::result::Result<super::MachineType, ::std::string::String>,
             updated: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
@@ -12226,9 +13386,7 @@ pub mod types {
             }
             pub fn metadata<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                    >,
+                T: ::std::convert::TryInto<cloudapi_api::Metadata>,
                 T::Error: ::std::fmt::Display,
             {
                 self.metadata = value
@@ -12248,7 +13406,7 @@ pub mod types {
             }
             pub fn networks<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::vec::Vec<::uuid::Uuid>>>,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::NetworkIds>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.networks = value
@@ -12288,9 +13446,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::RoleTags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -12310,9 +13466,7 @@ pub mod types {
             }
             pub fn tags<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                    >,
+                T: ::std::convert::TryInto<cloudapi_api::Tags>,
                 T::Error: ::std::fmt::Display,
             {
                 self.tags = value
@@ -12732,7 +13886,7 @@ pub mod types {
         pub struct MigrateRequest {
             action: ::std::result::Result<super::MigrationAction, ::std::string::String>,
             affinity: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::AffinityRules>,
                 ::std::string::String,
             >,
         }
@@ -12759,9 +13913,7 @@ pub mod types {
             }
             pub fn affinity<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::AffinityRules>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.affinity = value
@@ -13197,11 +14349,11 @@ pub mod types {
             >,
             public: ::std::result::Result<bool, ::std::string::String>,
             resolvers: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::Resolvers>,
                 ::std::string::String,
             >,
             role_tag: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
             routes: ::std::result::Result<
@@ -13345,9 +14497,7 @@ pub mod types {
             }
             pub fn resolvers<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::Resolvers>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.resolvers = value
@@ -13357,9 +14507,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::RoleTags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -13816,7 +14964,7 @@ pub mod types {
             memory: ::std::result::Result<u64, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             role_tag: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
             swap: ::std::result::Result<u64, ::std::string::String>,
@@ -13964,9 +15112,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::RoleTags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -14124,13 +15270,10 @@ pub mod types {
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             role_tag: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
-            rules: ::std::result::Result<
-                ::std::vec::Vec<::std::string::String>,
-                ::std::string::String,
-            >,
+            rules: ::std::result::Result<cloudapi_api::PolicyRules, ::std::string::String>,
         }
 
         impl ::std::default::Default for Policy {
@@ -14178,9 +15321,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::RoleTags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -14190,7 +15331,7 @@ pub mod types {
             }
             pub fn rules<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T: ::std::convert::TryInto<cloudapi_api::PolicyRules>,
                 T::Error: ::std::fmt::Display,
             {
                 self.rules = value
@@ -14290,90 +15431,268 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
-        pub struct ProvisioningLimits {
-            disk: ::std::result::Result<::std::option::Option<i64>, ::std::string::String>,
-            machines: ::std::result::Result<::std::option::Option<i64>, ::std::string::String>,
-            ram: ::std::result::Result<::std::option::Option<i64>, ::std::string::String>,
+        pub struct ProvisioningLimit {
+            brand: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            by: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            check: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            image: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            os: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            used: ::std::result::Result<::std::option::Option<i64>, ::std::string::String>,
+            value: ::std::result::Result<i64, ::std::string::String>,
         }
 
-        impl ::std::default::Default for ProvisioningLimits {
+        impl ::std::default::Default for ProvisioningLimit {
             fn default() -> Self {
                 Self {
-                    disk: Ok(Default::default()),
-                    machines: Ok(Default::default()),
-                    ram: Ok(Default::default()),
+                    brand: Ok(Default::default()),
+                    by: Ok(Default::default()),
+                    check: Ok(Default::default()),
+                    image: Ok(Default::default()),
+                    os: Ok(Default::default()),
+                    used: Ok(Default::default()),
+                    value: Err("no value supplied for value".to_string()),
                 }
             }
         }
 
-        impl ProvisioningLimits {
-            pub fn disk<T>(mut self, value: T) -> Self
+        impl ProvisioningLimit {
+            pub fn brand<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<i64>>,
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
                 T::Error: ::std::fmt::Display,
             {
-                self.disk = value
+                self.brand = value
                     .try_into()
-                    .map_err(|e| format!("error converting supplied value for disk: {e}"));
+                    .map_err(|e| format!("error converting supplied value for brand: {e}"));
                 self
             }
-            pub fn machines<T>(mut self, value: T) -> Self
+            pub fn by<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<i64>>,
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
                 T::Error: ::std::fmt::Display,
             {
-                self.machines = value
+                self.by = value
                     .try_into()
-                    .map_err(|e| format!("error converting supplied value for machines: {e}"));
+                    .map_err(|e| format!("error converting supplied value for by: {e}"));
                 self
             }
-            pub fn ram<T>(mut self, value: T) -> Self
+            pub fn check<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.check = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for check: {e}"));
+                self
+            }
+            pub fn image<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.image = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for image: {e}"));
+                self
+            }
+            pub fn os<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.os = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for os: {e}"));
+                self
+            }
+            pub fn used<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<i64>>,
                 T::Error: ::std::fmt::Display,
             {
-                self.ram = value
+                self.used = value
                     .try_into()
-                    .map_err(|e| format!("error converting supplied value for ram: {e}"));
+                    .map_err(|e| format!("error converting supplied value for used: {e}"));
+                self
+            }
+            pub fn value<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.value = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for value: {e}"));
                 self
             }
         }
 
-        impl ::std::convert::TryFrom<ProvisioningLimits> for super::ProvisioningLimits {
+        impl ::std::convert::TryFrom<ProvisioningLimit> for super::ProvisioningLimit {
             type Error = super::error::ConversionError;
             fn try_from(
-                value: ProvisioningLimits,
+                value: ProvisioningLimit,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
-                    disk: value.disk?,
-                    machines: value.machines?,
-                    ram: value.ram?,
+                    brand: value.brand?,
+                    by: value.by?,
+                    check: value.check?,
+                    image: value.image?,
+                    os: value.os?,
+                    used: value.used?,
+                    value: value.value?,
                 })
             }
         }
 
-        impl ::std::convert::From<super::ProvisioningLimits> for ProvisioningLimits {
-            fn from(value: super::ProvisioningLimits) -> Self {
+        impl ::std::convert::From<super::ProvisioningLimit> for ProvisioningLimit {
+            fn from(value: super::ProvisioningLimit) -> Self {
                 Self {
-                    disk: Ok(value.disk),
-                    machines: Ok(value.machines),
-                    ram: Ok(value.ram),
+                    brand: Ok(value.brand),
+                    by: Ok(value.by),
+                    check: Ok(value.check),
+                    image: Ok(value.image),
+                    os: Ok(value.os),
+                    used: Ok(value.used),
+                    value: Ok(value.value),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct RebootMachineRequest {
+            origin: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for RebootMachineRequest {
+            fn default() -> Self {
+                Self {
+                    origin: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl RebootMachineRequest {
+            pub fn origin<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.origin = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for origin: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<RebootMachineRequest> for super::RebootMachineRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: RebootMachineRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    origin: value.origin?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::RebootMachineRequest> for RebootMachineRequest {
+            fn from(value: super::RebootMachineRequest) -> Self {
+                Self {
+                    origin: Ok(value.origin),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct RenameMachineRequest {
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            origin: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for RenameMachineRequest {
+            fn default() -> Self {
+                Self {
+                    name: Err("no value supplied for name".to_string()),
+                    origin: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl RenameMachineRequest {
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn origin<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.origin = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for origin: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<RenameMachineRequest> for super::RenameMachineRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: RenameMachineRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    name: value.name?,
+                    origin: value.origin?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::RenameMachineRequest> for RenameMachineRequest {
+            fn from(value: super::RenameMachineRequest) -> Self {
+                Self {
+                    name: Ok(value.name),
+                    origin: Ok(value.origin),
                 }
             }
         }
 
         #[derive(Clone, Debug)]
         pub struct ReplaceRoleTagsRequest {
-            role_tag: ::std::result::Result<
-                ::std::vec::Vec<::std::string::String>,
-                ::std::string::String,
-            >,
+            role_tag: ::std::result::Result<cloudapi_api::RoleTags, ::std::string::String>,
         }
 
         impl ::std::default::Default for ReplaceRoleTagsRequest {
             fn default() -> Self {
                 Self {
-                    role_tag: Ok(Default::default()),
+                    role_tag: Ok(super::defaults::replace_role_tags_request_role_tag()),
                 }
             }
         }
@@ -14381,7 +15700,7 @@ pub mod types {
         impl ReplaceRoleTagsRequest {
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T: ::std::convert::TryInto<cloudapi_api::RoleTags>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -14411,23 +15730,139 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct ResizeDiskRequest {
+            dangerous_allow_shrink:
+                ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
+            size: ::std::result::Result<u64, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ResizeDiskRequest {
+            fn default() -> Self {
+                Self {
+                    dangerous_allow_shrink: Ok(Default::default()),
+                    size: Err("no value supplied for size".to_string()),
+                }
+            }
+        }
+
+        impl ResizeDiskRequest {
+            pub fn dangerous_allow_shrink<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.dangerous_allow_shrink = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for dangerous_allow_shrink: {e}")
+                });
+                self
+            }
+            pub fn size<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.size = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for size: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ResizeDiskRequest> for super::ResizeDiskRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ResizeDiskRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    dangerous_allow_shrink: value.dangerous_allow_shrink?,
+                    size: value.size?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ResizeDiskRequest> for ResizeDiskRequest {
+            fn from(value: super::ResizeDiskRequest) -> Self {
+                Self {
+                    dangerous_allow_shrink: Ok(value.dangerous_allow_shrink),
+                    size: Ok(value.size),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct ResizeMachineRequest {
+            origin: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            package: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ResizeMachineRequest {
+            fn default() -> Self {
+                Self {
+                    origin: Ok(Default::default()),
+                    package: Err("no value supplied for package".to_string()),
+                }
+            }
+        }
+
+        impl ResizeMachineRequest {
+            pub fn origin<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.origin = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for origin: {e}"));
+                self
+            }
+            pub fn package<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.package = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for package: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ResizeMachineRequest> for super::ResizeMachineRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ResizeMachineRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    origin: value.origin?,
+                    package: value.package?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ResizeMachineRequest> for ResizeMachineRequest {
+            fn from(value: super::ResizeMachineRequest) -> Self {
+                Self {
+                    origin: Ok(value.origin),
+                    package: Ok(value.package),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Role {
-            default_members: ::std::result::Result<
-                ::std::vec::Vec<::std::string::String>,
-                ::std::string::String,
-            >,
+            default_members:
+                ::std::result::Result<::std::vec::Vec<super::MemberRef>, ::std::string::String>,
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
-            members: ::std::result::Result<
-                ::std::vec::Vec<::std::string::String>,
-                ::std::string::String,
-            >,
+            members:
+                ::std::result::Result<::std::vec::Vec<super::MemberRef>, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
-            policies: ::std::result::Result<
-                ::std::vec::Vec<::std::string::String>,
-                ::std::string::String,
-            >,
+            policies:
+                ::std::result::Result<::std::vec::Vec<super::PolicyRef>, ::std::string::String>,
             role_tag: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
         }
@@ -14448,7 +15883,7 @@ pub mod types {
         impl Role {
             pub fn default_members<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T: ::std::convert::TryInto<::std::vec::Vec<super::MemberRef>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.default_members = value.try_into().map_err(|e| {
@@ -14468,7 +15903,7 @@ pub mod types {
             }
             pub fn members<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T: ::std::convert::TryInto<::std::vec::Vec<super::MemberRef>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.members = value
@@ -14488,7 +15923,7 @@ pub mod types {
             }
             pub fn policies<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T: ::std::convert::TryInto<::std::vec::Vec<super::PolicyRef>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.policies = value
@@ -14498,9 +15933,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::RoleTags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -14540,10 +15973,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct RoleTagsResponse {
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
-            role_tag: ::std::result::Result<
-                ::std::vec::Vec<::std::string::String>,
-                ::std::string::String,
-            >,
+            role_tag: ::std::result::Result<cloudapi_api::RoleTags, ::std::string::String>,
         }
 
         impl ::std::default::Default for RoleTagsResponse {
@@ -14568,7 +15998,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T: ::std::convert::TryInto<cloudapi_api::RoleTags>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -14706,7 +16136,7 @@ pub mod types {
             key: ::std::result::Result<::std::string::String, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             role_tag: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
         }
@@ -14768,9 +16198,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::RoleTags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -14803,6 +16231,102 @@ pub mod types {
                     key: Ok(value.key),
                     name: Ok(value.name),
                     role_tag: Ok(value.role_tag),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct StartMachineRequest {
+            origin: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for StartMachineRequest {
+            fn default() -> Self {
+                Self {
+                    origin: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl StartMachineRequest {
+            pub fn origin<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.origin = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for origin: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StartMachineRequest> for super::StartMachineRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StartMachineRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    origin: value.origin?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StartMachineRequest> for StartMachineRequest {
+            fn from(value: super::StartMachineRequest) -> Self {
+                Self {
+                    origin: Ok(value.origin),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct StopMachineRequest {
+            origin: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for StopMachineRequest {
+            fn default() -> Self {
+                Self {
+                    origin: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl StopMachineRequest {
+            pub fn origin<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.origin = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for origin: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StopMachineRequest> for super::StopMachineRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StopMachineRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    origin: value.origin?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StopMachineRequest> for StopMachineRequest {
+            fn from(value: super::StopMachineRequest) -> Self {
+                Self {
+                    origin: Ok(value.origin),
                 }
             }
         }
@@ -15157,7 +16681,7 @@ pub mod types {
                 ::std::string::String,
             >,
             resolvers: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::Resolvers>,
                 ::std::string::String,
             >,
             routes: ::std::result::Result<
@@ -15233,9 +16757,7 @@ pub mod types {
             }
             pub fn resolvers<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::Resolvers>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.resolvers = value
@@ -15445,6 +16967,156 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct UpdateImageRequest {
+            acl: ::std::result::Result<
+                ::std::option::Option<cloudapi_api::ImageAcl>,
+                ::std::string::String,
+            >,
+            description: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            eula: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            homepage: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            name: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            tags: ::std::result::Result<
+                ::std::option::Option<cloudapi_api::Tags>,
+                ::std::string::String,
+            >,
+            version: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for UpdateImageRequest {
+            fn default() -> Self {
+                Self {
+                    acl: Ok(Default::default()),
+                    description: Ok(Default::default()),
+                    eula: Ok(Default::default()),
+                    homepage: Ok(Default::default()),
+                    name: Ok(Default::default()),
+                    tags: Ok(Default::default()),
+                    version: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl UpdateImageRequest {
+            pub fn acl<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::ImageAcl>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.acl = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for acl: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn eula<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.eula = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for eula: {e}"));
+                self
+            }
+            pub fn homepage<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.homepage = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for homepage: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn tags<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::Tags>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tags = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tags: {e}"));
+                self
+            }
+            pub fn version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.version = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for version: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<UpdateImageRequest> for super::UpdateImageRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: UpdateImageRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    acl: value.acl?,
+                    description: value.description?,
+                    eula: value.eula?,
+                    homepage: value.homepage?,
+                    name: value.name?,
+                    tags: value.tags?,
+                    version: value.version?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::UpdateImageRequest> for UpdateImageRequest {
+            fn from(value: super::UpdateImageRequest) -> Self {
+                Self {
+                    acl: Ok(value.acl),
+                    description: Ok(value.description),
+                    eula: Ok(value.eula),
+                    homepage: Ok(value.homepage),
+                    name: Ok(value.name),
+                    tags: Ok(value.tags),
+                    version: Ok(value.version),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct UpdateNetworkIpRequest {
             reserved: ::std::result::Result<bool, ::std::string::String>,
         }
@@ -15500,7 +17172,7 @@ pub mod types {
                 ::std::string::String,
             >,
             rules: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::PolicyRules>,
                 ::std::string::String,
             >,
         }
@@ -15538,9 +17210,7 @@ pub mod types {
             }
             pub fn rules<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::PolicyRules>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.rules = value
@@ -15861,6 +17531,52 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct UpdateVolumeRequest {
+            name: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for UpdateVolumeRequest {
+            fn default() -> Self {
+                Self {
+                    name: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl UpdateVolumeRequest {
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<UpdateVolumeRequest> for super::UpdateVolumeRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: UpdateVolumeRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self { name: value.name? })
+            }
+        }
+
+        impl ::std::convert::From<super::UpdateVolumeRequest> for UpdateVolumeRequest {
+            fn from(value: super::UpdateVolumeRequest) -> Self {
+                Self {
+                    name: Ok(value.name),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct User {
             company_name: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -15886,7 +17602,7 @@ pub mod types {
                 ::std::string::String,
             >,
             role_tag: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
             updated: ::std::result::Result<
@@ -15995,9 +17711,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::RoleTags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -16064,15 +17778,12 @@ pub mod types {
             >,
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
-            networks: ::std::result::Result<::std::vec::Vec<::uuid::Uuid>, ::std::string::String>,
+            networks: ::std::result::Result<cloudapi_api::NetworkIds, ::std::string::String>,
             owner_uuid: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             refs: ::std::result::Result<::std::vec::Vec<::uuid::Uuid>, ::std::string::String>,
             size: ::std::result::Result<u64, ::std::string::String>,
             state: ::std::result::Result<super::VolumeState, ::std::string::String>,
-            tags: ::std::result::Result<
-                ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                ::std::string::String,
-            >,
+            tags: ::std::result::Result<cloudapi_api::Tags, ::std::string::String>,
             type_: ::std::result::Result<super::VolumeType, ::std::string::String>,
         }
 
@@ -16083,12 +17794,12 @@ pub mod types {
                     filesystem_path: Ok(Default::default()),
                     id: Err("no value supplied for id".to_string()),
                     name: Err("no value supplied for name".to_string()),
-                    networks: Ok(Default::default()),
+                    networks: Ok(super::defaults::volume_networks()),
                     owner_uuid: Err("no value supplied for owner_uuid".to_string()),
                     refs: Ok(Default::default()),
                     size: Err("no value supplied for size".to_string()),
                     state: Err("no value supplied for state".to_string()),
-                    tags: Ok(Default::default()),
+                    tags: Ok(super::defaults::volume_tags()),
                     type_: Err("no value supplied for type_".to_string()),
                 }
             }
@@ -16137,7 +17848,7 @@ pub mod types {
             }
             pub fn networks<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::vec::Vec<::uuid::Uuid>>,
+                T: ::std::convert::TryInto<cloudapi_api::NetworkIds>,
                 T::Error: ::std::fmt::Display,
             {
                 self.networks = value
@@ -16187,9 +17898,7 @@ pub mod types {
             }
             pub fn tags<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                    >,
+                T: ::std::convert::TryInto<cloudapi_api::Tags>,
                 T::Error: ::std::fmt::Display,
             {
                 self.tags = value
@@ -16397,6 +18106,18 @@ pub mod types {
                 min_ram: Default::default(),
             }
         }
+
+        pub(super) fn replace_role_tags_request_role_tag() -> cloudapi_api::RoleTags {
+            ::serde_json::from_str::<cloudapi_api::RoleTags>("[]").unwrap()
+        }
+
+        pub(super) fn volume_networks() -> cloudapi_api::NetworkIds {
+            ::serde_json::from_str::<cloudapi_api::NetworkIds>("[]").unwrap()
+        }
+
+        pub(super) fn volume_tags() -> cloudapi_api::Tags {
+            ::serde_json::from_str::<cloudapi_api::Tags>("{}").unwrap()
+        }
     }
 }
 
@@ -16553,7 +18274,7 @@ impl Client {
         builder::ReplaceDatacentersCollectionRoleTags::new(self)
     }
 
-    #[doc = "Get datacenter\n\nSends a `GET` request to `/{account}/datacenters/{dc}`\n\nArguments:\n- `account`: Account login name\n- `dc`: Datacenter name\n```ignore\nlet response = client.get_datacenter()\n    .account(account)\n    .dc(dc)\n    .send()\n    .await;\n```"]
+    #[doc = "Get datacenter\n\nReturns a 302 redirect to the named datacenter's CloudAPI URL.\n\nSends a `GET` request to `/{account}/datacenters/{dc}`\n\nArguments:\n- `account`: Account login name\n- `dc`: Datacenter name\n```ignore\nlet response = client.get_datacenter()\n    .account(account)\n    .dc(dc)\n    .send()\n    .await;\n```"]
     pub fn get_datacenter(&self) -> builder::GetDatacenter<'_> {
         builder::GetDatacenter::new(self)
     }
@@ -17729,7 +19450,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Account>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!("{}/{}", client.baseurl, encode_path(&account.to_string()),);
@@ -17739,15 +19460,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_account",
             };
@@ -17760,14 +19473,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -17982,9 +19689,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/accesskeys`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::AccessKey>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -17998,15 +19703,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_access_keys",
             };
@@ -18019,14 +19716,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -18373,7 +20064,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/accesskeys/{accesskeyid}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::AccessKey>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -18393,15 +20084,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_access_key",
             };
@@ -18414,14 +20097,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -18706,7 +20383,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/config`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Config>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -18720,15 +20397,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_config",
             };
@@ -18741,14 +20410,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -18973,9 +20636,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `GET` request to `/{account}/datacenters/{dc}`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::string::String>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<types::Error>> {
             let Self {
                 client,
                 account,
@@ -18995,15 +20656,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.get(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "get_datacenter",
             };
@@ -19016,7 +20669,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
+                200..=299 => Ok(ResponseValue::stream(response)),
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
@@ -19239,10 +20892,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/fabrics/default/vlans`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::FabricVlan>>, Error<types::Error>>
-        {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -19256,15 +20906,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_fabric_vlans",
             };
@@ -19277,14 +20919,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -19633,7 +21269,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/fabrics/default/vlans/{vlan_id}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::FabricVlan>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -19653,15 +21289,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_fabric_vlan",
             };
@@ -19674,14 +21302,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -19942,9 +21564,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/fabrics/default/vlans/{vlan_id}/networks`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Network>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -19964,15 +21584,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_fabric_networks",
             };
@@ -19985,14 +21597,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -20399,7 +22005,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/fabrics/default/vlans/{vlan_id}/networks/{id}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Network>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -20422,15 +22028,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_fabric_network",
             };
@@ -20443,14 +22041,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -20959,10 +22551,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/fwrules`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::FirewallRule>>, Error<types::Error>>
-        {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -20976,15 +22565,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_firewall_rules",
             };
@@ -20997,14 +22578,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -21478,7 +23053,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/fwrules/{id}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::FirewallRule>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -21498,15 +23073,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_firewall_rule",
             };
@@ -21519,14 +23086,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -21844,9 +23405,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/fwrules/{id}/machines`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Machine>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -21866,15 +23425,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_firewall_rule_machines",
             };
@@ -21887,14 +23438,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -22450,9 +23995,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/images`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Image>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -22486,10 +24029,6 @@ pub mod builder {
             let mut request = client
                 .client
                 .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
                 .query(&progenitor_client::QueryParam::new("name", &name))
                 .query(&progenitor_client::QueryParam::new("os", &os))
                 .query(&progenitor_client::QueryParam::new("owner", &owner))
@@ -22511,14 +24050,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -22989,7 +24522,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/images/{dataset}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -23009,15 +24542,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_image",
             };
@@ -23030,14 +24555,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -23357,9 +24876,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/keys`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::SshKey>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -23373,15 +24890,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_keys",
             };
@@ -23394,14 +24903,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -23750,7 +25253,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/keys/{name}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::SshKey>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -23770,15 +25273,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_key",
             };
@@ -23791,14 +25286,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -23831,7 +25320,7 @@ pub mod builder {
         #[doc = "Sends a `GET` request to `/{account}/limits`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<types::ProvisioningLimits>, Error<types::Error>> {
+        ) -> Result<ResponseValue<cloudapi_api::ProvisioningLimits>, Error<types::Error>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -24436,9 +25925,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Machine>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -24482,10 +25969,6 @@ pub mod builder {
             let mut request = client
                 .client
                 .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
                 .query(&progenitor_client::QueryParam::new("brand", &brand))
                 .query(&progenitor_client::QueryParam::new(
                     "credentials",
@@ -24515,14 +25998,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -24993,7 +26470,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Machine>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -25013,15 +26490,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine",
             };
@@ -25034,14 +26503,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -25178,10 +26641,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/audit`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::AuditEntry>>, Error<types::Error>>
-        {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -25201,15 +26661,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_audit",
             };
@@ -25222,14 +26674,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -25485,9 +26931,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/disks`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Disk>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -25507,15 +26951,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine_disks",
             };
@@ -25528,14 +26964,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -25939,7 +27369,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/disks/{disk}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Disk>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -25962,15 +27392,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine_disk",
             };
@@ -25983,14 +27405,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -26127,10 +27543,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/fwrules`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::FirewallRule>>, Error<types::Error>>
-        {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -26150,15 +27563,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine_firewall_rules",
             };
@@ -26171,14 +27576,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -26223,10 +27622,7 @@ pub mod builder {
         #[doc = "Sends a `GET` request to `/{account}/machines/{machine}/metadata`"]
         pub async fn send(
             self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        ) -> Result<ResponseValue<cloudapi_api::Metadata>, Error<types::Error>> {
             let Self {
                 client,
                 account,
@@ -26331,10 +27727,7 @@ pub mod builder {
         #[doc = "Sends a `POST` request to `/{account}/machines/{machine}/metadata`"]
         pub async fn send(
             self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        ) -> Result<ResponseValue<cloudapi_api::Metadata>, Error<types::Error>> {
             let Self {
                 client,
                 account,
@@ -26519,12 +27912,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/metadata`"]
-        pub async fn send(
-            self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -26544,15 +27932,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine_metadata",
             };
@@ -26565,14 +27945,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -26841,9 +28215,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/metadata/{key}`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::string::String>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -26866,15 +28238,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine_metadata_key",
             };
@@ -26887,14 +28251,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -27359,9 +28717,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/nics`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Nic>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -27381,15 +28737,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_nics",
             };
@@ -27402,14 +28750,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -27676,7 +29018,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/nics/{mac}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Nic>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -27699,15 +29041,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_nic",
             };
@@ -27720,14 +29054,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -27985,9 +29313,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/snapshots`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Snapshot>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -28007,15 +29333,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine_snapshots",
             };
@@ -28028,14 +29346,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -28408,7 +29720,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/snapshots/{name}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Snapshot>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -28431,15 +29743,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine_snapshot",
             };
@@ -28452,14 +29756,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -28502,12 +29800,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `GET` request to `/{account}/machines/{machine}/tags`"]
-        pub async fn send(
-            self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        pub async fn send(self) -> Result<ResponseValue<cloudapi_api::Tags>, Error<types::Error>> {
             let Self {
                 client,
                 account,
@@ -28610,12 +29903,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `PUT` request to `/{account}/machines/{machine}/tags`"]
-        pub async fn send(
-            self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        pub async fn send(self) -> Result<ResponseValue<cloudapi_api::Tags>, Error<types::Error>> {
             let Self {
                 client,
                 account,
@@ -28721,12 +30009,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `POST` request to `/{account}/machines/{machine}/tags`"]
-        pub async fn send(
-            self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        pub async fn send(self) -> Result<ResponseValue<cloudapi_api::Tags>, Error<types::Error>> {
             let Self {
                 client,
                 account,
@@ -28911,12 +30194,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/tags`"]
-        pub async fn send(
-            self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -28936,15 +30214,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine_tags",
             };
@@ -28957,14 +30227,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -29233,9 +30497,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/tags/{tag}`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::string::String>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -29258,15 +30520,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine_tag",
             };
@@ -29279,14 +30533,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -29855,9 +31103,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/networks`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Network>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -29871,15 +31117,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_networks",
             };
@@ -29892,14 +31130,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -30157,7 +31389,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/networks/{network}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Network>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -30177,15 +31409,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_network",
             };
@@ -30198,14 +31422,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -30341,9 +31559,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/networks/{network}/ips`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::NetworkIp>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -30363,15 +31579,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_network_ips",
             };
@@ -30384,14 +31592,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -30689,7 +31891,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/networks/{network}/ips/{ip_address}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::NetworkIp>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -30712,15 +31914,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_network_ip",
             };
@@ -30733,14 +31927,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -30955,9 +32143,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/packages`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Package>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -30971,15 +32157,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_packages",
             };
@@ -30992,14 +32170,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -31257,7 +32429,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/packages/{package}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Package>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -31277,15 +32449,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_package",
             };
@@ -31298,14 +32462,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -31625,9 +32783,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/policies`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Policy>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -31641,15 +32797,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_policies",
             };
@@ -31662,14 +32810,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -32138,7 +33280,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/policies/{policy}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Policy>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -32158,15 +33300,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_policy",
             };
@@ -32179,14 +33313,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -32506,9 +33634,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/roles`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Role>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -32522,15 +33648,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_roles",
             };
@@ -32543,14 +33661,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -33019,7 +34131,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/roles/{role}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Role>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -33039,15 +34151,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_role",
             };
@@ -33060,14 +34164,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -33569,9 +34667,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/users`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::User>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -33585,15 +34681,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_users",
             };
@@ -33606,14 +34694,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -34082,7 +35164,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/users/{uuid}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::User>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -34102,15 +35184,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_user",
             };
@@ -34123,14 +35197,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -34390,9 +35458,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/users/{uuid}/accesskeys`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::AccessKey>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -34412,15 +35478,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_user_access_keys",
             };
@@ -34433,14 +35491,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -34844,7 +35896,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/users/{uuid}/accesskeys/{accesskeyid}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::AccessKey>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -34867,15 +35919,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_user_access_key",
             };
@@ -34888,14 +35932,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -35397,9 +36435,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/users/{uuid}/keys`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::SshKey>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -35419,15 +36455,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_user_keys",
             };
@@ -35440,14 +36468,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -35853,7 +36875,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/users/{uuid}/keys/{name}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::SshKey>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -35876,15 +36898,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_user_key",
             };
@@ -35897,14 +36911,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }

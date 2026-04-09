@@ -25,9 +25,9 @@ func (s *rsaSignature) String() string {
 	return base64.StdEncoding.EncodeToString(s.signature)
 }
 
-func newRSASignature(signatureBlob []byte) (*rsaSignature, error) {
+func newRSASignature(signatureBlob []byte, hashAlgorithm string) (*rsaSignature, error) {
 	return &rsaSignature{
-		hashAlgorithm: "rsa-sha1",
+		hashAlgorithm: hashAlgorithm,
 		signature:     signatureBlob,
 	}, nil
 }

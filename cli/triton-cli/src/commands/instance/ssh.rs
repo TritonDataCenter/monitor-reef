@@ -278,8 +278,8 @@ async fn fetch_image_default_user(
     }
 }
 
-/// Extract a string value from tags (uses serde_json::Map from generated types)
-fn get_tag_string(tags: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
+/// Extract a string value from tags.
+fn get_tag_string(tags: &cloudapi_client::Tags, key: &str) -> Option<String> {
     tags.get(key).and_then(|v| match v {
         Value::String(s) => Some(s.clone()),
         // Also handle if someone stored it as a number

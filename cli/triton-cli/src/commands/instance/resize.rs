@@ -67,7 +67,14 @@ pub async fn run(args: ResizeArgs, client: &TypedClient) -> Result<()> {
     let id_str = machine_id.to_string();
 
     client
-        .resize_machine(account, &machine_id, package_id, None)
+        .resize_machine(
+            account,
+            &machine_id,
+            &cloudapi_client::ResizeMachineRequest {
+                package: package_id,
+                origin: None,
+            },
+        )
         .await?;
 
     println!(

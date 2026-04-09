@@ -297,7 +297,7 @@ async fn get_user(args: UserGetArgs, client: &TypedClient, use_json: bool) -> Re
             if role
                 .members
                 .iter()
-                .any(|m| m == &user.login || m == &user.id.to_string())
+                .any(|m| m.login.as_deref() == Some(&user.login) || m.id == Some(user.id))
             {
                 roles.push(role.name.clone());
             }
@@ -305,7 +305,7 @@ async fn get_user(args: UserGetArgs, client: &TypedClient, use_json: bool) -> Re
             if role
                 .default_members
                 .iter()
-                .any(|m| m == &user.login || m == &user.id.to_string())
+                .any(|m| m.login.as_deref() == Some(&user.login) || m.id == Some(user.id))
             {
                 default_roles.push(role.name.clone());
             }

@@ -265,6 +265,13 @@
         ],
         "type": "object"
       },
+      "AffinityRules": {
+        "description": "Affinity rule strings (used by CreateMachineRequest and MigrateRequest).\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries a single named `AffinityRules` schema shared between machine provisioning and migration.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
       "AuditEntry": {
         "description": "Audit entry for a machine",
         "properties": {
@@ -334,6 +341,11 @@
           "password",
           "password_confirmation"
         ],
+        "type": "object"
+      },
+      "CloneImageRequest": {
+        "description": "Request to clone an image",
+        "title": "CloneImageRequest",
         "type": "object"
       },
       "Config": {
@@ -423,13 +435,14 @@
             "type": "string"
           },
           "resolvers": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resolvers"
+              }
+            ],
             "default": null,
             "description": "Resolvers",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "routes": {
             "default": null,
@@ -510,13 +523,14 @@
         "description": "Request to create a machine\n\nThis struct supports both the modern nested format and the legacy flattened format:\n\n**Modern format:** ```json {\"image\": \"...\", \"tags\": {\"foo\": \"bar\"}, \"metadata\": {\"key\": \"value\"}} ```\n\n**Legacy format:** ```json {\"image\": \"...\", \"tag.foo\": \"bar\", \"metadata.key\": \"value\"} ```",
         "properties": {
           "affinity": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AffinityRules"
+              }
+            ],
             "default": null,
             "description": "Affinity rules for instance placement (added in CloudAPI v8.3.0)\n\nRules follow the pattern: `<key><operator><value>` where: - key: 'instance', 'container', or a tag name - operator: '==' (must), '!=' (must not), '==~' (prefer), '!=~' (prefer not) - value: exact string, glob pattern (*), or regex (/pattern/)\n\nExamples: `instance==myvm`, `role!=database`, `instance!=~foo*`",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "allow_shared_images": {
             "default": null,
@@ -578,11 +592,14 @@
             "nullable": true
           },
           "metadata": {
-            "additionalProperties": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetadataObject"
+              }
+            ],
             "default": null,
             "description": "Metadata (modern format - nested object)",
-            "nullable": true,
-            "type": "object"
+            "nullable": true
           },
           "name": {
             "default": null,
@@ -604,11 +621,14 @@
             "type": "string"
           },
           "tags": {
-            "additionalProperties": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ],
             "default": null,
             "description": "Tags (modern format - nested object)",
-            "nullable": true,
-            "type": "object"
+            "nullable": true
           },
           "volumes": {
             "default": null,
@@ -640,11 +660,12 @@
             "type": "string"
           },
           "rules": {
-            "description": "Policy rules (array of rule strings)",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PolicyRules"
+              }
+            ],
+            "description": "Policy rules (array of rule strings)"
           }
         },
         "required": [
@@ -801,27 +822,31 @@
             "type": "string"
           },
           "networks": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NetworkIds"
+              }
+            ],
             "default": null,
             "description": "Networks (array of UUIDs)",
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "size": {
-            "description": "Size in MiB",
+            "description": "Size in MiB. Optional — when omitted, CloudAPI selects the smallest available volume size from the billing packages.",
             "format": "uint64",
             "minimum": 0,
+            "nullable": true,
             "type": "integer"
           },
           "tags": {
-            "additionalProperties": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ],
             "default": null,
             "description": "Tags",
-            "nullable": true,
-            "type": "object"
+            "nullable": true
           },
           "type": {
             "allOf": [
@@ -834,9 +859,6 @@
             "nullable": true
           }
         },
-        "required": [
-          "size"
-        ],
         "type": "object"
       },
       "CredentialType": {
@@ -871,6 +893,32 @@
           "type": "string"
         },
         "description": "Datacenter map: name -> URL\n\nThe CloudAPI returns datacenters as a map where keys are datacenter names and values are their URLs. Example: ```json {\"us-central-1\": \"https://us-central-1.api.mnx.io\"} ```\n\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Datacenters = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Datacenters map[string]string` in Go).",
+        "type": "object"
+      },
+      "DisableDeletionProtectionRequest": {
+        "description": "Request to disable deletion protection",
+        "properties": {
+          "origin": {
+            "default": null,
+            "description": "Origin identifier (defaults to 'cloudapi')",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "DisableDeletionProtectionRequest",
+        "type": "object"
+      },
+      "DisableFirewallRequest": {
+        "description": "Request to disable firewall",
+        "properties": {
+          "origin": {
+            "default": null,
+            "description": "Origin identifier (defaults to 'cloudapi')",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "DisableFirewallRequest",
         "type": "object"
       },
       "Disk": {
@@ -997,6 +1045,32 @@
         ],
         "type": "string"
       },
+      "EnableDeletionProtectionRequest": {
+        "description": "Request to enable deletion protection",
+        "properties": {
+          "origin": {
+            "default": null,
+            "description": "Origin identifier (defaults to 'cloudapi')",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "EnableDeletionProtectionRequest",
+        "type": "object"
+      },
+      "EnableFirewallRequest": {
+        "description": "Request to enable firewall",
+        "properties": {
+          "origin": {
+            "default": null,
+            "description": "Origin identifier (defaults to 'cloudapi')",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "EnableFirewallRequest",
+        "type": "object"
+      },
       "Error": {
         "description": "CloudAPI error response",
         "properties": {
@@ -1016,6 +1090,20 @@
         "required": [
           "code"
         ],
+        "type": "object"
+      },
+      "ExportImageRequest": {
+        "description": "Request to export an image",
+        "properties": {
+          "manta_path": {
+            "description": "Manta path for export destination",
+            "type": "string"
+          }
+        },
+        "required": [
+          "manta_path"
+        ],
+        "title": "ExportImageRequest",
         "type": "object"
       },
       "FabricVlan": {
@@ -1078,12 +1166,13 @@
             "type": "boolean"
           },
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "description": "Role tags for RBAC",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "rule": {
             "description": "Rule text",
@@ -1107,13 +1196,13 @@
         "description": "Image/dataset information",
         "properties": {
           "acl": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageAcl"
+              }
+            ],
             "description": "ACL - list of account UUIDs with access (API version >= 7.1.0)",
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "description": {
             "description": "Description",
@@ -1200,12 +1289,13 @@
             "description": "Requirements (always present, may be empty)"
           },
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "description": "Role tags for RBAC",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "state": {
             "allOf": [
@@ -1217,10 +1307,13 @@
             "nullable": true
           },
           "tags": {
-            "additionalProperties": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ],
             "description": "Tags",
-            "nullable": true,
-            "type": "object"
+            "nullable": true
           },
           "type": {
             "allOf": [
@@ -1243,6 +1336,14 @@
           "version"
         ],
         "type": "object"
+      },
+      "ImageAcl": {
+        "description": "List of account UUIDs authorised to use a private image (shared across Image, CreateImageRequest, UpdateImageRequest).",
+        "items": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "type": "array"
       },
       "ImageAction": {
         "description": "Image action for action dispatch",
@@ -1402,6 +1503,26 @@
           }
         ]
       },
+      "ImportImageRequest": {
+        "description": "Request to import image from datacenter",
+        "properties": {
+          "datacenter": {
+            "description": "Source datacenter name",
+            "type": "string"
+          },
+          "id": {
+            "description": "Image UUID in source datacenter",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "datacenter",
+          "id"
+        ],
+        "title": "ImportImageRequest",
+        "type": "object"
+      },
       "Machine": {
         "description": "Machine information",
         "properties": {
@@ -1507,22 +1628,25 @@
             "type": "integer"
           },
           "metadata": {
-            "additionalProperties": true,
-            "description": "Metadata",
-            "type": "object"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetadataObject"
+              }
+            ],
+            "description": "Metadata"
           },
           "name": {
             "description": "Machine alias/name",
             "type": "string"
           },
           "networks": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NetworkIds"
+              }
+            ],
             "description": "Network UUIDs (API version >= 7.1.0)",
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "nics": {
             "description": "Network interfaces",
@@ -1541,12 +1665,13 @@
             "type": "string"
           },
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "description": "Role tags for RBAC",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "state": {
             "allOf": [
@@ -1557,9 +1682,12 @@
             "description": "Current state"
           },
           "tags": {
-            "additionalProperties": true,
-            "description": "Tags",
-            "type": "object"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ],
+            "description": "Tags"
           },
           "type": {
             "allOf": [
@@ -1789,6 +1917,11 @@
           }
         ]
       },
+      "MetadataObject": {
+        "additionalProperties": true,
+        "description": "Key-value metadata (values can be strings, booleans, or numbers)\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries `MetadataObject` as a named schema rather than an anonymous `additionalProperties` object. See the note on `Tags` below for the full rationale.",
+        "type": "object"
+      },
       "MigrateRequest": {
         "description": "Migration request\n\nUsed to perform migration actions on an instance. The `action` field specifies which migration operation to perform.\n\n# Examples\n\nStart a new migration: ```json {\"action\": \"begin\"} ```\n\nStart migration with affinity rules: ```json {\"action\": \"begin\", \"affinity\": [\"instance!=web-*\"]} ```\n\nSwitch to the new server: ```json {\"action\": \"switch\"} ```\n\nAbort an in-progress migration: ```json {\"action\": \"abort\"} ```",
         "properties": {
@@ -1801,13 +1934,14 @@
             "description": "Migration action to perform"
           },
           "affinity": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AffinityRules"
+              }
+            ],
             "default": null,
             "description": "Affinity rules (only valid for \"begin\" and \"automatic\" actions)\n\nThese rules influence which server the instance will be migrated to.",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           }
         },
         "required": [
@@ -2129,20 +2263,22 @@
             "type": "boolean"
           },
           "resolvers": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resolvers"
+              }
+            ],
             "description": "Resolvers",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "description": "Role tags for RBAC",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "routes": {
             "description": "Routes",
@@ -2175,6 +2311,14 @@
           "public"
         ],
         "type": "object"
+      },
+      "NetworkIds": {
+        "description": "List of network UUIDs a resource is attached to.\n\nNewtype wrapper so Machine / Volume / CreateVolumeRequest all reference the same named `NetworkIds` schema rather than each carrying an anonymous `Vec<Uuid>` field. Different shape from `CreateMachineRequest.networks: Option<Vec<NetworkObject>>`, which uses a richer per-entry struct -- only the UUID-list form is unified here.",
+        "items": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "type": "array"
       },
       "NetworkIp": {
         "description": "Network IP information\n\nNote: CloudAPI's `translateIp()` (networks.js) copies NAPI fields directly, so multi-word fields stay in snake_case (owner_uuid, belongs_to_uuid, etc.).",
@@ -2371,12 +2515,13 @@
             "type": "string"
           },
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "description": "Role tags for RBAC",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "swap": {
             "description": "Swap in MB",
@@ -2446,19 +2591,21 @@
             "type": "string"
           },
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "description": "Role tags for RBAC",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "rules": {
-            "description": "Policy rules (array of rule strings)",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PolicyRules"
+              }
+            ],
+            "description": "Policy rules (array of rule strings)"
           }
         },
         "required": [
@@ -2485,52 +2632,170 @@
         },
         "type": "object"
       },
-      "ProvisioningLimits": {
-        "description": "Provisioning limits for an account",
+      "PolicyRules": {
+        "description": "Aperture policy rule strings (shared across Policy, CreatePolicyRequest, UpdatePolicyRequest so all three reference the same named schema).",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "ProvisioningLimit": {
+        "description": "A single provisioning limit entry.\n\nEach limit constrains a specific dimension (VM count, RAM, or disk quota), optionally filtered by brand, image, or OS. A `value` of `-1` blocks all matching provisions; `0` means unlimited (filtered out before the response reaches the client).\n\nUnits for `value` and `used` depend on `by`: - absent / `\"machines\"` → count of VMs - `\"ram\"` → MiB - `\"quota\"` → GiB",
         "properties": {
-          "disk": {
-            "description": "Maximum disk space in MB",
+          "brand": {
+            "description": "Brand filter value (when `check` is `\"brand\"`).",
+            "nullable": true,
+            "type": "string"
+          },
+          "by": {
+            "description": "What dimension the limit counts: `\"ram\"`, `\"quota\"`, or `\"machines\"`. When absent, defaults to counting VMs.",
+            "nullable": true,
+            "type": "string"
+          },
+          "check": {
+            "description": "Type of filter applied: `\"brand\"`, `\"image\"`, or `\"os\"`.",
+            "nullable": true,
+            "type": "string"
+          },
+          "image": {
+            "description": "Image filter value (when `check` is `\"image\"`).",
+            "nullable": true,
+            "type": "string"
+          },
+          "os": {
+            "description": "OS filter value (when `check` is `\"os\"`).",
+            "nullable": true,
+            "type": "string"
+          },
+          "used": {
+            "description": "Current usage against this limit.",
             "format": "int64",
             "nullable": true,
             "type": "integer"
           },
-          "machines": {
-            "description": "Maximum number of machines",
+          "value": {
+            "description": "The limit value (threshold).",
             "format": "int64",
-            "nullable": true,
-            "type": "integer"
-          },
-          "ram": {
-            "description": "Maximum RAM in MB",
-            "format": "int64",
-            "nullable": true,
             "type": "integer"
           }
         },
+        "required": [
+          "value"
+        ],
+        "type": "object"
+      },
+      "ProvisioningLimits": {
+        "description": "Provisioning limits for an account — an array of limit entries.\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries `ProvisioningLimits` as a named schema rather than an anonymous array-of-ProvisioningLimit on the single endpoint that returns it.",
+        "items": {
+          "$ref": "#/components/schemas/ProvisioningLimit"
+        },
+        "type": "array"
+      },
+      "RebootMachineRequest": {
+        "description": "Request to reboot a machine",
+        "properties": {
+          "origin": {
+            "default": null,
+            "description": "Origin identifier (defaults to 'cloudapi')",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "RebootMachineRequest",
+        "type": "object"
+      },
+      "RenameMachineRequest": {
+        "description": "Request to rename a machine",
+        "properties": {
+          "name": {
+            "description": "New machine alias/name (max 189 chars, or 63 if CNS enabled)",
+            "type": "string"
+          },
+          "origin": {
+            "default": null,
+            "description": "Origin identifier (defaults to 'cloudapi')",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "RenameMachineRequest",
         "type": "object"
       },
       "ReplaceRoleTagsRequest": {
         "description": "Request to replace role tags",
         "properties": {
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "default": [],
-            "description": "Role tags (list of role names)",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+            "description": "Role tags (list of role names)"
           }
         },
         "type": "object"
+      },
+      "ResizeDiskRequest": {
+        "description": "Request to resize disk",
+        "properties": {
+          "dangerous_allow_shrink": {
+            "default": null,
+            "description": "Allow dangerous shrink operation",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "size": {
+            "description": "New size in MB",
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "size"
+        ],
+        "title": "ResizeDiskRequest",
+        "type": "object"
+      },
+      "ResizeMachineRequest": {
+        "description": "Request to resize a machine",
+        "properties": {
+          "origin": {
+            "default": null,
+            "description": "Origin identifier (defaults to 'cloudapi')",
+            "nullable": true,
+            "type": "string"
+          },
+          "package": {
+            "description": "New package name or UUID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "package"
+        ],
+        "title": "ResizeMachineRequest",
+        "type": "object"
+      },
+      "Resolvers": {
+        "description": "List of DNS resolver addresses for a fabric network.\n\nNewtype wrapper rather than a type alias so generated clients see a single named `Resolvers` type across all fabric-network schemas (Network, CreateFabricNetworkRequest, UpdateFabricNetworkRequest).",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
       },
       "Role": {
         "description": "Role information",
         "properties": {
           "default_members": {
             "default": [],
-            "description": "Default members (user UUIDs or logins)",
+            "description": "Default members (structured member references)",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/MemberRef"
             },
             "type": "array"
           },
@@ -2541,9 +2806,9 @@
           },
           "members": {
             "default": [],
-            "description": "Members (user UUIDs or logins)",
+            "description": "Members (structured member references)",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/MemberRef"
             },
             "type": "array"
           },
@@ -2553,19 +2818,20 @@
           },
           "policies": {
             "default": [],
-            "description": "Policies (policy UUIDs or names)",
+            "description": "Policies attached to this role",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/PolicyRef"
             },
             "type": "array"
           },
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "description": "Role tags for RBAC",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           }
         },
         "required": [
@@ -2573,6 +2839,13 @@
           "name"
         ],
         "type": "object"
+      },
+      "RoleTags": {
+        "description": "Role tags for RBAC\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries `RoleTags` as a named schema. Every RBAC-taggable resource (FirewallRule, Image, Machine, Network, Package, Policy, Role, SshKey, User, plus the bulk replace-role-tags request/ response) carries a `role-tag` field — with an alias, each was inlined as an anonymous `Vec<String>` per field. The newtype preserves the name so all clients see a single `RoleTags` type.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
       },
       "RoleTagsResponse": {
         "description": "Response after replacing role tags on a resource",
@@ -2582,11 +2855,12 @@
             "type": "string"
           },
           "role-tag": {
-            "description": "List of role names assigned to the resource",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
+            "description": "List of role names assigned to the resource"
           }
         },
         "required": [
@@ -2680,12 +2954,13 @@
             "type": "string"
           },
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "description": "Role tags for RBAC",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           }
         },
         "required": [
@@ -2693,6 +2968,37 @@
           "key",
           "name"
         ],
+        "type": "object"
+      },
+      "StartMachineRequest": {
+        "description": "Request to start a machine",
+        "properties": {
+          "origin": {
+            "default": null,
+            "description": "Origin identifier (defaults to 'cloudapi')",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "StartMachineRequest",
+        "type": "object"
+      },
+      "StopMachineRequest": {
+        "description": "Request to stop a machine",
+        "properties": {
+          "origin": {
+            "default": null,
+            "description": "Origin identifier (defaults to 'cloudapi')",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "StopMachineRequest",
+        "type": "object"
+      },
+      "Tags": {
+        "additionalProperties": true,
+        "description": "Key-value tags (values can be strings, booleans, or numbers)\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries `Tags` as a named schema rather than an anonymous `additionalProperties` object. A `pub type Tags = HashMap<String, Value>` is erased by schemars at compile time, causing every field typed `Tags` to inline the map shape and downstream code generators (Progenitor, oapi-codegen) to emit unnamed `serde_json::Map` / `map[string]interface{}` types per field. The newtype preserves the name so all clients see a single `Tags` type.",
         "type": "object"
       },
       "TagsRequest": {
@@ -2839,13 +3145,14 @@
             "type": "string"
           },
           "resolvers": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resolvers"
+              }
+            ],
             "default": null,
             "description": "Resolvers",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "routes": {
             "default": null,
@@ -2903,6 +3210,63 @@
         },
         "type": "object"
       },
+      "UpdateImageRequest": {
+        "description": "Request to update an image",
+        "properties": {
+          "acl": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageAcl"
+              }
+            ],
+            "default": null,
+            "description": "ACL",
+            "nullable": true
+          },
+          "description": {
+            "default": null,
+            "description": "Description",
+            "nullable": true,
+            "type": "string"
+          },
+          "eula": {
+            "default": null,
+            "description": "EULA URL",
+            "nullable": true,
+            "type": "string"
+          },
+          "homepage": {
+            "default": null,
+            "description": "Homepage URL",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "default": null,
+            "description": "Image name",
+            "nullable": true,
+            "type": "string"
+          },
+          "tags": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ],
+            "default": null,
+            "description": "Tags",
+            "nullable": true
+          },
+          "version": {
+            "default": null,
+            "description": "Image version",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "UpdateImageRequest",
+        "type": "object"
+      },
       "UpdateNetworkIpRequest": {
         "description": "Request to update network IP",
         "properties": {
@@ -2932,13 +3296,14 @@
             "type": "string"
           },
           "rules": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PolicyRules"
+              }
+            ],
             "default": null,
             "description": "Policy rules (array of rule strings)",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           }
         },
         "type": "object"
@@ -3039,6 +3404,19 @@
         },
         "type": "object"
       },
+      "UpdateVolumeRequest": {
+        "description": "Request to update volume",
+        "properties": {
+          "name": {
+            "default": null,
+            "description": "Volume name",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "UpdateVolumeRequest",
+        "type": "object"
+      },
       "User": {
         "description": "User information",
         "properties": {
@@ -3081,12 +3459,13 @@
             "type": "string"
           },
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "description": "Role tags for RBAC",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "updated": {
             "description": "Last update timestamp",
@@ -3155,13 +3534,13 @@
             "type": "string"
           },
           "networks": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NetworkIds"
+              }
+            ],
             "default": [],
-            "description": "Networks (array of UUIDs)",
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "type": "array"
+            "description": "Networks (array of UUIDs)"
           },
           "owner_uuid": {
             "description": "Owner UUID",
@@ -3192,10 +3571,13 @@
             "description": "State"
           },
           "tags": {
-            "additionalProperties": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ],
             "default": {},
-            "description": "Tags",
-            "type": "object"
+            "description": "Tags"
           },
           "type": {
             "allOf": [
@@ -3375,21 +3757,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Account"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head account details",
@@ -3546,25 +3920,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AccessKey"
-                  },
-                  "title": "Array_of_AccessKey",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head access keys",
@@ -3726,21 +4088,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccessKey"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head access key",
@@ -3887,21 +4241,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Config"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head configuration",
@@ -4043,6 +4389,7 @@
     },
     "/{account}/datacenters/{dc}": {
       "get": {
+        "description": "Returns a 302 redirect to the named datacenter's CloudAPI URL.",
         "operationId": "get_datacenter",
         "parameters": [
           {
@@ -4065,16 +4412,18 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
+          "302": {
+            "description": "redirect (found)",
+            "headers": {
+              "location": {
+                "description": "HTTP \"Location\" header",
+                "required": true,
                 "schema": {
-                  "title": "String",
                   "type": "string"
-                }
+                },
+                "style": "simple"
               }
-            },
-            "description": "successful operation"
+            }
           },
           "4XX": {
             "$ref": "#/components/responses/Error"
@@ -4144,25 +4493,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/FabricVlan"
-                  },
-                  "title": "Array_of_FabricVlan",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head fabric VLANs",
@@ -4330,21 +4667,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FabricVlan"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head fabric VLAN",
@@ -4487,25 +4816,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Network"
-                  },
-                  "title": "Array_of_Network",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head fabric networks",
@@ -4714,21 +5031,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Network"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head fabric network",
@@ -4944,25 +5253,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/FirewallRule"
-                  },
-                  "title": "Array_of_FirewallRule",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head firewall rules",
@@ -5173,21 +5470,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FirewallRule"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head firewall rule",
@@ -5479,25 +5768,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Machine"
-                  },
-                  "title": "Array_of_Machine",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head firewall rule machines",
@@ -5685,25 +5962,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Image"
-                  },
-                  "title": "Array_of_Image",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head images",
@@ -5940,21 +6205,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Image"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head image",
@@ -6137,25 +6394,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/SshKey"
-                  },
-                  "title": "Array_of_SshKey",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head SSH keys",
@@ -6363,21 +6608,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SshKey"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head SSH key",
@@ -6758,25 +6995,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Machine"
-                  },
-                  "title": "Array_of_Machine",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machines",
@@ -6941,21 +7166,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Machine"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head a machine",
@@ -7153,25 +7370,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AuditEntry"
-                  },
-                  "title": "Array_of_AuditEntry",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine audit log",
@@ -7256,25 +7461,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Disk"
-                  },
-                  "title": "Array_of_Disk",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine disks",
@@ -7483,21 +7676,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Disk"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine disk",
@@ -7657,25 +7842,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/FirewallRule"
-                  },
-                  "title": "Array_of_FirewallRule",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine firewall rules",
@@ -7754,9 +7927,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Map_of_AnyValue",
-                  "type": "object"
+                  "$ref": "#/components/schemas/MetadataObject"
                 }
               }
             },
@@ -7799,23 +7970,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Map_of_AnyValue",
-                  "type": "object"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine metadata",
@@ -7862,9 +8023,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Map_of_AnyValue",
-                  "type": "object"
+                  "$ref": "#/components/schemas/MetadataObject"
                 }
               }
             },
@@ -8024,22 +8183,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "String",
-                  "type": "string"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine metadata key",
@@ -8233,25 +8383,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Nic"
-                  },
-                  "title": "Array_of_Nic",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine NICs",
@@ -8457,21 +8595,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Nic"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine NIC",
@@ -8557,25 +8687,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Snapshot"
-                  },
-                  "title": "Array_of_Snapshot",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine snapshots",
@@ -8781,21 +8899,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Snapshot"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine snapshot",
@@ -8923,9 +9033,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Map_of_AnyValue",
-                  "type": "object"
+                  "$ref": "#/components/schemas/Tags"
                 }
               }
             },
@@ -8968,23 +9076,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Map_of_AnyValue",
-                  "type": "object"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine tags",
@@ -9031,9 +9129,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Map_of_AnyValue",
-                  "type": "object"
+                  "$ref": "#/components/schemas/Tags"
                 }
               }
             },
@@ -9090,9 +9186,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Map_of_AnyValue",
-                  "type": "object"
+                  "$ref": "#/components/schemas/Tags"
                 }
               }
             },
@@ -9252,22 +9346,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "String",
-                  "type": "string"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine tag",
@@ -9508,25 +9593,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Network"
-                  },
-                  "title": "Array_of_Network",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head networks",
@@ -9652,21 +9725,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Network"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head network",
@@ -9806,25 +9871,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/NetworkIp"
-                  },
-                  "title": "Array_of_NetworkIp",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head network IPs",
@@ -9922,21 +9975,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NetworkIp"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head network IP",
@@ -10065,25 +10110,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Package"
-                  },
-                  "title": "Array_of_Package",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head packages",
@@ -10207,21 +10240,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Package"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head package",
@@ -10340,25 +10365,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Policy"
-                  },
-                  "title": "Array_of_Policy",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head policies",
@@ -10566,21 +10579,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Policy"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head policy",
@@ -10754,25 +10759,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Role"
-                  },
-                  "title": "Array_of_Role",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head roles",
@@ -10980,21 +10973,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Role"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head role",
@@ -11253,25 +11238,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/User"
-                  },
-                  "title": "Array_of_User",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head users",
@@ -11479,21 +11452,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/User"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head user",
@@ -11686,25 +11651,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AccessKey"
-                  },
-                  "title": "Array_of_AccessKey",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head user access keys",
@@ -11906,21 +11859,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccessKey"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head user access key",
@@ -12126,25 +12071,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/SshKey"
-                  },
-                  "title": "Array_of_SshKey",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head user SSH keys",
@@ -12401,21 +12334,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SshKey"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head user SSH key",

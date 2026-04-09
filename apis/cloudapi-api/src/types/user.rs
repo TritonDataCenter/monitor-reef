@@ -10,6 +10,52 @@ use super::common::{RoleTags, Timestamp, Uuid};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// Aperture policy rule strings (shared across Policy, CreatePolicyRequest,
+/// UpdatePolicyRequest so all three reference the same named schema).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct PolicyRules(pub Vec<String>);
+
+impl std::ops::Deref for PolicyRules {
+    type Target = Vec<String>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for PolicyRules {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl From<Vec<String>> for PolicyRules {
+    fn from(v: Vec<String>) -> Self {
+        PolicyRules(v)
+    }
+}
+
+impl<S: Into<String>> FromIterator<S> for PolicyRules {
+    fn from_iter<I: IntoIterator<Item = S>>(iter: I) -> Self {
+        PolicyRules(iter.into_iter().map(Into::into).collect())
+    }
+}
+
+impl IntoIterator for PolicyRules {
+    type Item = String;
+    type IntoIter = std::vec::IntoIter<String>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a PolicyRules {
+    type Item = &'a String;
+    type IntoIter = std::slice::Iter<'a, String>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
 /// Path parameter for user operations
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct UserPath {
@@ -170,15 +216,15 @@ pub struct Role {
     pub id: Uuid,
     /// Role name
     pub name: String,
-    /// Members (user UUIDs or logins)
+    /// Members (structured member references)
     #[serde(default)]
-    pub members: Vec<String>,
-    /// Default members (user UUIDs or logins)
+    pub members: Vec<MemberRef>,
+    /// Default members (structured member references)
     #[serde(default)]
-    pub default_members: Vec<String>,
-    /// Policies (policy UUIDs or names)
+    pub default_members: Vec<MemberRef>,
+    /// Policies attached to this role
     #[serde(default)]
-    pub policies: Vec<String>,
+    pub policies: Vec<PolicyRef>,
     /// Role tags for RBAC
     #[serde(rename = "role-tag", default, skip_serializing_if = "Option::is_none")]
     pub role_tag: Option<RoleTags>,
@@ -264,7 +310,7 @@ pub struct Policy {
     /// Policy name
     pub name: String,
     /// Policy rules (array of rule strings)
-    pub rules: Vec<String>,
+    pub rules: PolicyRules,
     /// Description
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -279,7 +325,7 @@ pub struct CreatePolicyRequest {
     /// Policy name
     pub name: String,
     /// Policy rules (array of rule strings)
-    pub rules: Vec<String>,
+    pub rules: PolicyRules,
     /// Description
     #[serde(default)]
     pub description: Option<String>,
@@ -293,7 +339,7 @@ pub struct UpdatePolicyRequest {
     pub name: Option<String>,
     /// Policy rules (array of rule strings)
     #[serde(default)]
-    pub rules: Option<Vec<String>>,
+    pub rules: Option<PolicyRules>,
     /// Description
     #[serde(default)]
     pub description: Option<String>,

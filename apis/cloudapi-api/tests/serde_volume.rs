@@ -11,7 +11,7 @@
 
 mod common;
 
-use cloudapi_api::types::{Volume, VolumeState, VolumeType};
+use cloudapi_api::types::{CreateVolumeRequest, Volume, VolumeState, VolumeType};
 use uuid::Uuid;
 
 #[test]
@@ -177,4 +177,28 @@ fn test_volume_round_trip() {
     assert_eq!(original.volume_type, deserialized.volume_type);
     assert_eq!(original.state, deserialized.state);
     assert_eq!(original.size, deserialized.size);
+}
+
+/// Test that CreateVolumeRequest deserializes correctly without a size field.
+///
+/// CloudAPI treats size as optional in volume creation requests. When omitted,
+/// the server selects the smallest available NFS billing package size. This
+/// test ensures our Rust type accepts requests without size, matching the
+/// actual sdc-cloudapi behavior (lib/endpoints/volumes.js validates size only
+/// when `reqParams.size !== undefined`).
+#[test]
+fn test_create_volume_request_without_size() {
+    let json = r#"{"name": "my-vol", "type": "tritonnfs"}"#;
+    let req: CreateVolumeRequest = serde_json::from_str(json).unwrap();
+    assert_eq!(req.name.as_deref(), Some("my-vol"));
+    assert_eq!(req.volume_type, Some(VolumeType::Tritonnfs));
+    assert!(req.size.is_none(), "size should be None when omitted");
+}
+
+/// Test that CreateVolumeRequest deserializes correctly with an explicit size.
+#[test]
+fn test_create_volume_request_with_size() {
+    let json = r#"{"name": "my-vol", "type": "tritonnfs", "size": 10240}"#;
+    let req: CreateVolumeRequest = serde_json::from_str(json).unwrap();
+    assert_eq!(req.size, Some(10240));
 }
