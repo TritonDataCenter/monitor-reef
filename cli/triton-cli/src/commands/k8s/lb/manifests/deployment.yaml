@@ -33,6 +33,8 @@ spec:
           imagePullPolicy: Always
           args:
             - --leader-elect=false
+            - --health-probe-bind-address=:8081
+            - --metrics-bind-address=:8080
           env:
             - name: TRITON_URL
               valueFrom:
@@ -104,6 +106,11 @@ spec:
                 configMapKeyRef:
                   name: triton-lb-controller-config
                   key: requeue-after-seconds
+            - name: CLUSTER_UUID
+              valueFrom:
+                configMapKeyRef:
+                  name: triton-lb-controller-config
+                  key: cluster-uuid
           volumeMounts:
             - name: triton-key
               mountPath: /etc/triton

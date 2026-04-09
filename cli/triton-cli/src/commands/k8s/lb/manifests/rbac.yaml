@@ -28,6 +28,14 @@ rules:
   - apiGroups: [""]
     resources: ["events"]
     verbs: ["create", "patch"]
+  # Nodes - for topology awareness and health checks
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "list", "watch"]
+  # Endpoints - for service endpoint management
+  - apiGroups: [""]
+    resources: ["endpoints"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
   # ConfigMaps - for leader election
   - apiGroups: [""]
     resources: ["configmaps"]

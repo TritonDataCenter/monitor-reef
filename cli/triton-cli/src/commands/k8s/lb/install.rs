@@ -72,6 +72,7 @@ struct ControllerConfig {
     fabric_network: Uuid,
     worker_cns_name: String,
     cluster_name: String,
+    cluster_uuid: Uuid,
 }
 
 pub async fn run(
@@ -117,10 +118,8 @@ pub async fn run(
         id
     };
 
-    // Discover CNS suffix from public network
-    let (cns_suffix, external_cns_suffix) =
-        discover_cns_suffixes(public_network_id, client).await?;
-    eprintln!("    CNS suffix: {}", cns_suffix);
+    // Discover external CNS suffix from public network
+    let external_cns_suffix = discover_external_cns_suffix(public_network_id, client).await?;
 
     let external_cns_suffix = if let Some(suffix) = args.external_cns_suffix {
         eprintln!("    External CNS suffix (override): {}", suffix);
@@ -141,12 +140,19 @@ pub async fn run(
         &fabric_network_id.to_string()[..8]
     );
 
+    // Discover internal CNS root from fabric network suffixes.
+    // Fabric networks carry internal suffixes like "svc.travis.earth.cns.capsule.corp"
+    // from which we extract the root "cns.capsule.corp".
+    let cns_suffix = discover_internal_cns_root(fabric_network_id, client).await?;
+    eprintln!("    CNS suffix: {}", cns_suffix);
+
     // Discover datacenter
     let datacenter = discover_datacenter(client).await?;
     eprintln!("    Datacenter: {}", datacenter);
 
     // Compute worker CNS name
-    // Format: {fabric-name}.worker.svc.{account}.{datacenter}.{cns-suffix}
+    // Format: {fabric-name}.worker.svc.{account}.{datacenter}.{cns-root}
+    // where cns-root is the internal CNS domain (e.g. "cns.capsule.corp")
     let worker_cns_name = format!(
         "{}.worker.svc.{}.{}.{}",
         fabric_info.name, profile.account, datacenter, cns_suffix
@@ -220,6 +226,7 @@ pub async fn run(
         fabric_network: fabric_network_id,
         worker_cns_name,
         cluster_name: cluster.name.clone(),
+        cluster_uuid: cluster.uuid,
     };
 
     eprintln!("==> Installing LoadBalancer controller");
@@ -331,6 +338,10 @@ fn build_configmap_data(config: &ControllerConfig) -> BTreeMap<String, String> {
         config.worker_cns_name.clone(),
     );
     data.insert("cluster-name".to_string(), config.cluster_name.clone());
+    data.insert(
+        "cluster-uuid".to_string(),
+        config.cluster_uuid.to_string(),
+    );
     data.insert("requeue-after-seconds".to_string(), "30".to_string());
     data
 }
@@ -358,13 +369,12 @@ async fn discover_public_network(client: &TypedClient) -> Result<Uuid> {
     bail!("No public non-fabric network found")
 }
 
-/// Discover CNS suffixes from a public network
+/// Discover the external CNS suffix from a public network.
 ///
-/// Returns (cns_suffix, external_cns_suffix).
-/// The CNS suffix is typically like "cns.us-west-1.triton.zone".
-/// The external CNS suffix is extracted by removing the "cns." prefix if present,
-/// or looking for a suffix pattern that doesn't start with "svc.".
-async fn discover_cns_suffixes(network_id: Uuid, client: &TypedClient) -> Result<(String, String)> {
+/// Queries the network's suffix list and extracts the external root domain
+/// (e.g. "ext.corp") by finding a suffix that does not contain ".cns." and
+/// stripping the `{type}.{account}.` prefix.
+async fn discover_external_cns_suffix(network_id: Uuid, client: &TypedClient) -> Result<String> {
     let account = client.effective_account();
 
     let response = client
@@ -374,41 +384,94 @@ async fn discover_cns_suffixes(network_id: Uuid, client: &TypedClient) -> Result
         .network(network_id.to_string())
         .send()
         .await
-        .context("Failed to get network details")?;
+        .context("Failed to get public network details")?;
 
     let network = response.into_inner();
 
     let suffixes = network
         .suffixes
-        .ok_or_else(|| anyhow::anyhow!("Network has no CNS suffixes configured"))?;
+        .ok_or_else(|| anyhow::anyhow!("Public network has no CNS suffixes configured"))?;
 
     if suffixes.is_empty() {
-        bail!("Network has empty CNS suffixes list");
+        bail!("Public network has empty CNS suffixes list");
     }
 
-    // The first suffix is typically the main CNS suffix
-    let cns_suffix = suffixes[0].clone();
-
-    // For external CNS suffix, we look for a pattern or derive it
-    // Common patterns:
-    //   cns.us-west-1.triton.zone -> us-west-1.triton.zone (external)
-    //   cns.capsule.corp -> ext.corp or capsule.corp
+    // Public network suffixes look like:
+    //   svc.travis.ext.corp      (external, service scope)
+    //   inst.travis.ext.corp     (external, instance scope)
     //
-    // Try to find a suffix that looks like an external one, or derive it
-    let external_cns_suffix = suffixes
-        .iter()
-        .find(|s| !s.starts_with("cns.") && !s.starts_with("svc."))
-        .cloned()
-        .unwrap_or_else(|| {
-            // Derive from CNS suffix by removing "cns." prefix
-            if let Some(stripped) = cns_suffix.strip_prefix("cns.") {
-                stripped.to_string()
-            } else {
-                cns_suffix.clone()
-            }
-        });
+    // Extract the root domain by stripping the "{type}.{account}." prefix.
+    let account_dot = format!(".{}.", account);
 
-    Ok((cns_suffix, external_cns_suffix))
+    suffixes
+        .iter()
+        .find_map(|s| {
+            let after_account = s
+                .find(&account_dot)
+                .map(|pos| &s[pos + account_dot.len()..])?;
+            // External suffixes have no ".cns." component
+            if !after_account.contains(".cns.") {
+                Some(after_account.to_string())
+            } else {
+                None
+            }
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Could not extract external CNS suffix from public network suffixes: {:?}",
+                suffixes
+            )
+        })
+}
+
+/// Discover the internal CNS root domain from a fabric network's suffixes.
+///
+/// Fabric networks carry internal suffixes like
+/// "svc.travis.earth.cns.capsule.corp" from which we extract the root
+/// "cns.capsule.corp". This root is used to construct fabric-scoped CNS
+/// names like "{fabric}.worker.svc.{account}.{datacenter}.cns.capsule.corp".
+async fn discover_internal_cns_root(network_id: Uuid, client: &TypedClient) -> Result<String> {
+    let account = client.effective_account();
+
+    let response = client
+        .inner()
+        .get_network()
+        .account(account)
+        .network(network_id.to_string())
+        .send()
+        .await
+        .context("Failed to get fabric network details for CNS suffix")?;
+
+    let network = response.into_inner();
+
+    let suffixes = network
+        .suffixes
+        .ok_or_else(|| anyhow::anyhow!("Fabric network has no CNS suffixes configured"))?;
+
+    if suffixes.is_empty() {
+        bail!("Fabric network has empty CNS suffixes list");
+    }
+
+    // Fabric network suffixes look like:
+    //   svc.travis.earth.cns.capsule.corp  (internal, with datacenter)
+    //   inst.travis.earth.cns.capsule.corp (internal, instance scope)
+    //
+    // Find one containing ".cns." and extract from there to get the root
+    // domain (e.g. "cns.capsule.corp").
+    suffixes
+        .iter()
+        .find_map(|s| {
+            let pos = s.find(".cns.")?;
+            Some(s[pos + 1..].to_string())
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "Could not find internal CNS suffix (containing '.cns.') in \
+                 fabric network suffixes: {:?}. The fabric network may not \
+                 have CNS configured.",
+                suffixes
+            )
+        })
 }
 
 /// Discover the datacenter name
