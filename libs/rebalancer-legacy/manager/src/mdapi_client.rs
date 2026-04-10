@@ -1684,20 +1684,23 @@ mod tests {
     use rebalancer::util;
     use serde_json::json;
 
-    /// Initialize a logger for the current test and return a guard that must be held
-    /// for the duration of the test. This ensures each test has its own logger
-    /// context, avoiding race conditions with parallel test execution.
-    fn init_test_logger() -> slog_scope::GlobalLoggerGuard {
-        // Use a discard logger to avoid noisy test output
-        // Use Warning level to minimize overhead while still testing log paths
+    /// Ensure a global discard logger is set for the test process.
+    /// The logger is initialized once and never dropped, avoiding race
+    /// conditions when tests run in parallel.
+    fn init_test_logger() {
         use slog::{Drain, Logger, o};
-        use std::sync::Mutex;
+        use std::sync::{Mutex, Once};
 
-        let log = Logger::root(
-            Mutex::new(slog::Discard).fuse(),
-            o!("test" => true),
-        );
-        slog_scope::set_global_logger(log)
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            let log = Logger::root(
+                Mutex::new(slog::Discard).fuse(),
+                o!("test" => true),
+            );
+            // Leak the guard so the logger is never dropped.
+            let guard = slog_scope::set_global_logger(log);
+            std::mem::forget(guard);
+        });
     }
 
     /// Create an MdapiClient for testing without DNS SRV lookup.
@@ -1901,7 +1904,7 @@ mod tests {
 
     #[test]
     fn test_calculate_vnode_consistency() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let owner = "550e8400-e29b-41d4-a716-446655440000";
         let bucket = "test-bucket";
         let key = "test-object.txt";
@@ -1916,7 +1919,7 @@ mod tests {
 
     #[test]
     fn test_calculate_vnode_different_keys() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let owner = "550e8400-e29b-41d4-a716-446655440000";
         let bucket = "test-bucket";
 
@@ -1930,7 +1933,7 @@ mod tests {
 
     #[test]
     fn test_verify_vnode_matches() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let owner = "550e8400-e29b-41d4-a716-446655440000";
         let bucket = "test-bucket";
         let key = "test.txt";
@@ -1949,7 +1952,7 @@ mod tests {
 
     #[test]
     fn test_verify_vnode_mismatch() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let bucket = "test-bucket";
 
         let mut test_obj = create_test_manta_object();
@@ -1966,7 +1969,7 @@ mod tests {
     /// endpoint (bypasses DNS SRV, tests MdapiClient::new directly).
     #[test]
     fn test_create_client_valid_endpoint() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let result = MdapiClient::new("127.0.0.1:2030");
         assert!(result.is_ok());
     }
@@ -1975,7 +1978,7 @@ mod tests {
     /// record by returning an appropriate error.
     #[test]
     fn test_create_client_unresolvable_host() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let result =
             create_client("no-such-host.invalid:2030");
         assert!(result.is_err());
@@ -1985,7 +1988,7 @@ mod tests {
     /// endpoint (bypasses DNS SRV, tests MdapiClient::new directly).
     #[test]
     fn test_create_client_with_domain() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let result = MdapiClient::new("mdapi.example.com:2030");
         assert!(result.is_ok());
     }
@@ -2021,7 +2024,7 @@ mod tests {
 
     #[test]
     fn test_batch_update_empty_list() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let client = create_test_client();
         let objects: Vec<(&MantaObject, Uuid, Option<&str>)> = vec![];
 
@@ -2212,7 +2215,7 @@ mod tests {
 
     #[test]
     fn test_calculate_vnode_deterministic() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         // Same inputs should always produce same vnode
         for _ in 0..10 {
             let vnode = calculate_vnode(
@@ -2353,7 +2356,7 @@ mod tests {
 
     #[test]
     fn test_vnode_calculation_consistency() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         // Same input should always produce same vnode
         let owner = "550e8400-e29b-41d4-a716-446655440000";
         let bucket = "660e8400-e29b-41d4-a716-446655440001";
@@ -2367,7 +2370,7 @@ mod tests {
 
     #[test]
     fn test_vnode_calculation_different_keys() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let owner = "550e8400-e29b-41d4-a716-446655440000";
         let bucket = "660e8400-e29b-41d4-a716-446655440001";
 
@@ -2381,7 +2384,7 @@ mod tests {
 
     #[test]
     fn test_vnode_calculation_different_owners() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let bucket = "660e8400-e29b-41d4-a716-446655440001";
         let key = "test.txt";
 
@@ -2393,7 +2396,7 @@ mod tests {
 
     #[test]
     fn test_vnode_calculation_different_buckets() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let owner = "550e8400-e29b-41d4-a716-446655440000";
         let key = "test.txt";
 
@@ -2405,7 +2408,7 @@ mod tests {
 
     #[test]
     fn test_vnode_calculation_empty_strings() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         // Edge case: empty strings should still produce valid vnode
         let vnode = calculate_vnode("", "", "");
         // Should not panic and should return some value
@@ -2415,7 +2418,7 @@ mod tests {
 
     #[test]
     fn test_vnode_calculation_special_characters() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let owner = "550e8400-e29b-41d4-a716-446655440000";
         let bucket = "660e8400-e29b-41d4-a716-446655440001";
 
@@ -2432,7 +2435,7 @@ mod tests {
 
     #[test]
     fn test_verify_vnode_matching() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let manta_obj = create_test_manta_object();
         let bucket_id = Uuid::new_v4();
         let bucket_str = bucket_id.to_string();
@@ -2455,7 +2458,7 @@ mod tests {
 
     #[test]
     fn test_verify_vnode_mismatched() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let mut manta_obj = create_test_manta_object();
         let bucket_id = Uuid::new_v4();
         let bucket_str = bucket_id.to_string();
@@ -2549,7 +2552,7 @@ mod tests {
 
     #[test]
     fn test_batch_update_with_config_empty_list() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let client = create_test_client();
         let objects: Vec<(&MantaObject, Uuid, Option<&str>)> = vec![];
 
@@ -2563,7 +2566,7 @@ mod tests {
 
     #[test]
     fn test_batch_update_with_config_within_limit() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let client = create_test_client();
         let objects: Vec<(&MantaObject, Uuid, Option<&str>)> = vec![];
 
@@ -2632,7 +2635,7 @@ mod tests {
 
     #[test]
     fn test_batch_update_backward_compatibility() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let client = create_test_client();
         let objects: Vec<(&MantaObject, Uuid, Option<&str>)> = vec![];
 
@@ -2729,7 +2732,7 @@ mod tests {
 
     #[test]
     fn test_with_retry_succeeds_after_failures() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let config = RetryConfig {
             max_retries: 3,
             initial_backoff_ms: 1, // Very short for testing
@@ -2756,7 +2759,7 @@ mod tests {
 
     #[test]
     fn test_with_retry_all_failures() {
-        let _log_guard = init_test_logger();
+        init_test_logger();
         let config = RetryConfig {
             max_retries: 2,
             initial_backoff_ms: 1,

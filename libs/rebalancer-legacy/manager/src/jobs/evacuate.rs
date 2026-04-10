@@ -5523,7 +5523,7 @@ mod tests {
     use super::*;
     use crate::metrics::metrics_init;
     use crate::storinfo::ChooseAlgorithm;
-    use lazy_static::lazy_static;
+
     use quickcheck::{Arbitrary, StdThreadGen};
     use quickcheck_helpers::random::string as random_string;
     use rand::Rng;
@@ -5532,10 +5532,6 @@ mod tests {
     use rebalancer::metrics::MetricsMap;
     use rebalancer::util;
     use reqwest::Client;
-
-    lazy_static! {
-        static ref INITIALIZED: Mutex<bool> = Mutex::new(false);
-    }
 
     #[derive(Deserialize, Serialize)]
     struct TestMorayObject {
@@ -5553,32 +5549,38 @@ mod tests {
     }
 
     fn unit_test_init() {
-        let mut init = INITIALIZED.lock().unwrap_or_else(|e| e.into_inner());
-        if *init {
-            return;
-        }
+        use std::sync::Once;
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            metrics_init(rebalancer::metrics::ConfigMetrics::default());
 
-        metrics_init(rebalancer::metrics::ConfigMetrics::default());
+            // Leak the global logger guard so it is never dropped,
+            // allowing tests to run in parallel safely.
+            let guard = util::init_global_logger(None);
+            std::mem::forget(guard);
 
-        thread::spawn(move || {
-            let _guard = util::init_global_logger(None);
-            let addr = format!("{}:{}", "0.0.0.0", 7878);
+            thread::spawn(move || {
+                let addr = format!("{}:{}", "0.0.0.0", 7878);
 
-            // The reason that we call gotham::start() to start the agent as
-            // opposed to something like TestServer::new() in this case is
-            // because TestServer will automatically pick a port for us based on
-            // what is available at the time, most likely assuring us that
-            // whatever port the agent ends up starting on, it will be something
-            // other than 7878.  Currently, the wiring to pass a port all the
-            // way down to the threads that contact the agent does not exist.
-            // If or when it does, we can use gotham's TestServer as opposed to
-            // explicitly calling gotham::start().  Finally, we pass `None' to
-            // the router function for the agent because it does not run a
-            // metrics server during manager testing.
-            gotham::start(addr, agent_router(process_task_always_pass, None));
+                // The reason that we call gotham::start() to start the
+                // agent as opposed to something like TestServer::new()
+                // in this case is because TestServer will automatically
+                // pick a port for us based on what is available at the
+                // time, most likely assuring us that whatever port the
+                // agent ends up starting on, it will be something other
+                // than 7878.  Currently, the wiring to pass a port all
+                // the way down to the threads that contact the agent
+                // does not exist.  If or when it does, we can use
+                // gotham's TestServer as opposed to explicitly calling
+                // gotham::start().  Finally, we pass `None' to the
+                // router function for the agent because it does not run
+                // a metrics server during manager testing.
+                gotham::start(
+                    addr,
+                    agent_router(process_task_always_pass, None),
+                );
+            });
         });
-
-        *init = true;
     }
 
     // This function is supplied to the agent when we start it.  This is what

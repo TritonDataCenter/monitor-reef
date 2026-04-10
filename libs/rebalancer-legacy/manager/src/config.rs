@@ -442,29 +442,19 @@ fn _config_update_signal_handler(
 mod tests {
     use super::*;
     use crate::test_util::TestConfig;
-    use lazy_static::lazy_static;
+
     use mustache::MapBuilder;
     use std::fs::File;
     use std::io::Read;
 
-    lazy_static! {
-        static ref INITIALIZED: Mutex<bool> = Mutex::new(false);
-    }
-
     fn unit_test_init() {
-        let mut init = INITIALIZED.lock().unwrap_or_else(|e| e.into_inner());
-        if *init {
-            return;
-        }
-
-        *init = true;
-
-        thread::spawn(move || {
-            let _guard = util::init_global_logger(None);
-            loop {
-                // Loop around ::park() in the event of spurious wake ups.
-                std::thread::park();
-            }
+        use std::sync::Once;
+        static INIT: Once = Once::new();
+        INIT.call_once(|| {
+            let guard = util::init_global_logger(None);
+            // Leak the guard so the global logger is never dropped,
+            // allowing tests to run in parallel safely.
+            std::mem::forget(guard);
         });
     }
 

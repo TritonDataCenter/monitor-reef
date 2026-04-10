@@ -48,8 +48,7 @@ build: | $(CARGO_EXEC) ## Build all APIs, services and clients
 	$(CARGO) build
 
 test: | $(CARGO_EXEC) ## Run all tests
-	$(CARGO) test -- --test-threads=1
-
+	$(CARGO) test
 clean:: | $(CARGO_EXEC) ## Clean build artifacts
 	$(CARGO) clean
 
@@ -107,7 +106,7 @@ test-legacy: | $(CARGO_EXEC) ## Test legacy crates (rebalancer, cueball, etc.)
 	@if [ -f Cargo.lock ]; then mv Cargo.lock Cargo.lock.modern; fi
 	@cp Cargo.lock.legacy Cargo.lock
 	@echo "Testing legacy crates..."
-	$(CARGO) test --workspace -- --test-threads=1 || { \
+	$(CARGO) test --workspace || { \
 		echo "Tests failed, restoring modern workspace..."; \
 		mv Cargo.toml Cargo.toml.legacy; \
 		mv Cargo.toml.modern Cargo.toml; \
@@ -143,8 +142,7 @@ format: | $(CARGO_EXEC) ## Format all code
 	$(CARGO) fmt
 
 workspace-test: | $(CARGO_EXEC) ## Run all workspace tests
-	$(CARGO) test --workspace -- --test-threads=1
-
+	$(CARGO) test --workspace
 # API development commands
 api-new: ## Create new API trait (usage: make api-new API=my-service-api)
 	@if [ -z "$(API)" ]; then echo "Usage: make api-new API=my-service-api"; exit 1; fi
@@ -183,8 +181,7 @@ service-build: | $(CARGO_EXEC) ## Build specific service (usage: make service-bu
 
 service-test: | $(CARGO_EXEC) ## Test specific service (usage: make service-test SERVICE=my-service)
 	@if [ -z "$(SERVICE)" ]; then echo "Usage: make service-test SERVICE=my-service"; exit 1; fi
-	$(CARGO) test -p $(SERVICE) -- --test-threads=1
-
+	$(CARGO) test -p $(SERVICE)
 service-run: | $(CARGO_EXEC) ## Run specific service (usage: make service-run SERVICE=my-service)
 	@if [ -z "$(SERVICE)" ]; then echo "Usage: make service-run SERVICE=my-service"; exit 1; fi
 	$(CARGO) run -p $(SERVICE)
@@ -213,8 +210,7 @@ client-build: | $(CARGO_EXEC) ## Build specific client (usage: make client-build
 
 client-test: | $(CARGO_EXEC) ## Test specific client (usage: make client-test CLIENT=my-service-client)
 	@if [ -z "$(CLIENT)" ]; then echo "Usage: make client-test CLIENT=my-service-client"; exit 1; fi
-	$(CARGO) test -p $(CLIENT) -- --test-threads=1
-
+	$(CARGO) test -p $(CLIENT)
 # Generic package commands (for any crate in the workspace)
 package-build: | $(CARGO_EXEC) ## Build specific package (usage: make package-build PACKAGE=my-package)
 	@if [ -z "$(PACKAGE)" ]; then echo "Usage: make package-build PACKAGE=my-package"; exit 1; fi
@@ -222,8 +218,7 @@ package-build: | $(CARGO_EXEC) ## Build specific package (usage: make package-bu
 
 package-test: | $(CARGO_EXEC) ## Test specific package (usage: make package-test PACKAGE=my-package)
 	@if [ -z "$(PACKAGE)" ]; then echo "Usage: make package-test PACKAGE=my-package"; exit 1; fi
-	$(CARGO) test -p $(PACKAGE) -- --test-threads=1
-
+	$(CARGO) test -p $(PACKAGE)
 # OpenAPI management commands (using dropshot-api-manager)
 openapi-generate: | $(CARGO_EXEC) ## Generate OpenAPI specs from API traits
 	@echo "Generating OpenAPI specs using dropshot-api-manager..."
@@ -244,8 +239,7 @@ openapi-debug: | $(CARGO_EXEC) ## Debug OpenAPI manager configuration
 	$(CARGO) run -p openapi-manager -- debug
 
 integration-test: | $(CARGO_EXEC) ## Run integration tests across all services
-	$(CARGO) test --workspace integration -- --test-threads=1
-
+	$(CARGO) test --workspace integration
 # Development setup
 dev-setup: | $(CARGO_EXEC) ## Set up development environment
 	@echo "Setting up development environment..."
@@ -256,8 +250,7 @@ dev-setup: | $(CARGO_EXEC) ## Set up development environment
 	@echo "Generating OpenAPI specs..."
 	$(MAKE) openapi-generate
 	@echo "Running tests to ensure everything works..."
-	$(CARGO) test -- --test-threads=1
-	@echo ""
+	$(CARGO) test	@echo ""
 	@echo "Development environment ready!"
 	@echo ""
 	@echo "Quick start:"
@@ -308,8 +301,7 @@ list: ## List all APIs, services and clients
 # Validation and CI commands
 check:: | $(CARGO_EXEC) ## Run all validation checks (CI-ready)
 	@echo "Running all validation checks..."
-	$(CARGO) test --workspace -- --test-threads=1
-	$(MAKE) openapi-check
+	$(CARGO) test --workspace	$(MAKE) openapi-check
 	$(MAKE) arch-lint
 	@echo ""
 	@echo "All validation checks passed!"
