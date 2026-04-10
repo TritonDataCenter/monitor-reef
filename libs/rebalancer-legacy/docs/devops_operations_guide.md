@@ -242,7 +242,7 @@ A single assignment-manager thread consumes unprocessed objects and groups
 them into assignments destined for specific sharks:
 
 - Destination sharks selected from storinfo (refreshed every 10 seconds)
-- Selection filters: available capacity, datacenter blacklist, `max_fill_percentage`
+- Selection filters: available capacity, datacenter blocklist, `max_fill_percentage`
 - Top N sharks by available space (`max_sharks`, default: 5)
 - Each assignment holds up to `max_tasks_per_assignment` objects (default: 50)
 - Assignments are batched until they reach `max_assignment_age` seconds (default: 3600)

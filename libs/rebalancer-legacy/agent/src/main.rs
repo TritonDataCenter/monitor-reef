@@ -295,7 +295,7 @@ pub mod agenttests {
     // Description: Attempt to download an object from a storage node where
     //              the object does not reside will cause a client error.
     // Expected:    TaskStatus for all tasks in the assignment should appear
-    //              as "Failed(HTTPStatusCode(NotFound))".
+    //              as "Failed(SourceObjectNotFound)".
     #[test]
     fn object_not_found() {
         unit_test_init();
@@ -307,9 +307,7 @@ pub mod agenttests {
         let uuid = send_assignment(&assignment);
         monitor_assignment(
             &uuid,
-            TaskStatus::Failed(ObjectSkippedReason::HTTPStatusCode(
-                reqwest::StatusCode::NOT_FOUND.into(),
-            )),
+            TaskStatus::Failed(ObjectSkippedReason::SourceObjectNotFound),
         );
     }
 

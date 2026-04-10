@@ -2826,7 +2826,7 @@ fn assignment_post_fail(
     reason: ObjectSkippedReason,
     assignment_state: AssignmentState,
 ) {
-    // TODO: Should we blacklist this destination shark?
+    // TODO: Should we blocklist this destination shark?
 
     warn!(
         "Post of assignment ({}) with size {} failed: {}",
@@ -6909,23 +6909,24 @@ mod tests {
         .expect("job status");
 
         let JobStatusResults::Evacuate(results) = job_status_results;
-        assert_eq!(results.get("Total"), Some(&(num_objects as i64)));
+        assert_eq!(results.counts.get("Total"), Some(&(num_objects as i64)));
 
         // Almost all objects will be errors due to bad_moray_client.  But
         // because we are using random objects we may find that shark
         // assignment validation fails in which case the object will be skipped.
         let error_count =
-            results.get("Error").expect("error results").to_owned();
+            results.counts.get("Error").expect("error results").to_owned();
         let skip_count =
-            results.get("Skipped").expect("skip results").to_owned();
+            results.counts.get("Skipped").expect("skip results").to_owned();
         assert_eq!(error_count + skip_count, num_objects as i64);
 
-        // Confirm that all of the objects failed because they couldn't get a
-        // good moray client, which is expected since this test is run locally.
-        let bad_moray_client_count =
-            get_error_count(&retry_job_uuid, "bad_moray_client");
+        // Confirm that all errors are moray_update_failed, which is expected
+        // since this test runs without a real moray service — the metadata
+        // update attempt fails rather than the client creation.
+        let moray_update_failed_count =
+            get_error_count(&retry_job_uuid, "moray_update_failed");
 
-        assert_eq!(bad_moray_client_count, error_count);
+        assert_eq!(moray_update_failed_count, error_count);
     }
 
     fn skip_all(

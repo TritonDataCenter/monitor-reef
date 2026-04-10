@@ -761,7 +761,7 @@ mod tests {
         assert_eq!(opts.use_static_md_update_threads, false);
         assert_eq!(opts.static_queue_depth, DEFAULT_STATIC_QUEUE_DEPTH);
         assert_eq!(opts.max_assignment_age, DEFAULT_MAX_ASSIGNMENT_AGE);
-        assert_eq!(opts.use_batched_updates, true);
+        assert_eq!(opts.use_batched_updates, false);
         assert_eq!(opts.md_read_chunk_size, DEFAULT_METADATA_READ_CHUNK_SIZE);
         assert_eq!(opts.max_md_read_threads, DEFAULT_MAX_METADATA_READ_THREADS);
     }
@@ -774,7 +774,7 @@ mod tests {
         assert_eq!(opts.max_assignment_age, 300);
         // Non-overridden fields should keep defaults
         assert_eq!(opts.max_tasks_per_assignment, DEFAULT_MAX_TASKS_PER_ASSIGNMENT);
-        assert_eq!(opts.use_batched_updates, true);
+        assert_eq!(opts.use_batched_updates, false);
     }
 
     // =========================================================================

@@ -64,14 +64,14 @@ pub struct Storinfo {
 ///
 ///  * Default:
 ///     Provide a list of storage nodes that have at least a <minimum
-///     available capacity> and are not in a <blacklist of datacenters>
+///     available capacity> and are not in a <blocklist of datacenters>
 pub enum ChooseAlgorithm<'a> {
     Default(&'a DefaultChooseAlgorithm),
 }
 
 #[derive(Default)]
 pub struct DefaultChooseAlgorithm {
-    pub blacklist: Vec<String>,
+    pub blocklist: Vec<String>,
     pub min_avail_mb: Option<u64>,
 }
 
@@ -88,8 +88,8 @@ impl DefaultChooseAlgorithm {
         let mut ret: Vec<StorageNode> = vec![];
 
         for s in sharks.iter() {
-            // Always filter blacklisted datacenters
-            if self.blacklist.contains(&s.datacenter) {
+            // Always filter blocklisted datacenters
+            if self.blocklist.contains(&s.datacenter) {
                 continue;
             }
 
@@ -270,7 +270,7 @@ mod tests {
     #[test]
     fn default_choose_no_filter() {
         let algo = DefaultChooseAlgorithm {
-            blacklist: vec![],
+            blocklist: vec![],
             min_avail_mb: None,
         };
         let sharks = vec![
@@ -282,9 +282,9 @@ mod tests {
     }
 
     #[test]
-    fn default_choose_blacklist_filters_dc() {
+    fn default_choose_blocklist_filters_dc() {
         let algo = DefaultChooseAlgorithm {
-            blacklist: vec!["dc1".to_string()],
+            blocklist: vec!["dc1".to_string()],
             min_avail_mb: Some(0),
         };
         let sharks = vec![
@@ -299,7 +299,7 @@ mod tests {
     #[test]
     fn default_choose_min_avail_filters() {
         let algo = DefaultChooseAlgorithm {
-            blacklist: vec![],
+            blocklist: vec![],
             min_avail_mb: Some(1500),
         };
         let sharks = vec![
@@ -315,7 +315,7 @@ mod tests {
     #[test]
     fn default_choose_combined_filter() {
         let algo = DefaultChooseAlgorithm {
-            blacklist: vec!["dc2".to_string()],
+            blocklist: vec!["dc2".to_string()],
             min_avail_mb: Some(500),
         };
         let sharks = vec![
@@ -324,7 +324,7 @@ mod tests {
             make_shark("dc3", "3.stor", 100),
         ];
         let result = algo.method(&sharks);
-        // dc2 is blacklisted, dc3 has < 500MB
+        // dc2 is blocklisted, dc3 has < 500MB
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].manta_storage_id, "1.stor");
     }
@@ -332,7 +332,7 @@ mod tests {
     #[test]
     fn default_choose_empty_input() {
         let algo = DefaultChooseAlgorithm {
-            blacklist: vec![],
+            blocklist: vec![],
             min_avail_mb: Some(100),
         };
         let sharks: Vec<StorageNode> = vec![];
@@ -341,9 +341,9 @@ mod tests {
     }
 
     #[test]
-    fn default_choose_all_blacklisted() {
+    fn default_choose_all_blocklisted() {
         let algo = DefaultChooseAlgorithm {
-            blacklist: vec!["dc1".to_string(), "dc2".to_string()],
+            blocklist: vec!["dc1".to_string(), "dc2".to_string()],
             min_avail_mb: Some(0),
         };
         let sharks = vec![
@@ -355,10 +355,10 @@ mod tests {
     }
 
     #[test]
-    fn default_choose_no_min_avail_still_filters_blacklist() {
-        // When min_avail_mb is None, blacklisted sharks are still filtered
+    fn default_choose_no_min_avail_still_filters_blocklist() {
+        // When min_avail_mb is None, blocklisted sharks are still filtered
         let algo = DefaultChooseAlgorithm {
-            blacklist: vec!["dc1".to_string()],
+            blocklist: vec!["dc1".to_string()],
             min_avail_mb: None,
         };
         let sharks = vec![
@@ -366,7 +366,7 @@ mod tests {
             make_shark("dc2", "2.stor", 2000),
         ];
         let result = algo.method(&sharks);
-        // dc1 is blacklisted, only dc2 should pass
+        // dc1 is blocklisted, only dc2 should pass
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].datacenter, "dc2");
     }

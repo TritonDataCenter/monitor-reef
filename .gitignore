@@ -4,3 +4,4 @@
 /rust
 .env
 .idea/
+libs/rebalancer-legacy/manager/src/config.json
