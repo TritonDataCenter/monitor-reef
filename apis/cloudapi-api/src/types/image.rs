@@ -173,8 +173,7 @@ pub struct CreateImageRequest {
     /// Image name
     pub name: String,
     /// Image version
-    #[serde(default)]
-    pub version: Option<String>,
+    pub version: String,
     /// Description
     #[serde(default)]
     pub description: Option<String>,

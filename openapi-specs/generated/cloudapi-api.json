@@ -247,7 +247,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CreateAccessKeyResponse"
+                  "$ref": "#/components/schemas/AccessKeyCredentials"
                 }
               }
             }
@@ -663,11 +663,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_String",
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
+                  "$ref": "#/components/schemas/Datacenters"
                 }
               }
             }
@@ -1515,11 +1511,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_String",
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
+                  "$ref": "#/components/schemas/Datacenters"
                 }
               }
             }
@@ -3191,7 +3183,7 @@
             "name": "brand",
             "description": "Filter by brand (accepts any brand including internal-only brands)",
             "schema": {
-              "$ref": "#/components/schemas/Brand"
+              "$ref": "#/components/schemas/VmBrand"
             }
           },
           {
@@ -3389,7 +3381,7 @@
             "name": "brand",
             "description": "Filter by brand (accepts any brand including internal-only brands)",
             "schema": {
-              "$ref": "#/components/schemas/Brand"
+              "$ref": "#/components/schemas/VmBrand"
             }
           },
           {
@@ -7850,11 +7842,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_String",
-                  "type": "object",
-                  "additionalProperties": {
-                    "type": "string"
-                  }
+                  "$ref": "#/components/schemas/Services"
                 }
               }
             }
@@ -8422,7 +8410,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CreateAccessKeyResponse"
+                  "$ref": "#/components/schemas/AccessKeyCredentials"
                 }
               }
             }
@@ -9499,7 +9487,8 @@
           },
           "created": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "credentialtype": {
             "description": "Credential type",
@@ -9517,7 +9506,8 @@
           "expiration": {
             "nullable": true,
             "description": "Expiration timestamp (null for permanent keys)",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "status": {
             "description": "Status",
@@ -9529,11 +9519,71 @@
           },
           "updated": {
             "description": "Last updated timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
           "accesskeyid",
+          "created",
+          "credentialtype",
+          "status",
+          "updated"
+        ]
+      },
+      "AccessKeyCredentials": {
+        "description": "Response when creating access key (includes secret shown only once)",
+        "type": "object",
+        "properties": {
+          "accesskeyid": {
+            "description": "Access key ID",
+            "type": "string"
+          },
+          "accesskeysecret": {
+            "description": "Access key secret (only provided on creation)",
+            "type": "string"
+          },
+          "created": {
+            "description": "Creation timestamp",
+            "type": "string",
+            "format": "date-time"
+          },
+          "credentialtype": {
+            "description": "Credential type",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CredentialType"
+              }
+            ]
+          },
+          "description": {
+            "nullable": true,
+            "description": "Description",
+            "type": "string"
+          },
+          "expiration": {
+            "nullable": true,
+            "description": "Expiration timestamp",
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "description": "Status",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AccessKeyStatus"
+              }
+            ]
+          },
+          "updated": {
+            "description": "Last updated timestamp",
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "accesskeyid",
+          "accesskeysecret",
           "created",
           "credentialtype",
           "status",
@@ -9576,7 +9626,8 @@
           },
           "created": {
             "description": "Account creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "email": {
             "description": "Email address",
@@ -9624,7 +9675,8 @@
           },
           "updated": {
             "description": "Last update timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -9701,7 +9753,8 @@
           },
           "time": {
             "description": "Timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -9719,35 +9772,6 @@
         ]
       },
       "Brand": {
-        "description": "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",
-        "oneOf": [
-          {
-            "type": "string",
-            "enum": [
-              "bhyve",
-              "joyent",
-              "joyent-minimal",
-              "kvm",
-              "lx"
-            ]
-          },
-          {
-            "description": "Internal brand for image build zones (not provisionable via CloudAPI)",
-            "type": "string",
-            "enum": [
-              "builder"
-            ]
-          },
-          {
-            "description": "Unknown brand (forward compatibility)",
-            "type": "string",
-            "enum": [
-              "unknown"
-            ]
-          }
-        ]
-      },
-      "Brand2": {
         "description": "VM/Container brand for CloudAPI provisioning requests.\n\nThe brand determines the virtualization/containerization technology used. Valid brands as defined in `lib/machines.js`: - `bhyve`: FreeBSD hypervisor for hardware VMs - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",
         "type": "string",
         "enum": [
@@ -9807,62 +9831,6 @@
             ]
           }
         }
-      },
-      "CreateAccessKeyResponse": {
-        "description": "Response when creating access key (includes secret shown only once)",
-        "type": "object",
-        "properties": {
-          "accesskeyid": {
-            "description": "Access key ID",
-            "type": "string"
-          },
-          "accesskeysecret": {
-            "description": "Access key secret (only provided on creation)",
-            "type": "string"
-          },
-          "created": {
-            "description": "Creation timestamp",
-            "type": "string"
-          },
-          "credentialtype": {
-            "description": "Credential type",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CredentialType"
-              }
-            ]
-          },
-          "description": {
-            "nullable": true,
-            "description": "Description",
-            "type": "string"
-          },
-          "expiration": {
-            "nullable": true,
-            "description": "Expiration timestamp",
-            "type": "string"
-          },
-          "status": {
-            "description": "Status",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AccessKeyStatus"
-              }
-            ]
-          },
-          "updated": {
-            "description": "Last updated timestamp",
-            "type": "string"
-          }
-        },
-        "required": [
-          "accesskeyid",
-          "accesskeysecret",
-          "created",
-          "credentialtype",
-          "status",
-          "updated"
-        ]
       },
       "CreateDiskRequest": {
         "description": "Request to create disk",
@@ -10027,7 +9995,7 @@
             "default": null,
             "allOf": [
               {
-                "$ref": "#/components/schemas/Brand2"
+                "$ref": "#/components/schemas/Brand"
               }
             ]
           },
@@ -10214,9 +10182,27 @@
         "description": "Request to create user",
         "type": "object",
         "properties": {
+          "address": {
+            "nullable": true,
+            "description": "Street address",
+            "default": null,
+            "type": "string"
+          },
+          "city": {
+            "nullable": true,
+            "description": "City",
+            "default": null,
+            "type": "string"
+          },
           "companyName": {
             "nullable": true,
             "description": "Company name",
+            "default": null,
+            "type": "string"
+          },
+          "country": {
+            "nullable": true,
+            "description": "Country",
             "default": null,
             "type": "string"
           },
@@ -10247,6 +10233,18 @@
           "phone": {
             "nullable": true,
             "description": "Phone number",
+            "default": null,
+            "type": "string"
+          },
+          "postalCode": {
+            "nullable": true,
+            "description": "Postal code",
+            "default": null,
+            "type": "string"
+          },
+          "state": {
+            "nullable": true,
+            "description": "State or province",
             "default": null,
             "type": "string"
           }
@@ -10331,6 +10329,13 @@
           "name",
           "url"
         ]
+      },
+      "Datacenters": {
+        "description": "Datacenter map: name -> URL\n\nThe CloudAPI returns datacenters as a map where keys are datacenter names and values are their URLs. Example: ```json {\"us-central-1\": \"https://us-central-1.api.mnx.io\"} ```\n\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Datacenters = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Datacenters map[string]string` in Go).",
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
       },
       "Disk": {
         "description": "Disk information\n\nNote: CloudAPI returns all disk fields in snake_case, matching the VMAPI wire format passed through the `translate()` function.",
@@ -10489,7 +10494,8 @@
           "created": {
             "nullable": true,
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "description": {
             "nullable": true,
@@ -10531,7 +10537,8 @@
           "updated": {
             "nullable": true,
             "description": "Last update timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -10625,7 +10632,8 @@
           "published_at": {
             "nullable": true,
             "description": "Published timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "requirements": {
             "description": "Requirements (always present, may be empty)",
@@ -10737,7 +10745,7 @@
             "description": "Required brand",
             "allOf": [
               {
-                "$ref": "#/components/schemas/Brand"
+                "$ref": "#/components/schemas/VmBrand"
               }
             ]
           },
@@ -10825,7 +10833,7 @@
             "description": "Brand (joyent, kvm, bhyve, lx, joyent-minimal, and internal-only brands)\n\nUses VMAPI's Brand enum to support internal-only brands like \"builder\" that may be returned by VMAPI but cannot be provisioned via CloudAPI.",
             "allOf": [
               {
-                "$ref": "#/components/schemas/Brand"
+                "$ref": "#/components/schemas/VmBrand"
               }
             ]
           },
@@ -10837,7 +10845,8 @@
           },
           "created": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "delegate_dataset": {
             "nullable": true,
@@ -10986,7 +10995,8 @@
           },
           "updated": {
             "description": "Last update timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -11214,12 +11224,14 @@
           },
           "created_timestamp": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "finished_timestamp": {
             "nullable": true,
             "description": "Finished timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "machine": {
             "description": "Machine UUID being migrated",
@@ -11259,7 +11271,8 @@
           "updated_timestamp": {
             "nullable": true,
             "description": "Last update timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -11378,7 +11391,8 @@
           "finished_timestamp": {
             "nullable": true,
             "description": "When this phase finished",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "message": {
             "nullable": true,
@@ -11396,7 +11410,8 @@
           "started_timestamp": {
             "nullable": true,
             "description": "When this phase started",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "state": {
             "description": "State of this phase",
@@ -11693,7 +11708,7 @@
             "description": "Brand (joyent, bhyve, kvm, etc., including internal-only brands)\n\nUses VMAPI's Brand enum to support internal-only brands like \"builder\" that may exist in the system.",
             "allOf": [
               {
-                "$ref": "#/components/schemas/Brand"
+                "$ref": "#/components/schemas/VmBrand"
               }
             ]
           },
@@ -11977,6 +11992,13 @@
           "role-tag"
         ]
       },
+      "Services": {
+        "description": "Services map: name -> URL\n\nThe CloudAPI returns services as a map where keys are service names and values are their URLs. Example: ```json {\"cmon\": \"https://cmon.example.com:9163\", \"docker\": \"tcp://docker.example.com:2376\"} ```\n\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Services = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Services map[string]string` in Go).",
+        "type": "object",
+        "additionalProperties": {
+          "type": "string"
+        }
+      },
       "Snapshot": {
         "description": "Snapshot information",
         "type": "object",
@@ -11984,7 +12006,8 @@
           "created": {
             "nullable": true,
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "name": {
             "description": "Snapshot name",
@@ -12001,7 +12024,8 @@
           "updated": {
             "nullable": true,
             "description": "Last update timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -12038,7 +12062,8 @@
           "created": {
             "nullable": true,
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "fingerprint": {
             "description": "Key fingerprint",
@@ -12349,9 +12374,27 @@
         "description": "Request to update user",
         "type": "object",
         "properties": {
+          "address": {
+            "nullable": true,
+            "description": "Street address",
+            "default": null,
+            "type": "string"
+          },
+          "city": {
+            "nullable": true,
+            "description": "City",
+            "default": null,
+            "type": "string"
+          },
           "companyName": {
             "nullable": true,
             "description": "Company name",
+            "default": null,
+            "type": "string"
+          },
+          "country": {
+            "nullable": true,
+            "description": "Country",
             "default": null,
             "type": "string"
           },
@@ -12378,6 +12421,18 @@
             "description": "Phone number",
             "default": null,
             "type": "string"
+          },
+          "postalCode": {
+            "nullable": true,
+            "description": "Postal code",
+            "default": null,
+            "type": "string"
+          },
+          "state": {
+            "nullable": true,
+            "description": "State or province",
+            "default": null,
+            "type": "string"
           }
         }
       },
@@ -12392,7 +12447,8 @@
           },
           "created": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "email": {
             "description": "Email address",
@@ -12432,7 +12488,8 @@
           },
           "updated": {
             "description": "Last update timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -12443,13 +12500,43 @@
           "updated"
         ]
       },
+      "VmBrand": {
+        "description": "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "bhyve",
+              "joyent",
+              "joyent-minimal",
+              "kvm",
+              "lx"
+            ]
+          },
+          {
+            "description": "Internal brand for image build zones (not provisionable via CloudAPI)",
+            "type": "string",
+            "enum": [
+              "builder"
+            ]
+          },
+          {
+            "description": "Unknown brand (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
+        ]
+      },
       "Volume": {
         "description": "Volume information",
         "type": "object",
         "properties": {
           "created": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "filesystem_path": {
             "nullable": true,

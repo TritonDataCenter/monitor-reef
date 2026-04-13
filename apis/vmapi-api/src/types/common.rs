@@ -17,7 +17,7 @@ use std::collections::HashMap;
 pub type Uuid = uuid::Uuid;
 
 /// RFC3339 timestamp
-pub type Timestamp = String;
+pub type Timestamp = chrono::DateTime<chrono::Utc>;
 
 /// Key-value metadata (values can be strings, booleans, or numbers)
 pub type MetadataObject = HashMap<String, Value>;
@@ -43,6 +43,7 @@ pub type Tags = HashMap<String, Value>;
 // use this enum to accurately represent VM state.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[schemars(rename = "VmBrand")]
 pub enum Brand {
     Bhyve,
     /// Internal brand for image build zones (not provisionable via CloudAPI)

@@ -66,7 +66,7 @@ fn configure_vmapi(settings: &mut GenerationSettings) {
         .with_interface(progenitor::InterfaceStyle::Builder)
         .with_tag(progenitor::TagStyle::Merged)
         .with_derive("schemars::JsonSchema")
-        .with_patch("Brand", &value_enum_patch)
+        .with_patch("VmBrand", &value_enum_patch)
         .with_patch("VmState", &value_enum_patch)
         .with_patch("MigrationState", &value_enum_patch)
         .with_patch("MigrationAction", &value_enum_patch);
@@ -81,8 +81,8 @@ fn configure_cloudapi(settings: &mut GenerationSettings) {
         .with_inner_type(syn::parse_quote!(triton_auth::AuthConfig))
         .with_pre_hook_async(syn::parse_quote!(crate::auth::add_auth_headers))
         .with_derive("schemars::JsonSchema")
+        .with_patch("VmBrand", &value_enum_patch)
         .with_patch("Brand", &value_enum_patch)
-        .with_patch("Brand2", &value_enum_patch)
         .with_patch("MachineState", &value_enum_patch)
         .with_patch("MachineType", &value_enum_patch)
         .with_patch("ImageState", &value_enum_patch)

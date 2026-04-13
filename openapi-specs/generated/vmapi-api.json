@@ -646,7 +646,7 @@
             "name": "brand",
             "description": "Filter by brand",
             "schema": {
-              "$ref": "#/components/schemas/Brand"
+              "$ref": "#/components/schemas/VmBrand"
             }
           },
           {
@@ -882,7 +882,7 @@
             "name": "brand",
             "description": "Filter by brand",
             "schema": {
-              "$ref": "#/components/schemas/Brand"
+              "$ref": "#/components/schemas/VmBrand"
             }
           },
           {
@@ -2403,35 +2403,6 @@
           "role_tags"
         ]
       },
-      "Brand": {
-        "description": "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",
-        "oneOf": [
-          {
-            "type": "string",
-            "enum": [
-              "bhyve",
-              "joyent",
-              "joyent-minimal",
-              "kvm",
-              "lx"
-            ]
-          },
-          {
-            "description": "Internal brand for image build zones (not provisionable via CloudAPI)",
-            "type": "string",
-            "enum": [
-              "builder"
-            ]
-          },
-          {
-            "description": "Unknown brand (forward compatibility)",
-            "type": "string",
-            "enum": [
-              "unknown"
-            ]
-          }
-        ]
-      },
       "CreateVmRequest": {
         "description": "Request body for creating a new VM",
         "type": "object",
@@ -2455,7 +2426,7 @@
             "default": null,
             "allOf": [
               {
-                "$ref": "#/components/schemas/Brand"
+                "$ref": "#/components/schemas/VmBrand"
               }
             ]
           },
@@ -2654,7 +2625,8 @@
           "created_at": {
             "nullable": true,
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "elapsed": {
             "nullable": true,
@@ -2708,7 +2680,8 @@
           "started": {
             "nullable": true,
             "description": "Start timestamp (when execution began)",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "timeout": {
             "nullable": true,
@@ -2796,7 +2769,8 @@
           "created_timestamp": {
             "nullable": true,
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "duration_ms": {
             "nullable": true,
@@ -2813,7 +2787,8 @@
           "finished_timestamp": {
             "nullable": true,
             "description": "Finished timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "phase": {
             "nullable": true,
@@ -2841,7 +2816,8 @@
           "started_timestamp": {
             "nullable": true,
             "description": "Started timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "state": {
             "description": "Current migration state",
@@ -2968,7 +2944,8 @@
           "timestamp": {
             "nullable": true,
             "description": "Timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "total_bytes": {
             "nullable": true,
@@ -3048,7 +3025,8 @@
           "timestamp": {
             "nullable": true,
             "description": "Timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "total_bytes": {
             "nullable": true,
@@ -3400,7 +3378,8 @@
         "properties": {
           "created_at": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "name": {
             "description": "Snapshot name",
@@ -3491,7 +3470,8 @@
           "finished_at": {
             "nullable": true,
             "description": "Finish time",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "name": {
             "nullable": true,
@@ -3506,7 +3486,8 @@
           "started_at": {
             "nullable": true,
             "description": "Start time",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -3548,7 +3529,7 @@
             "description": "Brand (bhyve, kvm, joyent, joyent-minimal, lx)",
             "allOf": [
               {
-                "$ref": "#/components/schemas/Brand"
+                "$ref": "#/components/schemas/VmBrand"
               }
             ]
           },
@@ -3562,7 +3543,8 @@
           "create_timestamp": {
             "nullable": true,
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "customer_metadata": {
             "nullable": true,
@@ -3578,7 +3560,8 @@
           "destroyed": {
             "nullable": true,
             "description": "Destroyed timestamp (if destroyed)",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "disks": {
             "nullable": true,
@@ -3654,7 +3637,8 @@
           "last_modified": {
             "nullable": true,
             "description": "Last modified timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "limit_priv": {
             "nullable": true,
@@ -3797,6 +3781,35 @@
           "owner_uuid",
           "state",
           "uuid"
+        ]
+      },
+      "VmBrand": {
+        "description": "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "bhyve",
+              "joyent",
+              "joyent-minimal",
+              "kvm",
+              "lx"
+            ]
+          },
+          {
+            "description": "Internal brand for image build zones (not provisionable via CloudAPI)",
+            "type": "string",
+            "enum": [
+              "builder"
+            ]
+          },
+          {
+            "description": "Unknown brand (forward compatibility)",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
         ]
       },
       "VmState": {

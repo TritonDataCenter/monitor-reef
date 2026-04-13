@@ -50,7 +50,14 @@ fn test_image_published_at_snake_case() {
         image.published_at.is_some(),
         "published_at should deserialize from snake_case"
     );
-    assert_eq!(image.published_at.as_deref(), Some("2021-04-01T00:42:24Z"));
+    assert_eq!(
+        image.published_at,
+        Some(
+            chrono::DateTime::parse_from_rfc3339("2021-04-01T00:42:24Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+        )
+    );
 }
 
 #[test]

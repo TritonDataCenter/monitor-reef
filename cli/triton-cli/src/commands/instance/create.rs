@@ -65,7 +65,7 @@ pub struct CreateArgs {
 
     /// Instance brand. If not specified, inferred from the image.
     #[arg(long, short = 'b', value_enum)]
-    pub brand: Option<cloudapi_client::types::Brand2>,
+    pub brand: Option<cloudapi_client::types::Brand>,
 
     /// Volume to mount (NAME[@MOUNTPOINT] or NAME:MODE:MOUNTPOINT).
     /// MODE can be 'ro' or 'rw' (default: 'rw').

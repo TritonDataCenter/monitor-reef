@@ -67,16 +67,11 @@ fn opt_display<T: std::fmt::Display>(opt: &Option<T>) -> String {
 }
 
 /// Format a duration as a human-readable relative time string (e.g., "1d", "41w")
-fn long_ago(when: &str) -> String {
-    use chrono::{DateTime, Utc};
-
-    let parsed = match DateTime::parse_from_rfc3339(when) {
-        Ok(dt) => dt.with_timezone(&Utc),
-        Err(_) => return "".to_string(),
-    };
+fn long_ago(when: &chrono::DateTime<chrono::Utc>) -> String {
+    use chrono::Utc;
 
     let now = Utc::now();
-    let duration = now.signed_duration_since(parsed);
+    let duration = now.signed_duration_since(*when);
     let seconds = duration.num_seconds();
 
     if seconds < 0 {

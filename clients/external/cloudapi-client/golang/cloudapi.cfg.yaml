@@ -1,0 +1,12 @@
+# oapi-codegen configuration for Triton CloudAPI Go client
+# Source spec: openapi-specs/patched/cloudapi-api.json
+#
+# Naming collisions between spec schemas and oapi-codegen's auto-generated
+# type names (oneOf variants, response wrappers) are resolved upstream via
+# #[schemars(rename)] in the Rust API type definitions.
+package: cloudapi
+output: clients/external/cloudapi-client/golang/cloudapi.gen.go
+generate:
+  client: true
+  models: true
+  embedded-spec: true

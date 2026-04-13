@@ -59,7 +59,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"created\": {"]
     #[doc = "      \"description\": \"Creation timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"credentialtype\": {"]
     #[doc = "      \"description\": \"Credential type\","]
@@ -81,7 +82,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"status\": {"]
     #[doc = "      \"description\": \"Status\","]
@@ -93,7 +95,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"updated\": {"]
     #[doc = "      \"description\": \"Last updated timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -106,7 +109,7 @@ pub mod types {
         #[doc = "Access key ID"]
         pub accesskeyid: ::std::string::String,
         #[doc = "Creation timestamp"]
-        pub created: ::std::string::String,
+        pub created: ::chrono::DateTime<::chrono::offset::Utc>,
         #[doc = "Credential type"]
         pub credentialtype: CredentialType,
         #[doc = "Description"]
@@ -114,15 +117,115 @@ pub mod types {
         pub description: ::std::option::Option<::std::string::String>,
         #[doc = "Expiration timestamp (null for permanent keys)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub expiration: ::std::option::Option<::std::string::String>,
+        pub expiration: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Status"]
         pub status: AccessKeyStatus,
         #[doc = "Last updated timestamp"]
-        pub updated: ::std::string::String,
+        pub updated: ::chrono::DateTime<::chrono::offset::Utc>,
     }
 
     impl AccessKey {
         pub fn builder() -> builder::AccessKey {
+            Default::default()
+        }
+    }
+
+    #[doc = "Response when creating access key (includes secret shown only once)"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Response when creating access key (includes secret shown only once)\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"accesskeyid\","]
+    #[doc = "    \"accesskeysecret\","]
+    #[doc = "    \"created\","]
+    #[doc = "    \"credentialtype\","]
+    #[doc = "    \"status\","]
+    #[doc = "    \"updated\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"accesskeyid\": {"]
+    #[doc = "      \"description\": \"Access key ID\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"accesskeysecret\": {"]
+    #[doc = "      \"description\": \"Access key secret (only provided on creation)\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"created\": {"]
+    #[doc = "      \"description\": \"Creation timestamp\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"credentialtype\": {"]
+    #[doc = "      \"description\": \"Credential type\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/CredentialType\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"description\": \"Description\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"expiration\": {"]
+    #[doc = "      \"description\": \"Expiration timestamp\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    },"]
+    #[doc = "    \"status\": {"]
+    #[doc = "      \"description\": \"Status\","]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/AccessKeyStatus\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"updated\": {"]
+    #[doc = "      \"description\": \"Last updated timestamp\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct AccessKeyCredentials {
+        #[doc = "Access key ID"]
+        pub accesskeyid: ::std::string::String,
+        #[doc = "Access key secret (only provided on creation)"]
+        pub accesskeysecret: ::std::string::String,
+        #[doc = "Creation timestamp"]
+        pub created: ::chrono::DateTime<::chrono::offset::Utc>,
+        #[doc = "Credential type"]
+        pub credentialtype: CredentialType,
+        #[doc = "Description"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub description: ::std::option::Option<::std::string::String>,
+        #[doc = "Expiration timestamp"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub expiration: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+        #[doc = "Status"]
+        pub status: AccessKeyStatus,
+        #[doc = "Last updated timestamp"]
+        pub updated: ::chrono::DateTime<::chrono::offset::Utc>,
+    }
+
+    impl AccessKeyCredentials {
+        pub fn builder() -> builder::AccessKeyCredentials {
             Default::default()
         }
     }
@@ -260,7 +363,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"created\": {"]
     #[doc = "      \"description\": \"Account creation timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"email\": {"]
     #[doc = "      \"description\": \"Email address\","]
@@ -319,7 +423,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"updated\": {"]
     #[doc = "      \"description\": \"Last update timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -346,7 +451,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub country: ::std::option::Option<::std::string::String>,
         #[doc = "Account creation timestamp"]
-        pub created: ::std::string::String,
+        pub created: ::chrono::DateTime<::chrono::offset::Utc>,
         #[doc = "Email address"]
         pub email: ::std::string::String,
         #[doc = "First name"]
@@ -384,7 +489,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub triton_cns_enabled: ::std::option::Option<bool>,
         #[doc = "Last update timestamp"]
-        pub updated: ::std::string::String,
+        pub updated: ::chrono::DateTime<::chrono::offset::Utc>,
     }
 
     impl Account {
@@ -558,7 +663,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"time\": {"]
     #[doc = "      \"description\": \"Timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -577,7 +683,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub success: ::std::option::Option<AuditSuccess>,
         #[doc = "Timestamp"]
-        pub time: ::std::string::String,
+        pub time: ::chrono::DateTime<::chrono::offset::Utc>,
     }
 
     impl AuditEntry {
@@ -671,130 +777,6 @@ pub mod types {
         }
     }
 
-    #[doc = "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"description\": \"VM/Container brand as returned by VMAPI.\\n\\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)\","]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {"]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"enum\": ["]
-    #[doc = "        \"bhyve\","]
-    #[doc = "        \"joyent\","]
-    #[doc = "        \"joyent-minimal\","]
-    #[doc = "        \"kvm\","]
-    #[doc = "        \"lx\""]
-    #[doc = "      ]"]
-    #[doc = "    },"]
-    #[doc = "    {"]
-    #[doc = "      \"description\": \"Internal brand for image build zones (not provisionable via CloudAPI)\","]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"enum\": ["]
-    #[doc = "        \"builder\""]
-    #[doc = "      ]"]
-    #[doc = "    },"]
-    #[doc = "    {"]
-    #[doc = "      \"description\": \"Unknown brand (forward compatibility)\","]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"enum\": ["]
-    #[doc = "        \"unknown\""]
-    #[doc = "      ]"]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(
-        :: serde :: Deserialize,
-        :: serde :: Serialize,
-        Clone,
-        Copy,
-        Debug,
-        Eq,
-        Hash,
-        Ord,
-        PartialEq,
-        PartialOrd,
-        clap :: ValueEnum,
-        schemars :: JsonSchema,
-    )]
-    pub enum Brand {
-        #[serde(rename = "bhyve")]
-        Bhyve,
-        #[serde(rename = "joyent")]
-        Joyent,
-        #[serde(rename = "joyent-minimal")]
-        JoyentMinimal,
-        #[serde(rename = "kvm")]
-        Kvm,
-        #[serde(rename = "lx")]
-        Lx,
-        #[doc = "Internal brand for image build zones (not provisionable via CloudAPI)"]
-        #[serde(rename = "builder")]
-        Builder,
-        #[doc = "Unknown brand (forward compatibility)"]
-        #[serde(rename = "unknown")]
-        Unknown,
-    }
-
-    impl ::std::fmt::Display for Brand {
-        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            match *self {
-                Self::Bhyve => f.write_str("bhyve"),
-                Self::Joyent => f.write_str("joyent"),
-                Self::JoyentMinimal => f.write_str("joyent-minimal"),
-                Self::Kvm => f.write_str("kvm"),
-                Self::Lx => f.write_str("lx"),
-                Self::Builder => f.write_str("builder"),
-                Self::Unknown => f.write_str("unknown"),
-            }
-        }
-    }
-
-    impl ::std::str::FromStr for Brand {
-        type Err = self::error::ConversionError;
-        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-            match value {
-                "bhyve" => Ok(Self::Bhyve),
-                "joyent" => Ok(Self::Joyent),
-                "joyent-minimal" => Ok(Self::JoyentMinimal),
-                "kvm" => Ok(Self::Kvm),
-                "lx" => Ok(Self::Lx),
-                "builder" => Ok(Self::Builder),
-                "unknown" => Ok(Self::Unknown),
-                _ => Err("invalid value".into()),
-            }
-        }
-    }
-
-    impl ::std::convert::TryFrom<&str> for Brand {
-        type Error = self::error::ConversionError;
-        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-            value.parse()
-        }
-    }
-
-    impl ::std::convert::TryFrom<&::std::string::String> for Brand {
-        type Error = self::error::ConversionError;
-        fn try_from(
-            value: &::std::string::String,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
-            value.parse()
-        }
-    }
-
-    impl ::std::convert::TryFrom<::std::string::String> for Brand {
-        type Error = self::error::ConversionError;
-        fn try_from(
-            value: ::std::string::String,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
-            value.parse()
-        }
-    }
-
     #[doc = "VM/Container brand for CloudAPI provisioning requests.\n\nThe brand determines the virtualization/containerization technology used. Valid brands as defined in `lib/machines.js`: - `bhyve`: FreeBSD hypervisor for hardware VMs - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -827,7 +809,7 @@ pub mod types {
         clap :: ValueEnum,
         schemars :: JsonSchema,
     )]
-    pub enum Brand2 {
+    pub enum Brand {
         #[serde(rename = "bhyve")]
         Bhyve,
         #[serde(rename = "joyent")]
@@ -840,7 +822,7 @@ pub mod types {
         Lx,
     }
 
-    impl ::std::fmt::Display for Brand2 {
+    impl ::std::fmt::Display for Brand {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
             match *self {
                 Self::Bhyve => f.write_str("bhyve"),
@@ -852,7 +834,7 @@ pub mod types {
         }
     }
 
-    impl ::std::str::FromStr for Brand2 {
+    impl ::std::str::FromStr for Brand {
         type Err = self::error::ConversionError;
         fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             match value {
@@ -866,14 +848,14 @@ pub mod types {
         }
     }
 
-    impl ::std::convert::TryFrom<&str> for Brand2 {
+    impl ::std::convert::TryFrom<&str> for Brand {
         type Error = self::error::ConversionError;
         fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
         }
     }
 
-    impl ::std::convert::TryFrom<&::std::string::String> for Brand2 {
+    impl ::std::convert::TryFrom<&::std::string::String> for Brand {
         type Error = self::error::ConversionError;
         fn try_from(
             value: &::std::string::String,
@@ -882,7 +864,7 @@ pub mod types {
         }
     }
 
-    impl ::std::convert::TryFrom<::std::string::String> for Brand2 {
+    impl ::std::convert::TryFrom<::std::string::String> for Brand {
         type Error = self::error::ConversionError;
         fn try_from(
             value: ::std::string::String,
@@ -1034,103 +1016,6 @@ pub mod types {
 
     impl CreateAccessKeyRequest {
         pub fn builder() -> builder::CreateAccessKeyRequest {
-            Default::default()
-        }
-    }
-
-    #[doc = "Response when creating access key (includes secret shown only once)"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"description\": \"Response when creating access key (includes secret shown only once)\","]
-    #[doc = "  \"type\": \"object\","]
-    #[doc = "  \"required\": ["]
-    #[doc = "    \"accesskeyid\","]
-    #[doc = "    \"accesskeysecret\","]
-    #[doc = "    \"created\","]
-    #[doc = "    \"credentialtype\","]
-    #[doc = "    \"status\","]
-    #[doc = "    \"updated\""]
-    #[doc = "  ],"]
-    #[doc = "  \"properties\": {"]
-    #[doc = "    \"accesskeyid\": {"]
-    #[doc = "      \"description\": \"Access key ID\","]
-    #[doc = "      \"type\": \"string\""]
-    #[doc = "    },"]
-    #[doc = "    \"accesskeysecret\": {"]
-    #[doc = "      \"description\": \"Access key secret (only provided on creation)\","]
-    #[doc = "      \"type\": \"string\""]
-    #[doc = "    },"]
-    #[doc = "    \"created\": {"]
-    #[doc = "      \"description\": \"Creation timestamp\","]
-    #[doc = "      \"type\": \"string\""]
-    #[doc = "    },"]
-    #[doc = "    \"credentialtype\": {"]
-    #[doc = "      \"description\": \"Credential type\","]
-    #[doc = "      \"allOf\": ["]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/CredentialType\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
-    #[doc = "    },"]
-    #[doc = "    \"description\": {"]
-    #[doc = "      \"description\": \"Description\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"string\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ]"]
-    #[doc = "    },"]
-    #[doc = "    \"expiration\": {"]
-    #[doc = "      \"description\": \"Expiration timestamp\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"string\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ]"]
-    #[doc = "    },"]
-    #[doc = "    \"status\": {"]
-    #[doc = "      \"description\": \"Status\","]
-    #[doc = "      \"allOf\": ["]
-    #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/AccessKeyStatus\""]
-    #[doc = "        }"]
-    #[doc = "      ]"]
-    #[doc = "    },"]
-    #[doc = "    \"updated\": {"]
-    #[doc = "      \"description\": \"Last updated timestamp\","]
-    #[doc = "      \"type\": \"string\""]
-    #[doc = "    }"]
-    #[doc = "  }"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(
-        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
-    )]
-    pub struct CreateAccessKeyResponse {
-        #[doc = "Access key ID"]
-        pub accesskeyid: ::std::string::String,
-        #[doc = "Access key secret (only provided on creation)"]
-        pub accesskeysecret: ::std::string::String,
-        #[doc = "Creation timestamp"]
-        pub created: ::std::string::String,
-        #[doc = "Credential type"]
-        pub credentialtype: CredentialType,
-        #[doc = "Description"]
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub description: ::std::option::Option<::std::string::String>,
-        #[doc = "Expiration timestamp"]
-        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub expiration: ::std::option::Option<::std::string::String>,
-        #[doc = "Status"]
-        pub status: AccessKeyStatus,
-        #[doc = "Last updated timestamp"]
-        pub updated: ::std::string::String,
-    }
-
-    impl CreateAccessKeyResponse {
-        pub fn builder() -> builder::CreateAccessKeyResponse {
             Default::default()
         }
     }
@@ -1441,7 +1326,7 @@ pub mod types {
     #[doc = "        {"]
     #[doc = "          \"allOf\": ["]
     #[doc = "            {"]
-    #[doc = "              \"$ref\": \"#/components/schemas/Brand2\""]
+    #[doc = "              \"$ref\": \"#/components/schemas/Brand\""]
     #[doc = "            }"]
     #[doc = "          ]"]
     #[doc = "        }"]
@@ -1556,7 +1441,7 @@ pub mod types {
         pub allow_shared_images: ::std::option::Option<bool>,
         #[doc = "Brand (bhyve, kvm, joyent, joyent-minimal, lx) If not specified, inferred from the image"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub brand: ::std::option::Option<Brand2>,
+        pub brand: ::std::option::Option<Brand>,
         #[doc = "Create a delegated ZFS dataset for the zone Only applicable to zone-based instances (joyent, joyent-minimal, lx brands)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub delegate_dataset: ::std::option::Option<bool>,
@@ -1816,8 +1701,29 @@ pub mod types {
     #[doc = "    \"password\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"address\": {"]
+    #[doc = "      \"description\": \"Street address\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"city\": {"]
+    #[doc = "      \"description\": \"City\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"companyName\": {"]
     #[doc = "      \"description\": \"Company name\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"country\": {"]
+    #[doc = "      \"description\": \"Country\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -1855,6 +1761,20 @@ pub mod types {
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"postalCode\": {"]
+    #[doc = "      \"description\": \"Postal code\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"state\": {"]
+    #[doc = "      \"description\": \"State or province\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -1864,6 +1784,12 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct CreateUserRequest {
+        #[doc = "Street address"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub address: ::std::option::Option<::std::string::String>,
+        #[doc = "City"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub city: ::std::option::Option<::std::string::String>,
         #[doc = "Company name"]
         #[serde(
             rename = "companyName",
@@ -1871,6 +1797,9 @@ pub mod types {
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub company_name: ::std::option::Option<::std::string::String>,
+        #[doc = "Country"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub country: ::std::option::Option<::std::string::String>,
         #[doc = "Email address"]
         pub email: ::std::string::String,
         #[doc = "First name"]
@@ -1894,6 +1823,16 @@ pub mod types {
         #[doc = "Phone number"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub phone: ::std::option::Option<::std::string::String>,
+        #[doc = "Postal code"]
+        #[serde(
+            rename = "postalCode",
+            default,
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub postal_code: ::std::option::Option<::std::string::String>,
+        #[doc = "State or province"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub state: ::std::option::Option<::std::string::String>,
     }
 
     impl CreateUserRequest {
@@ -2119,6 +2058,56 @@ pub mod types {
     impl Datacenter {
         pub fn builder() -> builder::Datacenter {
             Default::default()
+        }
+    }
+
+    #[doc = "Datacenter map: name -> URL\n\nThe CloudAPI returns datacenters as a map where keys are datacenter names and values are their URLs. Example: ```json {\"us-central-1\": \"https://us-central-1.api.mnx.io\"} ```\n\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Datacenters = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Datacenters map[string]string` in Go)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Datacenter map: name -> URL\\n\\nThe CloudAPI returns datacenters as a map where keys are datacenter names and values are their URLs. Example: ```json {\\\"us-central-1\\\": \\\"https://us-central-1.api.mnx.io\\\"} ```\\n\\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Datacenters = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Datacenters map[string]string` in Go).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"additionalProperties\": {"]
+    #[doc = "    \"type\": \"string\""]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    #[serde(transparent)]
+    pub struct Datacenters(
+        pub ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+    );
+    impl ::std::ops::Deref for Datacenters {
+        type Target = ::std::collections::HashMap<::std::string::String, ::std::string::String>;
+        fn deref(
+            &self,
+        ) -> &::std::collections::HashMap<::std::string::String, ::std::string::String> {
+            &self.0
+        }
+    }
+
+    impl ::std::convert::From<Datacenters>
+        for ::std::collections::HashMap<::std::string::String, ::std::string::String>
+    {
+        fn from(value: Datacenters) -> Self {
+            value.0
+        }
+    }
+
+    impl
+        ::std::convert::From<
+            ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+        > for Datacenters
+    {
+        fn from(
+            value: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+        ) -> Self {
+            Self(value)
         }
     }
 
@@ -2655,7 +2644,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"description\": {"]
     #[doc = "      \"description\": \"Description\","]
@@ -2704,7 +2694,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -2716,7 +2707,7 @@ pub mod types {
     pub struct FirewallRule {
         #[doc = "Creation timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub created: ::std::option::Option<::std::string::String>,
+        pub created: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Description"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub description: ::std::option::Option<::std::string::String>,
@@ -2741,7 +2732,7 @@ pub mod types {
         pub rule: ::std::string::String,
         #[doc = "Last update timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub updated: ::std::option::Option<::std::string::String>,
+        pub updated: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
     }
 
     impl FirewallRule {
@@ -2873,7 +2864,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"requirements\": {"]
     #[doc = "      \"description\": \"Requirements (always present, may be empty)\","]
@@ -2975,7 +2967,7 @@ pub mod types {
         pub public: ::std::option::Option<bool>,
         #[doc = "Published timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub published_at: ::std::option::Option<::std::string::String>,
+        pub published_at: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Requirements (always present, may be empty)"]
         #[serde(default = "defaults::image_requirements")]
         pub requirements: ImageRequirements,
@@ -3231,7 +3223,7 @@ pub mod types {
     #[doc = "        {"]
     #[doc = "          \"allOf\": ["]
     #[doc = "            {"]
-    #[doc = "              \"$ref\": \"#/components/schemas/Brand\""]
+    #[doc = "              \"$ref\": \"#/components/schemas/VmBrand\""]
     #[doc = "            }"]
     #[doc = "          ]"]
     #[doc = "        }"]
@@ -3286,7 +3278,7 @@ pub mod types {
         pub bootrom: ::std::option::Option<::std::string::String>,
         #[doc = "Required brand"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub brand: ::std::option::Option<Brand>,
+        pub brand: ::std::option::Option<VmBrand>,
         #[doc = "Maximum memory (alias for max_ram)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub max_memory: ::std::option::Option<u64>,
@@ -3582,7 +3574,7 @@ pub mod types {
     #[doc = "      \"description\": \"Brand (joyent, kvm, bhyve, lx, joyent-minimal, and internal-only brands)\\n\\nUses VMAPI's Brand enum to support internal-only brands like \\\"builder\\\" that may be returned by VMAPI but cannot be provisioned via CloudAPI.\","]
     #[doc = "      \"allOf\": ["]
     #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/Brand\""]
+    #[doc = "          \"$ref\": \"#/components/schemas/VmBrand\""]
     #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    },"]
@@ -3596,7 +3588,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"created\": {"]
     #[doc = "      \"description\": \"Creation timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"delegate_dataset\": {"]
     #[doc = "      \"description\": \"Whether a delegate dataset is present\","]
@@ -3771,7 +3764,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"updated\": {"]
     #[doc = "      \"description\": \"Last update timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -3782,12 +3776,12 @@ pub mod types {
     )]
     pub struct Machine {
         #[doc = "Brand (joyent, kvm, bhyve, lx, joyent-minimal, and internal-only brands)\n\nUses VMAPI's Brand enum to support internal-only brands like \"builder\" that may be returned by VMAPI but cannot be provisioned via CloudAPI."]
-        pub brand: Brand,
+        pub brand: VmBrand,
         #[doc = "Compute node UUID (server hosting the VM)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub compute_node: ::std::option::Option<::uuid::Uuid>,
         #[doc = "Creation timestamp"]
-        pub created: ::std::string::String,
+        pub created: ::chrono::DateTime<::chrono::offset::Utc>,
         #[doc = "Whether a delegate dataset is present"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub delegate_dataset: ::std::option::Option<bool>,
@@ -3860,7 +3854,7 @@ pub mod types {
         #[serde(rename = "type")]
         pub type_: MachineType,
         #[doc = "Last update timestamp"]
-        pub updated: ::std::string::String,
+        pub updated: ::chrono::DateTime<::chrono::offset::Utc>,
     }
 
     impl Machine {
@@ -4635,14 +4629,16 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"created_timestamp\": {"]
     #[doc = "      \"description\": \"Creation timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"finished_timestamp\": {"]
     #[doc = "      \"description\": \"Finished timestamp\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"machine\": {"]
     #[doc = "      \"description\": \"Machine UUID being migrated\","]
@@ -4688,7 +4684,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -4702,10 +4699,10 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub automatic: ::std::option::Option<bool>,
         #[doc = "Creation timestamp"]
-        pub created_timestamp: ::std::string::String,
+        pub created_timestamp: ::chrono::DateTime<::chrono::offset::Utc>,
         #[doc = "Finished timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub finished_timestamp: ::std::option::Option<::std::string::String>,
+        pub finished_timestamp: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Machine UUID being migrated"]
         pub machine: ::uuid::Uuid,
         #[doc = "Migration phase"]
@@ -4720,7 +4717,7 @@ pub mod types {
         pub state: MigrationState,
         #[doc = "Last update timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub updated_timestamp: ::std::option::Option<::std::string::String>,
+        pub updated_timestamp: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
     }
 
     impl Migration {
@@ -5058,7 +5055,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"message\": {"]
     #[doc = "      \"description\": \"Progress message\","]
@@ -5080,7 +5078,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"state\": {"]
     #[doc = "      \"description\": \"State of this phase\","]
@@ -5108,7 +5107,7 @@ pub mod types {
         pub current_progress: u64,
         #[doc = "When this phase finished"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub finished_timestamp: ::std::option::Option<::std::string::String>,
+        pub finished_timestamp: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Progress message"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub message: ::std::option::Option<::std::string::String>,
@@ -5116,7 +5115,7 @@ pub mod types {
         pub phase: MigrationPhase,
         #[doc = "When this phase started"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub started_timestamp: ::std::option::Option<::std::string::String>,
+        pub started_timestamp: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "State of this phase"]
         pub state: MigrationState,
         #[doc = "Total progress value"]
@@ -5878,7 +5877,7 @@ pub mod types {
     #[doc = "        {"]
     #[doc = "          \"allOf\": ["]
     #[doc = "            {"]
-    #[doc = "              \"$ref\": \"#/components/schemas/Brand\""]
+    #[doc = "              \"$ref\": \"#/components/schemas/VmBrand\""]
     #[doc = "            }"]
     #[doc = "          ]"]
     #[doc = "        }"]
@@ -5990,7 +5989,7 @@ pub mod types {
     pub struct Package {
         #[doc = "Brand (joyent, bhyve, kvm, etc., including internal-only brands)\n\nUses VMAPI's Brand enum to support internal-only brands like \"builder\" that may exist in the system."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub brand: ::std::option::Option<Brand>,
+        pub brand: ::std::option::Option<VmBrand>,
         #[doc = "Default package"]
         #[serde(default)]
         pub default: bool,
@@ -6491,6 +6490,56 @@ pub mod types {
         }
     }
 
+    #[doc = "Services map: name -> URL\n\nThe CloudAPI returns services as a map where keys are service names and values are their URLs. Example: ```json {\"cmon\": \"https://cmon.example.com:9163\", \"docker\": \"tcp://docker.example.com:2376\"} ```\n\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Services = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Services map[string]string` in Go)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Services map: name -> URL\\n\\nThe CloudAPI returns services as a map where keys are service names and values are their URLs. Example: ```json {\\\"cmon\\\": \\\"https://cmon.example.com:9163\\\", \\\"docker\\\": \\\"tcp://docker.example.com:2376\\\"} ```\\n\\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Services = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Services map[string]string` in Go).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"additionalProperties\": {"]
+    #[doc = "    \"type\": \"string\""]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    #[serde(transparent)]
+    pub struct Services(
+        pub ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+    );
+    impl ::std::ops::Deref for Services {
+        type Target = ::std::collections::HashMap<::std::string::String, ::std::string::String>;
+        fn deref(
+            &self,
+        ) -> &::std::collections::HashMap<::std::string::String, ::std::string::String> {
+            &self.0
+        }
+    }
+
+    impl ::std::convert::From<Services>
+        for ::std::collections::HashMap<::std::string::String, ::std::string::String>
+    {
+        fn from(value: Services) -> Self {
+            value.0
+        }
+    }
+
+    impl
+        ::std::convert::From<
+            ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+        > for Services
+    {
+        fn from(
+            value: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+        ) -> Self {
+            Self(value)
+        }
+    }
+
     #[doc = "Snapshot information"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -6509,7 +6558,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"description\": \"Snapshot name\","]
@@ -6528,7 +6578,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -6540,14 +6591,14 @@ pub mod types {
     pub struct Snapshot {
         #[doc = "Creation timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub created: ::std::option::Option<::std::string::String>,
+        pub created: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Snapshot name"]
         pub name: ::std::string::String,
         #[doc = "Snapshot state"]
         pub state: SnapshotState,
         #[doc = "Last update timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub updated: ::std::option::Option<::std::string::String>,
+        pub updated: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
     }
 
     impl Snapshot {
@@ -6687,7 +6738,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"fingerprint\": {"]
     #[doc = "      \"description\": \"Key fingerprint\","]
@@ -6721,7 +6773,7 @@ pub mod types {
     pub struct SshKey {
         #[doc = "Creation timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub created: ::std::option::Option<::std::string::String>,
+        pub created: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Key fingerprint"]
         pub fingerprint: ::std::string::String,
         #[doc = "SSH public key material"]
@@ -7478,8 +7530,29 @@ pub mod types {
     #[doc = "  \"description\": \"Request to update user\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"address\": {"]
+    #[doc = "      \"description\": \"Street address\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"city\": {"]
+    #[doc = "      \"description\": \"City\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"companyName\": {"]
     #[doc = "      \"description\": \"Company name\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"country\": {"]
+    #[doc = "      \"description\": \"Country\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -7512,6 +7585,20 @@ pub mod types {
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"postalCode\": {"]
+    #[doc = "      \"description\": \"Postal code\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"state\": {"]
+    #[doc = "      \"description\": \"State or province\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -7521,6 +7608,12 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct UpdateUserRequest {
+        #[doc = "Street address"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub address: ::std::option::Option<::std::string::String>,
+        #[doc = "City"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub city: ::std::option::Option<::std::string::String>,
         #[doc = "Company name"]
         #[serde(
             rename = "companyName",
@@ -7528,6 +7621,9 @@ pub mod types {
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub company_name: ::std::option::Option<::std::string::String>,
+        #[doc = "Country"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub country: ::std::option::Option<::std::string::String>,
         #[doc = "Email address"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub email: ::std::option::Option<::std::string::String>,
@@ -7548,16 +7644,31 @@ pub mod types {
         #[doc = "Phone number"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub phone: ::std::option::Option<::std::string::String>,
+        #[doc = "Postal code"]
+        #[serde(
+            rename = "postalCode",
+            default,
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub postal_code: ::std::option::Option<::std::string::String>,
+        #[doc = "State or province"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub state: ::std::option::Option<::std::string::String>,
     }
 
     impl ::std::default::Default for UpdateUserRequest {
         fn default() -> Self {
             Self {
+                address: Default::default(),
+                city: Default::default(),
                 company_name: Default::default(),
+                country: Default::default(),
                 email: Default::default(),
                 first_name: Default::default(),
                 last_name: Default::default(),
                 phone: Default::default(),
+                postal_code: Default::default(),
+                state: Default::default(),
             }
         }
     }
@@ -7593,7 +7704,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"created\": {"]
     #[doc = "      \"description\": \"Creation timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"email\": {"]
     #[doc = "      \"description\": \"Email address\","]
@@ -7641,7 +7753,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"updated\": {"]
     #[doc = "      \"description\": \"Last update timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -7659,7 +7772,7 @@ pub mod types {
         )]
         pub company_name: ::std::option::Option<::std::string::String>,
         #[doc = "Creation timestamp"]
-        pub created: ::std::string::String,
+        pub created: ::chrono::DateTime<::chrono::offset::Utc>,
         #[doc = "Email address"]
         pub email: ::std::string::String,
         #[doc = "First name"]
@@ -7691,12 +7804,136 @@ pub mod types {
         )]
         pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
         #[doc = "Last update timestamp"]
-        pub updated: ::std::string::String,
+        pub updated: ::chrono::DateTime<::chrono::offset::Utc>,
     }
 
     impl User {
         pub fn builder() -> builder::User {
             Default::default()
+        }
+    }
+
+    #[doc = "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"VM/Container brand as returned by VMAPI.\\n\\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"bhyve\","]
+    #[doc = "        \"joyent\","]
+    #[doc = "        \"joyent-minimal\","]
+    #[doc = "        \"kvm\","]
+    #[doc = "        \"lx\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Internal brand for image build zones (not provisionable via CloudAPI)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"builder\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown brand (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        clap :: ValueEnum,
+        schemars :: JsonSchema,
+    )]
+    pub enum VmBrand {
+        #[serde(rename = "bhyve")]
+        Bhyve,
+        #[serde(rename = "joyent")]
+        Joyent,
+        #[serde(rename = "joyent-minimal")]
+        JoyentMinimal,
+        #[serde(rename = "kvm")]
+        Kvm,
+        #[serde(rename = "lx")]
+        Lx,
+        #[doc = "Internal brand for image build zones (not provisionable via CloudAPI)"]
+        #[serde(rename = "builder")]
+        Builder,
+        #[doc = "Unknown brand (forward compatibility)"]
+        #[serde(rename = "unknown")]
+        Unknown,
+    }
+
+    impl ::std::fmt::Display for VmBrand {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Bhyve => f.write_str("bhyve"),
+                Self::Joyent => f.write_str("joyent"),
+                Self::JoyentMinimal => f.write_str("joyent-minimal"),
+                Self::Kvm => f.write_str("kvm"),
+                Self::Lx => f.write_str("lx"),
+                Self::Builder => f.write_str("builder"),
+                Self::Unknown => f.write_str("unknown"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for VmBrand {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "bhyve" => Ok(Self::Bhyve),
+                "joyent" => Ok(Self::Joyent),
+                "joyent-minimal" => Ok(Self::JoyentMinimal),
+                "kvm" => Ok(Self::Kvm),
+                "lx" => Ok(Self::Lx),
+                "builder" => Ok(Self::Builder),
+                "unknown" => Ok(Self::Unknown),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for VmBrand {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for VmBrand {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for VmBrand {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
         }
     }
 
@@ -7720,7 +7957,8 @@ pub mod types {
     #[doc = "  \"properties\": {"]
     #[doc = "    \"created\": {"]
     #[doc = "      \"description\": \"Creation timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"filesystem_path\": {"]
     #[doc = "      \"description\": \"Filesystem path\","]
@@ -7798,7 +8036,7 @@ pub mod types {
     )]
     pub struct Volume {
         #[doc = "Creation timestamp"]
-        pub created: ::std::string::String,
+        pub created: ::chrono::DateTime<::chrono::offset::Utc>,
         #[doc = "Filesystem path"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub filesystem_path: ::std::option::Option<::std::string::String>,
@@ -8233,18 +8471,24 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct AccessKey {
             accesskeyid: ::std::result::Result<::std::string::String, ::std::string::String>,
-            created: ::std::result::Result<::std::string::String, ::std::string::String>,
+            created: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
             credentialtype: ::std::result::Result<super::CredentialType, ::std::string::String>,
             description: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
             expiration: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             status: ::std::result::Result<super::AccessKeyStatus, ::std::string::String>,
-            updated: ::std::result::Result<::std::string::String, ::std::string::String>,
+            updated: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
         }
 
         impl ::std::default::Default for AccessKey {
@@ -8274,7 +8518,7 @@ pub mod types {
             }
             pub fn created<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.created = value
@@ -8304,7 +8548,9 @@ pub mod types {
             }
             pub fn expiration<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.expiration = value
@@ -8324,7 +8570,7 @@ pub mod types {
             }
             pub fn updated<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.updated = value
@@ -8366,6 +8612,163 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct AccessKeyCredentials {
+            accesskeyid: ::std::result::Result<::std::string::String, ::std::string::String>,
+            accesskeysecret: ::std::result::Result<::std::string::String, ::std::string::String>,
+            created: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+            credentialtype: ::std::result::Result<super::CredentialType, ::std::string::String>,
+            description: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            expiration: ::std::result::Result<
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                ::std::string::String,
+            >,
+            status: ::std::result::Result<super::AccessKeyStatus, ::std::string::String>,
+            updated: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for AccessKeyCredentials {
+            fn default() -> Self {
+                Self {
+                    accesskeyid: Err("no value supplied for accesskeyid".to_string()),
+                    accesskeysecret: Err("no value supplied for accesskeysecret".to_string()),
+                    created: Err("no value supplied for created".to_string()),
+                    credentialtype: Err("no value supplied for credentialtype".to_string()),
+                    description: Ok(Default::default()),
+                    expiration: Ok(Default::default()),
+                    status: Err("no value supplied for status".to_string()),
+                    updated: Err("no value supplied for updated".to_string()),
+                }
+            }
+        }
+
+        impl AccessKeyCredentials {
+            pub fn accesskeyid<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.accesskeyid = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for accesskeyid: {e}"));
+                self
+            }
+            pub fn accesskeysecret<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.accesskeysecret = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for accesskeysecret: {e}")
+                });
+                self
+            }
+            pub fn created<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.created = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for created: {e}"));
+                self
+            }
+            pub fn credentialtype<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::CredentialType>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.credentialtype = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for credentialtype: {e}")
+                });
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn expiration<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.expiration = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for expiration: {e}"));
+                self
+            }
+            pub fn status<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<super::AccessKeyStatus>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.status = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for status: {e}"));
+                self
+            }
+            pub fn updated<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.updated = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for updated: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<AccessKeyCredentials> for super::AccessKeyCredentials {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: AccessKeyCredentials,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    accesskeyid: value.accesskeyid?,
+                    accesskeysecret: value.accesskeysecret?,
+                    created: value.created?,
+                    credentialtype: value.credentialtype?,
+                    description: value.description?,
+                    expiration: value.expiration?,
+                    status: value.status?,
+                    updated: value.updated?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::AccessKeyCredentials> for AccessKeyCredentials {
+            fn from(value: super::AccessKeyCredentials) -> Self {
+                Self {
+                    accesskeyid: Ok(value.accesskeyid),
+                    accesskeysecret: Ok(value.accesskeysecret),
+                    created: Ok(value.created),
+                    credentialtype: Ok(value.credentialtype),
+                    description: Ok(value.description),
+                    expiration: Ok(value.expiration),
+                    status: Ok(value.status),
+                    updated: Ok(value.updated),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Account {
             address: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -8383,7 +8786,10 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
-            created: ::std::result::Result<::std::string::String, ::std::string::String>,
+            created: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
             email: ::std::result::Result<::std::string::String, ::std::string::String>,
             first_name: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -8409,7 +8815,10 @@ pub mod types {
             >,
             triton_cns_enabled:
                 ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
-            updated: ::std::result::Result<::std::string::String, ::std::string::String>,
+            updated: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
         }
 
         impl ::std::default::Default for Account {
@@ -8477,7 +8886,7 @@ pub mod types {
             }
             pub fn created<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.created = value
@@ -8577,7 +8986,7 @@ pub mod types {
             }
             pub fn updated<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.updated = value
@@ -8763,7 +9172,10 @@ pub mod types {
                 ::std::option::Option<super::AuditSuccess>,
                 ::std::string::String,
             >,
-            time: ::std::result::Result<::std::string::String, ::std::string::String>,
+            time: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
         }
 
         impl ::std::default::Default for AuditEntry {
@@ -8810,7 +9222,7 @@ pub mod types {
             }
             pub fn time<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.time = value
@@ -9014,155 +9426,6 @@ pub mod types {
                 Self {
                     description: Ok(value.description),
                     status: Ok(value.status),
-                }
-            }
-        }
-
-        #[derive(Clone, Debug)]
-        pub struct CreateAccessKeyResponse {
-            accesskeyid: ::std::result::Result<::std::string::String, ::std::string::String>,
-            accesskeysecret: ::std::result::Result<::std::string::String, ::std::string::String>,
-            created: ::std::result::Result<::std::string::String, ::std::string::String>,
-            credentialtype: ::std::result::Result<super::CredentialType, ::std::string::String>,
-            description: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
-                ::std::string::String,
-            >,
-            expiration: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
-                ::std::string::String,
-            >,
-            status: ::std::result::Result<super::AccessKeyStatus, ::std::string::String>,
-            updated: ::std::result::Result<::std::string::String, ::std::string::String>,
-        }
-
-        impl ::std::default::Default for CreateAccessKeyResponse {
-            fn default() -> Self {
-                Self {
-                    accesskeyid: Err("no value supplied for accesskeyid".to_string()),
-                    accesskeysecret: Err("no value supplied for accesskeysecret".to_string()),
-                    created: Err("no value supplied for created".to_string()),
-                    credentialtype: Err("no value supplied for credentialtype".to_string()),
-                    description: Ok(Default::default()),
-                    expiration: Ok(Default::default()),
-                    status: Err("no value supplied for status".to_string()),
-                    updated: Err("no value supplied for updated".to_string()),
-                }
-            }
-        }
-
-        impl CreateAccessKeyResponse {
-            pub fn accesskeyid<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::string::String>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.accesskeyid = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for accesskeyid: {e}"));
-                self
-            }
-            pub fn accesskeysecret<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::string::String>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.accesskeysecret = value.try_into().map_err(|e| {
-                    format!("error converting supplied value for accesskeysecret: {e}")
-                });
-                self
-            }
-            pub fn created<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::string::String>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.created = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for created: {e}"));
-                self
-            }
-            pub fn credentialtype<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<super::CredentialType>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.credentialtype = value.try_into().map_err(|e| {
-                    format!("error converting supplied value for credentialtype: {e}")
-                });
-                self
-            }
-            pub fn description<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.description = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for description: {e}"));
-                self
-            }
-            pub fn expiration<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.expiration = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for expiration: {e}"));
-                self
-            }
-            pub fn status<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<super::AccessKeyStatus>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.status = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for status: {e}"));
-                self
-            }
-            pub fn updated<T>(mut self, value: T) -> Self
-            where
-                T: ::std::convert::TryInto<::std::string::String>,
-                T::Error: ::std::fmt::Display,
-            {
-                self.updated = value
-                    .try_into()
-                    .map_err(|e| format!("error converting supplied value for updated: {e}"));
-                self
-            }
-        }
-
-        impl ::std::convert::TryFrom<CreateAccessKeyResponse> for super::CreateAccessKeyResponse {
-            type Error = super::error::ConversionError;
-            fn try_from(
-                value: CreateAccessKeyResponse,
-            ) -> ::std::result::Result<Self, super::error::ConversionError> {
-                Ok(Self {
-                    accesskeyid: value.accesskeyid?,
-                    accesskeysecret: value.accesskeysecret?,
-                    created: value.created?,
-                    credentialtype: value.credentialtype?,
-                    description: value.description?,
-                    expiration: value.expiration?,
-                    status: value.status?,
-                    updated: value.updated?,
-                })
-            }
-        }
-
-        impl ::std::convert::From<super::CreateAccessKeyResponse> for CreateAccessKeyResponse {
-            fn from(value: super::CreateAccessKeyResponse) -> Self {
-                Self {
-                    accesskeyid: Ok(value.accesskeyid),
-                    accesskeysecret: Ok(value.accesskeysecret),
-                    created: Ok(value.created),
-                    credentialtype: Ok(value.credentialtype),
-                    description: Ok(value.description),
-                    expiration: Ok(value.expiration),
-                    status: Ok(value.status),
-                    updated: Ok(value.updated),
                 }
             }
         }
@@ -9575,7 +9838,7 @@ pub mod types {
             allow_shared_images:
                 ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             brand:
-                ::std::result::Result<::std::option::Option<super::Brand2>, ::std::string::String>,
+                ::std::result::Result<::std::option::Option<super::Brand>, ::std::string::String>,
             delegate_dataset:
                 ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             deletion_protection:
@@ -9667,7 +9930,7 @@ pub mod types {
             }
             pub fn brand<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::Brand2>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::Brand>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.brand = value
@@ -10137,7 +10400,19 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct CreateUserRequest {
+            address: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            city: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             company_name: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            country: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
@@ -10156,23 +10431,56 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            postal_code: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            state: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
         }
 
         impl ::std::default::Default for CreateUserRequest {
             fn default() -> Self {
                 Self {
+                    address: Ok(Default::default()),
+                    city: Ok(Default::default()),
                     company_name: Ok(Default::default()),
+                    country: Ok(Default::default()),
                     email: Err("no value supplied for email".to_string()),
                     first_name: Ok(Default::default()),
                     last_name: Ok(Default::default()),
                     login: Err("no value supplied for login".to_string()),
                     password: Err("no value supplied for password".to_string()),
                     phone: Ok(Default::default()),
+                    postal_code: Ok(Default::default()),
+                    state: Ok(Default::default()),
                 }
             }
         }
 
         impl CreateUserRequest {
+            pub fn address<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.address = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for address: {e}"));
+                self
+            }
+            pub fn city<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.city = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for city: {e}"));
+                self
+            }
             pub fn company_name<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
@@ -10181,6 +10489,16 @@ pub mod types {
                 self.company_name = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for company_name: {e}"));
+                self
+            }
+            pub fn country<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.country = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for country: {e}"));
                 self
             }
             pub fn email<T>(mut self, value: T) -> Self
@@ -10243,6 +10561,26 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for phone: {e}"));
                 self
             }
+            pub fn postal_code<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.postal_code = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for postal_code: {e}"));
+                self
+            }
+            pub fn state<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.state = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for state: {e}"));
+                self
+            }
         }
 
         impl ::std::convert::TryFrom<CreateUserRequest> for super::CreateUserRequest {
@@ -10251,13 +10589,18 @@ pub mod types {
                 value: CreateUserRequest,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    address: value.address?,
+                    city: value.city?,
                     company_name: value.company_name?,
+                    country: value.country?,
                     email: value.email?,
                     first_name: value.first_name?,
                     last_name: value.last_name?,
                     login: value.login?,
                     password: value.password?,
                     phone: value.phone?,
+                    postal_code: value.postal_code?,
+                    state: value.state?,
                 })
             }
         }
@@ -10265,13 +10608,18 @@ pub mod types {
         impl ::std::convert::From<super::CreateUserRequest> for CreateUserRequest {
             fn from(value: super::CreateUserRequest) -> Self {
                 Self {
+                    address: Ok(value.address),
+                    city: Ok(value.city),
                     company_name: Ok(value.company_name),
+                    country: Ok(value.country),
                     email: Ok(value.email),
                     first_name: Ok(value.first_name),
                     last_name: Ok(value.last_name),
                     login: Ok(value.login),
                     password: Ok(value.password),
                     phone: Ok(value.phone),
+                    postal_code: Ok(value.postal_code),
+                    state: Ok(value.state),
                 }
             }
         }
@@ -10819,7 +11167,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct FirewallRule {
             created: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             description: ::std::result::Result<
@@ -10836,7 +11184,7 @@ pub mod types {
             >,
             rule: ::std::result::Result<::std::string::String, ::std::string::String>,
             updated: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
         }
@@ -10860,7 +11208,9 @@ pub mod types {
         impl FirewallRule {
             pub fn created<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.created = value
@@ -10942,7 +11292,9 @@ pub mod types {
             }
             pub fn updated<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.updated = value
@@ -11023,7 +11375,7 @@ pub mod types {
                 ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             public: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             published_at: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             requirements: ::std::result::Result<super::ImageRequirements, ::std::string::String>,
@@ -11207,7 +11559,9 @@ pub mod types {
             }
             pub fn published_at<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.published_at = value
@@ -11482,7 +11836,7 @@ pub mod types {
                 ::std::string::String,
             >,
             brand:
-                ::std::result::Result<::std::option::Option<super::Brand>, ::std::string::String>,
+                ::std::result::Result<::std::option::Option<super::VmBrand>, ::std::string::String>,
             max_memory: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
             max_ram: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
             min_memory: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
@@ -11515,7 +11869,7 @@ pub mod types {
             }
             pub fn brand<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::Brand>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::VmBrand>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.brand = value
@@ -11596,10 +11950,13 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct Machine {
-            brand: ::std::result::Result<super::Brand, ::std::string::String>,
+            brand: ::std::result::Result<super::VmBrand, ::std::string::String>,
             compute_node:
                 ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
-            created: ::std::result::Result<::std::string::String, ::std::string::String>,
+            created: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
             delegate_dataset:
                 ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             deletion_protection:
@@ -11651,7 +12008,10 @@ pub mod types {
                 ::std::string::String,
             >,
             type_: ::std::result::Result<super::MachineType, ::std::string::String>,
-            updated: ::std::result::Result<::std::string::String, ::std::string::String>,
+            updated: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
         }
 
         impl ::std::default::Default for Machine {
@@ -11692,7 +12052,7 @@ pub mod types {
         impl Machine {
             pub fn brand<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<super::Brand>,
+                T: ::std::convert::TryInto<super::VmBrand>,
                 T::Error: ::std::fmt::Display,
             {
                 self.brand = value
@@ -11712,7 +12072,7 @@ pub mod types {
             }
             pub fn created<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.created = value
@@ -11972,7 +12332,7 @@ pub mod types {
             }
             pub fn updated<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.updated = value
@@ -12435,9 +12795,12 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct Migration {
             automatic: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
-            created_timestamp: ::std::result::Result<::std::string::String, ::std::string::String>,
+            created_timestamp: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
             finished_timestamp: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             machine: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
@@ -12450,7 +12813,7 @@ pub mod types {
                 ::std::result::Result<::std::option::Option<f64>, ::std::string::String>,
             state: ::std::result::Result<super::MigrationState, ::std::string::String>,
             updated_timestamp: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
         }
@@ -12484,7 +12847,7 @@ pub mod types {
             }
             pub fn created_timestamp<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.created_timestamp = value.try_into().map_err(|e| {
@@ -12494,7 +12857,9 @@ pub mod types {
             }
             pub fn finished_timestamp<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.finished_timestamp = value.try_into().map_err(|e| {
@@ -12556,7 +12921,9 @@ pub mod types {
             }
             pub fn updated_timestamp<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.updated_timestamp = value.try_into().map_err(|e| {
@@ -12664,7 +13031,7 @@ pub mod types {
         pub struct MigrationProgressEntry {
             current_progress: ::std::result::Result<u64, ::std::string::String>,
             finished_timestamp: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             message: ::std::result::Result<
@@ -12673,7 +13040,7 @@ pub mod types {
             >,
             phase: ::std::result::Result<super::MigrationPhase, ::std::string::String>,
             started_timestamp: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             state: ::std::result::Result<super::MigrationState, ::std::string::String>,
@@ -12707,7 +13074,9 @@ pub mod types {
             }
             pub fn finished_timestamp<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.finished_timestamp = value.try_into().map_err(|e| {
@@ -12737,7 +13106,9 @@ pub mod types {
             }
             pub fn started_timestamp<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.started_timestamp = value.try_into().map_err(|e| {
@@ -13423,7 +13794,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct Package {
             brand:
-                ::std::result::Result<::std::option::Option<super::Brand>, ::std::string::String>,
+                ::std::result::Result<::std::option::Option<super::VmBrand>, ::std::string::String>,
             default: ::std::result::Result<bool, ::std::string::String>,
             description: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -13481,7 +13852,7 @@ pub mod types {
         impl Package {
             pub fn brand<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::Brand>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::VmBrand>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.brand = value
@@ -14231,13 +14602,13 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct Snapshot {
             created: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             state: ::std::result::Result<super::SnapshotState, ::std::string::String>,
             updated: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
         }
@@ -14256,7 +14627,9 @@ pub mod types {
         impl Snapshot {
             pub fn created<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.created = value
@@ -14286,7 +14659,9 @@ pub mod types {
             }
             pub fn updated<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.updated = value
@@ -14324,7 +14699,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct SshKey {
             created: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             fingerprint: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -14351,7 +14726,9 @@ pub mod types {
         impl SshKey {
             pub fn created<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.created = value
@@ -15284,7 +15661,19 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct UpdateUserRequest {
+            address: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            city: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             company_name: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            country: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
@@ -15304,21 +15693,54 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            postal_code: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            state: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
         }
 
         impl ::std::default::Default for UpdateUserRequest {
             fn default() -> Self {
                 Self {
+                    address: Ok(Default::default()),
+                    city: Ok(Default::default()),
                     company_name: Ok(Default::default()),
+                    country: Ok(Default::default()),
                     email: Ok(Default::default()),
                     first_name: Ok(Default::default()),
                     last_name: Ok(Default::default()),
                     phone: Ok(Default::default()),
+                    postal_code: Ok(Default::default()),
+                    state: Ok(Default::default()),
                 }
             }
         }
 
         impl UpdateUserRequest {
+            pub fn address<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.address = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for address: {e}"));
+                self
+            }
+            pub fn city<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.city = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for city: {e}"));
+                self
+            }
             pub fn company_name<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
@@ -15327,6 +15749,16 @@ pub mod types {
                 self.company_name = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for company_name: {e}"));
+                self
+            }
+            pub fn country<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.country = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for country: {e}"));
                 self
             }
             pub fn email<T>(mut self, value: T) -> Self
@@ -15369,6 +15801,26 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for phone: {e}"));
                 self
             }
+            pub fn postal_code<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.postal_code = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for postal_code: {e}"));
+                self
+            }
+            pub fn state<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.state = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for state: {e}"));
+                self
+            }
         }
 
         impl ::std::convert::TryFrom<UpdateUserRequest> for super::UpdateUserRequest {
@@ -15377,11 +15829,16 @@ pub mod types {
                 value: UpdateUserRequest,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    address: value.address?,
+                    city: value.city?,
                     company_name: value.company_name?,
+                    country: value.country?,
                     email: value.email?,
                     first_name: value.first_name?,
                     last_name: value.last_name?,
                     phone: value.phone?,
+                    postal_code: value.postal_code?,
+                    state: value.state?,
                 })
             }
         }
@@ -15389,11 +15846,16 @@ pub mod types {
         impl ::std::convert::From<super::UpdateUserRequest> for UpdateUserRequest {
             fn from(value: super::UpdateUserRequest) -> Self {
                 Self {
+                    address: Ok(value.address),
+                    city: Ok(value.city),
                     company_name: Ok(value.company_name),
+                    country: Ok(value.country),
                     email: Ok(value.email),
                     first_name: Ok(value.first_name),
                     last_name: Ok(value.last_name),
                     phone: Ok(value.phone),
+                    postal_code: Ok(value.postal_code),
+                    state: Ok(value.state),
                 }
             }
         }
@@ -15404,7 +15866,10 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
-            created: ::std::result::Result<::std::string::String, ::std::string::String>,
+            created: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
             email: ::std::result::Result<::std::string::String, ::std::string::String>,
             first_name: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -15424,7 +15889,10 @@ pub mod types {
                 ::std::option::Option<::std::vec::Vec<::std::string::String>>,
                 ::std::string::String,
             >,
-            updated: ::std::result::Result<::std::string::String, ::std::string::String>,
+            updated: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
         }
 
         impl ::std::default::Default for User {
@@ -15457,7 +15925,7 @@ pub mod types {
             }
             pub fn created<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.created = value
@@ -15539,7 +16007,7 @@ pub mod types {
             }
             pub fn updated<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.updated = value
@@ -15586,7 +16054,10 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct Volume {
-            created: ::std::result::Result<::std::string::String, ::std::string::String>,
+            created: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
             filesystem_path: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
@@ -15626,7 +16097,7 @@ pub mod types {
         impl Volume {
             pub fn created<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.created = value
@@ -17430,7 +17901,7 @@ pub mod builder {
         #[doc = "Sends a `POST` request to `/{account}/accesskeys`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<types::CreateAccessKeyResponse>, Error<types::Error>> {
+        ) -> Result<ResponseValue<types::AccessKeyCredentials>, Error<types::Error>> {
             let Self {
                 client,
                 account,
@@ -18308,14 +18779,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `GET` request to `/{account}/datacenters`"]
-        pub async fn send(
-            self,
-        ) -> Result<
-            ResponseValue<
-                ::std::collections::HashMap<::std::string::String, ::std::string::String>,
-            >,
-            Error<types::Error>,
-        > {
+        pub async fn send(self) -> Result<ResponseValue<types::Datacenters>, Error<types::Error>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -20017,14 +20481,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `GET` request to `/{account}/foreigndatacenters`"]
-        pub async fn send(
-            self,
-        ) -> Result<
-            ResponseValue<
-                ::std::collections::HashMap<::std::string::String, ::std::string::String>,
-            >,
-            Error<types::Error>,
-        > {
+        pub async fn send(self) -> Result<ResponseValue<types::Datacenters>, Error<types::Error>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -23426,7 +23883,7 @@ pub mod builder {
     pub struct ListMachines<'a> {
         client: &'a super::Client,
         account: Result<::std::string::String, String>,
-        brand: Result<Option<types::Brand>, String>,
+        brand: Result<Option<types::VmBrand>, String>,
         credentials: Result<Option<bool>, String>,
         docker: Result<Option<bool>, String>,
         image: Result<Option<::uuid::Uuid>, String>,
@@ -23472,12 +23929,12 @@ pub mod builder {
 
         pub fn brand<V>(mut self, value: V) -> Self
         where
-            V: std::convert::TryInto<types::Brand>,
+            V: std::convert::TryInto<types::VmBrand>,
         {
             self.brand = value
                 .try_into()
                 .map(Some)
-                .map_err(|_| "conversion to `Brand` for brand failed".to_string());
+                .map_err(|_| "conversion to `VmBrand` for brand failed".to_string());
             self
         }
 
@@ -23804,7 +24261,7 @@ pub mod builder {
     pub struct HeadMachines<'a> {
         client: &'a super::Client,
         account: Result<::std::string::String, String>,
-        brand: Result<Option<types::Brand>, String>,
+        brand: Result<Option<types::VmBrand>, String>,
         credentials: Result<Option<bool>, String>,
         docker: Result<Option<bool>, String>,
         image: Result<Option<::uuid::Uuid>, String>,
@@ -23850,12 +24307,12 @@ pub mod builder {
 
         pub fn brand<V>(mut self, value: V) -> Self
         where
-            V: std::convert::TryInto<types::Brand>,
+            V: std::convert::TryInto<types::VmBrand>,
         {
             self.brand = value
                 .try_into()
                 .map(Some)
-                .map_err(|_| "conversion to `Brand` for brand failed".to_string());
+                .map_err(|_| "conversion to `VmBrand` for brand failed".to_string());
             self
         }
 
@@ -32641,14 +33098,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `GET` request to `/{account}/services`"]
-        pub async fn send(
-            self,
-        ) -> Result<
-            ResponseValue<
-                ::std::collections::HashMap<::std::string::String, ::std::string::String>,
-            >,
-            Error<types::Error>,
-        > {
+        pub async fn send(self) -> Result<ResponseValue<types::Services>, Error<types::Error>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -33844,7 +34294,7 @@ pub mod builder {
         #[doc = "Sends a `POST` request to `/{account}/users/{uuid}/accesskeys`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<types::CreateAccessKeyResponse>, Error<types::Error>> {
+        ) -> Result<ResponseValue<types::AccessKeyCredentials>, Error<types::Error>> {
             let Self {
                 client,
                 account,

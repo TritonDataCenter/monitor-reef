@@ -140,10 +140,10 @@ pub async fn list_snapshots(
             SnapshotColumn for Snapshot, long_from: 3, {
                 Name("NAME") => |snap| snap.name.clone(),
                 State("STATE") => |snap| crate::output::enum_to_display(&snap.state),
-                Created("CREATED") => |snap| snap.created.as_deref().unwrap_or("-").to_string(),
+                Created("CREATED") => |snap| snap.created.map(|c| c.to_rfc3339()).unwrap_or_else(|| "-".to_string()),
                 // --- long-only columns below ---
                 Updated("UPDATED") => |snap| {
-                    snap.updated.clone().unwrap_or_else(|| "-".to_string())
+                    snap.updated.map(|u| u.to_rfc3339()).unwrap_or_else(|| "-".to_string())
                 },
             }
         }

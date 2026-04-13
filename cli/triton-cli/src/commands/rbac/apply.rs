@@ -1134,6 +1134,11 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
                 first_name: first_name.clone(),
                 last_name: last_name.clone(),
                 phone: None,
+                address: None,
+                postal_code: None,
+                city: None,
+                state: None,
+                country: None,
             };
             client
                 .inner()
@@ -1158,6 +1163,11 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
                 first_name: first_name.clone(),
                 last_name: last_name.clone(),
                 phone: None,
+                address: None,
+                postal_code: None,
+                city: None,
+                state: None,
+                country: None,
             };
             client
                 .inner()
