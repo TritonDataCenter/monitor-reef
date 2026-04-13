@@ -9499,7 +9499,8 @@
           },
           "created": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "credentialtype": {
             "description": "Credential type",
@@ -9517,7 +9518,8 @@
           "expiration": {
             "nullable": true,
             "description": "Expiration timestamp (null for permanent keys)",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "status": {
             "description": "Status",
@@ -9529,7 +9531,8 @@
           },
           "updated": {
             "description": "Last updated timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -9554,7 +9557,8 @@
           },
           "created": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "credentialtype": {
             "description": "Credential type",
@@ -9572,7 +9576,8 @@
           "expiration": {
             "nullable": true,
             "description": "Expiration timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "status": {
             "description": "Status",
@@ -9584,7 +9589,8 @@
           },
           "updated": {
             "description": "Last updated timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -9632,7 +9638,8 @@
           },
           "created": {
             "description": "Account creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "email": {
             "description": "Email address",
@@ -9680,7 +9687,8 @@
           },
           "updated": {
             "description": "Last update timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -9757,7 +9765,8 @@
           },
           "time": {
             "description": "Timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -10460,7 +10469,8 @@
           "created": {
             "nullable": true,
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "description": {
             "nullable": true,
@@ -10502,7 +10512,8 @@
           "updated": {
             "nullable": true,
             "description": "Last update timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -10596,7 +10607,8 @@
           "published_at": {
             "nullable": true,
             "description": "Published timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "requirements": {
             "description": "Requirements (always present, may be empty)",
@@ -10808,7 +10820,8 @@
           },
           "created": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "delegate_dataset": {
             "nullable": true,
@@ -10957,7 +10970,8 @@
           },
           "updated": {
             "description": "Last update timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -11185,12 +11199,14 @@
           },
           "created_timestamp": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "finished_timestamp": {
             "nullable": true,
             "description": "Finished timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "machine": {
             "description": "Machine UUID being migrated",
@@ -11230,7 +11246,8 @@
           "updated_timestamp": {
             "nullable": true,
             "description": "Last update timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -11349,7 +11366,8 @@
           "finished_timestamp": {
             "nullable": true,
             "description": "When this phase finished",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "message": {
             "nullable": true,
@@ -11367,7 +11385,8 @@
           "started_timestamp": {
             "nullable": true,
             "description": "When this phase started",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "state": {
             "description": "State of this phase",
@@ -11955,7 +11974,8 @@
           "created": {
             "nullable": true,
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "name": {
             "description": "Snapshot name",
@@ -11972,7 +11992,8 @@
           "updated": {
             "nullable": true,
             "description": "Last update timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -12009,7 +12030,8 @@
           "created": {
             "nullable": true,
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "fingerprint": {
             "description": "Key fingerprint",
@@ -12363,7 +12385,8 @@
           },
           "created": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "email": {
             "description": "Email address",
@@ -12403,7 +12426,8 @@
           },
           "updated": {
             "description": "Last update timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         },
         "required": [
@@ -12449,7 +12473,8 @@
         "properties": {
           "created": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "filesystem_path": {
             "nullable": true,

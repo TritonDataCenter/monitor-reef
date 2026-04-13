@@ -207,7 +207,7 @@ pub async fn reboot(args: RebootArgs, client: &TypedClient) -> Result<()> {
 
         // Record the time before issuing the reboot so we can find the
         // corresponding audit entry later.
-        let reboot_time = chrono::Utc::now().to_rfc3339();
+        let reboot_time = chrono::Utc::now();
 
         if let Err(e) = client.reboot_machine(account, &machine_id, None).await {
             #[cfg(debug_assertions)]

@@ -9,7 +9,6 @@
 use std::collections::HashMap;
 
 use anyhow::Result;
-use chrono::DateTime;
 use clap::{Args, Subcommand};
 use cloudapi_client::TypedClient;
 use cloudapi_client::types::{Image, ImageState};
@@ -569,17 +568,9 @@ fn print_images_table(
 }
 
 /// Format pubdate as YYYY-MM-DD (matching node-triton)
-fn format_pubdate(published_at: &Option<String>) -> String {
+fn format_pubdate(published_at: &Option<chrono::DateTime<chrono::Utc>>) -> String {
     match published_at {
-        Some(timestamp) => {
-            // Try to parse as RFC 3339 and extract just the date part
-            if let Ok(dt) = DateTime::parse_from_rfc3339(timestamp) {
-                dt.format("%Y-%m-%d").to_string()
-            } else {
-                // Fall back to returning the raw string truncated to date
-                timestamp.split('T').next().unwrap_or("-").to_string()
-            }
-        }
+        Some(dt) => dt.format("%Y-%m-%d").to_string(),
         None => "-".to_string(),
     }
 }

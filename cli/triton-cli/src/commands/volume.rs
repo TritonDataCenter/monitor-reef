@@ -237,9 +237,9 @@ async fn list_volumes(
                 format_volume_size(vol.size),
                 enum_to_display(&vol.type_),
                 enum_to_display(&vol.state),
-                output::format_age(&vol.created.to_string()),
+                output::format_age(&vol.created),
                 vol.id.to_string(),
-                vol.created.to_string(),
+                vol.created.to_rfc3339(),
             ]);
         }
         tbl.print(&args.table)?;

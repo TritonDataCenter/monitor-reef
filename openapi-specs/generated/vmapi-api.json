@@ -2625,7 +2625,8 @@
           "created_at": {
             "nullable": true,
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "elapsed": {
             "nullable": true,
@@ -2679,7 +2680,8 @@
           "started": {
             "nullable": true,
             "description": "Start timestamp (when execution began)",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "timeout": {
             "nullable": true,
@@ -2767,7 +2769,8 @@
           "created_timestamp": {
             "nullable": true,
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "duration_ms": {
             "nullable": true,
@@ -2784,7 +2787,8 @@
           "finished_timestamp": {
             "nullable": true,
             "description": "Finished timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "phase": {
             "nullable": true,
@@ -2812,7 +2816,8 @@
           "started_timestamp": {
             "nullable": true,
             "description": "Started timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "state": {
             "description": "Current migration state",
@@ -2939,7 +2944,8 @@
           "timestamp": {
             "nullable": true,
             "description": "Timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "total_bytes": {
             "nullable": true,
@@ -3019,7 +3025,8 @@
           "timestamp": {
             "nullable": true,
             "description": "Timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "total_bytes": {
             "nullable": true,
@@ -3371,7 +3378,8 @@
         "properties": {
           "created_at": {
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "name": {
             "description": "Snapshot name",
@@ -3462,7 +3470,8 @@
           "finished_at": {
             "nullable": true,
             "description": "Finish time",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "name": {
             "nullable": true,
@@ -3477,7 +3486,8 @@
           "started_at": {
             "nullable": true,
             "description": "Start time",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -3533,7 +3543,8 @@
           "create_timestamp": {
             "nullable": true,
             "description": "Creation timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "customer_metadata": {
             "nullable": true,
@@ -3549,7 +3560,8 @@
           "destroyed": {
             "nullable": true,
             "description": "Destroyed timestamp (if destroyed)",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "disks": {
             "nullable": true,
@@ -3625,7 +3637,8 @@
           "last_modified": {
             "nullable": true,
             "description": "Last modified timestamp",
-            "type": "string"
+            "type": "string",
+            "format": "date-time"
           },
           "limit_priv": {
             "nullable": true,

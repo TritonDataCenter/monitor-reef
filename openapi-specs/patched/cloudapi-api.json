@@ -22,6 +22,7 @@
           },
           "created": {
             "description": "Creation timestamp",
+            "format": "date-time",
             "type": "string"
           },
           "credentialtype": {
@@ -39,6 +40,7 @@
           },
           "expiration": {
             "description": "Expiration timestamp (null for permanent keys)",
+            "format": "date-time",
             "nullable": true,
             "type": "string"
           },
@@ -52,6 +54,7 @@
           },
           "updated": {
             "description": "Last updated timestamp",
+            "format": "date-time",
             "type": "string"
           }
         },
@@ -77,6 +80,7 @@
           },
           "created": {
             "description": "Creation timestamp",
+            "format": "date-time",
             "type": "string"
           },
           "credentialtype": {
@@ -94,6 +98,7 @@
           },
           "expiration": {
             "description": "Expiration timestamp",
+            "format": "date-time",
             "nullable": true,
             "type": "string"
           },
@@ -107,6 +112,7 @@
           },
           "updated": {
             "description": "Last updated timestamp",
+            "format": "date-time",
             "type": "string"
           }
         },
@@ -155,6 +161,7 @@
           },
           "created": {
             "description": "Account creation timestamp",
+            "format": "date-time",
             "type": "string"
           },
           "email": {
@@ -203,6 +210,7 @@
           },
           "updated": {
             "description": "Last update timestamp",
+            "format": "date-time",
             "type": "string"
           }
         },
@@ -280,6 +288,7 @@
           },
           "time": {
             "description": "Timestamp",
+            "format": "date-time",
             "type": "string"
           }
         },
@@ -1002,6 +1011,7 @@
         "properties": {
           "created": {
             "description": "Creation timestamp",
+            "format": "date-time",
             "nullable": true,
             "type": "string"
           },
@@ -1044,6 +1054,7 @@
           },
           "updated": {
             "description": "Last update timestamp",
+            "format": "date-time",
             "nullable": true,
             "type": "string"
           }
@@ -1138,6 +1149,7 @@
           },
           "published_at": {
             "description": "Published timestamp",
+            "format": "date-time",
             "nullable": true,
             "type": "string"
           },
@@ -1372,6 +1384,7 @@
           },
           "created": {
             "description": "Creation timestamp",
+            "format": "date-time",
             "type": "string"
           },
           "delegate_dataset": {
@@ -1521,6 +1534,7 @@
           },
           "updated": {
             "description": "Last update timestamp",
+            "format": "date-time",
             "type": "string"
           }
         },
@@ -1775,10 +1789,12 @@
           },
           "created_timestamp": {
             "description": "Creation timestamp",
+            "format": "date-time",
             "type": "string"
           },
           "finished_timestamp": {
             "description": "Finished timestamp",
+            "format": "date-time",
             "nullable": true,
             "type": "string"
           },
@@ -1819,6 +1835,7 @@
           },
           "updated_timestamp": {
             "description": "Last update timestamp",
+            "format": "date-time",
             "nullable": true,
             "type": "string"
           }
@@ -1938,6 +1955,7 @@
           },
           "finished_timestamp": {
             "description": "When this phase finished",
+            "format": "date-time",
             "nullable": true,
             "type": "string"
           },
@@ -1956,6 +1974,7 @@
           },
           "started_timestamp": {
             "description": "When this phase started",
+            "format": "date-time",
             "nullable": true,
             "type": "string"
           },
@@ -2544,6 +2563,7 @@
         "properties": {
           "created": {
             "description": "Creation timestamp",
+            "format": "date-time",
             "nullable": true,
             "type": "string"
           },
@@ -2561,6 +2581,7 @@
           },
           "updated": {
             "description": "Last update timestamp",
+            "format": "date-time",
             "nullable": true,
             "type": "string"
           }
@@ -2598,6 +2619,7 @@
         "properties": {
           "created": {
             "description": "Creation timestamp",
+            "format": "date-time",
             "nullable": true,
             "type": "string"
           },
@@ -2953,6 +2975,7 @@
           },
           "created": {
             "description": "Creation timestamp",
+            "format": "date-time",
             "type": "string"
           },
           "email": {
@@ -2993,6 +3016,7 @@
           },
           "updated": {
             "description": "Last update timestamp",
+            "format": "date-time",
             "type": "string"
           }
         },
@@ -3039,6 +3063,7 @@
         "properties": {
           "created": {
             "description": "Creation timestamp",
+            "format": "date-time",
             "type": "string"
           },
           "filesystem_path": {

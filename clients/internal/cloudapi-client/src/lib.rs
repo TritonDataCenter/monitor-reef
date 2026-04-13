@@ -329,9 +329,12 @@ fn emit_and_fake_get_response(
             .and_then(|mut s| s.next_back())
             .unwrap_or("unknown");
         let last_seg_uuid = uuid::Uuid::try_parse(last_seg).unwrap_or(uuid::Uuid::nil());
-        let fake_ts = "2025-01-01T00:00:00.000Z".to_string();
+        #[allow(clippy::expect_used)]
+        let fake_ts = chrono::DateTime::parse_from_rfc3339("2025-01-01T00:00:00.000Z")
+            .expect("static timestamp must parse")
+            .with_timezone(&chrono::Utc);
 
-        fake_response_body(info.operation_id, last_seg, last_seg_uuid, &fake_ts, url)
+        fake_response_body(info.operation_id, last_seg, last_seg_uuid, fake_ts, url)
     };
 
     #[allow(clippy::expect_used)]
@@ -416,7 +419,7 @@ fn fake_response_body(
     operation_id: &str,
     last_seg: &str,
     last_seg_uuid: uuid::Uuid,
-    fake_ts: &str,
+    fake_ts: chrono::DateTime<chrono::Utc>,
     url: &reqwest::Url,
 ) -> Vec<u8> {
     // Try shared fixture file first
@@ -441,8 +444,8 @@ fn fake_response_body(
                 state: None,
                 country: None,
                 phone: None,
-                created: fake_ts.to_string(),
-                updated: fake_ts.to_string(),
+                created: fake_ts,
+                updated: fake_ts,
                 triton_cns_enabled: None,
             };
             serde_json::to_vec(&fake).expect("Account serialization should not fail")
@@ -486,8 +489,8 @@ fn fake_response_body(
                 ips: vec![],
                 metadata: Default::default(),
                 tags: Default::default(),
-                created: fake_ts.to_string(),
-                updated: fake_ts.to_string(),
+                created: fake_ts,
+                updated: fake_ts,
                 networks: None,
                 primary_ip: None,
                 nics: vec![],
@@ -568,7 +571,7 @@ fn fake_response_body(
                 .type_(types::VolumeType::Tritonnfs)
                 .size(0_u64)
                 .state(types::VolumeState::Ready)
-                .created(fake_ts.to_string())
+                .created(fake_ts)
                 .try_into()
                 .expect("Volume builder should not fail");
             serde_json::to_vec(&fake).expect("Volume serialization should not fail")
@@ -599,7 +602,7 @@ fn fake_response_body(
             let fake = Snapshot {
                 name: last_seg.to_string(),
                 state: cloudapi_api::SnapshotState::Created,
-                created: Some(fake_ts.to_string()),
+                created: Some(fake_ts),
                 updated: None,
             };
             serde_json::to_vec(&fake).expect("Snapshot serialization should not fail")

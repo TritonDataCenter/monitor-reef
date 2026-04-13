@@ -59,7 +59,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"created\": {"]
     #[doc = "      \"description\": \"Creation timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"credentialtype\": {"]
     #[doc = "      \"description\": \"Credential type\","]
@@ -81,7 +82,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"status\": {"]
     #[doc = "      \"description\": \"Status\","]
@@ -93,7 +95,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"updated\": {"]
     #[doc = "      \"description\": \"Last updated timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -106,7 +109,7 @@ pub mod types {
         #[doc = "Access key ID"]
         pub accesskeyid: ::std::string::String,
         #[doc = "Creation timestamp"]
-        pub created: ::std::string::String,
+        pub created: ::chrono::DateTime<::chrono::offset::Utc>,
         #[doc = "Credential type"]
         pub credentialtype: CredentialType,
         #[doc = "Description"]
@@ -114,11 +117,11 @@ pub mod types {
         pub description: ::std::option::Option<::std::string::String>,
         #[doc = "Expiration timestamp (null for permanent keys)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub expiration: ::std::option::Option<::std::string::String>,
+        pub expiration: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Status"]
         pub status: AccessKeyStatus,
         #[doc = "Last updated timestamp"]
-        pub updated: ::std::string::String,
+        pub updated: ::chrono::DateTime<::chrono::offset::Utc>,
     }
 
     impl AccessKey {
@@ -154,7 +157,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"created\": {"]
     #[doc = "      \"description\": \"Creation timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"credentialtype\": {"]
     #[doc = "      \"description\": \"Credential type\","]
@@ -176,7 +180,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"status\": {"]
     #[doc = "      \"description\": \"Status\","]
@@ -188,7 +193,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"updated\": {"]
     #[doc = "      \"description\": \"Last updated timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -203,7 +209,7 @@ pub mod types {
         #[doc = "Access key secret (only provided on creation)"]
         pub accesskeysecret: ::std::string::String,
         #[doc = "Creation timestamp"]
-        pub created: ::std::string::String,
+        pub created: ::chrono::DateTime<::chrono::offset::Utc>,
         #[doc = "Credential type"]
         pub credentialtype: CredentialType,
         #[doc = "Description"]
@@ -211,11 +217,11 @@ pub mod types {
         pub description: ::std::option::Option<::std::string::String>,
         #[doc = "Expiration timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub expiration: ::std::option::Option<::std::string::String>,
+        pub expiration: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Status"]
         pub status: AccessKeyStatus,
         #[doc = "Last updated timestamp"]
-        pub updated: ::std::string::String,
+        pub updated: ::chrono::DateTime<::chrono::offset::Utc>,
     }
 
     impl AccessKeyCredentials {
@@ -357,7 +363,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"created\": {"]
     #[doc = "      \"description\": \"Account creation timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"email\": {"]
     #[doc = "      \"description\": \"Email address\","]
@@ -416,7 +423,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"updated\": {"]
     #[doc = "      \"description\": \"Last update timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -443,7 +451,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub country: ::std::option::Option<::std::string::String>,
         #[doc = "Account creation timestamp"]
-        pub created: ::std::string::String,
+        pub created: ::chrono::DateTime<::chrono::offset::Utc>,
         #[doc = "Email address"]
         pub email: ::std::string::String,
         #[doc = "First name"]
@@ -481,7 +489,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub triton_cns_enabled: ::std::option::Option<bool>,
         #[doc = "Last update timestamp"]
-        pub updated: ::std::string::String,
+        pub updated: ::chrono::DateTime<::chrono::offset::Utc>,
     }
 
     impl Account {
@@ -655,7 +663,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"time\": {"]
     #[doc = "      \"description\": \"Timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -674,7 +683,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub success: ::std::option::Option<AuditSuccess>,
         #[doc = "Timestamp"]
-        pub time: ::std::string::String,
+        pub time: ::chrono::DateTime<::chrono::offset::Utc>,
     }
 
     impl AuditEntry {
@@ -2531,7 +2540,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"description\": {"]
     #[doc = "      \"description\": \"Description\","]
@@ -2580,7 +2590,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -2592,7 +2603,7 @@ pub mod types {
     pub struct FirewallRule {
         #[doc = "Creation timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub created: ::std::option::Option<::std::string::String>,
+        pub created: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Description"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub description: ::std::option::Option<::std::string::String>,
@@ -2617,7 +2628,7 @@ pub mod types {
         pub rule: ::std::string::String,
         #[doc = "Last update timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub updated: ::std::option::Option<::std::string::String>,
+        pub updated: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
     }
 
     impl FirewallRule {
@@ -2749,7 +2760,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"requirements\": {"]
     #[doc = "      \"description\": \"Requirements (always present, may be empty)\","]
@@ -2851,7 +2863,7 @@ pub mod types {
         pub public: ::std::option::Option<bool>,
         #[doc = "Published timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub published_at: ::std::option::Option<::std::string::String>,
+        pub published_at: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Requirements (always present, may be empty)"]
         #[serde(default = "defaults::image_requirements")]
         pub requirements: ImageRequirements,
@@ -3472,7 +3484,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"created\": {"]
     #[doc = "      \"description\": \"Creation timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"delegate_dataset\": {"]
     #[doc = "      \"description\": \"Whether a delegate dataset is present\","]
@@ -3647,7 +3660,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"updated\": {"]
     #[doc = "      \"description\": \"Last update timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -3663,7 +3677,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub compute_node: ::std::option::Option<::uuid::Uuid>,
         #[doc = "Creation timestamp"]
-        pub created: ::std::string::String,
+        pub created: ::chrono::DateTime<::chrono::offset::Utc>,
         #[doc = "Whether a delegate dataset is present"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub delegate_dataset: ::std::option::Option<bool>,
@@ -3736,7 +3750,7 @@ pub mod types {
         #[serde(rename = "type")]
         pub type_: MachineType,
         #[doc = "Last update timestamp"]
-        pub updated: ::std::string::String,
+        pub updated: ::chrono::DateTime<::chrono::offset::Utc>,
     }
 
     impl Machine {
@@ -4511,14 +4525,16 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"created_timestamp\": {"]
     #[doc = "      \"description\": \"Creation timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"finished_timestamp\": {"]
     #[doc = "      \"description\": \"Finished timestamp\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"machine\": {"]
     #[doc = "      \"description\": \"Machine UUID being migrated\","]
@@ -4564,7 +4580,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -4578,10 +4595,10 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub automatic: ::std::option::Option<bool>,
         #[doc = "Creation timestamp"]
-        pub created_timestamp: ::std::string::String,
+        pub created_timestamp: ::chrono::DateTime<::chrono::offset::Utc>,
         #[doc = "Finished timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub finished_timestamp: ::std::option::Option<::std::string::String>,
+        pub finished_timestamp: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Machine UUID being migrated"]
         pub machine: ::uuid::Uuid,
         #[doc = "Migration phase"]
@@ -4596,7 +4613,7 @@ pub mod types {
         pub state: MigrationState,
         #[doc = "Last update timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub updated_timestamp: ::std::option::Option<::std::string::String>,
+        pub updated_timestamp: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
     }
 
     impl Migration {
@@ -4934,7 +4951,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"message\": {"]
     #[doc = "      \"description\": \"Progress message\","]
@@ -4956,7 +4974,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"state\": {"]
     #[doc = "      \"description\": \"State of this phase\","]
@@ -4984,7 +5003,7 @@ pub mod types {
         pub current_progress: u64,
         #[doc = "When this phase finished"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub finished_timestamp: ::std::option::Option<::std::string::String>,
+        pub finished_timestamp: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Progress message"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub message: ::std::option::Option<::std::string::String>,
@@ -4992,7 +5011,7 @@ pub mod types {
         pub phase: MigrationPhase,
         #[doc = "When this phase started"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub started_timestamp: ::std::option::Option<::std::string::String>,
+        pub started_timestamp: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "State of this phase"]
         pub state: MigrationState,
         #[doc = "Total progress value"]
@@ -6385,7 +6404,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"description\": \"Snapshot name\","]
@@ -6404,7 +6424,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -6416,14 +6437,14 @@ pub mod types {
     pub struct Snapshot {
         #[doc = "Creation timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub created: ::std::option::Option<::std::string::String>,
+        pub created: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Snapshot name"]
         pub name: ::std::string::String,
         #[doc = "Snapshot state"]
         pub state: SnapshotState,
         #[doc = "Last update timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub updated: ::std::option::Option<::std::string::String>,
+        pub updated: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
     }
 
     impl Snapshot {
@@ -6563,7 +6584,8 @@ pub mod types {
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
-    #[doc = "      ]"]
+    #[doc = "      ],"]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"fingerprint\": {"]
     #[doc = "      \"description\": \"Key fingerprint\","]
@@ -6597,7 +6619,7 @@ pub mod types {
     pub struct SshKey {
         #[doc = "Creation timestamp"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub created: ::std::option::Option<::std::string::String>,
+        pub created: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Key fingerprint"]
         pub fingerprint: ::std::string::String,
         #[doc = "SSH public key material"]
@@ -7469,7 +7491,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"created\": {"]
     #[doc = "      \"description\": \"Creation timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"email\": {"]
     #[doc = "      \"description\": \"Email address\","]
@@ -7517,7 +7540,8 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"updated\": {"]
     #[doc = "      \"description\": \"Last update timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -7535,7 +7559,7 @@ pub mod types {
         )]
         pub company_name: ::std::option::Option<::std::string::String>,
         #[doc = "Creation timestamp"]
-        pub created: ::std::string::String,
+        pub created: ::chrono::DateTime<::chrono::offset::Utc>,
         #[doc = "Email address"]
         pub email: ::std::string::String,
         #[doc = "First name"]
@@ -7567,7 +7591,7 @@ pub mod types {
         )]
         pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
         #[doc = "Last update timestamp"]
-        pub updated: ::std::string::String,
+        pub updated: ::chrono::DateTime<::chrono::offset::Utc>,
     }
 
     impl User {
@@ -7720,7 +7744,8 @@ pub mod types {
     #[doc = "  \"properties\": {"]
     #[doc = "    \"created\": {"]
     #[doc = "      \"description\": \"Creation timestamp\","]
-    #[doc = "      \"type\": \"string\""]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"date-time\""]
     #[doc = "    },"]
     #[doc = "    \"filesystem_path\": {"]
     #[doc = "      \"description\": \"Filesystem path\","]
@@ -7798,7 +7823,7 @@ pub mod types {
     )]
     pub struct Volume {
         #[doc = "Creation timestamp"]
-        pub created: ::std::string::String,
+        pub created: ::chrono::DateTime<::chrono::offset::Utc>,
         #[doc = "Filesystem path"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub filesystem_path: ::std::option::Option<::std::string::String>,
@@ -8233,18 +8258,24 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct AccessKey {
             accesskeyid: ::std::result::Result<::std::string::String, ::std::string::String>,
-            created: ::std::result::Result<::std::string::String, ::std::string::String>,
+            created: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
             credentialtype: ::std::result::Result<super::CredentialType, ::std::string::String>,
             description: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
             expiration: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             status: ::std::result::Result<super::AccessKeyStatus, ::std::string::String>,
-            updated: ::std::result::Result<::std::string::String, ::std::string::String>,
+            updated: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
         }
 
         impl ::std::default::Default for AccessKey {
@@ -8274,7 +8305,7 @@ pub mod types {
             }
             pub fn created<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.created = value
@@ -8304,7 +8335,9 @@ pub mod types {
             }
             pub fn expiration<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.expiration = value
@@ -8324,7 +8357,7 @@ pub mod types {
             }
             pub fn updated<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.updated = value
@@ -8369,18 +8402,24 @@ pub mod types {
         pub struct AccessKeyCredentials {
             accesskeyid: ::std::result::Result<::std::string::String, ::std::string::String>,
             accesskeysecret: ::std::result::Result<::std::string::String, ::std::string::String>,
-            created: ::std::result::Result<::std::string::String, ::std::string::String>,
+            created: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
             credentialtype: ::std::result::Result<super::CredentialType, ::std::string::String>,
             description: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
             expiration: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             status: ::std::result::Result<super::AccessKeyStatus, ::std::string::String>,
-            updated: ::std::result::Result<::std::string::String, ::std::string::String>,
+            updated: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
         }
 
         impl ::std::default::Default for AccessKeyCredentials {
@@ -8421,7 +8460,7 @@ pub mod types {
             }
             pub fn created<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.created = value
@@ -8451,7 +8490,9 @@ pub mod types {
             }
             pub fn expiration<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.expiration = value
@@ -8471,7 +8512,7 @@ pub mod types {
             }
             pub fn updated<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.updated = value
@@ -8532,7 +8573,10 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
-            created: ::std::result::Result<::std::string::String, ::std::string::String>,
+            created: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
             email: ::std::result::Result<::std::string::String, ::std::string::String>,
             first_name: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -8558,7 +8602,10 @@ pub mod types {
             >,
             triton_cns_enabled:
                 ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
-            updated: ::std::result::Result<::std::string::String, ::std::string::String>,
+            updated: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
         }
 
         impl ::std::default::Default for Account {
@@ -8626,7 +8673,7 @@ pub mod types {
             }
             pub fn created<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.created = value
@@ -8726,7 +8773,7 @@ pub mod types {
             }
             pub fn updated<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.updated = value
@@ -8912,7 +8959,10 @@ pub mod types {
                 ::std::option::Option<super::AuditSuccess>,
                 ::std::string::String,
             >,
-            time: ::std::result::Result<::std::string::String, ::std::string::String>,
+            time: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
         }
 
         impl ::std::default::Default for AuditEntry {
@@ -8959,7 +9009,7 @@ pub mod types {
             }
             pub fn time<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.time = value
@@ -10819,7 +10869,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct FirewallRule {
             created: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             description: ::std::result::Result<
@@ -10836,7 +10886,7 @@ pub mod types {
             >,
             rule: ::std::result::Result<::std::string::String, ::std::string::String>,
             updated: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
         }
@@ -10860,7 +10910,9 @@ pub mod types {
         impl FirewallRule {
             pub fn created<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.created = value
@@ -10942,7 +10994,9 @@ pub mod types {
             }
             pub fn updated<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.updated = value
@@ -11023,7 +11077,7 @@ pub mod types {
                 ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             public: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             published_at: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             requirements: ::std::result::Result<super::ImageRequirements, ::std::string::String>,
@@ -11207,7 +11261,9 @@ pub mod types {
             }
             pub fn published_at<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.published_at = value
@@ -11599,7 +11655,10 @@ pub mod types {
             brand: ::std::result::Result<super::VmBrand, ::std::string::String>,
             compute_node:
                 ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
-            created: ::std::result::Result<::std::string::String, ::std::string::String>,
+            created: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
             delegate_dataset:
                 ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             deletion_protection:
@@ -11651,7 +11710,10 @@ pub mod types {
                 ::std::string::String,
             >,
             type_: ::std::result::Result<super::MachineType, ::std::string::String>,
-            updated: ::std::result::Result<::std::string::String, ::std::string::String>,
+            updated: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
         }
 
         impl ::std::default::Default for Machine {
@@ -11712,7 +11774,7 @@ pub mod types {
             }
             pub fn created<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.created = value
@@ -11972,7 +12034,7 @@ pub mod types {
             }
             pub fn updated<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.updated = value
@@ -12435,9 +12497,12 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct Migration {
             automatic: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
-            created_timestamp: ::std::result::Result<::std::string::String, ::std::string::String>,
+            created_timestamp: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
             finished_timestamp: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             machine: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
@@ -12450,7 +12515,7 @@ pub mod types {
                 ::std::result::Result<::std::option::Option<f64>, ::std::string::String>,
             state: ::std::result::Result<super::MigrationState, ::std::string::String>,
             updated_timestamp: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
         }
@@ -12484,7 +12549,7 @@ pub mod types {
             }
             pub fn created_timestamp<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.created_timestamp = value.try_into().map_err(|e| {
@@ -12494,7 +12559,9 @@ pub mod types {
             }
             pub fn finished_timestamp<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.finished_timestamp = value.try_into().map_err(|e| {
@@ -12556,7 +12623,9 @@ pub mod types {
             }
             pub fn updated_timestamp<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.updated_timestamp = value.try_into().map_err(|e| {
@@ -12664,7 +12733,7 @@ pub mod types {
         pub struct MigrationProgressEntry {
             current_progress: ::std::result::Result<u64, ::std::string::String>,
             finished_timestamp: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             message: ::std::result::Result<
@@ -12673,7 +12742,7 @@ pub mod types {
             >,
             phase: ::std::result::Result<super::MigrationPhase, ::std::string::String>,
             started_timestamp: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             state: ::std::result::Result<super::MigrationState, ::std::string::String>,
@@ -12707,7 +12776,9 @@ pub mod types {
             }
             pub fn finished_timestamp<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.finished_timestamp = value.try_into().map_err(|e| {
@@ -12737,7 +12808,9 @@ pub mod types {
             }
             pub fn started_timestamp<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.started_timestamp = value.try_into().map_err(|e| {
@@ -14231,13 +14304,13 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct Snapshot {
             created: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             state: ::std::result::Result<super::SnapshotState, ::std::string::String>,
             updated: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
         }
@@ -14256,7 +14329,9 @@ pub mod types {
         impl Snapshot {
             pub fn created<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.created = value
@@ -14286,7 +14361,9 @@ pub mod types {
             }
             pub fn updated<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.updated = value
@@ -14324,7 +14401,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct SshKey {
             created: ::std::result::Result<
-                ::std::option::Option<::std::string::String>,
+                ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
                 ::std::string::String,
             >,
             fingerprint: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -14351,7 +14428,9 @@ pub mod types {
         impl SshKey {
             pub fn created<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
+                    >,
                 T::Error: ::std::fmt::Display,
             {
                 self.created = value
@@ -15404,7 +15483,10 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
-            created: ::std::result::Result<::std::string::String, ::std::string::String>,
+            created: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
             email: ::std::result::Result<::std::string::String, ::std::string::String>,
             first_name: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -15424,7 +15506,10 @@ pub mod types {
                 ::std::option::Option<::std::vec::Vec<::std::string::String>>,
                 ::std::string::String,
             >,
-            updated: ::std::result::Result<::std::string::String, ::std::string::String>,
+            updated: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
         }
 
         impl ::std::default::Default for User {
@@ -15457,7 +15542,7 @@ pub mod types {
             }
             pub fn created<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.created = value
@@ -15539,7 +15624,7 @@ pub mod types {
             }
             pub fn updated<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.updated = value
@@ -15586,7 +15671,10 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct Volume {
-            created: ::std::result::Result<::std::string::String, ::std::string::String>,
+            created: ::std::result::Result<
+                ::chrono::DateTime<::chrono::offset::Utc>,
+                ::std::string::String,
+            >,
             filesystem_path: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
@@ -15626,7 +15714,7 @@ pub mod types {
         impl Volume {
             pub fn created<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::string::String>,
+                T: ::std::convert::TryInto<::chrono::DateTime<::chrono::offset::Utc>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.created = value

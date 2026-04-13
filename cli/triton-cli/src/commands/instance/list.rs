@@ -400,7 +400,7 @@ fn print_machines_table(
         col("PRIMARYIP", |m: &&Machine| {
             m.primary_ip.clone().unwrap_or_else(|| "-".to_string())
         }),
-        col("CREATED", |m: &&Machine| m.created.clone()),
+        col("CREATED", |m: &&Machine| m.created.to_rfc3339()),
     ];
 
     // Set default columns based on short/long mode to match node-triton.

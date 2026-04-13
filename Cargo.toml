@@ -62,7 +62,7 @@ anyhow = "1.0"
 build-data = "0.2"
 camino = "1.1"
 cargo_toml = "0.22"
-chrono = "0.4"
+chrono = { version = "0.4", features = ["serde"] }
 clap = { version = "4.5", features = ["derive"] }
 dropshot = { version = "0.16" }
 dropshot-api-manager = "0.3"
@@ -77,7 +77,7 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 # NOTE: schemars version is tied to dropshot compatibility
 # Dropshot 0.16.x requires schemars 0.8.x
 # Do not upgrade to schemars 1.x without also upgrading dropshot
-schemars = { version = "0.8", features = ["derive"] }
+schemars = { version = "0.8", features = ["derive", "chrono"] }
 semver = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 strum = { version = "0.27", features = ["derive"] }
