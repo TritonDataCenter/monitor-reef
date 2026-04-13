@@ -247,7 +247,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CreateAccessKeyResponse"
+                  "$ref": "#/components/schemas/AccessKeyCredentials"
                 }
               }
             }
@@ -8422,7 +8422,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CreateAccessKeyResponse"
+                  "$ref": "#/components/schemas/AccessKeyCredentials"
                 }
               }
             }
@@ -9540,6 +9540,62 @@
           "updated"
         ]
       },
+      "AccessKeyCredentials": {
+        "description": "Response when creating access key (includes secret shown only once)",
+        "type": "object",
+        "properties": {
+          "accesskeyid": {
+            "description": "Access key ID",
+            "type": "string"
+          },
+          "accesskeysecret": {
+            "description": "Access key secret (only provided on creation)",
+            "type": "string"
+          },
+          "created": {
+            "description": "Creation timestamp",
+            "type": "string"
+          },
+          "credentialtype": {
+            "description": "Credential type",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/CredentialType"
+              }
+            ]
+          },
+          "description": {
+            "nullable": true,
+            "description": "Description",
+            "type": "string"
+          },
+          "expiration": {
+            "nullable": true,
+            "description": "Expiration timestamp",
+            "type": "string"
+          },
+          "status": {
+            "description": "Status",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AccessKeyStatus"
+              }
+            ]
+          },
+          "updated": {
+            "description": "Last updated timestamp",
+            "type": "string"
+          }
+        },
+        "required": [
+          "accesskeyid",
+          "accesskeysecret",
+          "created",
+          "credentialtype",
+          "status",
+          "updated"
+        ]
+      },
       "AccessKeyStatus": {
         "description": "Access key status",
         "type": "string",
@@ -9778,62 +9834,6 @@
             ]
           }
         }
-      },
-      "CreateAccessKeyResponse": {
-        "description": "Response when creating access key (includes secret shown only once)",
-        "type": "object",
-        "properties": {
-          "accesskeyid": {
-            "description": "Access key ID",
-            "type": "string"
-          },
-          "accesskeysecret": {
-            "description": "Access key secret (only provided on creation)",
-            "type": "string"
-          },
-          "created": {
-            "description": "Creation timestamp",
-            "type": "string"
-          },
-          "credentialtype": {
-            "description": "Credential type",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/CredentialType"
-              }
-            ]
-          },
-          "description": {
-            "nullable": true,
-            "description": "Description",
-            "type": "string"
-          },
-          "expiration": {
-            "nullable": true,
-            "description": "Expiration timestamp",
-            "type": "string"
-          },
-          "status": {
-            "description": "Status",
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/AccessKeyStatus"
-              }
-            ]
-          },
-          "updated": {
-            "description": "Last updated timestamp",
-            "type": "string"
-          }
-        },
-        "required": [
-          "accesskeyid",
-          "accesskeysecret",
-          "created",
-          "credentialtype",
-          "status",
-          "updated"
-        ]
       },
       "CreateDiskRequest": {
         "description": "Request to create disk",
