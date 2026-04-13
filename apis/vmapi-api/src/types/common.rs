@@ -43,6 +43,7 @@ pub type Tags = HashMap<String, Value>;
 // use this enum to accurately represent VM state.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[schemars(rename = "VmBrand")]
 pub enum Brand {
     Bhyve,
     /// Internal brand for image build zones (not provisionable via CloudAPI)

@@ -849,7 +849,7 @@ pub struct ListMachinesFilter {
     /// Filter by machine type
     pub machine_type: Option<types::MachineType>,
     /// Filter by brand
-    pub brand: Option<types::Brand>,
+    pub brand: Option<types::VmBrand>,
     /// Filter by docker flag
     pub docker: Option<bool>,
     /// Pagination offset

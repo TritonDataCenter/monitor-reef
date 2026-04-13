@@ -80,7 +80,7 @@ enum Commands {
         state: Option<types::VmState>,
         /// Filter by brand
         #[arg(long, value_enum)]
-        brand: Option<types::Brand>,
+        brand: Option<types::VmBrand>,
         /// Filter by alias
         #[arg(long)]
         alias: Option<String>,

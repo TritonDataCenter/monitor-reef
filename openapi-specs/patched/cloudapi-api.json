@@ -243,35 +243,6 @@
         "type": "string"
       },
       "Brand": {
-        "description": "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",
-        "oneOf": [
-          {
-            "enum": [
-              "bhyve",
-              "joyent",
-              "joyent-minimal",
-              "kvm",
-              "lx"
-            ],
-            "type": "string"
-          },
-          {
-            "description": "Internal brand for image build zones (not provisionable via CloudAPI)",
-            "enum": [
-              "builder"
-            ],
-            "type": "string"
-          },
-          {
-            "description": "Unknown brand (forward compatibility)",
-            "enum": [
-              "unknown"
-            ],
-            "type": "string"
-          }
-        ]
-      },
-      "Brand2": {
         "description": "VM/Container brand for CloudAPI provisioning requests.\n\nThe brand determines the virtualization/containerization technology used. Valid brands as defined in `lib/machines.js`: - `bhyve`: FreeBSD hypervisor for hardware VMs - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",
         "enum": [
           "bhyve",
@@ -547,7 +518,7 @@
           "brand": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/Brand2"
+                "$ref": "#/components/schemas/Brand"
               }
             ],
             "default": null,
@@ -1299,7 +1270,7 @@
           "brand": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/Brand"
+                "$ref": "#/components/schemas/VmBrand"
               }
             ],
             "description": "Required brand",
@@ -1388,7 +1359,7 @@
           "brand": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/Brand"
+                "$ref": "#/components/schemas/VmBrand"
               }
             ],
             "description": "Brand (joyent, kvm, bhyve, lx, joyent-minimal, and internal-only brands)\n\nUses VMAPI's Brand enum to support internal-only brands like \"builder\" that may be returned by VMAPI but cannot be provisioned via CloudAPI."
@@ -2281,7 +2252,7 @@
           "brand": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/Brand"
+                "$ref": "#/components/schemas/VmBrand"
               }
             ],
             "description": "Brand (joyent, bhyve, kvm, etc., including internal-only brands)\n\nUses VMAPI's Brand enum to support internal-only brands like \"builder\" that may exist in the system.",
@@ -3033,6 +3004,35 @@
           "updated"
         ],
         "type": "object"
+      },
+      "VmBrand": {
+        "description": "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)",
+        "oneOf": [
+          {
+            "enum": [
+              "bhyve",
+              "joyent",
+              "joyent-minimal",
+              "kvm",
+              "lx"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Internal brand for image build zones (not provisionable via CloudAPI)",
+            "enum": [
+              "builder"
+            ],
+            "type": "string"
+          },
+          {
+            "description": "Unknown brand (forward compatibility)",
+            "enum": [
+              "unknown"
+            ],
+            "type": "string"
+          }
+        ]
       },
       "Volume": {
         "description": "Volume information",
@@ -6406,7 +6406,7 @@
             "in": "query",
             "name": "brand",
             "schema": {
-              "$ref": "#/components/schemas/Brand"
+              "$ref": "#/components/schemas/VmBrand"
             }
           },
           {
@@ -6558,7 +6558,7 @@
             "in": "query",
             "name": "brand",
             "schema": {
-              "$ref": "#/components/schemas/Brand"
+              "$ref": "#/components/schemas/VmBrand"
             }
           },
           {

@@ -671,130 +671,6 @@ pub mod types {
         }
     }
 
-    #[doc = "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)"]
-    #[doc = r""]
-    #[doc = r" <details><summary>JSON schema</summary>"]
-    #[doc = r""]
-    #[doc = r" ```json"]
-    #[doc = "{"]
-    #[doc = "  \"description\": \"VM/Container brand as returned by VMAPI.\\n\\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)\","]
-    #[doc = "  \"oneOf\": ["]
-    #[doc = "    {"]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"enum\": ["]
-    #[doc = "        \"bhyve\","]
-    #[doc = "        \"joyent\","]
-    #[doc = "        \"joyent-minimal\","]
-    #[doc = "        \"kvm\","]
-    #[doc = "        \"lx\""]
-    #[doc = "      ]"]
-    #[doc = "    },"]
-    #[doc = "    {"]
-    #[doc = "      \"description\": \"Internal brand for image build zones (not provisionable via CloudAPI)\","]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"enum\": ["]
-    #[doc = "        \"builder\""]
-    #[doc = "      ]"]
-    #[doc = "    },"]
-    #[doc = "    {"]
-    #[doc = "      \"description\": \"Unknown brand (forward compatibility)\","]
-    #[doc = "      \"type\": \"string\","]
-    #[doc = "      \"enum\": ["]
-    #[doc = "        \"unknown\""]
-    #[doc = "      ]"]
-    #[doc = "    }"]
-    #[doc = "  ]"]
-    #[doc = "}"]
-    #[doc = r" ```"]
-    #[doc = r" </details>"]
-    #[derive(
-        :: serde :: Deserialize,
-        :: serde :: Serialize,
-        Clone,
-        Copy,
-        Debug,
-        Eq,
-        Hash,
-        Ord,
-        PartialEq,
-        PartialOrd,
-        clap :: ValueEnum,
-        schemars :: JsonSchema,
-    )]
-    pub enum Brand {
-        #[serde(rename = "bhyve")]
-        Bhyve,
-        #[serde(rename = "joyent")]
-        Joyent,
-        #[serde(rename = "joyent-minimal")]
-        JoyentMinimal,
-        #[serde(rename = "kvm")]
-        Kvm,
-        #[serde(rename = "lx")]
-        Lx,
-        #[doc = "Internal brand for image build zones (not provisionable via CloudAPI)"]
-        #[serde(rename = "builder")]
-        Builder,
-        #[doc = "Unknown brand (forward compatibility)"]
-        #[serde(rename = "unknown")]
-        Unknown,
-    }
-
-    impl ::std::fmt::Display for Brand {
-        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-            match *self {
-                Self::Bhyve => f.write_str("bhyve"),
-                Self::Joyent => f.write_str("joyent"),
-                Self::JoyentMinimal => f.write_str("joyent-minimal"),
-                Self::Kvm => f.write_str("kvm"),
-                Self::Lx => f.write_str("lx"),
-                Self::Builder => f.write_str("builder"),
-                Self::Unknown => f.write_str("unknown"),
-            }
-        }
-    }
-
-    impl ::std::str::FromStr for Brand {
-        type Err = self::error::ConversionError;
-        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-            match value {
-                "bhyve" => Ok(Self::Bhyve),
-                "joyent" => Ok(Self::Joyent),
-                "joyent-minimal" => Ok(Self::JoyentMinimal),
-                "kvm" => Ok(Self::Kvm),
-                "lx" => Ok(Self::Lx),
-                "builder" => Ok(Self::Builder),
-                "unknown" => Ok(Self::Unknown),
-                _ => Err("invalid value".into()),
-            }
-        }
-    }
-
-    impl ::std::convert::TryFrom<&str> for Brand {
-        type Error = self::error::ConversionError;
-        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
-            value.parse()
-        }
-    }
-
-    impl ::std::convert::TryFrom<&::std::string::String> for Brand {
-        type Error = self::error::ConversionError;
-        fn try_from(
-            value: &::std::string::String,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
-            value.parse()
-        }
-    }
-
-    impl ::std::convert::TryFrom<::std::string::String> for Brand {
-        type Error = self::error::ConversionError;
-        fn try_from(
-            value: ::std::string::String,
-        ) -> ::std::result::Result<Self, self::error::ConversionError> {
-            value.parse()
-        }
-    }
-
     #[doc = "VM/Container brand for CloudAPI provisioning requests.\n\nThe brand determines the virtualization/containerization technology used. Valid brands as defined in `lib/machines.js`: - `bhyve`: FreeBSD hypervisor for hardware VMs - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -827,7 +703,7 @@ pub mod types {
         clap :: ValueEnum,
         schemars :: JsonSchema,
     )]
-    pub enum Brand2 {
+    pub enum Brand {
         #[serde(rename = "bhyve")]
         Bhyve,
         #[serde(rename = "joyent")]
@@ -840,7 +716,7 @@ pub mod types {
         Lx,
     }
 
-    impl ::std::fmt::Display for Brand2 {
+    impl ::std::fmt::Display for Brand {
         fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
             match *self {
                 Self::Bhyve => f.write_str("bhyve"),
@@ -852,7 +728,7 @@ pub mod types {
         }
     }
 
-    impl ::std::str::FromStr for Brand2 {
+    impl ::std::str::FromStr for Brand {
         type Err = self::error::ConversionError;
         fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             match value {
@@ -866,14 +742,14 @@ pub mod types {
         }
     }
 
-    impl ::std::convert::TryFrom<&str> for Brand2 {
+    impl ::std::convert::TryFrom<&str> for Brand {
         type Error = self::error::ConversionError;
         fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
         }
     }
 
-    impl ::std::convert::TryFrom<&::std::string::String> for Brand2 {
+    impl ::std::convert::TryFrom<&::std::string::String> for Brand {
         type Error = self::error::ConversionError;
         fn try_from(
             value: &::std::string::String,
@@ -882,7 +758,7 @@ pub mod types {
         }
     }
 
-    impl ::std::convert::TryFrom<::std::string::String> for Brand2 {
+    impl ::std::convert::TryFrom<::std::string::String> for Brand {
         type Error = self::error::ConversionError;
         fn try_from(
             value: ::std::string::String,
@@ -1441,7 +1317,7 @@ pub mod types {
     #[doc = "        {"]
     #[doc = "          \"allOf\": ["]
     #[doc = "            {"]
-    #[doc = "              \"$ref\": \"#/components/schemas/Brand2\""]
+    #[doc = "              \"$ref\": \"#/components/schemas/Brand\""]
     #[doc = "            }"]
     #[doc = "          ]"]
     #[doc = "        }"]
@@ -1556,7 +1432,7 @@ pub mod types {
         pub allow_shared_images: ::std::option::Option<bool>,
         #[doc = "Brand (bhyve, kvm, joyent, joyent-minimal, lx) If not specified, inferred from the image"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub brand: ::std::option::Option<Brand2>,
+        pub brand: ::std::option::Option<Brand>,
         #[doc = "Create a delegated ZFS dataset for the zone Only applicable to zone-based instances (joyent, joyent-minimal, lx brands)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub delegate_dataset: ::std::option::Option<bool>,
@@ -3231,7 +3107,7 @@ pub mod types {
     #[doc = "        {"]
     #[doc = "          \"allOf\": ["]
     #[doc = "            {"]
-    #[doc = "              \"$ref\": \"#/components/schemas/Brand\""]
+    #[doc = "              \"$ref\": \"#/components/schemas/VmBrand\""]
     #[doc = "            }"]
     #[doc = "          ]"]
     #[doc = "        }"]
@@ -3286,7 +3162,7 @@ pub mod types {
         pub bootrom: ::std::option::Option<::std::string::String>,
         #[doc = "Required brand"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub brand: ::std::option::Option<Brand>,
+        pub brand: ::std::option::Option<VmBrand>,
         #[doc = "Maximum memory (alias for max_ram)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub max_memory: ::std::option::Option<u64>,
@@ -3582,7 +3458,7 @@ pub mod types {
     #[doc = "      \"description\": \"Brand (joyent, kvm, bhyve, lx, joyent-minimal, and internal-only brands)\\n\\nUses VMAPI's Brand enum to support internal-only brands like \\\"builder\\\" that may be returned by VMAPI but cannot be provisioned via CloudAPI.\","]
     #[doc = "      \"allOf\": ["]
     #[doc = "        {"]
-    #[doc = "          \"$ref\": \"#/components/schemas/Brand\""]
+    #[doc = "          \"$ref\": \"#/components/schemas/VmBrand\""]
     #[doc = "        }"]
     #[doc = "      ]"]
     #[doc = "    },"]
@@ -3782,7 +3658,7 @@ pub mod types {
     )]
     pub struct Machine {
         #[doc = "Brand (joyent, kvm, bhyve, lx, joyent-minimal, and internal-only brands)\n\nUses VMAPI's Brand enum to support internal-only brands like \"builder\" that may be returned by VMAPI but cannot be provisioned via CloudAPI."]
-        pub brand: Brand,
+        pub brand: VmBrand,
         #[doc = "Compute node UUID (server hosting the VM)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub compute_node: ::std::option::Option<::uuid::Uuid>,
@@ -5878,7 +5754,7 @@ pub mod types {
     #[doc = "        {"]
     #[doc = "          \"allOf\": ["]
     #[doc = "            {"]
-    #[doc = "              \"$ref\": \"#/components/schemas/Brand\""]
+    #[doc = "              \"$ref\": \"#/components/schemas/VmBrand\""]
     #[doc = "            }"]
     #[doc = "          ]"]
     #[doc = "        }"]
@@ -5990,7 +5866,7 @@ pub mod types {
     pub struct Package {
         #[doc = "Brand (joyent, bhyve, kvm, etc., including internal-only brands)\n\nUses VMAPI's Brand enum to support internal-only brands like \"builder\" that may exist in the system."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub brand: ::std::option::Option<Brand>,
+        pub brand: ::std::option::Option<VmBrand>,
         #[doc = "Default package"]
         #[serde(default)]
         pub default: bool,
@@ -7697,6 +7573,130 @@ pub mod types {
     impl User {
         pub fn builder() -> builder::User {
             Default::default()
+        }
+    }
+
+    #[doc = "VM/Container brand as returned by VMAPI.\n\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"VM/Container brand as returned by VMAPI.\\n\\nThe brand determines the virtualization/containerization technology used. - `bhyve`: FreeBSD hypervisor for hardware VMs - `builder`: Internal brand for image build zones (not provisionable via CloudAPI) - `joyent`: Native SmartOS zone - `joyent-minimal`: Minimal SmartOS zone - `kvm`: KVM hardware VM - `lx`: Linux-branded zone (Linux containers)\","]
+    #[doc = "  \"oneOf\": ["]
+    #[doc = "    {"]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"bhyve\","]
+    #[doc = "        \"joyent\","]
+    #[doc = "        \"joyent-minimal\","]
+    #[doc = "        \"kvm\","]
+    #[doc = "        \"lx\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Internal brand for image build zones (not provisionable via CloudAPI)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"builder\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    {"]
+    #[doc = "      \"description\": \"Unknown brand (forward compatibility)\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"enum\": ["]
+    #[doc = "        \"unknown\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  ]"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize,
+        :: serde :: Serialize,
+        Clone,
+        Copy,
+        Debug,
+        Eq,
+        Hash,
+        Ord,
+        PartialEq,
+        PartialOrd,
+        clap :: ValueEnum,
+        schemars :: JsonSchema,
+    )]
+    pub enum VmBrand {
+        #[serde(rename = "bhyve")]
+        Bhyve,
+        #[serde(rename = "joyent")]
+        Joyent,
+        #[serde(rename = "joyent-minimal")]
+        JoyentMinimal,
+        #[serde(rename = "kvm")]
+        Kvm,
+        #[serde(rename = "lx")]
+        Lx,
+        #[doc = "Internal brand for image build zones (not provisionable via CloudAPI)"]
+        #[serde(rename = "builder")]
+        Builder,
+        #[doc = "Unknown brand (forward compatibility)"]
+        #[serde(rename = "unknown")]
+        Unknown,
+    }
+
+    impl ::std::fmt::Display for VmBrand {
+        fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+            match *self {
+                Self::Bhyve => f.write_str("bhyve"),
+                Self::Joyent => f.write_str("joyent"),
+                Self::JoyentMinimal => f.write_str("joyent-minimal"),
+                Self::Kvm => f.write_str("kvm"),
+                Self::Lx => f.write_str("lx"),
+                Self::Builder => f.write_str("builder"),
+                Self::Unknown => f.write_str("unknown"),
+            }
+        }
+    }
+
+    impl ::std::str::FromStr for VmBrand {
+        type Err = self::error::ConversionError;
+        fn from_str(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            match value {
+                "bhyve" => Ok(Self::Bhyve),
+                "joyent" => Ok(Self::Joyent),
+                "joyent-minimal" => Ok(Self::JoyentMinimal),
+                "kvm" => Ok(Self::Kvm),
+                "lx" => Ok(Self::Lx),
+                "builder" => Ok(Self::Builder),
+                "unknown" => Ok(Self::Unknown),
+                _ => Err("invalid value".into()),
+            }
+        }
+    }
+
+    impl ::std::convert::TryFrom<&str> for VmBrand {
+        type Error = self::error::ConversionError;
+        fn try_from(value: &str) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<&::std::string::String> for VmBrand {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: &::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
+        }
+    }
+
+    impl ::std::convert::TryFrom<::std::string::String> for VmBrand {
+        type Error = self::error::ConversionError;
+        fn try_from(
+            value: ::std::string::String,
+        ) -> ::std::result::Result<Self, self::error::ConversionError> {
+            value.parse()
         }
     }
 
@@ -9575,7 +9575,7 @@ pub mod types {
             allow_shared_images:
                 ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             brand:
-                ::std::result::Result<::std::option::Option<super::Brand2>, ::std::string::String>,
+                ::std::result::Result<::std::option::Option<super::Brand>, ::std::string::String>,
             delegate_dataset:
                 ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             deletion_protection:
@@ -9667,7 +9667,7 @@ pub mod types {
             }
             pub fn brand<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::Brand2>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::Brand>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.brand = value
@@ -11482,7 +11482,7 @@ pub mod types {
                 ::std::string::String,
             >,
             brand:
-                ::std::result::Result<::std::option::Option<super::Brand>, ::std::string::String>,
+                ::std::result::Result<::std::option::Option<super::VmBrand>, ::std::string::String>,
             max_memory: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
             max_ram: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
             min_memory: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
@@ -11515,7 +11515,7 @@ pub mod types {
             }
             pub fn brand<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::Brand>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::VmBrand>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.brand = value
@@ -11596,7 +11596,7 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct Machine {
-            brand: ::std::result::Result<super::Brand, ::std::string::String>,
+            brand: ::std::result::Result<super::VmBrand, ::std::string::String>,
             compute_node:
                 ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             created: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -11692,7 +11692,7 @@ pub mod types {
         impl Machine {
             pub fn brand<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<super::Brand>,
+                T: ::std::convert::TryInto<super::VmBrand>,
                 T::Error: ::std::fmt::Display,
             {
                 self.brand = value
@@ -13423,7 +13423,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct Package {
             brand:
-                ::std::result::Result<::std::option::Option<super::Brand>, ::std::string::String>,
+                ::std::result::Result<::std::option::Option<super::VmBrand>, ::std::string::String>,
             default: ::std::result::Result<bool, ::std::string::String>,
             description: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
@@ -13481,7 +13481,7 @@ pub mod types {
         impl Package {
             pub fn brand<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::Brand>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::VmBrand>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.brand = value
@@ -23426,7 +23426,7 @@ pub mod builder {
     pub struct ListMachines<'a> {
         client: &'a super::Client,
         account: Result<::std::string::String, String>,
-        brand: Result<Option<types::Brand>, String>,
+        brand: Result<Option<types::VmBrand>, String>,
         credentials: Result<Option<bool>, String>,
         docker: Result<Option<bool>, String>,
         image: Result<Option<::uuid::Uuid>, String>,
@@ -23472,12 +23472,12 @@ pub mod builder {
 
         pub fn brand<V>(mut self, value: V) -> Self
         where
-            V: std::convert::TryInto<types::Brand>,
+            V: std::convert::TryInto<types::VmBrand>,
         {
             self.brand = value
                 .try_into()
                 .map(Some)
-                .map_err(|_| "conversion to `Brand` for brand failed".to_string());
+                .map_err(|_| "conversion to `VmBrand` for brand failed".to_string());
             self
         }
 
@@ -23804,7 +23804,7 @@ pub mod builder {
     pub struct HeadMachines<'a> {
         client: &'a super::Client,
         account: Result<::std::string::String, String>,
-        brand: Result<Option<types::Brand>, String>,
+        brand: Result<Option<types::VmBrand>, String>,
         credentials: Result<Option<bool>, String>,
         docker: Result<Option<bool>, String>,
         image: Result<Option<::uuid::Uuid>, String>,
@@ -23850,12 +23850,12 @@ pub mod builder {
 
         pub fn brand<V>(mut self, value: V) -> Self
         where
-            V: std::convert::TryInto<types::Brand>,
+            V: std::convert::TryInto<types::VmBrand>,
         {
             self.brand = value
                 .try_into()
                 .map(Some)
-                .map_err(|_| "conversion to `Brand` for brand failed".to_string());
+                .map_err(|_| "conversion to `VmBrand` for brand failed".to_string());
             self
         }
 
