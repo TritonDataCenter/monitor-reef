@@ -33,6 +33,7 @@ include ./deps/eng/tools/mk/Makefile.rust.targ
 .PHONY: openapi-generate openapi-list openapi-check
 .PHONY: dev-setup workspace-test integration-test
 .PHONY: list coverage arch-lint doc-lint
+.PHONY: image image-clean image-rebuild image-buildimage images-list
 .PHONY: clients-generate clients-check
 
 # Default target
@@ -344,3 +345,25 @@ doc-lint: ## Check doc comments for implementation details that leak into OpenAP
 	else \
 		echo "No implementation detail leaks found in doc comments."; \
 	fi
+
+# Zone image build targets
+# Usage: make image IMAGE=triton-api
+#        make image-rebuild IMAGE=triton-api
+#        make image-buildimage IMAGE=triton-api
+
+image: ## Build a zone image tarball (IMAGE=<name>)
+	$(MAKE) -C images/$(IMAGE) all release publish
+
+image-clean: ## Clean a zone image build (IMAGE=<name>)
+	$(MAKE) -C images/$(IMAGE) clean
+
+image-rebuild: ## Clean rebuild a zone image tarball (IMAGE=<name>)
+	$(MAKE) -C images/$(IMAGE) clean
+	$(MAKE) -C images/$(IMAGE) all release publish
+
+image-buildimage: ## Build a zone image file from tarball (IMAGE=<name>)
+	$(MAKE) -C images/$(IMAGE) buildimage
+
+images-list: ## List available zone images
+	@echo "Zone images:"
+	@ls -1 images/ 2>/dev/null | grep -v '\.mk$$' || echo "  (none)"

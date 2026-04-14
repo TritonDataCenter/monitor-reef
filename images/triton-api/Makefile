@@ -12,9 +12,9 @@ NAME = triton-api
 DIR_NAME = triton-api
 
 include ../image.defs.mk
-include $(ENGBLD_REPO_ROOT)/deps/eng/tools/mk/Makefile.defs
-include $(ENGBLD_REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.defs
-include $(ENGBLD_REPO_ROOT)/deps/eng/tools/mk/Makefile.smf.defs
+include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.defs
+include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.defs
+include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.smf.defs
 
 ROOT            := $(shell pwd)
 RELEASE_TARBALL := $(NAME)-pkg-$(STAMP).tar.gz
@@ -26,6 +26,7 @@ SMF_MANIFESTS = smf/manifests/postboot.xml smf/manifests/triton-api.xml \
 # Image metadata
 BUILDIMAGE_NAME = $(NAME)
 BUILDIMAGE_DESC = Triton API service
+BUILDIMAGE_PKG = $(ROOT)/$(RELEASE_TARBALL)
 BUILDIMAGE_PKGSRC =
 
 # Cargo package names for the binaries (both run in the same zone)
@@ -35,7 +36,7 @@ CLEAN_FILES += bits proto target
 
 .PHONY: release_build
 release_build:
-	cd $(ENGBLD_REPO_ROOT) && \
+	cd $(REPO_ROOT) && \
 	    for pkg in $(SERVICE_BINS); do \
 	        $(CARGO) build --release -p $$pkg; \
 	    done
@@ -54,7 +55,7 @@ release: all
 	@mkdir -p $(RELSTAGEDIR)/site
 	@touch $(RELSTAGEDIR)/site/.do-not-delete-me
 	for bin in $(SERVICE_BINS); do \
-	    cp $(ENGBLD_REPO_ROOT)/target/release/$$bin \
+	    cp $(REPO_ROOT)/target/release/$$bin \
 	        $(RELSTAGEDIR)/root/opt/triton/$(DIR_NAME)/; \
 	done
 	cp -PR boot/* $(RELSTAGEDIR)/root/opt/triton/boot/
@@ -68,7 +69,7 @@ publish: release
 	mkdir -p $(ENGBLD_BITS_DIR)/$(NAME)
 	cp $(ROOT)/$(RELEASE_TARBALL) $(ENGBLD_BITS_DIR)/$(NAME)/$(RELEASE_TARBALL)
 
-include $(ENGBLD_REPO_ROOT)/deps/eng/tools/mk/Makefile.deps
-include $(ENGBLD_REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.targ
-include $(ENGBLD_REPO_ROOT)/deps/eng/tools/mk/Makefile.smf.targ
-include $(ENGBLD_REPO_ROOT)/deps/eng/tools/mk/Makefile.targ
+include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.deps
+include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.targ
+include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.smf.targ
+include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.targ
