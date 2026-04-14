@@ -9,8 +9,63 @@ use dropshot::{
     ConfigDropshot, ConfigLogging, ConfigLoggingLevel, HttpError, HttpResponseOk,
     HttpServerStarter, RequestContext,
 };
-use tracing::info;
+use serde::Deserialize;
+use tracing::{error, info};
 use triton_api::{PingResponse, TritonApi};
+
+#[derive(Deserialize)]
+#[allow(dead_code)]
+struct ApiServerConfig {
+    #[serde(default)]
+    datacenter_name: Option<String>,
+    #[serde(default)]
+    instance_uuid: Option<String>,
+    #[serde(default)]
+    server_uuid: Option<String>,
+    #[serde(default)]
+    admin_ip: Option<String>,
+    #[serde(default = "default_bind_address")]
+    bind_address: String,
+}
+
+fn default_bind_address() -> String {
+    "127.0.0.1:8080".to_string()
+}
+
+impl Default for ApiServerConfig {
+    fn default() -> Self {
+        Self {
+            datacenter_name: None,
+            instance_uuid: None,
+            server_uuid: None,
+            admin_ip: None,
+            bind_address: default_bind_address(),
+        }
+    }
+}
+
+/// Load config from TRITON__CONFIG_FILE env var, falling back to defaults.
+fn load_config() -> ApiServerConfig {
+    let path = std::env::var("TRITON__CONFIG_FILE").ok();
+    if let Some(ref path) = path {
+        match std::fs::read_to_string(path) {
+            Ok(contents) => match serde_json::from_str(&contents) {
+                Ok(config) => {
+                    info!("loaded config from {}", path);
+                    return config;
+                }
+                Err(e) => {
+                    error!("failed to parse config from {}: {}", path, e);
+                }
+            },
+            Err(e) => {
+                error!("failed to read config from {}: {}", path, e);
+            }
+        }
+    }
+    info!("using default config");
+    ApiServerConfig::default()
+}
 
 struct ApiContext {}
 
@@ -37,13 +92,13 @@ async fn main() -> Result<()> {
         ))
         .init();
 
+    let config = load_config();
+
     let api = triton_api::triton_api_mod::api_description::<TritonApiImpl>()
         .map_err(|e| anyhow::anyhow!("Failed to create API description: {}", e))?;
 
-    // TODO: read bind address from SAPI-generated config file
-    // (/opt/triton/triton-api/etc/config.json)
     let config_dropshot = ConfigDropshot {
-        bind_address: "127.0.0.1:8080".parse()?,
+        bind_address: config.bind_address.parse()?,
         default_request_body_max_bytes: 1024 * 1024,
         default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
         ..Default::default()
@@ -61,7 +116,10 @@ async fn main() -> Result<()> {
         .map_err(|error| anyhow::anyhow!("failed to create server: {}", error))?
         .start();
 
-    info!("triton-api-server listening on http://127.0.0.1:8080");
+    info!(
+        "triton-api-server listening on http://{}",
+        config.bind_address
+    );
 
     server
         .await
