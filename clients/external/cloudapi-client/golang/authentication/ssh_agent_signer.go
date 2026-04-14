@@ -33,7 +33,6 @@ type SSHAgentSigner struct {
 	algorithm               string
 	accountName             string
 	userName                string
-	keyIdentifier           string
 
 	agent agent.Agent
 	key   ssh.PublicKey
