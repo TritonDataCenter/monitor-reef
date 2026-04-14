@@ -32,6 +32,8 @@ struct GatewayState {
     client: Client<hyper_util::client::legacy::connect::HttpConnector, Body>,
     /// Base URL for triton-api-server (e.g. "http://127.0.0.1:8080").
     tritonapi_url: String,
+    /// Base URL for CloudAPI (e.g. "http://cloudapi.us-central-1.triton:8080").
+    cloudapi_url: String,
 }
 
 #[derive(Deserialize)]
@@ -40,6 +42,8 @@ struct GatewayConfig {
     bind_address: String,
     #[serde(default = "default_tritonapi_url")]
     tritonapi_url: String,
+    #[serde(default)]
+    cloudapi_url: Option<String>,
 }
 
 fn default_bind_address() -> String {
@@ -55,6 +59,7 @@ impl Default for GatewayConfig {
         Self {
             bind_address: default_bind_address(),
             tritonapi_url: default_tritonapi_url(),
+            cloudapi_url: None,
         }
     }
 }
@@ -69,9 +74,12 @@ async fn main() -> Result<()> {
 
     let client = Client::builder(TokioExecutor::new()).build_http();
 
+    let cloudapi_url = config.cloudapi_url.clone().unwrap_or_default();
+
     let state = Arc::new(GatewayState {
         client,
         tritonapi_url: config.tritonapi_url.clone(),
+        cloudapi_url: cloudapi_url.clone(),
     });
 
     // Routes that tritonapi handles -- forwarded to triton-api-server.
@@ -79,13 +87,18 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/ping", get(proxy_to_tritonapi))
         // TODO: Add /auth/* routes when tritonapi implements them
-        // Everything else will eventually proxy to CloudAPI.
-        .fallback(cloudapi_stub)
+        // Everything else proxies to CloudAPI.
+        .fallback(proxy_to_cloudapi)
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&config.bind_address).await?;
     info!("triton-gateway listening on {}", config.bind_address);
     info!("proxying to tritonapi at {}", config.tritonapi_url);
+    if cloudapi_url.is_empty() {
+        info!("CloudAPI proxy DISABLED (no cloudapi_url configured)");
+    } else {
+        info!("proxying to CloudAPI at {}", cloudapi_url);
+    }
 
     axum::serve(listener, app).await?;
 
@@ -129,12 +142,26 @@ async fn proxy_to_tritonapi(
     }
 }
 
-/// Stub handler for routes that will eventually proxy to CloudAPI.
-async fn cloudapi_stub() -> impl IntoResponse {
-    (
-        StatusCode::NOT_IMPLEMENTED,
-        "triton-gateway: CloudAPI proxy not yet implemented\n",
-    )
+/// Forward a request to CloudAPI. Returns 502 if CloudAPI is unreachable,
+/// or 501 if no CloudAPI URL is configured.
+async fn proxy_to_cloudapi(
+    State(state): State<Arc<GatewayState>>,
+    req: axum::extract::Request,
+) -> Response {
+    if state.cloudapi_url.is_empty() {
+        return (
+            StatusCode::NOT_IMPLEMENTED,
+            "triton-gateway: no cloudapi_url configured\n",
+        )
+            .into_response();
+    }
+    match forward_request(&state, &state.cloudapi_url, req).await {
+        Ok(resp) => resp,
+        Err(e) => {
+            error!("proxy to CloudAPI failed: {}", e);
+            StatusCode::BAD_GATEWAY.into_response()
+        }
+    }
 }
 
 /// Forward an HTTP request to a backend, returning the response.
