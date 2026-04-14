@@ -34,6 +34,10 @@ BASE_IMAGE_UUID ?= 41bd4100-eb86-409a-85b0-e649aadf6f62
 # Must be set before including Makefile.rust.defs (matches root Makefile).
 RUST_USE_BOOTSTRAP = false
 
+# Keep build output in the per-image directory (e.g. images/triton-api/bits/)
+# so Jenkins jobs can cd into the image dir and run make directly.
+ENGBLD_BITS_DIR = $(shell pwd)/bits
+
 # Common buildimage settings
 ENGBLD_USE_BUILDIMAGE = true
 BUILD_PLATFORM = 20210826T002459Z
