@@ -4579,6 +4579,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "triton-gateway"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "http",
+ "hyper",
+ "hyper-util",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "triton-tls"
 version = "0.1.0"
 dependencies = [

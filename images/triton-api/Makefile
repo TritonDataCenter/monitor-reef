@@ -20,21 +20,25 @@ ROOT            := $(shell pwd)
 RELEASE_TARBALL := $(NAME)-pkg-$(STAMP).tar.gz
 RELSTAGEDIR     := $(ROOT)/proto
 
-SMF_MANIFESTS = smf/manifests/postboot.xml smf/manifests/triton-api.xml
+SMF_MANIFESTS = smf/manifests/postboot.xml smf/manifests/triton-api.xml \
+    smf/manifests/triton-gateway.xml
 
 # Image metadata
 BUILDIMAGE_NAME = $(NAME)
 BUILDIMAGE_DESC = Triton API service
 BUILDIMAGE_PKGSRC =
 
-# Cargo package name for the binary
-SERVICE_BINS = triton-api-server
+# Cargo package names for the binaries (both run in the same zone)
+SERVICE_BINS = triton-api-server triton-gateway
 
 CLEAN_FILES += bits proto target
 
 .PHONY: release_build
 release_build:
-	cd $(ENGBLD_REPO_ROOT) && $(CARGO) build --release -p $(SERVICE_BINS)
+	cd $(ENGBLD_REPO_ROOT) && \
+	    for pkg in $(SERVICE_BINS); do \
+	        $(CARGO) build --release -p $$pkg; \
+	    done
 
 .PHONY: all
 all: release_build
@@ -49,8 +53,10 @@ release: all
 	@mkdir -p $(RELSTAGEDIR)/root/opt/smartdc/$(DIR_NAME)/sapi_manifests
 	@mkdir -p $(RELSTAGEDIR)/site
 	@touch $(RELSTAGEDIR)/site/.do-not-delete-me
-	cp $(ENGBLD_REPO_ROOT)/target/release/$(SERVICE_BINS) \
-	    $(RELSTAGEDIR)/root/opt/triton/$(DIR_NAME)/
+	for bin in $(SERVICE_BINS); do \
+	    cp $(ENGBLD_REPO_ROOT)/target/release/$$bin \
+	        $(RELSTAGEDIR)/root/opt/triton/$(DIR_NAME)/; \
+	done
 	cp -PR boot/* $(RELSTAGEDIR)/root/opt/triton/boot/
 	cp -PR smf/* $(RELSTAGEDIR)/root/opt/custom/smf/
 	cp -PR sapi_manifests/* \

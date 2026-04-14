@@ -2,5 +2,6 @@
     "datacenter_name": "{{{datacenter_name}}}",
     "instance_uuid": "{{auto.ZONENAME}}",
     "server_uuid": "{{auto.SERVER_UUID}}",
-    "admin_ip": "{{auto.ADMIN_IP}}"
+    "admin_ip": "{{auto.ADMIN_IP}}",
+    "bind_address": "127.0.0.1:8080"
 }

@@ -28,8 +28,9 @@ if [[ -f "$MARKER" ]]; then
     exit $SMF_EXIT_OK
 fi
 
-# Import the triton-api service manifest
+# Import service manifests for both services in this zone
 /usr/sbin/svccfg import /opt/custom/smf/manifests/triton-api.xml
+/usr/sbin/svccfg import /opt/custom/smf/manifests/triton-gateway.xml
 
 touch "$MARKER"
 exit $SMF_EXIT_OK

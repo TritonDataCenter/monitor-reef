@@ -37,6 +37,7 @@ members = [
     "services/bugview-service",
     "services/jira-stub-server",
     "services/triton-api-server",
+    "services/triton-gateway",
 
     # To be modernized:
     #"cli/manatee-echo-resolver",
@@ -73,6 +74,7 @@ expect_used = "deny"
 
 [workspace.dependencies]
 askama = "0.15"
+axum = "0.8"
 anyhow = "1.0"
 build-data = "0.2"
 camino = "1.1"
@@ -82,6 +84,9 @@ clap = { version = "4.5", features = ["derive"] }
 dropshot = { version = "0.16" }
 dropshot-api-manager = "0.3"
 dropshot-api-manager-types = "0.3"
+http = "1"
+hyper = { version = "1", features = ["full"] }
+hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
 openapiv3 = "2.0"
 progenitor = "0.12"
 progenitor-client = "0.12"

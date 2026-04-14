@@ -7,8 +7,8 @@
 
     Copyright 2026 Edgecast Cloud LLC.
 -->
-<service_bundle type="manifest" name="triton-api">
-    <service name="triton/application/triton-api" type="service" version="1">
+<service_bundle type="manifest" name="triton-gateway">
+    <service name="triton/application/triton-gateway" type="service" version="1">
         <create_default_instance enabled="true"/>
         <single_instance/>
 
@@ -22,13 +22,19 @@
             <service_fmri value="svc:/milestone/network:default"/>
         </dependency>
 
+        <!-- Gateway depends on triton-api being available -->
+        <dependency name="triton-api" grouping="require_all" restart_on="restart"
+            type="service">
+            <service_fmri value="svc:/triton/application/triton-api:default"/>
+        </dependency>
+
         <exec_method type="method" name="start"
-            exec="/opt/triton/triton-api/triton-api-server &amp;"
+            exec="/opt/triton/triton-api/triton-gateway &amp;"
             timeout_seconds="60">
             <method_context>
                 <method_environment>
                     <envvar name="TRITON__CONFIG_FILE"
-                        value="/opt/triton/triton-api/etc/config.json"/>
+                        value="/opt/triton/triton-api/etc/gateway-config.json"/>
                 </method_environment>
             </method_context>
         </exec_method>
