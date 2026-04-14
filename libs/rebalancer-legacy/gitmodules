@@ -1,8 +1,5 @@
 [submodule "deps/eng"]
 	path = deps/eng
-<<<<<<< HEAD
-	url = https://github.com/tritonDataCenter/eng
-=======
 	url = https://github.com/TritonDataCenter/eng
 [submodule "deps/manta-scripts"]
 	path = deps/manta-scripts
@@ -10,4 +7,3 @@
 [submodule "deps/postgresql12"]
 	path = deps/postgresql12
 	url = https://github.com/postgres/postgres.git
->>>>>>> monorepo

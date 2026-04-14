@@ -27,6 +27,7 @@ include ./deps/eng/tools/mk/Makefile.rust.targ
 .PHONY: openapi-generate openapi-list openapi-check
 .PHONY: dev-setup workspace-test integration-test
 .PHONY: list coverage coverage-legacy arch-lint
+.PHONY: image image-clean image-rebuild image-buildimage images-list
 
 # Default target
 help: ## Show this help message
@@ -357,3 +358,25 @@ arch-lint: | $(CARGO_EXEC) ## Run architecture lints
 		$(CARGO) install arch-lint-cli; \
 	fi
 	$(CARGO_HOME)/bin/arch-lint check
+
+# Zone image build targets
+# Usage: make image IMAGE=rebalancer
+#        make image-rebuild IMAGE=rebalancer
+#        make image-buildimage IMAGE=rebalancer
+
+image: ## Build a zone image tarball (IMAGE=<name>)
+	$(MAKE) -C images/$(IMAGE) all release publish
+
+image-clean: ## Clean a zone image build (IMAGE=<name>)
+	$(MAKE) -C images/$(IMAGE) clean
+
+image-rebuild: ## Clean rebuild a zone image tarball (IMAGE=<name>)
+	$(MAKE) -C images/$(IMAGE) clean
+	$(MAKE) -C images/$(IMAGE) all release publish
+
+image-buildimage: ## Build a zone image file from tarball (IMAGE=<name>)
+	$(MAKE) -C images/$(IMAGE) buildimage
+
+images-list: ## List available zone images
+	@echo "Zone images:"
+	@ls -1 images/ 2>/dev/null | grep -v '\.mk$$' || echo "  (none)"
