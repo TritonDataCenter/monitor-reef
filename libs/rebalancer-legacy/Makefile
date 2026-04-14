@@ -74,7 +74,7 @@ debug: | $(CARGO_EXEC)
 		rm -f agent/Cargo.lock; exit 1; }
 	@mv agent/Cargo.toml.ws agent/Cargo.toml
 	@rm -f agent/Cargo.lock
-	LD_LIBRARY_PATH=$(RELSTAGE_DIR)/root/opt/postgresql/$(PGVER)/lib:$(DEF_RPATH) \
+	LD_LIBRARY_PATH=$(RELSTAGEDIR)/root/opt/postgresql/$(PGVER)/lib:$(DEF_RPATH) \
 	    $(CARGO) build --manifest-path=manager/Cargo.toml
 	/usr/bin/elfedit -e \
 	    "dyn:runpath $(REBALANCER_RPATH)" \
@@ -151,7 +151,7 @@ agent: | $(CARGO_EXEC)
 
 .PHONY: manager
 manager: | $(CARGO_EXEC)
-	LD_LIBRARY_PATH=$(RELSTAGE_DIR)/root/opt/postgresql/$(PGVER)/lib:$(DEF_RPATH) \
+	LD_LIBRARY_PATH=$(RELSTAGEDIR)/root/opt/postgresql/$(PGVER)/lib:$(DEF_RPATH) \
 	    $(CARGO) build --manifest-path=manager/Cargo.toml --release
 	/usr/bin/elfedit -e \
 	    "dyn:runpath $(REBALANCER_RPATH)" \

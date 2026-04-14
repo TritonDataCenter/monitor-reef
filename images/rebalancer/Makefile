@@ -67,7 +67,7 @@ CLEAN_FILES += bits proto $(NAME)-*.tar.gz $(NAME)-*.manifest
 all: manager agent
 
 .PHONY: manager
-manager: | $(CARGO_EXEC)
+manager: pg | $(CARGO_EXEC)
 	@echo "Building legacy workspace (manager + adm)..."
 	@cd $(REPO_ROOT) && \
 	    if [ ! -f Cargo.toml.legacy ]; then \
@@ -76,6 +76,7 @@ manager: | $(CARGO_EXEC)
 	    mv Cargo.toml.legacy Cargo.toml && \
 	    { if [ -f Cargo.lock ]; then mv Cargo.lock Cargo.lock.modern; fi; } && \
 	    cp Cargo.lock.legacy Cargo.lock && \
+	    LD_LIBRARY_PATH=$(RELSTAGEDIR)/root/opt/postgresql/$(PGVER)/lib:$(DEF_RPATH) \
 	    $(CARGO) build --workspace --exclude agent --release; \
 	    build_status=$$?; \
 	    mv Cargo.toml Cargo.toml.legacy; \
@@ -119,7 +120,6 @@ pg: $(REPO_ROOT)/deps/postgresql12/.git
 .PHONY: release
 release: all pg $(REPO_ROOT)/deps/manta-scripts/.git $(SMF_MANIFESTS)
 	@echo "Building $(RELEASE_TARBALL)"
-	@rm -rf $(RELSTAGEDIR)
 	# application dir
 	@mkdir -p $(RELSTAGEDIR)/root/opt/smartdc/$(NAME)/bin
 	@mkdir -p $(RELSTAGEDIR)/root/opt/smartdc/$(NAME)/etc

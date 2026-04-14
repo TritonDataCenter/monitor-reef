@@ -3668,7 +3668,7 @@ where
 
         let algo = mod_storinfo::DefaultChooseAlgorithm {
             min_avail_mb: job_action.min_avail_mb,
-            blacklist: vec![],
+            blocklist: vec![],
         };
 
         let mut shark_hash: HashMap<StorageId, SharkHashEntry> = HashMap::new();
