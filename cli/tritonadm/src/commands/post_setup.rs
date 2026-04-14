@@ -117,6 +117,24 @@ pub enum PostSetupCommand {
         #[arg(long, short = 'C')]
         channel: Option<String>,
     },
+    /// Create the "triton-api" service and a first instance
+    Tritonapi {
+        /// Skip confirmation prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
+        /// Dry run (preview without executing)
+        #[arg(long, short = 'n')]
+        dry_run: bool,
+        /// Server UUID to place the instance on (default: headnode)
+        #[arg(long, short = 's')]
+        server: Option<String>,
+        /// Image UUID, "latest" (from updates server), or "current" (local only)
+        #[arg(long, short = 'i', default_value = "latest")]
+        image: String,
+        /// Updates server channel (default: from SAPI config or remote default)
+        #[arg(long, short = 'C')]
+        channel: Option<String>,
+    },
 }
 
 impl PostSetupCommand {
@@ -202,6 +220,28 @@ impl PostSetupCommand {
                 )
                 .await
             }
+            Self::Tritonapi {
+                yes,
+                dry_run,
+                server,
+                image,
+                channel,
+            } => {
+                let extra = build_tritonapi_metadata(&urls)?;
+                cmd_add_service(
+                    &TRITONAPI_CONFIG,
+                    &urls,
+                    SetupOpts {
+                        yes,
+                        dry_run,
+                        server,
+                        image,
+                        channel,
+                        extra_metadata: Some(extra),
+                    },
+                )
+                .await
+            }
         }
     }
 }
@@ -237,6 +277,15 @@ const GRAFANA_CONFIG: ServiceConfig = ServiceConfig {
 const PORTAL_CONFIG: ServiceConfig = ServiceConfig {
     name: "portal",
     image_name: "user-portal",
+    package_name: "sdc_1024",
+    delegate_dataset: false,
+    firewall_enabled: true,
+    ensure_manta_nic: false,
+};
+
+const TRITONAPI_CONFIG: ServiceConfig = ServiceConfig {
+    name: "triton-api",
+    image_name: "triton-api",
     package_name: "sdc_1024",
     delegate_dataset: false,
     firewall_enabled: true,
@@ -315,6 +364,32 @@ async fn build_portal_metadata(
             }]),
         );
     }
+
+    Ok(meta)
+}
+
+/// Build triton-api-specific SAPI metadata.
+///
+/// The triton-gateway SAPI template references `{{{CLOUDAPI_SERVICE}}}` to
+/// construct the CloudAPI URL for request proxying.
+fn build_tritonapi_metadata(
+    urls: &PostSetupUrls,
+) -> Result<serde_json::Map<String, serde_json::Value>> {
+    let mut meta = serde_json::Map::new();
+
+    let sdc_config = urls
+        .sdc_config
+        .as_ref()
+        .context("SDC config required to determine CloudAPI service domain")?;
+    let cloudapi_domain = format!(
+        "cloudapi.{}.{}",
+        sdc_config.datacenter_name, sdc_config.dns_domain
+    );
+
+    meta.insert(
+        "CLOUDAPI_SERVICE".into(),
+        serde_json::Value::String(cloudapi_domain),
+    );
 
     Ok(meta)
 }
