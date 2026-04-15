@@ -43,7 +43,24 @@ pipeline {
     stages {
         stage('check') {
             steps{
-                sh('make quick-check')
+                sh('make check')
+            }
+        }
+        stage('build image and upload') {
+           steps {
+               joyBuildImageAndUpload(dir: 'images/rebalancer')
+           }
+        }
+        stage('mako') {
+            // This only works for master branches. For development builds
+            // of the rebalancer, the developer should trigger a development
+            // branch build of mako with AGENT_PREBUILT_AGENT_BRANCH pointing
+            // at the corresponding development branch of the rebalancer.
+            when {
+                branch 'master'
+            }
+            steps {
+                build(job:'TritonDataCenter/manta-mako/master', wait: false)
             }
         }
     }
