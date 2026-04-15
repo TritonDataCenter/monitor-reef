@@ -35,6 +35,11 @@ pipeline {
         )
     }
 
+    environment {
+        /* attempt to tell rustup where our certs are */
+        SSL_CERT_FILE = '/etc/ssl/certs/ca-certificates.crt'
+    }
+
     stages {
         stage('check') {
             steps{
