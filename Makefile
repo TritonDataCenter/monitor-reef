@@ -302,7 +302,8 @@ list: ## List all APIs, services and clients
 # Validation and CI commands
 check:: | $(CARGO_EXEC) ## Run all validation checks (CI-ready)
 	@echo "Running all validation checks..."
-	$(CARGO) test --workspace	$(MAKE) openapi-check
+	$(CARGO) test --workspace
+	$(MAKE) openapi-check
 	$(MAKE) arch-lint
 	@echo ""
 	@echo "All validation checks passed!"
