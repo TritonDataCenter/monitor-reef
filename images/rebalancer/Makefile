@@ -18,6 +18,8 @@ include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.defs
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.defs
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.smf.defs
 
+BUILD_PLATFORM=20210826T002459Z
+
 ROOT            := $(shell pwd)
 LEGACY_DIR       = $(REPO_ROOT)/libs/rebalancer-legacy
 RELEASE_TARBALL := $(NAME)-pkg-$(STAMP).tar.gz
