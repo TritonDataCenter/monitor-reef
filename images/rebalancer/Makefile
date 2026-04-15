@@ -14,9 +14,6 @@ NAME = rebalancer
 
 include ../image.defs.mk
 
-# Rebalancer uses the older base image (19.4.0)
-BASE_IMAGE_UUID = 59ba2e5e-976f-4e09-8aac-a4a7ef0395f5
-
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.defs
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.defs
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.smf.defs
