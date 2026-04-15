@@ -11,5 +11,6 @@ images/*/bits/
 images/*/cache/
 images/*/proto/
 images/*/make_stamps/
+/make_stamps/
 images/*/*.tar.gz
 images/*/*.manifest
