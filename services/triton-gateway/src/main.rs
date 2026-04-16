@@ -24,9 +24,9 @@ use axum::routing::get;
 use http::header::{HOST, HeaderName, HeaderValue};
 use http::uri::{Authority, PathAndQuery, Scheme};
 use hyper_util::client::legacy::Client;
-use hyper_util::rt::TokioExecutor;
+use hyper_util::rt::{TokioExecutor, TokioIo};
 use serde::Deserialize;
-use tracing::{Instrument, error, info, info_span};
+use tracing::{Instrument, error, info, info_span, warn};
 
 /// Per-request identifier used for log correlation across gateway and backends.
 /// Stored in request extensions so the proxy handler can read it and forward
@@ -245,13 +245,7 @@ async fn proxy_to_tritonapi(
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
     req: axum::extract::Request,
 ) -> Response {
-    match forward_request(&state, &state.tritonapi, peer_addr, req).await {
-        Ok(resp) => resp,
-        Err(e) => {
-            error!("proxy to tritonapi failed: {}", e);
-            StatusCode::BAD_GATEWAY.into_response()
-        }
-    }
+    dispatch(&state, &state.tritonapi, peer_addr, req, "tritonapi").await
 }
 
 /// Forward a request to CloudAPI. Returns 502 if CloudAPI is unreachable,
@@ -268,13 +262,56 @@ async fn proxy_to_cloudapi(
         )
             .into_response();
     };
-    match forward_request(&state, target, peer_addr, req).await {
-        Ok(resp) => resp,
-        Err(e) => {
-            error!("proxy to CloudAPI failed: {}", e);
-            StatusCode::BAD_GATEWAY.into_response()
+    dispatch(&state, target, peer_addr, req, "CloudAPI").await
+}
+
+/// Inspect the incoming request and route it to either the WebSocket tunnel
+/// or the plain HTTP forwarder. The `label` is used purely for error logs so
+/// operators can tell which backend choked.
+async fn dispatch(
+    state: &GatewayState,
+    target: &BackendTarget,
+    peer_addr: SocketAddr,
+    req: axum::extract::Request,
+    label: &str,
+) -> Response {
+    if is_websocket_upgrade(req.headers()) {
+        match forward_websocket(state, target, peer_addr, req).await {
+            Ok(resp) => resp,
+            Err(e) => {
+                error!("websocket proxy to {} failed: {}", label, e);
+                StatusCode::BAD_GATEWAY.into_response()
+            }
+        }
+    } else {
+        match forward_request(state, target, peer_addr, req).await {
+            Ok(resp) => resp,
+            Err(e) => {
+                error!("proxy to {} failed: {}", label, e);
+                StatusCode::BAD_GATEWAY.into_response()
+            }
         }
     }
+}
+
+/// Returns true if the request headers indicate a WebSocket upgrade handshake.
+///
+/// RFC 6455: a client initiates a WebSocket handshake with `Upgrade: websocket`
+/// and `Connection: Upgrade`. The Connection header may carry additional tokens
+/// (e.g. `keep-alive, Upgrade`), so we split on commas and match case-insensitively.
+fn is_websocket_upgrade(headers: &http::HeaderMap) -> bool {
+    let connection = headers
+        .get(http::header::CONNECTION)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let upgrade = headers
+        .get(http::header::UPGRADE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    connection
+        .split(',')
+        .any(|s| s.trim().eq_ignore_ascii_case("upgrade"))
+        && upgrade.eq_ignore_ascii_case("websocket")
 }
 
 /// Forward an HTTP request to a backend, returning the response.
@@ -289,7 +326,110 @@ async fn forward_request(
     req: axum::extract::Request,
 ) -> Result<Response, anyhow::Error> {
     let (parts, body) = req.into_parts();
+    let proxy_req = build_outbound_request(target, peer_addr, parts, body, false)?;
+    let resp = state.client.request(proxy_req).await?;
 
+    let (resp_parts, resp_body) = resp.into_parts();
+    Ok(Response::from_parts(resp_parts, Body::new(resp_body)))
+}
+
+/// Forward a WebSocket upgrade handshake to a backend and, on a successful
+/// 101 response, tunnel raw bytes between the client and backend.
+///
+/// This does not parse WebSocket frames. Once both sides have completed the
+/// HTTP/1.1 upgrade, we simply shovel bytes in both directions until either
+/// side closes. This is how nginx's `proxy_pass` (with `Upgrade`/`Connection`
+/// forwarded) handles WebSocket, and it avoids pulling in a full WebSocket
+/// implementation for what is fundamentally a transparent tunnel.
+///
+/// Caveats:
+/// - Only `http://` backends are supported today. The shared `state.client`
+///   is built via `build_http()`; a `wss://` backend would require an HTTPS
+///   connector. If we ever need that, add it here.
+/// - If the backend returns anything other than `101 Switching Protocols`
+///   we pass the response through verbatim (e.g. a 401 or 404), and no
+///   tunnel is started.
+async fn forward_websocket(
+    state: &GatewayState,
+    target: &BackendTarget,
+    peer_addr: SocketAddr,
+    mut req: axum::extract::Request,
+) -> Result<Response, anyhow::Error> {
+    // Grab the client-side upgrade future BEFORE consuming the request. This
+    // future will only resolve once axum/hyper has flushed our 101 response
+    // back to the client -- at which point the TCP stream becomes a raw byte
+    // pipe we can splice to the backend.
+    let client_on_upgrade = hyper::upgrade::on(&mut req);
+
+    let (parts, body) = req.into_parts();
+    let proxy_req = build_outbound_request(target, peer_addr, parts, body, true)?;
+    let mut resp = state.client.request(proxy_req).await?;
+
+    // If the backend refused the upgrade (auth failure, wrong path, etc.)
+    // just forward whatever it returned. The client will see the error and
+    // no tunnel is started.
+    if resp.status() != StatusCode::SWITCHING_PROTOCOLS {
+        let (resp_parts, resp_body) = resp.into_parts();
+        return Ok(Response::from_parts(resp_parts, Body::new(resp_body)));
+    }
+
+    // Backend agreed to upgrade. Grab the backend-side upgrade future and
+    // spawn the bidirectional copy. Both futures resolve after their
+    // respective 101 responses have been flushed over the wire.
+    let backend_on_upgrade = hyper::upgrade::on(&mut resp);
+
+    tokio::spawn(async move {
+        let (client_upgraded, backend_upgraded) =
+            match tokio::try_join!(client_on_upgrade, backend_on_upgrade) {
+                Ok(pair) => pair,
+                Err(e) => {
+                    warn!("websocket upgrade failed: {}", e);
+                    return;
+                }
+            };
+
+        // `Upgraded` implements hyper's Read/Write; TokioIo adapts that to
+        // tokio's AsyncRead/AsyncWrite so copy_bidirectional can drive it.
+        let mut client_io = TokioIo::new(client_upgraded);
+        let mut backend_io = TokioIo::new(backend_upgraded);
+
+        match tokio::io::copy_bidirectional(&mut client_io, &mut backend_io).await {
+            Ok((from_client, from_backend)) => {
+                info!(
+                    client_bytes = from_client,
+                    backend_bytes = from_backend,
+                    "websocket tunnel closed"
+                );
+            }
+            Err(e) => {
+                // EOF on one side mid-stream is normal for WebSocket close;
+                // only log at warn to aid debugging of actually-broken tunnels.
+                warn!("websocket tunnel closed with error: {}", e);
+            }
+        }
+    });
+
+    // Hand the backend's 101 back to the client. Axum/hyper will flush these
+    // headers and then resolve our `client_on_upgrade` future with the raw
+    // stream. Do NOT consume the body here -- there is none, and touching it
+    // would interfere with the upgrade machinery.
+    let (resp_parts, resp_body) = resp.into_parts();
+    Ok(Response::from_parts(resp_parts, Body::new(resp_body)))
+}
+
+/// Build the outbound `hyper::Request` forwarded to a backend, shared between
+/// the HTTP and WebSocket paths.
+///
+/// When `preserve_upgrade` is true, the `Upgrade`, `Connection`, and
+/// `Sec-WebSocket-*` headers are copied through so the backend sees a real
+/// upgrade handshake. Normally these are hop-by-hop and stripped.
+fn build_outbound_request(
+    target: &BackendTarget,
+    peer_addr: SocketAddr,
+    parts: http::request::Parts,
+    body: Body,
+    preserve_upgrade: bool,
+) -> Result<hyper::Request<Body>, anyhow::Error> {
     // Pull the request ID our middleware stashed in extensions so we can
     // forward it to the backend. Always present in practice (the middleware
     // is registered on every route) but fall back to None defensively.
@@ -339,9 +479,15 @@ async fn forward_request(
 
     // Copy headers, skipping hop-by-hop headers and Host (we set our own
     // below) and any X-Forwarded-* / X-Real-IP we're about to replace.
+    //
+    // For WebSocket upgrades we deliberately keep Connection/Upgrade (and
+    // the Sec-WebSocket-* headers, which aren't hop-by-hop anyway but are
+    // listed here for clarity). These are normally stripped as hop-by-hop
+    // but must flow end-to-end during the upgrade handshake, otherwise the
+    // backend won't know to switch protocols.
     for (name, value) in &parts.headers {
         let n = name.as_str();
-        if is_hop_by_hop(n) {
+        if is_hop_by_hop(n) && !(preserve_upgrade && is_websocket_handshake_header(n)) {
             continue;
         }
         if n == "host"
@@ -378,11 +524,13 @@ async fn forward_request(
         builder = builder.header(HeaderName::from_static("x-request-id"), hv);
     }
 
-    let proxy_req = builder.body(body)?;
-    let resp = state.client.request(proxy_req).await?;
+    Ok(builder.body(body)?)
+}
 
-    let (resp_parts, resp_body) = resp.into_parts();
-    Ok(Response::from_parts(resp_parts, Body::new(resp_body)))
+/// Headers that are hop-by-hop in the general case but must be forwarded
+/// verbatim during a WebSocket upgrade handshake.
+fn is_websocket_handshake_header(name: &str) -> bool {
+    matches!(name, "connection" | "upgrade")
 }
 
 /// Returns true for HTTP hop-by-hop headers that should not be forwarded.
