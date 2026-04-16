@@ -31,8 +31,10 @@ struct Args {
     /// Backend identifier reported via `/ping`.
     ///
     /// The real agent picks this based on `os.platform()`; the Rust port
-    /// accepts it as an arg for dev/test flexibility. Only `dummy` is
-    /// supported today; `smartos` support lands with the full task suite.
+    /// accepts it as an arg for dev/test flexibility. Valid values:
+    /// `dummy` (platform-neutral tasks only) or `smartos` (adds sysinfo +
+    /// whatever else has been ported). `smartos` is still being built out,
+    /// so most tasks will 404 until they're implemented.
     #[arg(long, env = "CN_AGENT_BACKEND", default_value = "dummy")]
     backend: String,
 
@@ -57,16 +59,11 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    // For the initial scaffold we ship the platform-neutral tasks (nop, sleep).
-    // When the SmartOS backend lands it will swap in a richer registry based
-    // on `args.backend`.
     let registry = match args.backend.as_str() {
         "dummy" => tasks::common_registry(),
+        "smartos" => tasks::smartos_registry(),
         other => {
-            anyhow::bail!(
-                "backend '{other}' not yet supported. Try --backend dummy. \
-                 SmartOS tasks are being ported incrementally."
-            );
+            anyhow::bail!("backend '{other}' not supported. Valid values: dummy, smartos.");
         }
     };
 

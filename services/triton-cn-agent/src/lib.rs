@@ -19,6 +19,7 @@
 pub mod api_impl;
 pub mod context;
 pub mod registry;
+pub mod smartos;
 pub mod tasks;
 
 pub use context::{AgentContext, AgentMetadata};
