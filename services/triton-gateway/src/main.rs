@@ -26,7 +26,13 @@ use http::uri::{Authority, PathAndQuery, Scheme};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 use serde::Deserialize;
-use tracing::{error, info};
+use tracing::{Instrument, error, info, info_span};
+
+/// Per-request identifier used for log correlation across gateway and backends.
+/// Stored in request extensions so the proxy handler can read it and forward
+/// it as an `X-Request-Id` header to the upstream.
+#[derive(Clone)]
+struct RequestId(String);
 
 /// Parsed backend target: scheme + authority for a given upstream. This is
 /// computed once at startup so hot-path forwarding doesn't re-parse URLs
@@ -126,6 +132,7 @@ async fn main() -> Result<()> {
         // TODO: Add /auth/* routes when tritonapi implements them
         // Everything else proxies to CloudAPI.
         .fallback(proxy_to_cloudapi)
+        .layer(axum::middleware::from_fn(request_id_middleware))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(&config.bind_address).await?;
@@ -167,6 +174,49 @@ async fn shutdown_signal() {
         _ = sigterm.recv() => {},
     }
     info!("shutdown signal received, draining in-flight requests");
+}
+
+/// Middleware that establishes a per-request `RequestId` and a tracing span.
+///
+/// Behavior:
+/// - If the incoming request has an `X-Request-Id` header, use it verbatim.
+/// - Otherwise generate a fresh UUIDv4 (hyphenated lowercase).
+/// - The ID is stored in request extensions so `forward_request` can
+///   propagate it as `X-Request-Id` to the backend.
+/// - The downstream future is instrumented with an `http_request` span
+///   carrying `method`, `path`, and `request_id` fields so every log line
+///   emitted during the request is tagged.
+/// - The response echoes `X-Request-Id` back to the client.
+async fn request_id_middleware(
+    mut req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let request_id: String = req
+        .headers()
+        .get("x-request-id")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+
+    req.extensions_mut().insert(RequestId(request_id.clone()));
+
+    let span = info_span!(
+        "http_request",
+        method = %req.method(),
+        path = %req.uri().path(),
+        request_id = %request_id,
+    );
+
+    let mut response = next.run(req).instrument(span).await;
+
+    // Echo the header to the client so they can correlate their request
+    // with our logs. If the (possibly client-supplied) value isn't a valid
+    // HeaderValue, silently drop -- we still logged with it.
+    if let Ok(hv) = http::HeaderValue::from_str(&request_id) {
+        response.headers_mut().insert("x-request-id", hv);
+    }
+
+    response
 }
 
 /// Load config from TRITON__CONFIG_FILE env var.
@@ -240,6 +290,11 @@ async fn forward_request(
 ) -> Result<Response, anyhow::Error> {
     let (parts, body) = req.into_parts();
 
+    // Pull the request ID our middleware stashed in extensions so we can
+    // forward it to the backend. Always present in practice (the middleware
+    // is registered on every route) but fall back to None defensively.
+    let request_id = parts.extensions.get::<RequestId>().map(|r| r.0.clone());
+
     // Preserve the original path+query exactly, falling back to "/".
     // Using a URI builder (vs. string concat) avoids producing "//" when
     // the configured base URL ends with "/" and the request path starts
@@ -294,6 +349,7 @@ async fn forward_request(
             || n == "x-forwarded-proto"
             || n == "x-forwarded-host"
             || n == "x-real-ip"
+            || n == "x-request-id"
         {
             continue;
         }
@@ -312,6 +368,15 @@ async fn forward_request(
         builder = builder.header(HeaderName::from_static("x-forwarded-host"), h);
     }
     builder = builder.header(HeaderName::from_static("x-real-ip"), real_ip);
+    // Propagate the request ID to the backend so its logs correlate with
+    // ours. If for some reason we have no stored ID (shouldn't happen --
+    // the middleware runs on every route), skip rather than fabricate one
+    // here.
+    if let Some(rid) = request_id.as_deref()
+        && let Ok(hv) = HeaderValue::from_str(rid)
+    {
+        builder = builder.header(HeaderName::from_static("x-request-id"), hv);
+    }
 
     let proxy_req = builder.body(body)?;
     let resp = state.client.request(proxy_req).await?;
