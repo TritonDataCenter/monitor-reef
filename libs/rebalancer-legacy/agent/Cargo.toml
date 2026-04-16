@@ -24,6 +24,7 @@ moray = { path = "../../moray" }
 rebalancer = { path = "../rebalancer" }
 reqwest = "0.9.24"
 rusqlite = "0.19.0"
+openssl = { version = "0.10", features = ["vendored"] }
 serde = { version = "1.0.91", features = ["derive"] }
 serde_derive = "1.0.91"
 serde_json = "1.0.39"
