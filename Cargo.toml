@@ -86,6 +86,7 @@ dropshot-api-manager = "0.3"
 dropshot-api-manager-types = "0.3"
 http = "1"
 hyper = { version = "1", features = ["full"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "logging", "native-tokio", "tls12", "ring"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
 openapiv3 = "2.0"
 progenitor = "0.12"
@@ -94,6 +95,7 @@ progenitor-impl = "0.12"
 rustfmt-wrapper = "0.2"
 # reqwest needs to track with progenitor-client
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 # NOTE: schemars version is tied to dropshot compatibility
 # Dropshot 0.16.x requires schemars 0.8.x
 # Do not upgrade to schemars 1.x without also upgrading dropshot

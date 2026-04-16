@@ -1,5 +1,6 @@
 {
     "bind_address": "0.0.0.0:80",
     "tritonapi_url": "http://127.0.0.1:8080",
-    "cloudapi_url": "http://{{{CLOUDAPI_SERVICE}}}"
+    "cloudapi_url": "https://{{{CLOUDAPI_SERVICE}}}",
+    "tls_verify": false
 }

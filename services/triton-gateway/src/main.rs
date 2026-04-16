@@ -25,6 +25,9 @@ use http::header::{HOST, HeaderName, HeaderValue};
 use http::uri::{Authority, PathAndQuery, Scheme};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::{TokioExecutor, TokioIo};
+use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
+use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
+use rustls::{DigitallySignedStruct, Error as RustlsError, SignatureScheme};
 use serde::Deserialize;
 use tracing::{Instrument, error, info, info_span, warn};
 
@@ -67,8 +70,12 @@ impl BackendTarget {
 
 #[derive(Clone)]
 struct GatewayState {
-    /// HTTP client for proxying to backends.
-    client: Client<hyper_util::client::legacy::connect::HttpConnector, Body>,
+    /// HTTP(S) client for proxying to backends. The connector accepts both
+    /// `http://` (tritonapi on loopback) and `https://` (CloudAPI) upstreams.
+    client: Client<
+        hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>,
+        Body,
+    >,
     /// Parsed backend for triton-api-server.
     tritonapi: BackendTarget,
     /// Parsed backend for CloudAPI, if configured.
@@ -83,6 +90,11 @@ struct GatewayConfig {
     tritonapi_url: String,
     #[serde(default)]
     cloudapi_url: Option<String>,
+    /// Verify upstream TLS certificates. `None` (missing) is treated as `true`
+    /// (verify). Setting `false` is required for COAL / dev DCs that use a
+    /// self-signed CloudAPI cert; it must never be used in production.
+    #[serde(default)]
+    tls_verify: Option<bool>,
 }
 
 fn default_bind_address() -> String {
@@ -99,6 +111,7 @@ impl Default for GatewayConfig {
             bind_address: default_bind_address(),
             tritonapi_url: default_tritonapi_url(),
             cloudapi_url: None,
+            tls_verify: None,
         }
     }
 }
@@ -111,7 +124,19 @@ async fn main() -> Result<()> {
 
     let config = load_config()?;
 
-    let client = Client::builder(TokioExecutor::new()).build_http();
+    // rustls 0.23 requires a process-global `CryptoProvider` to be installed
+    // before any `ClientConfig` is built. We use the `ring` backend (pulled in
+    // by the `ring` feature of both `rustls` and `hyper-rustls`). This is a
+    // no-op if something else in the process already installed one.
+    if rustls::crypto::ring::default_provider()
+        .install_default()
+        .is_err()
+    {
+        // Another caller beat us to it (only matters in tests / embedding).
+        // Safe to ignore -- whatever is installed is a valid provider.
+    }
+
+    let client = build_proxy_client(config.tls_verify).await?;
 
     let tritonapi = BackendTarget::parse(&config.tritonapi_url)?;
     let cloudapi = match config.cloudapi_url.as_deref() {
@@ -546,4 +571,99 @@ fn is_hop_by_hop(name: &str) -> bool {
             | "transfer-encoding"
             | "upgrade"
     )
+}
+
+/// Build the shared proxy client, honoring the `tls_verify` config toggle.
+///
+/// `tls_verify` defaults to `true` (missing or explicit `true`). Setting it to
+/// `false` disables certificate chain *and* hostname verification so the
+/// gateway can reach COAL / dev DCs where CloudAPI uses a self-signed cert.
+/// This is equivalent to `tls_verify = false` in user-portal's config.
+async fn build_proxy_client(
+    tls_verify: Option<bool>,
+) -> Result<
+    Client<hyper_rustls::HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>, Body>,
+> {
+    let verify = tls_verify.unwrap_or(true);
+    let tls_config = if verify {
+        let root_store = triton_tls::build_root_cert_store().await;
+        rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth()
+    } else {
+        warn!(
+            "TLS certificate verification DISABLED for upstream proxy \
+             (tls_verify=false); safe only for COAL/dev"
+        );
+        rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(Arc::new(NoCertVerification))
+            .with_no_client_auth()
+    };
+
+    let https = hyper_rustls::HttpsConnectorBuilder::new()
+        .with_tls_config(tls_config)
+        .https_or_http()
+        .enable_http1()
+        .build();
+
+    Ok(Client::builder(TokioExecutor::new()).build(https))
+}
+
+/// `ServerCertVerifier` that accepts any certificate without checking.
+///
+/// Installed only when `tls_verify = false`. This mirrors reqwest's
+/// `danger_accept_invalid_certs(true)` — the same behavior portal uses in
+/// `triton_tls::build_http_client(insecure=true)`.
+#[derive(Debug)]
+struct NoCertVerification;
+
+impl ServerCertVerifier for NoCertVerification {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &CertificateDer<'_>,
+        _intermediates: &[CertificateDer<'_>],
+        _server_name: &ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: UnixTime,
+    ) -> Result<ServerCertVerified, RustlsError> {
+        Ok(ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, RustlsError> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &CertificateDer<'_>,
+        _dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, RustlsError> {
+        Ok(HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        // Advertise everything rustls can handle; we accept them all anyway.
+        vec![
+            SignatureScheme::RSA_PKCS1_SHA1,
+            SignatureScheme::ECDSA_SHA1_Legacy,
+            SignatureScheme::RSA_PKCS1_SHA256,
+            SignatureScheme::ECDSA_NISTP256_SHA256,
+            SignatureScheme::RSA_PKCS1_SHA384,
+            SignatureScheme::ECDSA_NISTP384_SHA384,
+            SignatureScheme::RSA_PKCS1_SHA512,
+            SignatureScheme::ECDSA_NISTP521_SHA512,
+            SignatureScheme::RSA_PSS_SHA256,
+            SignatureScheme::RSA_PSS_SHA384,
+            SignatureScheme::RSA_PSS_SHA512,
+            SignatureScheme::ED25519,
+            SignatureScheme::ED448,
+        ]
+    }
 }
