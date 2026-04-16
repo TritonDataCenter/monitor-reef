@@ -10,7 +10,7 @@ use dropshot::{
     HttpServerStarter, RequestContext,
 };
 use serde::Deserialize;
-use tracing::info;
+use tracing::{error, info};
 use triton_api::{PingResponse, TritonApi};
 
 /// Default request body size limit: 10 MiB.
@@ -137,7 +137,48 @@ async fn main() -> Result<()> {
         config.bind_address
     );
 
+    // Graceful shutdown: race `wait_for_shutdown()` (which does NOT trigger
+    // shutdown, only observes it) against SIGTERM/SIGINT. On signal, call
+    // `HttpServer::close()` which triggers Dropshot's built-in graceful
+    // shutdown (stops accepting new connections and waits for in-flight
+    // handlers to complete, since handlers run in `Detached` mode). SMF's
+    // `timeout_seconds` on the stop method is the hard backstop if draining
+    // takes too long.
+    tokio::select! {
+        result = server.wait_for_shutdown() => {
+            // Server exited on its own (unusual -- normally runs until close()
+            // is called).
+            return result.map_err(|error| anyhow::anyhow!("server failed: {}", error));
+        }
+        () = shutdown_signal() => {
+            // Fall through to the close path below.
+        }
+    }
+
     server
+        .close()
         .await
-        .map_err(|error| anyhow::anyhow!("server failed: {}", error))
+        .map_err(|error| anyhow::anyhow!("graceful shutdown failed: {}", error))
+}
+
+/// Await either SIGTERM or SIGINT (Ctrl-C), whichever arrives first.
+///
+/// SMF's `stop` method sends SIGTERM; Ctrl-C in a dev shell sends SIGINT.
+/// When the signal arrives we log and return, letting the caller trigger
+/// graceful shutdown. SMF's `timeout_seconds` on the stop method is the
+/// hard backstop if draining takes too long.
+async fn shutdown_signal() {
+    use tokio::signal::unix::{SignalKind, signal};
+    let mut sigterm = match signal(SignalKind::terminate()) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("failed to install SIGTERM handler: {}", e);
+            return;
+        }
+    };
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {},
+        _ = sigterm.recv() => {},
+    }
+    info!("shutdown signal received, draining in-flight requests");
 }

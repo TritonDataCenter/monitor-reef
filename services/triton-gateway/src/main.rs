@@ -140,9 +140,33 @@ async fn main() -> Result<()> {
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown_signal())
     .await?;
 
     Ok(())
+}
+
+/// Await either SIGTERM or SIGINT (Ctrl-C), whichever arrives first.
+///
+/// SMF's `stop` method sends SIGTERM; Ctrl-C in a dev shell sends SIGINT.
+/// When the signal arrives we log and return, letting the caller (axum's
+/// `with_graceful_shutdown`) drain in-flight requests. SMF's
+/// `timeout_seconds` on the stop method is the hard backstop if draining
+/// takes too long.
+async fn shutdown_signal() {
+    use tokio::signal::unix::{SignalKind, signal};
+    let mut sigterm = match signal(SignalKind::terminate()) {
+        Ok(s) => s,
+        Err(e) => {
+            error!("failed to install SIGTERM handler: {}", e);
+            return;
+        }
+    };
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {},
+        _ = sigterm.recv() => {},
+    }
+    info!("shutdown signal received, draining in-flight requests");
 }
 
 /// Load config from TRITON__CONFIG_FILE env var.
