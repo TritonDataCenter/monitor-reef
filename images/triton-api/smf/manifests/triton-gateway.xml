@@ -23,15 +23,22 @@
         </dependency>
 
         <!-- Gateway depends on triton-api being available -->
-        <dependency name="triton-api" grouping="require_all" restart_on="restart"
+        <dependency name="triton-api" grouping="require_all" restart_on="none"
             type="service">
             <service_fmri value="svc:/triton/application/triton-api:default"/>
+        </dependency>
+
+        <dependency name="config-agent" grouping="require_all" restart_on="none"
+            type="service">
+            <service_fmri value="svc:/smartdc/application/config-agent:default"/>
         </dependency>
 
         <exec_method type="method" name="start"
             exec="/opt/triton/triton-api/triton-gateway &amp;"
             timeout_seconds="60">
             <method_context>
+                <method_credential user="nobody" group="nobody"
+                    privileges="basic,net_privaddr"/>
                 <method_environment>
                     <envvar name="TRITON__CONFIG_FILE"
                         value="/opt/triton/triton-api/etc/gateway-config.json"/>

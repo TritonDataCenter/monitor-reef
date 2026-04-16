@@ -22,6 +22,11 @@
             <service_fmri value="svc:/milestone/network:default"/>
         </dependency>
 
+        <dependency name="config-agent" grouping="require_all" restart_on="none"
+            type="service">
+            <service_fmri value="svc:/smartdc/application/config-agent:default"/>
+        </dependency>
+
         <exec_method type="method" name="start"
             exec="/opt/triton/triton-api/triton-api-server &amp;"
             timeout_seconds="60">
