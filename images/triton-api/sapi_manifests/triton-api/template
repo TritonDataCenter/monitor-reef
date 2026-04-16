@@ -3,5 +3,6 @@
     "instance_uuid": "{{auto.ZONENAME}}",
     "server_uuid": "{{auto.SERVER_UUID}}",
     "admin_ip": "{{auto.ADMIN_IP}}",
-    "bind_address": "127.0.0.1:8080"
+    "bind_address": "127.0.0.1:8080",
+    "max_body_bytes": 10485760
 }

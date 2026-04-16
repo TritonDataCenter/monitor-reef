@@ -4,14 +4,21 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use dropshot::{
     ConfigDropshot, ConfigLogging, ConfigLoggingLevel, HttpError, HttpResponseOk,
     HttpServerStarter, RequestContext,
 };
 use serde::Deserialize;
-use tracing::{error, info};
+use tracing::info;
 use triton_api::{PingResponse, TritonApi};
+
+/// Default request body size limit: 10 MiB.
+///
+/// 1 MiB was too small for CloudAPI-compat use cases (user-scripts, machine
+/// metadata, image manifests). This is a reasonable starting point; it can be
+/// overridden per-deployment via the `max_body_bytes` field in the SAPI config.
+const DEFAULT_MAX_BODY_BYTES: u64 = 10 * 1024 * 1024;
 
 #[derive(Deserialize)]
 #[allow(dead_code)]
@@ -26,6 +33,8 @@ struct ApiServerConfig {
     admin_ip: Option<String>,
     #[serde(default = "default_bind_address")]
     bind_address: String,
+    #[serde(default)]
+    max_body_bytes: Option<u64>,
 }
 
 fn default_bind_address() -> String {
@@ -40,31 +49,29 @@ impl Default for ApiServerConfig {
             server_uuid: None,
             admin_ip: None,
             bind_address: default_bind_address(),
+            max_body_bytes: None,
         }
     }
 }
 
-/// Load config from TRITON__CONFIG_FILE env var, falling back to defaults.
-fn load_config() -> ApiServerConfig {
-    let path = std::env::var("TRITON__CONFIG_FILE").ok();
-    if let Some(ref path) = path {
-        match std::fs::read_to_string(path) {
-            Ok(contents) => match serde_json::from_str(&contents) {
-                Ok(config) => {
-                    info!("loaded config from {}", path);
-                    return config;
-                }
-                Err(e) => {
-                    error!("failed to parse config from {}: {}", path, e);
-                }
-            },
-            Err(e) => {
-                error!("failed to read config from {}: {}", path, e);
-            }
-        }
-    }
-    info!("using default config");
-    ApiServerConfig::default()
+/// Load config from TRITON__CONFIG_FILE env var.
+///
+/// If the env var is unset, returns defaults (useful for dev).
+/// If the env var is set but the file cannot be read or parsed, returns
+/// an error so the process exits non-zero -- SMF will mark the service in
+/// maintenance and an operator will notice.
+fn load_config() -> Result<ApiServerConfig> {
+    let Some(path) = std::env::var("TRITON__CONFIG_FILE").ok() else {
+        info!("TRITON__CONFIG_FILE not set; using default config");
+        return Ok(ApiServerConfig::default());
+    };
+
+    let contents = std::fs::read_to_string(&path)
+        .with_context(|| format!("failed to read config from {}", path))?;
+    let config: ApiServerConfig = serde_json::from_str(&contents)
+        .with_context(|| format!("failed to parse config from {}", path))?;
+    info!("loaded config from {}", path);
+    Ok(config)
 }
 
 struct ApiContext {}
@@ -92,14 +99,23 @@ async fn main() -> Result<()> {
         ))
         .init();
 
-    let config = load_config();
+    let config = load_config()?;
 
     let api = triton_api::triton_api_mod::api_description::<TritonApiImpl>()
         .map_err(|e| anyhow::anyhow!("Failed to create API description: {}", e))?;
 
+    let max_body_bytes_u64 = config.max_body_bytes.unwrap_or(DEFAULT_MAX_BODY_BYTES);
+    let max_body_bytes: usize = usize::try_from(max_body_bytes_u64).with_context(|| {
+        format!(
+            "max_body_bytes {} does not fit in usize on this platform",
+            max_body_bytes_u64
+        )
+    })?;
+    info!("request body size limit: {} bytes", max_body_bytes);
+
     let config_dropshot = ConfigDropshot {
         bind_address: config.bind_address.parse()?,
-        default_request_body_max_bytes: 1024 * 1024,
+        default_request_body_max_bytes: max_body_bytes,
         default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
         ..Default::default()
     };

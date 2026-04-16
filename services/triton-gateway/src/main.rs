@@ -13,7 +13,7 @@
 
 use std::sync::Arc;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use axum::Router;
 use axum::body::Body;
 use axum::extract::State;
@@ -70,7 +70,7 @@ async fn main() -> Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::new("triton_gateway=info"))
         .init();
 
-    let config = load_config();
+    let config = load_config()?;
 
     let client = Client::builder(TokioExecutor::new()).build_http();
 
@@ -105,27 +105,24 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Load config from TRITON__CONFIG_FILE env var, falling back to defaults.
-fn load_config() -> GatewayConfig {
-    let path = std::env::var("TRITON__CONFIG_FILE").ok();
-    if let Some(ref path) = path {
-        match std::fs::read_to_string(path) {
-            Ok(contents) => match serde_json::from_str(&contents) {
-                Ok(config) => {
-                    info!("loaded config from {}", path);
-                    return config;
-                }
-                Err(e) => {
-                    error!("failed to parse config from {}: {}", path, e);
-                }
-            },
-            Err(e) => {
-                error!("failed to read config from {}: {}", path, e);
-            }
-        }
-    }
-    info!("using default config");
-    GatewayConfig::default()
+/// Load config from TRITON__CONFIG_FILE env var.
+///
+/// If the env var is unset, returns defaults (useful for dev).
+/// If the env var is set but the file cannot be read or parsed, returns
+/// an error so the process exits non-zero -- SMF will mark the service in
+/// maintenance and an operator will notice.
+fn load_config() -> Result<GatewayConfig> {
+    let Some(path) = std::env::var("TRITON__CONFIG_FILE").ok() else {
+        info!("TRITON__CONFIG_FILE not set; using default config");
+        return Ok(GatewayConfig::default());
+    };
+
+    let contents = std::fs::read_to_string(&path)
+        .with_context(|| format!("failed to read config from {}", path))?;
+    let config: GatewayConfig = serde_json::from_str(&contents)
+        .with_context(|| format!("failed to parse config from {}", path))?;
+    info!("loaded config from {}", path);
+    Ok(config)
 }
 
 /// Forward a request to triton-api-server, preserving method/path/headers/body.
