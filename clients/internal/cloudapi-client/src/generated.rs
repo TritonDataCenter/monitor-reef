@@ -1701,8 +1701,29 @@ pub mod types {
     #[doc = "    \"password\""]
     #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"address\": {"]
+    #[doc = "      \"description\": \"Street address\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"city\": {"]
+    #[doc = "      \"description\": \"City\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"companyName\": {"]
     #[doc = "      \"description\": \"Company name\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"country\": {"]
+    #[doc = "      \"description\": \"Country\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -1740,6 +1761,20 @@ pub mod types {
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"postalCode\": {"]
+    #[doc = "      \"description\": \"Postal code\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"state\": {"]
+    #[doc = "      \"description\": \"State or province\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -1749,6 +1784,12 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct CreateUserRequest {
+        #[doc = "Street address"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub address: ::std::option::Option<::std::string::String>,
+        #[doc = "City"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub city: ::std::option::Option<::std::string::String>,
         #[doc = "Company name"]
         #[serde(
             rename = "companyName",
@@ -1756,6 +1797,9 @@ pub mod types {
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub company_name: ::std::option::Option<::std::string::String>,
+        #[doc = "Country"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub country: ::std::option::Option<::std::string::String>,
         #[doc = "Email address"]
         pub email: ::std::string::String,
         #[doc = "First name"]
@@ -1779,6 +1823,16 @@ pub mod types {
         #[doc = "Phone number"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub phone: ::std::option::Option<::std::string::String>,
+        #[doc = "Postal code"]
+        #[serde(
+            rename = "postalCode",
+            default,
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub postal_code: ::std::option::Option<::std::string::String>,
+        #[doc = "State or province"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub state: ::std::option::Option<::std::string::String>,
     }
 
     impl CreateUserRequest {
@@ -7376,8 +7430,29 @@ pub mod types {
     #[doc = "  \"description\": \"Request to update user\","]
     #[doc = "  \"type\": \"object\","]
     #[doc = "  \"properties\": {"]
+    #[doc = "    \"address\": {"]
+    #[doc = "      \"description\": \"Street address\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"city\": {"]
+    #[doc = "      \"description\": \"City\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
     #[doc = "    \"companyName\": {"]
     #[doc = "      \"description\": \"Company name\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"country\": {"]
+    #[doc = "      \"description\": \"Country\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
@@ -7410,6 +7485,20 @@ pub mod types {
     #[doc = "        \"string\","]
     #[doc = "        \"null\""]
     #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"postalCode\": {"]
+    #[doc = "      \"description\": \"Postal code\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"state\": {"]
+    #[doc = "      \"description\": \"State or province\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -7419,6 +7508,12 @@ pub mod types {
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
     pub struct UpdateUserRequest {
+        #[doc = "Street address"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub address: ::std::option::Option<::std::string::String>,
+        #[doc = "City"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub city: ::std::option::Option<::std::string::String>,
         #[doc = "Company name"]
         #[serde(
             rename = "companyName",
@@ -7426,6 +7521,9 @@ pub mod types {
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub company_name: ::std::option::Option<::std::string::String>,
+        #[doc = "Country"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub country: ::std::option::Option<::std::string::String>,
         #[doc = "Email address"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub email: ::std::option::Option<::std::string::String>,
@@ -7446,16 +7544,31 @@ pub mod types {
         #[doc = "Phone number"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub phone: ::std::option::Option<::std::string::String>,
+        #[doc = "Postal code"]
+        #[serde(
+            rename = "postalCode",
+            default,
+            skip_serializing_if = "::std::option::Option::is_none"
+        )]
+        pub postal_code: ::std::option::Option<::std::string::String>,
+        #[doc = "State or province"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub state: ::std::option::Option<::std::string::String>,
     }
 
     impl ::std::default::Default for UpdateUserRequest {
         fn default() -> Self {
             Self {
+                address: Default::default(),
+                city: Default::default(),
                 company_name: Default::default(),
+                country: Default::default(),
                 email: Default::default(),
                 first_name: Default::default(),
                 last_name: Default::default(),
                 phone: Default::default(),
+                postal_code: Default::default(),
+                state: Default::default(),
             }
         }
     }
@@ -10187,7 +10300,19 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct CreateUserRequest {
+            address: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            city: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             company_name: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            country: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
@@ -10206,23 +10331,56 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            postal_code: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            state: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
         }
 
         impl ::std::default::Default for CreateUserRequest {
             fn default() -> Self {
                 Self {
+                    address: Ok(Default::default()),
+                    city: Ok(Default::default()),
                     company_name: Ok(Default::default()),
+                    country: Ok(Default::default()),
                     email: Err("no value supplied for email".to_string()),
                     first_name: Ok(Default::default()),
                     last_name: Ok(Default::default()),
                     login: Err("no value supplied for login".to_string()),
                     password: Err("no value supplied for password".to_string()),
                     phone: Ok(Default::default()),
+                    postal_code: Ok(Default::default()),
+                    state: Ok(Default::default()),
                 }
             }
         }
 
         impl CreateUserRequest {
+            pub fn address<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.address = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for address: {e}"));
+                self
+            }
+            pub fn city<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.city = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for city: {e}"));
+                self
+            }
             pub fn company_name<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
@@ -10231,6 +10389,16 @@ pub mod types {
                 self.company_name = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for company_name: {e}"));
+                self
+            }
+            pub fn country<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.country = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for country: {e}"));
                 self
             }
             pub fn email<T>(mut self, value: T) -> Self
@@ -10293,6 +10461,26 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for phone: {e}"));
                 self
             }
+            pub fn postal_code<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.postal_code = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for postal_code: {e}"));
+                self
+            }
+            pub fn state<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.state = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for state: {e}"));
+                self
+            }
         }
 
         impl ::std::convert::TryFrom<CreateUserRequest> for super::CreateUserRequest {
@@ -10301,13 +10489,18 @@ pub mod types {
                 value: CreateUserRequest,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    address: value.address?,
+                    city: value.city?,
                     company_name: value.company_name?,
+                    country: value.country?,
                     email: value.email?,
                     first_name: value.first_name?,
                     last_name: value.last_name?,
                     login: value.login?,
                     password: value.password?,
                     phone: value.phone?,
+                    postal_code: value.postal_code?,
+                    state: value.state?,
                 })
             }
         }
@@ -10315,13 +10508,18 @@ pub mod types {
         impl ::std::convert::From<super::CreateUserRequest> for CreateUserRequest {
             fn from(value: super::CreateUserRequest) -> Self {
                 Self {
+                    address: Ok(value.address),
+                    city: Ok(value.city),
                     company_name: Ok(value.company_name),
+                    country: Ok(value.country),
                     email: Ok(value.email),
                     first_name: Ok(value.first_name),
                     last_name: Ok(value.last_name),
                     login: Ok(value.login),
                     password: Ok(value.password),
                     phone: Ok(value.phone),
+                    postal_code: Ok(value.postal_code),
+                    state: Ok(value.state),
                 }
             }
         }
@@ -15363,7 +15561,19 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct UpdateUserRequest {
+            address: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            city: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
             company_name: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            country: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
@@ -15383,21 +15593,54 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            postal_code: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            state: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
         }
 
         impl ::std::default::Default for UpdateUserRequest {
             fn default() -> Self {
                 Self {
+                    address: Ok(Default::default()),
+                    city: Ok(Default::default()),
                     company_name: Ok(Default::default()),
+                    country: Ok(Default::default()),
                     email: Ok(Default::default()),
                     first_name: Ok(Default::default()),
                     last_name: Ok(Default::default()),
                     phone: Ok(Default::default()),
+                    postal_code: Ok(Default::default()),
+                    state: Ok(Default::default()),
                 }
             }
         }
 
         impl UpdateUserRequest {
+            pub fn address<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.address = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for address: {e}"));
+                self
+            }
+            pub fn city<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.city = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for city: {e}"));
+                self
+            }
             pub fn company_name<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
@@ -15406,6 +15649,16 @@ pub mod types {
                 self.company_name = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for company_name: {e}"));
+                self
+            }
+            pub fn country<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.country = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for country: {e}"));
                 self
             }
             pub fn email<T>(mut self, value: T) -> Self
@@ -15448,6 +15701,26 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for phone: {e}"));
                 self
             }
+            pub fn postal_code<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.postal_code = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for postal_code: {e}"));
+                self
+            }
+            pub fn state<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.state = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for state: {e}"));
+                self
+            }
         }
 
         impl ::std::convert::TryFrom<UpdateUserRequest> for super::UpdateUserRequest {
@@ -15456,11 +15729,16 @@ pub mod types {
                 value: UpdateUserRequest,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
+                    address: value.address?,
+                    city: value.city?,
                     company_name: value.company_name?,
+                    country: value.country?,
                     email: value.email?,
                     first_name: value.first_name?,
                     last_name: value.last_name?,
                     phone: value.phone?,
+                    postal_code: value.postal_code?,
+                    state: value.state?,
                 })
             }
         }
@@ -15468,11 +15746,16 @@ pub mod types {
         impl ::std::convert::From<super::UpdateUserRequest> for UpdateUserRequest {
             fn from(value: super::UpdateUserRequest) -> Self {
                 Self {
+                    address: Ok(value.address),
+                    city: Ok(value.city),
                     company_name: Ok(value.company_name),
+                    country: Ok(value.country),
                     email: Ok(value.email),
                     first_name: Ok(value.first_name),
                     last_name: Ok(value.last_name),
                     phone: Ok(value.phone),
+                    postal_code: Ok(value.postal_code),
+                    state: Ok(value.state),
                 }
             }
         }

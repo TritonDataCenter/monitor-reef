@@ -717,9 +717,27 @@
       "CreateUserRequest": {
         "description": "Request to create user",
         "properties": {
+          "address": {
+            "default": null,
+            "description": "Street address",
+            "nullable": true,
+            "type": "string"
+          },
+          "city": {
+            "default": null,
+            "description": "City",
+            "nullable": true,
+            "type": "string"
+          },
           "companyName": {
             "default": null,
             "description": "Company name",
+            "nullable": true,
+            "type": "string"
+          },
+          "country": {
+            "default": null,
+            "description": "Country",
             "nullable": true,
             "type": "string"
           },
@@ -750,6 +768,18 @@
           "phone": {
             "default": null,
             "description": "Phone number",
+            "nullable": true,
+            "type": "string"
+          },
+          "postalCode": {
+            "default": null,
+            "description": "Postal code",
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "default": null,
+            "description": "State or province",
             "nullable": true,
             "type": "string"
           }
@@ -2932,9 +2962,27 @@
       "UpdateUserRequest": {
         "description": "Request to update user",
         "properties": {
+          "address": {
+            "default": null,
+            "description": "Street address",
+            "nullable": true,
+            "type": "string"
+          },
+          "city": {
+            "default": null,
+            "description": "City",
+            "nullable": true,
+            "type": "string"
+          },
           "companyName": {
             "default": null,
             "description": "Company name",
+            "nullable": true,
+            "type": "string"
+          },
+          "country": {
+            "default": null,
+            "description": "Country",
             "nullable": true,
             "type": "string"
           },
@@ -2959,6 +3007,18 @@
           "phone": {
             "default": null,
             "description": "Phone number",
+            "nullable": true,
+            "type": "string"
+          },
+          "postalCode": {
+            "default": null,
+            "description": "Postal code",
+            "nullable": true,
+            "type": "string"
+          },
+          "state": {
+            "default": null,
+            "description": "State or province",
             "nullable": true,
             "type": "string"
           }

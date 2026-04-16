@@ -101,6 +101,21 @@ pub struct CreateUserRequest {
     /// Phone number
     #[serde(default)]
     pub phone: Option<String>,
+    /// Street address
+    #[serde(default)]
+    pub address: Option<String>,
+    /// Postal code
+    #[serde(default)]
+    pub postal_code: Option<String>,
+    /// City
+    #[serde(default)]
+    pub city: Option<String>,
+    /// State or province
+    #[serde(default)]
+    pub state: Option<String>,
+    /// Country
+    #[serde(default)]
+    pub country: Option<String>,
 }
 
 /// Request to update user
@@ -122,6 +137,21 @@ pub struct UpdateUserRequest {
     /// Phone number
     #[serde(default)]
     pub phone: Option<String>,
+    /// Street address
+    #[serde(default)]
+    pub address: Option<String>,
+    /// Postal code
+    #[serde(default)]
+    pub postal_code: Option<String>,
+    /// City
+    #[serde(default)]
+    pub city: Option<String>,
+    /// State or province
+    #[serde(default)]
+    pub state: Option<String>,
+    /// Country
+    #[serde(default)]
+    pub country: Option<String>,
 }
 
 /// Request to change user password

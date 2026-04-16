@@ -414,6 +414,11 @@ async fn create_user(args: UserCreateArgs, client: &TypedClient, use_json: bool)
         first_name: args.first_name,
         last_name: args.last_name,
         phone: None,
+        address: None,
+        postal_code: None,
+        city: None,
+        state: None,
+        country: None,
     };
 
     let response = client
@@ -444,6 +449,11 @@ async fn update_user(args: UserUpdateArgs, client: &TypedClient, use_json: bool)
         first_name: args.first_name,
         last_name: args.last_name,
         phone: None,
+        address: None,
+        postal_code: None,
+        city: None,
+        state: None,
+        country: None,
     };
 
     let response = client
@@ -617,6 +627,11 @@ async fn add_user_from_file(
         first_name,
         last_name,
         phone,
+        address: None,
+        postal_code: None,
+        city: None,
+        state: None,
+        country: None,
     };
 
     let response = client
@@ -738,6 +753,11 @@ async fn edit_user_in_editor(user_ref: &str, client: &TypedClient) -> Result<()>
                     first_name: edited.first_name,
                     last_name: edited.last_name,
                     phone: edited.phone,
+                    address: None,
+                    postal_code: None,
+                    city: None,
+                    state: None,
+                    country: None,
                 };
 
                 // Update the user
