@@ -1,5 +1,5 @@
 {
     "name": "triton-api",
-    "path": "/opt/triton/triton-api/etc/config.json",
+    "path": "/opt/smartdc/triton-api/etc/config.json",
     "post_cmd": "/usr/sbin/svcadm restart triton/application/triton-api"
 }

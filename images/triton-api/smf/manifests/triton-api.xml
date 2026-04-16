@@ -28,12 +28,12 @@
         </dependency>
 
         <exec_method type="method" name="start"
-            exec="/opt/triton/triton-api/triton-api-server &amp;"
+            exec="/opt/smartdc/triton-api/triton-api-server &amp;"
             timeout_seconds="60">
             <method_context>
                 <method_environment>
                     <envvar name="TRITON__CONFIG_FILE"
-                        value="/opt/triton/triton-api/etc/config.json"/>
+                        value="/opt/smartdc/triton-api/etc/config.json"/>
                 </method_environment>
             </method_context>
         </exec_method>

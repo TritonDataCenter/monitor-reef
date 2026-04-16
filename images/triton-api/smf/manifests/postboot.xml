@@ -23,9 +23,11 @@
         </dependency>
 
         <exec_method type="method" name="start"
-            exec="/opt/triton/boot/setup.sh"
+            exec="/opt/smartdc/boot/setup.sh"
             timeout_seconds="300">
-            <method_context/>
+            <method_context>
+                <method_credential user="root" group="root"/>
+            </method_context>
         </exec_method>
 
         <exec_method type="method" name="stop" exec=":true"

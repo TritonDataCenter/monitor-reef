@@ -48,17 +48,19 @@ all: release_build
 release: all
 	@echo "Building $(RELEASE_TARBALL)"
 	@rm -rf $(RELSTAGEDIR)
-	@mkdir -p $(RELSTAGEDIR)/root/opt/triton/boot
-	@mkdir -p $(RELSTAGEDIR)/root/opt/triton/$(DIR_NAME)
+	@mkdir -p $(RELSTAGEDIR)/root/opt/smartdc/boot
+	@mkdir -p $(RELSTAGEDIR)/root/opt/smartdc/$(DIR_NAME)
 	@mkdir -p $(RELSTAGEDIR)/root/opt/custom/smf
 	@mkdir -p $(RELSTAGEDIR)/root/opt/smartdc/$(DIR_NAME)/sapi_manifests
 	@mkdir -p $(RELSTAGEDIR)/site
 	@touch $(RELSTAGEDIR)/site/.do-not-delete-me
 	for bin in $(SERVICE_BINS); do \
 	    cp $(REPO_ROOT)/target/release/$$bin \
-	        $(RELSTAGEDIR)/root/opt/triton/$(DIR_NAME)/; \
+	        $(RELSTAGEDIR)/root/opt/smartdc/$(DIR_NAME)/; \
 	done
-	cp -PR boot/* $(RELSTAGEDIR)/root/opt/triton/boot/
+	cp -r $(REPO_ROOT)/deps/sdc-scripts/{etc,lib,sbin,smf} \
+	    $(RELSTAGEDIR)/root/opt/smartdc/boot/
+	cp -PR boot/* $(RELSTAGEDIR)/root/opt/smartdc/boot/
 	cp -PR smf/* $(RELSTAGEDIR)/root/opt/custom/smf/
 	cp -PR sapi_manifests/* \
 	    $(RELSTAGEDIR)/root/opt/smartdc/$(DIR_NAME)/sapi_manifests/

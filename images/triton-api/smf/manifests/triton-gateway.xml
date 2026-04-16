@@ -34,14 +34,14 @@
         </dependency>
 
         <exec_method type="method" name="start"
-            exec="/opt/triton/triton-api/triton-gateway &amp;"
+            exec="/opt/smartdc/triton-api/triton-gateway &amp;"
             timeout_seconds="60">
             <method_context>
                 <method_credential user="nobody" group="nobody"
                     privileges="basic,net_privaddr"/>
                 <method_environment>
                     <envvar name="TRITON__CONFIG_FILE"
-                        value="/opt/triton/triton-api/etc/gateway-config.json"/>
+                        value="/opt/smartdc/triton-api/etc/gateway-config.json"/>
                 </method_environment>
             </method_context>
         </exec_method>

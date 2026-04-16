@@ -4,33 +4,43 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 #
-
-#
 # Copyright 2026 Edgecast Cloud LLC.
 #
 
 #
-# Triton API zone first-boot setup script.
+# First-boot setup for the triton-api zone.
+#
+# Called by the standard Triton user-script (mdata:execute) and also by
+# /site/postboot as belt-and-suspenders. Must be idempotent.
+#
+# The zone runs two services: triton-api-server (loopback) and
+# triton-gateway (public). Both read config rendered by config-agent
+# from SAPI templates at /opt/smartdc/triton-api/sapi_manifests/.
 #
 
-export PS4='[\D{%FT%TZ}] ${BASH_SOURCE}:${LINENO}: '\
-'${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
-set -o xtrace
+export PS4='[\D{%FT%TZ}] ${BASH_SOURCE}:${LINENO}: ${FUNCNAME[0]:+${FUNCNAME[0]}(): }'
 set -o errexit
 set -o pipefail
+set -o xtrace
 
-. /lib/svc/share/smf_include.sh
+SVC_ROOT=/opt/smartdc/triton-api
 
-MARKER=/var/tmp/.first-boot-done
+# Tell sdc_common_setup where to find SAPI manifests for config-agent
+CONFIG_AGENT_LOCAL_MANIFESTS_DIRS="${SVC_ROOT}"
+source /opt/smartdc/boot/lib/util.sh
+sdc_common_setup
 
-if [[ -f "$MARKER" ]]; then
-    echo "Already completed first boot setup."
-    exit $SMF_EXIT_OK
-fi
-
-# Import service manifests for both services in this zone
+# Import the long-running service manifests
 /usr/sbin/svccfg import /opt/custom/smf/manifests/triton-api.xml
 /usr/sbin/svccfg import /opt/custom/smf/manifests/triton-gateway.xml
 
-touch "$MARKER"
-exit $SMF_EXIT_OK
+# Create the config directory if config-agent hasn't already
+mkdir -p ${SVC_ROOT}/etc
+
+sdc_log_rotation_add triton-api-server /var/svc/log/*triton-api*.log 1g
+sdc_log_rotation_add triton-gateway /var/svc/log/*triton-gateway*.log 1g
+sdc_log_rotation_setup_end
+
+sdc_setup_complete
+
+exit 0
