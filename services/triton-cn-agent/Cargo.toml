@@ -1,0 +1,41 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "triton-cn-agent"
+version = "0.1.0"
+edition.workspace = true
+description = "Triton Compute Node Agent (Rust port of sdc-cn-agent)"
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "triton-cn-agent"
+path = "src/main.rs"
+
+[lib]
+name = "triton_cn_agent"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+async-trait = "0.1"
+chrono = { workspace = true, features = ["serde"] }
+clap = { workspace = true, features = ["derive", "env"] }
+cn-agent-api = { path = "../../apis/cn-agent-api" }
+dropshot = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+reqwest = { workspace = true, features = ["json"] }

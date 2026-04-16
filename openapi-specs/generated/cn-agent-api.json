@@ -1,0 +1,393 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Triton Compute Node Agent",
+    "description": "Triton cn-agent - per-compute-node HTTP agent that CNAPI dispatches VM lifecycle, ZFS, image, and agent-management tasks to",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/history": {
+      "get": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Return the in-memory task history (most recent first).",
+        "operationId": "get_history",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TaskHistoryResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/pause": {
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Stop accepting new tasks.",
+        "description": "Pausing is used during agent self-update and CN reboots to drain work before the service exits. Tasks already in flight are not interrupted.",
+        "operationId": "pause",
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/ping": {
+      "get": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Health check and agent metadata.",
+        "operationId": "ping",
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PingResponse"
+                }
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/resume": {
+      "post": {
+        "tags": [
+          "system"
+        ],
+        "summary": "Resume accepting tasks after a prior pause.",
+        "operationId": "resume",
+        "responses": {
+          "204": {
+            "description": "resource updated"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    },
+    "/tasks": {
+      "post": {
+        "tags": [
+          "tasks"
+        ],
+        "summary": "Dispatch a task.",
+        "description": "Runs the named task with the given params. On success the task's result is returned as a JSON body; on failure a [`TaskError`] is returned with HTTP 500. If the agent is paused, returns HTTP 503.",
+        "operationId": "dispatch_task",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TaskRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "successful operation",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Error": {
+        "description": "Error information from a response.",
+        "type": "object",
+        "properties": {
+          "error_code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "request_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "message",
+          "request_id"
+        ]
+      },
+      "PingResponse": {
+        "description": "Health check response from `GET /ping`.",
+        "type": "object",
+        "properties": {
+          "backend": {
+            "description": "Backend name (e.g., \"smartos\", \"dummy\").",
+            "type": "string"
+          },
+          "name": {
+            "description": "Agent name (e.g., \"cn-agent\").",
+            "type": "string"
+          },
+          "paused": {
+            "description": "Whether the agent is currently paused (not accepting new tasks).",
+            "type": "boolean"
+          },
+          "server_uuid": {
+            "description": "Server UUID this agent is running on.",
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "description": "Agent version.",
+            "type": "string"
+          }
+        },
+        "required": [
+          "backend",
+          "name",
+          "paused",
+          "server_uuid",
+          "version"
+        ]
+      },
+      "TaskHistoryEntry": {
+        "description": "A single entry in the task history ring buffer.\n\nThe legacy agent keeps the 16 most-recent tasks in memory. We preserve that behavior so operators relying on `curl /history` keep the same shape.",
+        "type": "object",
+        "properties": {
+          "error_count": {
+            "description": "Number of error events emitted by the task (>0 implies failure).",
+            "default": 0,
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          },
+          "finished_at": {
+            "nullable": true,
+            "description": "ISO-8601 timestamp of when the task finished (absent if still running).",
+            "type": "string"
+          },
+          "params": {
+            "description": "Raw params the task was invoked with (may be redacted for `docker_build`)."
+          },
+          "started_at": {
+            "description": "ISO-8601 timestamp of when the task started.",
+            "type": "string"
+          },
+          "status": {
+            "description": "Current status of the task (active, finished, failed).",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskStatus"
+              }
+            ]
+          },
+          "task": {
+            "description": "The task that ran.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskName"
+              }
+            ]
+          }
+        },
+        "required": [
+          "params",
+          "started_at",
+          "status",
+          "task"
+        ]
+      },
+      "TaskHistoryResponse": {
+        "description": "Response from `GET /history`.",
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TaskHistoryEntry"
+            }
+          }
+        },
+        "required": [
+          "entries"
+        ]
+      },
+      "TaskName": {
+        "description": "Canonical set of tasks the SmartOS backend of cn-agent can dispatch.\n\nEnum variants are serialized as the exact string names used in the legacy Node.js agent (see `lib/backends/smartos/index.js:queueDefns`). A catch-all `Unknown` variant lets newer CNAPIs send tasks an older agent does not yet understand without blowing up deserialization.",
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "machine_create",
+              "machine_reprovision",
+              "machine_destroy",
+              "machine_boot",
+              "machine_shutdown",
+              "machine_reboot",
+              "machine_kill",
+              "machine_update",
+              "machine_update_nics",
+              "machine_screenshot",
+              "machine_create_snapshot",
+              "machine_delete_snapshot",
+              "machine_rollback_snapshot",
+              "machine_create_image",
+              "machine_migrate",
+              "machine_migrate_receive",
+              "machine_load",
+              "machine_info",
+              "machine_proc",
+              "image_ensure_present",
+              "image_get",
+              "server_sysinfo",
+              "server_reboot",
+              "server_update_nics",
+              "server_overprovision_ratio",
+              "command_execute",
+              "recovery_config",
+              "agent_install",
+              "agents_uninstall",
+              "refresh_agents",
+              "shutdown_cn_agent_update",
+              "docker_build",
+              "docker_copy",
+              "docker_exec",
+              "docker_stats",
+              "zfs_create_dataset",
+              "zfs_destroy_dataset",
+              "zfs_rename_dataset",
+              "zfs_snapshot_dataset",
+              "zfs_rollback_dataset",
+              "zfs_clone_dataset",
+              "zfs_set_properties",
+              "zfs_get_properties",
+              "zfs_list_datasets",
+              "zfs_list_snapshots",
+              "zfs_list_pools",
+              "nop",
+              "sleep",
+              "test_subtask"
+            ]
+          },
+          {
+            "description": "Catch-all for tasks this agent version does not understand. Dispatch will return an error explaining the task is unsupported.",
+            "type": "string",
+            "enum": [
+              "unknown"
+            ]
+          }
+        ]
+      },
+      "TaskRequest": {
+        "description": "Request body for `POST /tasks`.\n\nMatches the wire shape CNAPI sends today. `params` is deliberately untyped here; the service deserializes it into a task-specific struct after selecting a handler based on `task`.",
+        "type": "object",
+        "properties": {
+          "params": {
+            "description": "Arbitrary task-specific parameters.",
+            "default": null
+          },
+          "task": {
+            "description": "The task to execute.",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/TaskName"
+              }
+            ]
+          }
+        },
+        "required": [
+          "task"
+        ]
+      },
+      "TaskStatus": {
+        "description": "Lifecycle state of a task.",
+        "oneOf": [
+          {
+            "description": "Task is currently running.",
+            "type": "string",
+            "enum": [
+              "active"
+            ]
+          },
+          {
+            "description": "Task finished successfully.",
+            "type": "string",
+            "enum": [
+              "finished"
+            ]
+          },
+          {
+            "description": "Task finished with an error.",
+            "type": "string",
+            "enum": [
+              "failed"
+            ]
+          }
+        ]
+      }
+    },
+    "responses": {
+      "Error": {
+        "description": "Error",
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/Error"
+            }
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "system"
+    },
+    {
+      "name": "tasks"
+    }
+  ]
+}

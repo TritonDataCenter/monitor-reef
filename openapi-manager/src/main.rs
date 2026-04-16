@@ -77,6 +77,20 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
             api_description: cloudapi_api::cloud_api_mod::stub_api_description,
         },
         ManagedApiConfig {
+            ident: "cn-agent-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/cn-agent-api")?,
+            },
+            title: "Triton Compute Node Agent",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Triton cn-agent - per-compute-node HTTP agent that CNAPI dispatches VM lifecycle, ZFS, image, and agent-management tasks to",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: cn_agent_api::cn_agent_api_mod::stub_api_description,
+        },
+        ManagedApiConfig {
             ident: "jira-api",
             versions: Versions::Lockstep {
                 version: crate_version("apis/jira-api")?,

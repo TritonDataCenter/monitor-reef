@@ -1,0 +1,27 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "cn-agent-api"
+version = "0.1.0"
+edition.workspace = true
+description = "Triton Compute Node Agent API trait definition"
+
+[lints]
+workspace = true
+
+[lib]
+name = "cn_agent_api"
+path = "src/lib.rs"
+
+[dependencies]
+chrono = { workspace = true, features = ["serde"] }
+dropshot = { workspace = true }
+schemars = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+strum = { workspace = true }
+uuid = { workspace = true }

@@ -735,6 +735,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "cn-agent-api"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dropshot",
+ "schemars",
+ "serde",
+ "serde_json",
+ "strum",
+ "uuid",
+]
+
+[[package]]
 name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2340,6 +2353,7 @@ dependencies = [
  "cargo_toml",
  "clap",
  "cloudapi-api",
+ "cn-agent-api",
  "dropshot",
  "dropshot-api-manager",
  "dropshot-api-manager-types",
@@ -4407,6 +4421,27 @@ dependencies = [
  "triton-auth",
  "uuid",
  "webpki-roots 1.0.6",
+]
+
+[[package]]
+name = "triton-cn-agent"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "chrono",
+ "clap",
+ "cn-agent-api",
+ "dropshot",
+ "reqwest",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
