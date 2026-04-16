@@ -103,6 +103,19 @@ fn configure_jira(settings: &mut GenerationSettings) {
         .with_tag(progenitor::TagStyle::Merged);
 }
 
+fn configure_cn_agent(settings: &mut GenerationSettings) {
+    // TaskName / TaskStatus may be rendered as CLI args in diagnostic tools
+    // (e.g., a future triton-cn-agent-cli), so pre-derive clap::ValueEnum.
+    let value_enum_patch = TypePatch::default().with_derive("clap::ValueEnum").clone();
+
+    settings
+        .with_interface(progenitor::InterfaceStyle::Builder)
+        .with_tag(progenitor::TagStyle::Merged)
+        .with_derive("schemars::JsonSchema")
+        .with_patch("TaskName", &value_enum_patch)
+        .with_patch("TaskStatus", &value_enum_patch);
+}
+
 /// Registry of all managed clients.
 static CLIENTS: &[ClientConfig] = &[
     ClientConfig {
@@ -116,6 +129,12 @@ static CLIENTS: &[ClientConfig] = &[
         spec_path: "openapi-specs/patched/cloudapi-api.json",
         output_path: "clients/internal/cloudapi-client/src/generated.rs",
         configure: configure_cloudapi,
+    },
+    ClientConfig {
+        name: "cn-agent-client",
+        spec_path: "openapi-specs/generated/cn-agent-api.json",
+        output_path: "clients/internal/cn-agent-client/src/generated.rs",
+        configure: configure_cn_agent,
     },
     ClientConfig {
         name: "jira-client",

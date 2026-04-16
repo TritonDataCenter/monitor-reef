@@ -748,6 +748,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "cn-agent-client"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "cn-agent-api",
+ "dropshot",
+ "progenitor-client",
+ "reqwest",
+ "schemars",
+ "serde",
+ "serde_json",
+ "tokio",
+ "triton-cn-agent",
+ "uuid",
+]
+
+[[package]]
 name = "colorchoice"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
