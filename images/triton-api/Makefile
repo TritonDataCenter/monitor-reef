@@ -13,8 +13,12 @@ DIR_NAME = triton-api
 
 include ../image.defs.mk
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.defs
+include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.agent_prebuilt.defs
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.defs
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.smf.defs
+
+# Triton agents bundled into the image by buildimage
+AGENTS = config registrar
 
 ROOT            := $(shell pwd)
 RELEASE_TARBALL := $(NAME)-pkg-$(STAMP).tar.gz
@@ -72,6 +76,7 @@ publish: release
 	cp $(ROOT)/$(RELEASE_TARBALL) $(ENGBLD_BITS_DIR)/$(NAME)/$(RELEASE_TARBALL)
 
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.deps
+include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.agent_prebuilt.targ
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.targ
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.smf.targ
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.targ

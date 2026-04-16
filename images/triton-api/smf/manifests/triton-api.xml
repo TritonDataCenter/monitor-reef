@@ -12,11 +12,6 @@
         <create_default_instance enabled="true"/>
         <single_instance/>
 
-        <dependency name="postboot" grouping="require_all" restart_on="none"
-            type="service">
-            <service_fmri value="svc:/site/postboot:default"/>
-        </dependency>
-
         <dependency name="network" grouping="require_all" restart_on="error"
             type="service">
             <service_fmri value="svc:/milestone/network:default"/>
