@@ -36,7 +36,7 @@ AGENT_TARGET_DIR = $(LEGACY_DIR)/target-agent
 BUILDIMAGE_NAME  = mantav2-rebalancer
 BUILDIMAGE_DESC  = Manta Rebalancer
 BUILDIMAGE_PKG   = $(ROOT)/$(RELEASE_TARBALL)
-BUILDIMAGE_PKGSRC =
+BUILDIMAGE_PKGSRC = openssl readline sqlite3
 AGENTS           = amon config registrar
 
 # PostgreSQL
