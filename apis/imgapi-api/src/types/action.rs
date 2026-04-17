@@ -343,7 +343,7 @@ pub struct UpdateImageRequest {
     pub state: Option<String>,
     /// Updated error
     #[serde(default)]
-    pub error: Option<super::image::ImageError>,
+    pub error: Option<super::image::ImageErrorInfo>,
 }
 
 // ============================================================================

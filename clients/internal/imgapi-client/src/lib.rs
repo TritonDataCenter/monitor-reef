@@ -96,7 +96,7 @@ pub use imgapi_api::{
     Image,
     ImageAction,
     ImageActionQuery,
-    ImageError,
+    ImageErrorInfo,
     ImageFile,
     ImageOs,
     ImagePath,
@@ -502,27 +502,18 @@ impl TypedClient {
 ///
 /// Wraps both Progenitor errors (for endpoints that return typed errors)
 /// and ByteStream errors (for endpoints that return `Response<Body>`).
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum ActionError {
     /// Error from a typed endpoint (returns `types::Error`)
+    #[error("{0}")]
     Typed(Error<types::Error>),
     /// Error from a ByteStream endpoint (returns raw bytes)
+    #[error("{0}")]
     ByteStream(Error<ByteStream>),
     /// Error from reqwest when reading the response stream
-    Reqwest(reqwest::Error),
+    #[error("request error: {0}")]
+    Reqwest(#[from] reqwest::Error),
     /// Error deserializing the response body
-    Deserialize(serde_json::Error),
+    #[error("response deserialization failed: {0}")]
+    Deserialize(#[from] serde_json::Error),
 }
-
-impl std::fmt::Display for ActionError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ActionError::Typed(e) => write!(f, "{e}"),
-            ActionError::ByteStream(e) => write!(f, "{e}"),
-            ActionError::Reqwest(e) => write!(f, "request error: {e}"),
-            ActionError::Deserialize(e) => write!(f, "response deserialization failed: {e}"),
-        }
-    }
-}
-
-impl std::error::Error for ActionError {}

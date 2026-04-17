@@ -639,7 +639,7 @@ pub mod types {
     #[doc = "        {"]
     #[doc = "          \"allOf\": ["]
     #[doc = "            {"]
-    #[doc = "              \"$ref\": \"#/components/schemas/ImageError\""]
+    #[doc = "              \"$ref\": \"#/components/schemas/ImageErrorInfo\""]
     #[doc = "            }"]
     #[doc = "          ]"]
     #[doc = "        }"]
@@ -856,7 +856,7 @@ pub mod types {
         pub disk_driver: ::std::option::Option<::std::string::String>,
         #[doc = "Error details (only when state=failed)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub error: ::std::option::Option<ImageError>,
+        pub error: ::std::option::Option<ImageErrorInfo>,
         #[doc = "End-user license agreement URL"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub eula: ::std::option::Option<::std::string::String>,
@@ -1184,7 +1184,7 @@ pub mod types {
     #[derive(
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
-    pub struct ImageError {
+    pub struct ImageErrorInfo {
         #[doc = "Error code"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub code: ::std::option::Option<::std::string::String>,
@@ -1196,7 +1196,7 @@ pub mod types {
         pub url: ::std::option::Option<::std::string::String>,
     }
 
-    impl ::std::default::Default for ImageError {
+    impl ::std::default::Default for ImageErrorInfo {
         fn default() -> Self {
             Self {
                 code: Default::default(),
@@ -1206,8 +1206,8 @@ pub mod types {
         }
     }
 
-    impl ImageError {
-        pub fn builder() -> builder::ImageError {
+    impl ImageErrorInfo {
+        pub fn builder() -> builder::ImageErrorInfo {
             Default::default()
         }
     }
@@ -2436,7 +2436,7 @@ pub mod types {
                 ::std::string::String,
             >,
             error: ::std::result::Result<
-                ::std::option::Option<super::ImageError>,
+                ::std::option::Option<super::ImageErrorInfo>,
                 ::std::string::String,
             >,
             eula: ::std::result::Result<
@@ -2616,7 +2616,7 @@ pub mod types {
             }
             pub fn error<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<super::ImageError>>,
+                T: ::std::convert::TryInto<::std::option::Option<super::ImageErrorInfo>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.error = value
@@ -2952,7 +2952,7 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
-        pub struct ImageError {
+        pub struct ImageErrorInfo {
             code: ::std::result::Result<
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
@@ -2967,7 +2967,7 @@ pub mod types {
             >,
         }
 
-        impl ::std::default::Default for ImageError {
+        impl ::std::default::Default for ImageErrorInfo {
             fn default() -> Self {
                 Self {
                     code: Ok(Default::default()),
@@ -2977,7 +2977,7 @@ pub mod types {
             }
         }
 
-        impl ImageError {
+        impl ImageErrorInfo {
             pub fn code<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
@@ -3010,10 +3010,10 @@ pub mod types {
             }
         }
 
-        impl ::std::convert::TryFrom<ImageError> for super::ImageError {
+        impl ::std::convert::TryFrom<ImageErrorInfo> for super::ImageErrorInfo {
             type Error = super::error::ConversionError;
             fn try_from(
-                value: ImageError,
+                value: ImageErrorInfo,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
                     code: value.code?,
@@ -3023,8 +3023,8 @@ pub mod types {
             }
         }
 
-        impl ::std::convert::From<super::ImageError> for ImageError {
-            fn from(value: super::ImageError) -> Self {
+        impl ::std::convert::From<super::ImageErrorInfo> for ImageErrorInfo {
+            fn from(value: super::ImageErrorInfo) -> Self {
                 Self {
                     code: Ok(value.code),
                     message: Ok(value.message),

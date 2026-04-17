@@ -77,7 +77,7 @@ pub struct ImageUser {
 
 /// Error information for failed images
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
-pub struct ImageError {
+pub struct ImageErrorInfo {
     /// Error message
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
@@ -219,7 +219,7 @@ pub struct Image {
     pub traits: Option<serde_json::Value>,
     /// Error details (only when state=failed)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub error: Option<ImageError>,
+    pub error: Option<ImageErrorInfo>,
     /// Channels this image belongs to
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub channels: Option<Vec<String>>,
@@ -275,7 +275,7 @@ pub struct CreateImageRequest {
     pub icon: Option<bool>,
     /// Error details
     #[serde(default)]
-    pub error: Option<ImageError>,
+    pub error: Option<ImageErrorInfo>,
     /// Image requirements
     #[serde(default)]
     pub requirements: Option<ImageRequirements>,

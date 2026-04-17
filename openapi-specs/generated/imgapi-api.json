@@ -1491,7 +1491,7 @@
             "description": "Error details (only when state=failed)",
             "allOf": [
               {
-                "$ref": "#/components/schemas/ImageError"
+                "$ref": "#/components/schemas/ImageErrorInfo"
               }
             ]
           },
@@ -1650,7 +1650,7 @@
           "version"
         ]
       },
-      "ImageError": {
+      "ImageErrorInfo": {
         "description": "Error information for failed images",
         "type": "object",
         "properties": {

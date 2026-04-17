@@ -233,7 +233,7 @@
           "error": {
             "allOf": [
               {
-                "$ref": "#/components/schemas/ImageError"
+                "$ref": "#/components/schemas/ImageErrorInfo"
               }
             ],
             "description": "Error details (only when state=failed)",
@@ -484,7 +484,7 @@
           }
         ]
       },
-      "ImageError": {
+      "ImageErrorInfo": {
         "description": "Error information for failed images",
         "properties": {
           "code": {
