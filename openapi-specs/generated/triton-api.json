@@ -6,7 +6,7 @@
     "version": "0.1.0"
   },
   "paths": {
-    "/ping": {
+    "/v1/ping": {
       "get": {
         "tags": [
           "system"

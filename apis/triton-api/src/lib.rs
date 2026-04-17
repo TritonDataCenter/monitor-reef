@@ -22,7 +22,7 @@ pub trait TritonApi {
     /// Ping
     #[endpoint {
         method = GET,
-        path = "/ping",
+        path = "/v1/ping",
         tags = ["system"],
     }]
     async fn ping(

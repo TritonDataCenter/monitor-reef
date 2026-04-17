@@ -20,7 +20,7 @@ use axum::body::Body;
 use axum::extract::{ConnectInfo, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::any;
 use http::header::{HOST, HeaderName, HeaderValue};
 use http::uri::{Authority, PathAndQuery, Scheme};
 use hyper_util::client::legacy::Client;
@@ -150,12 +150,11 @@ async fn main() -> Result<()> {
         cloudapi: cloudapi.clone(),
     });
 
-    // Routes that tritonapi handles -- forwarded to triton-api-server.
-    // This list grows as tritonapi gains endpoints.
+    // All tritonapi-native routes live under /v1/*. Everything else proxies
+    // to CloudAPI, which keeps the routing rule a one-liner: the prefix is
+    // the contract, not a per-endpoint allowlist.
     let app = Router::new()
-        .route("/ping", get(proxy_to_tritonapi))
-        // TODO: Add /auth/* routes when tritonapi implements them
-        // Everything else proxies to CloudAPI.
+        .route("/v1/{*rest}", any(proxy_to_tritonapi))
         .fallback(proxy_to_cloudapi)
         .layer(axum::middleware::from_fn(request_id_middleware))
         .with_state(state);

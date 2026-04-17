@@ -56,7 +56,8 @@ frontend tritonapi
         use_backend websocket if is_websocket
 
 backend gateway
-        option httpchk GET /ping
+        # Healthcheck exercises the whole chain: haproxy -> gateway -> tritonapi.
+        option httpchk GET /v1/ping
         server gateway0 127.0.0.1:80 check inter 10s
 
 backend websocket
