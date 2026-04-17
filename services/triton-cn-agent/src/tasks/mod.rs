@@ -50,6 +50,7 @@ use crate::smartos::tasks::{
     server_update_nics::ServerUpdateNicsTask,
     shutdown_cn_agent_update::ShutdownCnAgentUpdateTask,
     test_subtask::TestSubtaskTask,
+    unsupported::UnsupportedTask,
     zfs_get_properties::ZfsGetPropertiesTask,
     zfs_list_datasets::ZfsListDatasetsTask,
     zfs_list_pools::ZfsListPoolsTask,
@@ -286,6 +287,66 @@ pub fn register_server_nic_tasks(
     builder.register(TaskName::ServerUpdateNics, ServerUpdateNicsTask::new(tool))
 }
 
+/// Register explicit "unsupported by this Rust build" handlers for the
+/// tasks we intentionally did not port.
+///
+/// This is the production-correct alternative to leaving the variants
+/// unregistered (which would surface as the generic 404 "no handler
+/// for task X"). Operators and CNAPI alike get a structured error with
+/// a stable restCode (`TaskNotSupportedByRustAgent`).
+///
+/// The two families rejected here:
+/// * Docker runtime tasks — the legacy implementation relies on the
+///   sdc-docker-stdio helper (~1500 lines of PTY + WebSocket glue);
+///   CNs that need Docker should continue running the Node.js agent.
+/// * Migration tasks — `vmadm migrate` + the WebSocket state machine
+///   is a dedicated porting project.
+pub fn register_unsupported_tasks(builder: TaskRegistryBuilder) -> TaskRegistryBuilder {
+    builder
+        .register(
+            TaskName::DockerExec,
+            UnsupportedTask::new(
+                "docker_exec",
+                "Docker streaming helper is not ported to the Rust agent",
+            ),
+        )
+        .register(
+            TaskName::DockerCopy,
+            UnsupportedTask::new(
+                "docker_copy",
+                "Docker streaming helper is not ported to the Rust agent",
+            ),
+        )
+        .register(
+            TaskName::DockerStats,
+            UnsupportedTask::new(
+                "docker_stats",
+                "Docker streaming helper is not ported to the Rust agent",
+            ),
+        )
+        .register(
+            TaskName::DockerBuild,
+            UnsupportedTask::new(
+                "docker_build",
+                "Docker streaming helper is not ported to the Rust agent",
+            ),
+        )
+        .register(
+            TaskName::MachineMigrate,
+            UnsupportedTask::new(
+                "machine_migrate",
+                "vmadm migrate + WebSocket state machine is not ported to the Rust agent",
+            ),
+        )
+        .register(
+            TaskName::MachineMigrateReceive,
+            UnsupportedTask::new(
+                "machine_migrate_receive",
+                "vmadm migrate + WebSocket state machine is not ported to the Rust agent",
+            ),
+        )
+}
+
 /// Build a registry containing the tasks the SmartOS backend exposes.
 ///
 /// This is the "offline" variant — no CNAPI client available, so
@@ -305,6 +366,7 @@ pub fn smartos_registry() -> TaskRegistry {
     builder = register_vmadm_mutation_tasks(builder, vmadm);
     builder = register_image_tasks(builder, imgadm, zfs);
     builder = register_server_nic_tasks(builder, Arc::new(NictagadmTool::new()));
+    builder = register_unsupported_tasks(builder);
     builder = register_server_ops_tasks(builder);
     builder.build()
 }
@@ -334,6 +396,7 @@ pub fn smartos_registry_with(
     builder = register_image_tasks(builder, imgadm.clone(), zfs.clone());
     builder = register_provisioning_tasks(builder, vmadm, zfs, imgadm, admin_ip);
     builder = register_server_nic_tasks(builder, Arc::new(NictagadmTool::new()));
+    builder = register_unsupported_tasks(builder);
     builder = register_server_ops_tasks(builder);
     builder = register_agent_tasks(builder, cnapi, agents_collector, apm, bind_port);
     builder.build()

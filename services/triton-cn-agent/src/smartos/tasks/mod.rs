@@ -31,6 +31,7 @@ pub mod server_sysinfo;
 pub mod server_update_nics;
 pub mod shutdown_cn_agent_update;
 pub mod test_subtask;
+pub mod unsupported;
 pub mod zfs_get_properties;
 pub mod zfs_list_datasets;
 pub mod zfs_list_pools;
