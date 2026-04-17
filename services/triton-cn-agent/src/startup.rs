@@ -297,8 +297,30 @@ impl SmartosStartup {
         let kstat_tool = Arc::new(KstatTool::with_bin(self.bins.kstat.clone()));
         let imgadm_db = Arc::new(ImgadmDb::with_dir(self.paths.imgadm_dir.clone()));
         let disk_usage = DiskUsageSampler::new(zfs_tool.clone(), imgadm_db.clone());
+        let agents_collector = AgentsCollector::with_dirs(
+            self.paths.agents_dir.clone(),
+            self.paths.agents_etc.clone(),
+        );
 
-        let registry = tasks::smartos_registry_with(vmadm_tool.clone(), zfs_tool.clone());
+        // CNAPI client has to exist before we build the task registry so
+        // refresh_agents can use it. Build it here, then use the same Arc
+        // for startup registration and the heartbeater.
+        let cnapi = Arc::new(
+            CnapiClient::builder(&cnapi_url, server_uuid)
+                .with_user_agent(format!(
+                    "triton-cn-agent/{} server/{server_uuid}",
+                    env!("CARGO_PKG_VERSION")
+                ))
+                .build()
+                .context("build CNAPI client")?,
+        );
+
+        let registry = tasks::smartos_registry_with(
+            vmadm_tool.clone(),
+            zfs_tool.clone(),
+            cnapi.clone(),
+            agents_collector.clone(),
+        );
 
         let metadata = AgentMetadata {
             name: "cn-agent".to_string(),
@@ -311,21 +333,11 @@ impl SmartosStartup {
         let server = start_http_server(bind_addr, context)?;
         let actual_port = server.local_addr().port();
 
-        let cnapi = Arc::new(
-            CnapiClient::builder(&cnapi_url, server_uuid)
-                .with_user_agent(format!(
-                    "triton-cn-agent/{} server/{server_uuid}",
-                    env!("CARGO_PKG_VERSION")
-                ))
-                .build()
-                .context("build CNAPI client")?,
-        );
-
         // Register sysinfo (with the port we actually bound) and agents
         // before starting the heartbeater, matching the legacy startup
         // order.
         register_sysinfo(&cnapi, &sysinfo_value, actual_port).await?;
-        post_agents(&cnapi, &sysinfo_value, &self.paths).await?;
+        post_agents_list(&cnapi, &sysinfo_value, &agents_collector).await?;
 
         // Watchers share a DirtyFlag with the heartbeater's status loop.
         let dirty = DirtyFlag::new();
@@ -450,8 +462,11 @@ async fn register_sysinfo(cnapi: &CnapiClient, sysinfo: &Sysinfo, actual_port: u
     }
 }
 
-async fn post_agents(cnapi: &CnapiClient, sysinfo: &Sysinfo, paths: &SmartosPaths) -> Result<()> {
-    let collector = AgentsCollector::with_dirs(paths.agents_dir.clone(), paths.agents_etc.clone());
+async fn post_agents_list(
+    cnapi: &CnapiClient,
+    sysinfo: &Sysinfo,
+    collector: &AgentsCollector,
+) -> Result<()> {
     let agents = collector
         .collect(&sysinfo.raw)
         .await

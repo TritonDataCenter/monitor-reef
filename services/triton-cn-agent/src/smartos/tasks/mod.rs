@@ -6,13 +6,20 @@
 
 //! SmartOS-backed task handlers.
 
+pub mod command_execute;
 pub mod machine_destroy;
 pub mod machine_info;
 pub mod machine_lifecycle;
 pub mod machine_load;
+pub mod machine_screenshot;
 pub mod machine_snapshots;
 pub mod machine_update;
+pub mod refresh_agents;
+pub mod server_overprovision_ratio;
+pub mod server_reboot;
 pub mod server_sysinfo;
+pub mod shutdown_cn_agent_update;
+pub mod test_subtask;
 pub mod zfs_get_properties;
 pub mod zfs_list_datasets;
 pub mod zfs_list_pools;

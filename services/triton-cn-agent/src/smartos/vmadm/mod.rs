@@ -481,6 +481,25 @@ impl VmadmTool {
         Ok(())
     }
 
+    /// `vmadm sysreq <uuid> screenshot` — writes a PPM of the KVM
+    /// framebuffer to `/zones/<uuid>/root/tmp/vm.ppm`.
+    ///
+    /// vmadm's subcommand is spelled `sysreq`, not `sysrq`; the legacy
+    /// node-vmadm module passes `opts.req="screenshot"` as the final
+    /// positional arg, which maps to `vmadm sysreq <uuid> screenshot`.
+    pub async fn sysrq_screenshot(&self, uuid: &str, include_dni: bool) -> Result<(), VmadmError> {
+        self.assert_exists(uuid, include_dni).await?;
+
+        let output = run(&self.vmadm_bin, &["sysreq", uuid, "screenshot"]).await?;
+        if !output.status.success() {
+            return Err(VmadmError::NonZeroExit {
+                status: output.status,
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            });
+        }
+        Ok(())
+    }
+
     /// Run a vmadm mutation that produces no stdout, translating the
     /// "already in target state" stderr patterns into
     /// [`VmadmError::AlreadyInState`].

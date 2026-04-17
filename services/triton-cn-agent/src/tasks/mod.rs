@@ -17,17 +17,26 @@ use std::sync::Arc;
 
 use cn_agent_api::TaskName;
 
+use crate::cnapi::CnapiClient;
+use crate::heartbeater::AgentsCollector;
 use crate::registry::{TaskRegistry, TaskRegistryBuilder};
 use crate::smartos::tasks::{
+    command_execute::CommandExecuteTask,
     machine_destroy::MachineDestroyTask,
     machine_info::MachineInfoTask,
     machine_lifecycle::{MachineBootTask, MachineKillTask, MachineRebootTask, MachineShutdownTask},
     machine_load::MachineLoadTask,
+    machine_screenshot::MachineScreenshotTask,
     machine_snapshots::{
         MachineCreateSnapshotTask, MachineDeleteSnapshotTask, MachineRollbackSnapshotTask,
     },
     machine_update::MachineUpdateTask,
+    refresh_agents::RefreshAgentsTask,
+    server_overprovision_ratio::ServerOverprovisionRatioTask,
+    server_reboot::ServerRebootTask,
     server_sysinfo::ServerSysinfoTask,
+    shutdown_cn_agent_update::ShutdownCnAgentUpdateTask,
+    test_subtask::TestSubtaskTask,
     zfs_get_properties::ZfsGetPropertiesTask,
     zfs_list_datasets::ZfsListDatasetsTask,
     zfs_list_pools::ZfsListPoolsTask,
@@ -159,23 +168,51 @@ pub fn register_vmadm_mutation_tasks(
         )
         .register(
             TaskName::MachineRollbackSnapshot,
-            MachineRollbackSnapshotTask::new(tool),
+            MachineRollbackSnapshotTask::new(tool.clone()),
         )
+        .register(
+            TaskName::MachineScreenshot,
+            MachineScreenshotTask::new(tool),
+        )
+}
+
+/// Register server-level operational tasks (reboot, command_execute,
+/// overprovision ratio, cn-agent-update shutdown, diagnostic helpers).
+pub fn register_server_ops_tasks(builder: TaskRegistryBuilder) -> TaskRegistryBuilder {
+    builder
+        .register(TaskName::ServerReboot, ServerRebootTask::new())
+        .register(TaskName::CommandExecute, CommandExecuteTask::new())
+        .register(
+            TaskName::ServerOverprovisionRatio,
+            ServerOverprovisionRatioTask::new(),
+        )
+        .register(
+            TaskName::ShutdownCnAgentUpdate,
+            ShutdownCnAgentUpdateTask::new(),
+        )
+        .register(TaskName::TestSubtask, TestSubtaskTask)
+}
+
+/// Register agent-management tasks (refresh_agents posts to CNAPI).
+pub fn register_agent_tasks(
+    builder: TaskRegistryBuilder,
+    cnapi: Arc<CnapiClient>,
+    collector: AgentsCollector,
+) -> TaskRegistryBuilder {
+    builder.register(
+        TaskName::RefreshAgents,
+        RefreshAgentsTask::new(cnapi, collector),
+    )
 }
 
 /// Build a registry containing the tasks the SmartOS backend exposes.
 ///
-/// Today that's the platform-neutral set plus `server_sysinfo`, the
-/// read-only ZFS queries, and the read-only vmadm queries, plus ZFS and
-/// vmadm mutations (lifecycle/update/destroy/snapshots).
+/// This is the "offline" variant — no CNAPI client available, so
+/// refresh_agents is not registered. Callers that have a running CNAPI
+/// client should use [`smartos_registry_with`] instead.
 pub fn smartos_registry() -> TaskRegistry {
-    smartos_registry_with(Arc::new(VmadmTool::new()), Arc::new(ZfsTool::new()))
-}
-
-/// Same as [`smartos_registry`] but with injectable tool instances so the
-/// binary can share a single `VmadmTool`/`ZfsTool` between the task
-/// handlers and the heartbeater's status collector.
-pub fn smartos_registry_with(vmadm: Arc<VmadmTool>, zfs: Arc<ZfsTool>) -> TaskRegistry {
+    let vmadm = Arc::new(VmadmTool::new());
+    let zfs = Arc::new(ZfsTool::new());
     let mut builder = register_common_tasks(TaskRegistry::builder())
         .register(TaskName::ServerSysinfo, ServerSysinfoTask::new());
     builder = register_zfs_query_tasks(builder, zfs.clone());
@@ -183,5 +220,28 @@ pub fn smartos_registry_with(vmadm: Arc<VmadmTool>, zfs: Arc<ZfsTool>) -> TaskRe
     builder = register_vmadm_query_tasks(builder, vmadm.clone());
     builder = register_vmadm_lifecycle_tasks(builder, vmadm.clone());
     builder = register_vmadm_mutation_tasks(builder, vmadm);
+    builder = register_server_ops_tasks(builder);
+    builder.build()
+}
+
+/// Full SmartOS registry: every task we ship today. Accepts injectable
+/// tool instances so the binary can share them with the heartbeater, and
+/// a CNAPI client + agents collector for tasks that post back to CNAPI
+/// (currently just `refresh_agents`).
+pub fn smartos_registry_with(
+    vmadm: Arc<VmadmTool>,
+    zfs: Arc<ZfsTool>,
+    cnapi: Arc<CnapiClient>,
+    agents_collector: AgentsCollector,
+) -> TaskRegistry {
+    let mut builder = register_common_tasks(TaskRegistry::builder())
+        .register(TaskName::ServerSysinfo, ServerSysinfoTask::new());
+    builder = register_zfs_query_tasks(builder, zfs.clone());
+    builder = register_zfs_mutation_tasks(builder, zfs);
+    builder = register_vmadm_query_tasks(builder, vmadm.clone());
+    builder = register_vmadm_lifecycle_tasks(builder, vmadm.clone());
+    builder = register_vmadm_mutation_tasks(builder, vmadm);
+    builder = register_server_ops_tasks(builder);
+    builder = register_agent_tasks(builder, cnapi, agents_collector);
     builder.build()
 }

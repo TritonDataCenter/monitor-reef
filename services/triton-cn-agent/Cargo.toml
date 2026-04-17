@@ -24,6 +24,7 @@ path = "src/lib.rs"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = "0.1"
+base64 = "0.22"
 chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true, features = ["derive", "env"] }
 cn-agent-api = { path = "../../apis/cn-agent-api" }
