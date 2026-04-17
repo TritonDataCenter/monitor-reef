@@ -7,3 +7,7 @@
 //! SmartOS-backed task handlers.
 
 pub mod server_sysinfo;
+pub mod zfs_get_properties;
+pub mod zfs_list_datasets;
+pub mod zfs_list_pools;
+pub mod zfs_list_snapshots;

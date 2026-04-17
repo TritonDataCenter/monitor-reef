@@ -14,6 +14,8 @@
 pub mod config;
 pub mod sysinfo;
 pub mod tasks;
+pub mod zfs;
 
 pub use config::{AgentConfig, SdcConfig};
 pub use sysinfo::Sysinfo;
+pub use zfs::ZfsTool;

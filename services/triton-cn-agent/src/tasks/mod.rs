@@ -13,16 +13,44 @@
 pub mod nop;
 pub mod sleep;
 
+use std::sync::Arc;
+
 use cn_agent_api::TaskName;
 
 use crate::registry::{TaskRegistry, TaskRegistryBuilder};
-use crate::smartos::tasks::server_sysinfo::ServerSysinfoTask;
+use crate::smartos::ZfsTool;
+use crate::smartos::tasks::{
+    server_sysinfo::ServerSysinfoTask, zfs_get_properties::ZfsGetPropertiesTask,
+    zfs_list_datasets::ZfsListDatasetsTask, zfs_list_pools::ZfsListPoolsTask,
+    zfs_list_snapshots::ZfsListSnapshotsTask,
+};
 
 /// Register platform-neutral tasks that every backend exposes.
 pub fn register_common_tasks(builder: TaskRegistryBuilder) -> TaskRegistryBuilder {
     builder
         .register(TaskName::Nop, nop::NopTask)
         .register(TaskName::Sleep, sleep::SleepTask)
+}
+
+/// Register the SmartOS ZFS query handlers.
+///
+/// Takes a shared [`ZfsTool`] so tests can inject mock binaries for the
+/// entire ZFS suite with one call.
+pub fn register_zfs_query_tasks(
+    builder: TaskRegistryBuilder,
+    tool: Arc<ZfsTool>,
+) -> TaskRegistryBuilder {
+    builder
+        .register(TaskName::ZfsListPools, ZfsListPoolsTask::new(tool.clone()))
+        .register(
+            TaskName::ZfsListDatasets,
+            ZfsListDatasetsTask::new(tool.clone()),
+        )
+        .register(
+            TaskName::ZfsListSnapshots,
+            ZfsListSnapshotsTask::new(tool.clone()),
+        )
+        .register(TaskName::ZfsGetProperties, ZfsGetPropertiesTask::new(tool))
 }
 
 /// Build a registry containing only the platform-neutral tasks.
@@ -34,11 +62,13 @@ pub fn common_registry() -> TaskRegistry {
 
 /// Build a registry containing the tasks the SmartOS backend exposes.
 ///
-/// Today that's the platform-neutral set plus `server_sysinfo`; the rest of
-/// the vmadm / zfs / imgadm-backed tasks will be registered here as they are
-/// ported.
+/// Today that's the platform-neutral set plus `server_sysinfo` and the
+/// read-only ZFS query tasks. Mutating ZFS, vmadm, imgadm, Docker, and agent
+/// tasks get added here as they're ported.
 pub fn smartos_registry() -> TaskRegistry {
-    register_common_tasks(TaskRegistry::builder())
-        .register(TaskName::ServerSysinfo, ServerSysinfoTask::new())
-        .build()
+    let zfs = Arc::new(ZfsTool::new());
+    let mut builder = register_common_tasks(TaskRegistry::builder())
+        .register(TaskName::ServerSysinfo, ServerSysinfoTask::new());
+    builder = register_zfs_query_tasks(builder, zfs);
+    builder.build()
 }
