@@ -488,8 +488,22 @@ impl BugviewApi for BugviewServiceImpl {
     }
 }
 
+/// Install the `ring` rustls crypto provider for this process.
+///
+/// `reqwest` is built with the `rustls-no-provider` feature (see the workspace
+/// `Cargo.toml` for the five places that must move in lockstep), so any
+/// `reqwest::Client` that does not supply a preconfigured TLS config will
+/// panic with "No provider set" unless a default `CryptoProvider` has been
+/// installed. Calling this is idempotent: the second call returns `Err`,
+/// which we discard.
+fn install_default_crypto_provider() {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    install_default_crypto_provider();
+
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new(
@@ -595,6 +609,8 @@ mod tests {
     /// Returns `Some(server)` on success, or `None` if the server couldn't start
     /// (in non-CI environments). Panics in CI if startup fails.
     async fn start_test_server(ctx: ApiContext) -> Option<dropshot::HttpServer<ApiContext>> {
+        install_default_crypto_provider();
+
         let api = bugview_api::bugview_api_mod::api_description::<BugviewServiceImpl>()
             .expect("api description");
 

@@ -29,6 +29,7 @@ jira-api = { path = "../../apis/jira-api" }
 jira-client = { path = "../../clients/internal/jira-client" }
 rand = "0.9"
 reqwest = { workspace = true, features = ["json"] }
+rustls = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -43,3 +44,4 @@ dropshot = { workspace = true }
 jira-client = { path = "../../clients/internal/jira-client" }
 jira-stub-server = { path = "../jira-stub-server" }
 reqwest = { workspace = true }
+rustls = { workspace = true }
