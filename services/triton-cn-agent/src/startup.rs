@@ -320,7 +320,18 @@ impl SmartosStartup {
             zfs_tool.clone(),
             cnapi.clone(),
             agents_collector.clone(),
+            admin_ip,
         );
+
+        // Clean up stale machine-creation guard files (AGENT-640).
+        // Failure to clean is non-fatal; the next startup will try again.
+        if let Err(e) = crate::smartos::tasks::machine_create::cleanup_stale_guards(
+            std::path::Path::new(crate::smartos::tasks::machine_create::DEFAULT_GUARD_DIR),
+        )
+        .await
+        {
+            tracing::warn!(error = %e, "failed to clean stale creation guards at startup");
+        }
 
         let metadata = AgentMetadata {
             name: "cn-agent".to_string(),

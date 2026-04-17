@@ -22,10 +22,14 @@ use crate::heartbeater::AgentsCollector;
 use crate::registry::{TaskRegistry, TaskRegistryBuilder};
 use crate::smartos::tasks::{
     command_execute::CommandExecuteTask,
+    image_ensure_present::ImageEnsurePresentTask,
+    image_get::ImageGetTask,
+    machine_create::MachineCreateTask,
     machine_destroy::MachineDestroyTask,
     machine_info::MachineInfoTask,
     machine_lifecycle::{MachineBootTask, MachineKillTask, MachineRebootTask, MachineShutdownTask},
     machine_load::MachineLoadTask,
+    machine_reprovision::MachineReprovisionTask,
     machine_screenshot::MachineScreenshotTask,
     machine_snapshots::{
         MachineCreateSnapshotTask, MachineDeleteSnapshotTask, MachineRollbackSnapshotTask,
@@ -46,7 +50,7 @@ use crate::smartos::tasks::{
         ZfsRollbackDatasetTask, ZfsSetPropertiesTask, ZfsSnapshotDatasetTask,
     },
 };
-use crate::smartos::{VmadmTool, ZfsTool};
+use crate::smartos::{ImgadmTool, VmadmTool, ZfsTool};
 
 /// Register platform-neutral tasks that every backend exposes.
 pub fn register_common_tasks(builder: TaskRegistryBuilder) -> TaskRegistryBuilder {
@@ -205,21 +209,59 @@ pub fn register_agent_tasks(
     )
 }
 
+/// Register image tasks (`image_get` + `image_ensure_present`).
+pub fn register_image_tasks(
+    builder: TaskRegistryBuilder,
+    imgadm: Arc<ImgadmTool>,
+    zfs: Arc<ZfsTool>,
+) -> TaskRegistryBuilder {
+    builder
+        .register(TaskName::ImageGet, ImageGetTask::new(imgadm.clone()))
+        .register(
+            TaskName::ImageEnsurePresent,
+            ImageEnsurePresentTask::new(imgadm, zfs),
+        )
+}
+
+/// Register the heavy provisioning tasks (`machine_create`,
+/// `machine_reprovision`). Needs the admin IP so the firewaller client
+/// can dial the local firewaller on port 2021.
+pub fn register_provisioning_tasks(
+    builder: TaskRegistryBuilder,
+    vmadm: Arc<VmadmTool>,
+    zfs: Arc<ZfsTool>,
+    imgadm: Arc<ImgadmTool>,
+    admin_ip: std::net::Ipv4Addr,
+) -> TaskRegistryBuilder {
+    builder
+        .register(
+            TaskName::MachineCreate,
+            MachineCreateTask::new(vmadm.clone(), zfs.clone(), imgadm.clone(), admin_ip),
+        )
+        .register(
+            TaskName::MachineReprovision,
+            MachineReprovisionTask::new(vmadm, zfs, imgadm),
+        )
+}
+
 /// Build a registry containing the tasks the SmartOS backend exposes.
 ///
 /// This is the "offline" variant — no CNAPI client available, so
-/// refresh_agents is not registered. Callers that have a running CNAPI
-/// client should use [`smartos_registry_with`] instead.
+/// refresh_agents is not registered, and no admin IP is provided so
+/// machine_create is also not registered. Callers that have a running
+/// CNAPI client should use [`smartos_registry_with`] instead.
 pub fn smartos_registry() -> TaskRegistry {
     let vmadm = Arc::new(VmadmTool::new());
     let zfs = Arc::new(ZfsTool::new());
+    let imgadm = Arc::new(ImgadmTool::new(zfs.clone()));
     let mut builder = register_common_tasks(TaskRegistry::builder())
         .register(TaskName::ServerSysinfo, ServerSysinfoTask::new());
     builder = register_zfs_query_tasks(builder, zfs.clone());
-    builder = register_zfs_mutation_tasks(builder, zfs);
+    builder = register_zfs_mutation_tasks(builder, zfs.clone());
     builder = register_vmadm_query_tasks(builder, vmadm.clone());
     builder = register_vmadm_lifecycle_tasks(builder, vmadm.clone());
     builder = register_vmadm_mutation_tasks(builder, vmadm);
+    builder = register_image_tasks(builder, imgadm, zfs);
     builder = register_server_ops_tasks(builder);
     builder.build()
 }
@@ -227,20 +269,25 @@ pub fn smartos_registry() -> TaskRegistry {
 /// Full SmartOS registry: every task we ship today. Accepts injectable
 /// tool instances so the binary can share them with the heartbeater, and
 /// a CNAPI client + agents collector for tasks that post back to CNAPI
-/// (currently just `refresh_agents`).
+/// (currently just `refresh_agents`), plus the admin IP for the
+/// firewaller wiring in `machine_create`.
 pub fn smartos_registry_with(
     vmadm: Arc<VmadmTool>,
     zfs: Arc<ZfsTool>,
     cnapi: Arc<CnapiClient>,
     agents_collector: AgentsCollector,
+    admin_ip: std::net::Ipv4Addr,
 ) -> TaskRegistry {
+    let imgadm = Arc::new(ImgadmTool::new(zfs.clone()));
     let mut builder = register_common_tasks(TaskRegistry::builder())
         .register(TaskName::ServerSysinfo, ServerSysinfoTask::new());
     builder = register_zfs_query_tasks(builder, zfs.clone());
-    builder = register_zfs_mutation_tasks(builder, zfs);
+    builder = register_zfs_mutation_tasks(builder, zfs.clone());
     builder = register_vmadm_query_tasks(builder, vmadm.clone());
     builder = register_vmadm_lifecycle_tasks(builder, vmadm.clone());
-    builder = register_vmadm_mutation_tasks(builder, vmadm);
+    builder = register_vmadm_mutation_tasks(builder, vmadm.clone());
+    builder = register_image_tasks(builder, imgadm.clone(), zfs.clone());
+    builder = register_provisioning_tasks(builder, vmadm, zfs, imgadm, admin_ip);
     builder = register_server_ops_tasks(builder);
     builder = register_agent_tasks(builder, cnapi, agents_collector);
     builder.build()

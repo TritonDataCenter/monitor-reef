@@ -12,7 +12,9 @@
 //! developer laptops without the real binaries.
 
 pub mod config;
+pub mod firewaller;
 pub mod imgadm;
+pub mod imgadm_tool;
 pub mod kstat;
 pub mod sysinfo;
 pub mod tasks;
@@ -21,6 +23,7 @@ pub mod zfs;
 
 pub use config::{AgentConfig, SdcConfig};
 pub use imgadm::ImgadmDb;
+pub use imgadm_tool::ImgadmTool;
 pub use kstat::KstatTool;
 pub use sysinfo::Sysinfo;
 pub use vmadm::VmadmTool;

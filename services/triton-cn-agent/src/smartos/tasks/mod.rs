@@ -7,10 +7,14 @@
 //! SmartOS-backed task handlers.
 
 pub mod command_execute;
+pub mod image_ensure_present;
+pub mod image_get;
+pub mod machine_create;
 pub mod machine_destroy;
 pub mod machine_info;
 pub mod machine_lifecycle;
 pub mod machine_load;
+pub mod machine_reprovision;
 pub mod machine_screenshot;
 pub mod machine_snapshots;
 pub mod machine_update;

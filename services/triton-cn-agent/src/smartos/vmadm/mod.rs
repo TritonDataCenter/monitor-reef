@@ -481,6 +481,55 @@ impl VmadmTool {
         Ok(())
     }
 
+    /// `vmadm create` — create a zone or KVM/bhyve VM from the given
+    /// JSON payload, which is sent on stdin.
+    ///
+    /// Returns the UUID vmadm echoes on its "Successfully created VM …"
+    /// stderr line, wrapped as `{uuid: ...}`. vmadm writes that line to
+    /// stderr (yes, stderr) even on the success path.
+    pub async fn create(
+        &self,
+        payload: &serde_json::Value,
+    ) -> Result<serde_json::Value, VmadmError> {
+        let stdin = serde_json::to_vec(payload).map_err(|e| VmadmError::Parse { source: e })?;
+        let output = run_with_stdin(&self.vmadm_bin, &["create"], &stdin).await?;
+        if !output.status.success() {
+            return Err(VmadmError::NonZeroExit {
+                status: output.status,
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            });
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        for line in stderr.lines() {
+            if let Some(rest) = line.strip_prefix("Successfully created VM ") {
+                return Ok(serde_json::json!({ "uuid": rest.trim() }));
+            }
+        }
+        // vmadm created the VM but we couldn't parse a uuid — not fatal,
+        // callers typically know the uuid from the payload already.
+        Ok(serde_json::json!({}))
+    }
+
+    /// `vmadm reprovision <uuid>` with a JSON payload on stdin.
+    pub async fn reprovision(
+        &self,
+        uuid: &str,
+        payload: &serde_json::Value,
+        include_dni: bool,
+    ) -> Result<(), VmadmError> {
+        self.assert_exists(uuid, include_dni).await?;
+
+        let stdin = serde_json::to_vec(payload).map_err(|e| VmadmError::Parse { source: e })?;
+        let output = run_with_stdin(&self.vmadm_bin, &["reprovision", uuid], &stdin).await?;
+        if !output.status.success() {
+            return Err(VmadmError::NonZeroExit {
+                status: output.status,
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            });
+        }
+        Ok(())
+    }
+
     /// `vmadm sysreq <uuid> screenshot` — writes a PPM of the KVM
     /// framebuffer to `/zones/<uuid>/root/tmp/vm.ppm`.
     ///
