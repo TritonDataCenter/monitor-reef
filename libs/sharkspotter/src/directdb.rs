@@ -157,7 +157,9 @@ fn check_value_for_match(
     obj_tx: &crossbeam_channel::Sender<SharkspotterMessage>,
     log: &Logger,
 ) -> Result<(), Error> {
-    if !exclude_key_prefixes.is_empty() {
+    if !exclude_key_prefixes.is_empty()
+        && !(exclude_key_prefixes.len() == 1 && exclude_key_prefixes[0] == "none")
+    {
         if let Some(key) = value.get("key").and_then(|k| k.as_str()) {
             if exclude_key_prefixes.iter().any(|p| key.contains(p)) {
                 trace!(log, "skipping excluded key: {}", key);

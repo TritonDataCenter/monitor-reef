@@ -139,6 +139,48 @@ moray unless explicitly configured for mdapi.
 For more details on the mdapi client implementation, see the module documentation
 in `manager/src/mdapi_client.rs`.
 
+### System Object Filtering During Evacuation
+
+By default, the rebalancer skips system-managed objects during pgclone
+discovery.  These objects (`/stor/logs/`, `/stor/usage/`,
+`/stor/manatee_backups/`) are continuously overwritten by system cron
+jobs (`logrotateandupload.sh`, `backup.sh`, `backup_pg_dumps.sh`),
+causing unavoidable etag conflicts during metadata updates.
+
+The `exclude_key_prefixes` option controls this filtering:
+
+```json
+"options": {
+    "exclude_key_prefixes": ["/stor/logs/", "/stor/usage/", "/stor/manatee_backups/"]
+}
+```
+
+**SAPI variable:** `REBALANCER_EXCLUDE_KEY_PREFIXES`
+
+| SAPI Value | Effect |
+|-----------|--------|
+| Not set | Defaults — skips `/stor/logs/`, `/stor/usage/`, `/stor/manatee_backups/` |
+| `["none"]` | Disables filtering — all objects are discovered |
+| `["/stor/logs/", "/custom/"]` | Custom prefix list |
+| `null` | Removes override, restores defaults |
+
+**Note:** Setting to `[]` (empty array) does NOT disable filtering.
+Mustache treats empty arrays as falsy and renders the defaults.
+Use `["none"]` to explicitly disable.
+
+**Decommissioning workflow:**  The filter produces zero-error evacuations
+for user data, but skipped system objects still reference the evacuated
+shark in moray.  To fully decommission a shark:
+
+1. First pass **with** filter (default) — evacuates user data cleanly
+2. Set `REBALANCER_EXCLUDE_KEY_PREFIXES` to `["none"]` via SAPI
+3. Second pass **without** filter — evacuates historical system objects
+4. Verify no moray metadata references the shark (query pgclones)
+5. Restore defaults: set `REBALANCER_EXCLUDE_KEY_PREFIXES` to `null`
+
+See the [DevOps Operations Guide](docs/devops_operations_guide.md) for
+detailed procedures.
+
 ### SAPI Deployment Configuration
 
 In production Triton deployments, the rebalancer configuration is managed via SAPI

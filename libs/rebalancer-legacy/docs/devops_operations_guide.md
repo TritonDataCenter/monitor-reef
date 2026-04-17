@@ -906,6 +906,23 @@ Most tunables take effect on the next job without a restart.
 | `max_assignment_age` | `REBALANCER_MAX_ASSIGNMENT_AGE` | 3600 | seconds | Max wait before posting assignment to agent. The checker timeout is 2× this value (7200s). Assignments not completed by agents within the timeout are skipped. |
 | `use_batched_updates` | `REBALANCER_USE_BATCHED_UPDATES` | false | — | Batch metadata updates |
 | `md_read_chunk_size` | `REBALANCER_MD_READ_CHUNK_SIZE` | 10000 | 1+ | Objects per metadata query |
+| `exclude_key_prefixes` | `REBALANCER_EXCLUDE_KEY_PREFIXES` | see below | — | Object key prefixes to skip during discovery |
+
+**`exclude_key_prefixes`** controls which moray objects are skipped
+during pgclone scanning.  System-managed objects (logs, backups, metering
+assets) are overwritten by hourly crons, causing unavoidable etag errors.
+Skipping them produces clean evacuations for user data.
+
+| SAPI Value | Effect |
+|-----------|--------|
+| Not set (default) | Skips `/stor/logs/`, `/stor/usage/`, `/stor/manatee_backups/` |
+| `["none"]` | Disables filtering — all objects are discovered (required for decommissioning) |
+| `["/stor/logs/", "/custom/"]` | Custom prefix list |
+| `null` | Removes override, restores defaults |
+
+**Note:** Setting to `[]` (empty array) does NOT disable filtering —
+mustache treats empty arrays as falsy and renders the defaults.  Use
+`["none"]` instead.
 
 #### MDAPI Settings (Bucket Objects)
 
@@ -1155,6 +1172,149 @@ etags will keep changing.
 - Remaining errors are exclusively `/stor/logs/` paths
 - Minnow remains disabled on the evacuated shark
 
+### Decommissioning a Shark After Evacuation
+
+**Important:** Completing an evacuation with the system path filter
+(`exclude_key_prefixes`) does NOT mean the shark is safe to
+decommission.  The filter skips system objects during discovery, so
+their moray metadata **still references the evacuated shark**.
+
+System log objects use **unique hourly paths** (e.g.,
+`/stor/logs/muskie/2026/04/05/12/83e3b3bc.log`).  The hourly cron
+creates new files at the current hour's path — it does **not**
+overwrite old ones.  Historical log objects will never be naturally
+replaced by cron rotation.
+
+**Before decommissioning**, verify that no moray metadata references
+the shark.  Create fresh pgclones and run against each moray shard:
+
+```bash
+# On each moray pgclone:
+psql -U postgres -h /tmp moray -c \
+  "SELECT count(*) FROM manta
+   WHERE _value LIKE '%<SHARK_STORAGE_ID>%';"
+```
+
+If the count is non-zero, the shark still has objects that would
+become inaccessible.  Options:
+
+1. **Run a second evacuation without the filter** — set
+   `REBALANCER_EXCLUDE_KEY_PREFIXES` to an empty array `[]` in SAPI
+   metadata.  This will attempt to move all system objects.  Etag
+   errors are expected for recently-overwritten logs, but historical
+   logs (which haven't been touched) will evacuate successfully.
+
+2. **Accept the loss of old logs** — if the objects are expendable
+   historical logs (e.g., weeks-old service logs), decommission
+   anyway.  Reads for those specific objects will fail, but they
+   have no operational impact.
+
+3. **Wait and re-check** — some objects may be overwritten
+   over days/weeks (daily pg_dumps, weekly audits).  Re-check
+   periodically until the count reaches an acceptable level.
+
+**Recommended approach for decommissioning:**
+
+1. First evacuation **with** the filter — clean, zero errors, moves
+   all user data.
+2. Second evacuation **without** the filter — moves historical system
+   objects.  Accept etag errors on recently-overwritten logs.
+3. Verify with pgclone query — confirm count is zero or near-zero.
+4. Decommission.
+
+#### Second Pass Procedure (Removing the Filter)
+
+**Step 1 — Disable the exclude filter via SAPI:**
+
+```bash
+MANTA_APP=$(sdc-sapi /applications?name=manta | json -Ha uuid)
+echo '{ "metadata": {
+    "REBALANCER_EXCLUDE_KEY_PREFIXES": ["none"]
+} }' | sapiadm update $MANTA_APP
+```
+
+The sentinel value `"none"` tells the rebalancer to skip no objects.
+An empty array `[]` does NOT work because mustache treats it as
+falsy and renders the defaults instead.
+
+Wait for config-agent to regenerate `config.json` (a few seconds),
+then verify:
+
+```bash
+# In the rebalancer zone:
+json exclude_key_prefixes < /opt/smartdc/rebalancer/config.json
+# Should print: [ "none" ]
+```
+
+**Step 2 — Restart the rebalancer** to pick up the new config:
+
+```bash
+svcadm restart svc:/manta/application/rebalancer
+```
+
+**Step 3 — Create fresh pgclones.** Minnow is already disabled from
+the first pass — do NOT re-enable it.
+
+```bash
+pgclone.sh destroy-all
+pgclone.sh clone-all \
+  --moray-vm <UUID> [--moray-vm ...] \
+  --buckets-vm <UUID> [--buckets-vm ...]
+```
+
+**Step 4 — Run the second evacuation:**
+
+```bash
+rebalancer-adm job create evacuate --shark <SHARK>
+```
+
+This time all objects are discovered, including `/stor/logs/`,
+`/stor/usage/`, and `/stor/manatee_backups/`.  Historical log files
+(written days/weeks ago and never touched since) will evacuate
+cleanly.  Only logs overwritten by crons during the job will get
+etag errors — this is a much smaller set than the first-pass-without-
+filter scenario because most system objects are historical.
+
+**Step 5 — Retry once** with fresh pgclones to catch the remaining
+etag errors from step 4.
+
+**Step 6 — Verify safe to decommission.** Destroy pgclones, create
+fresh ones, then query each moray shard:
+
+```bash
+# On each moray pgclone:
+psql -U postgres -h /tmp moray -c \
+  "SELECT count(*) FROM manta
+   WHERE _value LIKE '%<SHARK_STORAGE_ID>%';"
+```
+
+When the count is **0 across all shards**, no metadata references the
+shark and it is safe to decommission.  If a small count remains
+(logs written in the last hour), one more retry will clear them.
+
+**Step 7 — Restore the filter** for future evacuations:
+
+```bash
+MANTA_APP=$(sdc-sapi /applications?name=manta | json -Ha uuid)
+echo '{ "metadata": {
+    "REBALANCER_EXCLUDE_KEY_PREFIXES": null
+} }' | sapiadm update $MANTA_APP
+```
+
+Setting to `null` removes the SAPI override.  Config-agent
+regenerates `config.json` with the template defaults
+(`/stor/logs/`, `/stor/usage/`, `/stor/manatee_backups/`).
+Restart the rebalancer to apply:
+
+```bash
+# In the rebalancer zone:
+svcadm restart svc:/manta/application/rebalancer
+
+# Verify defaults restored:
+json options.exclude_key_prefixes < /opt/smartdc/rebalancer/config.json
+# Should print: [ "/stor/logs/", "/stor/usage/", "/stor/manatee_backups/" ]
+```
+
 ### Verifying Evacuation Completeness
 
 The job summary (`rebalancer-adm job get`) shows total error counts but
@@ -1381,6 +1541,77 @@ cron jobs.  The evacuation was operationally complete.**
    pgclones, but the hourly cron changes etags again before the retry
    finishes.  Accept the errors and verify via SQL instead of retrying
    indefinitely.
+
+### Verifying Object Data After Evacuation
+
+After an evacuation completes, verify that object data was
+successfully copied to destination sharks and is accessible via
+the Manta/S3 API.
+
+#### Storage-level verification
+
+Query the job database for completed objects and check that the
+data exists on both the source and destination sharks:
+
+```bash
+# From the rebalancer zone — get a sample of completed objects:
+psql -U postgres -h /tmp <JOB_UUID> -c \
+  "SELECT id, object::json->>'key' AS key,
+          object::json->>'bucket_id' AS bucket_id,
+          object::json->>'owner' AS owner,
+          dest_shark
+   FROM evacuateobjects
+   WHERE status = 'complete' LIMIT 5;"
+```
+
+Then verify the data on the destination shark.  Note that
+**bucket objects (v2)** are stored at a different path than
+traditional moray objects:
+
+- **Moray objects (v1):** `/manta/<object_id>`
+- **Bucket objects (v2):** `/manta/v2/<owner>/<bucket_id>/<prefix>/<object_id>,<content_md5>`
+
+```bash
+# Find the object on the destination shark:
+sdc-oneachnode -n <DEST_CN_UUID> \
+  'zlogin <DEST_STORAGE_ZONE> "find /manta -name <OBJECT_ID>*"'
+
+# Verify it also still exists on the source shark (rebalancer
+# copies, it does not delete):
+sdc-oneachnode -n <SOURCE_CN_UUID> \
+  'zlogin <SOURCE_STORAGE_ZONE> "find /manta -name <OBJECT_ID>*"'
+```
+
+Both should show the file with the same size.  The destination
+copy will have a recent timestamp (from the evacuation), while the
+source copy has the original timestamp.
+
+#### S3 API verification (bucket objects)
+
+For bucket objects, verify they are accessible via the S3 API.
+You need the bucket name (not the bucket UUID).  Look up the
+bucket name from the mdapi database, or if you know which buckets
+your test objects are in:
+
+```bash
+# Download an evacuated object via s3cmd:
+s3cmd get s3://<BUCKET_NAME>/<OBJECT_KEY> /tmp/verify.dat
+
+# Compare checksum against the original:
+md5sum /tmp/verify.dat
+# Should match the contentMD5 in the object metadata from the job DB
+```
+
+```bash
+# Or verify with curl using the S3 endpoint:
+curl -k https://<MANTA_S3_ENDPOINT>/<BUCKET_NAME>/<OBJECT_KEY> \
+  -o /tmp/verify.dat
+```
+
+If the download succeeds, Manta resolved the metadata (which now
+points to the destination shark) and served the object from the
+new location.  This confirms both the data copy and the metadata
+update were successful.
 
 ### Dynamically Adjusting Metadata Threads
 
