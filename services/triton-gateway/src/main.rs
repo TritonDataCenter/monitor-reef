@@ -19,7 +19,6 @@ use axum::Router;
 use axum::body::Body;
 use axum::extract::{ConnectInfo, State};
 use axum::http::StatusCode;
-use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::any;
 use http::header::{HOST, HeaderName, HeaderValue};
@@ -200,10 +199,6 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/v1/{*rest}", any(proxy_to_tritonapi))
         .fallback(proxy_to_cloudapi)
-        .layer(axum::middleware::from_fn_with_state(
-            state.clone(),
-            jwt_auth_middleware,
-        ))
         .layer(axum::middleware::from_fn(request_id_middleware))
         .with_state(state);
 
@@ -253,17 +248,6 @@ async fn shutdown_signal() {
     info!("shutdown signal received, draining in-flight requests");
 }
 
-/// Auth-bootstrap endpoints that must accept unauthenticated requests.
-/// Everything else the gateway proxies is gated on a valid JWT.
-/// Logout is public because tritonapi accepts expired tokens there;
-/// requiring validity would break cross-device logout after expiry.
-fn is_public_auth_path(path: &str) -> bool {
-    matches!(
-        path,
-        "/v1/auth/login" | "/v1/auth/logout" | "/v1/auth/refresh" | "/v1/auth/jwks.json"
-    )
-}
-
 /// Pull a bearer token from either `Authorization: Bearer …` or the
 /// `auth` cookie. Mirrors `triton-api-server`'s extract_token; browsers
 /// use the cookie, CLIs use the header.
@@ -288,37 +272,29 @@ fn extract_token(headers: &http::HeaderMap) -> Option<String> {
     None
 }
 
-/// Verify incoming JWTs and stash the resulting `Claims` in request
-/// extensions for downstream handlers. Rejects missing or invalid tokens
-/// with 401 for non-public paths; public auth endpoints always pass
-/// through unchanged.
-async fn jwt_auth_middleware(
-    State(state): State<Arc<GatewayState>>,
-    mut req: axum::extract::Request,
-    next: Next,
-) -> Response {
-    if is_public_auth_path(req.uri().path()) {
-        return next.run(req).await;
-    }
-
-    let Some(jwks) = state.jwks.as_ref() else {
-        // No JWKS configured — gateway runs as an unauthenticated
-        // passthrough (dev only).
-        return next.run(req).await;
-    };
-
+/// Verify a JWT and stash the `Claims` in request extensions. Called by
+/// the CloudAPI proxy handler only: the gateway intentionally stays out
+/// of `/v1/*` auth decisions since tritonapi enforces its own policy
+/// per endpoint (including intentionally-public routes like `/v1/ping`
+/// that haproxy uses for its backend health check).
+///
+/// Returns `Err(Response)` with a 401 that should be returned to the
+/// client when the token is missing or invalid.
+async fn authenticate_cloudapi_request(
+    jwks: &JwksClient,
+    req: &mut axum::extract::Request,
+) -> Result<(), Response> {
     let Some(token) = extract_token(req.headers()) else {
-        return (StatusCode::UNAUTHORIZED, "missing auth token\n").into_response();
+        return Err((StatusCode::UNAUTHORIZED, "missing auth token\n").into_response());
     };
-
     match jwks.verify_token(&token).await {
         Ok(claims) => {
             req.extensions_mut().insert(Arc::new(claims));
-            next.run(req).await
+            Ok(())
         }
         Err(e) => {
             warn!("JWT verification failed: {e}");
-            (StatusCode::UNAUTHORIZED, "invalid auth token\n").into_response()
+            Err((StatusCode::UNAUTHORIZED, "invalid auth token\n").into_response())
         }
     }
 }
@@ -397,11 +373,12 @@ async fn proxy_to_tritonapi(
 }
 
 /// Forward a request to CloudAPI. Returns 502 if CloudAPI is unreachable,
-/// or 501 if no CloudAPI URL is configured.
+/// or 501 if no CloudAPI URL is configured. Enforces a valid JWT first
+/// (when JWKS is configured) since the signer path will consume Claims.
 async fn proxy_to_cloudapi(
     State(state): State<Arc<GatewayState>>,
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
-    req: axum::extract::Request,
+    mut req: axum::extract::Request,
 ) -> Response {
     let Some(target) = state.cloudapi.as_ref() else {
         return (
@@ -410,6 +387,11 @@ async fn proxy_to_cloudapi(
         )
             .into_response();
     };
+    if let Some(jwks) = state.jwks.as_ref()
+        && let Err(resp) = authenticate_cloudapi_request(jwks, &mut req).await
+    {
+        return resp;
+    }
     dispatch(&state, target, peer_addr, req, "CloudAPI").await
 }
 
