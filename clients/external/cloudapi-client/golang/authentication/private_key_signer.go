@@ -21,7 +21,8 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/pkg/errors"
+	"errors"
+
 	"golang.org/x/crypto/ssh"
 )
 
@@ -55,16 +56,16 @@ func NewPrivateKeySigner(input PrivateKeySignerInput) (*PrivateKeySigner, error)
 
 	key, err := ssh.ParseRawPrivateKey(input.PrivateKeyMaterial)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to parse private key")
+		return nil, fmt.Errorf("unable to parse private key: %w", err)
 	}
 
 	matchKeyFingerprint, err := formatPublicKeyFingerprint(key, false)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to format match public key")
+		return nil, fmt.Errorf("unable to format match public key: %w", err)
 	}
 	displayKeyFingerprint, err := formatPublicKeyFingerprint(key, true)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to format display public key")
+		return nil, fmt.Errorf("unable to format display public key: %w", err)
 	}
 	if matchKeyFingerprint != keyFingerprintMD5 {
 		return nil, errors.New("Private key file does not match public key fingerprint")
@@ -123,7 +124,7 @@ func (s *PrivateKeySigner) SignRaw(toSign string) (string, string, error) {
 		digest := hash.Sum(nil)
 		signed, err := rsa.SignPKCS1v15(rand.Reader, key, s.hashFunc, digest)
 		if err != nil {
-			return "", "", errors.Wrap(err, "failed to create signature using RSA key")
+			return "", "", fmt.Errorf("failed to create signature using RSA key: %w", err)
 		}
 		signedBase64 = base64.StdEncoding.EncodeToString(signed)
 	case *ecdsa.PrivateKey:
@@ -133,12 +134,12 @@ func (s *PrivateKeySigner) SignRaw(toSign string) (string, string, error) {
 		digest := hash.Sum(nil)
 		r, s, err := ecdsa.Sign(rand.Reader, key, digest)
 		if err != nil {
-			return "", "", errors.Wrap(err, "failed to create signature using ECDSA key")
+			return "", "", fmt.Errorf("failed to create signature using ECDSA key: %w", err)
 		}
 		signature := ECDSASignature{R: r, S: s}
 		signed, err := asn1.Marshal(signature)
 		if err != nil {
-			return "", "", errors.Wrap(err, "unable to marshal ECDSA signature")
+			return "", "", fmt.Errorf("unable to marshal ECDSA signature: %w", err)
 		}
 		signedBase64 = base64.StdEncoding.EncodeToString(signed)
 	case ed25519.PrivateKey:

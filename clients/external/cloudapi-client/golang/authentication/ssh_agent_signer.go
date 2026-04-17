@@ -18,7 +18,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/pkg/errors"
+	"errors"
+
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 )
@@ -52,7 +53,7 @@ func NewSSHAgentSigner(input SSHAgentSignerInput) (*SSHAgentSigner, error) {
 
 	conn, err := net.Dial("unix", sshAgentAddress)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to dial SSH agent")
+		return nil, fmt.Errorf("unable to dial SSH agent: %w", err)
 	}
 
 	ag := agent.NewClient(conn)
@@ -74,7 +75,7 @@ func NewSSHAgentSigner(input SSHAgentSignerInput) (*SSHAgentSigner, error) {
 	signer.key = matchingKey
 	signer.formattedKeyFingerprint, err = formatPublicKeyFingerprint(signer.key, true)
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to format match public key")
+		return nil, fmt.Errorf("unable to format match public key: %w", err)
 	}
 
 	_, algorithm, err := signer.SignRaw("HelloWorld")
@@ -89,7 +90,7 @@ func NewSSHAgentSigner(input SSHAgentSignerInput) (*SSHAgentSigner, error) {
 func (s *SSHAgentSigner) MatchKey() (ssh.PublicKey, error) {
 	keys, err := s.agent.List()
 	if err != nil {
-		return nil, errors.Wrap(err, "unable to list keys in SSH Agent")
+		return nil, fmt.Errorf("unable to list keys in SSH Agent: %w", err)
 	}
 
 	keyFingerprintStripped := strings.TrimPrefix(s.keyFingerprint, "MD5:")
@@ -123,12 +124,12 @@ func (s *SSHAgentSigner) Sign(dateHeader string, isManta bool) (string, error) {
 
 	signature, err := s.agent.Sign(s.key, []byte(fmt.Sprintf("%s: %s", headerName, dateHeader)))
 	if err != nil {
-		return "", errors.Wrap(err, "unable to sign date header")
+		return "", fmt.Errorf("unable to sign date header: %w", err)
 	}
 
 	keyFormat, err := keyFormatToKeyType(signature.Format)
 	if err != nil {
-		return "", errors.Wrap(err, "unable to format signature")
+		return "", fmt.Errorf("unable to format signature: %w", err)
 	}
 
 	key := &KeyID{
@@ -143,17 +144,17 @@ func (s *SSHAgentSigner) Sign(dateHeader string, isManta bool) (string, error) {
 	case "rsa":
 		authSignature, err = newRSASignature(signature.Blob)
 		if err != nil {
-			return "", errors.Wrap(err, "unable to read RSA signature")
+			return "", fmt.Errorf("unable to read RSA signature: %w", err)
 		}
 	case "ecdsa":
 		authSignature, err = newECDSASignature(signature.Blob)
 		if err != nil {
-			return "", errors.Wrap(err, "unable to read ECDSA signature")
+			return "", fmt.Errorf("unable to read ECDSA signature: %w", err)
 		}
 	case "ed25519":
 		authSignature, err = newEd25519Signature(signature.Blob)
 		if err != nil {
-			return "", errors.Wrap(err, "unable to read Ed25519 signature")
+			return "", fmt.Errorf("unable to read Ed25519 signature: %w", err)
 		}
 	default:
 		return "", fmt.Errorf("Unsupported algorithm from SSH agent: %s", signature.Format)
@@ -166,12 +167,12 @@ func (s *SSHAgentSigner) Sign(dateHeader string, isManta bool) (string, error) {
 func (s *SSHAgentSigner) SignRaw(toSign string) (string, string, error) {
 	signature, err := s.agent.Sign(s.key, []byte(toSign))
 	if err != nil {
-		return "", "", errors.Wrap(err, "unable to sign string")
+		return "", "", fmt.Errorf("unable to sign string: %w", err)
 	}
 
 	keyFormat, err := keyFormatToKeyType(signature.Format)
 	if err != nil {
-		return "", "", errors.Wrap(err, "unable to format key")
+		return "", "", fmt.Errorf("unable to format key: %w", err)
 	}
 
 	var authSignature httpAuthSignature
@@ -179,17 +180,17 @@ func (s *SSHAgentSigner) SignRaw(toSign string) (string, string, error) {
 	case "rsa":
 		authSignature, err = newRSASignature(signature.Blob)
 		if err != nil {
-			return "", "", errors.Wrap(err, "unable to read RSA signature")
+			return "", "", fmt.Errorf("unable to read RSA signature: %w", err)
 		}
 	case "ecdsa":
 		authSignature, err = newECDSASignature(signature.Blob)
 		if err != nil {
-			return "", "", errors.Wrap(err, "unable to read ECDSA signature")
+			return "", "", fmt.Errorf("unable to read ECDSA signature: %w", err)
 		}
 	case "ed25519":
 		authSignature, err = newEd25519Signature(signature.Blob)
 		if err != nil {
-			return "", "", errors.Wrap(err, "unable to read Ed25519 signature")
+			return "", "", fmt.Errorf("unable to read Ed25519 signature: %w", err)
 		}
 	default:
 		return "", "", fmt.Errorf("Unsupported algorithm from SSH agent: %s", signature.Format)

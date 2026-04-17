@@ -17,7 +17,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pkg/errors"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -32,19 +31,19 @@ func formatPublicKeyFingerprint(privateKey interface{}, display bool) (string, e
 	case *rsa.PrivateKey:
 		p, err := ssh.NewPublicKey(k.Public())
 		if err != nil {
-			return "", errors.Wrap(err, "unable to parse SSH key from private key")
+			return "", fmt.Errorf("unable to parse SSH key from private key: %w", err)
 		}
 		key = p
 	case *ecdsa.PrivateKey:
 		p, err := ssh.NewPublicKey(k.Public())
 		if err != nil {
-			return "", errors.Wrap(err, "unable to parse SSH key from private key")
+			return "", fmt.Errorf("unable to parse SSH key from private key: %w", err)
 		}
 		key = p
 	case ed25519.PrivateKey:
 		p, err := ssh.NewPublicKey(k.Public())
 		if err != nil {
-			return "", errors.Wrap(err, "unable to parse SSH key from private key")
+			return "", fmt.Errorf("unable to parse SSH key from private key: %w", err)
 		}
 		key = p
 	default:
