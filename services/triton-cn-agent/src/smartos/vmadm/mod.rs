@@ -128,6 +128,18 @@ pub struct KillOptions {
     pub signal: Option<String>,
 }
 
+/// Options for [`VmadmTool::delete`].
+#[derive(Debug, Clone, Default)]
+pub struct DeleteOptions {
+    pub include_dni: bool,
+}
+
+/// Options for [`VmadmTool::snapshot`].
+#[derive(Debug, Clone, Default)]
+pub struct SnapshotOptions {
+    pub include_dni: bool,
+}
+
 /// Thin wrapper around the `vmadm` binary.
 ///
 /// Cheap to clone; stores only the binary path.
@@ -368,6 +380,107 @@ impl VmadmTool {
             .await
     }
 
+    /// `vmadm delete <uuid>`. Honors `include_dni`; idempotently succeeds if
+    /// the zone is already missing (matches the legacy task's "No such zone"
+    /// special-case).
+    pub async fn delete(&self, uuid: &str, opts: &DeleteOptions) -> Result<(), VmadmError> {
+        match self.assert_exists(uuid, opts.include_dni).await {
+            Ok(()) => {}
+            Err(VmadmError::NotFound { .. }) => return Ok(()),
+            Err(e) => return Err(e),
+        }
+
+        let output = run(&self.vmadm_bin, &["delete", uuid]).await?;
+        if output.status.success() {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        // Re-apply the legacy idempotence contract: "No such zone" means the
+        // delete already happened from the operator's point of view.
+        if stderr_matches_no_such_zone(&stderr) {
+            return Ok(());
+        }
+        Err(VmadmError::NonZeroExit {
+            status: output.status,
+            stderr: stderr.into_owned(),
+        })
+    }
+
+    /// `vmadm update <uuid>` with the given JSON payload written to stdin.
+    ///
+    /// The payload must be a JSON object — keys like `customer_metadata`,
+    /// `add_nics`, `ram`, etc. are defined by vmadm itself.
+    pub async fn update(
+        &self,
+        uuid: &str,
+        payload: &serde_json::Value,
+        include_dni: bool,
+    ) -> Result<(), VmadmError> {
+        self.assert_exists(uuid, include_dni).await?;
+
+        let stdin = serde_json::to_vec(payload).map_err(|e| VmadmError::Parse { source: e })?;
+        let output = run_with_stdin(&self.vmadm_bin, &["update", uuid], &stdin).await?;
+        if !output.status.success() {
+            return Err(VmadmError::NonZeroExit {
+                status: output.status,
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            });
+        }
+        Ok(())
+    }
+
+    /// `vmadm create-snapshot <uuid> <snapshot_name>`.
+    pub async fn create_snapshot(
+        &self,
+        uuid: &str,
+        snapshot_name: &str,
+        opts: &SnapshotOptions,
+    ) -> Result<(), VmadmError> {
+        self.run_snapshot_op("create-snapshot", uuid, snapshot_name, opts.include_dni)
+            .await
+    }
+
+    /// `vmadm delete-snapshot <uuid> <snapshot_name>`.
+    pub async fn delete_snapshot(
+        &self,
+        uuid: &str,
+        snapshot_name: &str,
+        opts: &SnapshotOptions,
+    ) -> Result<(), VmadmError> {
+        self.run_snapshot_op("delete-snapshot", uuid, snapshot_name, opts.include_dni)
+            .await
+    }
+
+    /// `vmadm rollback-snapshot <uuid> <snapshot_name>`.
+    pub async fn rollback_snapshot(
+        &self,
+        uuid: &str,
+        snapshot_name: &str,
+        opts: &SnapshotOptions,
+    ) -> Result<(), VmadmError> {
+        self.run_snapshot_op("rollback-snapshot", uuid, snapshot_name, opts.include_dni)
+            .await
+    }
+
+    async fn run_snapshot_op(
+        &self,
+        subcmd: &str,
+        uuid: &str,
+        snapshot_name: &str,
+        include_dni: bool,
+    ) -> Result<(), VmadmError> {
+        self.assert_exists(uuid, include_dni).await?;
+
+        let output = run(&self.vmadm_bin, &[subcmd, uuid, snapshot_name]).await?;
+        if !output.status.success() {
+            return Err(VmadmError::NonZeroExit {
+                status: output.status,
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            });
+        }
+        Ok(())
+    }
+
     /// Run a vmadm mutation that produces no stdout, translating the
     /// "already in target state" stderr patterns into
     /// [`VmadmError::AlreadyInState`].
@@ -418,6 +531,50 @@ async fn run(bin: &Path, args: &[&str]) -> Result<std::process::Output, VmadmErr
     tokio::process::Command::new(bin)
         .args(args)
         .output()
+        .await
+        .map_err(|source| VmadmError::Spawn {
+            path: bin.to_path_buf(),
+            source,
+        })
+}
+
+/// Same as `run`, but pipes `stdin_data` to the child's stdin.
+///
+/// Used by `vmadm update`, which reads its payload from stdin rather than
+/// argv. We wait for the write to complete before collecting output so
+/// vmadm sees EOF and exits normally.
+async fn run_with_stdin(
+    bin: &Path,
+    args: &[&str],
+    stdin_data: &[u8],
+) -> Result<std::process::Output, VmadmError> {
+    use tokio::io::AsyncWriteExt;
+
+    let mut child = tokio::process::Command::new(bin)
+        .args(args)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|source| VmadmError::Spawn {
+            path: bin.to_path_buf(),
+            source,
+        })?;
+
+    if let Some(mut stdin) = child.stdin.take() {
+        // Write-all then drop to close the pipe so vmadm sees EOF.
+        stdin
+            .write_all(stdin_data)
+            .await
+            .map_err(|source| VmadmError::Spawn {
+                path: bin.to_path_buf(),
+                source,
+            })?;
+        drop(stdin);
+    }
+
+    child
+        .wait_with_output()
         .await
         .map_err(|source| VmadmError::Spawn {
             path: bin.to_path_buf(),

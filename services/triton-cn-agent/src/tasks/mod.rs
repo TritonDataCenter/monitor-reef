@@ -19,9 +19,14 @@ use cn_agent_api::TaskName;
 
 use crate::registry::{TaskRegistry, TaskRegistryBuilder};
 use crate::smartos::tasks::{
+    machine_destroy::MachineDestroyTask,
     machine_info::MachineInfoTask,
     machine_lifecycle::{MachineBootTask, MachineKillTask, MachineRebootTask, MachineShutdownTask},
     machine_load::MachineLoadTask,
+    machine_snapshots::{
+        MachineCreateSnapshotTask, MachineDeleteSnapshotTask, MachineRollbackSnapshotTask,
+    },
+    machine_update::MachineUpdateTask,
     server_sysinfo::ServerSysinfoTask,
     zfs_get_properties::ZfsGetPropertiesTask,
     zfs_list_datasets::ZfsListDatasetsTask,
@@ -130,6 +135,34 @@ pub fn register_vmadm_lifecycle_tasks(
         .register(TaskName::MachineKill, MachineKillTask::new(tool))
 }
 
+/// Register vmadm mutation wrappers (destroy/update + snapshot operations).
+pub fn register_vmadm_mutation_tasks(
+    builder: TaskRegistryBuilder,
+    tool: Arc<VmadmTool>,
+) -> TaskRegistryBuilder {
+    builder
+        .register(
+            TaskName::MachineDestroy,
+            MachineDestroyTask::new(tool.clone()),
+        )
+        .register(
+            TaskName::MachineUpdate,
+            MachineUpdateTask::new(tool.clone()),
+        )
+        .register(
+            TaskName::MachineCreateSnapshot,
+            MachineCreateSnapshotTask::new(tool.clone()),
+        )
+        .register(
+            TaskName::MachineDeleteSnapshot,
+            MachineDeleteSnapshotTask::new(tool.clone()),
+        )
+        .register(
+            TaskName::MachineRollbackSnapshot,
+            MachineRollbackSnapshotTask::new(tool),
+        )
+}
+
 /// Build a registry containing the tasks the SmartOS backend exposes.
 ///
 /// Today that's the platform-neutral set plus `server_sysinfo`, the
@@ -144,6 +177,7 @@ pub fn smartos_registry() -> TaskRegistry {
     builder = register_zfs_query_tasks(builder, zfs.clone());
     builder = register_zfs_mutation_tasks(builder, zfs);
     builder = register_vmadm_query_tasks(builder, vmadm.clone());
-    builder = register_vmadm_lifecycle_tasks(builder, vmadm);
+    builder = register_vmadm_lifecycle_tasks(builder, vmadm.clone());
+    builder = register_vmadm_mutation_tasks(builder, vmadm);
     builder.build()
 }
