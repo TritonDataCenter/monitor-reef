@@ -15,6 +15,10 @@
         "connection_timeout_secs": 10
     },
 
+    "mahi": {
+        "url": "http://mahi.{{{datacenter_name}}}.{{{dns_domain}}}"
+    },
+
     "jwt": {
         "private_key_file": "/data/jwt-private.pem",
         "public_key_file": "/data/jwt-public.pem",

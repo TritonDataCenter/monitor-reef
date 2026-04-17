@@ -13,14 +13,16 @@
 //!
 //! # Identity flow
 //!
-//! 1. Client `POST /v1/auth/login` with LDAP credentials.
+//! 1. Client `POST /v1/auth/login` with UFDS credentials.
 //! 2. [`LdapService::authenticate`] binds admin, looks up the user as
-//!    `sdcperson`, verifies the password via LDAP compare, and resolves
-//!    roles from `memberof`.
-//! 3. [`JwtService::create_token`] signs a short-lived access token with an
+//!    `sdcperson`, and verifies the password via LDAP compare.
+//! 3. [`MahiService::lookup`] reads the same login from the Mahi auth cache
+//!    to resolve operator status and group memberships — cheaper and with
+//!    fewer UFDS quirks than the pre-mahi LDAP groupofuniquenames dance.
+//! 4. [`JwtService::create_token`] signs a short-lived access token with an
 //!    ES256 private key. [`JwtService::create_refresh_token`] mints an
 //!    opaque single-use refresh token held in memory.
-//! 4. Any verifier (same process, the gateway, or a future adminui proxy)
+//! 5. Any verifier (same process, the gateway, or a future adminui proxy)
 //!    validates the access token against the public key. The public key is
 //!    published at `GET /v1/auth/jwks.json` via [`JwtService::jwks`].
 //!
@@ -30,9 +32,11 @@
 pub mod error;
 pub mod jwt;
 pub mod ldap;
+pub mod mahi;
 pub mod models;
 
 pub use error::{SessionError, SessionResult};
 pub use jwt::{JwtConfig, JwtService};
 pub use ldap::{LdapConfig, LdapService, UfdsUser};
+pub use mahi::{AuthInfo, MahiConfig, MahiService};
 pub use models::{Claims, Role, roles_imply_admin};

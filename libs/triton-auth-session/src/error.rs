@@ -28,6 +28,9 @@ pub enum SessionError {
     #[error("LDAP misconfiguration: {0}")]
     LdapConfigError(String),
 
+    #[error("Mahi unavailable: {0}")]
+    MahiUnavailable(String),
+
     #[error("JWT key error: {0}")]
     JwtKeyError(String),
 

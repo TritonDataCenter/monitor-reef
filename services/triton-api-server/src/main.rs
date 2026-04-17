@@ -20,7 +20,7 @@ use triton_api::{
 };
 use triton_auth_session::{
     JwtConfig as SessionJwtConfig, JwtService, LdapConfig as SessionLdapConfig, LdapService,
-    SessionError,
+    MahiConfig as SessionMahiConfig, MahiService, Role, SessionError,
 };
 
 /// Default request body size limit: 10 MiB.
@@ -44,6 +44,8 @@ struct ApiServerConfig {
     #[serde(default)]
     ldap: Option<LdapConfigFile>,
     #[serde(default)]
+    mahi: Option<MahiConfigFile>,
+    #[serde(default)]
     jwt: Option<JwtConfigFile>,
 }
 
@@ -57,6 +59,11 @@ struct LdapConfigFile {
     tls_verify: bool,
     #[serde(default = "default_ldap_timeout_secs")]
     connection_timeout_secs: NonZeroU64,
+}
+
+#[derive(Deserialize)]
+struct MahiConfigFile {
+    url: url::Url,
 }
 
 #[derive(Deserialize)]
@@ -97,6 +104,7 @@ impl Default for ApiServerConfig {
             bind_address: default_bind_address(),
             max_body_bytes: None,
             ldap: None,
+            mahi: None,
             jwt: None,
         }
     }
@@ -125,6 +133,7 @@ async fn load_config() -> Result<ApiServerConfig> {
 struct ApiContext {
     jwt: Option<Arc<JwtService>>,
     ldap: Option<Arc<LdapService>>,
+    mahi: Option<Arc<MahiService>>,
     /// Whether to set the `Secure` flag on the auth cookie. Disabled for
     /// local HTTP development, enabled behind haproxy (the production
     /// deployment always terminates TLS in front of tritonapi).
@@ -152,6 +161,7 @@ impl TritonApi for TritonApiImpl {
         let ctx = rqctx.context();
         let jwt = ctx.jwt.as_ref().ok_or_else(auth_unavailable)?;
         let ldap = ctx.ldap.as_ref().ok_or_else(auth_unavailable)?;
+        let mahi = ctx.mahi.as_ref().ok_or_else(auth_unavailable)?;
 
         let req = body.into_inner();
         let user = ldap
@@ -159,21 +169,39 @@ impl TritonApi for TritonApiImpl {
             .await
             .map_err(session_error_to_http)?;
 
-        let roles = &user.roles;
+        // Password is verified; mahi now provides the canonical operator /
+        // group view. A 404 here would mean mahi hasn't caught up with a
+        // brand-new user yet; MahiService maps that to AuthenticationFailed
+        // so the client can retry.
+        let auth_info = mahi
+            .lookup(&user.login)
+            .await
+            .map_err(session_error_to_http)?;
+        let account = auth_info.account;
+
+        let roles: Vec<Role> = account
+            .groups
+            .as_deref()
+            .unwrap_or(&[])
+            .iter()
+            .map(|g| Role::from(g.as_str()))
+            .collect();
+        let is_operator = account.is_operator.unwrap_or(false);
+
         let token = jwt
-            .create_token(user.uuid, &user.login, roles)
+            .create_token(account.uuid, &account.login, &roles)
             .map_err(session_error_to_http)?;
         let refresh_token = jwt
-            .create_refresh_token(user.uuid, &user.login, roles)
+            .create_refresh_token(account.uuid, &account.login, &roles)
             .await;
 
-        let is_admin = triton_auth_session::roles_imply_admin(roles);
+        let is_admin = is_operator || triton_auth_session::roles_imply_admin(&roles);
         let user_info = UserInfo {
-            id: user.uuid,
-            username: user.login.clone(),
-            email: user.email.clone(),
-            name: user.cn.clone(),
-            company: user.company.clone(),
+            id: account.uuid,
+            username: account.login.clone(),
+            email: account.email.clone(),
+            name: account.cn.clone(),
+            company: account.company.clone(),
             is_admin,
         };
 
@@ -328,7 +356,7 @@ fn session_error_to_http(err: SessionError) -> HttpError {
             ClientErrorStatusCode::UNAUTHORIZED,
             err.to_string(),
         ),
-        SessionError::LdapUnavailable(msg) => {
+        SessionError::LdapUnavailable(msg) | SessionError::MahiUnavailable(msg) => {
             HttpError::for_unavail(Some("ServiceUnavailable".to_string()), msg)
         }
         SessionError::LdapConfigError(msg) | SessionError::JwtKeyError(msg) => {
@@ -394,6 +422,12 @@ fn build_ldap_service(cfg: &LdapConfigFile) -> LdapService {
     })
 }
 
+fn build_mahi_service(cfg: &MahiConfigFile) -> MahiService {
+    MahiService::new(SessionMahiConfig {
+        url: cfg.url.clone(),
+    })
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
@@ -415,6 +449,13 @@ async fn main() -> Result<()> {
         Some(cfg) => Some(Arc::new(build_ldap_service(cfg))),
         None => {
             warn!("no [ldap] section in config; /v1/auth/login will return 503");
+            None
+        }
+    };
+    let mahi = match config.mahi.as_ref() {
+        Some(cfg) => Some(Arc::new(build_mahi_service(cfg))),
+        None => {
+            warn!("no [mahi] section in config; /v1/auth/login will return 503");
             None
         }
     };
@@ -451,6 +492,7 @@ async fn main() -> Result<()> {
     let context = ApiContext {
         jwt,
         ldap,
+        mahi,
         cookie_secure,
     };
 

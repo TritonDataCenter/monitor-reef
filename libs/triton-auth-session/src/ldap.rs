@@ -4,16 +4,14 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! UFDS authentication over LDAP.
+//! UFDS password verification over LDAP.
 //!
 //! Binds as the configured admin, looks up the user as an `sdcperson`
 //! entry, and verifies the supplied password with an LDAP `compare` on
-//! `userPassword`. Roles are derived from `memberof` DNs; when the server
-//! doesn't populate `memberof`, we fall back to a `groupofuniquenames`
-//! search under `ou=groups, o=smartdc`.
+//! `userPassword`. Group membership / operator status is resolved
+//! separately from the Mahi auth cache (see [`crate::mahi`]).
 
 use crate::error::{SessionError, SessionResult};
-use crate::models::Role;
 use ldap3::{Ldap, LdapConnAsync, LdapConnSettings, Scope, SearchEntry};
 use secrecy::{ExposeSecret, SecretString};
 use serde::{Deserialize, Serialize};
@@ -21,7 +19,7 @@ use std::num::NonZeroU64;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, warn};
 use url::Url;
 use uuid::Uuid;
 
@@ -35,16 +33,14 @@ pub struct LdapConfig {
     pub connection_timeout_secs: NonZeroU64,
 }
 
+/// Minimal identity returned by a successful LDAP bind. Authoritative
+/// attributes (operator status, group memberships, display metadata) are
+/// fetched from mahi after this point; `UfdsUser` only carries what is
+/// needed to correlate that lookup.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UfdsUser {
     pub uuid: Uuid,
     pub login: String,
-    pub email: Option<String>,
-    pub cn: Option<String>,
-    pub company: Option<String>,
-    pub groups: Vec<String>,
-    /// Typed roles extracted from LDAP group membership.
-    pub roles: Vec<Role>,
     dn: String,
 }
 
@@ -159,7 +155,7 @@ impl LdapService {
                 search_base,
                 Scope::Subtree,
                 &filter,
-                vec!["dn", "uuid", "login", "email", "cn", "company", "memberof"],
+                vec!["dn", "uuid", "login"],
             )
             .await
             .map_err(|e| {
@@ -173,7 +169,6 @@ impl LdapService {
             })?;
 
         if rs.is_empty() {
-            debug!("User not found: {username}");
             return Err(SessionError::AuthenticationFailed);
         }
 
@@ -183,89 +178,7 @@ impl LdapService {
                 .ok_or(SessionError::AuthenticationFailed)?,
         );
         drop(config);
-        let mut user = self.parse_user_entry(entry)?;
-
-        // Fall back to groupofuniquenames search if memberof was empty.
-        // Reuses the same bound LDAP handle rather than opening a second
-        // connection — simpler and avoids doubling per-request LDAP cost.
-        if user.groups.is_empty() {
-            match self.check_user_groups(ldap, &user.uuid).await {
-                Ok(group_names) => {
-                    user.roles = group_names.iter().map(|g| Role::from(g.as_str())).collect();
-                    user.groups = group_names;
-                }
-                Err(e) => {
-                    error!(
-                        user = %user.login,
-                        "Group lookup failed, cannot determine admin status: {e}"
-                    );
-                    return Err(e);
-                }
-            }
-        }
-
-        Ok(user)
-    }
-
-    /// Look up the groups the user belongs to by listing every group under
-    /// `ou=groups, o=smartdc` and matching the user's UUID against each
-    /// group's `uniquemember` values in-process.
-    ///
-    /// We deliberately do not push the match into the LDAP filter (as
-    /// `(uniquemember=<dn>)`) because that requires encoding a DN as a
-    /// filter value, and ldap3's filter-string parser treats embedded `=`
-    /// signs in a way that UFDS does not match -- the same filter that
-    /// works via `sdc-ldap` returns zero hits through ldap3. Since the DC
-    /// has a handful of groups, the server-side listing is cheap and the
-    /// client-side UUID match is exact.
-    async fn check_user_groups(
-        &self,
-        ldap: &mut Ldap,
-        user_uuid: &Uuid,
-    ) -> SessionResult<Vec<String>> {
-        let filter = "(objectClass=groupofuniquenames)";
-        debug!(user_uuid = %user_uuid, "group membership search");
-
-        let (rs, _) = ldap
-            .search(
-                "ou=groups, o=smartdc",
-                Scope::Subtree,
-                filter,
-                vec!["cn", "uniquemember"],
-            )
-            .await
-            .map_err(|e| SessionError::LdapUnavailable(format!("LDAP group search failed: {e}")))?
-            .success()
-            .map_err(|e| {
-                warn!(user_uuid = %user_uuid, "LDAP group search result error: {e}");
-                SessionError::LdapUnavailable("Group search failed".to_string())
-            })?;
-
-        let user_uuid_str = user_uuid.to_string();
-        let groups: Vec<String> = rs
-            .into_iter()
-            .filter_map(|entry| {
-                let entry = SearchEntry::construct(entry);
-                // UFDS does not return the RDN attribute (`cn`) in the
-                // response attrs because it's already encoded in the DN.
-                // Parse it out of the DN instead of trusting attrs.get("cn").
-                let cn = entry
-                    .dn
-                    .split(',')
-                    .next()?
-                    .trim()
-                    .strip_prefix("cn=")?
-                    .to_string();
-                let members = entry.attrs.get("uniquemember")?;
-                members
-                    .iter()
-                    .any(|m| m.contains(&user_uuid_str))
-                    .then_some(cn)
-            })
-            .collect();
-        debug!(groups = ?groups, "group membership search result");
-
-        Ok(groups)
+        self.parse_user_entry(entry)
     }
 
     fn parse_user_entry(&self, entry: SearchEntry) -> SessionResult<UfdsUser> {
@@ -281,19 +194,6 @@ impl LdapService {
             error!(dn = %entry.dn, uuid = %uuid_str, "Invalid UUID in LDAP entry: {e}");
             SessionError::Internal(format!("UFDS uuid parse: {e}"))
         })?;
-
-        // arch-lint: allow(no-silent-result-drop) reason="Option::unwrap_or_default — missing memberof attribute is a valid empty state"
-        let memberof = attrs.get("memberof").cloned().unwrap_or_default();
-        let roles: Vec<Role> = memberof
-            .iter()
-            .filter_map(|group| {
-                group
-                    .split(',')
-                    .find(|part| part.trim().starts_with("cn="))
-                    .and_then(|cn| cn.trim().strip_prefix("cn="))
-                    .map(Role::from)
-            })
-            .collect();
         let login = get("login").ok_or_else(|| {
             error!(dn = %entry.dn, "LDAP entry missing 'login' attribute");
             SessionError::Internal("UFDS entry missing login".to_string())
@@ -303,11 +203,6 @@ impl LdapService {
             dn: entry.dn,
             uuid,
             login,
-            email: get("email"),
-            cn: get("cn"),
-            company: get("company"),
-            groups: memberof,
-            roles,
         })
     }
 
@@ -358,7 +253,7 @@ mod tests {
     }
 
     #[test]
-    fn roles_extracted_from_memberof_dns() {
+    fn parse_user_entry_extracts_uuid_and_login() {
         let service = LdapService::new(test_config());
 
         let mut attrs = std::collections::HashMap::new();
@@ -367,22 +262,20 @@ mod tests {
             vec!["550e8400-e29b-41d4-a716-446655440000".to_string()],
         );
         attrs.insert("login".to_string(), vec!["testuser".to_string()]);
-        attrs.insert(
-            "memberof".to_string(),
-            vec![
-                "cn=operators,ou=groups,o=smartdc".to_string(),
-                "cn=readers,ou=groups,o=smartdc".to_string(),
-            ],
-        );
 
+        let dn = "uuid=550e8400-e29b-41d4-a716-446655440000,ou=users,o=smartdc".to_string();
         let entry = SearchEntry {
-            dn: "uuid=550e8400-e29b-41d4-a716-446655440000,ou=users,o=smartdc".to_string(),
+            dn: dn.clone(),
             attrs,
             bin_attrs: std::collections::HashMap::new(),
         };
 
         let user = service.parse_user_entry(entry).unwrap();
-        assert_eq!(user.roles, vec![Role::Operators, Role::Unknown]);
-        assert!(user.groups[0].contains("ou=groups"));
+        assert_eq!(user.login, "testuser");
+        assert_eq!(user.dn(), dn);
+        assert_eq!(
+            user.uuid,
+            Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap()
+        );
     }
 }
