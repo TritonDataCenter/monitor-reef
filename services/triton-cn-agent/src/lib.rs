@@ -17,7 +17,9 @@
 //! developer laptops.
 
 pub mod api_impl;
+pub mod cnapi;
 pub mod context;
+pub mod heartbeater;
 pub mod registry;
 pub mod smartos;
 pub mod tasks;

@@ -14,7 +14,12 @@ use clap::Parser;
 use cn_agent_api::cn_agent_api_mod;
 use dropshot::{ConfigDropshot, ConfigLogging, ConfigLoggingLevel, HttpServerStarter};
 use triton_cn_agent::{
-    AgentContext, AgentMetadata, DEFAULT_AGENT_PORT, api_impl::CnAgentApiImpl, tasks,
+    AgentContext, AgentMetadata, DEFAULT_AGENT_PORT,
+    api_impl::CnAgentApiImpl,
+    cnapi::CnapiClient,
+    heartbeater::{Heartbeater, status::StatusCollector},
+    smartos::{Sysinfo, VmadmTool, ZfsTool},
+    tasks,
 };
 
 /// Command-line arguments.
@@ -41,6 +46,21 @@ struct Args {
     /// Server UUID this agent is running on. Must be a valid UUID.
     #[arg(long, env = "CN_AGENT_SERVER_UUID")]
     server_uuid: Option<uuid::Uuid>,
+
+    /// Optional override for the CNAPI base URL.
+    ///
+    /// When unset, the heartbeater is disabled. A real deployment should
+    /// set this (or we'd need to port sdcConfig+DNS lookup of
+    /// `cnapi.<dc>.<domain>`, which we haven't wired up yet).
+    #[arg(long, env = "CN_AGENT_CNAPI_URL")]
+    cnapi_url: Option<String>,
+
+    /// Skip the heartbeater entirely, even when `--cnapi-url` is set.
+    ///
+    /// Handy during development so you can exercise /tasks without
+    /// filling CNAPI logs.
+    #[arg(long, env = "CN_AGENT_NO_HEARTBEAT", default_value_t = false)]
+    no_heartbeat: bool,
 }
 
 fn default_bind_addr() -> SocketAddr {
@@ -67,7 +87,7 @@ async fn main() -> Result<()> {
         }
     };
 
-    let server_uuid = args.server_uuid.unwrap_or_else(uuid::Uuid::nil);
+    let server_uuid = resolve_server_uuid(&args).await?;
 
     let metadata = AgentMetadata {
         name: "cn-agent".to_string(),
@@ -98,10 +118,86 @@ async fn main() -> Result<()> {
         .map_err(|e| anyhow::anyhow!("start http server: {e}"))?
         .start();
 
-    tracing::info!(bind = %args.bind_addr, backend = %args.backend, "cn-agent listening");
+    tracing::info!(
+        bind = %args.bind_addr,
+        backend = %args.backend,
+        server_uuid = %server_uuid,
+        "cn-agent listening"
+    );
 
-    server
+    // Optional heartbeater. Only enabled when the user supplied a CNAPI URL
+    // and didn't opt out explicitly.
+    let heartbeater_handle = match (&args.cnapi_url, args.no_heartbeat) {
+        (Some(url), false) => Some(start_heartbeater(url, server_uuid, &args.backend)?),
+        _ => {
+            tracing::info!("heartbeater disabled (no --cnapi-url)");
+            None
+        }
+    };
+
+    let server_result = server
         .await
         .map_err(|e| anyhow::anyhow!("server exited with error: {e}"))
-        .context("cn-agent server loop")
+        .context("cn-agent server loop");
+
+    if let Some(handle) = heartbeater_handle {
+        handle.shutdown().await;
+    }
+
+    server_result
+}
+
+/// Decide what UUID to report to CNAPI.
+///
+/// In order of preference:
+/// 1. Explicit `--server-uuid` argument / `CN_AGENT_SERVER_UUID` env.
+/// 2. `/usr/bin/sysinfo` UUID field (SmartOS-only).
+/// 3. All-zero UUID (dev/dummy backend).
+async fn resolve_server_uuid(args: &Args) -> Result<uuid::Uuid> {
+    if let Some(uuid) = args.server_uuid {
+        return Ok(uuid);
+    }
+    if args.backend == "smartos" {
+        match Sysinfo::collect().await {
+            Ok(si) => {
+                if let Some(uuid) = si.uuid() {
+                    return Ok(uuid);
+                }
+                tracing::warn!("sysinfo returned no UUID; falling back to nil");
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to read sysinfo; falling back to nil UUID")
+            }
+        }
+    }
+    Ok(uuid::Uuid::nil())
+}
+
+fn start_heartbeater(
+    cnapi_url: &str,
+    server_uuid: uuid::Uuid,
+    backend: &str,
+) -> Result<triton_cn_agent::heartbeater::HeartbeaterHandle> {
+    let cnapi = Arc::new(
+        CnapiClient::builder(cnapi_url, server_uuid)
+            .with_user_agent(format!(
+                "triton-cn-agent/{} server/{server_uuid}",
+                env!("CARGO_PKG_VERSION")
+            ))
+            .build()
+            .context("build CNAPI client")?,
+    );
+    // The heartbeater's status collector uses the SmartOS vmadm/zfs wrappers
+    // unconditionally. On the dummy backend, those will return errors —
+    // status posts will log warnings but heartbeats still fire, which is
+    // what we want for dev runs that point at a stub CNAPI.
+    if backend == "dummy" {
+        tracing::warn!(
+            "running heartbeater on dummy backend; status collection will fail against fake vmadm/zfs"
+        );
+    }
+    let collector = StatusCollector::new(Arc::new(VmadmTool::new()), Arc::new(ZfsTool::new()));
+    let heartbeater = Heartbeater::new(cnapi, collector);
+    tracing::info!(cnapi_url = %cnapi_url, "starting heartbeater");
+    Ok(heartbeater.spawn())
 }
