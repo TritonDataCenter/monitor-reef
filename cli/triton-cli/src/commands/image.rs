@@ -121,7 +121,7 @@ pub struct ImageCreateArgs {
     /// Image name
     pub name: String,
     /// Image version
-    pub version: Option<String>,
+    pub version: String,
     /// Image description
     #[arg(long, short = 'd')]
     pub description: Option<String>,
@@ -655,9 +655,7 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
     if args.dry_run {
         println!("Dry run - would create image:");
         println!("  Name:        {}", args.name);
-        if let Some(ver) = &args.version {
-            println!("  Version:     {}", ver);
-        }
+        println!("  Version:     {}", args.version);
         if let Some(desc) = &args.description {
             println!("  Description: {}", desc);
         }

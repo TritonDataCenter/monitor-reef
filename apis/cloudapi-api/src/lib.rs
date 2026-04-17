@@ -45,14 +45,14 @@ pub use vmapi_api::MigrationPhase;
 pub use vmapi_api::SnapshotState;
 
 /// URL for CloudAPI documentation
-// The Node.js CloudAPI has documentation redirect endpoints at /, /docs, and
-// /favicon.ico. These cannot be represented in the Dropshot API trait because
-// they conflict with /{account} variable path routing. Dropshot does not allow
-// both literal segments (e.g., /docs) and variable segments (e.g., /{account})
-// at the same path depth.
+// The Node.js CloudAPI has endpoints at /, /docs, /favicon.ico, and /--ping
+// that cannot be represented in the Dropshot API trait because they conflict
+// with /{account} variable path routing. Dropshot does not allow both literal
+// segments (e.g., /docs) and variable segments (e.g., /{account}) at the same
+// path depth.
 //
-// Service implementations should handle these redirects at the reverse proxy or
-// HTTP server level before routing to the Dropshot API.
+// Service implementations should handle these at the reverse proxy or HTTP
+// server level before routing to the Dropshot API.
 pub const DOCS_URL: &str = "http://apidocs.tritondatacenter.com/cloudapi/";
 
 /// URL for favicon
@@ -76,10 +76,10 @@ pub const FAVICON_URL: &str = "http://apidocs.tritondatacenter.com/favicon.ico";
 /// - Datacenters
 /// - Services
 /// - Migrations
-// Note: Documentation redirect endpoints (/, /docs, /favicon.ico) from the
-// Node.js CloudAPI cannot be included due to Dropshot routing limitations.
-// See DOCS_URL constant for details. These should be handled at the reverse
-// proxy or HTTP server level.
+// Note: Endpoints /, /docs, /favicon.ico, and /--ping from the Node.js
+// CloudAPI cannot be included due to Dropshot routing limitations.
+// See DOCS_URL constant for details. These should be handled at the
+// reverse proxy or HTTP server level.
 #[dropshot::api_description]
 pub trait CloudApi {
     /// Context type for request handlers
