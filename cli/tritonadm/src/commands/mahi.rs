@@ -9,9 +9,10 @@
 //! API (26 endpoints across lookup, AWS SigV4, STS, IAM) plus the two sitter
 //! endpoints (ping, snapshot) via a nested `sitter` subcommand group.
 //!
-//! The Mahi sitter runs on its own port on the mahi zone and has no DNS
-//! record of its own, so its URL must be supplied explicitly via
-//! `--mahi-sitter-url` / `MAHI_SITTER_URL`.
+//! The Mahi sitter runs on port 8080 of the same mahi zone (the main service
+//! is on port 80). On a Triton headnode this URL is derived automatically
+//! from the SDC config; elsewhere supply `--mahi-sitter-url` /
+//! `MAHI_SITTER_URL` explicitly.
 
 use anyhow::{Context, Result};
 use clap::Subcommand;

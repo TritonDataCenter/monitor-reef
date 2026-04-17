@@ -168,16 +168,20 @@ impl Cli {
         )
     }
 
-    /// Resolve the Mahi sitter URL. Unlike other services, the sitter has no
-    /// DNS record of its own (it runs on a different port inside the mahi
-    /// zone) so we only consult the explicit flag/env — never the SDC config.
-    fn mahi_sitter_url(&self) -> Result<String> {
+    /// Resolve the Mahi sitter URL. The sitter runs on port 8080 of the mahi
+    /// zone (see `replicator.port` in the mahi SAPI manifest); the main mahi
+    /// service is on port 80 of the same zone. Auto-derive from the SDC
+    /// config by appending `:8080` to the mahi service URL.
+    fn mahi_sitter_url(&self, sdc_config: &Option<TritonConfig>) -> Result<String> {
         if let Some(url) = &self.mahi_sitter_url {
             return Ok(url.clone());
         }
+        if let Some(cfg) = sdc_config {
+            return Ok(format!("{}:8080", cfg.service_url("mahi")));
+        }
         anyhow::bail!(
-            "cannot determine Mahi sitter URL: set --mahi-sitter-url or \
-             MAHI_SITTER_URL (the sitter port has no SDC-config default)"
+            "cannot determine Mahi sitter URL: set --mahi-sitter-url, \
+             MAHI_SITTER_URL, or run on a Triton headnode"
         )
     }
 }
@@ -306,7 +310,7 @@ async fn main() -> Result<()> {
     let papi_url = cli.papi_url(&sdc_config);
     let napi_url = cli.napi_url(&sdc_config);
     let mahi_url = cli.mahi_url(&sdc_config);
-    let mahi_sitter_url = cli.mahi_sitter_url();
+    let mahi_sitter_url = cli.mahi_sitter_url(&sdc_config);
     let updates_url = cli.updates_url;
 
     match cli.command {
