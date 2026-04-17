@@ -241,11 +241,13 @@ impl LdapService {
                 SessionError::LdapUnavailable("Group search failed".to_string())
             })?;
 
+        debug!(raw_entries = rs.len(), "group search returned LDAP entries");
         let user_uuid_str = user_uuid.to_string();
         let groups: Vec<String> = rs
             .into_iter()
             .filter_map(|entry| {
                 let entry = SearchEntry::construct(entry);
+                debug!(dn = %entry.dn, attrs = ?entry.attrs, "group entry");
                 let cn = entry.attrs.get("cn")?.first()?.clone();
                 let members = entry.attrs.get("uniquemember")?;
                 members
