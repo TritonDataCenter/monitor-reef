@@ -40,6 +40,10 @@ reqwest = { version = "0.13", default-features = false, features = ["json"] }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# Pinned directly rather than via the workspace: `sha2` is only used by the
+# recovery_config task, and adding it to the workspace would pull it into
+# every downstream crate unnecessarily.
+sha2 = "0.10"
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }

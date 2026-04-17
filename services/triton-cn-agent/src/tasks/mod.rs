@@ -31,6 +31,7 @@ use crate::smartos::tasks::{
     machine_info::MachineInfoTask,
     machine_lifecycle::{MachineBootTask, MachineKillTask, MachineRebootTask, MachineShutdownTask},
     machine_load::MachineLoadTask,
+    machine_proc::MachineProcTask,
     machine_reprovision::MachineReprovisionTask,
     machine_screenshot::MachineScreenshotTask,
     machine_snapshots::{
@@ -38,6 +39,7 @@ use crate::smartos::tasks::{
     },
     machine_update::MachineUpdateTask,
     machine_update_nics::MachineUpdateNicsTask,
+    recovery_config::RecoveryConfigTask,
     refresh_agents::RefreshAgentsTask,
     server_overprovision_ratio::ServerOverprovisionRatioTask,
     server_reboot::ServerRebootTask,
@@ -185,7 +187,8 @@ pub fn register_vmadm_mutation_tasks(
 }
 
 /// Register server-level operational tasks (reboot, command_execute,
-/// overprovision ratio, cn-agent-update shutdown, diagnostic helpers).
+/// overprovision ratio, cn-agent-update shutdown, diagnostic helpers,
+/// recovery_config).
 pub fn register_server_ops_tasks(builder: TaskRegistryBuilder) -> TaskRegistryBuilder {
     builder
         .register(TaskName::ServerReboot, ServerRebootTask::new())
@@ -198,6 +201,7 @@ pub fn register_server_ops_tasks(builder: TaskRegistryBuilder) -> TaskRegistryBu
             TaskName::ShutdownCnAgentUpdate,
             ShutdownCnAgentUpdateTask::new(),
         )
+        .register(TaskName::RecoveryConfig, RecoveryConfigTask::new())
         .register(TaskName::TestSubtask, TestSubtaskTask)
 }
 
@@ -253,8 +257,9 @@ pub fn register_provisioning_tasks(
         )
         .register(
             TaskName::MachineUpdateNics,
-            MachineUpdateNicsTask::new(vmadm),
+            MachineUpdateNicsTask::new(vmadm.clone()),
         )
+        .register(TaskName::MachineProc, MachineProcTask::new(vmadm))
 }
 
 /// Register `server_update_nics` (nictagadm wrapper).
