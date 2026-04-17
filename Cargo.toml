@@ -18,7 +18,6 @@ members = [
     "cli/bugview-cli",
     "cli/triton-cli",
     "cli/tritonadm",
-    "cli/sapi-cli",
     "cli/napi-cli",
     "cli/papi-cli",
     "cli/vmapi-cli",

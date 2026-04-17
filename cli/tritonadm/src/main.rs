@@ -17,7 +17,7 @@ mod config;
 
 use commands::{
     ChannelCommand, DcMaintCommand, ExperimentalCommand, ImageCommand, PlatformCommand,
-    PostSetupCommand,
+    PostSetupCommand, SapiCommand,
 };
 use config::TritonConfig;
 
@@ -242,6 +242,12 @@ enum Commands {
         #[command(subcommand)]
         command: commands::DevCommand,
     },
+
+    /// Raw access to the SAPI HTTP API (applications, services, instances, manifests, ...)
+    Sapi {
+        #[command(subcommand)]
+        command: SapiCommand,
+    },
 }
 
 #[tokio::main]
@@ -303,6 +309,7 @@ async fn main() -> Result<()> {
         Commands::Experimental { command } => command.run(),
         Commands::Image { command } => command.run(&imgapi_url?, updates_url.as_deref()).await,
         Commands::Dev { command } => command.run(&sapi_url?, &vmapi_url?, &napi_url?).await,
+        Commands::Sapi { command } => command.run(&sapi_url?).await,
     }
 }
 

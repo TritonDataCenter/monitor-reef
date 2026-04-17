@@ -13,6 +13,7 @@ mod experimental;
 mod image;
 mod platform;
 mod post_setup;
+mod sapi;
 
 pub use channel::ChannelCommand;
 pub use dc_maint::DcMaintCommand;
@@ -21,3 +22,4 @@ pub use experimental::ExperimentalCommand;
 pub use image::ImageCommand;
 pub use platform::PlatformCommand;
 pub use post_setup::{PostSetupCommand, PostSetupUrls};
+pub use sapi::SapiCommand;
