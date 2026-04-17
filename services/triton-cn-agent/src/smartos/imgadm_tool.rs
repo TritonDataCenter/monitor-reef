@@ -79,6 +79,28 @@ pub struct ImportOptions {
     pub lock_timeout: Option<Duration>,
 }
 
+/// Options for [`ImgadmTool::create_image`].
+///
+/// Maps to `imgadm -E create -m <manifest> -c <compression> <vm_uuid>
+/// --publish <imgapi_url> [--incremental] [--max-origin-depth N]
+/// [-s <prepare_script>]`.
+#[derive(Debug, Clone)]
+pub struct CreateImageOptions {
+    /// UUID of the source VM the image is being created from.
+    pub vm_uuid: String,
+    /// imgadm compression flag (e.g., `gzip`, `bzip2`, `none`).
+    pub compression: String,
+    /// IMGAPI URL that receives the published image.
+    pub imgapi_url: String,
+    /// Image manifest JSON. `manifest.uuid` is the new image's UUID.
+    pub manifest: serde_json::Value,
+    pub incremental: bool,
+    pub max_origin_depth: Option<u32>,
+    /// Optional prepare-image script body. Written to a tempfile and
+    /// passed via `-s`.
+    pub prepare_image_script: Option<String>,
+}
+
 /// Shell-based imgadm wrapper.
 #[derive(Clone)]
 pub struct ImgadmTool {
@@ -183,6 +205,125 @@ impl ImgadmTool {
         })
     }
 
+    /// `imgadm -E create -m <manifest> -c <compression> <vm_uuid>
+    /// --publish <imgapi_url> [flags...]` — create and publish an image
+    /// from a VM.
+    ///
+    /// Writes the manifest (and optional prepare script) to
+    /// `/var/tmp/.provisioner-create-image-*` files, runs imgadm with
+    /// `-E` so the last stderr line is a structured bunyan error object
+    /// on failure, and cleans up the tempfiles regardless of outcome.
+    pub async fn create_image(&self, opts: &CreateImageOptions) -> Result<(), ImgadmCliError> {
+        let fid = random_u32();
+        let manifest_path = PathBuf::from(format!(
+            "/var/tmp/.provisioner-create-image-manifest-{fid}.json"
+        ));
+        let prepare_path = opts
+            .prepare_image_script
+            .as_ref()
+            .map(|_| PathBuf::from(format!("/var/tmp/.provisioner-create-image-prepare-{fid}")));
+
+        // Write tempfiles up-front so cleanup always has something to remove.
+        let manifest_json = serde_json::to_vec(&opts.manifest)?;
+        tokio::fs::write(&manifest_path, &manifest_json)
+            .await
+            .map_err(|source| ImgadmCliError::Spawn {
+                path: manifest_path.clone(),
+                source,
+            })?;
+        if let (Some(path), Some(script)) =
+            (prepare_path.as_ref(), opts.prepare_image_script.as_ref())
+        {
+            tokio::fs::write(path, script)
+                .await
+                .map_err(|source| ImgadmCliError::Spawn {
+                    path: path.clone(),
+                    source,
+                })?;
+        }
+
+        let result = self
+            .run_create(opts, &manifest_path, prepare_path.as_deref())
+            .await;
+
+        // Best-effort cleanup. Failures here are logged but don't mask
+        // the create outcome.
+        if let Err(e) = tokio::fs::remove_file(&manifest_path).await {
+            tracing::warn!(
+                path = %manifest_path.display(),
+                error = %e,
+                "failed to unlink imgadm manifest tempfile"
+            );
+        }
+        if let Some(path) = prepare_path.as_ref()
+            && let Err(e) = tokio::fs::remove_file(path).await
+        {
+            tracing::warn!(
+                path = %path.display(),
+                error = %e,
+                "failed to unlink imgadm prepare-image tempfile"
+            );
+        }
+
+        result
+    }
+
+    async fn run_create(
+        &self,
+        opts: &CreateImageOptions,
+        manifest_path: &std::path::Path,
+        prepare_path: Option<&std::path::Path>,
+    ) -> Result<(), ImgadmCliError> {
+        let compression = opts.compression.clone();
+        let imgapi_url = opts.imgapi_url.clone();
+
+        let mut args: Vec<String> = vec![
+            "-E".to_string(),
+            "create".to_string(),
+            "-m".to_string(),
+            manifest_path.display().to_string(),
+            "-c".to_string(),
+            compression,
+            opts.vm_uuid.clone(),
+            "--publish".to_string(),
+            imgapi_url,
+        ];
+        if opts.incremental {
+            args.push("--incremental".to_string());
+        }
+        if let Some(depth) = opts.max_origin_depth {
+            args.push("--max-origin-depth".to_string());
+            args.push(depth.to_string());
+        }
+        if let Some(path) = prepare_path {
+            args.push("-s".to_string());
+            args.push(path.display().to_string());
+        }
+        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+
+        let output = tokio::process::Command::new(&self.bin)
+            .args(&arg_refs)
+            .env("IMGADM_LOG_LEVEL", "debug")
+            .output()
+            .await
+            .map_err(|source| ImgadmCliError::Spawn {
+                path: self.bin.clone(),
+                source,
+            })?;
+        if output.status.success() {
+            return Ok(());
+        }
+
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        if let Some(msg) = parse_imgadm_error(&stderr) {
+            return Err(ImgadmCliError::ImgadmReported(msg));
+        }
+        Err(ImgadmCliError::NonZeroExit {
+            status: output.status,
+            stderr,
+        })
+    }
+
     /// Poll for `<zpool>/<uuid>-partial` to disappear. Returns success
     /// when the dataset is gone; errors on timeout.
     pub async fn wait_for_concurrent_import(
@@ -232,6 +373,17 @@ fn parse_imgadm_error(stderr: &str) -> Option<String> {
         .pointer("/err/message")
         .and_then(|v| v.as_str())
         .map(str::to_string)
+}
+
+/// Non-cryptographic `u32` for tempfile uniqueness — good enough to
+/// avoid accidental collisions when two image creates race.
+fn random_u32() -> u32 {
+    // Seed off process time nsec + pid; `random` crate is overkill here.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    now ^ std::process::id()
 }
 
 /// Convenience accessor for the default zfs binary path — matches the

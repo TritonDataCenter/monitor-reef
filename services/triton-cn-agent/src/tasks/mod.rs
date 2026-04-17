@@ -20,11 +20,13 @@ use cn_agent_api::TaskName;
 use crate::cnapi::CnapiClient;
 use crate::heartbeater::AgentsCollector;
 use crate::registry::{TaskRegistry, TaskRegistryBuilder};
+use crate::smartos::nictagadm::NictagadmTool;
 use crate::smartos::tasks::{
     command_execute::CommandExecuteTask,
     image_ensure_present::ImageEnsurePresentTask,
     image_get::ImageGetTask,
     machine_create::MachineCreateTask,
+    machine_create_image::MachineCreateImageTask,
     machine_destroy::MachineDestroyTask,
     machine_info::MachineInfoTask,
     machine_lifecycle::{MachineBootTask, MachineKillTask, MachineRebootTask, MachineShutdownTask},
@@ -35,10 +37,12 @@ use crate::smartos::tasks::{
         MachineCreateSnapshotTask, MachineDeleteSnapshotTask, MachineRollbackSnapshotTask,
     },
     machine_update::MachineUpdateTask,
+    machine_update_nics::MachineUpdateNicsTask,
     refresh_agents::RefreshAgentsTask,
     server_overprovision_ratio::ServerOverprovisionRatioTask,
     server_reboot::ServerRebootTask,
     server_sysinfo::ServerSysinfoTask,
+    server_update_nics::ServerUpdateNicsTask,
     shutdown_cn_agent_update::ShutdownCnAgentUpdateTask,
     test_subtask::TestSubtaskTask,
     zfs_get_properties::ZfsGetPropertiesTask,
@@ -224,8 +228,9 @@ pub fn register_image_tasks(
 }
 
 /// Register the heavy provisioning tasks (`machine_create`,
-/// `machine_reprovision`). Needs the admin IP so the firewaller client
-/// can dial the local firewaller on port 2021.
+/// `machine_reprovision`, `machine_create_image`, `machine_update_nics`).
+/// Needs the admin IP so the firewaller client can dial the local
+/// firewaller on port 2021.
 pub fn register_provisioning_tasks(
     builder: TaskRegistryBuilder,
     vmadm: Arc<VmadmTool>,
@@ -240,8 +245,24 @@ pub fn register_provisioning_tasks(
         )
         .register(
             TaskName::MachineReprovision,
-            MachineReprovisionTask::new(vmadm, zfs, imgadm),
+            MachineReprovisionTask::new(vmadm.clone(), zfs, imgadm.clone()),
         )
+        .register(
+            TaskName::MachineCreateImage,
+            MachineCreateImageTask::new(imgadm),
+        )
+        .register(
+            TaskName::MachineUpdateNics,
+            MachineUpdateNicsTask::new(vmadm),
+        )
+}
+
+/// Register `server_update_nics` (nictagadm wrapper).
+pub fn register_server_nic_tasks(
+    builder: TaskRegistryBuilder,
+    tool: Arc<NictagadmTool>,
+) -> TaskRegistryBuilder {
+    builder.register(TaskName::ServerUpdateNics, ServerUpdateNicsTask::new(tool))
 }
 
 /// Build a registry containing the tasks the SmartOS backend exposes.
@@ -262,6 +283,7 @@ pub fn smartos_registry() -> TaskRegistry {
     builder = register_vmadm_lifecycle_tasks(builder, vmadm.clone());
     builder = register_vmadm_mutation_tasks(builder, vmadm);
     builder = register_image_tasks(builder, imgadm, zfs);
+    builder = register_server_nic_tasks(builder, Arc::new(NictagadmTool::new()));
     builder = register_server_ops_tasks(builder);
     builder.build()
 }
@@ -288,6 +310,7 @@ pub fn smartos_registry_with(
     builder = register_vmadm_mutation_tasks(builder, vmadm.clone());
     builder = register_image_tasks(builder, imgadm.clone(), zfs.clone());
     builder = register_provisioning_tasks(builder, vmadm, zfs, imgadm, admin_ip);
+    builder = register_server_nic_tasks(builder, Arc::new(NictagadmTool::new()));
     builder = register_server_ops_tasks(builder);
     builder = register_agent_tasks(builder, cnapi, agents_collector);
     builder.build()

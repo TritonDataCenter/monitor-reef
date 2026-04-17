@@ -16,6 +16,7 @@ pub mod firewaller;
 pub mod imgadm;
 pub mod imgadm_tool;
 pub mod kstat;
+pub mod nictagadm;
 pub mod sysinfo;
 pub mod tasks;
 pub mod vmadm;
