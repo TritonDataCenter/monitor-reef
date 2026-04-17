@@ -18,12 +18,13 @@ use std::sync::Arc;
 use cn_agent_api::TaskName;
 
 use crate::registry::{TaskRegistry, TaskRegistryBuilder};
-use crate::smartos::ZfsTool;
 use crate::smartos::tasks::{
+    machine_info::MachineInfoTask, machine_load::MachineLoadTask,
     server_sysinfo::ServerSysinfoTask, zfs_get_properties::ZfsGetPropertiesTask,
     zfs_list_datasets::ZfsListDatasetsTask, zfs_list_pools::ZfsListPoolsTask,
     zfs_list_snapshots::ZfsListSnapshotsTask,
 };
+use crate::smartos::{VmadmTool, ZfsTool};
 
 /// Register platform-neutral tasks that every backend exposes.
 pub fn register_common_tasks(builder: TaskRegistryBuilder) -> TaskRegistryBuilder {
@@ -60,15 +61,28 @@ pub fn common_registry() -> TaskRegistry {
     register_common_tasks(TaskRegistry::builder()).build()
 }
 
+/// Register read-only vmadm wrappers (`machine_load`, `machine_info`).
+pub fn register_vmadm_query_tasks(
+    builder: TaskRegistryBuilder,
+    tool: Arc<VmadmTool>,
+) -> TaskRegistryBuilder {
+    builder
+        .register(TaskName::MachineLoad, MachineLoadTask::new(tool.clone()))
+        .register(TaskName::MachineInfo, MachineInfoTask::new(tool))
+}
+
 /// Build a registry containing the tasks the SmartOS backend exposes.
 ///
-/// Today that's the platform-neutral set plus `server_sysinfo` and the
-/// read-only ZFS query tasks. Mutating ZFS, vmadm, imgadm, Docker, and agent
-/// tasks get added here as they're ported.
+/// Today that's the platform-neutral set plus `server_sysinfo`, the
+/// read-only ZFS queries, and the read-only vmadm queries. Mutating ZFS,
+/// vmadm lifecycle, imgadm, Docker, and agent tasks get added here as
+/// they're ported.
 pub fn smartos_registry() -> TaskRegistry {
     let zfs = Arc::new(ZfsTool::new());
+    let vmadm = Arc::new(VmadmTool::new());
     let mut builder = register_common_tasks(TaskRegistry::builder())
         .register(TaskName::ServerSysinfo, ServerSysinfoTask::new());
     builder = register_zfs_query_tasks(builder, zfs);
+    builder = register_vmadm_query_tasks(builder, vmadm);
     builder.build()
 }
