@@ -11,10 +11,12 @@
 //! compute node. Tests here operate on captured JSON fixtures so they run on
 //! developer laptops without the real binaries.
 
+pub mod apm;
 pub mod config;
 pub mod firewaller;
 pub mod imgadm;
 pub mod imgadm_tool;
+pub mod imgapi;
 pub mod kstat;
 pub mod nictagadm;
 pub mod sysinfo;

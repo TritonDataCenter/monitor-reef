@@ -321,6 +321,7 @@ impl SmartosStartup {
             cnapi.clone(),
             agents_collector.clone(),
             admin_ip,
+            bind_addr.port(),
         );
 
         // Clean up stale machine-creation guard files (AGENT-640).

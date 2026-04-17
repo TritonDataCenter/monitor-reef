@@ -40,9 +40,11 @@ reqwest = { version = "0.13", default-features = false, features = ["json"] }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-# Pinned directly rather than via the workspace: `sha2` is only used by the
-# recovery_config task, and adding it to the workspace would pull it into
-# every downstream crate unnecessarily.
+# Pinned directly rather than via the workspace: `sha1` is used by the
+# IMGAPI client for agent-image integrity verification, and `sha2` is
+# used by recovery_config for the KBMAPI recovery-token hash. Neither
+# is needed elsewhere in the workspace.
+sha1 = "0.10"
 sha2 = "0.10"
 thiserror = { workspace = true }
 tokio = { workspace = true }

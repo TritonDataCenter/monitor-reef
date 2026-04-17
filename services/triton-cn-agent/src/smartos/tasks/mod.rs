@@ -6,6 +6,8 @@
 
 //! SmartOS-backed task handlers.
 
+pub mod agent_install;
+pub mod agents_uninstall;
 pub mod command_execute;
 pub mod image_ensure_present;
 pub mod image_get;

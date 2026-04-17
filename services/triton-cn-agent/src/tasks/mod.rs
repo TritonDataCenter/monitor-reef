@@ -20,8 +20,11 @@ use cn_agent_api::TaskName;
 use crate::cnapi::CnapiClient;
 use crate::heartbeater::AgentsCollector;
 use crate::registry::{TaskRegistry, TaskRegistryBuilder};
+use crate::smartos::apm::Apm;
 use crate::smartos::nictagadm::NictagadmTool;
 use crate::smartos::tasks::{
+    agent_install::AgentInstallTask,
+    agents_uninstall::AgentsUninstallTask,
     command_execute::CommandExecuteTask,
     image_ensure_present::ImageEnsurePresentTask,
     image_get::ImageGetTask,
@@ -205,16 +208,29 @@ pub fn register_server_ops_tasks(builder: TaskRegistryBuilder) -> TaskRegistryBu
         .register(TaskName::TestSubtask, TestSubtaskTask)
 }
 
-/// Register agent-management tasks (refresh_agents posts to CNAPI).
+/// Register agent-management tasks (refresh_agents,
+/// agent_install, agents_uninstall). All three post to CNAPI when
+/// their operation completes.
 pub fn register_agent_tasks(
     builder: TaskRegistryBuilder,
     cnapi: Arc<CnapiClient>,
     collector: AgentsCollector,
+    apm: Arc<Apm>,
+    bind_port: u16,
 ) -> TaskRegistryBuilder {
-    builder.register(
-        TaskName::RefreshAgents,
-        RefreshAgentsTask::new(cnapi, collector),
-    )
+    builder
+        .register(
+            TaskName::RefreshAgents,
+            RefreshAgentsTask::new(cnapi.clone(), collector.clone()),
+        )
+        .register(
+            TaskName::AgentInstall,
+            AgentInstallTask::new(apm.clone(), cnapi.clone(), collector.clone(), bind_port),
+        )
+        .register(
+            TaskName::AgentsUninstall,
+            AgentsUninstallTask::new(apm, cnapi, collector),
+        )
 }
 
 /// Register image tasks (`image_get` + `image_ensure_present`).
@@ -304,8 +320,10 @@ pub fn smartos_registry_with(
     cnapi: Arc<CnapiClient>,
     agents_collector: AgentsCollector,
     admin_ip: std::net::Ipv4Addr,
+    bind_port: u16,
 ) -> TaskRegistry {
     let imgadm = Arc::new(ImgadmTool::new(zfs.clone()));
+    let apm = Arc::new(Apm::production());
     let mut builder = register_common_tasks(TaskRegistry::builder())
         .register(TaskName::ServerSysinfo, ServerSysinfoTask::new());
     builder = register_zfs_query_tasks(builder, zfs.clone());
@@ -317,6 +335,6 @@ pub fn smartos_registry_with(
     builder = register_provisioning_tasks(builder, vmadm, zfs, imgadm, admin_ip);
     builder = register_server_nic_tasks(builder, Arc::new(NictagadmTool::new()));
     builder = register_server_ops_tasks(builder);
-    builder = register_agent_tasks(builder, cnapi, agents_collector);
+    builder = register_agent_tasks(builder, cnapi, agents_collector, apm, bind_port);
     builder.build()
 }
