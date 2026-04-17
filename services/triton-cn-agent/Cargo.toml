@@ -29,7 +29,13 @@ clap = { workspace = true, features = ["derive", "env"] }
 cn-agent-api = { path = "../../apis/cn-agent-api" }
 dropshot = { workspace = true }
 notify = "8.2"
-reqwest = { workspace = true, features = ["json"] }
+# We deliberately bypass the workspace's default reqwest features
+# (`rustls`) here because the workspace version pulls in
+# `rustls-platform-verifier`, which fails to initialize on illumos (no
+# `/etc/ssl/certs/ca-certificates.crt` in the global zone). CNAPI is
+# always reachable over plain HTTP from a compute node; if we ever need
+# TLS, swap in `rustls-no-provider` and a webpki-roots provider.
+reqwest = { version = "0.13", default-features = false, features = ["json"] }
 schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
