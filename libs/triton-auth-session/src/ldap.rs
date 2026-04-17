@@ -186,8 +186,10 @@ impl LdapService {
         let mut user = self.parse_user_entry(entry)?;
 
         // Fall back to groupofuniquenames search if memberof was empty.
+        // Reuses the same bound LDAP handle rather than opening a second
+        // connection — simpler and avoids doubling per-request LDAP cost.
         if user.groups.is_empty() {
-            match self.check_user_groups(&user.dn).await {
+            match self.check_user_groups(ldap, &user.dn).await {
                 Ok(group_names) => {
                     user.roles = group_names.iter().map(|g| Role::from(g.as_str())).collect();
                     user.groups = group_names;
@@ -205,12 +207,14 @@ impl LdapService {
         Ok(user)
     }
 
-    async fn check_user_groups(&self, user_dn: &str) -> SessionResult<Vec<String>> {
-        let mut ldap = self.connect().await?;
-        self.bind_admin(&mut ldap).await?;
-
+    async fn check_user_groups(
+        &self,
+        ldap: &mut Ldap,
+        user_dn: &str,
+    ) -> SessionResult<Vec<String>> {
         let safe_dn = ldap_escape_filter(user_dn);
         let filter = format!("(&(objectClass=groupofuniquenames)(uniquemember={safe_dn}))");
+        debug!(user_dn = %user_dn, filter = %filter, "group membership search");
 
         let (rs, _) = ldap
             .search("ou=groups, o=smartdc", Scope::Subtree, &filter, vec!["cn"])
@@ -229,11 +233,8 @@ impl LdapService {
                 entry.attrs.get("cn")?.first().cloned()
             })
             .collect();
+        debug!(groups = ?groups, "group membership search result");
 
-        // arch-lint: allow(no-error-swallowing) reason="Unbind failure is non-fatal; connection is being dropped"
-        if let Err(e) = ldap.unbind().await {
-            warn!("LDAP unbind failed after group lookup: {e}");
-        }
         Ok(groups)
     }
 

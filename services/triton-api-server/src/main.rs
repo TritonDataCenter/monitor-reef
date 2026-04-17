@@ -398,7 +398,7 @@ fn build_ldap_service(cfg: &LdapConfigFile) -> LdapService {
 async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new(
-            "triton_api_server=info,dropshot=info",
+            "triton_api_server=info,triton_auth_session=debug,dropshot=info",
         ))
         .init();
 
