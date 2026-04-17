@@ -57,13 +57,23 @@ fi
 # needs to accept tritonapi-issued JWTs (triton-gateway, future adminui
 # proxy, etc.). Both live on the delegated dataset so they survive zone
 # reprovisioning.
-if [[ -f /data/jwt-private.pem && -f /data/jwt-public.pem ]]; then
-    echo "JWT signing keypair already present at /data/"
+#
+# The private key must be in PKCS#8 PEM format ("-----BEGIN PRIVATE KEY-----")
+# because that is what jsonwebtoken's `from_ec_pem` accepts. `openssl genpkey`
+# emits PKCS#8 by default; the older `openssl ecparam -genkey` emits SEC1
+# ("-----BEGIN EC PRIVATE KEY-----") which the library rejects, so if an old
+# key happens to be on disk we regenerate instead of trusting it.
+if [[ -f /data/jwt-private.pem && -f /data/jwt-public.pem ]] \
+    && /opt/local/bin/openssl pkey -in /data/jwt-private.pem -noout 2>/dev/null \
+    && head -1 /data/jwt-private.pem | grep -q 'BEGIN PRIVATE KEY'; then
+    echo "JWT signing keypair already present at /data/ (PKCS#8)"
 else
     echo "Generating ES256 (P-256) JWT signing keypair at /data/"
-    /opt/local/bin/openssl ecparam -name prime256v1 -genkey -noout \
+    /opt/local/bin/openssl genpkey -algorithm EC \
+        -pkeyopt ec_paramgen_curve:P-256 \
+        -pkeyopt ec_param_enc:named_curve \
         -out /data/jwt-private.pem
-    /opt/local/bin/openssl ec -in /data/jwt-private.pem \
+    /opt/local/bin/openssl pkey -in /data/jwt-private.pem \
         -pubout -out /data/jwt-public.pem
     chmod 0400 /data/jwt-private.pem
     chmod 0444 /data/jwt-public.pem
