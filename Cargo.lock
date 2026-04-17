@@ -2212,6 +2212,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "mahi-client"
+version = "2.1.0"
+dependencies = [
+ "clap",
+ "mahi-api",
+ "progenitor-client",
+ "reqwest",
+ "schemars",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
+name = "mahi-sitter-client"
+version = "2.1.0"
+dependencies = [
+ "mahi-api",
+ "progenitor-client",
+ "reqwest",
+ "schemars",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "match_cfg"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

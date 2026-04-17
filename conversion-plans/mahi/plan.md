@@ -597,11 +597,72 @@ verifies they stay fresh via `check_transforms`. Phase 3 must add
 `openapi-specs/patched/mahi-sitter-api.json`), mirroring the cloudapi
 pattern.
 
+## Phase 3 Complete
+
+Two Progenitor client crates have been generated and registered:
+
+- `clients/internal/mahi-client/` (version 2.1.0) — public Mahi service
+  (26 endpoints across `lookup`, `lookup-deprecated`, `aws-sigv4`, `sts`,
+  `iam` tag groups). Depends on `mahi-api` and re-exports every
+  path/query/body/response type from the API crate.
+- `clients/internal/mahi-sitter-client/` (version 2.1.0) — replicator admin
+  sitter (2 endpoints: `sitter_ping`, `sitter_snapshot`). No re-exports
+  needed; the sitter does not define any typed request/response bodies.
+
+### Client-generator configuration
+
+Both clients are registered in `client-generator/src/main.rs` pointing at the
+Phase-2b **patched** specs:
+
+- `openapi-specs/patched/mahi-api.json` → `mahi-client`
+- `openapi-specs/patched/mahi-sitter-api.json` → `mahi-sitter-client`
+
+`configure_mahi` applies `clap::ValueEnum` patches to `ObjectType`,
+`CredentialType`, and `ArnPartition` (mirroring the API-crate derives so the
+Progenitor-generated copies also pick up `ValueEnum` for CLI usage).
+`configure_mahi_sitter` uses the default settings with the standard
+`schemars::JsonSchema` derive.
+
+### Build status
+
+- `make format package-build PACKAGE=mahi-client` — **SUCCESS**, no warnings.
+- `make format package-build PACKAGE=mahi-sitter-client` — **SUCCESS**, no
+  warnings.
+- `make clients-check` — **PASS** (all 10 clients up-to-date).
+
+### Endpoints with unusual Progenitor signatures (note for Phase 4)
+
+1. **`Client::sts_get_caller_identity(...).send()`** returns
+   `Result<ResponseValue<ByteStream>, Error<types::Error>>`. Progenitor sees
+   the Phase-2b `text/xml` / `{"type":"string"}` response as a streaming
+   body, not a string. The CLI must collect the stream (e.g., via
+   `futures::TryStreamExt` into a `Vec<u8>` or `String`) to get the XML
+   payload.
+
+2. **`Client::sitter_snapshot().send()`** returns
+   `Result<ResponseValue<ByteStream>, Error<types::Error>>` for the same
+   reason (201 with `application/octet-stream`). The CLI must stream bytes
+   to the destination (file, stdout, etc.).
+
+3. **`Client::name_to_uuid().name(...)`** and **`Client::uuid_to_name().uuid(...)`**
+   both accept a single `String` on the wire despite being documented as
+   arrays. Callers must join multiple values with commas before passing
+   them in. (Dropshot query structs cannot express repeated params, so the
+   Phase-2b spec patch reshaped only the OpenAPI doc, not the generated
+   builder method signature.)
+
+### No typed wrappers needed
+
+Unlike CloudAPI/VMAPI, mahi does **not** use the single-endpoint action-dispatch
+pattern. Every STS / IAM operation has its own dedicated path and typed
+request body, so the Progenitor-generated builders are already ergonomic and
+type-safe — no `TypedClient` wrapper is required.
+
 ## Phase Status
 
 - [x] Phase 1: Analyze — **COMPLETE**
 - [x] Phase 2: Generate API — **COMPLETE**
 - [x] Phase 2b: OpenAPI spec patches — **COMPLETE**
-- [ ] Phase 3: Generate Client
+- [x] Phase 3: Generate Client — **COMPLETE**
 - [ ] Phase 4: Generate CLI
 - [ ] Phase 5: Validate

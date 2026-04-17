@@ -152,6 +152,25 @@ fn configure_jira(settings: &mut GenerationSettings) {
         .with_tag(progenitor::TagStyle::Merged);
 }
 
+fn configure_mahi(settings: &mut GenerationSettings) {
+    let value_enum_patch = TypePatch::default().with_derive("clap::ValueEnum").clone();
+
+    settings
+        .with_interface(progenitor::InterfaceStyle::Builder)
+        .with_tag(progenitor::TagStyle::Merged)
+        .with_derive("schemars::JsonSchema")
+        .with_patch("ObjectType", &value_enum_patch)
+        .with_patch("CredentialType", &value_enum_patch)
+        .with_patch("ArnPartition", &value_enum_patch);
+}
+
+fn configure_mahi_sitter(settings: &mut GenerationSettings) {
+    settings
+        .with_interface(progenitor::InterfaceStyle::Builder)
+        .with_tag(progenitor::TagStyle::Merged)
+        .with_derive("schemars::JsonSchema");
+}
+
 /// Registry of all managed clients.
 static CLIENTS: &[ClientConfig] = &[
     ClientConfig {
@@ -201,6 +220,18 @@ static CLIENTS: &[ClientConfig] = &[
         spec_path: "openapi-specs/patched/vmapi-api.json",
         output_path: "clients/internal/vmapi-client/src/generated.rs",
         configure: configure_vmapi,
+    },
+    ClientConfig {
+        name: "mahi-client",
+        spec_path: "openapi-specs/patched/mahi-api.json",
+        output_path: "clients/internal/mahi-client/src/generated.rs",
+        configure: configure_mahi,
+    },
+    ClientConfig {
+        name: "mahi-sitter-client",
+        spec_path: "openapi-specs/patched/mahi-sitter-api.json",
+        output_path: "clients/internal/mahi-sitter-client/src/generated.rs",
+        configure: configure_mahi_sitter,
     },
 ];
 
