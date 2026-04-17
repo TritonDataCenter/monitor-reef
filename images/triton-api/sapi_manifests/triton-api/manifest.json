@@ -1,5 +1,6 @@
 {
     "name": "triton-api",
     "path": "/opt/smartdc/triton-api/etc/config.json",
-    "post_cmd": "/usr/sbin/svcadm restart triton/application/triton-api"
+    "post_cmd": "/usr/sbin/svcadm refresh svc:/triton/application/triton-api:default",
+    "master": true
 }

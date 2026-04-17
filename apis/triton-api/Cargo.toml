@@ -16,3 +16,4 @@ workspace = true
 dropshot = { workspace = true }
 schemars = { workspace = true }
 serde = { workspace = true }
+uuid = { workspace = true }

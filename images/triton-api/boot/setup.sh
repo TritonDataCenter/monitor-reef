@@ -51,6 +51,24 @@ else
     cat /data/tls/key.pem >> /data/tls/cert.pem
 fi
 
+# Generate the JWT signing keypair (ES256) if one isn't already on disk.
+# The private key is the ONLY place tritonapi can sign tokens from; the
+# public key is published via /v1/auth/jwks.json for any verifier that
+# needs to accept tritonapi-issued JWTs (triton-gateway, future adminui
+# proxy, etc.). Both live on the delegated dataset so they survive zone
+# reprovisioning.
+if [[ -f /data/jwt-private.pem && -f /data/jwt-public.pem ]]; then
+    echo "JWT signing keypair already present at /data/"
+else
+    echo "Generating ES256 (P-256) JWT signing keypair at /data/"
+    /opt/local/bin/openssl ecparam -name prime256v1 -genkey -noout \
+        -out /data/jwt-private.pem
+    /opt/local/bin/openssl ec -in /data/jwt-private.pem \
+        -pubout -out /data/jwt-public.pem
+    chmod 0400 /data/jwt-private.pem
+    chmod 0444 /data/jwt-public.pem
+fi
+
 # Import the long-running service manifests
 /usr/sbin/svccfg import /opt/custom/smf/manifests/triton-api.xml
 /usr/sbin/svccfg import /opt/custom/smf/manifests/triton-gateway.xml
