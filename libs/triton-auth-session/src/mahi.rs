@@ -11,27 +11,25 @@
 //! [`MahiService::lookup`] just forwards to `GET /accounts?login=` and
 //! returns mahi-client's own [`AuthInfo`] so callers can pick out whichever
 //! fields they need without going through an intermediate type.
+//!
+//! Callers provide a prebuilt [`reqwest::Client`] at construction time —
+//! typically via `triton_tls::build_http_client` — so this module stays
+//! out of the TLS / CA-store business.
 
 use crate::error::{SessionError, SessionResult};
 use mahi_client::Client as MahiHttpClient;
 pub use mahi_client::types::AuthInfo;
 use std::sync::Arc;
 use tracing::warn;
-use url::Url;
-
-#[derive(Debug, Clone)]
-pub struct MahiConfig {
-    pub url: Url,
-}
 
 pub struct MahiService {
     client: Arc<MahiHttpClient>,
 }
 
 impl MahiService {
-    pub fn new(config: MahiConfig) -> Self {
+    pub fn new(base_url: &str, http: reqwest::Client) -> Self {
         Self {
-            client: Arc::new(MahiHttpClient::new(config.url.as_str())),
+            client: Arc::new(MahiHttpClient::new_with_client(base_url, http)),
         }
     }
 

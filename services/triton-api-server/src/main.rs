@@ -20,7 +20,7 @@ use triton_api::{
 };
 use triton_auth_session::{
     JwtConfig as SessionJwtConfig, JwtService, LdapConfig as SessionLdapConfig, LdapService,
-    MahiConfig as SessionMahiConfig, MahiService, Role, SessionError,
+    MahiService, Role, SessionError,
 };
 
 /// Default request body size limit: 10 MiB.
@@ -422,10 +422,15 @@ fn build_ldap_service(cfg: &LdapConfigFile) -> LdapService {
     })
 }
 
-fn build_mahi_service(cfg: &MahiConfigFile) -> MahiService {
-    MahiService::new(SessionMahiConfig {
-        url: cfg.url.clone(),
-    })
+async fn build_mahi_service(cfg: &MahiConfigFile) -> Result<MahiService> {
+    // Use triton-tls's client builder so the service survives on zones
+    // whose native CA store is empty (reqwest's default builder panics
+    // there). Mahi speaks plain HTTP today, but going through build_http_client
+    // keeps us consistent with the other admin-plane clients.
+    let http = triton_tls::build_http_client(false)
+        .await
+        .context("failed to build HTTP client for mahi")?;
+    Ok(MahiService::new(cfg.url.as_str(), http))
 }
 
 /// Install the `ring` rustls crypto provider for this process.
@@ -469,7 +474,7 @@ async fn main() -> Result<()> {
         }
     };
     let mahi = match config.mahi.as_ref() {
-        Some(cfg) => Some(Arc::new(build_mahi_service(cfg))),
+        Some(cfg) => Some(Arc::new(build_mahi_service(cfg).await?)),
         None => {
             warn!("no [mahi] section in config; /v1/auth/login will return 503");
             None

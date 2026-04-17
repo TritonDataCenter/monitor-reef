@@ -4684,6 +4684,7 @@ dependencies = [
  "tracing-subscriber",
  "triton-api",
  "triton-auth-session",
+ "triton-tls",
  "url",
  "uuid",
 ]
