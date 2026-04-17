@@ -3472,6 +3472,11 @@ fn start_sharkspotter(
         direct_db: job_action.config.direct_db,
         max_threads: job_action.config.options.max_md_read_threads,
         mdapi_endpoints,
+        exclude_key_prefixes: job_action
+            .config
+            .options
+            .exclude_key_prefixes
+            .clone(),
         ..Default::default()
     };
 

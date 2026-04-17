@@ -38,6 +38,11 @@ pub struct Config {
     /// Mdapi endpoints for bucket object discovery (one per shard).
     /// Each entry is a "host:port" string (e.g., "1.buckets-mdapi.domain:2030").
     pub mdapi_endpoints: Vec<String>,
+    /// Key prefixes to exclude from object discovery.
+    /// Objects whose key contains any of these strings are silently skipped.
+    /// Default: empty (no filtering).  The rebalancer manager populates this
+    /// from its config to skip system-managed paths like `/stor/logs/`.
+    pub exclude_key_prefixes: Vec<String>,
 }
 
 // Note: owners and mdapi_vnodes were removed from Config.
@@ -62,6 +67,7 @@ impl Default for Config {
             direct_db: false,
             log_level: Level::Debug,
             mdapi_endpoints: vec![],
+            exclude_key_prefixes: vec![],
         }
     }
 }
@@ -411,6 +417,7 @@ mod test {
         assert_eq!(config.max_threads, 50);
         assert!(!config.direct_db);
         assert!(config.mdapi_endpoints.is_empty());
+        assert!(config.exclude_key_prefixes.is_empty());
     }
 
 }

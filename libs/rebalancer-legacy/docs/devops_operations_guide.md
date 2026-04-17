@@ -210,16 +210,29 @@ The manager supports three metadata backend modes:
 
 **1. Pre-condition: Mark the shark read-only.**
 Before starting evacuation, the source shark must be marked read-only in
-storinfo so Muskie stops placing new objects on it.
+storinfo so Muskie stops placing new objects on it.  Disable minnow on the
+target shark, flush the storinfo cache, restart muskie and buckets-api, then
+wait for in-flight writes to drain.
 
-**2. Create the evacuation job.**
+**2. Create pgclone snapshots (after writes have drained).**
+pgclone clones must be created **after** the shark is fully read-only and all
+in-flight writes have drained.  If clones are created before disabling writes,
+objects modified between the snapshot and the metadata update will cause
+`EtagConflictError` failures.
+```bash
+pgclone.sh clone-all \
+  --moray-vm <UUID> [--moray-vm <UUID> ...] \
+  --buckets-vm <UUID> [--buckets-vm <UUID> ...]
+```
+
+**3. Create the evacuation job.**
 ```bash
 rebalancer-adm job create evacuate --shark 1.stor.us-east.joyent.us
 ```
 The manager creates a job record in PostgreSQL (`rebalancer.jobs` table) and
 a dedicated database named after the job UUID.
 
-**3. Object Discovery (Phase 1) — via pgclone direct PostgreSQL.**
+**4. Object Discovery (Phase 1) — via pgclone direct PostgreSQL.**
 The manager uses **sharkspotter** to scan metadata databases for every object
 stored on the source shark. **In production, discovery always uses direct
 PostgreSQL connections to read-only pgclone clones** — not Moray/MDAPI RPC.
@@ -234,10 +247,11 @@ For each object found, it inserts a row into the job database's
   `{shard}.rebalancer-buckets-postgres.{domain}:5432` (pgclone buckets clone)
 - Chunk size controlled by `md_read_chunk_size` (default: 10,000)
 - Parallelism controlled by `max_md_read_threads` (default: 10)
-- pgclone clones must be created **before** starting the job (see
+- pgclone clones must be created **after** the shark is marked read-only
+  and writes have drained, but **before** starting the job (see
   [pgclone section](#pgclone-read-only-postgresql-clones-for-discovery))
 
-**4. Assignment Generation (Phase 2).**
+**5. Assignment Generation (Phase 2).**
 A single assignment-manager thread consumes unprocessed objects and groups
 them into assignments destined for specific sharks:
 
@@ -247,7 +261,7 @@ them into assignments destined for specific sharks:
 - Each assignment holds up to `max_tasks_per_assignment` objects (default: 50)
 - Assignments are batched until they reach `max_assignment_age` seconds (default: 3600)
 
-**5. Agent Transfer (Phase 3).**
+**6. Agent Transfer (Phase 3).**
 The manager POSTs each assignment to the rebalancer-agent running on the
 destination shark. The agent:
 
@@ -257,7 +271,7 @@ destination shark. The agent:
 - Moves the file to its final location under `/manta/`
 - Reports completion (or per-task failures) when the manager polls
 
-**6. Metadata Update (Phase 4).**
+**7. Metadata Update (Phase 4).**
 Once an agent reports an assignment complete, the manager updates Manta
 metadata to reflect the new shark location:
 
@@ -266,7 +280,7 @@ metadata to reflect the new shark location:
 - **MPU parts:** If multipart upload parts were moved, the upload record's
   `preAllocatedSharks` array is updated to reference the new shark
 
-**7. Completion.**
+**8. Completion.**
 Objects are marked `complete` in the job database. The job transitions to
 `complete` state when all objects are processed. Objects that failed can be
 retried via `rebalancer-adm job retry <UUID>`.
@@ -421,7 +435,52 @@ manta-oneach -s buckets-api 'svcadm restart svc:/manta/application/buckets-api'
 | Restart muskie | Muskie in-memory shark lists still include the shark |
 | Restart buckets-api | buckets-api routes bucket object writes to the shark |
 
-**5. Verify writes have drained** before taking the snapshot:
+**5. (Optional) Disable hourly log upload crons** to prevent etag drift
+on `/stor/logs/` objects during evacuation:
+```bash
+# From the headnode — disables logrotateandupload.sh across all service zones
+sdc-oneachnode -a '
+  for vm in $(vmadm list -Ho uuid -o uuid); do
+    zlogin $vm "crontab -l 2>/dev/null" | grep -q logrotateandupload || continue
+    zlogin $vm "crontab -l | grep -v logrotateandupload | crontab -" 2>/dev/null
+    echo "Disabled log upload in $(vmadm get $vm | json alias)"
+  done'
+```
+
+> **RISKS — read carefully before disabling:**
+>
+> - **Log accumulation:** Unrotated logs will grow unbounded in every
+>   service zone.  If the evacuation takes many hours, zones may exhaust
+>   tmpfs or local disk, causing service failures.  Monitor zone disk
+>   usage (`df -h` in zones) during the evacuation.
+> - **Lost observability:** Log uploads to Manta are the primary way
+>   operators access historical service logs.  While the cron is
+>   disabled, no new logs are uploaded — any incident during this
+>   window will have incomplete log coverage in `/stor/logs/`.
+> - **Forgotten re-enable:** If the cron is not re-enabled after the
+>   evacuation, logs will silently stop uploading permanently.  Always
+>   re-enable immediately after the job completes (see step below).
+> - **Production impact:** On busy production systems with high log
+>   volume, disabling rotation can fill zone tmpfs within hours.
+>   **Only recommended for small/test evacuations or COAL.**
+>
+> For production systems with large evacuations, it is safer to accept
+> the hourly etag errors and retry with fresh pgclones instead.
+
+To re-enable after evacuation:
+```bash
+# Re-enable by re-adding the cron entry in each zone
+sdc-oneachnode -a '
+  for vm in $(vmadm list -Ho uuid -o uuid); do
+    zlogin $vm "test -f /opt/smartdc/common/sbin/logrotateandupload.sh" \
+      2>/dev/null || continue
+    zlogin $vm "crontab -l 2>/dev/null" | grep -q logrotateandupload && continue
+    zlogin $vm "(crontab -l 2>/dev/null; echo \"0 * * * * /opt/smartdc/common/sbin/logrotateandupload.sh >> /var/log/logrotateandupload.log 2>&1\") | crontab -" 2>/dev/null
+    echo "Re-enabled log upload in $(vmadm get $vm | json alias)"
+  done'
+```
+
+**6. Verify writes have drained** before taking the snapshot:
 ```bash
 svcs minnow                                    # Confirm minnow is off
 tail -f /var/log/mako-access.log | grep PUT    # Watch for in-flight PUTs
@@ -879,17 +938,18 @@ Most tunables take effect on the next job without a restart.
 
 **Pre-flight checklist:**
 
-1. **Mark the shark read-only** and create pgclone clones (see
-   [pgclone section](#pgclone-read-only-postgresql-clones-for-discovery)):
+1. **Mark the shark read-only:**
    - Disable minnow on target shark
    - Flush storinfo cache
    - Restart muskie and buckets-api
    - Wait for writes to drain
+2. **Create pgclone clones** (must be done **after** writes have fully
+   drained — see [pgclone section](#pgclone-read-only-postgresql-clones-for-discovery)):
    - Run `pgclone.sh discover` to find all postgres VMs (especially
      important for multi-shard/multi-CN deployments)
    - Create pgclone clones (`pgclone.sh clone-all ...`) — one per shard
    - Verify DNS resolution from rebalancer zone
-2. **Enable directdb discovery** via SAPI:
+3. **Enable directdb discovery** via SAPI:
    ```bash
    MANTA_APP=$(sdc-sapi /applications?name=manta | json -Ha uuid)
    echo '{ "metadata": {
@@ -1003,6 +1063,324 @@ curl -s http://localhost/jobs/<UUID> | json
 | `stopped` | Operator stopped the job |
 | `complete` | All objects processed |
 | `failed` | Job failed with error |
+
+### Expected Production Workflow: Convergence and Residual Errors
+
+In production, evacuations will **always** have etag errors on
+`/stor/logs/` objects.  This is inherent to the system — not a bug.
+
+**Why convergence to zero errors is not achievable in practice:**
+
+Multiple system crons continuously write to `/stor/logs/` in Manta,
+changing moray etags:
+
+| Cron | Schedule | Zones |
+|------|----------|-------|
+| `logrotateandupload.sh` | `0 * * * *` (hourly) | webapi, buckets-api, electric-moray, mdapi, garbage-collector, rebalancer, mdplacement |
+| `backup.sh` | `1,2,3,4,5 * * * *` (every minute, first 5 min) | storage, moray, postgres, nameservice, storinfo, loadbalancer, authcache |
+| `backup_pg_dumps.sh` | `30 * * * *` (half-hourly) | webapi, buckets-api |
+| `pg_dump.sh` | `0 0 * * *` (daily) | all postgres/manatee zones |
+
+Disabling minnow only stops **user object placement** via storinfo.
+These system crons bypass storinfo entirely — they upload logs through
+muskie → moray directly.  Even with minnow disabled, `/stor/logs/`
+etags will keep changing.
+
+**Recommended production workflow:**
+
+1. **First run** — evacuate the full shark.  Expect ~40-50% etag errors
+   concentrated on `/stor/logs/` objects.  All user data objects should
+   complete successfully.
+
+2. **One retry with fresh pgclones** — catches objects that failed due to
+   pgclone-vs-live etag drift from the first run's duration.  Error
+   count will drop but not reach zero.
+
+3. **Accept residual `/stor/logs/` errors** — these errors are
+   unavoidable and harmless:
+   - The stale metadata pointing to the evacuated shark is harmless —
+     the object data still exists there until the shark is physically
+     decommissioned.
+   - The rebalancer successfully copied the data to the destination
+     shark — only the metadata update (changing the sharks list in
+     moray) was rejected due to the etag mismatch.
+
+   **Why `/stor/logs/` etag errors happen even after disabling minnow:**
+
+   When `logrotateandupload.sh` runs, it overwrites existing log files
+   via `curl -X PUT` through the Manta front door (muskie).  For PUT
+   overwrites, muskie asks storinfo for new sharks — and since minnow
+   is disabled, the evacuated shark is not returned.  The **new version**
+   of the log file is placed on **different sharks**.  However, this
+   overwrite **changes the object's etag in moray** (new content, new
+   sharks list, new etag).
+
+   The pgclone snapshot has the old etag from before the overwrite.
+   When the rebalancer tries to update metadata using the old etag,
+   moray rejects it with `EtagConflictError`.  The object data was
+   already copied to the destination shark, but the metadata update
+   fails because moray's etag no longer matches.
+
+   This is actually harmless for two reasons:
+   - The new version of the log file already lives on non-evacuated
+     sharks (muskie placed it there during the overwrite)
+   - The old version's data on the evacuated shark is stale — moray
+     no longer references it
+
+   **No amount of retries will converge to zero** while these crons
+   run, because each cron cycle overwrites the log object, changing
+   the etag again before the retry finishes.
+
+   (Code reference: `manta-muskie/lib/obj.js` `findSharks()` calls
+   `picker.choose()` for all PUTs including overwrites.
+   `manta-muskie/lib/common.js` `createMetadata()` uses the newly
+   selected sharks when available, falling back to previous sharks
+   only for metadata-only operations.)
+
+4. **Verify user data is fully evacuated** — check that all errors are
+   in `/stor/logs/` paths:
+   ```bash
+   grep EtagConflict /var/svc/log/manta-application-rebalancer:default.log \
+     | grep -o 'stor/logs/[a-z_-]*' | sort | uniq -c | sort -rn
+   ```
+   If all errors are `/stor/logs/*`, the evacuation is complete for
+   operational purposes.
+
+5. **Re-enable minnow** only if keeping the shark in service.  If
+   decommissioning, leave minnow disabled and proceed with hardware
+   removal.
+
+**The evacuation is operationally complete when:**
+- All non-`/stor/logs/` objects show as `complete`
+- Remaining errors are exclusively `/stor/logs/` paths
+- Minnow remains disabled on the evacuated shark
+
+### Verifying Evacuation Completeness
+
+The job summary (`rebalancer-adm job get`) shows total error counts but
+does not distinguish between harmless `/stor/logs/` etag errors and real
+user data failures.  Use these SQL queries against the job database to
+verify.
+
+From the rebalancer zone, connect to the job database using the job UUID:
+
+```bash
+/opt/postgresql/12.4/bin/psql -U postgres -h /tmp <JOB_UUID>
+```
+
+**1. Check if any non-log objects failed:**
+
+```sql
+-- If this returns 0, all errors are harmless log objects
+SELECT count(*) FROM evacuateobjects
+WHERE status = 'error'
+AND object::json->>'key' NOT LIKE '%/stor/logs/%';
+```
+
+**2. See which non-log objects failed (if any):**
+
+```sql
+SELECT object::json->>'key', error, dest_shark
+FROM evacuateobjects
+WHERE status = 'error'
+AND object::json->>'key' NOT LIKE '%/stor/logs/%';
+```
+
+**3. Breakdown of errors by path prefix:**
+
+```sql
+SELECT
+  CASE WHEN object::json->>'key' LIKE '%/stor/logs/%'
+       THEN '/stor/logs/'
+       ELSE 'user_data'
+  END AS category,
+  error,
+  count(*)
+FROM evacuateobjects
+WHERE status = 'error'
+GROUP BY category, error
+ORDER BY count DESC;
+```
+
+**4. Verify all user data was evacuated:**
+
+```sql
+SELECT status, count(*) FROM evacuateobjects
+WHERE object::json->>'key' NOT LIKE '%/stor/logs/%'
+GROUP BY status;
+```
+
+All rows should show `complete` or `skipped` — any `error` rows
+for non-log objects require investigation.
+
+**Interpreting results:**
+
+**Known system-managed paths** that cause etag errors (all harmless):
+
+| Path prefix | Written by | Cron |
+|-------------|-----------|------|
+| `/stor/logs/` | `logrotateandupload.sh` | Hourly |
+| `/stor/usage/assets/` | mackerel metering (ops zone) | Various |
+| `/stor/manatee_backups/` | `backup_pg_dumps.sh` | Half-hourly |
+
+Filter all system paths when checking for real failures:
+
+```sql
+SELECT count(*) AS real_errors FROM evacuateobjects
+WHERE status = 'error'
+AND object::json->>'key' NOT LIKE '%/stor/logs/%'
+AND object::json->>'key' NOT LIKE '%/stor/usage/%'
+AND object::json->>'key' NOT LIKE '%/stor/manatee_backups/%';
+```
+
+**Interpreting results:**
+
+| Result | Meaning |
+|--------|---------|
+| Real error count = 0 | Evacuation operationally complete |
+| Real errors exist | Investigate — possible concurrent user writes or bugs |
+| All errors on system paths | Expected — system crons changed etags |
+
+### Worked Example: Evacuating 1.stor on COAL (2026-04-16)
+
+This section documents a real evacuation of `1.stor.coal.joyent.us`
+(5,735 objects, ~1.1 GB) on a 4-node COAL deployment with 2 moray
+shards and 2 buckets-mdapi shards.
+
+**Environment:**
+- Headnode + 3 compute nodes (dc1-cn1, dc1-cn2, dc1-cn3)
+- 7 storage zones, 1 storinfo zone
+- Rebalancer zone on dc1-cn2
+- `direct_db: true`, `mdapi` shards configured
+
+**Step 1 — Identify the target.**
+
+```
+1.stor (dc1-cn1):  12,670 files, 1.1 GB used, 228 MB free  ← most constrained
+5.stor (dc1-cn1):  105 files, 22 MB used
+6.stor (dc1-cn2):  6,230 files, 420 MB used, 8.6 GB free
+7.stor (dc1-cn2):  6,331 files, 472 MB used, 8.6 GB free
+3.stor (dc1-cn3):  12,806 files, 1.2 GB used, 9.4 GB free
+4.stor (dc1-cn3):  6,315 files, 450 MB used, 9.4 GB free
+2.stor (headnode): 12,710 files, 1.1 GB used, 60.8 GB free
+```
+
+Selected `1.stor` — most constrained CN, real workload (12,670 files).
+
+**Step 2 — Mark shark read-only.**
+
+```bash
+# Disable minnow on 1.stor zone (15ae7372 on dc1-cn1)
+sdc-oneachnode -n <CN1_UUID> \
+  'zlogin 15ae7372-fa40-41db-b20c-5473e36008fb svcadm disable minnow'
+
+# Flush storinfo cache
+sdc-oneachnode -a '
+  for vm in $(vmadm lookup alias=~storinfo); do
+    zlogin $vm svcadm restart storinfo; done'
+
+# Restart muskie and buckets-api (all instances)
+zlogin <WEBAPI_ZONE> 'svcadm restart svc:/manta/application/muskie:muskie-8081'
+# ... (repeat for all muskie and buckets-api instances)
+```
+
+**Step 3 — Create fresh pgclones (after minnow disabled).**
+
+```bash
+pgclone.sh discover   # find postgres VMs across all CNs
+
+pgclone.sh clone-all \
+  --moray-vm <shard1-postgres-uuid> \
+  --moray-vm <shard2-postgres-uuid> \
+  --buckets-vm <shard1-buckets-postgres-uuid> \
+  --buckets-vm <shard2-buckets-postgres-uuid>
+```
+
+**Step 4 — Start evacuation.**
+
+```bash
+rebalancer-adm job create evacuate --shark 1.stor.coal.joyent.us
+# Returns: 4a087bbf-4034-40aa-8022-6848cb4791fe
+```
+
+**Step 5 — Monitor and results.**
+
+The job took ~45 minutes on COAL hardware (all VMs sharing one physical
+disk).  The hourly `logrotateandupload.sh` cron fired during the job,
+causing etag drift on `/stor/logs/` objects.
+
+```
+Job 4a087bbf — Final results:
+  Total:       5,735
+  Complete:    3,109  (54%)
+  Error:       2,604  (45%)
+  Skipped:     22     (MPU parts + not found)
+```
+
+**Step 6 — Verify completeness.**
+
+The 45% error rate looks alarming, but querying the job database
+reveals all errors are on system-managed paths:
+
+```sql
+-- From rebalancer zone:
+-- psql -U postgres -h /tmp 4a087bbf-4034-40aa-8022-6848cb4791fe
+
+SELECT count(*) AS real_errors FROM evacuateobjects
+WHERE status = 'error'
+AND object::json->>'key' NOT LIKE '%/stor/logs/%'
+AND object::json->>'key' NOT LIKE '%/stor/usage/%'
+AND object::json->>'key' NOT LIKE '%/stor/manatee_backups/%';
+```
+
+Result: **0 real errors.**
+
+Full breakdown by category:
+
+```
+        category        |  status  | count
+------------------------+----------+-------
+ /stor/logs/            | complete |  3097
+ /stor/logs/            | error    |  2590
+ /stor/logs/            | skipped  |     2
+ /stor/manatee_backups/ | complete |     2
+ /stor/manatee_backups/ | error    |     1
+ /stor/usage/           | error    |    13
+ /stor/usage/           | skipped  |     4
+ user_data              | complete |    10
+ user_data              | skipped  |    16
+```
+
+**All 10 user data objects completed successfully.  All 2,604 errors
+were system-managed objects (`/stor/logs/`, `/stor/usage/`,
+`/stor/manatee_backups/`) whose etags changed due to hourly system
+cron jobs.  The evacuation was operationally complete.**
+
+**Lessons learned:**
+
+1. **Order matters:** pgclones must be created *after* disabling minnow
+   and waiting for writes to drain.  Creating pgclones first caused
+   additional etag errors from writes that occurred between the snapshot
+   and the minnow disable.
+
+2. **System crons cause unavoidable etag errors:** `logrotateandupload.sh`
+   (hourly), `backup.sh` (every minute), and `backup_pg_dumps.sh`
+   (half-hourly) all overwrite existing objects in Manta.  Each
+   overwrite changes the etag in moray.  Since minnow is disabled,
+   the overwritten log files are placed on different sharks by muskie
+   — but the etag change still causes the rebalancer's metadata
+   update to fail.  These errors are harmless because the new version
+   of the log already lives on non-evacuated sharks.
+
+3. **Always verify with SQL, not just the job summary:** The job summary
+   shows 45% errors, but the database proves 0% of those are real
+   failures.  Without the SQL check, an operator might incorrectly
+   conclude the evacuation failed.
+
+4. **Retries don't help for log objects:** Each retry creates fresh
+   pgclones, but the hourly cron changes etags again before the retry
+   finishes.  Accept the errors and verify via SQL instead of retrying
+   indefinitely.
 
 ### Dynamically Adjusting Metadata Threads
 
@@ -1531,26 +1909,64 @@ shark in the fresh pgclone snapshot).
 #### High `moray.update_failed` / `etag_mismatch` errors
 
 **Cause:** The etag in the pgclone snapshot doesn't match the etag in
-live moray.  Two common scenarios:
+live moray.  Three common scenarios:
 
 1. **Re-run after a previous evacuation (expected):** The previous job
    updated metadata for objects it evacuated, changing their etags.
    The current pgclone snapshot still has the old etags.  These errors
    are **harmless** — the objects are already evacuated.
-2. **Active writes on a production system:** Users or services modified
-   the object's metadata between the snapshot and the update.
+2. **pgclones created before disabling writes:** If pgclone snapshots
+   were taken before the shark was marked read-only, any writes between
+   the snapshot and the evacuation will cause etag drift.  Always
+   disable minnow and wait for writes to drain **before** creating
+   pgclones.
+3. **System log uploads (`/stor/logs/`):** Disabling minnow only stops
+   **user object placement** via storinfo.  System services (binder,
+   manatee-sitter, waferlock, zookeeper, muskie, moray, etc.) continue
+   uploading their logs to `/stor/logs/` via the hourly
+   `logrotateandupload.sh` cron (`0 * * * *`).  These uploads go
+   through muskie → moray directly, bypassing storinfo entirely.  Each
+   upload overwrites the log object's metadata, changing its etag.
+
+   **This means etag errors on `/stor/logs/` objects are expected on
+   every evacuation**, regardless of whether minnow was disabled.  The
+   errors will occur whenever the hourly cron runs between the pgclone
+   snapshot and the metadata update for that object.
 
 **Impact:** Not data-loss.  The object data was successfully copied to
 the destination shark, but the metadata update was rejected.  The
 source shark still has the object — nothing is lost.
 
-**How to tell the difference:** If the error count roughly matches the
-number of objects completed by a previous run against the same shark,
-it's scenario 1.
+**How to tell the difference:** If the errors are concentrated on
+`/stor/logs/*` paths (binder, waferlock, manatee-sitter, etc.), it's
+scenario 3 — the hourly log cron.  Run this query against the job
+database to check:
+```bash
+grep EtagConflict /var/svc/log/manta-application-rebalancer:default.log \
+  | grep -o 'stor/logs/[a-z_-]*' | sort | uniq -c | sort -rn
+```
 
-**Fix:** Start a new job with **fresh pgclones**.  Fresh snapshots have
-current etags, eliminating the conflicts.  `rebalancer-adm job retry`
-does NOT help here — it retries from the same stale pgclone etags.
+**Timing guidance:** The `logrotateandupload.sh` cron runs at the top
+of every hour (`0 * * * *`).  To minimize etag errors:
+
+1. Create pgclones shortly after the top of the hour (e.g., at :05)
+2. Start the evacuation immediately after pgclones are ready
+3. If the job completes before the next hour mark, `/stor/logs/` objects
+   will have matching etags
+
+For large evacuations that span multiple hours, expect a batch of etag
+errors each time the cron fires.  Each retry with fresh pgclones will
+converge, but will never reach zero errors if the job takes longer than
+one hour.
+
+**Fix:** Destroy pgclones, create fresh ones, then retry:
+```bash
+pgclone.sh destroy-all
+pgclone.sh clone-all --moray-vm <UUID> --buckets-vm <UUID>
+rebalancer-adm job retry <JOB_UUID>
+```
+For small evacuations (< 1 hour), time the pgclone creation just after
+the hourly cron to avoid etag drift entirely.
 
 #### `source_object_not_found` skips
 

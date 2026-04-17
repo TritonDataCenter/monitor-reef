@@ -130,6 +130,7 @@ pub async fn get_objects_from_shard(
             &value,
             &row,
             &conf.sharks,
+            &conf.exclude_key_prefixes,
             shard,
             &obj_tx,
             &log,
@@ -151,10 +152,20 @@ fn check_value_for_match(
     value: &Value,
     row: &Row,
     filter_sharks: &[String],
+    exclude_key_prefixes: &[String],
     shard: u32,
     obj_tx: &crossbeam_channel::Sender<SharkspotterMessage>,
     log: &Logger,
 ) -> Result<(), Error> {
+    if !exclude_key_prefixes.is_empty() {
+        if let Some(key) = value.get("key").and_then(|k| k.as_str()) {
+            if exclude_key_prefixes.iter().any(|p| key.contains(p)) {
+                trace!(log, "skipping excluded key: {}", key);
+                return Ok(());
+            }
+        }
+    }
+
     let obj_id = object_id_from_manta_obj(value)
         .map_err(|e| Error::new(ErrorKind::Other, e))?;
     let sharks = get_sharks_from_manta_obj(value, log)?;

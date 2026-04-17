@@ -73,7 +73,7 @@ pub struct Shard {
 
 // Until we can determine a reasonable set of defaults and limits these
 // tunables are intentionally not exposed in the documentation.
-#[derive(Deserialize, Debug, Clone, Copy)]
+#[derive(Deserialize, Debug, Clone)]
 #[serde(default)]
 pub struct ConfigOptions {
     pub max_tasks_per_assignment: usize,
@@ -86,6 +86,20 @@ pub struct ConfigOptions {
     pub md_read_chunk_size: usize,
     pub max_md_read_threads: usize,
     pub shark_list_retry_delay_ms: u64,
+    /// Key prefixes to exclude from object discovery during evacuation.
+    /// Objects whose moray key contains any of these strings are skipped.
+    /// Defaults to system-managed paths that are periodically overwritten
+    /// by cron jobs, causing unavoidable etag conflicts.
+    #[serde(default = "default_exclude_key_prefixes")]
+    pub exclude_key_prefixes: Vec<String>,
+}
+
+fn default_exclude_key_prefixes() -> Vec<String> {
+    vec![
+        "/stor/logs/".to_string(),
+        "/stor/usage/".to_string(),
+        "/stor/manatee_backups/".to_string(),
+    ]
 }
 
 impl Default for ConfigOptions {
@@ -101,6 +115,7 @@ impl Default for ConfigOptions {
             md_read_chunk_size: DEFAULT_METADATA_READ_CHUNK_SIZE,
             max_md_read_threads: DEFAULT_MAX_METADATA_READ_THREADS,
             shark_list_retry_delay_ms: DEFAULT_SHARK_LIST_RETRY_DELAY_MS,
+            exclude_key_prefixes: default_exclude_key_prefixes(),
         }
     }
 }

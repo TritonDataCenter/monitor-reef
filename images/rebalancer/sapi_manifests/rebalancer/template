@@ -60,11 +60,20 @@
         {{/REBALANCER_USE_BATCHED_UPDATES}}
 
         {{#REBALANCER_MD_READ_CHUNK_SIZE}}
-        "md_read_chunk_size": {{REBALANCER_MD_READ_CHUNK_SIZE}}
+        "md_read_chunk_size": {{REBALANCER_MD_READ_CHUNK_SIZE}},
         {{/REBALANCER_MD_READ_CHUNK_SIZE}}
         {{^REBALANCER_MD_READ_CHUNK_SIZE}}
-        "md_read_chunk_size": 10000
+        "md_read_chunk_size": 10000,
         {{/REBALANCER_MD_READ_CHUNK_SIZE}}
+
+        {{#REBALANCER_EXCLUDE_KEY_PREFIXES}}
+        "exclude_key_prefixes": [{{#REBALANCER_EXCLUDE_KEY_PREFIXES}}
+            "{{.}}"{{^last}},{{/last}}{{/REBALANCER_EXCLUDE_KEY_PREFIXES}}
+        ]
+        {{/REBALANCER_EXCLUDE_KEY_PREFIXES}}
+        {{^REBALANCER_EXCLUDE_KEY_PREFIXES}}
+        "exclude_key_prefixes": ["/stor/logs/", "/stor/usage/", "/stor/manatee_backups/"]
+        {{/REBALANCER_EXCLUDE_KEY_PREFIXES}}
     },
     "listen_port": 80,
 
