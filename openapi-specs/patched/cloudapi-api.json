@@ -866,6 +866,13 @@
         ],
         "type": "object"
       },
+      "Datacenters": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "description": "Datacenter map: name -> URL\n\nThe CloudAPI returns datacenters as a map where keys are datacenter names and values are their URLs. Example: ```json {\"us-central-1\": \"https://us-central-1.api.mnx.io\"} ```\n\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Datacenters = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Datacenters map[string]string` in Go).",
+        "type": "object"
+      },
       "Disk": {
         "description": "Disk information\n\nNote: CloudAPI returns all disk fields in snake_case, matching the VMAPI wire format passed through the `translate()` function.",
         "properties": {
@@ -2588,6 +2595,13 @@
         ],
         "type": "object"
       },
+      "Services": {
+        "additionalProperties": {
+          "type": "string"
+        },
+        "description": "Services map: name -> URL\n\nThe CloudAPI returns services as a map where keys are service names and values are their URLs. Example: ```json {\"cmon\": \"https://cmon.example.com:9163\", \"docker\": \"tcp://docker.example.com:2376\"} ```\n\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Services = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Services map[string]string` in Go).",
+        "type": "object"
+      },
       "Snapshot": {
         "description": "Snapshot information",
         "properties": {
@@ -3962,11 +3976,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Map_of_String",
-                  "type": "object"
+                  "$ref": "#/components/schemas/Datacenters"
                 }
               }
             },
@@ -4814,11 +4824,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Map_of_String",
-                  "type": "object"
+                  "$ref": "#/components/schemas/Datacenters"
                 }
               }
             },
@@ -11127,11 +11133,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": {
-                    "type": "string"
-                  },
-                  "title": "Map_of_String",
-                  "type": "object"
+                  "$ref": "#/components/schemas/Services"
                 }
               }
             },

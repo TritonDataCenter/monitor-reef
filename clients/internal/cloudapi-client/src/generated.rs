@@ -2061,6 +2061,56 @@ pub mod types {
         }
     }
 
+    #[doc = "Datacenter map: name -> URL\n\nThe CloudAPI returns datacenters as a map where keys are datacenter names and values are their URLs. Example: ```json {\"us-central-1\": \"https://us-central-1.api.mnx.io\"} ```\n\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Datacenters = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Datacenters map[string]string` in Go)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Datacenter map: name -> URL\\n\\nThe CloudAPI returns datacenters as a map where keys are datacenter names and values are their URLs. Example: ```json {\\\"us-central-1\\\": \\\"https://us-central-1.api.mnx.io\\\"} ```\\n\\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Datacenters = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Datacenters map[string]string` in Go).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"additionalProperties\": {"]
+    #[doc = "    \"type\": \"string\""]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    #[serde(transparent)]
+    pub struct Datacenters(
+        pub ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+    );
+    impl ::std::ops::Deref for Datacenters {
+        type Target = ::std::collections::HashMap<::std::string::String, ::std::string::String>;
+        fn deref(
+            &self,
+        ) -> &::std::collections::HashMap<::std::string::String, ::std::string::String> {
+            &self.0
+        }
+    }
+
+    impl ::std::convert::From<Datacenters>
+        for ::std::collections::HashMap<::std::string::String, ::std::string::String>
+    {
+        fn from(value: Datacenters) -> Self {
+            value.0
+        }
+    }
+
+    impl
+        ::std::convert::From<
+            ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+        > for Datacenters
+    {
+        fn from(
+            value: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+        ) -> Self {
+            Self(value)
+        }
+    }
+
     #[doc = "Disk information\n\nNote: CloudAPI returns all disk fields in snake_case, matching the VMAPI wire format passed through the `translate()` function."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -6437,6 +6487,56 @@ pub mod types {
     impl RoleTagsResponse {
         pub fn builder() -> builder::RoleTagsResponse {
             Default::default()
+        }
+    }
+
+    #[doc = "Services map: name -> URL\n\nThe CloudAPI returns services as a map where keys are service names and values are their URLs. Example: ```json {\"cmon\": \"https://cmon.example.com:9163\", \"docker\": \"tcp://docker.example.com:2376\"} ```\n\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Services = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Services map[string]string` in Go)."]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"description\": \"Services map: name -> URL\\n\\nThe CloudAPI returns services as a map where keys are service names and values are their URLs. Example: ```json {\\\"cmon\\\": \\\"https://cmon.example.com:9163\\\", \\\"docker\\\": \\\"tcp://docker.example.com:2376\\\"} ```\\n\\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Services = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Services map[string]string` in Go).\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"additionalProperties\": {"]
+    #[doc = "    \"type\": \"string\""]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    #[serde(transparent)]
+    pub struct Services(
+        pub ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+    );
+    impl ::std::ops::Deref for Services {
+        type Target = ::std::collections::HashMap<::std::string::String, ::std::string::String>;
+        fn deref(
+            &self,
+        ) -> &::std::collections::HashMap<::std::string::String, ::std::string::String> {
+            &self.0
+        }
+    }
+
+    impl ::std::convert::From<Services>
+        for ::std::collections::HashMap<::std::string::String, ::std::string::String>
+    {
+        fn from(value: Services) -> Self {
+            value.0
+        }
+    }
+
+    impl
+        ::std::convert::From<
+            ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+        > for Services
+    {
+        fn from(
+            value: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
+        ) -> Self {
+            Self(value)
         }
     }
 
@@ -18679,14 +18779,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `GET` request to `/{account}/datacenters`"]
-        pub async fn send(
-            self,
-        ) -> Result<
-            ResponseValue<
-                ::std::collections::HashMap<::std::string::String, ::std::string::String>,
-            >,
-            Error<types::Error>,
-        > {
+        pub async fn send(self) -> Result<ResponseValue<types::Datacenters>, Error<types::Error>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -20388,14 +20481,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `GET` request to `/{account}/foreigndatacenters`"]
-        pub async fn send(
-            self,
-        ) -> Result<
-            ResponseValue<
-                ::std::collections::HashMap<::std::string::String, ::std::string::String>,
-            >,
-            Error<types::Error>,
-        > {
+        pub async fn send(self) -> Result<ResponseValue<types::Datacenters>, Error<types::Error>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -33012,14 +33098,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `GET` request to `/{account}/services`"]
-        pub async fn send(
-            self,
-        ) -> Result<
-            ResponseValue<
-                ::std::collections::HashMap<::std::string::String, ::std::string::String>,
-            >,
-            Error<types::Error>,
-        > {
+        pub async fn send(self) -> Result<ResponseValue<types::Services>, Error<types::Error>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
