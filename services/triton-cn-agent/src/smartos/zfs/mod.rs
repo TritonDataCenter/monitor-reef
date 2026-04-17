@@ -158,6 +158,92 @@ impl ZfsTool {
         Ok(parse_rows(&stdout, ZFS_LIST_FIELDS))
     }
 
+    /// `zfs create <dataset>`.
+    pub async fn create_dataset(&self, dataset: &str) -> Result<(), ZfsError> {
+        self.run_mutation(&["create", dataset]).await
+    }
+
+    /// `zfs destroy <dataset>`.
+    ///
+    /// Non-recursive to match the legacy `zfs.destroy` (which is distinct
+    /// from `destroyAll`). Callers that need recursion can pre-walk the
+    /// dataset tree.
+    pub async fn destroy_dataset(&self, dataset: &str) -> Result<(), ZfsError> {
+        self.run_mutation(&["destroy", dataset]).await
+    }
+
+    /// `zfs rename <dataset> <new_name>`.
+    pub async fn rename_dataset(&self, dataset: &str, new_name: &str) -> Result<(), ZfsError> {
+        self.run_mutation(&["rename", dataset, new_name]).await
+    }
+
+    /// `zfs snapshot <name>`.
+    pub async fn snapshot_dataset(&self, snapshot: &str) -> Result<(), ZfsError> {
+        self.run_mutation(&["snapshot", snapshot]).await
+    }
+
+    /// `zfs rollback -r <name>`.
+    ///
+    /// Legacy `zfs.rollback` always passes `-r`, so recent snapshots are
+    /// destroyed as part of the rollback. That's the behavior callers expect.
+    pub async fn rollback_dataset(&self, snapshot: &str) -> Result<(), ZfsError> {
+        self.run_mutation(&["rollback", "-r", snapshot]).await
+    }
+
+    /// `zfs clone <snapshot> <dataset>`.
+    pub async fn clone_dataset(&self, snapshot: &str, dataset: &str) -> Result<(), ZfsError> {
+        self.run_mutation(&["clone", snapshot, dataset]).await
+    }
+
+    /// `zfs set key=val <dataset>` per property.
+    ///
+    /// Legacy iteratively runs one `zfs set` per property rather than
+    /// combining them, and we preserve that so errors still report the
+    /// offending property by line.
+    pub async fn set_properties(
+        &self,
+        dataset: &str,
+        properties: &serde_json::Map<String, serde_json::Value>,
+    ) -> Result<(), ZfsError> {
+        for (key, value) in properties {
+            let value_str = match value {
+                serde_json::Value::String(s) => s.clone(),
+                serde_json::Value::Bool(b) => b.to_string(),
+                serde_json::Value::Number(n) => n.to_string(),
+                serde_json::Value::Null => "-".to_string(),
+                _ => {
+                    return Err(ZfsError::BadOutput(format!(
+                        "property {key}: unsupported value type {value}"
+                    )));
+                }
+            };
+            let pair = format!("{key}={value_str}");
+            self.run_mutation(&["set", &pair, dataset]).await?;
+        }
+        Ok(())
+    }
+
+    /// Run a zfs mutation that yields no interesting stdout. Surfaces stderr
+    /// verbatim on non-zero exit.
+    async fn run_mutation(&self, args: &[&str]) -> Result<(), ZfsError> {
+        let output = tokio::process::Command::new(&self.zfs_bin)
+            .args(args)
+            .output()
+            .await
+            .map_err(|source| ZfsError::Spawn {
+                path: self.zfs_bin.clone(),
+                source,
+            })?;
+        if !output.status.success() {
+            return Err(ZfsError::NonZeroExit {
+                path: self.zfs_bin.clone(),
+                status: output.status,
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            });
+        }
+        Ok(())
+    }
+
     /// `zfs get -Hp -o name,property,value <props> [<dataset>]`.
     ///
     /// Returns `{ dataset: { property: value } }` to match the legacy

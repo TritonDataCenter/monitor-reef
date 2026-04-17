@@ -19,10 +19,18 @@ use cn_agent_api::TaskName;
 
 use crate::registry::{TaskRegistry, TaskRegistryBuilder};
 use crate::smartos::tasks::{
-    machine_info::MachineInfoTask, machine_load::MachineLoadTask,
-    server_sysinfo::ServerSysinfoTask, zfs_get_properties::ZfsGetPropertiesTask,
-    zfs_list_datasets::ZfsListDatasetsTask, zfs_list_pools::ZfsListPoolsTask,
+    machine_info::MachineInfoTask,
+    machine_lifecycle::{MachineBootTask, MachineKillTask, MachineRebootTask, MachineShutdownTask},
+    machine_load::MachineLoadTask,
+    server_sysinfo::ServerSysinfoTask,
+    zfs_get_properties::ZfsGetPropertiesTask,
+    zfs_list_datasets::ZfsListDatasetsTask,
+    zfs_list_pools::ZfsListPoolsTask,
     zfs_list_snapshots::ZfsListSnapshotsTask,
+    zfs_mutations::{
+        ZfsCloneDatasetTask, ZfsCreateDatasetTask, ZfsDestroyDatasetTask, ZfsRenameDatasetTask,
+        ZfsRollbackDatasetTask, ZfsSetPropertiesTask, ZfsSnapshotDatasetTask,
+    },
 };
 use crate::smartos::{VmadmTool, ZfsTool};
 
@@ -54,6 +62,39 @@ pub fn register_zfs_query_tasks(
         .register(TaskName::ZfsGetProperties, ZfsGetPropertiesTask::new(tool))
 }
 
+/// Register the SmartOS ZFS mutation handlers.
+pub fn register_zfs_mutation_tasks(
+    builder: TaskRegistryBuilder,
+    tool: Arc<ZfsTool>,
+) -> TaskRegistryBuilder {
+    builder
+        .register(
+            TaskName::ZfsCreateDataset,
+            ZfsCreateDatasetTask::new(tool.clone()),
+        )
+        .register(
+            TaskName::ZfsDestroyDataset,
+            ZfsDestroyDatasetTask::new(tool.clone()),
+        )
+        .register(
+            TaskName::ZfsRenameDataset,
+            ZfsRenameDatasetTask::new(tool.clone()),
+        )
+        .register(
+            TaskName::ZfsSnapshotDataset,
+            ZfsSnapshotDatasetTask::new(tool.clone()),
+        )
+        .register(
+            TaskName::ZfsRollbackDataset,
+            ZfsRollbackDatasetTask::new(tool.clone()),
+        )
+        .register(
+            TaskName::ZfsCloneDataset,
+            ZfsCloneDatasetTask::new(tool.clone()),
+        )
+        .register(TaskName::ZfsSetProperties, ZfsSetPropertiesTask::new(tool))
+}
+
 /// Build a registry containing only the platform-neutral tasks.
 ///
 /// Useful for tests and for the `dummy` backend used during development.
@@ -71,6 +112,24 @@ pub fn register_vmadm_query_tasks(
         .register(TaskName::MachineInfo, MachineInfoTask::new(tool))
 }
 
+/// Register vmadm lifecycle wrappers (boot/shutdown/reboot/kill).
+pub fn register_vmadm_lifecycle_tasks(
+    builder: TaskRegistryBuilder,
+    tool: Arc<VmadmTool>,
+) -> TaskRegistryBuilder {
+    builder
+        .register(TaskName::MachineBoot, MachineBootTask::new(tool.clone()))
+        .register(
+            TaskName::MachineShutdown,
+            MachineShutdownTask::new(tool.clone()),
+        )
+        .register(
+            TaskName::MachineReboot,
+            MachineRebootTask::new(tool.clone()),
+        )
+        .register(TaskName::MachineKill, MachineKillTask::new(tool))
+}
+
 /// Build a registry containing the tasks the SmartOS backend exposes.
 ///
 /// Today that's the platform-neutral set plus `server_sysinfo`, the
@@ -82,7 +141,9 @@ pub fn smartos_registry() -> TaskRegistry {
     let vmadm = Arc::new(VmadmTool::new());
     let mut builder = register_common_tasks(TaskRegistry::builder())
         .register(TaskName::ServerSysinfo, ServerSysinfoTask::new());
-    builder = register_zfs_query_tasks(builder, zfs);
-    builder = register_vmadm_query_tasks(builder, vmadm);
+    builder = register_zfs_query_tasks(builder, zfs.clone());
+    builder = register_zfs_mutation_tasks(builder, zfs);
+    builder = register_vmadm_query_tasks(builder, vmadm.clone());
+    builder = register_vmadm_lifecycle_tasks(builder, vmadm);
     builder.build()
 }

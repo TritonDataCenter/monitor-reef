@@ -39,6 +39,11 @@ pub enum VmadmError {
     NonZeroExit { status: ExitStatus, stderr: String },
     #[error("VM {uuid} not found")]
     NotFound { uuid: String },
+    /// The VM is already in the state the caller asked for (e.g., `vmadm
+    /// start` on a running VM). Distinct from [`NonZeroExit`] so handlers
+    /// can treat it as success when the caller passes `idempotent=true`.
+    #[error("VM {uuid} is already {state}")]
+    AlreadyInState { uuid: String, state: &'static str },
     #[error("failed to parse vmadm JSON: {source}")]
     Parse {
         #[source]
@@ -82,6 +87,45 @@ pub struct InfoOptions {
 pub struct LookupOptions {
     pub include_dni: bool,
     pub fields: Option<Vec<String>>,
+}
+
+/// Options for [`VmadmTool::start`].
+///
+/// Maps to the legacy cdrom/disk/order/once `key=value` positional args
+/// `vmadm start` accepts for KVM and bhyve boot overrides.
+#[derive(Debug, Clone, Default)]
+pub struct StartOptions {
+    pub include_dni: bool,
+    /// CDROM devices to attach, one per element.
+    pub cdrom: Vec<String>,
+    pub disk: Vec<String>,
+    pub order: Vec<String>,
+    pub once: Vec<String>,
+}
+
+/// Options for [`VmadmTool::stop`].
+#[derive(Debug, Clone, Default)]
+pub struct StopOptions {
+    pub include_dni: bool,
+    /// Equivalent to `vmadm stop -F`: kill abruptly instead of graceful shutdown.
+    pub force: bool,
+    /// Seconds between SIGTERM and SIGKILL for docker containers (`-t`).
+    pub timeout: Option<u32>,
+}
+
+/// Options for [`VmadmTool::reboot`].
+#[derive(Debug, Clone, Default)]
+pub struct RebootOptions {
+    pub include_dni: bool,
+    pub force: bool,
+}
+
+/// Options for [`VmadmTool::kill`].
+#[derive(Debug, Clone, Default)]
+pub struct KillOptions {
+    pub include_dni: bool,
+    /// Signal name to pass to `vmadm kill -s`. Defaults to SIGKILL when unset.
+    pub signal: Option<String>,
 }
 
 /// Thin wrapper around the `vmadm` binary.
@@ -242,6 +286,118 @@ impl VmadmTool {
         };
 
         Ok(filtered)
+    }
+
+    /// `vmadm start <uuid> [cdrom=... disk=... ...]`.
+    ///
+    /// `ifExists` checks the VM first, so a missing or DNI-filtered zone
+    /// returns `NotFound`. If the VM is already running, returns
+    /// [`VmadmError::AlreadyInState`] so callers passing `idempotent=true`
+    /// can treat it as success.
+    pub async fn start(&self, uuid: &str, opts: &StartOptions) -> Result<(), VmadmError> {
+        self.assert_exists(uuid, opts.include_dni).await?;
+
+        let mut args: Vec<String> = vec!["start".to_string(), uuid.to_string()];
+        for v in &opts.cdrom {
+            args.push(format!("cdrom={v}"));
+        }
+        for v in &opts.disk {
+            args.push(format!("disk={v}"));
+        }
+        for v in &opts.order {
+            args.push(format!("order={v}"));
+        }
+        for v in &opts.once {
+            args.push(format!("once={v}"));
+        }
+
+        self.run_mutation(
+            &args,
+            uuid,
+            "running",
+            &["already running", "already booted"],
+        )
+        .await
+    }
+
+    /// `vmadm stop <uuid> [-F] [-t N]`.
+    pub async fn stop(&self, uuid: &str, opts: &StopOptions) -> Result<(), VmadmError> {
+        self.assert_exists(uuid, opts.include_dni).await?;
+
+        let mut args: Vec<String> = vec!["stop".to_string(), uuid.to_string()];
+        if opts.force {
+            args.push("-F".to_string());
+        }
+        if let Some(t) = opts.timeout {
+            args.push("-t".to_string());
+            args.push(t.to_string());
+        }
+
+        self.run_mutation(&args, uuid, "stopped", &["not running", "no such process"])
+            .await
+    }
+
+    /// `vmadm reboot <uuid> [-F]`.
+    pub async fn reboot(&self, uuid: &str, opts: &RebootOptions) -> Result<(), VmadmError> {
+        self.assert_exists(uuid, opts.include_dni).await?;
+
+        let mut args: Vec<String> = vec!["reboot".to_string(), uuid.to_string()];
+        if opts.force {
+            args.push("-F".to_string());
+        }
+
+        self.run_mutation(&args, uuid, "running", &["not running"])
+            .await
+    }
+
+    /// `vmadm kill [-s signal] <uuid>`.
+    ///
+    /// Maps `AlreadyInState` for already-stopped VMs so idempotent callers
+    /// can ignore the failure.
+    pub async fn kill(&self, uuid: &str, opts: &KillOptions) -> Result<(), VmadmError> {
+        self.assert_exists(uuid, opts.include_dni).await?;
+
+        let mut args: Vec<String> = vec!["kill".to_string()];
+        if let Some(signal) = &opts.signal {
+            args.push("-s".to_string());
+            args.push(signal.clone());
+        }
+        args.push(uuid.to_string());
+
+        self.run_mutation(&args, uuid, "stopped", &["not running", "no such process"])
+            .await
+    }
+
+    /// Run a vmadm mutation that produces no stdout, translating the
+    /// "already in target state" stderr patterns into
+    /// [`VmadmError::AlreadyInState`].
+    async fn run_mutation(
+        &self,
+        args: &[String],
+        uuid: &str,
+        target_state: &'static str,
+        idempotent_patterns: &[&str],
+    ) -> Result<(), VmadmError> {
+        let arg_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let output = run(&self.vmadm_bin, &arg_refs).await?;
+        if output.status.success() {
+            return Ok(());
+        }
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr_lc = stderr.to_lowercase();
+        if idempotent_patterns
+            .iter()
+            .any(|p| stderr_lc.contains(&p.to_lowercase()))
+        {
+            return Err(VmadmError::AlreadyInState {
+                uuid: uuid.to_string(),
+                state: target_state,
+            });
+        }
+        Err(VmadmError::NonZeroExit {
+            status: output.status,
+            stderr: stderr.into_owned(),
+        })
     }
 
     /// Internal helper: calls `vmadm get` just to confirm the VM exists.
