@@ -703,6 +703,15 @@ arrays so Progenitor generated the right signature).
   `cargo run --bin tritonadm -- mahi sitter --help` — print correctly
   without contacting the network.
 
+## Phase 5 Complete — CONVERSION VALIDATED
+
+- Validation report: `conversion-plans/mahi/validation.md`
+- Overall status: **READY TO SHIP** (API trait / client / CLI surface).
+- Endpoint coverage: 28/28 (100%).
+- Issues found: 0 blockers. 2 follow-ups filed as beads:
+  - `monitor-reef-xhec` — verify wire format of `SigV4VerifyResult.signingKey`.
+  - `monitor-reef-rqs1` — verify `GET /users?fallback` on-wire format.
+
 ## Phase Status
 
 - [x] Phase 1: Analyze — **COMPLETE**
@@ -710,4 +719,28 @@ arrays so Progenitor generated the right signature).
 - [x] Phase 2b: OpenAPI spec patches — **COMPLETE**
 - [x] Phase 3: Generate Client — **COMPLETE**
 - [x] Phase 4: CLI (integrated into `tritonadm`) — **COMPLETE**
-- [ ] Phase 5: Validate
+- [x] Phase 5: Validate — **COMPLETE**
+
+## Conversion Complete
+
+The mahi API has been converted to Rust as API-trait / Progenitor-client /
+tritonadm-CLI. See `validation.md` for details. No Rust mahi server has
+been implemented — that remains a separate orchestration decision.
+
+### Generated Artifacts
+- API crate: `apis/mahi-api/` (two traits: `MahiApi`, `MahiSitterApi`)
+- Client crates: `clients/internal/mahi-client/`,
+  `clients/internal/mahi-sitter-client/`
+- CLI: `cli/tritonadm/src/commands/mahi.rs` (`MahiCommand` enum, nested
+  `MahiSitterCommand` subgroup)
+- Generated OpenAPI specs: `openapi-specs/generated/mahi-api.json`,
+  `openapi-specs/generated/mahi-sitter-api.json`
+- Patched OpenAPI specs: `openapi-specs/patched/mahi-api.json`,
+  `openapi-specs/patched/mahi-sitter-api.json`
+
+### Next Steps
+1. Resolve the two open wire-format beads follow-ups against a live mahi
+   instance or upstream integration tests.
+2. If a Rust mahi server is desired, implement it using `MahiApi` /
+   `MahiSitterApi`, carrying forward the service-layer quirks in "Phase
+   2b — service-layer behavior requirements" above.
