@@ -32,7 +32,7 @@ BUILDIMAGE_NAME = $(NAME)
 BUILDIMAGE_DESC = Triton API service
 BUILDIMAGE_PKG = $(ROOT)/$(RELEASE_TARBALL)
 BUILDIMAGE_PKGSRC = \
-    haproxy-2.6.1
+    haproxy-3.2.3
 
 # Cargo package names for the binaries (both run in the same zone)
 SERVICE_BINS = triton-api-server triton-gateway
