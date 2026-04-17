@@ -30,12 +30,14 @@
 //! migration path to a persistent store.
 
 pub mod error;
+pub mod jwks;
 pub mod jwt;
 pub mod ldap;
 pub mod mahi;
 pub mod models;
 
 pub use error::{SessionError, SessionResult};
+pub use jwks::JwksClient;
 pub use jwt::{JwtConfig, JwtService, JwtVerifier};
 pub use ldap::{LdapConfig, LdapService, UfdsUser};
 pub use mahi::{AuthInfo, MahiService};

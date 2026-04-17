@@ -19,6 +19,7 @@ use axum::Router;
 use axum::body::Body;
 use axum::extract::{ConnectInfo, State};
 use axum::http::StatusCode;
+use axum::middleware::Next;
 use axum::response::{IntoResponse, Response};
 use axum::routing::any;
 use http::header::{HOST, HeaderName, HeaderValue};
@@ -30,6 +31,7 @@ use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, Error as RustlsError, SignatureScheme};
 use serde::Deserialize;
 use tracing::{Instrument, error, info, info_span, warn};
+use triton_auth_session::JwksClient;
 
 /// Per-request identifier used for log correlation across gateway and backends.
 /// Stored in request extensions so the proxy handler can read it and forward
@@ -80,6 +82,10 @@ struct GatewayState {
     tritonapi: BackendTarget,
     /// Parsed backend for CloudAPI, if configured.
     cloudapi: Option<BackendTarget>,
+    /// JWKS consumer for verifying tritonapi-issued access tokens. Middleware
+    /// uses this on every request except the public `/v1/auth/*` bootstrap
+    /// endpoints. `None` disables auth entirely (dev without tritonapi).
+    jwks: Option<Arc<JwksClient>>,
 }
 
 #[derive(Deserialize)]
@@ -95,6 +101,11 @@ struct GatewayConfig {
     /// self-signed CloudAPI cert; it must never be used in production.
     #[serde(default)]
     tls_verify: Option<bool>,
+    /// URL of the tritonapi JWKS document. When unset, defaults to
+    /// `<tritonapi_url>/v1/auth/jwks.json`. Setting this to empty string
+    /// disables gateway-side JWT verification (dev only).
+    #[serde(default)]
+    jwks_url: Option<String>,
 }
 
 fn default_bind_address() -> String {
@@ -112,6 +123,7 @@ impl Default for GatewayConfig {
             tritonapi_url: default_tritonapi_url(),
             cloudapi_url: None,
             tls_verify: None,
+            jwks_url: None,
         }
     }
 }
@@ -144,10 +156,42 @@ async fn main() -> Result<()> {
         _ => None,
     };
 
+    // Default the JWKS URL to `<tritonapi_url>/v1/auth/jwks.json`; an
+    // explicit empty string turns auth off entirely (dev only).
+    let jwks_url = match config.jwks_url.as_deref() {
+        Some("") => None,
+        Some(url) => Some(url.to_string()),
+        None => Some(format!(
+            "{}/v1/auth/jwks.json",
+            config.tritonapi_url.trim_end_matches('/')
+        )),
+    };
+    let insecure_upstream = !config.tls_verify.unwrap_or(true);
+    let jwks = match jwks_url {
+        Some(url) => {
+            let http = triton_tls::build_http_client(insecure_upstream)
+                .await
+                .context("build HTTP client for JWKS fetch")?;
+            let client = JwksClient::new(url.clone(), http);
+            // arch-lint: allow(no-error-swallowing) reason="JWKS prime is best-effort; first request reattempts via lazy cache-miss refresh"
+            if let Err(e) = client.refresh().await {
+                warn!("initial JWKS fetch from {url} failed: {e}. Will retry on first request.");
+            } else {
+                info!("JWKS primed from {url}");
+            }
+            Some(client)
+        }
+        None => {
+            warn!("JWKS disabled; gateway will NOT verify JWTs (dev only)");
+            None
+        }
+    };
+
     let state = Arc::new(GatewayState {
         client,
         tritonapi: tritonapi.clone(),
         cloudapi: cloudapi.clone(),
+        jwks,
     });
 
     // All tritonapi-native routes live under /v1/*. Everything else proxies
@@ -156,6 +200,10 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/v1/{*rest}", any(proxy_to_tritonapi))
         .fallback(proxy_to_cloudapi)
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            jwt_auth_middleware,
+        ))
         .layer(axum::middleware::from_fn(request_id_middleware))
         .with_state(state);
 
@@ -203,6 +251,76 @@ async fn shutdown_signal() {
         _ = sigterm_fut => {},
     }
     info!("shutdown signal received, draining in-flight requests");
+}
+
+/// Auth-bootstrap endpoints that must accept unauthenticated requests.
+/// Everything else the gateway proxies is gated on a valid JWT.
+/// Logout is public because tritonapi accepts expired tokens there;
+/// requiring validity would break cross-device logout after expiry.
+fn is_public_auth_path(path: &str) -> bool {
+    matches!(
+        path,
+        "/v1/auth/login" | "/v1/auth/logout" | "/v1/auth/refresh" | "/v1/auth/jwks.json"
+    )
+}
+
+/// Pull a bearer token from either `Authorization: Bearer …` or the
+/// `auth` cookie. Mirrors `triton-api-server`'s extract_token; browsers
+/// use the cookie, CLIs use the header.
+fn extract_token(headers: &http::HeaderMap) -> Option<String> {
+    if let Some(auth) = headers
+        .get(http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        && let Some(token) = auth.strip_prefix("Bearer ")
+    {
+        return Some(token.to_string());
+    }
+    if let Some(cookie) = headers
+        .get(http::header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+    {
+        for part in cookie.split(';') {
+            if let Some(value) = part.trim().strip_prefix("auth=") {
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Verify incoming JWTs and stash the resulting `Claims` in request
+/// extensions for downstream handlers. Rejects missing or invalid tokens
+/// with 401 for non-public paths; public auth endpoints always pass
+/// through unchanged.
+async fn jwt_auth_middleware(
+    State(state): State<Arc<GatewayState>>,
+    mut req: axum::extract::Request,
+    next: Next,
+) -> Response {
+    if is_public_auth_path(req.uri().path()) {
+        return next.run(req).await;
+    }
+
+    let Some(jwks) = state.jwks.as_ref() else {
+        // No JWKS configured — gateway runs as an unauthenticated
+        // passthrough (dev only).
+        return next.run(req).await;
+    };
+
+    let Some(token) = extract_token(req.headers()) else {
+        return (StatusCode::UNAUTHORIZED, "missing auth token\n").into_response();
+    };
+
+    match jwks.verify_token(&token).await {
+        Ok(claims) => {
+            req.extensions_mut().insert(Arc::new(claims));
+            next.run(req).await
+        }
+        Err(e) => {
+            warn!("JWT verification failed: {e}");
+            (StatusCode::UNAUTHORIZED, "invalid auth token\n").into_response()
+        }
+    }
 }
 
 /// Middleware that establishes a per-request `RequestId` and a tracing span.
