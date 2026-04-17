@@ -287,7 +287,9 @@ const TRITONAPI_CONFIG: ServiceConfig = ServiceConfig {
     name: "triton-api",
     image_name: "triton-api",
     package_name: "sdc_1024",
-    delegate_dataset: false,
+    // haproxy needs a persistent /data/tls for the self-signed cert it
+    // generates on first boot, so the zone must have a delegated dataset.
+    delegate_dataset: true,
     firewall_enabled: true,
     ensure_manta_nic: false,
 };

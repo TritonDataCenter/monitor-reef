@@ -1,0 +1,62 @@
+<?xml version="1.0"?>
+<!DOCTYPE service_bundle SYSTEM "/usr/share/lib/xml/dtd/service_bundle.dtd.1">
+<!--
+    This Source Code Form is subject to the terms of the Mozilla Public
+    License, v. 2.0. If a copy of the MPL was not distributed with this
+    file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+    Copyright 2026 Edgecast Cloud LLC.
+-->
+<service_bundle type="manifest" name="haproxy">
+    <service name="pkgsrc/haproxy" type="service" version="1">
+        <create_default_instance enabled="true"/>
+        <single_instance/>
+
+        <dependency name="network" grouping="require_all" restart_on="error"
+            type="service">
+            <service_fmri value="svc:/milestone/network:default"/>
+        </dependency>
+
+        <dependency name="filesystem" grouping="require_all" restart_on="error"
+            type="service">
+            <service_fmri value="svc:/system/filesystem/local"/>
+        </dependency>
+
+        <dependency name="config-agent" grouping="require_all" restart_on="none"
+            type="service">
+            <service_fmri value="svc:/smartdc/application/config-agent:default"/>
+        </dependency>
+
+        <!-- Haproxy fronts triton-gateway; don't start until the gateway is up. -->
+        <dependency name="triton-gateway" grouping="require_all" restart_on="none"
+            type="service">
+            <service_fmri value="svc:/triton/application/triton-gateway:default"/>
+        </dependency>
+
+        <exec_method type="method" name="start"
+            exec="/opt/local/sbin/haproxy -f /opt/smartdc/triton-api/etc/haproxy.cfg -D"
+            timeout_seconds="30">
+            <method_context>
+                <method_environment>
+                    <envvar name="PATH"
+                        value="/opt/local/bin:/usr/bin:/usr/sbin:/bin"/>
+                    <envvar name="LD_PRELOAD_32"
+                        value="/usr/lib/extendedFILE.so.1"/>
+                </method_environment>
+            </method_context>
+        </exec_method>
+
+        <exec_method type="method" name="stop" exec=":kill"
+            timeout_seconds="30"/>
+
+        <!-- master-worker mode: USR2 triggers a seamless reload. -->
+        <exec_method type="method" name="refresh" exec=":kill -USR2"
+            timeout_seconds="30"/>
+
+        <property_group name="startd" type="framework">
+            <propval name="duration" type="astring" value="contract"/>
+        </property_group>
+
+        <stability value="Evolving"/>
+    </service>
+</service_bundle>

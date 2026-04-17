@@ -1,0 +1,6 @@
+{
+    "name": "haproxy",
+    "path": "/opt/smartdc/triton-api/etc/haproxy.cfg",
+    "post_cmd": "/usr/sbin/svcadm refresh svc:/pkgsrc/haproxy:default",
+    "master": true
+}

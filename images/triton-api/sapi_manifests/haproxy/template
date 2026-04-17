@@ -1,0 +1,64 @@
+#
+# haproxy config for the triton-api zone.
+#
+# Terminates TLS on :443 using the self-signed cert generated in
+# boot/setup.sh, then proxies to triton-gateway on loopback:80.
+# WebSocket upgrades are routed to a dedicated backend so haproxy
+# keeps the connection open after the 101 response.
+#
+global
+        master-worker
+        mworker-max-reloads 10
+        log 127.0.0.1 len 4096 local0
+        tune.http.logurilen 3072
+        user  nobody
+        group nobody
+        daemon
+        maxconn 65535
+        pidfile /var/run/haproxy.pid
+        stats socket /tmp/haproxy.sock mode 0600 level admin expose-fd listeners
+
+        ca-base /data/tls
+        crt-base /data/tls
+
+        ssl-default-bind-ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA:AES128-GCM-SHA256:AES256-SHA256:AES128-SHA256
+        ssl-default-bind-options ssl-min-ver TLSv1.2 no-tls-tickets
+        tune.ssl.default-dh-param 2048
+
+defaults
+        log       global
+        mode      http
+        balance   leastconn
+        maxconn   65535
+        option    httplog
+        option    redispatch
+        option    abortonclose
+        option    forwardfor
+        no option httpclose
+        no option http-server-close
+        retries   1
+        timeout queue   0
+        timeout connect 2000
+        timeout client  55000
+        timeout server  120000
+
+frontend tritonapi
+        bind *:443 ssl crt /data/tls/cert.pem
+        http-request capture req.hdr(x-request-id) len 36
+
+        # Protect against CVE-2021-40346 (same guard CloudAPI uses).
+        http-request  deny if { req.hdr_cnt(content-length) gt 1 }
+        http-response deny if { res.hdr_cnt(content-length) gt 1 }
+
+        default_backend gateway
+
+        acl is_websocket hdr(Upgrade) -i WebSocket
+        use_backend websocket if is_websocket
+
+backend gateway
+        option httpchk GET /ping
+        server gateway0 127.0.0.1:80 check inter 10s
+
+backend websocket
+        option http-server-close
+        server gateway0 127.0.0.1:80

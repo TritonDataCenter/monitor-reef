@@ -5,9 +5,9 @@
     "service": {
       "type": "service",
       "service": {
-        "srvce": "_http",
+        "srvce": "_https",
         "proto": "_tcp",
-        "port": 80
+        "port": 443
       },
       "ttl": 60
     },

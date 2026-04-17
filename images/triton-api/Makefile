@@ -25,13 +25,14 @@ RELEASE_TARBALL := $(NAME)-pkg-$(STAMP).tar.gz
 RELSTAGEDIR     := $(ROOT)/proto
 
 SMF_MANIFESTS = smf/manifests/postboot.xml smf/manifests/triton-api.xml \
-    smf/manifests/triton-gateway.xml
+    smf/manifests/triton-gateway.xml smf/manifests/haproxy.xml
 
 # Image metadata
 BUILDIMAGE_NAME = $(NAME)
 BUILDIMAGE_DESC = Triton API service
 BUILDIMAGE_PKG = $(ROOT)/$(RELEASE_TARBALL)
-BUILDIMAGE_PKGSRC =
+BUILDIMAGE_PKGSRC = \
+    haproxy-2.6.1
 
 # Cargo package names for the binaries (both run in the same zone)
 SERVICE_BINS = triton-api-server triton-gateway
