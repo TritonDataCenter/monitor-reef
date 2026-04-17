@@ -189,7 +189,7 @@ impl LdapService {
         // Reuses the same bound LDAP handle rather than opening a second
         // connection — simpler and avoids doubling per-request LDAP cost.
         if user.groups.is_empty() {
-            match self.check_user_groups(ldap, &user.dn).await {
+            match self.check_user_groups(ldap, &user.uuid).await {
                 Ok(group_names) => {
                     user.roles = group_names.iter().map(|g| Role::from(g.as_str())).collect();
                     user.groups = group_names;
@@ -207,30 +207,51 @@ impl LdapService {
         Ok(user)
     }
 
+    /// Look up the groups the user belongs to by listing every group under
+    /// `ou=groups, o=smartdc` and matching the user's UUID against each
+    /// group's `uniquemember` values in-process.
+    ///
+    /// We deliberately do not push the match into the LDAP filter (as
+    /// `(uniquemember=<dn>)`) because that requires encoding a DN as a
+    /// filter value, and ldap3's filter-string parser treats embedded `=`
+    /// signs in a way that UFDS does not match -- the same filter that
+    /// works via `sdc-ldap` returns zero hits through ldap3. Since the DC
+    /// has a handful of groups, the server-side listing is cheap and the
+    /// client-side UUID match is exact.
     async fn check_user_groups(
         &self,
         ldap: &mut Ldap,
-        user_dn: &str,
+        user_uuid: &Uuid,
     ) -> SessionResult<Vec<String>> {
-        let safe_dn = ldap_escape_filter(user_dn);
-        let filter = format!("(&(objectClass=groupofuniquenames)(uniquemember={safe_dn}))");
-        debug!(user_dn = %user_dn, filter = %filter, "group membership search");
+        let filter = "(objectClass=groupofuniquenames)";
+        debug!(user_uuid = %user_uuid, "group membership search");
 
         let (rs, _) = ldap
-            .search("ou=groups, o=smartdc", Scope::Subtree, &filter, vec!["cn"])
+            .search(
+                "ou=groups, o=smartdc",
+                Scope::Subtree,
+                filter,
+                vec!["cn", "uniquemember"],
+            )
             .await
             .map_err(|e| SessionError::LdapUnavailable(format!("LDAP group search failed: {e}")))?
             .success()
             .map_err(|e| {
-                warn!(user_dn = %user_dn, "LDAP group search result error: {e}");
+                warn!(user_uuid = %user_uuid, "LDAP group search result error: {e}");
                 SessionError::LdapUnavailable("Group search failed".to_string())
             })?;
 
+        let user_uuid_str = user_uuid.to_string();
         let groups: Vec<String> = rs
             .into_iter()
             .filter_map(|entry| {
                 let entry = SearchEntry::construct(entry);
-                entry.attrs.get("cn")?.first().cloned()
+                let cn = entry.attrs.get("cn")?.first()?.clone();
+                let members = entry.attrs.get("uniquemember")?;
+                members
+                    .iter()
+                    .any(|m| m.contains(&user_uuid_str))
+                    .then_some(cn)
             })
             .collect();
         debug!(groups = ?groups, "group membership search result");
