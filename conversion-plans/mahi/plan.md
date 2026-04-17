@@ -564,10 +564,44 @@ that the trait alone cannot capture:
    must implement the 404 path.
 5. Comma-splitting for `name=` and `uuid=` query parameters (see deviation #1).
 
+## Phase 2b Complete
+
+Post-generation OpenAPI spec patches for mahi have been applied via
+`openapi-manager/src/transforms.rs`. The patched specs are written to:
+
+- `openapi-specs/patched/mahi-api.json`
+- `openapi-specs/patched/mahi-sitter-api.json`
+
+Transforms registered (see `transforms.rs`):
+
+1. `patch_mahi_sts_get_caller_identity_xml` — rewrites
+   `POST /sts/get-caller-identity` responses to a 200 with
+   `text/xml` / `{"schema": {"type": "string"}}` instead of the
+   Dropshot-default `*/*` opaque response.
+2. `patch_mahi_repeated_query_param` — rewrites the `name` query parameter
+   on `GET /uuids` and the `uuid` query parameter on `GET /names` to
+   `{style: form, explode: true, schema: {type: array, items: {type:
+   string}}}` so the wire format matches `?name=a&name=b` / `?uuid=x&uuid=y`.
+   (The Rust trait uses `Option<String>` because Dropshot rejects `Vec<T>`
+   in `Query<>`; the service layer splits on commas or reads the repeated
+   form via the request context.)
+3. `patch_mahi_sitter_snapshot_binary` — rewrites `GET /snapshot` responses
+   to a 201 with `application/octet-stream` / `{"schema": {"type":
+   "string", "format": "binary"}}`.
+
+`make openapi-generate` writes both patched specs; `make openapi-check`
+verifies they stay fresh via `check_transforms`. Phase 3 must add
+`mahi-client` and `mahi-sitter-client` entries to
+`client-generator/src/main.rs` using the patched spec paths
+(`openapi-specs/patched/mahi-api.json` and
+`openapi-specs/patched/mahi-sitter-api.json`), mirroring the cloudapi
+pattern.
+
 ## Phase Status
 
 - [x] Phase 1: Analyze — **COMPLETE**
 - [x] Phase 2: Generate API — **COMPLETE**
+- [x] Phase 2b: OpenAPI spec patches — **COMPLETE**
 - [ ] Phase 3: Generate Client
 - [ ] Phase 4: Generate CLI
 - [ ] Phase 5: Validate

@@ -53,6 +53,19 @@ pub fn apply_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Res
         }
     }
 
+    let mahi_source = generated_dir.join("mahi-api.json");
+    if mahi_source.exists() {
+        let dest = patched_dir.join("mahi-api.json");
+        transform_mahi_spec(&mahi_source, &dest).context("failed to transform mahi-api.json")?;
+    }
+
+    let mahi_sitter_source = generated_dir.join("mahi-sitter-api.json");
+    if mahi_sitter_source.exists() {
+        let dest = patched_dir.join("mahi-sitter-api.json");
+        transform_mahi_sitter_spec(&mahi_sitter_source, &dest)
+            .context("failed to transform mahi-sitter-api.json")?;
+    }
+
     Ok(())
 }
 
@@ -91,6 +104,20 @@ pub fn check_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Res
             patch_node_triton_error_schema,
         )?;
     }
+
+    all_fresh &= check_one_transform(
+        generated_dir,
+        patched_dir,
+        "mahi-api.json",
+        apply_all_mahi_patches,
+    )?;
+
+    all_fresh &= check_one_transform(
+        generated_dir,
+        patched_dir,
+        "mahi-sitter-api.json",
+        apply_all_mahi_sitter_patches,
+    )?;
 
     Ok(all_fresh)
 }
@@ -416,6 +443,191 @@ fn transform_imgapi_spec(source: &Utf8Path, dest: &Utf8Path) -> Result<()> {
 
 fn apply_all_imgapi_patches(spec: &mut Value) -> Result<()> {
     patch_node_triton_error_schema(spec)?;
+    Ok(())
+}
+
+// --- Mahi transforms ---
+
+/// Transform mahi-api.json for wire-format quirks the Rust trait can't express.
+///
+/// Three patches:
+/// 1. `POST /sts/get-caller-identity` returns raw XML (`Content-Type: text/xml`).
+/// 2. `GET /uuids?name=` accepts a repeated query parameter (`?name=a&name=b`).
+/// 3. `GET /names?uuid=` accepts a repeated query parameter (`?uuid=x&uuid=y`).
+fn transform_mahi_spec(source: &Utf8Path, dest: &Utf8Path) -> Result<()> {
+    let content = std::fs::read_to_string(source).context("failed to read spec file")?;
+    let mut spec: Value = serde_json::from_str(&content).context("failed to parse spec as JSON")?;
+
+    apply_all_mahi_patches(&mut spec)?;
+
+    let output = serde_json::to_string_pretty(&spec).context("failed to serialize spec")?;
+    std::fs::write(dest, output).context("failed to write patched spec file")?;
+
+    eprintln!("Wrote patched Mahi spec to {}", dest);
+    Ok(())
+}
+
+fn apply_all_mahi_patches(spec: &mut Value) -> Result<()> {
+    patch_mahi_sts_get_caller_identity_xml(spec)?;
+    patch_mahi_repeated_query_param(
+        spec,
+        "/uuids",
+        "name",
+        "Names to resolve. Repeat the parameter, e.g. `?name=a&name=b`.",
+    )?;
+    patch_mahi_repeated_query_param(
+        spec,
+        "/names",
+        "uuid",
+        "UUIDs to resolve. Repeat the parameter, e.g. `?uuid=x&uuid=y`.",
+    )?;
+    Ok(())
+}
+
+/// Rewrite `POST /sts/get-caller-identity` 200 response to return raw XML.
+///
+/// The upstream Mahi service emits `Content-Type: text/xml` with a raw
+/// `<GetCallerIdentityResponse>...</GetCallerIdentityResponse>` body. The
+/// Rust trait uses `Result<Response<Body>, HttpError>` so the generated
+/// spec only has a `default` response with `*/*`. Replace the `responses`
+/// with a proper `200` that uses `text/xml` and a plain `string` schema.
+fn patch_mahi_sts_get_caller_identity_xml(spec: &mut Value) -> Result<()> {
+    let responses = spec
+        .get_mut("paths")
+        .and_then(|p| p.get_mut("/sts/get-caller-identity"))
+        .and_then(|p| p.get_mut("post"))
+        .and_then(|m| m.get_mut("responses"))
+        .ok_or_else(|| {
+            anyhow::anyhow!("POST /sts/get-caller-identity responses not found in spec")
+        })?;
+
+    *responses = serde_json::json!({
+        "200": {
+            "description": "XML body with Content-Type: text/xml",
+            "content": {
+                "text/xml": {
+                    "schema": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "4XX": {
+            "$ref": "#/components/responses/Error"
+        },
+        "5XX": {
+            "$ref": "#/components/responses/Error"
+        }
+    });
+
+    Ok(())
+}
+
+/// Rewrite a single query parameter on `GET {path}` to be a repeated (array)
+/// parameter with `style: form, explode: true`.
+///
+/// Dropshot rejects `Vec<T>` in `Query<>`, so the Rust trait declares these
+/// as `Option<String>` scalars. Real node-mahi clients send
+/// `?name=a&name=b` / `?uuid=x&uuid=y`, so the spec must declare these as
+/// arrays. The service layer splits on commas or accepts the raw repeated
+/// form via the request context.
+fn patch_mahi_repeated_query_param(
+    spec: &mut Value,
+    path: &str,
+    param_name: &str,
+    description: &str,
+) -> Result<()> {
+    let parameters = spec
+        .get_mut("paths")
+        .and_then(|p| p.get_mut(path))
+        .and_then(|p| p.get_mut("get"))
+        .and_then(|m| m.get_mut("parameters"))
+        .and_then(|p| p.as_array_mut())
+        .ok_or_else(|| anyhow::anyhow!("GET {} parameters not found in spec", path))?;
+
+    let param = parameters
+        .iter_mut()
+        .find(|p| {
+            p.get("in").and_then(|v| v.as_str()) == Some("query")
+                && p.get("name").and_then(|v| v.as_str()) == Some(param_name)
+        })
+        .ok_or_else(|| {
+            anyhow::anyhow!("query parameter `{}` not found on GET {}", param_name, path)
+        })?;
+
+    *param = serde_json::json!({
+        "in": "query",
+        "name": param_name,
+        "description": description,
+        "style": "form",
+        "explode": true,
+        "schema": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        }
+    });
+
+    Ok(())
+}
+
+/// Transform mahi-sitter-api.json — patch the `GET /snapshot` endpoint to
+/// return a 201 with `application/octet-stream` streaming body.
+fn transform_mahi_sitter_spec(source: &Utf8Path, dest: &Utf8Path) -> Result<()> {
+    let content = std::fs::read_to_string(source).context("failed to read spec file")?;
+    let mut spec: Value = serde_json::from_str(&content).context("failed to parse spec as JSON")?;
+
+    apply_all_mahi_sitter_patches(&mut spec)?;
+
+    let output = serde_json::to_string_pretty(&spec).context("failed to serialize spec")?;
+    std::fs::write(dest, output).context("failed to write patched spec file")?;
+
+    eprintln!("Wrote patched Mahi sitter spec to {}", dest);
+    Ok(())
+}
+
+fn apply_all_mahi_sitter_patches(spec: &mut Value) -> Result<()> {
+    patch_mahi_sitter_snapshot_binary(spec)?;
+    Ok(())
+}
+
+/// Rewrite `GET /snapshot` to return `201 Created` with an
+/// `application/octet-stream` binary streaming body.
+///
+/// Upstream Mahi sitter pipes the Redis `dump.rdb` file to the socket and
+/// terminates the response with `res.send(201)`. The Rust trait returns
+/// `Result<Response<Body>, HttpError>`, so the generated spec only has a
+/// `default` response with `*/*`. Replace `responses` with a proper 201
+/// that uses `application/octet-stream` and a binary schema.
+fn patch_mahi_sitter_snapshot_binary(spec: &mut Value) -> Result<()> {
+    let responses = spec
+        .get_mut("paths")
+        .and_then(|p| p.get_mut("/snapshot"))
+        .and_then(|p| p.get_mut("get"))
+        .and_then(|m| m.get_mut("responses"))
+        .ok_or_else(|| anyhow::anyhow!("GET /snapshot responses not found in spec"))?;
+
+    *responses = serde_json::json!({
+        "201": {
+            "description": "Streaming Redis dump.rdb body",
+            "content": {
+                "application/octet-stream": {
+                    "schema": {
+                        "type": "string",
+                        "format": "binary"
+                    }
+                }
+            }
+        },
+        "4XX": {
+            "$ref": "#/components/responses/Error"
+        },
+        "5XX": {
+            "$ref": "#/components/responses/Error"
+        }
+    });
+
     Ok(())
 }
 
