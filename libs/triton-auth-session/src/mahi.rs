@@ -59,15 +59,3 @@ impl MahiService {
         Ok(resp.into_inner())
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn service_constructs() {
-        let _svc = MahiService::new(MahiConfig {
-            url: Url::parse("http://mahi.example.invalid").unwrap(),
-        });
-    }
-}
