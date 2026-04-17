@@ -86,16 +86,37 @@ dropshot-api-manager = "0.3"
 dropshot-api-manager-types = "0.3"
 http = "1"
 hyper = { version = "1", features = ["full"] }
-hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "logging", "native-tokio", "tls12", "ring"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
 openapiv3 = "2.0"
 progenitor = "0.12"
 progenitor-client = "0.12"
 progenitor-impl = "0.12"
 rustfmt-wrapper = "0.2"
-# reqwest needs to track with progenitor-client
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
-rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+
+#
+# rustls crypto provider selection -- EDIT ALL FIVE PLACES TOGETHER.
+#
+# This repo standardises on the `ring` provider. Rustls refuses to
+# auto-select a provider when more than one is feature-enabled in the
+# build, so every crate that brings rustls in transitively must agree.
+#
+# To switch to `aws-lc-rs`:
+#   1) Change `ring` -> `aws-lc-rs` in `hyper-rustls` below.
+#   2) Change `ring` -> `aws-lc-rs` in `rustls` below.
+#   3) Change `ring` -> `aws-lc-rs` in `tokio-rustls` below.
+#   4) Change reqwest's feature `rustls-no-provider` -> `rustls`
+#      (reqwest's `rustls` feature activates `aws-lc-rs` automatically).
+#   5) Change `rustls::crypto::ring::default_provider()` to
+#      `rustls::crypto::aws_lc_rs::default_provider()` in
+#      `services/triton-gateway/src/main.rs` (the explicit install
+#      before any ClientConfig is built).
+#
+# reqwest also needs to track with progenitor-client.
+#
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "logging", "native-tokio", "tls12", "ring"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls-no-provider"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
 # NOTE: schemars version is tied to dropshot compatibility
 # Dropshot 0.16.x requires schemars 0.8.x
 # Do not upgrade to schemars 1.x without also upgrading dropshot
