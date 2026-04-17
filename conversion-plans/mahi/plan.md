@@ -658,11 +658,56 @@ pattern. Every STS / IAM operation has its own dedicated path and typed
 request body, so the Progenitor-generated builders are already ergonomic and
 type-safe — no `TypedClient` wrapper is required.
 
+## Phase 4 Complete
+
+Mahi CLI integration lives under `tritonadm`, **not** under `cli/mahi-cli/`. Per
+project policy, admin-plane services ship as subcommands of the `tritonadm`
+binary rather than one-off `*-cli` crates.
+
+### Layout
+
+- `cli/tritonadm/src/commands/mahi.rs` — `MahiCommand` enum with one
+  `clap::Subcommand` variant per endpoint; a nested `MahiSitterCommand`
+  carries the two sitter endpoints under `tritonadm mahi sitter ...`.
+- `cli/tritonadm/src/main.rs` — adds `--mahi-url` / `MAHI_URL` and
+  `--mahi-sitter-url` / `MAHI_SITTER_URL` global flags and a top-level
+  `Commands::Mahi { command }` variant.
+- `cli/tritonadm/Cargo.toml` — adds `mahi-api`, `mahi-client`, and
+  `mahi-sitter-client` path deps.
+
+### URL resolution
+
+- `mahi_url` falls back to `cfg.service_url("mahi")` from the SDC config on
+  a Triton headnode, matching sapi/imgapi/etc.
+- `mahi_sitter_url` is **never** auto-derived — the sitter runs on a
+  separate port inside the mahi zone with no dedicated DNS record. Users
+  must pass `--mahi-sitter-url` / `MAHI_SITTER_URL` explicitly; sitter
+  subcommands return a clean error otherwise.
+
+### Endpoint coverage
+
+All 28 endpoints are exposed. Binary-stream endpoints
+(`sts-get-caller-identity`, `sitter snapshot`) use `futures::TryStreamExt` to
+collect / stream the `ResponseValue<ByteStream>`. Repeated-query-param
+endpoints (`name-to-uuid`, `uuid-to-name`) accept repeatable `--name` /
+`--uuid` args and hand them straight to the Progenitor builder, which accepts
+`Vec<String>` (the Phase-2b spec patch declared them as `form,explode=true`
+arrays so Progenitor generated the right signature).
+
+### Validation
+
+- `make format package-build PACKAGE=tritonadm` — **SUCCESS**.
+- `make format build` — **SUCCESS**.
+- `make lint` — **PASS** (clippy `-D warnings` clean).
+- `cargo run --bin tritonadm -- mahi --help` and
+  `cargo run --bin tritonadm -- mahi sitter --help` — print correctly
+  without contacting the network.
+
 ## Phase Status
 
 - [x] Phase 1: Analyze — **COMPLETE**
 - [x] Phase 2: Generate API — **COMPLETE**
 - [x] Phase 2b: OpenAPI spec patches — **COMPLETE**
 - [x] Phase 3: Generate Client — **COMPLETE**
-- [ ] Phase 4: Generate CLI
+- [x] Phase 4: CLI (integrated into `tritonadm`) — **COMPLETE**
 - [ ] Phase 5: Validate

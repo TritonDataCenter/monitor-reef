@@ -16,8 +16,8 @@ mod commands;
 mod config;
 
 use commands::{
-    ChannelCommand, DcMaintCommand, ExperimentalCommand, ImageCommand, PlatformCommand,
-    PostSetupCommand, SapiCommand,
+    ChannelCommand, DcMaintCommand, ExperimentalCommand, ImageCommand, MahiCommand,
+    PlatformCommand, PostSetupCommand, SapiCommand,
 };
 use config::TritonConfig;
 
@@ -66,6 +66,14 @@ struct Cli {
     /// NAPI base URL (auto-detected from SDC config if not set)
     #[arg(long, env = "NAPI_URL", global = true)]
     napi_url: Option<String>,
+
+    /// Mahi base URL (auto-detected from SDC config if not set)
+    #[arg(long, env = "MAHI_URL", global = true)]
+    mahi_url: Option<String>,
+
+    /// Mahi sitter base URL (no SDC default — the sitter has no DNS record)
+    #[arg(long, env = "MAHI_SITTER_URL", global = true)]
+    mahi_sitter_url: Option<String>,
 
     /// Updates server URL (default: https://updates.tritondatacenter.com)
     #[arg(long, env = "UPDATES_URL", global = true)]
@@ -143,6 +151,33 @@ impl Cli {
         anyhow::bail!(
             "cannot determine NAPI URL: set --napi-url, NAPI_URL, \
              or run on a Triton headnode"
+        )
+    }
+
+    /// Resolve the Mahi URL from CLI flag, env var, or SDC config.
+    fn mahi_url(&self, sdc_config: &Option<TritonConfig>) -> Result<String> {
+        if let Some(url) = &self.mahi_url {
+            return Ok(url.clone());
+        }
+        if let Some(cfg) = sdc_config {
+            return Ok(cfg.service_url("mahi"));
+        }
+        anyhow::bail!(
+            "cannot determine Mahi URL: set --mahi-url, MAHI_URL, \
+             or run on a Triton headnode"
+        )
+    }
+
+    /// Resolve the Mahi sitter URL. Unlike other services, the sitter has no
+    /// DNS record of its own (it runs on a different port inside the mahi
+    /// zone) so we only consult the explicit flag/env — never the SDC config.
+    fn mahi_sitter_url(&self) -> Result<String> {
+        if let Some(url) = &self.mahi_sitter_url {
+            return Ok(url.clone());
+        }
+        anyhow::bail!(
+            "cannot determine Mahi sitter URL: set --mahi-sitter-url or \
+             MAHI_SITTER_URL (the sitter port has no SDC-config default)"
         )
     }
 }
@@ -248,6 +283,12 @@ enum Commands {
         #[command(subcommand)]
         command: SapiCommand,
     },
+
+    /// Raw access to the Mahi auth-cache HTTP API (lookup, SigV4, STS, IAM, sitter)
+    Mahi {
+        #[command(subcommand)]
+        command: MahiCommand,
+    },
 }
 
 #[tokio::main]
@@ -264,6 +305,8 @@ async fn main() -> Result<()> {
     let vmapi_url = cli.vmapi_url(&sdc_config);
     let papi_url = cli.papi_url(&sdc_config);
     let napi_url = cli.napi_url(&sdc_config);
+    let mahi_url = cli.mahi_url(&sdc_config);
+    let mahi_sitter_url = cli.mahi_sitter_url();
     let updates_url = cli.updates_url;
 
     match cli.command {
@@ -310,6 +353,7 @@ async fn main() -> Result<()> {
         Commands::Image { command } => command.run(&imgapi_url?, updates_url.as_deref()).await,
         Commands::Dev { command } => command.run(&sapi_url?, &vmapi_url?, &napi_url?).await,
         Commands::Sapi { command } => command.run(&sapi_url?).await,
+        Commands::Mahi { command } => command.run(mahi_url, mahi_sitter_url).await,
     }
 }
 
