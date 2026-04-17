@@ -105,6 +105,34 @@ fn all_apis() -> Result<dropshot_api_manager::ManagedApis> {
             api_description: jira_api::jira_api_mod::stub_api_description,
         },
         ManagedApiConfig {
+            ident: "mahi-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/mahi-api")?,
+            },
+            title: "Mahi (Manta Auth Cache) API",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Mahi - Manta Auth Cache. Redis-backed auth cache exposing UFDS-sourced account/user/role/policy lookups plus AWS SigV4/STS/IAM endpoints.",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: mahi_api::mahi_api_mod::stub_api_description,
+        },
+        ManagedApiConfig {
+            ident: "mahi-sitter-api",
+            versions: Versions::Lockstep {
+                version: crate_version("apis/mahi-api")?,
+            },
+            title: "Mahi Sitter API",
+            metadata: ManagedApiMetadata {
+                description: Some(
+                    "Mahi sitter - internal replicator admin server running alongside the Mahi replicator. Exposes /ping and /snapshot (binary RDB streaming).",
+                ),
+                ..ManagedApiMetadata::default()
+            },
+            api_description: mahi_api::mahi_sitter_api_mod::stub_api_description,
+        },
+        ManagedApiConfig {
             ident: "napi-api",
             versions: Versions::Lockstep {
                 version: crate_version("apis/napi-api")?,

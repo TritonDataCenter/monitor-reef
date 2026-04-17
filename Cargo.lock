@@ -2199,6 +2199,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
+name = "mahi-api"
+version = "2.1.0"
+dependencies = [
+ "clap",
+ "dropshot",
+ "http",
+ "schemars",
+ "serde",
+ "serde_json",
+ "uuid",
+]
+
+[[package]]
 name = "match_cfg"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2470,6 +2483,7 @@ dependencies = [
  "dropshot-api-manager-types",
  "imgapi-api",
  "jira-api",
+ "mahi-api",
  "napi-api",
  "papi-api",
  "sapi-api",

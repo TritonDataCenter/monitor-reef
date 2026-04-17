@@ -495,10 +495,79 @@ skip them):
 5. Whether the `Role.permissionPolicies` field is serialized on responses
    or only used internally in STS evaluation.
 
+## Phase 2 Complete
+
+- API crate: `apis/mahi-api/` (one crate; two traits: `MahiApi` and
+  `MahiSitterApi`).
+- OpenAPI specs: `openapi-specs/generated/mahi-api.json` and
+  `openapi-specs/generated/mahi-sitter-api.json`.
+- Endpoint count: **28 total** (26 on `MahiApi`, 2 on `MahiSitterApi`).
+- Build status: **SUCCESS** — `make format package-build PACKAGE=mahi-api`
+  and `make openapi-generate` both succeed cleanly (no warnings).
+
+### Phase 2 deviations from the plan
+
+1. **Repeated query parameters cannot be `Vec<T>`**. Dropshot rejects
+   `Vec<String>`/`Vec<Uuid>` in `Query<>` structs ("must have a scalar type").
+   Plan envisioned repeated `?name=a&name=b` / `?uuid=...&uuid=...` query
+   params via `Vec<String>` / `Vec<Uuid>`. The trait now declares those fields
+   as `name: Option<String>` and `uuid: Option<String>` (comma-separated).
+   **Phase 2b patch needed**: update the generated OpenAPI to declare these
+   parameters as arrays (`schema.type=array`, `style=form`, `explode=true`)
+   so the wire format matches what node-mahi actually sends. The service
+   layer must split on commas and parse each element.
+2. **`permissionPolicies` field** on `Role` was renamed to `permission_policies`
+   in Rust with `#[serde(rename = "permissionPolicies")]` to keep the wire
+   name while satisfying the `non_snake_case` lint.
+3. **No separate `MahiErrorCode` enum** — preserved from Phase 1 decision
+   (use documented Dropshot `HttpError` causes instead).
+4. **`CredentialStatus`** deferred to Phase 3+ (string field; the full set of
+   UFDS values is unknown and Phase 1 flagged the same concern).
+
+### Notes for Phase 2b (spec patches)
+
+The following OpenAPI spec patches should be applied under
+`openapi-specs/patched/mahi-api.json` (and `mahi-sitter-api.json`) in a later
+phase. They cannot be expressed in the Rust trait:
+
+1. **`POST /sts/get-caller-identity`** — trait returns
+   `Result<Response<Body>, HttpError>`; patch the 200 response content to
+   `{"text/xml": {"schema": {"type": "string"}}}`.
+2. **`GET /snapshot` (sitter)** — trait returns
+   `Result<Response<Body>, HttpError>`; patch the successful response to
+   `201 { "application/octet-stream": { "schema": { "type": "string",
+   "format": "binary" } } }`.
+3. **`GET /uuids?name=` and `GET /names?uuid=`** — declare `name` / `uuid`
+   query parameters as `array` with `style=form, explode=true` so the spec
+   matches the on-the-wire `?name=a&name=b` format.
+4. **Field-level schema tweaks** — `SigV4VerifyResult.signingKey` is
+   currently `serde_json::Value` (truly opaque; upstream emits a Node
+   `Buffer` JSON envelope). If Phase 5 confirms no callers read it, we can
+   drop the field from the response schema or flag it as deprecated.
+
+### Phase 2b — service-layer behavior requirements
+
+The service implementation (Phase 3/future) must carry the following quirks
+that the trait alone cannot capture:
+
+1. `POST /aws-verify` — inspect `Authorization`, `x-amz-date`,
+   `x-amz-content-sha256`, `x-amz-security-token` headers directly via
+   `RequestContext::request`. The `TypedBody<serde_json::Value>` is
+   effectively ignored.
+2. `POST /sts/get-caller-identity` — read `x-assumed-role-arn` and
+   `x-is-temporary-credential` request headers.
+3. `GET /users?fallback=true` — swallow `ObjectDoesNotExist` for the sub-user
+   and return the account-only `AuthInfo` (the type system already supports
+   this via `user: Option<User>`).
+4. `GET /roles` with a missing role — upstream hangs; Phase 1 recommended
+   returning 404 `RoleDoesNotExist` here. The trait is ready; the service
+   must implement the 404 path.
+5. Comma-splitting for `name=` and `uuid=` query parameters (see deviation #1).
+
 ## Phase Status
 
 - [x] Phase 1: Analyze — **COMPLETE**
-- [ ] Phase 2: Generate API
+- [x] Phase 2: Generate API — **COMPLETE**
 - [ ] Phase 3: Generate Client
 - [ ] Phase 4: Generate CLI
 - [ ] Phase 5: Validate
