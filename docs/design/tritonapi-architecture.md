@@ -159,6 +159,28 @@ tritonapi supports two authentication mechanisms on the same endpoints:
 Both mechanisms produce the same internal caller identity (account, UUID,
 roles) used by endpoint handlers.
 
+### JWT signing: ES256 (asymmetric)
+
+Tokens are signed with ES256 (ECDSA over P-256). tritonapi holds the
+private key and is the sole issuer; every verifier (triton-gateway today;
+any future adminui proxy, Kubernetes gateway, or operator-portal tomorrow)
+holds only the public key. This is a deliberate choice over HS256:
+
+- **Compromise containment.** A verifier cannot forge tokens. Only a
+  compromise of tritonapi itself can produce valid tokens.
+- **Fan-out without coordination.** Any new DC component can accept
+  tritonapi identities by obtaining the public key -- no new shared secret
+  needs to be distributed, rotated in lockstep, or stored N places.
+- **Public key distribution.** tritonapi exposes a JWKS document at
+  `GET /v1/auth/jwks.json` (RFC 7517). Verifiers fetch it on startup and
+  refresh periodically, so there is no SAPI-metadata plumbing for verifier
+  keys.
+
+The private key is generated once per zone at first boot into
+`/data/jwt-private.pem` (delegated dataset, survives reprovision); the
+public key lives beside it at `/data/jwt-public.pem`. Both paths are named
+by the SAPI config template and read by tritonapi at startup.
+
 ### Shared libraries, independent verification
 
 Security-critical auth code lives in reusable library crates:
@@ -166,7 +188,7 @@ Security-critical auth code lives in reusable library crates:
 | Library | Purpose | Used by |
 |---------|---------|---------|
 | `libs/triton-auth-verify` (to be created) | HTTP Signature verification, UFDS public key lookup with TTL cache | Both services |
-| `libs/triton-auth-session` (to be created) | JWT creation/validation, refresh token management, LDAP authentication | Both services |
+| `libs/triton-auth-session` (to be created) | ES256 JWT creation/validation, refresh token management, LDAP authentication | Both services (tritonapi issues + verifies; gateway verifies only) |
 | `libs/triton-auth` (existing) | HTTP Signature signing (client-side) | Gateway (proxy signing) |
 
 Placing JWT and LDAP code in a shared `libs/` crate (rather than duplicating
@@ -190,10 +212,18 @@ Both services call these libraries independently:
 
 ### Auth flow through the gateway
 
+A **single** credential from a single login covers the whole gateway
+surface. A browser that obtains a JWT from `POST /v1/auth/login` can use
+that same JWT for both `/v1/*` (tritonapi-native) and `/{account}/*`
+(proxied CloudAPI); the gateway handles the translation. Likewise, a CLI
+that signs with an SSH key can use that same signature for both path
+families. Clients do not need to track two credentials to cross the
+strangler-fig boundary.
+
 ```
 JWT (browser):
-  Client -> [gateway verifies JWT] -> routes to tritonapi or proxy
-    If /v1/*:    [tritonapi re-verifies JWT in handler]
+  Client -> [gateway verifies JWT with public key] -> routes to tritonapi or proxy
+    If /v1/*:    [tritonapi re-verifies JWT with public key in handler]
     If CloudAPI: [gateway signs request with operator key]
 
 HTTP Signature (CLI):
@@ -201,6 +231,10 @@ HTTP Signature (CLI):
     If /v1/*:    [tritonapi re-verifies signature in handler]
     If CloudAPI: [gateway passes through original Authorization header]
 ```
+
+The gateway obtains the JWT public key from tritonapi's JWKS endpoint on
+startup and refreshes it periodically. No shared secret is required
+between the two services.
 
 ### triton-auth-verify (new library)
 
@@ -270,6 +304,7 @@ async fn list_keys(
 | `POST` | `/v1/auth/logout` | Revoke refresh tokens |
 | `POST` | `/v1/auth/refresh` | Rotate refresh token, get new access token |
 | `GET` | `/v1/auth/session` | Validate session, return user info |
+| `GET` | `/v1/auth/jwks.json` | RFC 7517 JWKS -- public key(s) for JWT verifiers |
 
 These are defined in the Dropshot API trait and produce an OpenAPI spec.
 Web SPAs generate TypeScript types from this spec.
@@ -474,9 +509,9 @@ accessible through the gateway with dual-mode auth verification.
 
 tritonapi (Dropshot):
 - Auth endpoints: `/v1/auth/login`, `/v1/auth/logout`, `/v1/auth/refresh`,
-  `/v1/auth/session`
-- JWT service (LDAP-backed)
-- `/ping` health check
+  `/v1/auth/session`, `/v1/auth/jwks.json`
+- JWT service (LDAP-backed, ES256)
+- `/v1/ping` health check
 - Auth verification via `triton-auth-verify` in handlers
 
 triton-auth-verify (new lib):
@@ -579,15 +614,25 @@ needed, a cache-invalidation mechanism can be added later.
 ### Operator key for proxy signing
 
 The gateway signs proxied requests (for JWT callers) with an operator SSH
-key that has full privileges. This key is loaded from the zone's
-filesystem (SAPI-configured) and never logged.
+key that has full privileges. The key is loaded from the zone's
+filesystem at startup and never logged. Two SAPI config keys control it:
+
+- `operator_key_id` -- the `keyId` value to send in the `Authorization`
+  header, e.g. `/admin/keys/<fingerprint>`.
+- `operator_key_file` -- absolute path to the PEM private key on the
+  gateway zone, e.g. `/data/tls/operator.pem`.
+
+Provisioning of the operator account and key pair is a one-time
+bootstrap step performed when the datacenter is set up.
 
 ### JWT refresh token storage
 
-In-memory initially. Refresh tokens are lost on restart (users must log in
-again). For production HA with multiple instances, a shared store is
-needed (UFDS attribute, persistent key-value store, or a dedicated token
-service).
+In-memory initially, ported directly from user-portal's single-instance
+model. Refresh tokens are lost on tritonapi restart (users must log in
+again). A code comment at the storage site names this as the migration
+point -- the obvious next move is a persistent store (UFDS attribute, a
+dedicated key-value store like `moray`, or a token service) so that
+restarts and multi-instance HA do not force a re-login.
 
 ### CSRF and cookie-based JWT
 
