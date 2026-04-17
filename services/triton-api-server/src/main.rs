@@ -10,7 +10,7 @@ use dropshot::{
     HttpServerStarter, RequestContext,
 };
 use serde::Deserialize;
-use tracing::{error, info};
+use tracing::info;
 use triton_api::{PingResponse, TritonApi};
 
 /// Default request body size limit: 10 MiB.
@@ -60,13 +60,14 @@ impl Default for ApiServerConfig {
 /// If the env var is set but the file cannot be read or parsed, returns
 /// an error so the process exits non-zero -- SMF will mark the service in
 /// maintenance and an operator will notice.
-fn load_config() -> Result<ApiServerConfig> {
+async fn load_config() -> Result<ApiServerConfig> {
     let Some(path) = std::env::var("TRITON__CONFIG_FILE").ok() else {
         info!("TRITON__CONFIG_FILE not set; using default config");
         return Ok(ApiServerConfig::default());
     };
 
-    let contents = std::fs::read_to_string(&path)
+    let contents = tokio::fs::read_to_string(&path)
+        .await
         .with_context(|| format!("failed to read config from {}", path))?;
     let config: ApiServerConfig = serde_json::from_str(&contents)
         .with_context(|| format!("failed to parse config from {}", path))?;
@@ -99,7 +100,7 @@ async fn main() -> Result<()> {
         ))
         .init();
 
-    let config = load_config()?;
+    let config = load_config().await?;
 
     let api = triton_api::triton_api_mod::api_description::<TritonApiImpl>()
         .map_err(|e| anyhow::anyhow!("Failed to create API description: {}", e))?;
@@ -169,16 +170,21 @@ async fn main() -> Result<()> {
 /// hard backstop if draining takes too long.
 async fn shutdown_signal() {
     use tokio::signal::unix::{SignalKind, signal};
-    let mut sigterm = match signal(SignalKind::terminate()) {
-        Ok(s) => s,
-        Err(e) => {
-            error!("failed to install SIGTERM handler: {}", e);
-            return;
+    // Fall back to ctrl_c-only if the SIGTERM handler can't be installed --
+    // a pure-unix tokio runtime shouldn't fail, but we don't want shutdown
+    // to be the thing that breaks if it does.
+    let mut sigterm = signal(SignalKind::terminate()).ok();
+    let sigterm_fut = async {
+        match sigterm.as_mut() {
+            Some(s) => {
+                s.recv().await;
+            }
+            None => std::future::pending::<()>().await,
         }
     };
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {},
-        _ = sigterm.recv() => {},
+        _ = sigterm_fut => {},
     }
     info!("shutdown signal received, draining in-flight requests");
 }

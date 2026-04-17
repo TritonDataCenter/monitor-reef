@@ -122,7 +122,7 @@ async fn main() -> Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::new("triton_gateway=info"))
         .init();
 
-    let config = load_config()?;
+    let config = load_config().await?;
 
     // rustls 0.23 requires a process-global `CryptoProvider` to be installed
     // before any `ClientConfig` is built. We use the `ring` backend (pulled in
@@ -187,16 +187,21 @@ async fn main() -> Result<()> {
 /// takes too long.
 async fn shutdown_signal() {
     use tokio::signal::unix::{SignalKind, signal};
-    let mut sigterm = match signal(SignalKind::terminate()) {
-        Ok(s) => s,
-        Err(e) => {
-            error!("failed to install SIGTERM handler: {}", e);
-            return;
+    // Fall back to ctrl_c-only if the SIGTERM handler can't be installed --
+    // a pure-unix tokio runtime shouldn't fail, but we don't want shutdown
+    // to be the thing that breaks if it does.
+    let mut sigterm = signal(SignalKind::terminate()).ok();
+    let sigterm_fut = async {
+        match sigterm.as_mut() {
+            Some(s) => {
+                s.recv().await;
+            }
+            None => std::future::pending::<()>().await,
         }
     };
     tokio::select! {
         _ = tokio::signal::ctrl_c() => {},
-        _ = sigterm.recv() => {},
+        _ = sigterm_fut => {},
     }
     info!("shutdown signal received, draining in-flight requests");
 }
@@ -250,13 +255,14 @@ async fn request_id_middleware(
 /// If the env var is set but the file cannot be read or parsed, returns
 /// an error so the process exits non-zero -- SMF will mark the service in
 /// maintenance and an operator will notice.
-fn load_config() -> Result<GatewayConfig> {
+async fn load_config() -> Result<GatewayConfig> {
     let Some(path) = std::env::var("TRITON__CONFIG_FILE").ok() else {
         info!("TRITON__CONFIG_FILE not set; using default config");
         return Ok(GatewayConfig::default());
     };
 
-    let contents = std::fs::read_to_string(&path)
+    let contents = tokio::fs::read_to_string(&path)
+        .await
         .with_context(|| format!("failed to read config from {}", path))?;
     let config: GatewayConfig = serde_json::from_str(&contents)
         .with_context(|| format!("failed to parse config from {}", path))?;
@@ -403,35 +409,12 @@ async fn forward_websocket(
     // respective 101 responses have been flushed over the wire.
     let backend_on_upgrade = hyper::upgrade::on(&mut resp);
 
+    // Fire-and-forget: the spawned task outlives this handler and has no
+    // meaningful way to propagate errors, so log them at the terminal edge.
     tokio::spawn(async move {
-        let (client_upgraded, backend_upgraded) =
-            match tokio::try_join!(client_on_upgrade, backend_on_upgrade) {
-                Ok(pair) => pair,
-                Err(e) => {
-                    warn!("websocket upgrade failed: {}", e);
-                    return;
-                }
-            };
-
-        // `Upgraded` implements hyper's Read/Write; TokioIo adapts that to
-        // tokio's AsyncRead/AsyncWrite so copy_bidirectional can drive it.
-        let mut client_io = TokioIo::new(client_upgraded);
-        let mut backend_io = TokioIo::new(backend_upgraded);
-
-        match tokio::io::copy_bidirectional(&mut client_io, &mut backend_io).await {
-            Ok((from_client, from_backend)) => {
-                info!(
-                    client_bytes = from_client,
-                    backend_bytes = from_backend,
-                    "websocket tunnel closed"
-                );
-            }
-            Err(e) => {
-                // EOF on one side mid-stream is normal for WebSocket close;
-                // only log at warn to aid debugging of actually-broken tunnels.
-                warn!("websocket tunnel closed with error: {}", e);
-            }
-        }
+        drive_websocket_tunnel(client_on_upgrade, backend_on_upgrade)
+            .await
+            .unwrap_or_else(|e| warn!("websocket tunnel ended with error: {}", e));
     });
 
     // Hand the backend's 101 back to the client. Axum/hyper will flush these
@@ -550,6 +533,36 @@ fn build_outbound_request(
     }
 
     Ok(builder.body(body)?)
+}
+
+/// Drive the bidirectional WebSocket tunnel to completion.
+///
+/// Waits for both the client-side and backend-side HTTP upgrades to
+/// complete, then shovels bytes in both directions until either side
+/// closes. Returns Ok with the transferred byte counts on a clean
+/// close, or Err if the upgrade handshake or stream copy failed.
+async fn drive_websocket_tunnel(
+    client_on_upgrade: hyper::upgrade::OnUpgrade,
+    backend_on_upgrade: hyper::upgrade::OnUpgrade,
+) -> Result<(), anyhow::Error> {
+    let (client_upgraded, backend_upgraded) =
+        tokio::try_join!(client_on_upgrade, backend_on_upgrade)
+            .context("websocket upgrade failed")?;
+
+    // `Upgraded` implements hyper's Read/Write; TokioIo adapts that to
+    // tokio's AsyncRead/AsyncWrite so copy_bidirectional can drive it.
+    let mut client_io = TokioIo::new(client_upgraded);
+    let mut backend_io = TokioIo::new(backend_upgraded);
+
+    let (from_client, from_backend) =
+        tokio::io::copy_bidirectional(&mut client_io, &mut backend_io).await?;
+
+    info!(
+        client_bytes = from_client,
+        backend_bytes = from_backend,
+        "websocket tunnel closed"
+    );
+    Ok(())
 }
 
 /// Headers that are hop-by-hop in the general case but must be forwarded

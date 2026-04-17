@@ -755,9 +755,12 @@ async fn cmd_add_service(
                     .into_inner();
                 eprintln!("Created instance {}", inst.uuid);
 
-                // Ensure manta NIC on the newly created instance (if configured)
+                // Ensure manta NIC on the newly created instance (if configured).
+                // Non-fatal: warn and continue if the NIC can't be added.
                 if config.ensure_manta_nic {
-                    ensure_manta_nic(&napi, &vmapi, inst.uuid, config.name).await;
+                    ensure_manta_nic(&napi, &vmapi, inst.uuid, config.name)
+                        .await
+                        .unwrap_or_else(|e| eprintln!("Warning: manta NIC setup: {e}"));
                 }
             }
             AddServiceAction::ReprovisionInstance { inst_uuid, alias } => {
@@ -783,7 +786,9 @@ async fn cmd_add_service(
             .iter()
             .any(|a| matches!(a, AddServiceAction::CreateInstance { .. }))
     {
-        ensure_manta_nic(&napi, &vmapi, inst.uuid, config.name).await;
+        ensure_manta_nic(&napi, &vmapi, inst.uuid, config.name)
+            .await
+            .unwrap_or_else(|e| eprintln!("Warning: manta NIC setup: {e}"));
     }
 
     eprintln!("Done.");
@@ -1082,38 +1087,32 @@ async fn add_nic_if_missing(
     Ok(true)
 }
 
-/// Ensure an instance has a NIC on the manta network (non-fatal).
+/// Ensure an instance has a NIC on the manta network.
+///
+/// Returns Err on genuine failures (NAPI unreachable, malformed network
+/// UUID, `add_nics` failure). Callers treat failures as non-fatal by
+/// logging and continuing.
 async fn ensure_manta_nic(
     napi: &napi_client::Client,
     vmapi: &vmapi_client::TypedClient,
     inst_uuid: sapi_client::Uuid,
     svc_name: &str,
-) {
-    // Check if manta network exists
-    let manta_networks = match napi.list_networks().name("manta").send().await {
-        Ok(resp) => resp.into_inner(),
-        Err(_) => return,
-    };
-    let manta_net = match manta_networks.first() {
-        Some(net) => net,
-        None => {
-            eprintln!("No manta network found — skipping manta NIC.");
-            return;
-        }
-    };
-
-    let manta_uuid = match uuid::Uuid::parse_str(&manta_net.uuid.to_string()) {
-        Ok(u) => u,
-        Err(e) => {
-            eprintln!("Warning: failed to parse manta network UUID: {e}");
-            return;
-        }
+) -> Result<()> {
+    let manta_networks = napi
+        .list_networks()
+        .name("manta")
+        .send()
+        .await
+        .context("failed to list manta networks")?
+        .into_inner();
+    let Some(manta_net) = manta_networks.first() else {
+        eprintln!("No manta network found — skipping manta NIC.");
+        return Ok(());
     };
 
-    // Non-fatal: ignore errors from add_nic_if_missing
-    match add_nic_if_missing(napi, vmapi, inst_uuid, "manta", manta_uuid, false, svc_name).await {
-        Ok(false) => {}
-        Ok(true) => {}
-        Err(e) => eprintln!("Warning: {e}"),
-    }
+    let manta_uuid = uuid::Uuid::parse_str(&manta_net.uuid.to_string())
+        .context("failed to parse manta network UUID")?;
+
+    add_nic_if_missing(napi, vmapi, inst_uuid, "manta", manta_uuid, false, svc_name).await?;
+    Ok(())
 }
