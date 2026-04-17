@@ -36,7 +36,7 @@ pub mod mahi;
 pub mod models;
 
 pub use error::{SessionError, SessionResult};
-pub use jwt::{JwtConfig, JwtService};
+pub use jwt::{JwtConfig, JwtService, JwtVerifier};
 pub use ldap::{LdapConfig, LdapService, UfdsUser};
 pub use mahi::{AuthInfo, MahiService};
 pub use models::{Claims, Role, roles_imply_admin};

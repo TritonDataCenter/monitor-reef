@@ -17,7 +17,7 @@
 use crate::error::{SessionError, SessionResult};
 use crate::models::{Claims, Role};
 use chrono::Utc;
-use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode, jwk};
 use p256::pkcs8::DecodePublicKey;
 use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
@@ -49,13 +49,63 @@ pub struct JwtConfig {
 
 pub struct JwtService {
     encoding_key: EncodingKey,
-    decoding_key: DecodingKey,
+    verifier: JwtVerifier,
     header: Header,
     public_key_pem: String,
     kid: String,
     access_ttl_secs: u64,
     refresh_ttl_secs: u64,
     refresh_tokens: Arc<RwLock<HashMap<String, RefreshEntry>>>,
+}
+
+/// Verify-only counterpart to [`JwtService`]. Constructable from a PEM
+/// public key or a JWK, which lets external verifiers (the gateway, a
+/// future adminui proxy, any DC component that consumes tritonapi JWTs)
+/// validate access tokens without owning a signing key. Only the
+/// signature path matters here; refresh tokens are not in scope.
+#[derive(Clone)]
+pub struct JwtVerifier {
+    decoding_key: Arc<DecodingKey>,
+    validation: Validation,
+}
+
+impl JwtVerifier {
+    fn new(decoding_key: DecodingKey) -> Self {
+        Self {
+            decoding_key: Arc::new(decoding_key),
+            validation: Validation::new(Algorithm::ES256),
+        }
+    }
+
+    /// Build a verifier from a PEM-encoded EC public key.
+    pub fn from_ec_public_pem(pem: &str) -> SessionResult<Self> {
+        let key = DecodingKey::from_ec_pem(pem.as_bytes())
+            .map_err(|e| SessionError::JwtKeyError(format!("parse public key: {e}")))?;
+        Ok(Self::new(key))
+    }
+
+    /// Build a verifier from a parsed JWK (typically read from a JWKS
+    /// document). The JWK's `alg` is ignored; ES256 is enforced.
+    pub fn from_jwk(jwk: &jwk::Jwk) -> SessionResult<Self> {
+        let key = DecodingKey::from_jwk(jwk)
+            .map_err(|e| SessionError::JwtKeyError(format!("parse JWK: {e}")))?;
+        Ok(Self::new(key))
+    }
+
+    pub fn verify_token(&self, token: &str) -> SessionResult<Claims> {
+        let data = decode::<Claims>(token, &self.decoding_key, &self.validation)?;
+        Ok(data.claims)
+    }
+
+    /// Decode a token and return its claims without validating expiry.
+    /// The signature is still verified. Used for logout so that users
+    /// with an expired session can still log out cleanly.
+    pub fn decode_ignoring_expiry(&self, token: &str) -> SessionResult<Claims> {
+        let mut validation = self.validation.clone();
+        validation.validate_exp = false;
+        let data = decode::<Claims>(token, &self.decoding_key, &validation)?;
+        Ok(data.claims)
+    }
 }
 
 struct RefreshEntry {
@@ -90,15 +140,14 @@ impl JwtService {
         let encoding_key =
             EncodingKey::from_ec_pem(config.private_key_pem.expose_secret().as_bytes())
                 .map_err(|e| SessionError::JwtKeyError(format!("parse private key: {e}")))?;
-        let decoding_key = DecodingKey::from_ec_pem(config.public_key_pem.as_bytes())
-            .map_err(|e| SessionError::JwtKeyError(format!("parse public key: {e}")))?;
+        let verifier = JwtVerifier::from_ec_public_pem(&config.public_key_pem)?;
 
         let mut header = Header::new(Algorithm::ES256);
         header.kid = Some(config.kid.clone());
 
         Ok(Self {
             encoding_key,
-            decoding_key,
+            verifier,
             header,
             public_key_pem: config.public_key_pem.clone(),
             kid: config.kid.clone(),
@@ -106,6 +155,13 @@ impl JwtService {
             refresh_ttl_secs: config.refresh_ttl_secs,
             refresh_tokens: Arc::new(RwLock::new(HashMap::new())),
         })
+    }
+
+    /// Expose the verify-only handle so any verifier logic (middleware,
+    /// other services in the same process) can share a single decoding
+    /// setup without reaching into the issuing service.
+    pub fn verifier(&self) -> &JwtVerifier {
+        &self.verifier
     }
 
     pub fn create_token(
@@ -127,25 +183,12 @@ impl JwtService {
         Ok(encode(&self.header, &claims, &self.encoding_key)?)
     }
 
-    /// Shared validation so `verify_token` and `decode_ignoring_expiry`
-    /// stay in sync.
-    fn base_validation() -> Validation {
-        Validation::new(Algorithm::ES256)
-    }
-
     pub fn verify_token(&self, token: &str) -> SessionResult<Claims> {
-        let data = decode::<Claims>(token, &self.decoding_key, &Self::base_validation())?;
-        Ok(data.claims)
+        self.verifier.verify_token(token)
     }
 
-    /// Decode a token and return its claims without validating expiry.
-    /// The signature is still verified. Used for logout so that users with
-    /// an expired session can still log out cleanly.
     pub fn decode_ignoring_expiry(&self, token: &str) -> SessionResult<Claims> {
-        let mut validation = Self::base_validation();
-        validation.validate_exp = false;
-        let data = decode::<Claims>(token, &self.decoding_key, &validation)?;
-        Ok(data.claims)
+        self.verifier.decode_ignoring_expiry(token)
     }
 
     pub async fn create_refresh_token(
