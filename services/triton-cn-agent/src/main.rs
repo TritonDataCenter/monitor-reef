@@ -5,66 +5,57 @@
 // Copyright 2026 Edgecast Cloud LLC.
 
 //! Triton Compute Node Agent binary entrypoint.
+//!
+//! The binary has two operating modes:
+//!
+//! * `--backend smartos` (production): boots through the full
+//!   [`startup::SmartosStartup`] pipeline — reads agent config + sysinfo +
+//!   SDC config, binds the admin IP, registers with CNAPI, and runs the
+//!   heartbeater plus zoneevent/zones watchers until SIGTERM.
+//!
+//! * `--backend dummy` (dev/test): stands up only the HTTP server with
+//!   the platform-neutral task registry. Useful for exercising the task
+//!   dispatcher on non-illumos hosts.
 
 use std::net::SocketAddr;
-use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use clap::Parser;
-use cn_agent_api::cn_agent_api_mod;
-use dropshot::{ConfigDropshot, ConfigLogging, ConfigLoggingLevel, HttpServerStarter};
 use triton_cn_agent::{
-    AgentContext, AgentMetadata, DEFAULT_AGENT_PORT,
-    api_impl::CnAgentApiImpl,
-    cnapi::CnapiClient,
-    heartbeater::{Heartbeater, status::StatusCollector},
-    smartos::{Sysinfo, VmadmTool, ZfsTool},
-    tasks,
+    DEFAULT_AGENT_PORT,
+    startup::{SmartosStartup, start_dummy},
 };
 
 /// Command-line arguments.
 #[derive(Parser, Debug)]
 #[command(name = "triton-cn-agent", version)]
 struct Args {
-    /// Address to bind the HTTP server to.
+    /// Backend to run. Valid values:
     ///
-    /// Production installs pass the compute node's admin IP here. For
-    /// development, leave unset to bind to the loopback address.
-    #[arg(long, env = "CN_AGENT_BIND_ADDR", default_value_t = default_bind_addr())]
-    bind_addr: SocketAddr,
-
-    /// Backend identifier reported via `/ping`.
-    ///
-    /// The real agent picks this based on `os.platform()`; the Rust port
-    /// accepts it as an arg for dev/test flexibility. Valid values:
-    /// `dummy` (platform-neutral tasks only) or `smartos` (adds sysinfo +
-    /// whatever else has been ported). `smartos` is still being built out,
-    /// so most tasks will 404 until they're implemented.
-    #[arg(long, env = "CN_AGENT_BACKEND", default_value = "dummy")]
+    /// * `smartos` — the production backend; boots the full startup
+    ///   pipeline. Requires the standard SmartOS install layout.
+    /// * `dummy` — minimal HTTP server for dev/test, no CNAPI or
+    ///   watchers.
+    #[arg(long, env = "CN_AGENT_BACKEND", default_value = "smartos")]
     backend: String,
 
-    /// Server UUID this agent is running on. Must be a valid UUID.
-    #[arg(long, env = "CN_AGENT_SERVER_UUID")]
-    server_uuid: Option<uuid::Uuid>,
+    /// Optional bind-address override. In production this is derived
+    /// from the admin NIC in sysinfo; setting it explicitly is useful
+    /// during development or when running multiple agents on one host.
+    #[arg(long, env = "CN_AGENT_BIND_ADDR")]
+    bind_addr: Option<SocketAddr>,
 
-    /// Optional override for the CNAPI base URL.
-    ///
-    /// When unset, the heartbeater is disabled. A real deployment should
-    /// set this (or we'd need to port sdcConfig+DNS lookup of
-    /// `cnapi.<dc>.<domain>`, which we haven't wired up yet).
+    /// Override the CNAPI URL. Only meaningful for `--backend smartos`.
+    /// When unset, cn-agent picks the URL from `cn-agent.config.json`
+    /// (`cnapi.url`) or falls back to `cnapi.<dc>.<domain>` constructed
+    /// from `/lib/sdc/config.sh`.
     #[arg(long, env = "CN_AGENT_CNAPI_URL")]
     cnapi_url: Option<String>,
 
-    /// Skip the heartbeater entirely, even when `--cnapi-url` is set.
-    ///
-    /// Handy during development so you can exercise /tasks without
-    /// filling CNAPI logs.
-    #[arg(long, env = "CN_AGENT_NO_HEARTBEAT", default_value_t = false)]
-    no_heartbeat: bool,
-}
-
-fn default_bind_addr() -> SocketAddr {
-    SocketAddr::from(([127, 0, 0, 1], DEFAULT_AGENT_PORT))
+    /// Server UUID used by the `dummy` backend. Ignored in production —
+    /// the SmartOS startup reads the UUID from sysinfo.
+    #[arg(long, env = "CN_AGENT_SERVER_UUID")]
+    dummy_server_uuid: Option<uuid::Uuid>,
 }
 
 #[tokio::main]
@@ -79,125 +70,41 @@ async fn main() -> Result<()> {
 
     let args = Args::parse();
 
-    let registry = match args.backend.as_str() {
-        "dummy" => tasks::common_registry(),
-        "smartos" => tasks::smartos_registry(),
-        other => {
-            anyhow::bail!("backend '{other}' not supported. Valid values: dummy, smartos.");
-        }
-    };
-
-    let server_uuid = resolve_server_uuid(&args).await?;
-
-    let metadata = AgentMetadata {
-        name: "cn-agent".to_string(),
-        version: env!("CARGO_PKG_VERSION").to_string(),
-        server_uuid,
-        backend: args.backend.clone(),
-    };
-
-    let context = Arc::new(AgentContext::new(metadata, registry));
-
-    let api = cn_agent_api_mod::api_description::<CnAgentApiImpl>()
-        .map_err(|e| anyhow::anyhow!("build api description: {e}"))?;
-
-    let config = ConfigDropshot {
-        bind_address: args.bind_addr,
-        default_request_body_max_bytes: 4 * 1024 * 1024, // 4 MiB; docker_build payloads are large
-        default_handler_task_mode: dropshot::HandlerTaskMode::Detached,
-        ..Default::default()
-    };
-
-    let log = ConfigLogging::StderrTerminal {
-        level: ConfigLoggingLevel::Info,
+    match args.backend.as_str() {
+        "smartos" => run_smartos(&args).await,
+        "dummy" => run_dummy(&args).await,
+        other => anyhow::bail!("backend '{other}' not supported. Valid values: smartos, dummy."),
     }
-    .to_logger("triton-cn-agent")
-    .map_err(|e| anyhow::anyhow!("build logger: {e}"))?;
+}
 
-    let server = HttpServerStarter::new(&config, api, context, &log)
-        .map_err(|e| anyhow::anyhow!("start http server: {e}"))?
-        .start();
+async fn run_smartos(args: &Args) -> Result<()> {
+    let mut startup = SmartosStartup::production();
+    if let Some(url) = &args.cnapi_url {
+        startup = startup.with_cnapi_url(url.clone());
+    }
+    if let Some(addr) = args.bind_addr {
+        startup = startup.with_bind_address(addr);
+    }
+    let agent = startup.start().await.context("start SmartOS agent")?;
+    agent.run_until_shutdown().await
+}
 
+async fn run_dummy(args: &Args) -> Result<()> {
+    let bind_addr = args
+        .bind_addr
+        .unwrap_or_else(|| SocketAddr::from(([127, 0, 0, 1], DEFAULT_AGENT_PORT)));
+    let server_uuid = args.dummy_server_uuid.unwrap_or_else(uuid::Uuid::nil);
     tracing::info!(
-        bind = %args.bind_addr,
-        backend = %args.backend,
+        bind = %bind_addr,
         server_uuid = %server_uuid,
-        "cn-agent listening"
+        "starting dummy cn-agent (no CNAPI, no watchers)"
     );
+    let server = start_dummy(bind_addr, server_uuid)?;
 
-    // Optional heartbeater. Only enabled when the user supplied a CNAPI URL
-    // and didn't opt out explicitly.
-    let heartbeater_handle = match (&args.cnapi_url, args.no_heartbeat) {
-        (Some(url), false) => Some(start_heartbeater(url, server_uuid, &args.backend)?),
-        _ => {
-            tracing::info!("heartbeater disabled (no --cnapi-url)");
-            None
-        }
-    };
-
-    let server_result = server
+    // Block on the server until it exits; dummy backend has no heartbeater
+    // to shut down, so this is the whole story.
+    server
         .await
-        .map_err(|e| anyhow::anyhow!("server exited with error: {e}"))
-        .context("cn-agent server loop");
-
-    if let Some(handle) = heartbeater_handle {
-        handle.shutdown().await;
-    }
-
-    server_result
-}
-
-/// Decide what UUID to report to CNAPI.
-///
-/// In order of preference:
-/// 1. Explicit `--server-uuid` argument / `CN_AGENT_SERVER_UUID` env.
-/// 2. `/usr/bin/sysinfo` UUID field (SmartOS-only).
-/// 3. All-zero UUID (dev/dummy backend).
-async fn resolve_server_uuid(args: &Args) -> Result<uuid::Uuid> {
-    if let Some(uuid) = args.server_uuid {
-        return Ok(uuid);
-    }
-    if args.backend == "smartos" {
-        match Sysinfo::collect().await {
-            Ok(si) => {
-                if let Some(uuid) = si.uuid() {
-                    return Ok(uuid);
-                }
-                tracing::warn!("sysinfo returned no UUID; falling back to nil");
-            }
-            Err(e) => {
-                tracing::warn!(error = %e, "failed to read sysinfo; falling back to nil UUID")
-            }
-        }
-    }
-    Ok(uuid::Uuid::nil())
-}
-
-fn start_heartbeater(
-    cnapi_url: &str,
-    server_uuid: uuid::Uuid,
-    backend: &str,
-) -> Result<triton_cn_agent::heartbeater::HeartbeaterHandle> {
-    let cnapi = Arc::new(
-        CnapiClient::builder(cnapi_url, server_uuid)
-            .with_user_agent(format!(
-                "triton-cn-agent/{} server/{server_uuid}",
-                env!("CARGO_PKG_VERSION")
-            ))
-            .build()
-            .context("build CNAPI client")?,
-    );
-    // The heartbeater's status collector uses the SmartOS vmadm/zfs wrappers
-    // unconditionally. On the dummy backend, those will return errors —
-    // status posts will log warnings but heartbeats still fire, which is
-    // what we want for dev runs that point at a stub CNAPI.
-    if backend == "dummy" {
-        tracing::warn!(
-            "running heartbeater on dummy backend; status collection will fail against fake vmadm/zfs"
-        );
-    }
-    let collector = StatusCollector::new(Arc::new(VmadmTool::new()), Arc::new(ZfsTool::new()));
-    let heartbeater = Heartbeater::new(cnapi, collector);
-    tracing::info!(cnapi_url = %cnapi_url, "starting heartbeater");
-    Ok(heartbeater.spawn())
+        .map_err(|e| anyhow::anyhow!("server exited: {e}"))
+        .context("dummy backend server loop")
 }

@@ -28,6 +28,7 @@ chrono = { workspace = true, features = ["serde"] }
 clap = { workspace = true, features = ["derive", "env"] }
 cn-agent-api = { path = "../../apis/cn-agent-api" }
 dropshot = { workspace = true }
+notify = "8.2"
 reqwest = { workspace = true, features = ["json"] }
 schemars = { workspace = true }
 serde = { workspace = true }

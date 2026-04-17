@@ -29,8 +29,11 @@ use tokio::time::timeout;
 
 use triton_cn_agent::{
     cnapi::{AgentInfo, CnapiClient},
-    heartbeater::{Heartbeater, status::StatusCollector},
-    smartos::{VmadmTool, ZfsTool},
+    heartbeater::{
+        DiskUsageSampler, Heartbeater,
+        status::{LiveSysinfo, StatusCollector, SysinfoLoader},
+    },
+    smartos::{ImgadmDb, KstatTool, Sysinfo, VmadmTool, ZfsTool},
 };
 use uuid::Uuid;
 
@@ -171,6 +174,58 @@ fn write_script(dir: &Path, name: &str, body: &str) -> PathBuf {
     path
 }
 
+/// Build a [`StatusCollector`] wired with mock kstat/imgadm so the test
+/// exercises the full collector path without needing illumos binaries.
+fn build_collector(vmadm: Arc<VmadmTool>, zfs: Arc<ZfsTool>, dir: &Path) -> StatusCollector {
+    // Mock kstat returns synthetic memory stats.
+    let kstat_script = write_script(
+        dir,
+        "kstat",
+        "#!/bin/sh\n\
+         echo 'unix:0:system_pages:availrmem\\t1000'\n\
+         echo 'unix:0:system_pages:pagestotal\\t2000'\n\
+         echo 'zfs:0:arcstats:size\\t4096'\n",
+    );
+    let kstat = Arc::new(KstatTool::with_bin(kstat_script));
+    let imgadm = Arc::new(ImgadmDb::with_dir(dir));
+    let disk_usage = DiskUsageSampler::new(zfs.clone(), imgadm);
+    StatusCollector::new(vmadm, zfs, kstat, disk_usage)
+        .with_sysinfo_loader(Arc::new(FixedSysinfo::default()))
+}
+
+/// Sysinfo loader that always returns a canned blob — no spawning required
+/// so tests work on macOS/Linux/etc.
+#[derive(Debug, Clone)]
+struct FixedSysinfo {
+    value: serde_json::Value,
+}
+
+impl Default for FixedSysinfo {
+    fn default() -> Self {
+        Self {
+            value: serde_json::json!({
+                "UUID": "00000000-0000-0000-0000-000000000000",
+                "Boot Time": "1700000000"
+            }),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl SysinfoLoader for FixedSysinfo {
+    async fn load(&self) -> Option<Sysinfo> {
+        Sysinfo::from_json(self.value.to_string().as_bytes()).ok()
+    }
+}
+
+/// Sanity touch so clippy doesn't warn if `LiveSysinfo` isn't used in
+/// this file. Provides a trivial compile-check: the default loader type
+/// must match [`StatusCollector::new`]'s expectation.
+#[allow(dead_code)]
+fn _check_live_loader_type() -> Arc<dyn SysinfoLoader> {
+    Arc::new(LiveSysinfo)
+}
+
 /// Wait up to `timeout_secs` for `pred` to become true.
 async fn wait_for(
     ctx: &StubContext,
@@ -257,7 +312,7 @@ async fn heartbeater_ticks_and_posts_status() {
 
     let server_uuid = Uuid::new_v4();
     let cnapi = Arc::new(CnapiClient::new(&url, server_uuid).expect("client"));
-    let collector = StatusCollector::new(vmadm_tool, zfs_tool);
+    let collector = build_collector(vmadm_tool, zfs_tool, tmp.path());
 
     let heartbeater = Heartbeater::new(cnapi, collector)
         .with_heartbeat_interval(Duration::from_millis(50))
@@ -303,9 +358,10 @@ async fn heartbeater_survives_cnapi_errors() {
     let vmadm = write_script(tmp.path(), "vmadm", "#!/bin/sh\necho '[]'\n");
     let zpool = write_script(tmp.path(), "zpool", "#!/bin/sh\n");
     let zfs = write_script(tmp.path(), "zfs", "#!/bin/sh\n");
-    let collector = StatusCollector::new(
+    let collector = build_collector(
         Arc::new(VmadmTool::with_bin(vmadm)),
         Arc::new(ZfsTool::with_bins(zfs, zpool)),
+        tmp.path(),
     );
 
     let heartbeater = Heartbeater::new(cnapi, collector)

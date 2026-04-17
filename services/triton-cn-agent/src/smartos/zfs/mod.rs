@@ -244,6 +244,19 @@ impl ZfsTool {
         Ok(())
     }
 
+    /// `zfs get -Hp -o name,property,value <props>` across every dataset.
+    ///
+    /// Same wire format as [`get_properties`] but with no dataset filter,
+    /// so a single `zfs get` call produces the full pool-wide view the
+    /// disk-usage sampler needs. The legacy `getDiskUsage` implementation
+    /// calls `zfs.get(null, [...], true, ...)` the same way.
+    pub async fn get_all_properties(
+        &self,
+        properties: &[&str],
+    ) -> Result<serde_json::Map<String, serde_json::Value>, ZfsError> {
+        self.get_properties(None, properties).await
+    }
+
     /// `zfs get -Hp -o name,property,value <props> [<dataset>]`.
     ///
     /// Returns `{ dataset: { property: value } }` to match the legacy

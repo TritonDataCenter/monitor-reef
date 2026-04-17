@@ -21,9 +21,15 @@ use tokio::time::{self, Interval, interval};
 use crate::cnapi::CnapiClient;
 use crate::heartbeater::status::StatusCollector;
 
+pub mod agents;
+pub mod disk_usage;
 pub mod status;
+pub mod watchers;
 
+pub use agents::{AgentsCollector, AgentsError};
+pub use disk_usage::{DiskUsage, DiskUsageError, DiskUsageSampler, VmSnapshot};
 pub use status::{StatusCollector as StatusCollectorType, StatusReport};
+pub use watchers::DirtyFlag;
 
 /// How often to post heartbeats. Matches `HEARTBEAT_INTERVAL = 5000` in the
 /// legacy agent.
@@ -60,12 +66,14 @@ impl HeartbeaterHandle {
 /// Periodic CNAPI client.
 ///
 /// Holds the pieces it needs to hit CNAPI: the client, a status collector,
+/// a shared [`DirtyFlag`] that watchers can poke to force a status sample,
 /// and timing knobs. Built via [`Heartbeater::new`], run via
 /// [`Heartbeater::spawn`] (background) or [`Heartbeater::run`] (awaits in
 /// place).
 pub struct Heartbeater {
     cnapi: Arc<CnapiClient>,
     collector: StatusCollector,
+    dirty: DirtyFlag,
     heartbeat_interval: Duration,
     status_check_interval: Duration,
     status_max_interval: Duration,
@@ -76,10 +84,23 @@ impl Heartbeater {
         Self {
             cnapi,
             collector,
+            dirty: DirtyFlag::new(),
             heartbeat_interval: HEARTBEAT_INTERVAL,
             status_check_interval: STATUS_CHECK_INTERVAL,
             status_max_interval: STATUS_MAX_INTERVAL,
         }
+    }
+
+    /// Use a specific [`DirtyFlag`] — typically one shared with the
+    /// zoneevent / zone-config watchers.
+    pub fn with_dirty_flag(mut self, dirty: DirtyFlag) -> Self {
+        self.dirty = dirty;
+        self
+    }
+
+    /// Shared dirty flag watchers should poke.
+    pub fn dirty_flag(&self) -> DirtyFlag {
+        self.dirty.clone()
     }
 
     pub fn with_heartbeat_interval(mut self, d: Duration) -> Self {
@@ -108,6 +129,20 @@ impl Heartbeater {
     }
 
     /// Run the heartbeat / status loops until the given notifier fires.
+    ///
+    /// Three timers drive the loop, mirroring the legacy
+    /// `StatusReporter.start()` behavior:
+    ///
+    /// * `heartbeat_interval` (default 5s) — post a heartbeat to CNAPI.
+    /// * `status_max_interval` (default 60s) — force a status sample
+    ///   even if nothing has signaled dirty, so CNAPI never sees stale
+    ///   data longer than a minute.
+    /// * `status_check_interval` (default 500ms) — check the dirty flag;
+    ///   if any watcher has raised it since the last sample, take a new
+    ///   one.
+    ///
+    /// The dirty flag is shared with the zoneevent + /etc/zones watchers
+    /// (see [`DirtyFlag`] and the `watchers` module).
     pub async fn run(self, shutdown: Arc<Notify>) {
         let mut heartbeat_tick: Interval = interval(self.heartbeat_interval);
         heartbeat_tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
@@ -118,9 +153,14 @@ impl Heartbeater {
         let mut max_tick: Interval = interval(self.status_max_interval);
         max_tick.set_missed_tick_behavior(time::MissedTickBehavior::Skip);
 
-        // The first `tick()` on an Interval fires immediately. We discard
-        // the initial status-max tick so we don't double-collect on startup.
+        // The first `tick()` on an Interval fires immediately. Consume the
+        // initial status-max tick so we don't double-sample on startup;
+        // the status-check arm below already covers the dirty-flag path.
         let _ = max_tick.tick().await;
+
+        // Mark dirty once at startup so CNAPI gets a first status sample
+        // well before the 60s `status_max_interval` has a chance to fire.
+        self.dirty.mark();
 
         loop {
             tokio::select! {
@@ -136,18 +176,16 @@ impl Heartbeater {
                 }
 
                 _ = max_tick.tick() => {
+                    // Hard floor: sample at least every
+                    // `status_max_interval`, even if nothing signaled dirty.
+                    self.dirty.take();
                     self.collect_and_post().await;
                 }
 
-                // Status-check-interval is kept for future use: the legacy
-                // agent used it to batch "dirty" signals from zoneevent /
-                // fs.watch. We haven't ported the watchers yet, so this
-                // branch currently only triggers the same collect_and_post
-                // as the max-interval branch — but at a finer cadence so
-                // post-startup we don't wait a full minute for the first
-                // status update.
                 _ = status_tick.tick() => {
-                    // No-op for now; once watchers exist they'll gate this.
+                    if self.dirty.take() {
+                        self.collect_and_post().await;
+                    }
                 }
             }
         }

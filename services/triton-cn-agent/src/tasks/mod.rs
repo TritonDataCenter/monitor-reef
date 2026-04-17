@@ -166,12 +166,16 @@ pub fn register_vmadm_mutation_tasks(
 /// Build a registry containing the tasks the SmartOS backend exposes.
 ///
 /// Today that's the platform-neutral set plus `server_sysinfo`, the
-/// read-only ZFS queries, and the read-only vmadm queries. Mutating ZFS,
-/// vmadm lifecycle, imgadm, Docker, and agent tasks get added here as
-/// they're ported.
+/// read-only ZFS queries, and the read-only vmadm queries, plus ZFS and
+/// vmadm mutations (lifecycle/update/destroy/snapshots).
 pub fn smartos_registry() -> TaskRegistry {
-    let zfs = Arc::new(ZfsTool::new());
-    let vmadm = Arc::new(VmadmTool::new());
+    smartos_registry_with(Arc::new(VmadmTool::new()), Arc::new(ZfsTool::new()))
+}
+
+/// Same as [`smartos_registry`] but with injectable tool instances so the
+/// binary can share a single `VmadmTool`/`ZfsTool` between the task
+/// handlers and the heartbeater's status collector.
+pub fn smartos_registry_with(vmadm: Arc<VmadmTool>, zfs: Arc<ZfsTool>) -> TaskRegistry {
     let mut builder = register_common_tasks(TaskRegistry::builder())
         .register(TaskName::ServerSysinfo, ServerSysinfoTask::new());
     builder = register_zfs_query_tasks(builder, zfs.clone());

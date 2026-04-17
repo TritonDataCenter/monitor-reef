@@ -22,6 +22,7 @@ pub mod context;
 pub mod heartbeater;
 pub mod registry;
 pub mod smartos;
+pub mod startup;
 pub mod tasks;
 
 pub use context::{AgentContext, AgentMetadata};
