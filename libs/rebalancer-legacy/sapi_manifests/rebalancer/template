@@ -68,7 +68,7 @@
 
         {{#REBALANCER_EXCLUDE_KEY_PREFIXES}}
         "exclude_key_prefixes": [{{#REBALANCER_EXCLUDE_KEY_PREFIXES}}
-            "{{.}}"{{^last}},{{/last}}{{/REBALANCER_EXCLUDE_KEY_PREFIXES}}
+            "{{value}}"{{^last}},{{/last}}{{/REBALANCER_EXCLUDE_KEY_PREFIXES}}
         ]
         {{/REBALANCER_EXCLUDE_KEY_PREFIXES}}
         {{^REBALANCER_EXCLUDE_KEY_PREFIXES}}

@@ -1220,7 +1220,96 @@ become inaccessible.  Options:
 2. Second evacuation **without** the filter — moves historical system
    objects.  Accept etag errors on recently-overwritten logs.
 3. Verify with pgclone query — confirm count is zero or near-zero.
-4. Decommission.
+4. If a small residual count remains (system logs whose etags keep
+   changing), validate that all remaining objects have copies on
+   other live sharks (see below).
+5. Decommission.
+
+#### Validating Remaining Objects Have Copies on Other Sharks
+
+After multiple evacuation passes, a residual count of system log
+objects may remain referencing the evacuated shark due to
+continuously changing etags.  Before decommissioning, verify that
+**every** remaining object has at least one copy on another live
+shark.
+
+Manta stores objects with durability level 2 (two copies on
+different sharks).  If 3.stor is being decommissioned and an object
+has copies on both 3.stor and 2.stor, removing 3.stor means muskie
+will try 3.stor (fail), then fall back to 2.stor (succeed).  No
+data is lost.
+
+**Step 1 — Count objects that reference ONLY the evacuated shark:**
+
+Create fresh pgclones and run against each moray shard:
+
+```bash
+# Objects where the evacuated shark is the ONLY copy (dangerous):
+psql -U postgres -h /tmp moray -c "
+  SELECT count(*) AS shark_only_objects
+  FROM manta
+  WHERE _value LIKE '%<SHARK>%'
+  AND _value NOT LIKE '%2.stor%'
+  AND _value NOT LIKE '%4.stor%'
+  AND _value NOT LIKE '%6.stor%'
+  AND _value NOT LIKE '%7.stor%';"
+```
+
+Adjust the `NOT LIKE` clauses to exclude all **other live sharks**
+in the datacenter.  If the count is 0, every remaining object has
+a copy elsewhere.
+
+**Step 2 — Count objects with a valid second copy:**
+
+```bash
+# Objects that have at least one other shark copy:
+psql -U postgres -h /tmp moray -c "
+  SELECT count(*) AS has_other_copy
+  FROM manta
+  WHERE _value LIKE '%<SHARK>%'
+  AND (_value LIKE '%2.stor%'
+       OR _value LIKE '%4.stor%'
+       OR _value LIKE '%6.stor%'
+       OR _value LIKE '%7.stor%');"
+```
+
+This count should equal the total remaining count from Step 6 of
+the second pass procedure.  If they match, all objects have a
+backup copy.
+
+**Step 3 — Verify no single-copy objects exist:**
+
+```bash
+# This should return 0 rows:
+psql -U postgres -h /tmp moray -c "
+  SELECT substring(_value from '\"key\":\"([^\"]+)\"') AS key,
+         substring(_value from '\"sharks\":(.{1,200})') AS sharks
+  FROM manta
+  WHERE _value LIKE '%<SHARK>%'
+  AND _value NOT LIKE '%2.stor%'
+  AND _value NOT LIKE '%4.stor%'
+  AND _value NOT LIKE '%6.stor%'
+  AND _value NOT LIKE '%7.stor%'
+  LIMIT 10;"
+```
+
+If any rows are returned, those objects exist ONLY on the
+evacuated shark.  Do NOT decommission until they are evacuated.
+
+**Interpreting results:**
+
+| Scenario | Safe to decommission? |
+|----------|----------------------|
+| Remaining count = 0 | Yes — no metadata references the shark |
+| Remaining count > 0, all have second copy | Yes — reads fall back to second shark |
+| Any objects with evacuated shark as only copy | **No** — those objects would be lost |
+
+**Read behavior after decommission:** When muskie serves an object
+whose metadata still lists the decommissioned shark, it will try
+that shark first (connection timeout/refused), then try the second
+shark (success).  This adds latency to reads for those specific
+objects but no data is lost.  Over time, GC will clean up the
+stale shark reference from metadata.
 
 #### Second Pass Procedure (Removing the Filter)
 
