@@ -96,12 +96,17 @@ else
     # PRIVATE KEY-----"), which is the format triton-auth's LegacyPrivateKey
     # is known to accept. OpenSSH's default binary format is riskier given
     # what the signing path currently parses.
-    /opt/local/bin/ssh-keygen -t rsa -b 4096 -N '' -m PEM \
+    /usr/bin/ssh-keygen -t rsa -b 4096 -N '' -m PEM \
         -C "triton-gateway@$(zonename)" \
         -f /data/cloudapi-signer-key.pem
     # ssh-keygen writes the public key to <path>.pub; our template refers
     # to that path unmodified, so no rename needed.
     mv /data/cloudapi-signer-key.pem.pub /data/cloudapi-signer-key.pub
+    # triton-gateway runs as nobody:nobody (method_credential in its SMF
+    # manifest); the signer key must be readable to that user. Tritonapi
+    # runs as root and can read 0400 root-owned files, but we keep the
+    # private key owner-readable-only, just owned by nobody.
+    chown nobody:nobody /data/cloudapi-signer-key.pem /data/cloudapi-signer-key.pub
     chmod 0400 /data/cloudapi-signer-key.pem
     chmod 0444 /data/cloudapi-signer-key.pub
 fi
