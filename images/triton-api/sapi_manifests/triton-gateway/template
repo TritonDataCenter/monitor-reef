@@ -2,5 +2,11 @@
     "bind_address": "0.0.0.0:80",
     "tritonapi_url": "http://127.0.0.1:8080",
     "cloudapi_url": "https://{{{CLOUDAPI_SERVICE}}}",
-    "tls_verify": false
+    "tls_verify": false,
+
+    "cloudapi_signer": {
+        "account": "admin",
+        "key_id": "from-file",
+        "key_file": "/data/cloudapi-signer-key.pem"
+    }
 }
