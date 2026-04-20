@@ -84,7 +84,7 @@ cat <<EOF
   "version": "$VERSION",
   "state": "active",
   "disabled": false,
-  "public": true,
+  "public": false,
   "published_at": "$PUBLISHED_AT",
   "type": "other",
   "os": "smartos",
