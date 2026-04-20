@@ -149,6 +149,24 @@ bits-upload: publish
 	    -n $(NAME) \
 	    $(NAME)
 
+#
+# buildimage is the zone-image step; tritonadm is a tool tarball, not a zone,
+# so this is a no-op. Kept as an explicit target because joyBuildImageAndUpload
+# in jenkins-joylib unconditionally runs `make ... buildimage ...`.
+#
+.PHONY: buildimage
+buildimage:
+	@echo "buildimage: no-op (tritonadm is a tool tarball, not a zone image)"
+
+#
+# Generic value-inspection target used by Jenkins: `make print-STAMP` prints
+# whatever STAMP resolves to. Mirrors the same facility in eng's Makefile.targ
+# which we don't include here.
+#
+.PHONY: print-%
+print-%:
+	@echo "$* is $($*)"
+
 .PHONY: clean
 clean:
-	rm -rf $(RELSTAGEDIR) bits $(RELEASE_TARBALL) $(MANIFEST)
+	rm -rf $(RELSTAGEDIR) bits $(RELEASE_TARBALL) $(MANIFEST) $(UUID_FILE)
