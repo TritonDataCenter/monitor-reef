@@ -79,49 +79,20 @@ else
     chmod 0444 /data/jwt-public.pem
 fi
 
-# Generate the CloudAPI-signer keypair if one isn't already on disk.
-# The triton-gateway signs outbound CloudAPI requests with this key on
-# behalf of whichever user's JWT arrives; CloudAPI honors isOperator so
-# the request is scoped to the user's account once the public key is
-# registered on the `admin` UFDS account (one-time operator action).
-#
-# Uses a 4096-bit RSA key to match what sdc-useradm / CloudAPI's older
-# code paths treat as the common case, and writes the PEM in the same
-# layout (private+public pair on the delegated dataset).
-if [[ -f /data/cloudapi-signer-key.pem && -f /data/cloudapi-signer-key.pub ]]; then
-    echo "CloudAPI signer keypair already present at /data/"
-else
-    echo "Generating RSA 4096 keypair at /data/cloudapi-signer-key{,.pub}"
-    # -m PEM writes the private key in PKCS#1 PEM ("-----BEGIN RSA
-    # PRIVATE KEY-----"), which is the format triton-auth's LegacyPrivateKey
-    # is known to accept. OpenSSH's default binary format is riskier given
-    # what the signing path currently parses.
-    /usr/bin/ssh-keygen -t rsa -b 4096 -N '' -m PEM \
-        -C "triton-gateway@$(zonename)" \
-        -f /data/cloudapi-signer-key.pem
-    # ssh-keygen writes the public key to <path>.pub; our template refers
-    # to that path unmodified, so no rename needed.
-    mv /data/cloudapi-signer-key.pem.pub /data/cloudapi-signer-key.pub
-    # triton-gateway runs as nobody:nobody (method_credential in its SMF
-    # manifest); the signer key must be readable to that user. Tritonapi
-    # runs as root and can read 0400 root-owned files, but we keep the
-    # private key owner-readable-only, just owned by nobody.
-    chown nobody:nobody /data/cloudapi-signer-key.pem /data/cloudapi-signer-key.pub
-    chmod 0400 /data/cloudapi-signer-key.pem
-    chmod 0444 /data/cloudapi-signer-key.pub
+# Sanity-check that config-agent has rendered the CloudAPI signer key.
+# The keypair is generated and registered by `tritonadm post-setup
+# tritonapi` on the headnode, stored in the triton-api service's SAPI
+# metadata, and rendered here by config-agent. If the file is missing
+# the operator hasn't run the bootstrap — fail loudly rather than let
+# triton-gateway come up without an operator key (it would 502 every
+# CloudAPI request).
+SIGNER_KEY=/opt/smartdc/triton-gateway/etc/cloudapi-signer-key.pem
+if [[ ! -s ${SIGNER_KEY} ]]; then
+    echo "ERROR: ${SIGNER_KEY} missing or empty." >&2
+    echo "       Run 'tritonadm post-setup tritonapi' on the headnode" >&2
+    echo "       to seed the CloudAPI signer key in SAPI." >&2
+    exit 1
 fi
-
-# Log the public key + MD5 fingerprint so the operator can register it
-# on the admin account via `sdc-useradm add-key admin <name> <pubkey>`.
-# (Automating this requires talking to UFDS; for now it's a one-time
-# manual step per DC.) MD5 is the format CloudAPI signature headers use.
-echo "=== CloudAPI signer public key (register on admin to activate) ==="
-cat /data/cloudapi-signer-key.pub
-echo "=== MD5 fingerprint ==="
-/usr/bin/ssh-keygen -E md5 -lf /data/cloudapi-signer-key.pub
-echo "=== To register, on the headnode run: ==="
-echo "    sdc-useradm add-key admin /var/tmp/triton-gateway-signer.pub"
-echo "=================================================================="
 
 # Import the long-running service manifests
 /usr/sbin/svccfg import /opt/custom/smf/manifests/triton-api.xml

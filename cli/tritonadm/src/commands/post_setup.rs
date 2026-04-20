@@ -298,6 +298,11 @@ const TRITONAPI_CONFIG: ServiceConfig = ServiceConfig {
 enum AddServiceAction {
     ImportImage,
     CreateService,
+    /// triton-api-only: generate the CloudAPI-signer keypair, store the
+    /// private key in SAPI service metadata, and register the public key
+    /// on the admin UFDS account. Idempotent with respect to admin keys
+    /// (any stale key named `triton-gateway` is removed first).
+    EnsureSignerKey,
     CreateInstance {
         server_uuid: String,
     },
@@ -432,6 +437,145 @@ fn get_ssh_key_fingerprint() -> Result<String> {
         .context("unexpected ssh-keygen output format")?
         .to_string();
     Ok(fingerprint)
+}
+
+/// Generate a fresh RSA 4096 keypair for the triton-gateway CloudAPI
+/// signer, store the private key in the triton-api service's SAPI
+/// metadata (`CLOUDAPI_SIGNER_KEY` / `CLOUDAPI_SIGNER_KEY_ID`), remove
+/// any stale `triton-gateway`-named key from the admin UFDS account,
+/// and register the new public key there via `sdc-useradm`.
+///
+/// Shells out to `/usr/bin/ssh-keygen` and `/opt/smartdc/bin/sdc-useradm`,
+/// so it must run on a Triton headnode. The private key is written to a
+/// tempdir that `tempfile` deletes on drop — nothing persists to disk
+/// on the headnode.
+async fn ensure_cloudapi_signer_key(
+    sapi: &sapi_client::Client,
+    svc_uuid: sapi_client::Uuid,
+    datacenter_name: &str,
+) -> Result<()> {
+    let useradm = std::path::Path::new("/opt/smartdc/bin/sdc-useradm");
+    if !tokio::fs::try_exists(useradm)
+        .await
+        .context("probe sdc-useradm existence")?
+    {
+        anyhow::bail!(
+            "cannot bootstrap triton-gateway signer key: \
+             /opt/smartdc/bin/sdc-useradm not found. \
+             `tritonadm post-setup tritonapi` must run on a Triton headnode."
+        );
+    }
+
+    // Tempdir + ssh-keygen: RSA 4096 in PKCS#1 PEM (triton-auth wants PEM).
+    let tmp = tempfile::tempdir().context("create tempdir for signer keygen")?;
+    let priv_path = tmp.path().join("signer");
+    let pub_path = tmp.path().join("signer.pub");
+    let comment = format!("triton-gateway@{datacenter_name}");
+    eprintln!("Generating CloudAPI signer keypair (RSA 4096)...");
+    let keygen = std::process::Command::new("/usr/bin/ssh-keygen")
+        .args([
+            "-t", "rsa", "-b", "4096", "-N", "", "-m", "PEM", "-C", &comment, "-f",
+        ])
+        .arg(&priv_path)
+        .output()
+        .context("failed to run ssh-keygen for signer")?;
+    if !keygen.status.success() {
+        anyhow::bail!(
+            "ssh-keygen failed: {}",
+            String::from_utf8_lossy(&keygen.stderr)
+        );
+    }
+
+    let priv_pem = tokio::fs::read_to_string(&priv_path)
+        .await
+        .context("read generated private key")?;
+
+    // Fingerprint: "4096 MD5:xx:xx:... comment (RSA)" → strip "MD5:".
+    let fp_out = std::process::Command::new("/usr/bin/ssh-keygen")
+        .args(["-E", "md5", "-lf"])
+        .arg(&pub_path)
+        .output()
+        .context("failed to fingerprint signer public key")?;
+    if !fp_out.status.success() {
+        anyhow::bail!(
+            "ssh-keygen -lf failed: {}",
+            String::from_utf8_lossy(&fp_out.stderr)
+        );
+    }
+    let fp_stdout = String::from_utf8_lossy(&fp_out.stdout);
+    let md5_prefixed = fp_stdout
+        .split_whitespace()
+        .nth(1)
+        .context("unexpected ssh-keygen -lf output")?;
+    let fingerprint = md5_prefixed
+        .strip_prefix("MD5:")
+        .unwrap_or(md5_prefixed)
+        .to_string();
+
+    // Push metadata to SAPI. Default action is "update" which merges,
+    // so we don't need to fetch-then-write.
+    let mut metadata = serde_json::Map::new();
+    metadata.insert("CLOUDAPI_SIGNER_KEY".into(), json!(priv_pem));
+    metadata.insert("CLOUDAPI_SIGNER_KEY_ID".into(), json!(fingerprint.clone()));
+    sapi.update_service()
+        .uuid(svc_uuid)
+        .body(sapi_client::types::UpdateServiceBody {
+            action: Some(sapi_client::types::UpdateAction::Update),
+            manifests: None,
+            metadata: Some(metadata),
+            params: None,
+        })
+        .send()
+        .await
+        .context("failed to update triton-api service metadata with signer key")?;
+    eprintln!("Stored signer key in SAPI metadata (fp MD5:{fingerprint})");
+
+    // Remove any pre-existing admin key named triton-gateway (stale from a
+    // previous bootstrap / earlier manual registration). `-H` suppresses
+    // the header row; output is tab-separated fingerprint<TAB>name.
+    let keys = std::process::Command::new(useradm)
+        .args(["keys", "admin", "-o", "fingerprint,name", "-H"])
+        .output()
+        .context("failed to list admin keys")?;
+    if !keys.status.success() {
+        anyhow::bail!(
+            "sdc-useradm keys admin failed: {}",
+            String::from_utf8_lossy(&keys.stderr)
+        );
+    }
+    for line in String::from_utf8_lossy(&keys.stdout).lines() {
+        let mut fields = line.split_whitespace();
+        let Some(fp) = fields.next() else { continue };
+        let name = fields.next().unwrap_or("");
+        if name == "triton-gateway" {
+            eprintln!("Removing stale triton-gateway key from admin ({fp})");
+            let del = std::process::Command::new(useradm)
+                .args(["delete-key", "-f", "admin", fp])
+                .output()
+                .context("failed to delete stale admin key")?;
+            if !del.status.success() {
+                anyhow::bail!(
+                    "sdc-useradm delete-key admin {fp} failed: {}",
+                    String::from_utf8_lossy(&del.stderr)
+                );
+            }
+        }
+    }
+
+    let add = std::process::Command::new(useradm)
+        .args(["add-key", "admin"])
+        .arg(&pub_path)
+        .args(["-n", "triton-gateway"])
+        .output()
+        .context("failed to add signer key to admin")?;
+    if !add.status.success() {
+        anyhow::bail!(
+            "sdc-useradm add-key admin failed: {}",
+            String::from_utf8_lossy(&add.stderr)
+        );
+    }
+    eprintln!("Registered triton-gateway on admin (fp MD5:{fingerprint})");
+    Ok(())
 }
 
 async fn cmd_add_service(
@@ -582,6 +726,22 @@ async fn cmd_add_service(
         actions.push(AddServiceAction::CreateService);
     }
 
+    // triton-api only: make sure the CloudAPI signer keypair exists in
+    // SAPI metadata (and is registered on admin) before any instance
+    // comes up -- config-agent renders the PEM at boot from that same
+    // metadata, and the zone fails to start without it.
+    if config.name == "triton-api" {
+        let key_present = existing_svc
+            .and_then(|s| s.metadata.as_ref())
+            .and_then(|m| m.get("CLOUDAPI_SIGNER_KEY"))
+            .and_then(|v| v.as_str())
+            .map(|s| !s.is_empty())
+            .unwrap_or(false);
+        if !key_present {
+            actions.push(AddServiceAction::EnsureSignerKey);
+        }
+    }
+
     match existing_inst {
         None => {
             actions.push(AddServiceAction::CreateInstance {
@@ -624,6 +784,12 @@ async fn cmd_add_service(
             }
             AddServiceAction::CreateService => {
                 eprintln!("  - Create \"{}\" service in SAPI", config.name);
+            }
+            AddServiceAction::EnsureSignerKey => {
+                eprintln!(
+                    "  - Generate CloudAPI signer keypair, store in SAPI metadata,\n    \
+                     and register the public key on admin as \"triton-gateway\""
+                );
             }
             AddServiceAction::CreateInstance { server_uuid } => {
                 eprintln!(
@@ -728,6 +894,11 @@ async fn cmd_add_service(
                     .into_inner();
                 eprintln!("Created service {} ({})", svc.uuid, svc.name);
                 svc_uuid = Some(svc.uuid);
+            }
+            AddServiceAction::EnsureSignerKey => {
+                let svc_id =
+                    svc_uuid.context("service UUID not available for signer key bootstrap")?;
+                ensure_cloudapi_signer_key(&sapi, svc_id, datacenter_name).await?;
             }
             AddServiceAction::CreateInstance { server_uuid } => {
                 let svc_id =

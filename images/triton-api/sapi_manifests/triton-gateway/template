@@ -6,7 +6,7 @@
 
     "cloudapi_signer": {
         "account": "admin",
-        "key_id": "from-file",
-        "key_file": "/data/cloudapi-signer-key.pem"
+        "key_id": "{{{CLOUDAPI_SIGNER_KEY_ID}}}",
+        "key_file": "/opt/smartdc/triton-gateway/etc/cloudapi-signer-key.pem"
     }
 }

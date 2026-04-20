@@ -33,6 +33,7 @@ napi-client = { path = "../../clients/internal/napi-client" }
 papi-client = { path = "../../clients/internal/papi-client" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true }
 triton-tls = { path = "../../libs/triton-tls" }
 uuid = { workspace = true }

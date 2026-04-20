@@ -4845,6 +4845,7 @@ dependencies = [
  "sapi-client",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
  "triton-tls",
  "uuid",
