@@ -87,8 +87,12 @@ fi
 # triton-gateway come up without an operator key (it would 502 every
 # CloudAPI request).
 SIGNER_KEY=/opt/smartdc/triton-gateway/etc/cloudapi-signer-key.pem
-if [[ ! -s ${SIGNER_KEY} ]]; then
-    echo "ERROR: ${SIGNER_KEY} missing or empty." >&2
+if ! grep -q '^-----BEGIN.*PRIVATE KEY-----' "${SIGNER_KEY}" 2>/dev/null; then
+    # Catches both the "file missing" and the "config-agent rendered an
+    # empty {{{CLOUDAPI_SIGNER_KEY}}} because SAPI metadata was never
+    # seeded" cases. The latter produces a 1-byte trailing-newline file
+    # that a simple `-s` check would treat as valid.
+    echo "ERROR: ${SIGNER_KEY} missing or not a PEM private key." >&2
     echo "       Run 'tritonadm post-setup tritonapi' on the headnode" >&2
     echo "       to seed the CloudAPI signer key in SAPI." >&2
     exit 1
