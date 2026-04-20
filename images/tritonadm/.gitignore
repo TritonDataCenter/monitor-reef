@@ -1,5 +1,7 @@
 bits/
 proto/
+cache/
+make_stamps/
 *.tgz
 *.imgmanifest
 *.uuid
