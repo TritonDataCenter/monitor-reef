@@ -550,7 +550,7 @@ async fn ensure_cloudapi_signer_key(
         if name == "triton-gateway" {
             eprintln!("Removing stale triton-gateway key from admin ({fp})");
             let del = std::process::Command::new(useradm)
-                .args(["delete-key", "-f", "admin", fp])
+                .args(["delete-key", "admin", fp])
                 .output()
                 .context("failed to delete stale admin key")?;
             if !del.status.success() {
