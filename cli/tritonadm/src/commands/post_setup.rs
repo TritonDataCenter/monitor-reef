@@ -439,16 +439,21 @@ fn get_ssh_key_fingerprint() -> Result<String> {
     Ok(fingerprint)
 }
 
-/// Generate a fresh RSA 4096 keypair for the triton-gateway CloudAPI
-/// signer, store the private key in the triton-api service's SAPI
-/// metadata (`CLOUDAPI_SIGNER_KEY` / `CLOUDAPI_SIGNER_KEY_ID`), remove
-/// any stale `triton-gateway`-named key from the admin UFDS account,
-/// and register the new public key there via `sdc-useradm`.
+/// Converge the state of the triton-gateway CloudAPI signer keypair.
+///
+/// Ensures that the triton-api service's SAPI metadata has:
+/// - `CLOUDAPI_SIGNER_KEY` — PKCS#1 RSA 4096 private key PEM.
+/// - `CLOUDAPI_SIGNER_PUB` — OpenSSH-format public key.
+/// - `CLOUDAPI_SIGNER_KEY_ID` — MD5 fingerprint (no "MD5:" prefix).
+///
+/// And that the admin UFDS account has exactly one key named
+/// `triton-gateway` whose fingerprint matches. Any mismatched keys
+/// under that name are deleted first. Idempotent: with fully-converged
+/// state this prints nothing semantic and makes no changes.
 ///
 /// Shells out to `/usr/bin/ssh-keygen` and `/opt/smartdc/bin/sdc-useradm`,
-/// so it must run on a Triton headnode. The private key is written to a
-/// tempdir that `tempfile` deletes on drop — nothing persists to disk
-/// on the headnode.
+/// so it must run on a Triton headnode. All generated material stays
+/// inside a tempdir `tempfile` deletes on drop.
 async fn ensure_cloudapi_signer_key(
     sapi: &sapi_client::Client,
     svc_uuid: sapi_client::Uuid,
@@ -466,73 +471,125 @@ async fn ensure_cloudapi_signer_key(
         );
     }
 
-    // Tempdir + ssh-keygen: RSA 4096 in PKCS#1 PEM (triton-auth wants PEM).
+    // Read current SAPI state so we know whether to generate, hydrate,
+    // or do nothing.
+    let svc = sapi
+        .get_service()
+        .uuid(svc_uuid)
+        .send()
+        .await
+        .context("failed to fetch triton-api service for signer-key check")?
+        .into_inner();
+    let metadata = svc.metadata.unwrap_or_default();
+    let sapi_priv = metadata
+        .get("CLOUDAPI_SIGNER_KEY")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let sapi_pub = metadata
+        .get("CLOUDAPI_SIGNER_PUB")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+    let sapi_fp = metadata
+        .get("CLOUDAPI_SIGNER_KEY_ID")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .map(str::to_string);
+
     let tmp = tempfile::tempdir().context("create tempdir for signer keygen")?;
     let priv_path = tmp.path().join("signer");
     let pub_path = tmp.path().join("signer.pub");
-    let comment = format!("triton-gateway@{datacenter_name}");
-    eprintln!("Generating CloudAPI signer keypair (RSA 4096)...");
-    let keygen = std::process::Command::new("/usr/bin/ssh-keygen")
-        .args([
-            "-t", "rsa", "-b", "4096", "-N", "", "-m", "PEM", "-C", &comment, "-f",
-        ])
-        .arg(&priv_path)
-        .output()
-        .context("failed to run ssh-keygen for signer")?;
-    if !keygen.status.success() {
-        anyhow::bail!(
-            "ssh-keygen failed: {}",
-            String::from_utf8_lossy(&keygen.stderr)
-        );
+
+    // Populate the tempdir (generate, or hydrate from SAPI) and
+    // collect any metadata fields we'll need to PUT back.
+    let mut sapi_updates: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
+    match sapi_priv {
+        Some(priv_pem) => {
+            tokio::fs::write(&priv_path, &priv_pem)
+                .await
+                .context("write private key to tempdir")?;
+            match sapi_pub {
+                Some(pk) => {
+                    tokio::fs::write(&pub_path, &pk)
+                        .await
+                        .context("write public key to tempdir")?;
+                }
+                None => {
+                    // Derive the public half from the private we just wrote.
+                    let out = std::process::Command::new("/usr/bin/ssh-keygen")
+                        .args(["-y", "-f"])
+                        .arg(&priv_path)
+                        .output()
+                        .context("failed to derive public key from private")?;
+                    if !out.status.success() {
+                        anyhow::bail!(
+                            "ssh-keygen -y failed: {}",
+                            String::from_utf8_lossy(&out.stderr)
+                        );
+                    }
+                    let mut pk = String::from_utf8_lossy(&out.stdout).trim_end().to_string();
+                    pk.push('\n');
+                    tokio::fs::write(&pub_path, &pk)
+                        .await
+                        .context("write derived public key to tempdir")?;
+                    sapi_updates.insert("CLOUDAPI_SIGNER_PUB".into(), json!(pk));
+                }
+            }
+        }
+        None => {
+            let comment = format!("triton-gateway@{datacenter_name}");
+            eprintln!("Generating CloudAPI signer keypair (RSA 4096)...");
+            let keygen = std::process::Command::new("/usr/bin/ssh-keygen")
+                .args([
+                    "-t", "rsa", "-b", "4096", "-N", "", "-m", "PEM", "-C", &comment, "-f",
+                ])
+                .arg(&priv_path)
+                .output()
+                .context("failed to run ssh-keygen for signer")?;
+            if !keygen.status.success() {
+                anyhow::bail!(
+                    "ssh-keygen failed: {}",
+                    String::from_utf8_lossy(&keygen.stderr)
+                );
+            }
+            let priv_pem = tokio::fs::read_to_string(&priv_path)
+                .await
+                .context("read generated private key")?;
+            let pub_key = tokio::fs::read_to_string(&pub_path)
+                .await
+                .context("read generated public key")?;
+            sapi_updates.insert("CLOUDAPI_SIGNER_KEY".into(), json!(priv_pem));
+            sapi_updates.insert("CLOUDAPI_SIGNER_PUB".into(), json!(pub_key));
+        }
     }
 
-    let priv_pem = tokio::fs::read_to_string(&priv_path)
-        .await
-        .context("read generated private key")?;
+    let fingerprint = match sapi_fp {
+        Some(fp) => fp,
+        None => {
+            let fp = fingerprint_md5(&pub_path)?;
+            sapi_updates.insert("CLOUDAPI_SIGNER_KEY_ID".into(), json!(fp.clone()));
+            fp
+        }
+    };
 
-    // Fingerprint: "4096 MD5:xx:xx:... comment (RSA)" → strip "MD5:".
-    let fp_out = std::process::Command::new("/usr/bin/ssh-keygen")
-        .args(["-E", "md5", "-lf"])
-        .arg(&pub_path)
-        .output()
-        .context("failed to fingerprint signer public key")?;
-    if !fp_out.status.success() {
-        anyhow::bail!(
-            "ssh-keygen -lf failed: {}",
-            String::from_utf8_lossy(&fp_out.stderr)
-        );
+    if !sapi_updates.is_empty() {
+        sapi.update_service()
+            .uuid(svc_uuid)
+            .body(sapi_client::types::UpdateServiceBody {
+                action: Some(sapi_client::types::UpdateAction::Update),
+                manifests: None,
+                metadata: Some(sapi_updates),
+                params: None,
+            })
+            .send()
+            .await
+            .context("failed to update triton-api service metadata with signer key")?;
+        eprintln!("Updated SAPI signer-key metadata (fp MD5:{fingerprint})");
     }
-    let fp_stdout = String::from_utf8_lossy(&fp_out.stdout);
-    let md5_prefixed = fp_stdout
-        .split_whitespace()
-        .nth(1)
-        .context("unexpected ssh-keygen -lf output")?;
-    let fingerprint = md5_prefixed
-        .strip_prefix("MD5:")
-        .unwrap_or(md5_prefixed)
-        .to_string();
 
-    // Push metadata to SAPI. Default action is "update" which merges,
-    // so we don't need to fetch-then-write.
-    let mut metadata = serde_json::Map::new();
-    metadata.insert("CLOUDAPI_SIGNER_KEY".into(), json!(priv_pem));
-    metadata.insert("CLOUDAPI_SIGNER_KEY_ID".into(), json!(fingerprint.clone()));
-    sapi.update_service()
-        .uuid(svc_uuid)
-        .body(sapi_client::types::UpdateServiceBody {
-            action: Some(sapi_client::types::UpdateAction::Update),
-            manifests: None,
-            metadata: Some(metadata),
-            params: None,
-        })
-        .send()
-        .await
-        .context("failed to update triton-api service metadata with signer key")?;
-    eprintln!("Stored signer key in SAPI metadata (fp MD5:{fingerprint})");
-
-    // Remove any pre-existing admin key named triton-gateway (stale from a
-    // previous bootstrap / earlier manual registration). `-H` suppresses
-    // the header row; output is tab-separated fingerprint<TAB>name.
+    // Converge admin UFDS state: exactly one key named `triton-gateway`
+    // with a matching fingerprint.
     let keys = std::process::Command::new(useradm)
         .args(["keys", "admin", "-o", "fingerprint,name", "-H"])
         .output()
@@ -543,39 +600,86 @@ async fn ensure_cloudapi_signer_key(
             String::from_utf8_lossy(&keys.stderr)
         );
     }
-    for line in String::from_utf8_lossy(&keys.stdout).lines() {
-        let mut fields = line.split_whitespace();
-        let Some(fp) = fields.next() else { continue };
-        let name = fields.next().unwrap_or("");
-        if name == "triton-gateway" {
-            eprintln!("Removing stale triton-gateway key from admin ({fp})");
-            let del = std::process::Command::new(useradm)
-                .args(["delete-key", "admin", fp])
-                .output()
-                .context("failed to delete stale admin key")?;
-            if !del.status.success() {
-                anyhow::bail!(
-                    "sdc-useradm delete-key admin {fp} failed: {}",
-                    String::from_utf8_lossy(&del.stderr)
-                );
-            }
+    let admin_keys: Vec<(String, String)> = String::from_utf8_lossy(&keys.stdout)
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let fp = fields.next()?.to_string();
+            let name = fields.next().unwrap_or("").to_string();
+            Some((fp, name))
+        })
+        .collect();
+
+    let matching_registered = admin_keys
+        .iter()
+        .any(|(fp, name)| name == "triton-gateway" && fp == &fingerprint);
+    let stale_fps: Vec<String> = admin_keys
+        .iter()
+        .filter(|(fp, name)| name == "triton-gateway" && fp != &fingerprint)
+        .map(|(fp, _)| fp.clone())
+        .collect();
+
+    if matching_registered && stale_fps.is_empty() {
+        return Ok(());
+    }
+
+    for fp in &stale_fps {
+        eprintln!("Removing stale triton-gateway key from admin ({fp})");
+        let del = std::process::Command::new(useradm)
+            .args(["delete-key", "admin", fp])
+            .output()
+            .context("failed to delete stale admin key")?;
+        if !del.status.success() {
+            anyhow::bail!(
+                "sdc-useradm delete-key admin {fp} failed: {}",
+                String::from_utf8_lossy(&del.stderr)
+            );
         }
     }
 
-    let add = std::process::Command::new(useradm)
-        .args(["add-key", "admin"])
-        .arg(&pub_path)
-        .args(["-n", "triton-gateway"])
+    if !matching_registered {
+        let add = std::process::Command::new(useradm)
+            .args(["add-key", "admin"])
+            .arg(&pub_path)
+            .args(["-n", "triton-gateway"])
+            .output()
+            .context("failed to add signer key to admin")?;
+        if !add.status.success() {
+            anyhow::bail!(
+                "sdc-useradm add-key admin failed: {}",
+                String::from_utf8_lossy(&add.stderr)
+            );
+        }
+        eprintln!("Registered triton-gateway on admin (fp MD5:{fingerprint})");
+    }
+
+    Ok(())
+}
+
+/// Compute the MD5 fingerprint (no "MD5:" prefix) of an OpenSSH public
+/// key file via ssh-keygen -lf.
+fn fingerprint_md5(pub_path: &std::path::Path) -> Result<String> {
+    let out = std::process::Command::new("/usr/bin/ssh-keygen")
+        .args(["-E", "md5", "-lf"])
+        .arg(pub_path)
         .output()
-        .context("failed to add signer key to admin")?;
-    if !add.status.success() {
+        .context("failed to fingerprint public key")?;
+    if !out.status.success() {
         anyhow::bail!(
-            "sdc-useradm add-key admin failed: {}",
-            String::from_utf8_lossy(&add.stderr)
+            "ssh-keygen -lf failed: {}",
+            String::from_utf8_lossy(&out.stderr)
         );
     }
-    eprintln!("Registered triton-gateway on admin (fp MD5:{fingerprint})");
-    Ok(())
+    // Output format: "4096 MD5:xx:xx:... comment (RSA)"
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let md5_prefixed = stdout
+        .split_whitespace()
+        .nth(1)
+        .context("unexpected ssh-keygen -lf output")?;
+    Ok(md5_prefixed
+        .strip_prefix("MD5:")
+        .unwrap_or(md5_prefixed)
+        .to_string())
 }
 
 async fn cmd_add_service(
@@ -726,20 +830,13 @@ async fn cmd_add_service(
         actions.push(AddServiceAction::CreateService);
     }
 
-    // triton-api only: make sure the CloudAPI signer keypair exists in
-    // SAPI metadata (and is registered on admin) before any instance
-    // comes up -- config-agent renders the PEM at boot from that same
-    // metadata, and the zone fails to start without it.
+    // triton-api only: converge the CloudAPI signer keypair state so
+    // that SAPI metadata has the PEM + fingerprint AND admin UFDS has
+    // the matching public key registered as `triton-gateway`. Always
+    // runs for triton-api; the action handler is idempotent and prints
+    // only when something actually changes.
     if config.name == "triton-api" {
-        let key_present = existing_svc
-            .and_then(|s| s.metadata.as_ref())
-            .and_then(|m| m.get("CLOUDAPI_SIGNER_KEY"))
-            .and_then(|v| v.as_str())
-            .map(|s| !s.is_empty())
-            .unwrap_or(false);
-        if !key_present {
-            actions.push(AddServiceAction::EnsureSignerKey);
-        }
+        actions.push(AddServiceAction::EnsureSignerKey);
     }
 
     match existing_inst {
@@ -787,8 +884,8 @@ async fn cmd_add_service(
             }
             AddServiceAction::EnsureSignerKey => {
                 eprintln!(
-                    "  - Generate CloudAPI signer keypair, store in SAPI metadata,\n    \
-                     and register the public key on admin as \"triton-gateway\""
+                    "  - Ensure CloudAPI signer keypair is in SAPI metadata and\n    \
+                     registered on admin as \"triton-gateway\" (idempotent)"
                 );
             }
             AddServiceAction::CreateInstance { server_uuid } => {
