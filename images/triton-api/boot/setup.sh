@@ -118,7 +118,7 @@ fi
 echo "=== CloudAPI signer public key (register on admin to activate) ==="
 cat /data/cloudapi-signer-key.pub
 echo "=== MD5 fingerprint ==="
-/opt/local/bin/ssh-keygen -E md5 -lf /data/cloudapi-signer-key.pub
+/usr/bin/ssh-keygen -E md5 -lf /data/cloudapi-signer-key.pub
 echo "=== To register, on the headnode run: ==="
 echo "    sdc-useradm add-key admin /var/tmp/triton-gateway-signer.pub"
 echo "=================================================================="
