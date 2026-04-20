@@ -40,11 +40,9 @@ ENGBLD_BITS_DIR = $(shell pwd)/bits
 
 # Common buildimage settings
 ENGBLD_USE_BUILDIMAGE = true
-# NOTE: BUILD_PLATFORM cannot be set here. eng/Makefile.defs unconditionally
-# assigns BUILD_PLATFORM=20181206T011455Z and is included AFTER image.defs.mk
-# by each per-image Makefile, so any value we set here gets stomped. The
-# per-image Makefile must re-override BUILD_PLATFORM AFTER including
-# Makefile.defs. Our Jenkins builders run on 20210826T002459Z.
+# NOTE: any variable that eng's Makefile.defs reassigns (e.g. BUILD_PLATFORM)
+# must NOT be set here — it'd be silently stomped because Makefile.defs is
+# included after this file. Put those in image.post-defs.mk instead.
 
 # Use the local copy of buildimage from deps/eng
 ENGBLD_FORCE_LOCAL_BUILDIMAGE = true
