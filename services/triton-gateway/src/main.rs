@@ -30,7 +30,8 @@ use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
 use rustls::{DigitallySignedStruct, Error as RustlsError, SignatureScheme};
 use serde::Deserialize;
 use tracing::{Instrument, error, info, info_span, warn};
-use triton_auth_session::JwksClient;
+use triton_auth::{AuthConfig, KeySource};
+use triton_auth_session::{Claims, JwksClient};
 
 /// Per-request identifier used for log correlation across gateway and backends.
 /// Stored in request extensions so the proxy handler can read it and forward
@@ -85,6 +86,12 @@ struct GatewayState {
     /// uses this on every request except the public `/v1/auth/*` bootstrap
     /// endpoints. `None` disables auth entirely (dev without tritonapi).
     jwks: Option<Arc<JwksClient>>,
+    /// CloudAPI signer: the operator SSH key used to sign requests to
+    /// CloudAPI on the authenticated user's behalf. `None` disables the
+    /// signer (valid JWT → request passes through unsigned and CloudAPI
+    /// will reject with InvalidCredentials, which is fine during
+    /// bringup).
+    cloudapi_signer: Option<Arc<AuthConfig>>,
 }
 
 #[derive(Deserialize)]
@@ -105,6 +112,40 @@ struct GatewayConfig {
     /// disables gateway-side JWT verification (dev only).
     #[serde(default)]
     jwks_url: Option<String>,
+    /// Optional CloudAPI signer settings. When present, valid-JWT
+    /// requests bound for CloudAPI have their path rewritten from
+    /// `/my/...` to `/{claims.username}/...` and are signed with this
+    /// operator key before being forwarded. When absent, CloudAPI
+    /// requests are forwarded verbatim (useful before the signer key
+    /// has been provisioned).
+    #[serde(default)]
+    cloudapi_signer: Option<CloudapiSignerConfig>,
+}
+
+/// Mirrors user-portal's `CloudApiConfig` fields: `account` +
+/// `key_id` required, `key_file` optional (auto-detect via agent /
+/// `~/.ssh/` when absent).
+#[derive(Deserialize)]
+struct CloudapiSignerConfig {
+    /// Operator account login whose SSH key signs the outbound requests.
+    account: String,
+    /// SSH key fingerprint (MD5 or SHA256). Required; used as the
+    /// `keyId` path in the HTTP Signature header and as a lookup key
+    /// when `key_file` is not set.
+    key_id: String,
+    /// Filesystem path to the PEM-encoded private key. When `None`,
+    /// `KeySource::auto` searches the SSH agent and `~/.ssh/` for a
+    /// key matching `key_id`.
+    #[serde(default)]
+    key_file: Option<String>,
+}
+
+fn build_cloudapi_signer(cfg: &CloudapiSignerConfig) -> AuthConfig {
+    let key_source = match &cfg.key_file {
+        Some(path) => KeySource::file(path),
+        None => KeySource::auto(&cfg.key_id),
+    };
+    AuthConfig::new(&cfg.account, key_source)
 }
 
 fn default_bind_address() -> String {
@@ -123,6 +164,7 @@ impl Default for GatewayConfig {
             cloudapi_url: None,
             tls_verify: None,
             jwks_url: None,
+            cloudapi_signer: None,
         }
     }
 }
@@ -186,11 +228,28 @@ async fn main() -> Result<()> {
         }
     };
 
+    let cloudapi_signer = config.cloudapi_signer.as_ref().map(|cfg| {
+        info!(
+            "CloudAPI signer configured: account={} key_id={} key_file={:?}",
+            cfg.account, cfg.key_id, cfg.key_file
+        );
+        Arc::new(build_cloudapi_signer(cfg))
+    });
+    if cloudapi_signer.is_none() && cloudapi.is_some() {
+        warn!(
+            "CloudAPI proxy is configured but no cloudapi_signer is set; \
+             valid-JWT requests will be forwarded unsigned and CloudAPI will \
+             reject them. Configure [cloudapi_signer] to enable the operator \
+             impersonation path."
+        );
+    }
+
     let state = Arc::new(GatewayState {
         client,
         tritonapi: tritonapi.clone(),
         cloudapi: cloudapi.clone(),
         jwks,
+        cloudapi_signer,
     });
 
     // All tritonapi-native routes live under /v1/*. Everything else proxies
@@ -374,7 +433,10 @@ async fn proxy_to_tritonapi(
 
 /// Forward a request to CloudAPI. Returns 502 if CloudAPI is unreachable,
 /// or 501 if no CloudAPI URL is configured. Enforces a valid JWT first
-/// (when JWKS is configured) since the signer path will consume Claims.
+/// (when JWKS is configured), then — when the signer is configured —
+/// rewrites the path from `/my/...` to `/{claims.username}/...`, strips
+/// the client's JWT credentials, and signs the outbound request with
+/// the operator SSH key.
 async fn proxy_to_cloudapi(
     State(state): State<Arc<GatewayState>>,
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
@@ -392,7 +454,101 @@ async fn proxy_to_cloudapi(
     {
         return resp;
     }
+    if let Some(signer) = state.cloudapi_signer.as_ref()
+        && let Err(resp) = sign_cloudapi_request(signer, &mut req).await
+    {
+        return resp;
+    }
     dispatch(&state, target, peer_addr, req, "CloudAPI").await
+}
+
+/// Rewrite `/my/...` to `/{claims.username}/...`, strip the JWT
+/// credentials the client sent, and replace them with an HTTP Signature
+/// header signed by the operator key. CloudAPI honors `isOperator`, so
+/// the operator-signed request scoped to the user's account path is
+/// authorized exactly as if the user had signed it themselves.
+async fn sign_cloudapi_request(
+    signer: &AuthConfig,
+    req: &mut axum::extract::Request,
+) -> Result<(), Response> {
+    let claims = req
+        .extensions()
+        .get::<Arc<Claims>>()
+        .cloned()
+        .ok_or_else(|| {
+            // Should be unreachable: authenticate_cloudapi_request always
+            // inserts Claims before we get here. Belt-and-braces 500.
+            error!("sign_cloudapi_request called without Claims in extensions");
+            (StatusCode::INTERNAL_SERVER_ERROR, "missing claims\n").into_response()
+        })?;
+
+    // Rewrite /my/... paths so CloudAPI scopes to the authenticated user.
+    rewrite_my_prefix(req, &claims.username).map_err(|e| {
+        error!("failed to rewrite request URI: {e}");
+        (StatusCode::BAD_REQUEST, "malformed request URI\n").into_response()
+    })?;
+
+    req.headers_mut().remove(http::header::AUTHORIZATION);
+    req.headers_mut().remove(http::header::COOKIE);
+
+    let method = req.method().as_str().to_lowercase();
+    let path_and_query = req
+        .uri()
+        .path_and_query()
+        .map(|p| p.as_str().to_string())
+        .unwrap_or_else(|| "/".to_string());
+
+    let (date_header, auth_header) = triton_auth::sign_request(signer, &method, &path_and_query)
+        .await
+        .map_err(|e| {
+            error!("CloudAPI signing failed: {e}");
+            (StatusCode::BAD_GATEWAY, "signing failed\n").into_response()
+        })?;
+
+    let date_value = HeaderValue::from_str(&date_header).map_err(|e| {
+        error!("Date header not ASCII-safe: {e}");
+        (StatusCode::INTERNAL_SERVER_ERROR, "bad date header\n").into_response()
+    })?;
+    let auth_value = HeaderValue::from_str(&auth_header).map_err(|e| {
+        error!("Authorization header not ASCII-safe: {e}");
+        (StatusCode::INTERNAL_SERVER_ERROR, "bad signature header\n").into_response()
+    })?;
+
+    req.headers_mut().insert(http::header::DATE, date_value);
+    req.headers_mut()
+        .insert(http::header::AUTHORIZATION, auth_value);
+    Ok(())
+}
+
+/// Replace a leading `/my` path segment with `/{username}` in-place.
+/// Paths that do not start with `/my/` (or equal `/my`) pass through
+/// unchanged so the caller can address arbitrary account-scoped paths
+/// directly (e.g. `/datacenters`, `/{other_account}/machines`).
+fn rewrite_my_prefix(
+    req: &mut axum::extract::Request,
+    username: &str,
+) -> Result<(), anyhow::Error> {
+    let uri = req.uri().clone();
+    let path = uri.path();
+    let new_path_owned: String;
+    let new_path = if path == "/my" {
+        new_path_owned = format!("/{username}");
+        new_path_owned.as_str()
+    } else if let Some(rest) = path.strip_prefix("/my/") {
+        new_path_owned = format!("/{username}/{rest}");
+        new_path_owned.as_str()
+    } else {
+        return Ok(());
+    };
+
+    let new_pq = match uri.query() {
+        Some(q) => PathAndQuery::try_from(format!("{new_path}?{q}"))?,
+        None => PathAndQuery::try_from(new_path.to_string())?,
+    };
+    let mut parts = uri.into_parts();
+    parts.path_and_query = Some(new_pq);
+    *req.uri_mut() = hyper::Uri::from_parts(parts)?;
+    Ok(())
 }
 
 /// Inspect the incoming request and route it to either the WebSocket tunnel
