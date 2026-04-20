@@ -509,6 +509,13 @@ async fn ensure_cloudapi_signer_key(
             tokio::fs::write(&priv_path, &priv_pem)
                 .await
                 .context("write private key to tempdir")?;
+            // ssh-keygen refuses to touch a private key file that's
+            // group/world-readable; the default tokio::fs::write mode
+            // is 0644, which trips its safety check.
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(&priv_path, std::fs::Permissions::from_mode(0o600))
+                .await
+                .context("tighten permissions on tempdir private key")?;
             match sapi_pub {
                 Some(pk) => {
                     tokio::fs::write(&pub_path, &pk)
