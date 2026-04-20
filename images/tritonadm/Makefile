@@ -26,11 +26,13 @@ ENGBLD_USE_BUILDIMAGE := false
 
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.defs
 
-# We don't need the rest of the eng Makefile chain (Makefile.rust.defs pulls
-# in toolchain bootstrap; Makefile.targ adds buildimage targets we don't use).
-# Define the small subset of tools we actually invoke.
-CARGO ?= cargo
-TAR   ?= tar
+# Pull in eng's Rust toolchain management so CI hosts auto-install rustup
+# on first build. $(CARGO) and $(CARGO_EXEC) come from here; any recipe that
+# invokes $(CARGO) must carry an order-only dep on | $(CARGO_EXEC) so the
+# toolchain is fetched before cargo runs (see comment in Makefile.rust.defs).
+include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.defs
+
+TAR ?= tar
 
 ROOT            := $(shell pwd)
 RELSTAGEDIR     := $(ROOT)/proto
@@ -68,7 +70,7 @@ endif
 all: release_build
 
 .PHONY: release_build
-release_build:
+release_build: | $(CARGO_EXEC)
 	cd $(REPO_ROOT) && $(CARGO) build --release -p tritonadm
 ifeq ($(IS_ILLUMOS),true)
 	/usr/bin/elfedit -e 'dyn:delete RUNPATH' $(CARGO_BIN) || true
@@ -167,6 +169,9 @@ buildimage:
 print-%:
 	@echo "$* is $($*)"
 
-.PHONY: clean
-clean:
+# Double-colon so it composes with clean:: in Makefile.rust.targ below.
+clean::
 	rm -rf $(RELSTAGEDIR) bits $(RELEASE_TARBALL) $(MANIFEST) $(UUID_FILE)
+
+# Brings in the $(CARGO_EXEC): rust-fetch rule that installs rustup on demand.
+include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.targ

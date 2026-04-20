@@ -40,7 +40,7 @@ SERVICE_BINS = triton-api-server triton-gateway
 CLEAN_FILES += bits proto target
 
 .PHONY: release_build
-release_build:
+release_build: | $(CARGO_EXEC)
 	cd $(REPO_ROOT) && \
 	    for pkg in $(SERVICE_BINS); do \
 	        $(CARGO) build --release -p $$pkg; \
