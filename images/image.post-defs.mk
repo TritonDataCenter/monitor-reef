@@ -9,13 +9,21 @@
 #
 
 #
-# Shared settings that must be applied AFTER eng's Makefile.defs, typically
-# because Makefile.defs unconditionally reassigns a variable and our value
-# would otherwise be silently stomped.
+# Shared settings applied after all eng Makefile.*.defs includes. Two kinds
+# of thing belong here:
 #
-# Each images/<service>/Makefile should include this immediately after it
-# includes $(REPO_ROOT)/deps/eng/tools/mk/Makefile.defs. Anything that can
-# be set safely BEFORE Makefile.defs belongs in image.defs.mk instead.
+#   * Overrides for variables that eng's Makefile.defs unconditionally
+#     reassigns (today: BUILD_PLATFORM).
+#
+#   * Rules that reference variables defined by later eng includes — notably
+#     $(CARGO_EXEC), which Makefile.rust.defs sets. An order-only prereq
+#     like `| $(CARGO_EXEC)` is expanded when the rule is read, so the rule
+#     has to land AFTER rust.defs has defined the variable.
+#
+# Include from each images/<service>/Makefile AFTER all eng *.defs files
+# (Makefile.defs, Makefile.agent_prebuilt.defs, Makefile.rust.defs, etc.).
+# Anything that can be set safely BEFORE eng's Makefile.defs belongs in
+# image.defs.mk instead.
 #
 
 # Our Jenkins builders run on 20210826T002459Z. Makefile.defs hardcodes

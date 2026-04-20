@@ -13,10 +13,13 @@ DIR_NAME = triton-api
 
 include ../image.defs.mk
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.defs
-include ../image.post-defs.mk
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.agent_prebuilt.defs
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.defs
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.smf.defs
+# Must come AFTER Makefile.rust.defs because image.post-defs.mk's
+# _image-cargo-build rule carries a `| $(CARGO_EXEC)` order-only dep,
+# and CARGO_EXEC isn't set until rust.defs runs.
+include ../image.post-defs.mk
 
 # Triton agents bundled into the image by buildimage
 AGENTS = config registrar

@@ -25,13 +25,16 @@ include ../image.defs.mk
 ENGBLD_USE_BUILDIMAGE := false
 
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.defs
-include ../image.post-defs.mk
 
 # Pull in eng's Rust toolchain management so CI hosts auto-install rustup
 # on first build. $(CARGO) and $(CARGO_EXEC) come from here; any recipe that
 # invokes $(CARGO) must carry an order-only dep on | $(CARGO_EXEC) so the
 # toolchain is fetched before cargo runs (see comment in Makefile.rust.defs).
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.defs
+# Must come AFTER Makefile.rust.defs because image.post-defs.mk's
+# _image-cargo-build rule carries a `| $(CARGO_EXEC)` order-only dep,
+# and CARGO_EXEC isn't set until rust.defs runs.
+include ../image.post-defs.mk
 
 TAR ?= tar
 
