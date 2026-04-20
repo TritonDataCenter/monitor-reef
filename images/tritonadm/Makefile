@@ -41,6 +41,12 @@ TAR ?= tar
 ROOT            := $(shell pwd)
 RELSTAGEDIR     := $(ROOT)/proto
 RELEASE_TARBALL := tritonadm-$(STAMP).tgz
+# The .sh is a self-extracting shell archive wrapping $(RELEASE_TARBALL) —
+# this is the file that gets published to the updates server and exec'd by
+# sdcadm experimental get-tritonadm. The tarball stays local for dev
+# inspection (it's the shar's payload and not uploaded by itself). See
+# docs/design/tritonadm-distribution.md.
+RELEASE_SHAR    := tritonadm-$(STAMP).sh
 MANIFEST        := tritonadm-$(STAMP).imgmanifest
 UUID_FILE       := $(ROOT)/$(STAMP).uuid
 
@@ -58,7 +64,7 @@ INSTALL_PREFIX := root/opt/triton/tritonadm
 # (elvish, powershell), but these three cover real operators.
 COMPLETION_SHELLS := bash zsh fish
 
-CLEAN_FILES += bits proto $(RELEASE_TARBALL) $(MANIFEST) $(UUID_FILE)
+CLEAN_FILES += bits proto $(RELEASE_TARBALL) $(RELEASE_SHAR) $(MANIFEST) $(UUID_FILE)
 
 #
 # Detect build host. Stripping RPATH/RUNPATH only works on illumos with
@@ -123,22 +129,27 @@ release: all $(UUID_FILE)
 	cp $(REPO_ROOT)/tools/install-tritonadm.sh $(RELSTAGEDIR)/install.sh
 	chmod 755 $(RELSTAGEDIR)/install.sh
 	(cd $(RELSTAGEDIR) && $(TAR) -czf $(ROOT)/$(RELEASE_TARBALL) install.sh root)
+	@echo "Wrapping $(RELEASE_TARBALL) as $(RELEASE_SHAR)"
+	$(ROOT)/scripts/make-shar.sh \
+	    --tarball $(ROOT)/$(RELEASE_TARBALL) \
+	    --output $(ROOT)/$(RELEASE_SHAR)
 	@echo "Generating $(MANIFEST)"
 	$(ROOT)/scripts/make-manifest.sh \
-	    --tarball $(ROOT)/$(RELEASE_TARBALL) \
+	    --file $(ROOT)/$(RELEASE_SHAR) \
 	    --uuid $$(cat $(UUID_FILE)) \
 	    --version $(STAMP) \
 	    --branch $(BRANCH) \
 	    > $(ROOT)/$(MANIFEST)
 	@echo ""
 	@echo "Built:"
-	@echo "  $(ROOT)/$(RELEASE_TARBALL)"
+	@echo "  $(ROOT)/$(RELEASE_TARBALL)   (local-only; wrapped into the shar)"
+	@echo "  $(ROOT)/$(RELEASE_SHAR)      (what gets published)"
 	@echo "  $(ROOT)/$(MANIFEST)"
 
 .PHONY: publish
 publish: release
 	@mkdir -p $(ENGBLD_BITS_DIR)/$(NAME)
-	cp $(ROOT)/$(RELEASE_TARBALL) $(ENGBLD_BITS_DIR)/$(NAME)/$(RELEASE_TARBALL)
+	cp $(ROOT)/$(RELEASE_SHAR) $(ENGBLD_BITS_DIR)/$(NAME)/$(RELEASE_SHAR)
 	cp $(ROOT)/$(MANIFEST) $(ENGBLD_BITS_DIR)/$(NAME)/$(MANIFEST)
 	@echo "Published bits to $(ENGBLD_BITS_DIR)/$(NAME)/"
 

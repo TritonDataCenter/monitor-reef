@@ -10,30 +10,36 @@
 #
 
 #
-# Generate an IMGAPI v2 manifest (type "other") for a tritonadm tarball.
-# Emitted on stdout. Matches the convention sdcadm uses for its own releases.
+# Generate an IMGAPI v2 manifest (type "other") for a tritonadm build.
+# Emitted on stdout. Mirrors sdcadm's own manifest convention
+# (sdcadm/tools/mk-shar): `type: other`, `os: other`, `public: false`,
+# compression absent (the file is a self-extracting bash script, not a
+# compressed blob IMGAPI should wrap).
 #
-# The UUID is passed in (not generated here) because the build pipeline
+# The UUID is passed in rather than generated because the build pipeline
 # bakes the same UUID into the tarball's etc/version, so embedded-mode
 # installs can preserve image identity round-trip.
 #
 # Usage:
-#   make-manifest.sh --tarball <path> --uuid <uuid> --version <stamp> \
+#   make-manifest.sh --file <path> --uuid <uuid> --version <stamp> \
 #                    --branch <branch>
+#
+# --file points at whatever gets uploaded to the updates server. Today
+# that's tritonadm-<stamp>.sh (the shar).
 #
 
 set -o errexit
 set -o pipefail
 set -o nounset
 
-TARBALL=""
+FILE=""
 UUID=""
 VERSION=""
 BRANCH=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --tarball) TARBALL="$2"; shift 2 ;;
+        --file)    FILE="$2";    shift 2 ;;
         --uuid)    UUID="$2";    shift 2 ;;
         --version) VERSION="$2"; shift 2 ;;
         --branch)  BRANCH="$2";  shift 2 ;;
@@ -41,13 +47,13 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "$TARBALL" || -z "$UUID" || -z "$VERSION" || -z "$BRANCH" ]]; then
-    echo "Usage: $0 --tarball <path> --uuid <uuid> --version <stamp> --branch <branch>" >&2
+if [[ -z "$FILE" || -z "$UUID" || -z "$VERSION" || -z "$BRANCH" ]]; then
+    echo "Usage: $0 --file <path> --uuid <uuid> --version <stamp> --branch <branch>" >&2
     exit 2
 fi
 
-if [[ ! -f "$TARBALL" ]]; then
-    echo "tarball not found: $TARBALL" >&2
+if [[ ! -f "$FILE" ]]; then
+    echo "file not found: $FILE" >&2
     exit 1
 fi
 
@@ -56,21 +62,21 @@ fi
 # build hosts. Use sha1sum where available, openssl as a fallback.
 #
 if command -v sha1sum >/dev/null 2>&1; then
-    SHA1=$(sha1sum "$TARBALL" | awk '{print $1}')
+    SHA1=$(sha1sum "$FILE" | awk '{print $1}')
 elif command -v digest >/dev/null 2>&1; then
-    SHA1=$(digest -a sha1 "$TARBALL")
+    SHA1=$(digest -a sha1 "$FILE")
 else
-    SHA1=$(openssl dgst -sha1 "$TARBALL" | awk '{print $NF}')
+    SHA1=$(openssl dgst -sha1 "$FILE" | awk '{print $NF}')
 fi
 
 if command -v stat >/dev/null 2>&1; then
-    if stat -c%s "$TARBALL" >/dev/null 2>&1; then
-        SIZE=$(stat -c%s "$TARBALL")
+    if stat -c%s "$FILE" >/dev/null 2>&1; then
+        SIZE=$(stat -c%s "$FILE")
     else
-        SIZE=$(stat -f%z "$TARBALL")
+        SIZE=$(stat -f%z "$FILE")
     fi
 else
-    SIZE=$(wc -c < "$TARBALL" | tr -d ' ')
+    SIZE=$(wc -c < "$FILE" | tr -d ' ')
 fi
 
 PUBLISHED_AT=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
@@ -87,12 +93,12 @@ cat <<EOF
   "public": false,
   "published_at": "$PUBLISHED_AT",
   "type": "other",
-  "os": "smartos",
+  "os": "other",
   "files": [
     {
       "sha1": "$SHA1",
       "size": $SIZE,
-      "compression": "gzip"
+      "compression": "none"
     }
   ],
   "description": "Triton admin CLI (Rust successor to sdcadm)",

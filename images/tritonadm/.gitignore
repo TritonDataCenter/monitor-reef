@@ -3,5 +3,6 @@ proto/
 cache/
 make_stamps/
 *.tgz
+tritonadm-*.sh
 *.imgmanifest
 *.uuid
