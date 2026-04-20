@@ -13,7 +13,13 @@
 # Generate an IMGAPI v2 manifest (type "other") for a tritonadm tarball.
 # Emitted on stdout. Matches the convention sdcadm uses for its own releases.
 #
-# Usage: make-manifest.sh --tarball <path> --version <stamp> --branch <branch>
+# The UUID is passed in (not generated here) because the build pipeline
+# bakes the same UUID into the tarball's etc/version, so embedded-mode
+# installs can preserve image identity round-trip.
+#
+# Usage:
+#   make-manifest.sh --tarball <path> --uuid <uuid> --version <stamp> \
+#                    --branch <branch>
 #
 
 set -o errexit
@@ -21,20 +27,22 @@ set -o pipefail
 set -o nounset
 
 TARBALL=""
+UUID=""
 VERSION=""
 BRANCH=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --tarball) TARBALL="$2"; shift 2 ;;
+        --uuid)    UUID="$2";    shift 2 ;;
         --version) VERSION="$2"; shift 2 ;;
         --branch)  BRANCH="$2";  shift 2 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
 done
 
-if [[ -z "$TARBALL" || -z "$VERSION" || -z "$BRANCH" ]]; then
-    echo "Usage: $0 --tarball <path> --version <stamp> --branch <branch>" >&2
+if [[ -z "$TARBALL" || -z "$UUID" || -z "$VERSION" || -z "$BRANCH" ]]; then
+    echo "Usage: $0 --tarball <path> --uuid <uuid> --version <stamp> --branch <branch>" >&2
     exit 2
 fi
 
@@ -65,7 +73,6 @@ else
     SIZE=$(wc -c < "$TARBALL" | tr -d ' ')
 fi
 
-UUID=$(uuidgen | tr '[:upper:]' '[:lower:]')
 PUBLISHED_AT=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
 
 cat <<EOF

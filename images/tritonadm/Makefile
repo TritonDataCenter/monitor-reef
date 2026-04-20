@@ -36,6 +36,7 @@ ROOT            := $(shell pwd)
 RELSTAGEDIR     := $(ROOT)/proto
 RELEASE_TARBALL := tritonadm-$(STAMP).tgz
 MANIFEST        := tritonadm-$(STAMP).imgmanifest
+UUID_FILE       := $(ROOT)/$(STAMP).uuid
 
 # Cargo target output (workspace-shared)
 CARGO_BIN := $(REPO_ROOT)/target/release/tritonadm
@@ -48,7 +49,7 @@ INSTALL_PREFIX := root/opt/triton/tritonadm
 # (elvish, powershell), but these three cover real operators.
 COMPLETION_SHELLS := bash zsh fish
 
-CLEAN_FILES += bits proto $(RELEASE_TARBALL) $(MANIFEST)
+CLEAN_FILES += bits proto $(RELEASE_TARBALL) $(MANIFEST) $(UUID_FILE)
 
 #
 # Detect build host. Stripping RPATH/RUNPATH only works on illumos with
@@ -77,8 +78,16 @@ else
 	@echo "         Resulting tarball is for local testing only."
 endif
 
+# Generate the IMGAPI image UUID once per release so the same UUID can be
+# baked into the tarball (etc/version) AND referenced by the manifest. The
+# file is per-stamp so reruns of the same build reuse the UUID; clean drops
+# it. Required by the embedded install path so /etc/version stays
+# round-trippable.
+$(UUID_FILE):
+	uuidgen | tr '[:upper:]' '[:lower:]' > $@
+
 .PHONY: release
-release: all
+release: all $(UUID_FILE)
 	@echo "Staging $(RELEASE_TARBALL)"
 	@rm -rf $(RELSTAGEDIR)
 	@mkdir -p $(RELSTAGEDIR)/$(INSTALL_PREFIX)/bin
@@ -86,16 +95,30 @@ release: all
 	@mkdir -p $(RELSTAGEDIR)/$(INSTALL_PREFIX)/share/completions
 	cp $(CARGO_BIN) $(RELSTAGEDIR)/$(INSTALL_PREFIX)/bin/tritonadm
 	chmod 755 $(RELSTAGEDIR)/$(INSTALL_PREFIX)/bin/tritonadm
-	@echo "$(STAMP)" > $(RELSTAGEDIR)/$(INSTALL_PREFIX)/etc/version
+	# Bake uuid + version + build_at into etc/version. install-tritonadm.sh
+	# in embedded mode reads uuid + version from here; install-time then
+	# rewrites etc/version with installed_at + source. See the install
+	# script header comment for the canonical format.
+	@printf 'uuid=%s\nversion=%s\nbuild_at=%s\n' \
+	    "$$(cat $(UUID_FILE))" \
+	    "$(STAMP)" \
+	    "$$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+	    > $(RELSTAGEDIR)/$(INSTALL_PREFIX)/etc/version
 	@for shell in $(COMPLETION_SHELLS); do \
 	    $(CARGO_BIN) completion $$shell \
 	        > $(RELSTAGEDIR)/$(INSTALL_PREFIX)/share/completions/tritonadm.$$shell \
 	        || { echo "completion $$shell failed"; exit 1; }; \
 	done
-	(cd $(RELSTAGEDIR) && $(TAR) -czf $(ROOT)/$(RELEASE_TARBALL) root)
+	# Stage install.sh at the tarball root so the tarball is self-installing:
+	# extractor untars to a temp dir then runs ./install.sh, mirroring the
+	# sdcadm-shar pattern that sdcadm experimental will exec.
+	cp $(REPO_ROOT)/tools/install-tritonadm.sh $(RELSTAGEDIR)/install.sh
+	chmod 755 $(RELSTAGEDIR)/install.sh
+	(cd $(RELSTAGEDIR) && $(TAR) -czf $(ROOT)/$(RELEASE_TARBALL) install.sh root)
 	@echo "Generating $(MANIFEST)"
 	$(ROOT)/scripts/make-manifest.sh \
 	    --tarball $(ROOT)/$(RELEASE_TARBALL) \
+	    --uuid $$(cat $(UUID_FILE)) \
 	    --version $(STAMP) \
 	    --branch $(BRANCH) \
 	    > $(ROOT)/$(MANIFEST)

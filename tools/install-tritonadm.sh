@@ -17,6 +17,25 @@
 #
 # See docs/design/tritonadm-distribution.md for the full design.
 #
+# Three install modes:
+#
+#   * Network (default): resolve latest in --channel, download, verify SHA,
+#     extract, install.
+#   * Local tarball: --tarball + --manifest, skips download but still
+#     verifies SHA before extract.
+#   * Embedded: when this script is run from inside an extracted tarball
+#     (i.e. an adjacent ./root/opt/triton/tritonadm/ exists), reuse that
+#     payload. This is the path sdcadm experimental takes after it
+#     downloads + extracts the image — sdcadm has already verified the
+#     SHA against IMGAPI, so we trust the surrounding tree.
+#
+# All modes write the same /opt/triton/tritonadm/etc/version file:
+#
+#   uuid=<image-uuid>           # baked into tarball at build time
+#   version=<build-stamp>       # eng-style: <branch>-<UTC>-g<sha>
+#   installed_at=<iso8601>      # set by this script
+#   source=embedded|network|local
+#
 # Usage:
 #   install-tritonadm.sh [--channel <name>] [--updates-url <url>]
 #   install-tritonadm.sh --uuid <image-uuid> [--updates-url <url>]
@@ -95,6 +114,37 @@ sha1_of() {
     fi
 }
 
+#
+# Embedded mode: this script can be run from inside an extracted tarball,
+# in which case the install payload is sitting next to it and we skip the
+# fetch/verify dance. sdcadm experimental and operators who manually
+# extract the tarball both end up here.
+#
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+EMBEDDED_PAYLOAD="$SCRIPT_DIR/root/opt/triton/tritonadm"
+EMBEDDED_MODE=false
+if [[ -z "$LOCAL_TARBALL" && -z "$UUID" && -d "$EMBEDDED_PAYLOAD" ]]; then
+    EMBEDDED_MODE=true
+fi
+
+if [[ "$EMBEDDED_MODE" == "true" ]]; then
+    echo "==> Installing from embedded payload at $SCRIPT_DIR"
+    # uuid + version are baked into the tarball at build time. Read them out
+    # so the installed etc/version preserves the IMGAPI identity end-to-end.
+    BAKED_VERSION="$EMBEDDED_PAYLOAD/etc/version"
+    INSTALLED_UUID=$(awk -F= '$1=="uuid"{print $2; exit}' "$BAKED_VERSION" 2>/dev/null || echo "")
+    INSTALLED_VERSION=$(awk -F= '$1=="version"{print $2; exit}' "$BAKED_VERSION" 2>/dev/null || echo "")
+    if [[ -z "$INSTALLED_UUID" || -z "$INSTALLED_VERSION" ]]; then
+        echo "error: embedded payload missing uuid/version in etc/version" >&2
+        exit 1
+    fi
+    INSTALL_SOURCE="embedded"
+    mkdir -p "$INSTALL_DIR"
+    # cp -R preserves mode bits without depending on rsync (not on every
+    # GZ). Trailing /. copies contents, not the directory itself.
+    cp -R "$EMBEDDED_PAYLOAD/." "$INSTALL_DIR/"
+else
+
 WORKDIR=$(mktemp -d -t tritonadm-install.XXXXXX)
 trap 'rm -rf "$WORKDIR"' EXIT
 
@@ -108,7 +158,9 @@ if [[ -n "$LOCAL_TARBALL" ]]; then
     fi
     cp "$LOCAL_TARBALL" "$WORKDIR/tritonadm.tgz"
     cp "$LOCAL_MANIFEST" "$WORKDIR/tritonadm.imgmanifest"
+    INSTALL_SOURCE="local"
 else
+    INSTALL_SOURCE="network"
     #
     # Network path: resolve UUID against the updates server, then download.
     #
@@ -167,16 +219,24 @@ tar -xzf "$WORKDIR/tritonadm.tgz" \
     root/opt/triton/tritonadm
 
 #
-# Record the installed image UUID. self-update reads this to decide whether a
-# new image is actually new.
+# Pull image identity from the manifest for the unified etc/version write
+# below.
 #
 INSTALLED_UUID=$(jq -r '.uuid' "$WORKDIR/tritonadm.imgmanifest")
 INSTALLED_VERSION=$(jq -r '.version' "$WORKDIR/tritonadm.imgmanifest")
+
+fi  # end of !EMBEDDED_MODE branch
+
+#
+# Unified etc/version write — same shape regardless of install source. The
+# 'source' field tells future self-updates how this install got here.
+#
 mkdir -p "$INSTALL_DIR/etc"
 cat > "$INSTALL_DIR/etc/version" <<EOF
 uuid=$INSTALLED_UUID
 version=$INSTALLED_VERSION
 installed_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+source=$INSTALL_SOURCE
 EOF
 
 #

@@ -2,3 +2,4 @@ bits/
 proto/
 *.tgz
 *.imgmanifest
+*.uuid
