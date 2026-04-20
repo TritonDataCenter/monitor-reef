@@ -41,6 +41,9 @@ RELEASE_TARBALL := tritonadm-$(STAMP).tgz
 MANIFEST        := tritonadm-$(STAMP).imgmanifest
 UUID_FILE       := $(ROOT)/$(STAMP).uuid
 
+# Cargo packages to build. Consumed by _image-cargo-build in image.post-defs.mk.
+CARGO_PKGS = tritonadm
+
 # Cargo target output (workspace-shared)
 CARGO_BIN := $(REPO_ROOT)/target/release/tritonadm
 
@@ -71,8 +74,7 @@ endif
 all: release_build
 
 .PHONY: release_build
-release_build: | $(CARGO_EXEC)
-	cd $(REPO_ROOT) && $(CARGO) build --release -p tritonadm
+release_build: _image-cargo-build
 ifeq ($(IS_ILLUMOS),true)
 	/usr/bin/elfedit -e 'dyn:delete RUNPATH' $(CARGO_BIN) || true
 	/usr/bin/elfedit -e 'dyn:delete RPATH' $(CARGO_BIN) || true

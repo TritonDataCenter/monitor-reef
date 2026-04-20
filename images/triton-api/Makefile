@@ -36,16 +36,12 @@ BUILDIMAGE_PKGSRC = \
     haproxy-3.2.3
 
 # Cargo package names for the binaries (both run in the same zone)
-SERVICE_BINS = triton-api-server triton-gateway
+CARGO_PKGS = triton-api-server triton-gateway
 
 CLEAN_FILES += bits proto target
 
 .PHONY: release_build
-release_build: | $(CARGO_EXEC)
-	cd $(REPO_ROOT) && \
-	    for pkg in $(SERVICE_BINS); do \
-	        $(CARGO) build --release -p $$pkg; \
-	    done
+release_build: _image-cargo-build
 
 .PHONY: all
 all: release_build
@@ -60,7 +56,7 @@ release: all
 	@mkdir -p $(RELSTAGEDIR)/root/opt/smartdc/$(DIR_NAME)/sapi_manifests
 	@mkdir -p $(RELSTAGEDIR)/site
 	@touch $(RELSTAGEDIR)/site/.do-not-delete-me
-	for bin in $(SERVICE_BINS); do \
+	for bin in $(CARGO_PKGS); do \
 	    cp $(REPO_ROOT)/target/release/$$bin \
 	        $(RELSTAGEDIR)/root/opt/smartdc/$(DIR_NAME)/; \
 	done
