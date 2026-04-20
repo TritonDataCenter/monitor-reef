@@ -219,14 +219,16 @@ current command, and grows as more commands are implemented.
    implementing every command; coexisting means operators need to know
    which tool handles what.
 
-2. **Self-update mechanism**: sdcadm updates itself via a zone image in
-   IMGAPI. Does tritonadm ship as part of a zone image, as a standalone
-   binary in the GZ, or bundled with another service's image?
+2. **Self-update mechanism**: see
+   [tritonadm-distribution.md](tritonadm-distribution.md) — `tritonadm`
+   ships as a GZ tool tarball published to `updates.tritondatacenter.com`,
+   bootstrapped via `tools/install-tritonadm.sh` and refreshed via the
+   stubbed `tritonadm self-update` command.
 
-3. **Installation location**: Should tritonadm be installed directly in
-   the GZ (like sdcadm) or run from a zone? GZ installation gives direct
-   access to platform management and CN operations. Zone installation is
-   cleaner but limits some operations.
+3. **Installation location**: see
+   [tritonadm-distribution.md](tritonadm-distribution.md) — installed
+   directly in the GZ at `/opt/triton/tritonadm/`, with a symlink at
+   `/opt/local/bin/tritonadm`.
 
 4. **Operator migration path**: Operators are used to sdcadm. Options
    include compatibility aliases (`sdcadm` -> `tritonadm`), a wrapper

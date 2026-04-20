@@ -1,0 +1,4 @@
+bits/
+proto/
+*.tgz
+*.imgmanifest
