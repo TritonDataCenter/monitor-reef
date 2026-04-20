@@ -13,6 +13,9 @@ DIR_NAME = triton-api
 
 include ../image.defs.mk
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.defs
+# Must come AFTER Makefile.defs (which hardcodes the old 20181206 default);
+# see image.defs.mk for the full explanation.
+BUILD_PLATFORM = 20210826T002459Z
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.agent_prebuilt.defs
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.rust.defs
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.smf.defs

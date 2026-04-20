@@ -25,6 +25,9 @@ include ../image.defs.mk
 ENGBLD_USE_BUILDIMAGE := false
 
 include $(REPO_ROOT)/deps/eng/tools/mk/Makefile.defs
+# Must come AFTER Makefile.defs (which hardcodes the old 20181206 default);
+# see image.defs.mk for the full explanation.
+BUILD_PLATFORM = 20210826T002459Z
 
 # Pull in eng's Rust toolchain management so CI hosts auto-install rustup
 # on first build. $(CARGO) and $(CARGO_EXEC) come from here; any recipe that
