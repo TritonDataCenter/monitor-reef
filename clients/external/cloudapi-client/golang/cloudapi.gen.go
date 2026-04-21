@@ -2112,16 +2112,32 @@ type PolicyRef struct {
 	Name *string `json:"name,omitempty"`
 }
 
-// ProvisioningLimits Provisioning limits for an account
-type ProvisioningLimits struct {
-	// Disk Maximum disk space in MB
-	Disk *int64 `json:"disk,omitempty"`
+// ProvisioningLimit A single provisioning limit entry.
+//
+// Each limit constrains a specific dimension (VM count, RAM, or disk quota), optionally filtered by brand, image, or OS. A `value` of `-1` blocks all matching provisions; `0` means unlimited (filtered out before the response reaches the client).
+//
+// Units for `value` and `used` depend on `by`: - absent / `"machines"` → count of VMs - `"ram"` → MiB - `"quota"` → GiB
+type ProvisioningLimit struct {
+	// Brand Brand filter value (when `check` is `"brand"`).
+	Brand *string `json:"brand,omitempty"`
 
-	// Machines Maximum number of machines
-	Machines *int64 `json:"machines,omitempty"`
+	// By What dimension the limit counts: `"ram"`, `"quota"`, or `"machines"`. When absent, defaults to counting VMs.
+	By *string `json:"by,omitempty"`
 
-	// RAM Maximum RAM in MB
-	RAM *int64 `json:"ram,omitempty"`
+	// Check Type of filter applied: `"brand"`, `"image"`, or `"os"`.
+	Check *string `json:"check,omitempty"`
+
+	// Image Image filter value (when `check` is `"image"`).
+	Image *string `json:"image,omitempty"`
+
+	// Os OS filter value (when `check` is `"os"`).
+	Os *string `json:"os,omitempty"`
+
+	// Used Current usage against this limit.
+	Used *int64 `json:"used,omitempty"`
+
+	// Value The limit value (threshold).
+	Value int64 `json:"value"`
 }
 
 // ReplaceRoleTagsRequest Request to replace role tags
@@ -18878,7 +18894,7 @@ func (r ReplaceKeyRoleTagsResponse) StatusCode() int {
 type GetProvisioningLimitsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *ProvisioningLimits
+	JSON200      *[]ProvisioningLimit
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -25979,7 +25995,7 @@ func ParseGetProvisioningLimitsResponse(rsp *http.Response) (*GetProvisioningLim
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ProvisioningLimits
+		var dest []ProvisioningLimit
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

@@ -6237,37 +6237,64 @@ pub mod types {
         }
     }
 
-    #[doc = "Provisioning limits for an account"]
+    #[doc = "A single provisioning limit entry.\n\nEach limit constrains a specific dimension (VM count, RAM, or disk quota), optionally filtered by brand, image, or OS. A `value` of `-1` blocks all matching provisions; `0` means unlimited (filtered out before the response reaches the client).\n\nUnits for `value` and `used` depend on `by`: - absent / `\"machines\"` → count of VMs - `\"ram\"` → MiB - `\"quota\"` → GiB"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
     #[doc = r""]
     #[doc = r" ```json"]
     #[doc = "{"]
-    #[doc = "  \"description\": \"Provisioning limits for an account\","]
+    #[doc = "  \"description\": \"A single provisioning limit entry.\\n\\nEach limit constrains a specific dimension (VM count, RAM, or disk quota), optionally filtered by brand, image, or OS. A `value` of `-1` blocks all matching provisions; `0` means unlimited (filtered out before the response reaches the client).\\n\\nUnits for `value` and `used` depend on `by`: - absent / `\\\"machines\\\"` → count of VMs - `\\\"ram\\\"` → MiB - `\\\"quota\\\"` → GiB\","]
     #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"value\""]
+    #[doc = "  ],"]
     #[doc = "  \"properties\": {"]
-    #[doc = "    \"disk\": {"]
-    #[doc = "      \"description\": \"Maximum disk space in MB\","]
+    #[doc = "    \"brand\": {"]
+    #[doc = "      \"description\": \"Brand filter value (when `check` is `\\\"brand\\\"`).\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"by\": {"]
+    #[doc = "      \"description\": \"What dimension the limit counts: `\\\"ram\\\"`, `\\\"quota\\\"`, or `\\\"machines\\\"`. When absent, defaults to counting VMs.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"check\": {"]
+    #[doc = "      \"description\": \"Type of filter applied: `\\\"brand\\\"`, `\\\"image\\\"`, or `\\\"os\\\"`.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"image\": {"]
+    #[doc = "      \"description\": \"Image filter value (when `check` is `\\\"image\\\"`).\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"os\": {"]
+    #[doc = "      \"description\": \"OS filter value (when `check` is `\\\"os\\\"`).\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"used\": {"]
+    #[doc = "      \"description\": \"Current usage against this limit.\","]
     #[doc = "      \"type\": ["]
     #[doc = "        \"integer\","]
     #[doc = "        \"null\""]
     #[doc = "      ],"]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    },"]
-    #[doc = "    \"machines\": {"]
-    #[doc = "      \"description\": \"Maximum number of machines\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"integer\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"format\": \"int64\""]
-    #[doc = "    },"]
-    #[doc = "    \"ram\": {"]
-    #[doc = "      \"description\": \"Maximum RAM in MB\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"integer\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
+    #[doc = "    \"value\": {"]
+    #[doc = "      \"description\": \"The limit value (threshold).\","]
+    #[doc = "      \"type\": \"integer\","]
     #[doc = "      \"format\": \"int64\""]
     #[doc = "    }"]
     #[doc = "  }"]
@@ -6277,30 +6304,31 @@ pub mod types {
     #[derive(
         :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
     )]
-    pub struct ProvisioningLimits {
-        #[doc = "Maximum disk space in MB"]
+    pub struct ProvisioningLimit {
+        #[doc = "Brand filter value (when `check` is `\"brand\"`)."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub disk: ::std::option::Option<i64>,
-        #[doc = "Maximum number of machines"]
+        pub brand: ::std::option::Option<::std::string::String>,
+        #[doc = "What dimension the limit counts: `\"ram\"`, `\"quota\"`, or `\"machines\"`. When absent, defaults to counting VMs."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub machines: ::std::option::Option<i64>,
-        #[doc = "Maximum RAM in MB"]
+        pub by: ::std::option::Option<::std::string::String>,
+        #[doc = "Type of filter applied: `\"brand\"`, `\"image\"`, or `\"os\"`."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub ram: ::std::option::Option<i64>,
+        pub check: ::std::option::Option<::std::string::String>,
+        #[doc = "Image filter value (when `check` is `\"image\"`)."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub image: ::std::option::Option<::std::string::String>,
+        #[doc = "OS filter value (when `check` is `\"os\"`)."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub os: ::std::option::Option<::std::string::String>,
+        #[doc = "Current usage against this limit."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub used: ::std::option::Option<i64>,
+        #[doc = "The limit value (threshold)."]
+        pub value: i64,
     }
 
-    impl ::std::default::Default for ProvisioningLimits {
-        fn default() -> Self {
-            Self {
-                disk: Default::default(),
-                machines: Default::default(),
-                ram: Default::default(),
-            }
-        }
-    }
-
-    impl ProvisioningLimits {
-        pub fn builder() -> builder::ProvisioningLimits {
+    impl ProvisioningLimit {
+        pub fn builder() -> builder::ProvisioningLimit {
             Default::default()
         }
     }
@@ -14290,74 +14318,145 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
-        pub struct ProvisioningLimits {
-            disk: ::std::result::Result<::std::option::Option<i64>, ::std::string::String>,
-            machines: ::std::result::Result<::std::option::Option<i64>, ::std::string::String>,
-            ram: ::std::result::Result<::std::option::Option<i64>, ::std::string::String>,
+        pub struct ProvisioningLimit {
+            brand: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            by: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            check: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            image: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            os: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            used: ::std::result::Result<::std::option::Option<i64>, ::std::string::String>,
+            value: ::std::result::Result<i64, ::std::string::String>,
         }
 
-        impl ::std::default::Default for ProvisioningLimits {
+        impl ::std::default::Default for ProvisioningLimit {
             fn default() -> Self {
                 Self {
-                    disk: Ok(Default::default()),
-                    machines: Ok(Default::default()),
-                    ram: Ok(Default::default()),
+                    brand: Ok(Default::default()),
+                    by: Ok(Default::default()),
+                    check: Ok(Default::default()),
+                    image: Ok(Default::default()),
+                    os: Ok(Default::default()),
+                    used: Ok(Default::default()),
+                    value: Err("no value supplied for value".to_string()),
                 }
             }
         }
 
-        impl ProvisioningLimits {
-            pub fn disk<T>(mut self, value: T) -> Self
+        impl ProvisioningLimit {
+            pub fn brand<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<i64>>,
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
                 T::Error: ::std::fmt::Display,
             {
-                self.disk = value
+                self.brand = value
                     .try_into()
-                    .map_err(|e| format!("error converting supplied value for disk: {e}"));
+                    .map_err(|e| format!("error converting supplied value for brand: {e}"));
                 self
             }
-            pub fn machines<T>(mut self, value: T) -> Self
+            pub fn by<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<i64>>,
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
                 T::Error: ::std::fmt::Display,
             {
-                self.machines = value
+                self.by = value
                     .try_into()
-                    .map_err(|e| format!("error converting supplied value for machines: {e}"));
+                    .map_err(|e| format!("error converting supplied value for by: {e}"));
                 self
             }
-            pub fn ram<T>(mut self, value: T) -> Self
+            pub fn check<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.check = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for check: {e}"));
+                self
+            }
+            pub fn image<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.image = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for image: {e}"));
+                self
+            }
+            pub fn os<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.os = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for os: {e}"));
+                self
+            }
+            pub fn used<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::option::Option<i64>>,
                 T::Error: ::std::fmt::Display,
             {
-                self.ram = value
+                self.used = value
                     .try_into()
-                    .map_err(|e| format!("error converting supplied value for ram: {e}"));
+                    .map_err(|e| format!("error converting supplied value for used: {e}"));
+                self
+            }
+            pub fn value<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<i64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.value = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for value: {e}"));
                 self
             }
         }
 
-        impl ::std::convert::TryFrom<ProvisioningLimits> for super::ProvisioningLimits {
+        impl ::std::convert::TryFrom<ProvisioningLimit> for super::ProvisioningLimit {
             type Error = super::error::ConversionError;
             fn try_from(
-                value: ProvisioningLimits,
+                value: ProvisioningLimit,
             ) -> ::std::result::Result<Self, super::error::ConversionError> {
                 Ok(Self {
-                    disk: value.disk?,
-                    machines: value.machines?,
-                    ram: value.ram?,
+                    brand: value.brand?,
+                    by: value.by?,
+                    check: value.check?,
+                    image: value.image?,
+                    os: value.os?,
+                    used: value.used?,
+                    value: value.value?,
                 })
             }
         }
 
-        impl ::std::convert::From<super::ProvisioningLimits> for ProvisioningLimits {
-            fn from(value: super::ProvisioningLimits) -> Self {
+        impl ::std::convert::From<super::ProvisioningLimit> for ProvisioningLimit {
+            fn from(value: super::ProvisioningLimit) -> Self {
                 Self {
-                    disk: Ok(value.disk),
-                    machines: Ok(value.machines),
-                    ram: Ok(value.ram),
+                    brand: Ok(value.brand),
+                    by: Ok(value.by),
+                    check: Ok(value.check),
+                    image: Ok(value.image),
+                    os: Ok(value.os),
+                    used: Ok(value.used),
+                    value: Ok(value.value),
                 }
             }
         }
@@ -23599,7 +23698,8 @@ pub mod builder {
         #[doc = "Sends a `GET` request to `/{account}/limits`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<types::ProvisioningLimits>, Error<types::Error>> {
+        ) -> Result<ResponseValue<::std::vec::Vec<types::ProvisioningLimit>>, Error<types::Error>>
+        {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(

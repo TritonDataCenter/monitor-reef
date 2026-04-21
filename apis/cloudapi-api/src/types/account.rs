@@ -96,16 +96,44 @@ pub struct UpdateAccountRequest {
     pub triton_cns_enabled: Option<bool>,
 }
 
-/// Provisioning limits for an account
+/// A single provisioning limit entry.
+///
+/// Each limit constrains a specific dimension (VM count, RAM, or disk quota),
+/// optionally filtered by brand, image, or OS. A `value` of `-1` blocks all
+/// matching provisions; `0` means unlimited (filtered out before the response
+/// reaches the client).
+///
+/// Units for `value` and `used` depend on `by`:
+/// - absent / `"machines"` → count of VMs
+/// - `"ram"` → MiB
+/// - `"quota"` → GiB
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]
-pub struct ProvisioningLimits {
-    /// Maximum number of machines
-    pub machines: Option<i64>,
-    /// Maximum RAM in MB
-    pub ram: Option<i64>,
-    /// Maximum disk space in MB
-    pub disk: Option<i64>,
+pub struct ProvisioningLimit {
+    /// The limit value (threshold).
+    pub value: i64,
+    /// Current usage against this limit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub used: Option<i64>,
+    /// What dimension the limit counts: `"ram"`, `"quota"`, or `"machines"`.
+    /// When absent, defaults to counting VMs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub by: Option<String>,
+    /// Type of filter applied: `"brand"`, `"image"`, or `"os"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check: Option<String>,
+    /// Brand filter value (when `check` is `"brand"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub brand: Option<String>,
+    /// Image filter value (when `check` is `"image"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub image: Option<String>,
+    /// OS filter value (when `check` is `"os"`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub os: Option<String>,
 }
+
+/// Provisioning limits for an account — an array of limit entries.
+pub type ProvisioningLimits = Vec<ProvisioningLimit>;
 
 /// Configuration settings
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

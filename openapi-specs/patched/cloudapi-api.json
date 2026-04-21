@@ -2485,28 +2485,49 @@
         },
         "type": "object"
       },
-      "ProvisioningLimits": {
-        "description": "Provisioning limits for an account",
+      "ProvisioningLimit": {
+        "description": "A single provisioning limit entry.\n\nEach limit constrains a specific dimension (VM count, RAM, or disk quota), optionally filtered by brand, image, or OS. A `value` of `-1` blocks all matching provisions; `0` means unlimited (filtered out before the response reaches the client).\n\nUnits for `value` and `used` depend on `by`: - absent / `\"machines\"` → count of VMs - `\"ram\"` → MiB - `\"quota\"` → GiB",
         "properties": {
-          "disk": {
-            "description": "Maximum disk space in MB",
+          "brand": {
+            "description": "Brand filter value (when `check` is `\"brand\"`).",
+            "nullable": true,
+            "type": "string"
+          },
+          "by": {
+            "description": "What dimension the limit counts: `\"ram\"`, `\"quota\"`, or `\"machines\"`. When absent, defaults to counting VMs.",
+            "nullable": true,
+            "type": "string"
+          },
+          "check": {
+            "description": "Type of filter applied: `\"brand\"`, `\"image\"`, or `\"os\"`.",
+            "nullable": true,
+            "type": "string"
+          },
+          "image": {
+            "description": "Image filter value (when `check` is `\"image\"`).",
+            "nullable": true,
+            "type": "string"
+          },
+          "os": {
+            "description": "OS filter value (when `check` is `\"os\"`).",
+            "nullable": true,
+            "type": "string"
+          },
+          "used": {
+            "description": "Current usage against this limit.",
             "format": "int64",
             "nullable": true,
             "type": "integer"
           },
-          "machines": {
-            "description": "Maximum number of machines",
+          "value": {
+            "description": "The limit value (threshold).",
             "format": "int64",
-            "nullable": true,
-            "type": "integer"
-          },
-          "ram": {
-            "description": "Maximum RAM in MB",
-            "format": "int64",
-            "nullable": true,
             "type": "integer"
           }
         },
+        "required": [
+          "value"
+        ],
         "type": "object"
       },
       "ReplaceRoleTagsRequest": {
@@ -6315,7 +6336,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvisioningLimits"
+                  "items": {
+                    "$ref": "#/components/schemas/ProvisioningLimit"
+                  },
+                  "title": "Array_of_ProvisioningLimit",
+                  "type": "array"
                 }
               }
             },

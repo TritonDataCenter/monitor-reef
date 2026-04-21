@@ -220,13 +220,14 @@ func TestIntegration_GetProvisioningLimits(t *testing.T) {
 
 	resp, err := testClient.GetProvisioningLimitsWithResponse(ctx, testAccount)
 	if err != nil {
-		// CloudAPI may return an array of limit objects, but the generated
-		// type expects an object, causing an unmarshal error. The endpoint
-		// is still exercised — the HTTP call succeeded.
-		t.Logf("GetProvisioningLimits: %v (response shape may differ from spec, OK)", err)
-		return
+		t.Fatalf("GetProvisioningLimits: %v", err)
 	}
 	requireOK(t, resp.StatusCode(), resp.Body)
+
+	if resp.JSON200 == nil {
+		t.Fatal("expected JSON200 to be non-nil")
+	}
+	t.Logf("GetProvisioningLimits: %d limit entries", len(*resp.JSON200))
 }
 
 func TestIntegration_ListForeignDatacenters(t *testing.T) {

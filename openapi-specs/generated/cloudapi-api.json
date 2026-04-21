@@ -3002,7 +3002,11 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProvisioningLimits"
+                  "title": "Array_of_ProvisioningLimit",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ProvisioningLimit"
+                  }
                 }
               }
             }
@@ -11435,29 +11439,50 @@
           }
         }
       },
-      "ProvisioningLimits": {
-        "description": "Provisioning limits for an account",
+      "ProvisioningLimit": {
+        "description": "A single provisioning limit entry.\n\nEach limit constrains a specific dimension (VM count, RAM, or disk quota), optionally filtered by brand, image, or OS. A `value` of `-1` blocks all matching provisions; `0` means unlimited (filtered out before the response reaches the client).\n\nUnits for `value` and `used` depend on `by`: - absent / `\"machines\"` → count of VMs - `\"ram\"` → MiB - `\"quota\"` → GiB",
         "type": "object",
         "properties": {
-          "disk": {
+          "brand": {
             "nullable": true,
-            "description": "Maximum disk space in MB",
+            "description": "Brand filter value (when `check` is `\"brand\"`).",
+            "type": "string"
+          },
+          "by": {
+            "nullable": true,
+            "description": "What dimension the limit counts: `\"ram\"`, `\"quota\"`, or `\"machines\"`. When absent, defaults to counting VMs.",
+            "type": "string"
+          },
+          "check": {
+            "nullable": true,
+            "description": "Type of filter applied: `\"brand\"`, `\"image\"`, or `\"os\"`.",
+            "type": "string"
+          },
+          "image": {
+            "nullable": true,
+            "description": "Image filter value (when `check` is `\"image\"`).",
+            "type": "string"
+          },
+          "os": {
+            "nullable": true,
+            "description": "OS filter value (when `check` is `\"os\"`).",
+            "type": "string"
+          },
+          "used": {
+            "nullable": true,
+            "description": "Current usage against this limit.",
             "type": "integer",
             "format": "int64"
           },
-          "machines": {
-            "nullable": true,
-            "description": "Maximum number of machines",
-            "type": "integer",
-            "format": "int64"
-          },
-          "ram": {
-            "nullable": true,
-            "description": "Maximum RAM in MB",
+          "value": {
+            "description": "The limit value (threshold).",
             "type": "integer",
             "format": "int64"
           }
-        }
+        },
+        "required": [
+          "value"
+        ]
       },
       "ReplaceRoleTagsRequest": {
         "description": "Request to replace role tags",
