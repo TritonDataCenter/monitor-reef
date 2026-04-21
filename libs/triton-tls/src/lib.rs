@@ -13,6 +13,33 @@
 //! 1. Native system certs (respects `SSL_CERT_FILE` / `SSL_CERT_DIR`)
 //! 2. Extra platform-specific paths (SmartOS pkgsrc, etc.)
 //! 3. Bundled Mozilla roots (via `webpki-roots`) as a last resort
+//!
+//! The crate also owns process-wide installation of the `ring` rustls
+//! crypto provider. Because the workspace builds reqwest with
+//! `rustls-no-provider` (see the top-level `Cargo.toml` for the five
+//! places that must move in lockstep to switch providers), every
+//! `reqwest::Client::builder().build()` and every `rustls::*Config::builder()`
+//! call will panic with "No provider set" unless a default `CryptoProvider`
+//! is installed first. [`build_http_client`] takes care of that for its
+//! own callers; binaries or tests that build rustls configs directly
+//! should call [`install_default_crypto_provider`] themselves before
+//! touching `rustls::ClientConfig::builder()` or `rustls::ServerConfig::builder()`.
+
+use std::sync::Once;
+
+/// Install the `ring` rustls crypto provider as this process's default,
+/// exactly once.
+///
+/// `install_default()` itself is idempotent (the second call returns
+/// `Err`, which we discard), but we guard it behind [`std::sync::Once`]
+/// so repeated calls from a hot path like [`build_http_client`] don't
+/// re-allocate a provider struct just to throw it away.
+pub fn install_default_crypto_provider() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
+    });
+}
 
 /// Extra certificate locations to probe on platforms where `openssl-probe`
 /// doesn't find the system CA store (e.g., SmartOS/illumos with pkgsrc).
@@ -142,6 +169,8 @@ async fn load_extra_cert_paths(root_store: &mut rustls::RootCertStore) {
 /// When `insecure` is `true`, TLS certificate validation is skipped entirely.
 /// Otherwise, certificates are loaded via [`build_root_cert_store`].
 pub async fn build_http_client(insecure: bool) -> Result<reqwest::Client, reqwest::Error> {
+    install_default_crypto_provider();
+
     let mut builder = reqwest::Client::builder().danger_accept_invalid_certs(insecure);
 
     // Only apply custom root cert store when we actually need to verify

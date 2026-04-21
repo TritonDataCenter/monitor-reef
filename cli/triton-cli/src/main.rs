@@ -761,6 +761,11 @@ mod tests {
         use tokio::net::TcpListener;
         use tokio_rustls::TlsAcceptor;
 
+        // Needed here because `rustls::ServerConfig::builder()` below runs
+        // before `build_http_client`, which is what would normally install
+        // the default crypto provider for this process.
+        triton_tls::install_default_crypto_provider();
+
         // Generate a self-signed certificate for localhost
         let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()])
             .expect("cert generation failed");
