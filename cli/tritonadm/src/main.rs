@@ -249,6 +249,12 @@ enum Commands {
         /// because self-update runs interactively.
         #[arg(long)]
         verbose: bool,
+
+        /// Resolve everything and print what would happen, but skip
+        /// the download and installer exec. Mirrors sdcadm's
+        /// self-update -n / get-tritonadm --dry-run.
+        #[arg(short = 'n', long)]
+        dry_run: bool,
     },
 
     /// List all Triton services
@@ -361,6 +367,7 @@ async fn main() -> Result<()> {
             image_uuid,
             channel,
             verbose,
+            dry_run,
         } => {
             let image_uuid = match (latest, image_uuid) {
                 (true, None) => None,
@@ -385,6 +392,7 @@ async fn main() -> Result<()> {
                 channel,
                 image_uuid,
                 verbose,
+                dry_run,
             })
             .await
         }

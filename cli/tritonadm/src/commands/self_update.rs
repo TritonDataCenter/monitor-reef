@@ -58,15 +58,25 @@ pub struct SelfUpdateOpts {
     /// unconditionally since it captures output to a log file; we
     /// default off for interactive UX and opt in via --verbose.
     pub verbose: bool,
+    /// Dry-run: resolve channel/installed/candidate + print, but
+    /// skip lock acquisition, download, and installer exec. Matches
+    /// sdcadm's self-update -n (and sdcadm's get-tritonadm is also
+    /// lock-skipping in dry-run, so concurrent dry-runs don't fight).
+    pub dry_run: bool,
 }
 
 pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
-    // Serialize self-update invocations. flock on a file in /var/run;
-    // LOCK_NB so we fail fast rather than block if another run is
-    // already in flight. The returned File is held for the rest of
-    // this function (and across the eventual exec(), since flock is
-    // preserved across exec as long as the fd stays open).
-    let _lock = acquire_self_update_lock().context("self-update lock")?;
+    let dry_prefix = if opts.dry_run { "[dry-run] " } else { "" };
+
+    // Serialize self-update invocations. Dry-run skips this so a
+    // concurrent real run doesn't block an operator from sanity-
+    // checking the channel — same behavior as sdcadm's self-update
+    // (sdcadm/lib/cli/do_get_tritonadm.js getLock:168).
+    let _lock = if opts.dry_run {
+        None
+    } else {
+        Some(acquire_self_update_lock().context("self-update lock")?)
+    };
 
     let http = triton_tls::build_http_client(false)
         .await
@@ -156,9 +166,14 @@ pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
     }
 
     println!(
-        "Install tritonadm {} ({})",
+        "{dry_prefix}Install tritonadm {} ({})",
         candidate.version, candidate.uuid,
     );
+
+    if opts.dry_run {
+        return Ok(());
+    }
+
     println!("Download tritonadm image from {}", opts.updates_url);
 
     let installer_path = format!("{}/tritonadm-{}", INSTALLER_DIR, candidate.uuid);
