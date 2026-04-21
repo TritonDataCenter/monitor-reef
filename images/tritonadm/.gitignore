@@ -2,7 +2,7 @@ bits/
 proto/
 cache/
 make_stamps/
-*.tgz
 tritonadm-*.sh
+*.tgz
 *.imgmanifest
 *.uuid

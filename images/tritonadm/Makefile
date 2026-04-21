@@ -40,11 +40,10 @@ TAR ?= tar
 
 ROOT            := $(shell pwd)
 RELSTAGEDIR     := $(ROOT)/proto
-RELEASE_TARBALL := tritonadm-$(STAMP).tgz
-# The .sh is a self-extracting shell archive wrapping $(RELEASE_TARBALL) —
-# this is the file that gets published to the updates server and exec'd by
-# sdcadm experimental get-tritonadm. The tarball stays local for dev
-# inspection (it's the shar's payload and not uploaded by itself). See
+# Self-extracting shell archive built by $(REPO_ROOT)/tools/mk-shar. This
+# is the file published to the updates server and exec'd by sdcadm
+# experimental get-tritonadm. mk-shar handles the tarring internally
+# via shar(1) (uuencoded), so no outer tarball is produced. See
 # docs/design/tritonadm-distribution.md.
 RELEASE_SHAR    := tritonadm-$(STAMP).sh
 MANIFEST        := tritonadm-$(STAMP).imgmanifest
@@ -64,7 +63,7 @@ INSTALL_PREFIX := root/opt/triton/tritonadm
 # (elvish, powershell), but these three cover real operators.
 COMPLETION_SHELLS := bash zsh fish
 
-CLEAN_FILES += bits proto $(RELEASE_TARBALL) $(RELEASE_SHAR) $(MANIFEST) $(UUID_FILE)
+CLEAN_FILES += bits proto $(RELEASE_SHAR) $(MANIFEST) $(UUID_FILE)
 
 #
 # Detect build host. Stripping RPATH/RUNPATH only works on illumos with
@@ -102,7 +101,7 @@ $(UUID_FILE):
 
 .PHONY: release
 release: all $(UUID_FILE)
-	@echo "Staging $(RELEASE_TARBALL)"
+	@echo "Staging $(RELSTAGEDIR)"
 	@rm -rf $(RELSTAGEDIR)
 	@mkdir -p $(RELSTAGEDIR)/$(INSTALL_PREFIX)/bin
 	@mkdir -p $(RELSTAGEDIR)/$(INSTALL_PREFIX)/etc
@@ -123,16 +122,17 @@ release: all $(UUID_FILE)
 	        > $(RELSTAGEDIR)/$(INSTALL_PREFIX)/share/completions/tritonadm.$$shell \
 	        || { echo "completion $$shell failed"; exit 1; }; \
 	done
-	# Stage install.sh at the tarball root so the tarball is self-installing:
-	# extractor untars to a temp dir then runs ./install.sh, mirroring the
-	# sdcadm-shar pattern that sdcadm experimental will exec.
+	# Stage install.sh in the proto. tools/mk-shar expects it at the top
+	# of the proto dir — everything else there gets tarred into the
+	# shar's contents.tgz.
 	cp $(REPO_ROOT)/tools/install-tritonadm.sh $(RELSTAGEDIR)/install.sh
 	chmod 755 $(RELSTAGEDIR)/install.sh
-	(cd $(RELSTAGEDIR) && $(TAR) -czf $(ROOT)/$(RELEASE_TARBALL) install.sh root)
-	@echo "Wrapping $(RELEASE_TARBALL) as $(RELEASE_SHAR)"
-	$(ROOT)/scripts/make-shar.sh \
-	    --tarball $(ROOT)/$(RELEASE_TARBALL) \
-	    --output $(ROOT)/$(RELEASE_SHAR)
+	@echo "Wrapping $(RELSTAGEDIR) as $(RELEASE_SHAR)"
+	$(REPO_ROOT)/tools/mk-shar \
+	    -n tritonadm \
+	    -s $(STAMP) \
+	    -d $(RELSTAGEDIR) \
+	    -o $(ROOT)/$(RELEASE_SHAR)
 	@echo "Generating $(MANIFEST)"
 	$(ROOT)/scripts/make-manifest.sh \
 	    --file $(ROOT)/$(RELEASE_SHAR) \
@@ -142,8 +142,7 @@ release: all $(UUID_FILE)
 	    > $(ROOT)/$(MANIFEST)
 	@echo ""
 	@echo "Built:"
-	@echo "  $(ROOT)/$(RELEASE_TARBALL)   (local-only; wrapped into the shar)"
-	@echo "  $(ROOT)/$(RELEASE_SHAR)      (what gets published)"
+	@echo "  $(ROOT)/$(RELEASE_SHAR)"
 	@echo "  $(ROOT)/$(MANIFEST)"
 
 .PHONY: publish
