@@ -15,6 +15,7 @@ mod mahi;
 mod platform;
 mod post_setup;
 mod sapi;
+pub mod self_update;
 
 pub use channel::ChannelCommand;
 pub use dc_maint::DcMaintCommand;

@@ -226,8 +226,20 @@ enum Commands {
     /// Rollback Triton services and instances
     Rollback,
 
-    /// Update tritonadm itself
-    SelfUpdate,
+    /// Update tritonadm itself (mirrors `sdcadm experimental get-tritonadm`).
+    SelfUpdate {
+        /// Install the latest image from the update channel. Mutually
+        /// exclusive with passing an image UUID.
+        #[arg(long)]
+        latest: bool,
+
+        /// Pin to a specific image UUID.
+        image_uuid: Option<String>,
+
+        /// Update channel to pull from.
+        #[arg(short = 'C', long, default_value = "experimental")]
+        channel: String,
+    },
 
     /// List all Triton services
     #[command(alias = "svcs")]
@@ -334,7 +346,32 @@ async fn main() -> Result<()> {
         Commands::DefaultFabric => not_yet_implemented("default-fabric"),
         Commands::Instances { json } => cmd_instances(&sapi_url?, &vmapi_url?, json).await,
         Commands::Rollback => not_yet_implemented("rollback"),
-        Commands::SelfUpdate => not_yet_implemented("self-update"),
+        Commands::SelfUpdate {
+            latest,
+            image_uuid,
+            channel,
+        } => {
+            let image_uuid = match (latest, image_uuid) {
+                (true, None) => None,
+                (false, Some(s)) => Some(
+                    uuid::Uuid::parse_str(&s)
+                        .context("image uuid argument must be a valid UUID")?,
+                ),
+                (true, Some(_)) => anyhow::bail!("pass either --latest or an image UUID, not both"),
+                (false, None) => anyhow::bail!(
+                    "pass --latest or an image UUID (sdcadm experimental \
+                     get-tritonadm --latest behaves the same way)"
+                ),
+            };
+            commands::self_update::run(commands::self_update::SelfUpdateOpts {
+                updates_url: updates_url
+                    .clone()
+                    .unwrap_or_else(|| DEFAULT_UPDATES_URL.to_string()),
+                channel,
+                image_uuid,
+            })
+            .await
+        }
         Commands::Services { json } => cmd_services(&sapi_url?, json).await,
         Commands::Update => not_yet_implemented("update"),
         Commands::Channel { command } => command.run(),
