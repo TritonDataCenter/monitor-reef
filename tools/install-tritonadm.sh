@@ -10,8 +10,11 @@
 #
 
 #
-# Bootstrap installer for tritonadm. Designed to run on a Triton headnode
-# global zone. See docs/design/tritonadm-distribution.md for the full design.
+# Bootstrap installer for tritonadm. The same tarball also ships the
+# user-facing `triton` CLI (cli/triton-cli), so a successful install
+# places both binaries in $INSTALL_DIR/bin and symlinks both into the
+# same directory on PATH. Designed to run on a Triton headnode global
+# zone. See docs/design/tritonadm-distribution.md for the full design.
 #
 # Three install modes:
 #
@@ -71,7 +74,8 @@ Usage:
   $(basename "$0") --uuid <image-uuid> [--updates-url <url>]
   $(basename "$0") --shar <path>
 
-Installs tritonadm into $INSTALL_DIR and symlinks $SYMLINK.
+Installs tritonadm (and the bundled `triton` CLI) into $INSTALL_DIR and
+symlinks $SYMLINK plus $(dirname "$SYMLINK")/triton.
 
 Options:
   --channel <name>         Updates channel (default: experimental)
@@ -214,7 +218,16 @@ EOF
     # works even if the parent dir is missing (common on dev hosts); if
     # that still fails, we skip with an actionable message rather than
     # trying to second-guess the operator's layout.
+    #
+    # The same tarball also carries `triton` (the user-facing CLI from
+    # cli/triton-cli). Drop a sibling symlink next to tritonadm's so both
+    # commands are on PATH. `--symlink` controls the tritonadm path; the
+    # triton symlink lives in the same directory and can't be renamed
+    # independently (operators who want a custom location can symlink by
+    # hand — this is a convenience, not policy).
     SYMLINK_OK=false
+    TRITON_SYMLINK_OK=false
+    TRITON_SYMLINK="$(dirname "$SYMLINK")/triton"
     if [[ "$NO_SYMLINK" != "true" ]]; then
         mkdir -p "$(dirname "$SYMLINK")" 2>/dev/null || true
         if [[ -d "$(dirname "$SYMLINK")" ]] \
@@ -224,17 +237,26 @@ EOF
             echo "==> Skipping symlink: couldn't create $SYMLINK"
             echo "    Override with --symlink <path> or use --no-symlink to silence."
         fi
+        if [[ "$SYMLINK_OK" == "true" ]] \
+                && ln -sf "$INSTALL_DIR/bin/triton" "$TRITON_SYMLINK" 2>/dev/null; then
+            TRITON_SYMLINK_OK=true
+        fi
     fi
 
     echo
     echo "==> Installed: $INSTALLED_VERSION ($INSTALLED_UUID)"
-    echo "    Binary:   $INSTALL_DIR/bin/tritonadm"
+    echo "    Binaries: $INSTALL_DIR/bin/tritonadm"
+    echo "              $INSTALL_DIR/bin/triton"
     if [[ "$SYMLINK_OK" == "true" ]]; then
         echo "    Symlink:  $SYMLINK"
+        if [[ "$TRITON_SYMLINK_OK" == "true" ]]; then
+            echo "              $TRITON_SYMLINK"
+        fi
         echo
         "$SYMLINK" --version || true
     else
         echo "    Run with: $INSTALL_DIR/bin/tritonadm"
+        echo "              $INSTALL_DIR/bin/triton"
         echo
         "$INSTALL_DIR/bin/tritonadm" --version || true
     fi

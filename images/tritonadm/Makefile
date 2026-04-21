@@ -10,10 +10,15 @@
 
 #
 # images/tritonadm — builds the tritonadm GZ tool tarball + IMGAPI manifest
-# for upload to updates.tritondatacenter.com.
+# for upload to updates.tritondatacenter.com. The same tarball also carries
+# the user-facing `triton` CLI (from cli/triton-cli), so an operator who
+# installs tritonadm also gets `triton` on PATH for testing. They ship
+# together because the JWT / tritonapi workflow wants both binaries
+# available on the headnode and shipping two images just to land two
+# static-ish binaries is friction with no upside.
 #
-# Unlike images/triton-api/, this is NOT a zone image. tritonadm runs in the
-# headnode global zone, so we ship a plain tarball + IMGAPI 'other'-type
+# Unlike images/triton-api/, this is NOT a zone image. Both binaries run in
+# the headnode global zone, so we ship a plain tarball + IMGAPI 'other'-type
 # manifest. See docs/design/tritonadm-distribution.md.
 #
 
@@ -50,10 +55,14 @@ MANIFEST        := tritonadm-$(STAMP).imgmanifest
 UUID_FILE       := $(ROOT)/$(STAMP).uuid
 
 # Cargo packages to build. Consumed by _image-cargo-build in image.post-defs.mk.
-CARGO_PKGS = tritonadm
+# triton-cli produces a binary named `triton` (see cli/triton-cli/Cargo.toml
+# [[bin]] stanza), not `triton-cli`, which is why the $(CARGO_BIN_TRITON)
+# path below doesn't match the package name.
+CARGO_PKGS = tritonadm triton-cli
 
-# Cargo target output (workspace-shared)
-CARGO_BIN := $(REPO_ROOT)/target/release/tritonadm
+# Cargo target outputs (workspace-shared)
+CARGO_BIN         := $(REPO_ROOT)/target/release/tritonadm
+CARGO_BIN_TRITON  := $(REPO_ROOT)/target/release/triton
 
 # Where the tarball stages files. The on-disk layout in the tarball mirrors
 # what the install script extracts onto the headnode GZ.
@@ -86,6 +95,8 @@ release_build: _image-cargo-build
 ifeq ($(IS_ILLUMOS),true)
 	/usr/bin/elfedit -e 'dyn:delete RUNPATH' $(CARGO_BIN) || true
 	/usr/bin/elfedit -e 'dyn:delete RPATH' $(CARGO_BIN) || true
+	/usr/bin/elfedit -e 'dyn:delete RUNPATH' $(CARGO_BIN_TRITON) || true
+	/usr/bin/elfedit -e 'dyn:delete RPATH' $(CARGO_BIN_TRITON) || true
 else
 	@echo "WARNING: not on illumos — RPATH/RUNPATH not stripped."
 	@echo "         Resulting tarball is for local testing only."
@@ -108,6 +119,8 @@ release: all $(UUID_FILE)
 	@mkdir -p $(RELSTAGEDIR)/$(INSTALL_PREFIX)/share/completions
 	cp $(CARGO_BIN) $(RELSTAGEDIR)/$(INSTALL_PREFIX)/bin/tritonadm
 	chmod 755 $(RELSTAGEDIR)/$(INSTALL_PREFIX)/bin/tritonadm
+	cp $(CARGO_BIN_TRITON) $(RELSTAGEDIR)/$(INSTALL_PREFIX)/bin/triton
+	chmod 755 $(RELSTAGEDIR)/$(INSTALL_PREFIX)/bin/triton
 	# Bake uuid + version + build_at into etc/version. install-tritonadm.sh
 	# in embedded mode reads uuid + version from here; install-time then
 	# rewrites etc/version with installed_at + source. See the install
@@ -120,7 +133,10 @@ release: all $(UUID_FILE)
 	@for shell in $(COMPLETION_SHELLS); do \
 	    $(CARGO_BIN) completion $$shell \
 	        > $(RELSTAGEDIR)/$(INSTALL_PREFIX)/share/completions/tritonadm.$$shell \
-	        || { echo "completion $$shell failed"; exit 1; }; \
+	        || { echo "tritonadm completion $$shell failed"; exit 1; }; \
+	    $(CARGO_BIN_TRITON) completion $$shell \
+	        > $(RELSTAGEDIR)/$(INSTALL_PREFIX)/share/completions/triton.$$shell \
+	        || { echo "triton completion $$shell failed"; exit 1; }; \
 	done
 	# Stage install.sh in the proto. tools/mk-shar expects it at the top
 	# of the proto dir — everything else there gets tarred into the
