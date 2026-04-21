@@ -222,6 +222,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)] // serial_guard is held intentionally to gate shared env
     async fn save_and_load_round_trip() {
         let _g = serial_guard();
         let _dir = scoped_config_dir();
@@ -244,6 +245,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn load_missing_file_returns_none() {
         let _g = serial_guard();
         let _dir = scoped_config_dir();
@@ -257,6 +259,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn saved_file_is_mode_0600() {
         let _g = serial_guard();
         let _dir = scoped_config_dir();
@@ -279,6 +282,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
     async fn delete_is_idempotent() {
         let _g = serial_guard();
         let _dir = scoped_config_dir();

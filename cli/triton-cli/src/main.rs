@@ -307,6 +307,15 @@ enum Commands {
     /// Make raw authenticated API requests to CloudAPI
     #[command(hide = true)]
     Cloudapi(commands::cloudapi::CloudApiArgs),
+
+    /// Log in to a triton-gateway (tritonapi profiles only)
+    Login(commands::login::LoginArgs),
+
+    /// Log out of a triton-gateway (tritonapi profiles only)
+    Logout,
+
+    /// Show the identity backing the current Bearer JWT
+    Whoami(commands::whoami::WhoamiArgs),
 }
 
 /// Build a reqwest HTTP client with CA cert fallback for platforms where
@@ -741,6 +750,11 @@ async fn try_main() -> Result<()> {
         Commands::Cloudapi(args) => {
             let (client, _profile) = cli.build_client().await?;
             commands::cloudapi::run(args.clone(), &client).await
+        }
+        Commands::Login(args) => commands::login::run(args.clone(), cli.profile.as_deref()).await,
+        Commands::Logout => commands::logout::run(cli.profile.as_deref()).await,
+        Commands::Whoami(args) => {
+            commands::whoami::run(args.clone(), cli.profile.as_deref(), cli.json).await
         }
     }
 }
