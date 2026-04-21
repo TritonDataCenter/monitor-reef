@@ -97,16 +97,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 #
-# Required tools. jq is on every modern Triton headnode via pkgsrc.
+# Tool checks are mode-specific. Embedded mode (the common path — what
+# sdcadm experimental get-tritonadm ends up in, and what operators hit
+# when they extract the shar and run install.sh themselves) only needs
+# base-system utilities (awk, mkdir, cp, chmod, ln, cat, date). Network
+# and local-shar modes do their own checks right before they need the
+# tools.
 #
-for tool in curl tar jq; do
-    if ! command -v "$tool" >/dev/null 2>&1; then
-        echo "error: required tool '$tool' not found in PATH" >&2
-        exit 1
-    fi
-done
 
-# Pick a sha1 helper that exists on this host.
+# Pick a sha1 helper that exists on this host. illumos GZ has
+# /usr/bin/digest; most other systems have sha1sum or openssl.
 sha1_of() {
     if command -v sha1sum >/dev/null 2>&1; then
         sha1sum "$1" | awk '{print $1}'
@@ -114,6 +114,39 @@ sha1_of() {
         digest -a sha1 "$1"
     else
         openssl dgst -sha1 "$1" | awk '{print $NF}'
+    fi
+}
+
+# Read a JSON path from a file. Prefers `json` (shipped on Triton
+# headnodes at /usr/bin/json), falls back to `jq` for dev hosts.
+# Path syntax is the same for both modulo a leading dot (json:
+# `files[0].sha1`, jq: `.files[0].sha1`).
+json_get() {
+    local file=$1 path=$2
+    if command -v json >/dev/null 2>&1; then
+        json -f "$file" "$path"
+    elif command -v jq >/dev/null 2>&1; then
+        jq -r ".$path" "$file"
+    else
+        echo "error: need 'json' (Triton) or 'jq' to parse JSON" >&2
+        return 1
+    fi
+}
+
+# Pick the uuid of the most recently published image from a JSON array.
+# Uses published_at (ISO-8601, so lex-sortable). json's -ga emits
+# space-separated fields per array element; jq's sort_by/reverse
+# produces the same result.
+pick_latest_uuid() {
+    local file=$1
+    if command -v json >/dev/null 2>&1; then
+        json -ga uuid published_at -f "$file" \
+            | sort -k2 | tail -1 | awk '{print $1}'
+    elif command -v jq >/dev/null 2>&1; then
+        jq -r 'sort_by(.published_at) | reverse | .[0].uuid // empty' "$file"
+    else
+        echo "error: need 'json' (Triton) or 'jq' to parse image list" >&2
+        return 1
     fi
 }
 
@@ -201,14 +234,19 @@ fi
 
 # Mode 3 — network. Resolve latest/uuid on the updates server, download,
 # verify SHA against the manifest, exec.
+command -v curl >/dev/null 2>&1 \
+    || { echo "error: network mode needs curl" >&2; exit 1; }
+command -v json >/dev/null 2>&1 || command -v jq >/dev/null 2>&1 \
+    || { echo "error: network mode needs 'json' (Triton) or 'jq'" >&2; exit 1; }
+
 WORKDIR=$(mktemp -d -t tritonadm-install.XXXXXX)
 trap 'rm -rf "$WORKDIR"' EXIT
 
 echo "==> Resolving tritonadm image (channel=$CHANNEL)"
 if [[ -z "$UUID" ]]; then
     list_url="$UPDATES_URL/images?name=tritonadm&channel=$CHANNEL&state=active"
-    UUID=$(curl -sSf "$list_url" \
-        | jq -r 'sort_by(.published_at) | reverse | .[0].uuid // empty')
+    curl -sSf -o "$WORKDIR/images.json" "$list_url"
+    UUID=$(pick_latest_uuid "$WORKDIR/images.json")
     if [[ -z "$UUID" ]]; then
         echo "error: no active tritonadm images on channel=$CHANNEL at $UPDATES_URL" >&2
         exit 1
@@ -227,8 +265,8 @@ curl -sSf -o "$WORKDIR/tritonadm.imgmanifest" "$manifest_url"
 echo "==> Fetching shar"
 curl -sSf -o "$WORKDIR/tritonadm.sh" "$file_url"
 
-EXPECTED=$(jq -r '.files[0].sha1' "$WORKDIR/tritonadm.imgmanifest")
-if [[ -z "$EXPECTED" || "$EXPECTED" == "null" ]]; then
+EXPECTED=$(json_get "$WORKDIR/tritonadm.imgmanifest" 'files[0].sha1')
+if [[ -z "$EXPECTED" ]]; then
     echo "error: manifest missing files[0].sha1" >&2
     exit 1
 fi
