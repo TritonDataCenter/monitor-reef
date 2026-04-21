@@ -79,6 +79,13 @@ done
 [[ -d "$PROTO" ]] || fatal "proto dir not found: $PROTO"
 [[ -f "$PROTO/install.sh" ]] || fatal "missing $PROTO/install.sh (mk-shar convention)"
 
+# Locate our sibling md5sum shim. GNU shar's extraction code calls
+# md5sum at runtime to verify integrity; the illumos GZ doesn't ship
+# one, so we embed a fallback (same approach as sdcadm's mk-shar).
+MK_SHAR_DIR=$(cd "$(dirname "$0")" && pwd)
+MD5SUM_SHIM="$MK_SHAR_DIR/md5sum-for-smartos-gz"
+[[ -f "$MD5SUM_SHIM" ]] || fatal "md5sum shim missing: $MD5SUM_SHIM"
+
 # Need GNU sharutils — macOS's BSD shar doesn't support -Q and uses a very
 # different shar format (plain cat, not uudecoded).
 SHAR=""
@@ -113,8 +120,21 @@ fi
 
 
 #---- write the shar
+#
+# Structure of the output:
+#
+#   [preamble 1]  — interpolated NAME/STAMP; sets TRACE/errexit, mktemp
+#                   a TMPDIR, installs the md5sum shim onto PATH.
+#   [shim]        — verbatim contents of md5sum-for-smartos-gz, embedded
+#                   via a quoted here-doc so $-substitutions in the shim
+#                   stay literal until runtime.
+#   [preamble 2]  — closes the shim heredoc and chmods +x the shim.
+#   [shar body]   — GNU shar -Q uuencoded install.sh + contents.tgz.
+#                   Strip shar's trailing 'exit 0' so our postamble runs.
+#   [postamble]   — untar contents.tgz, exec install.sh with $@.
+#
 
-(cat <<HEADER_END
+cat <<HEADER1_END > "$OUTPUT"
 #!/bin/bash
 #
 # $NAME installer — self-extracting shell archive. Built by mk-shar.
@@ -133,21 +153,32 @@ set -o pipefail
 echo "Extracting $NAME $STAMP"
 
 TMPDIR=\$(mktemp -d -t $NAME-shar.XXXXXX)
-trap 'rm -rf "\$TMPDIR"' EXIT
+# cd / before rm so the cleanup isn't trying to remove our cwd.
+trap 'cd /; rm -rf "\$TMPDIR"' EXIT
 cd "\$TMPDIR"
 
-HEADER_END
-) > "$OUTPUT"
+# GNU shar's extraction code calls md5sum to verify file integrity.
+# The illumos GZ doesn't ship md5sum; inject a shim (openssl-backed)
+# onto PATH before the shar body runs. Same approach sdcadm uses.
+mkdir -p "\$TMPDIR/.bin"
+export PATH="\$TMPDIR/.bin:\$PATH"
+cat > "\$TMPDIR/.bin/md5sum" <<'MD5SUM_SHIM_END'
+HEADER1_END
 
-# shar -Q emits shell code that, when sourced, recreates install.sh and
-# contents.tgz in cwd via uudecode-style here-docs. Strip its trailing
-# `exit 0` so our postamble runs.
+cat "$MD5SUM_SHIM" >> "$OUTPUT"
+
+cat <<'HEADER2_END' >> "$OUTPUT"
+MD5SUM_SHIM_END
+chmod 755 "$TMPDIR/.bin/md5sum"
+
+HEADER2_END
+
 (cd "$PROTO" && $SHAR -Q install.sh contents.tgz | grep -v '^exit') >> "$OUTPUT"
 
-cat <<POSTAMBLE_END >> "$OUTPUT"
+cat <<'POSTAMBLE_END' >> "$OUTPUT"
 
 tar -xzf contents.tgz
-bash ./install.sh "\$@"
+bash ./install.sh "$@"
 exit 0
 POSTAMBLE_END
 
