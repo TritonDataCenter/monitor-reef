@@ -13,6 +13,8 @@ package cloudapi_test
 import (
 	"context"
 	"testing"
+
+	cloudapi "github.com/TritonDataCenter/monitor-reef/clients/external/cloudapi-client/golang"
 )
 
 func TestIntegration_ListNetworks(t *testing.T) {
@@ -88,7 +90,8 @@ func TestIntegration_HeadNetwork(t *testing.T) {
 func TestIntegration_NetworkIPs(t *testing.T) {
 	ctx := context.Background()
 
-	// Find a network to query IPs on.
+	// Find a non-pool fabric network to query IPs on.
+	// Network pools return 409 for IP listing operations.
 	listResp, err := testClient.ListNetworksWithResponse(ctx, testAccount)
 	if err != nil {
 		t.Fatalf("ListNetworks: %v", err)
@@ -96,7 +99,18 @@ func TestIntegration_NetworkIPs(t *testing.T) {
 	if listResp.JSON200 == nil || len(*listResp.JSON200) == 0 {
 		t.Skip("no networks available")
 	}
-	net := (*listResp.JSON200)[0]
+
+	var net *cloudapi.Network
+	for i := range *listResp.JSON200 {
+		n := &(*listResp.JSON200)[i]
+		if n.Fabric != nil && *n.Fabric {
+			net = n
+			break
+		}
+	}
+	if net == nil {
+		t.Skip("no fabric network found (pools return 409 for IP operations)")
+	}
 
 	// List IPs.
 	ipsResp, err := testClient.ListNetworkIpsWithResponse(ctx, testAccount, net.ID)
