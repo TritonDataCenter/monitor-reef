@@ -68,6 +68,12 @@ pub struct SelfUpdateOpts {
 pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
     let dry_prefix = if opts.dry_run { "[dry-run] " } else { "" };
 
+    // Fail fast if we're obviously not on a Triton headnode GZ. sdcadm's
+    // shar does the equivalent check in its preamble (sdcadm/tools/mk-shar);
+    // we do it here so the error message is "self-update must run on a
+    // headnode GZ" rather than a confusing downstream write failure.
+    require_headnode_gz()?;
+
     // Serialize self-update invocations. Dry-run skips this so a
     // concurrent real run doesn't block an operator from sanity-
     // checking the channel — same behavior as sdcadm's self-update
@@ -212,6 +218,56 @@ pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
     }
     let err = cmd.exec();
     Err(anyhow!("failed to exec {installer_path}: {err}"))
+}
+
+/// Check that we're running in the global zone on a Triton headnode.
+/// Same posture as sdcadm's shar (zonename=global, sysinfo says
+/// Boot Parameters.headnode=true). On non-illumos hosts the zonename
+/// binary is missing and we bail with the same "not a headnode"
+/// error — self-update is definitionally a headnode-GZ operation.
+fn require_headnode_gz() -> Result<()> {
+    let out = Command::new("zonename").output().map_err(|e| {
+        anyhow!(
+            "self-update requires a Triton headnode global zone \
+             (zonename(1) not available: {e})"
+        )
+    })?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "zonename failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let zone = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if zone != "global" {
+        anyhow::bail!("self-update must run in the global zone (currently in zone \"{zone}\")");
+    }
+
+    let out = Command::new("sysinfo").output().map_err(|e| {
+        anyhow!(
+            "self-update requires a Triton headnode (sysinfo(8) \
+             not available: {e})"
+        )
+    })?;
+    if !out.status.success() {
+        anyhow::bail!(
+            "sysinfo failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        );
+    }
+    let info: serde_json::Value =
+        serde_json::from_slice(&out.stdout).context("failed to parse sysinfo JSON")?;
+    let headnode = info
+        .get("Boot Parameters")
+        .and_then(|bp| bp.get("headnode"))
+        .and_then(|v| v.as_str());
+    if headnode != Some("true") {
+        anyhow::bail!(
+            "self-update must run on a Triton headnode \
+             (sysinfo \"Boot Parameters.headnode\" is {headnode:?})"
+        );
+    }
+    Ok(())
 }
 
 /// flock(LOCK_EX|LOCK_NB) on LOCK_FILE. Returns the open file so the
