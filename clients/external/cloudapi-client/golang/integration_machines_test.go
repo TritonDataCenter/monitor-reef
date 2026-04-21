@@ -376,12 +376,21 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 	t.Run("TagOperations", func(t *testing.T) {
 		// Ensure tags exist — creation-time tags use Restify flat-params
 		// convention and may not be set from the JSON body.
-		_, err := testClient.AddMachineTagsWithResponse(ctx, testAccount, machineID,
+		addSetupResp, err := testClient.AddMachineTagsWithResponse(ctx, testAccount, machineID,
 			cloudapi.TagsRequest{"tag1": "value1"},
 		)
 		if err != nil {
 			t.Fatalf("AddMachineTags (setup): %v", err)
 		}
+		requireOK(t, addSetupResp.StatusCode(), addSetupResp.Body)
+		t.Logf("AddMachineTags (setup): status %d", addSetupResp.StatusCode())
+
+		// Verify the tag was added via ListMachineTags first.
+		listTagsResp, err := testClient.ListMachineTagsWithResponse(ctx, testAccount, machineID)
+		if err != nil {
+			t.Fatalf("ListMachineTags (verify setup): %v", err)
+		}
+		t.Logf("ListMachineTags after setup: %s", string(listTagsResp.Body))
 
 		// Get individual tag.
 		getTagResp, err := testClient.GetMachineTagWithResponse(ctx, testAccount, machineID, "tag1")
