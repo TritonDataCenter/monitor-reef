@@ -236,9 +236,12 @@ enum Commands {
         /// Pin to a specific image UUID.
         image_uuid: Option<String>,
 
-        /// Update channel to pull from.
-        #[arg(short = 'C', long, default_value = "experimental")]
-        channel: String,
+        /// Update channel to pull from. If omitted, falls back to the
+        /// sdc SAPI application's `update_channel` metadata, then to
+        /// the updates server's default channel (same fallback chain
+        /// as sdcadm's getDefaultChannel).
+        #[arg(short = 'C', long)]
+        channel: Option<String>,
     },
 
     /// List all Triton services
@@ -367,6 +370,10 @@ async fn main() -> Result<()> {
                 updates_url: updates_url
                     .clone()
                     .unwrap_or_else(|| DEFAULT_UPDATES_URL.to_string()),
+                // sapi_url is best-effort: if we can auto-detect it
+                // (headnode) or it was passed explicitly, great; if
+                // not, self_update::run requires --channel.
+                sapi_url: sapi_url.as_ref().ok().cloned(),
                 channel,
                 image_uuid,
             })

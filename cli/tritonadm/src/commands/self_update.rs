@@ -35,7 +35,14 @@ const INSTALLER_DIR: &str = "/var/tmp";
 
 pub struct SelfUpdateOpts {
     pub updates_url: String,
-    pub channel: String,
+    /// Optional — None means "auto-detect". Passed through to
+    /// post_setup::resolve_channel for flag > SAPI sdc.metadata >
+    /// updates-server-default fallback (matches sdcadm).
+    pub channel: Option<String>,
+    /// Optional — only needed if channel is None (to look up the
+    /// sdc application's update_channel metadata). Usually the
+    /// SDC-config auto-detected URL on a headnode.
+    pub sapi_url: Option<String>,
     /// None means "pick the latest on the channel"; Some(uuid) pins.
     pub image_uuid: Option<Uuid>,
 }
@@ -44,9 +51,39 @@ pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
     let http = triton_tls::build_http_client(false)
         .await
         .context("failed to build HTTP client")?;
-    let updates = Client::new_with_client(&opts.updates_url, http);
+    let updates = Client::new_with_client(&opts.updates_url, http.clone());
 
-    println!("Using channel {}", opts.channel);
+    // Resolve channel: --channel flag > sdc SAPI metadata > updates default.
+    // Mirrors sdcadm's getDefaultChannel.
+    let channel = if let Some(ch) = opts.channel.clone() {
+        ch
+    } else {
+        let sapi_url = opts.sapi_url.as_ref().ok_or_else(|| {
+            anyhow!(
+                "cannot determine update channel: pass --channel explicitly, \
+                 or run on a Triton headnode where the sdc app's SAPI \
+                 metadata supplies update_channel"
+            )
+        })?;
+        let sapi = sapi_client::Client::new_with_client(sapi_url, http);
+        let apps = sapi
+            .list_applications()
+            .name("sdc")
+            .send()
+            .await
+            .context("failed to list sdc application")?
+            .into_inner();
+        let sdc_app = apps
+            .first()
+            .ok_or_else(|| anyhow!("no 'sdc' application found in SAPI"))?;
+        let sdc_metadata = sdc_app
+            .metadata
+            .as_ref()
+            .ok_or_else(|| anyhow!("sdc application has no metadata"))?;
+        super::post_setup::resolve_channel(None, sdc_metadata, &updates).await?
+    };
+
+    println!("Using channel {channel}");
 
     let installed = read_installed_version(VERSION_FILE);
     match &installed {
@@ -62,7 +99,7 @@ pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
         Some(uuid) => updates
             .get_image()
             .uuid(uuid)
-            .channel(opts.channel.clone())
+            .channel(channel.clone())
             .send()
             .await
             .with_context(|| format!("failed to fetch image {uuid}"))?
@@ -72,7 +109,7 @@ pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
                 .list_images()
                 .name("tritonadm")
                 .state("active")
-                .channel(opts.channel.clone())
+                .channel(channel.clone())
                 .send()
                 .await
                 .context("failed to list tritonadm images")?
@@ -83,7 +120,7 @@ pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
                 .ok_or_else(|| {
                     anyhow!(
                         "no active tritonadm images on channel \"{}\" at {}",
-                        opts.channel,
+                        channel,
                         opts.updates_url,
                     )
                 })?
@@ -94,10 +131,7 @@ pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
     // download. sdcadm uses the same comparison.
     let installed_uuid = installed.as_ref().and_then(|v| v.get("uuid"));
     if installed_uuid.map(String::as_str) == Some(candidate.uuid.to_string().as_str()) {
-        println!(
-            "Already up-to-date (using \"{}\" update channel).",
-            opts.channel,
-        );
+        println!("Already up-to-date (using \"{channel}\" update channel).");
         return Ok(());
     }
 
@@ -111,7 +145,7 @@ pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
     let resp = updates
         .get_image_file()
         .uuid(candidate.uuid)
-        .channel(opts.channel.clone())
+        .channel(channel.clone())
         .send()
         .await
         .with_context(|| format!("failed to download {}", candidate.uuid))?;

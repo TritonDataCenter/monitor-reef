@@ -1075,7 +1075,7 @@ async fn cmd_add_service(
 /// Resolve the updates channel.
 ///
 /// Priority: --channel flag > SAPI sdc metadata `update_channel` > remote default.
-async fn resolve_channel(
+pub(crate) async fn resolve_channel(
     channel_opt: Option<String>,
     sdc_metadata: &serde_json::Map<String, serde_json::Value>,
     updates_imgapi: &imgapi_client::Client,
