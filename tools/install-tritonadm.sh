@@ -172,19 +172,42 @@ if [[ -d "$EMBEDDED_PAYLOAD" ]]; then
         exit 1
     fi
     INSTALL_SOURCE="embedded"
-    mkdir -p "$INSTALL_DIR"
-    # cp -R preserves mode bits without depending on rsync (not on every
-    # GZ). Trailing /. copies contents, not the directory itself.
-    cp -R "$EMBEDDED_PAYLOAD/." "$INSTALL_DIR/"
 
-    # Unified etc/version write.
-    mkdir -p "$INSTALL_DIR/etc"
-    cat > "$INSTALL_DIR/etc/version" <<EOF
+    # Atomic-swap staging: build $INSTALL_DIR.new/, rotate the live
+    # dir to $INSTALL_DIR.old/, then rename the staging dir into
+    # place. A failure BEFORE the rotation leaves the live install
+    # untouched; AFTER the rotation, .old holds the previous version
+    # for manual rollback. Matches sdcadm's install-sdcadm.sh
+    # DESTDIR/.new/.old convention.
+    NEW_DIR="${INSTALL_DIR}.new"
+    OLD_DIR="${INSTALL_DIR}.old"
+    rm -rf "$NEW_DIR"
+    mkdir -p "$NEW_DIR"
+    # cp -R preserves mode bits without depending on rsync (not on
+    # every GZ). Trailing /. copies contents, not the directory itself.
+    cp -R "$EMBEDDED_PAYLOAD/." "$NEW_DIR/"
+
+    # Write the unified etc/version INTO the staging dir so the whole
+    # swap is one rename.
+    mkdir -p "$NEW_DIR/etc"
+    cat > "$NEW_DIR/etc/version" <<EOF
 uuid=$INSTALLED_UUID
 version=$INSTALLED_VERSION
 installed_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 source=$INSTALL_SOURCE
 EOF
+
+    # Rotate. rm any stale .old (previous rollback target), then:
+    #   live → .old (if live existed)
+    #   new  → live
+    # There's a ~millisecond window between the two mv calls where
+    # $INSTALL_DIR doesn't exist; the alternative (using rsync
+    # in-place) loses atomicity entirely.
+    rm -rf "$OLD_DIR"
+    if [[ -d "$INSTALL_DIR" ]]; then
+        mv "$INSTALL_DIR" "$OLD_DIR"
+    fi
+    mv "$NEW_DIR" "$INSTALL_DIR"
 
     # Symlink so 'tritonadm' is on PATH. Default /opt/smartdc/bin matches
     # where sdcadm's symlink lives on a headnode. mkdir -p so the create
