@@ -242,6 +242,13 @@ enum Commands {
         /// as sdcadm's getDefaultChannel).
         #[arg(short = 'C', long)]
         channel: Option<String>,
+
+        /// Run the installer shar with TRACE=1 set so it emits the
+        /// full xtrace (PS4-formatted). Matches the flag sdcadm's
+        /// get-tritonadm sets unconditionally; we default to off
+        /// because self-update runs interactively.
+        #[arg(long)]
+        verbose: bool,
     },
 
     /// List all Triton services
@@ -353,6 +360,7 @@ async fn main() -> Result<()> {
             latest,
             image_uuid,
             channel,
+            verbose,
         } => {
             let image_uuid = match (latest, image_uuid) {
                 (true, None) => None,
@@ -376,6 +384,7 @@ async fn main() -> Result<()> {
                 sapi_url: sapi_url.as_ref().ok().cloned(),
                 channel,
                 image_uuid,
+                verbose,
             })
             .await
         }

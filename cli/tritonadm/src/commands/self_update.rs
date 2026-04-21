@@ -53,6 +53,11 @@ pub struct SelfUpdateOpts {
     pub sapi_url: Option<String>,
     /// None means "pick the latest on the channel"; Some(uuid) pins.
     pub image_uuid: Option<Uuid>,
+    /// When true, set TRACE=1 on the installer exec so the shar
+    /// emits full xtrace. sdcadm's get-tritonadm does this
+    /// unconditionally since it captures output to a log file; we
+    /// default off for interactive UX and opt in via --verbose.
+    pub verbose: bool,
 }
 
 pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
@@ -186,7 +191,11 @@ pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
     // our tty, so `tritonadm self-update` is an interactive UX (unlike
     // sdcadm's get-tritonadm which redirects to install.log).
     println!("Run tritonadm installer ({installer_path})");
-    let err = Command::new(&installer_path).exec();
+    let mut cmd = Command::new(&installer_path);
+    if opts.verbose {
+        cmd.env("TRACE", "1");
+    }
+    let err = cmd.exec();
     Err(anyhow!("failed to exec {installer_path}: {err}"))
 }
 
