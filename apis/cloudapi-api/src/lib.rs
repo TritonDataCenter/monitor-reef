@@ -25,9 +25,11 @@
 //! to patch the Error schema. See `openapi-manager/src/transforms.rs` for details.
 
 use dropshot::{
-    HttpError, HttpResponseAccepted, HttpResponseCreated, HttpResponseDeleted, HttpResponseOk,
-    Path, Query, RequestContext, TypedBody, WebsocketChannelResult, WebsocketConnection,
+    Body, HttpError, HttpResponseAccepted, HttpResponseCreated, HttpResponseDeleted,
+    HttpResponseOk, Path, Query, RequestContext, TypedBody, WebsocketChannelResult,
+    WebsocketConnection,
 };
+use http::Response;
 
 pub mod types;
 pub use types::*;
@@ -109,7 +111,7 @@ pub trait CloudApi {
     async fn head_account(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
-    ) -> Result<HttpResponseOk<Account>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Update account
     #[endpoint {
@@ -172,7 +174,7 @@ pub trait CloudApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
         query: Query<ListMachinesQuery>,
-    ) -> Result<HttpResponseOk<Vec<Machine>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Get a machine
     #[endpoint {
@@ -194,7 +196,7 @@ pub trait CloudApi {
     async fn head_machine(
         rqctx: RequestContext<Self::Context>,
         path: Path<MachinePath>,
-    ) -> Result<HttpResponseOk<Machine>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Update a machine (action dispatch)
     ///
@@ -260,7 +262,7 @@ pub trait CloudApi {
     async fn head_audit(
         rqctx: RequestContext<Self::Context>,
         path: Path<MachinePath>,
-    ) -> Result<HttpResponseOk<Vec<AuditEntry>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     // ========================================================================
     // Machine Metadata
@@ -298,7 +300,7 @@ pub trait CloudApi {
     async fn head_machine_metadata(
         rqctx: RequestContext<Self::Context>,
         path: Path<MachinePath>,
-    ) -> Result<HttpResponseOk<Metadata>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Get machine metadata key
     #[endpoint {
@@ -320,7 +322,7 @@ pub trait CloudApi {
     async fn head_machine_metadata_key(
         rqctx: RequestContext<Self::Context>,
         path: Path<MetadataKeyPath>,
-    ) -> Result<HttpResponseOk<String>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Delete all machine metadata
     #[endpoint {
@@ -392,7 +394,7 @@ pub trait CloudApi {
     async fn head_machine_tags(
         rqctx: RequestContext<Self::Context>,
         path: Path<MachinePath>,
-    ) -> Result<HttpResponseOk<Tags>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Get machine tag
     #[endpoint {
@@ -414,7 +416,7 @@ pub trait CloudApi {
     async fn head_machine_tag(
         rqctx: RequestContext<Self::Context>,
         path: Path<TagPath>,
-    ) -> Result<HttpResponseOk<String>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Delete all machine tags
     #[endpoint {
@@ -485,7 +487,7 @@ pub trait CloudApi {
     async fn head_machine_snapshots(
         rqctx: RequestContext<Self::Context>,
         path: Path<MachinePath>,
-    ) -> Result<HttpResponseOk<Vec<Snapshot>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Get machine snapshot
     #[endpoint {
@@ -507,7 +509,7 @@ pub trait CloudApi {
     async fn head_machine_snapshot(
         rqctx: RequestContext<Self::Context>,
         path: Path<SnapshotPath>,
-    ) -> Result<HttpResponseOk<Snapshot>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Delete machine snapshot
     #[endpoint {
@@ -556,7 +558,7 @@ pub trait CloudApi {
     async fn head_nics(
         rqctx: RequestContext<Self::Context>,
         path: Path<MachinePath>,
-    ) -> Result<HttpResponseOk<Vec<Nic>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Get machine NIC
     #[endpoint {
@@ -578,7 +580,7 @@ pub trait CloudApi {
     async fn head_nic(
         rqctx: RequestContext<Self::Context>,
         path: Path<NicPath>,
-    ) -> Result<HttpResponseOk<Nic>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Remove NIC from machine
     #[endpoint {
@@ -627,7 +629,7 @@ pub trait CloudApi {
     async fn head_machine_disks(
         rqctx: RequestContext<Self::Context>,
         path: Path<MachinePath>,
-    ) -> Result<HttpResponseOk<Vec<Disk>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Get machine disk
     #[endpoint {
@@ -649,7 +651,7 @@ pub trait CloudApi {
     async fn head_machine_disk(
         rqctx: RequestContext<Self::Context>,
         path: Path<DiskPath>,
-    ) -> Result<HttpResponseOk<Disk>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Resize machine disk (action dispatch)
     ///
@@ -704,7 +706,7 @@ pub trait CloudApi {
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
         query: Query<ListImagesQuery>,
-    ) -> Result<HttpResponseOk<Vec<Image>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Get image
     #[endpoint {
@@ -726,7 +728,7 @@ pub trait CloudApi {
     async fn head_image(
         rqctx: RequestContext<Self::Context>,
         path: Path<ImagePath>,
-    ) -> Result<HttpResponseOk<Image>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Create or import image (action dispatch)
     ///
@@ -808,7 +810,7 @@ pub trait CloudApi {
     async fn head_packages(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
-    ) -> Result<HttpResponseOk<Vec<Package>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Get package
     #[endpoint {
@@ -830,7 +832,7 @@ pub trait CloudApi {
     async fn head_package(
         rqctx: RequestContext<Self::Context>,
         path: Path<PackagePath>,
-    ) -> Result<HttpResponseOk<Package>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     // ========================================================================
     // Networks
@@ -856,7 +858,7 @@ pub trait CloudApi {
     async fn head_networks(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
-    ) -> Result<HttpResponseOk<Vec<Network>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Get network
     #[endpoint {
@@ -878,7 +880,7 @@ pub trait CloudApi {
     async fn head_network(
         rqctx: RequestContext<Self::Context>,
         path: Path<NetworkPath>,
-    ) -> Result<HttpResponseOk<Network>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     // ========================================================================
     // Network IPs
@@ -904,7 +906,7 @@ pub trait CloudApi {
     async fn head_network_ips(
         rqctx: RequestContext<Self::Context>,
         path: Path<NetworkPath>,
-    ) -> Result<HttpResponseOk<Vec<NetworkIp>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Get network IP
     #[endpoint {
@@ -926,7 +928,7 @@ pub trait CloudApi {
     async fn head_network_ip(
         rqctx: RequestContext<Self::Context>,
         path: Path<NetworkIpPath>,
-    ) -> Result<HttpResponseOk<NetworkIp>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Update network IP
     #[endpoint {
@@ -964,7 +966,7 @@ pub trait CloudApi {
     async fn head_fabric_vlans(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
-    ) -> Result<HttpResponseOk<Vec<FabricVlan>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Create fabric VLAN
     #[endpoint {
@@ -998,7 +1000,7 @@ pub trait CloudApi {
     async fn head_fabric_vlan(
         rqctx: RequestContext<Self::Context>,
         path: Path<FabricVlanPath>,
-    ) -> Result<HttpResponseOk<FabricVlan>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Update fabric VLAN
     #[endpoint {
@@ -1047,7 +1049,7 @@ pub trait CloudApi {
     async fn head_fabric_networks(
         rqctx: RequestContext<Self::Context>,
         path: Path<FabricVlanPath>,
-    ) -> Result<HttpResponseOk<Vec<Network>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Create fabric network
     #[endpoint {
@@ -1081,7 +1083,7 @@ pub trait CloudApi {
     async fn head_fabric_network(
         rqctx: RequestContext<Self::Context>,
         path: Path<FabricNetworkPath>,
-    ) -> Result<HttpResponseOk<Network>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Update fabric network
     #[endpoint {
@@ -1142,7 +1144,7 @@ pub trait CloudApi {
     async fn head_firewall_rules(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
-    ) -> Result<HttpResponseOk<Vec<FirewallRule>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Get firewall rule
     #[endpoint {
@@ -1164,7 +1166,7 @@ pub trait CloudApi {
     async fn head_firewall_rule(
         rqctx: RequestContext<Self::Context>,
         path: Path<FirewallRulePath>,
-    ) -> Result<HttpResponseOk<FirewallRule>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Update firewall rule
     #[endpoint {
@@ -1231,7 +1233,7 @@ pub trait CloudApi {
     async fn head_firewall_rule_machines(
         rqctx: RequestContext<Self::Context>,
         path: Path<FirewallRulePath>,
-    ) -> Result<HttpResponseOk<Vec<Machine>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// List machine firewall rules
     #[endpoint {
@@ -1253,7 +1255,7 @@ pub trait CloudApi {
     async fn head_machine_firewall_rules(
         rqctx: RequestContext<Self::Context>,
         path: Path<MachinePath>,
-    ) -> Result<HttpResponseOk<Vec<FirewallRule>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     // ========================================================================
     // Users
@@ -1291,7 +1293,7 @@ pub trait CloudApi {
     async fn head_users(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
-    ) -> Result<HttpResponseOk<Vec<User>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Get user
     #[endpoint {
@@ -1313,7 +1315,7 @@ pub trait CloudApi {
     async fn head_user(
         rqctx: RequestContext<Self::Context>,
         path: Path<UserPath>,
-    ) -> Result<HttpResponseOk<User>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Update user
     #[endpoint {
@@ -1386,7 +1388,7 @@ pub trait CloudApi {
     async fn head_roles(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
-    ) -> Result<HttpResponseOk<Vec<Role>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Get role
     #[endpoint {
@@ -1408,7 +1410,7 @@ pub trait CloudApi {
     async fn head_role(
         rqctx: RequestContext<Self::Context>,
         path: Path<RolePath>,
-    ) -> Result<HttpResponseOk<Role>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Update role
     #[endpoint {
@@ -1469,7 +1471,7 @@ pub trait CloudApi {
     async fn head_policies(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
-    ) -> Result<HttpResponseOk<Vec<Policy>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Get policy
     #[endpoint {
@@ -1491,7 +1493,7 @@ pub trait CloudApi {
     async fn head_policy(
         rqctx: RequestContext<Self::Context>,
         path: Path<PolicyPath>,
-    ) -> Result<HttpResponseOk<Policy>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Update policy
     #[endpoint {
@@ -1552,7 +1554,7 @@ pub trait CloudApi {
     async fn head_keys(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
-    ) -> Result<HttpResponseOk<Vec<SshKey>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Get SSH key
     #[endpoint {
@@ -1574,7 +1576,7 @@ pub trait CloudApi {
     async fn head_key(
         rqctx: RequestContext<Self::Context>,
         path: Path<KeyPath>,
-    ) -> Result<HttpResponseOk<SshKey>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Delete SSH key
     #[endpoint {
@@ -1623,7 +1625,7 @@ pub trait CloudApi {
     async fn head_user_keys(
         rqctx: RequestContext<Self::Context>,
         path: Path<UserPath>,
-    ) -> Result<HttpResponseOk<Vec<SshKey>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Get user SSH key
     #[endpoint {
@@ -1645,7 +1647,7 @@ pub trait CloudApi {
     async fn head_user_key(
         rqctx: RequestContext<Self::Context>,
         path: Path<UserKeyPath>,
-    ) -> Result<HttpResponseOk<SshKey>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Delete user SSH key
     #[endpoint {
@@ -1694,7 +1696,7 @@ pub trait CloudApi {
     async fn head_access_keys(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
-    ) -> Result<HttpResponseOk<Vec<AccessKey>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Get access key
     #[endpoint {
@@ -1716,7 +1718,7 @@ pub trait CloudApi {
     async fn head_access_key(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccessKeyPath>,
-    ) -> Result<HttpResponseOk<AccessKey>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Update access key
     #[endpoint {
@@ -1777,7 +1779,7 @@ pub trait CloudApi {
     async fn head_user_access_keys(
         rqctx: RequestContext<Self::Context>,
         path: Path<UserPath>,
-    ) -> Result<HttpResponseOk<Vec<AccessKey>>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Get user access key
     #[endpoint {
@@ -1799,7 +1801,7 @@ pub trait CloudApi {
     async fn head_user_access_key(
         rqctx: RequestContext<Self::Context>,
         path: Path<UserAccessKeyPath>,
-    ) -> Result<HttpResponseOk<AccessKey>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Update user access key
     #[endpoint {
@@ -1848,7 +1850,7 @@ pub trait CloudApi {
     async fn head_config(
         rqctx: RequestContext<Self::Context>,
         path: Path<AccountPath>,
-    ) -> Result<HttpResponseOk<Config>, HttpError>;
+    ) -> Result<Response<Body>, HttpError>;
 
     /// Update configuration
     #[endpoint {

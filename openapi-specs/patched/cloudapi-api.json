@@ -3375,21 +3375,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Account"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head account details",
@@ -3546,25 +3538,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AccessKey"
-                  },
-                  "title": "Array_of_AccessKey",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head access keys",
@@ -3726,21 +3706,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccessKey"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head access key",
@@ -3887,21 +3859,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Config"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head configuration",
@@ -4144,25 +4108,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/FabricVlan"
-                  },
-                  "title": "Array_of_FabricVlan",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head fabric VLANs",
@@ -4330,21 +4282,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FabricVlan"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head fabric VLAN",
@@ -4487,25 +4431,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Network"
-                  },
-                  "title": "Array_of_Network",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head fabric networks",
@@ -4714,21 +4646,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Network"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head fabric network",
@@ -4944,25 +4868,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/FirewallRule"
-                  },
-                  "title": "Array_of_FirewallRule",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head firewall rules",
@@ -5173,21 +5085,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FirewallRule"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head firewall rule",
@@ -5479,25 +5383,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Machine"
-                  },
-                  "title": "Array_of_Machine",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head firewall rule machines",
@@ -5685,25 +5577,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Image"
-                  },
-                  "title": "Array_of_Image",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head images",
@@ -5940,21 +5820,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Image"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head image",
@@ -6137,25 +6009,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/SshKey"
-                  },
-                  "title": "Array_of_SshKey",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head SSH keys",
@@ -6363,21 +6223,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SshKey"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head SSH key",
@@ -6758,25 +6610,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Machine"
-                  },
-                  "title": "Array_of_Machine",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machines",
@@ -6941,21 +6781,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Machine"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head a machine",
@@ -7153,25 +6985,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AuditEntry"
-                  },
-                  "title": "Array_of_AuditEntry",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine audit log",
@@ -7256,25 +7076,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Disk"
-                  },
-                  "title": "Array_of_Disk",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine disks",
@@ -7483,21 +7291,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Disk"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine disk",
@@ -7657,25 +7457,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/FirewallRule"
-                  },
-                  "title": "Array_of_FirewallRule",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine firewall rules",
@@ -7799,23 +7587,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Map_of_AnyValue",
-                  "type": "object"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine metadata",
@@ -8024,22 +7802,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "String",
-                  "type": "string"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine metadata key",
@@ -8233,25 +8002,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Nic"
-                  },
-                  "title": "Array_of_Nic",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine NICs",
@@ -8457,21 +8214,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Nic"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine NIC",
@@ -8557,25 +8306,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Snapshot"
-                  },
-                  "title": "Array_of_Snapshot",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine snapshots",
@@ -8781,21 +8518,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Snapshot"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine snapshot",
@@ -8968,23 +8697,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "additionalProperties": true,
-                  "title": "Map_of_AnyValue",
-                  "type": "object"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine tags",
@@ -9252,22 +8971,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "String",
-                  "type": "string"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head machine tag",
@@ -9508,25 +9218,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Network"
-                  },
-                  "title": "Array_of_Network",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head networks",
@@ -9652,21 +9350,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Network"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head network",
@@ -9806,25 +9496,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/NetworkIp"
-                  },
-                  "title": "Array_of_NetworkIp",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head network IPs",
@@ -9922,21 +9600,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NetworkIp"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head network IP",
@@ -10065,25 +9735,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Package"
-                  },
-                  "title": "Array_of_Package",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head packages",
@@ -10207,21 +9865,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Package"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head package",
@@ -10340,25 +9990,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Policy"
-                  },
-                  "title": "Array_of_Policy",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head policies",
@@ -10566,21 +10204,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Policy"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head policy",
@@ -10754,25 +10384,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/Role"
-                  },
-                  "title": "Array_of_Role",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head roles",
@@ -10980,21 +10598,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Role"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head role",
@@ -11253,25 +10863,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/User"
-                  },
-                  "title": "Array_of_User",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head users",
@@ -11479,21 +11077,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/User"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head user",
@@ -11686,25 +11276,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/AccessKey"
-                  },
-                  "title": "Array_of_AccessKey",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head user access keys",
@@ -11906,21 +11484,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccessKey"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head user access key",
@@ -12126,25 +11696,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/SshKey"
-                  },
-                  "title": "Array_of_SshKey",
-                  "type": "array"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head user SSH keys",
@@ -12401,21 +11959,13 @@
           }
         ],
         "responses": {
-          "200": {
+          "default": {
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SshKey"
-                }
+              "*/*": {
+                "schema": {}
               }
             },
-            "description": "successful operation"
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
+            "description": ""
           }
         },
         "summary": "Head user SSH key",

@@ -154,21 +154,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Account"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -278,25 +270,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_AccessKey",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AccessKey"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -467,21 +447,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccessKey"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -619,21 +591,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Config"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -876,25 +840,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_FabricVlan",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FabricVlan"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -1073,21 +1025,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FabricVlan"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -1230,25 +1174,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Network",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Network"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -1467,21 +1399,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Network"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -1722,25 +1646,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_FirewallRule",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FirewallRule"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -1971,21 +1883,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FirewallRule"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -2165,25 +2069,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Machine",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Machine"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -2489,25 +2381,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Image",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Image"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -2745,21 +2625,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Image"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -2915,25 +2787,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_SshKey",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/SshKey"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -3104,21 +2964,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SshKey"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -3490,25 +3342,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Machine",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Machine"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -3752,21 +3592,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Machine"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -3850,25 +3682,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_AuditEntry",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AuditEntry"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -4011,25 +3831,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Disk",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Disk"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -4255,21 +4063,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Disk"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -4355,25 +4155,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_FirewallRule",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/FirewallRule"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -4556,23 +4344,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Map_of_AnyValue",
-                  "type": "object",
-                  "additionalProperties": true
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -4722,22 +4500,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "String",
-                  "type": "string"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -4988,25 +4757,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Nic",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Nic"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -5155,21 +4912,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Nic"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -5312,25 +5061,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Snapshot",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Snapshot"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -5539,21 +5276,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Snapshot"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -5795,23 +5524,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Map_of_AnyValue",
-                  "type": "object",
-                  "additionalProperties": true
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -5961,22 +5680,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "String",
-                  "type": "string"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -6262,25 +5972,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Network",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Network"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -6416,21 +6114,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Network"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -6514,25 +6204,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_NetworkIp",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/NetworkIp"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -6695,21 +6373,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NetworkIp"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -6819,25 +6489,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Package",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Package"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -6970,21 +6628,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Package"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -7140,25 +6790,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Policy",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Policy"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -7384,21 +7022,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Policy"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -7554,25 +7184,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_Role",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/Role"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -7798,21 +7416,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Role"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -8053,25 +7663,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_User",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/User"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -8297,21 +7895,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/User"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -8451,25 +8041,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_AccessKey",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/AccessKey"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -8680,21 +8258,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/AccessKey"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -8946,25 +8516,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "title": "Array_of_SshKey",
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/SshKey"
-                  }
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
@@ -9175,21 +8733,13 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
+          "default": {
+            "description": "",
             "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SshKey"
-                }
+              "*/*": {
+                "schema": {}
               }
             }
-          },
-          "4XX": {
-            "$ref": "#/components/responses/Error"
-          },
-          "5XX": {
-            "$ref": "#/components/responses/Error"
           }
         }
       }
