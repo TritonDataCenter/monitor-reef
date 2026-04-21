@@ -11,6 +11,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
 use cloudapi_client::TypedClient;
 
+mod auth;
 mod cache;
 mod commands;
 mod config;

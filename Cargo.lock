@@ -4750,7 +4750,9 @@ version = "1.0.0"
 dependencies = [
  "anyhow",
  "assert_cmd",
+ "async-trait",
  "axum",
+ "base64 0.22.1",
  "build-data",
  "chrono",
  "clap",
@@ -4785,6 +4787,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "triton-auth",
+ "triton-gateway-client",
  "triton-tls",
  "uuid",
 ]
