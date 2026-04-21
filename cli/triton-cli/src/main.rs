@@ -13,6 +13,7 @@ use cloudapi_client::TypedClient;
 
 mod auth;
 mod cache;
+mod client;
 mod commands;
 mod config;
 mod errors;
@@ -460,6 +461,44 @@ impl Cli {
             profile,
         ))
     }
+
+    /// Like [`Self::build_client`] but dispatches based on the resolved
+    /// profile's auth kind. SSH profiles still land on cloudapi; tritonapi
+    /// profiles build a Bearer-JWT gateway client. Commands that have been
+    /// ported to [`client::AnyClient`] use this; the rest still call
+    /// `build_client` directly and will error on tritonapi profiles.
+    async fn build_any_client(&self) -> Result<(client::AnyClient, Profile)> {
+        let profile = resolve_profile(self.profile.as_deref()).await?;
+        match &profile {
+            Profile::SshKey(_) => {
+                // Reuse the existing SSH construction path in full (profile
+                // resolution there is idempotent with ours above because
+                // `resolve_profile` is cheap and deterministic).
+                let (typed, p) = self.build_client().await?;
+                Ok((client::AnyClient::CloudApi(typed), p))
+            }
+            Profile::TritonApi(tp) => {
+                let provider =
+                    auth::token_provider::FileTokenProvider::load(&tp.name, &tp.url, tp.insecure)
+                        .await?;
+                let gw_auth =
+                    triton_gateway_client::GatewayAuthConfig::bearer(provider.clone() as _);
+                let http_client = build_http_client(tp.insecure).await?;
+                let typed = triton_gateway_client::TypedClient::new_with_http_client(
+                    &tp.url,
+                    gw_auth,
+                    http_client,
+                );
+                Ok((
+                    client::AnyClient::Gateway {
+                        client: typed,
+                        account: tp.account.clone(),
+                    },
+                    profile,
+                ))
+            }
+        }
+    }
 }
 
 #[tokio::main]
@@ -587,15 +626,15 @@ async fn try_main() -> Result<()> {
             command.clone().run(&client, cli.json).await
         }
         Commands::Info => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::info::run(&client, cli.json).await
         }
         Commands::Datacenters(args) => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::datacenters::run(args.clone(), &client, cli.json).await
         }
         Commands::Services(args) => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::services::run(args.clone(), &client, cli.json).await
         }
         Commands::Changefeed(args) => {

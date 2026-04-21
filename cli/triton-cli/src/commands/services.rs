@@ -8,9 +8,10 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
 
+use crate::client::AnyClient;
 use crate::define_columns;
+use crate::dispatch;
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
 
@@ -21,16 +22,16 @@ pub struct ServiceListArgs {
 }
 
 /// List available service endpoints
-pub async fn run(args: ServiceListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+pub async fn run(args: ServiceListArgs, client: &AnyClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
-    let response = client
-        .inner()
-        .list_services()
-        .account(account)
-        .send()
-        .await?;
-
-    let services = response.into_inner();
+    let services = dispatch!(client, |c| {
+        c.inner()
+            .list_services()
+            .account(account)
+            .send()
+            .await?
+            .into_inner()
+    });
 
     if use_json {
         json::print_json(&services)?;

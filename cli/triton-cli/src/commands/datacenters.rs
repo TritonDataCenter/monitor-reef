@@ -8,9 +8,10 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
 
+use crate::client::AnyClient;
 use crate::define_columns;
+use crate::dispatch;
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
 
@@ -20,17 +21,25 @@ pub struct DatacenterListArgs {
     pub table: TableFormatArgs,
 }
 
-/// List datacenters
-pub async fn run(args: DatacenterListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+/// List datacenters.
+///
+/// First Phase-4 command ported to [`AnyClient`] — the builder chain
+/// is identical in both variants, but the builder *types* come from
+/// separate Progenitor crates, so we pattern-match and dispatch inside
+/// each arm. The response is a `HashMap<String, String>` (a `std`
+/// type), which converges across variants, so the post-call rendering
+/// is variant-agnostic.
+pub async fn run(args: DatacenterListArgs, client: &AnyClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
-    let response = client
-        .inner()
-        .list_datacenters()
-        .account(account)
-        .send()
-        .await?;
 
-    let datacenters = response.into_inner();
+    let datacenters = dispatch!(client, |c| {
+        c.inner()
+            .list_datacenters()
+            .account(account)
+            .send()
+            .await?
+            .into_inner()
+    });
 
     if use_json {
         json::print_json(&datacenters)?;

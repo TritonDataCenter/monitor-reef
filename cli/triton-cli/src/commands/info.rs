@@ -7,75 +7,80 @@
 //! Account info/overview command
 
 use anyhow::Result;
-use cloudapi_client::{ClientInfo, TypedClient};
+use std::collections::HashMap;
 
+use crate::client::AnyClient;
+use crate::dispatch;
 use crate::output::{enum_to_display, json};
 
-pub async fn run(client: &TypedClient, use_json: bool) -> Result<()> {
+pub async fn run(client: &AnyClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
-    let profile_url = client.inner().baseurl();
+    let profile_url = client.baseurl().to_string();
 
-    // Fetch account details
-    let acc_response = client.inner().get_account().account(account).send().await?;
-    let acc = acc_response.into_inner();
+    // Push the field extraction inside the dispatch so only std-typed
+    // values escape each arm. The per-crate Progenitor types (`Account`,
+    // `Machine`) stay local to the match arm, and the tuple we return is
+    // uniform across variants.
+    let (login, full_name, email, machine_count, total_memory, total_disk, states) =
+        dispatch!(client, |c| {
+            let acc = c
+                .inner()
+                .get_account()
+                .account(account)
+                .send()
+                .await?
+                .into_inner();
+            let machines = c
+                .inner()
+                .list_machines()
+                .account(account)
+                .send()
+                .await?
+                .into_inner();
 
-    // Fetch machines
-    let machines_response = client
-        .inner()
-        .list_machines()
-        .account(account)
-        .send()
-        .await?;
-    let machines = machines_response.into_inner();
+            let total_memory: u64 = machines.iter().filter_map(|m| m.memory).sum();
+            let total_disk: u64 = machines.iter().map(|m| m.disk).sum();
+            let full_name = match (&acc.first_name, &acc.last_name) {
+                (Some(first), Some(last)) => format!("{} {}", first, last),
+                (Some(first), None) => first.clone(),
+                (None, Some(last)) => last.clone(),
+                (None, None) => "-".to_string(),
+            };
+            let mut states: HashMap<String, usize> = HashMap::new();
+            for m in &machines {
+                let state = enum_to_display(&m.state);
+                *states.entry(state).or_insert(0) += 1;
+            }
 
-    // Calculate stats
-    let total_memory: u64 = machines.iter().filter_map(|m| m.memory).sum();
-    let total_disk: u64 = machines.iter().map(|m| m.disk).sum();
-
-    // Build full name from first/last name
-    let full_name = match (&acc.first_name, &acc.last_name) {
-        (Some(first), Some(last)) => format!("{} {}", first, last),
-        (Some(first), None) => first.clone(),
-        (None, Some(last)) => last.clone(),
-        (None, None) => "-".to_string(),
-    };
+            (
+                acc.login,
+                full_name,
+                acc.email,
+                machines.len(),
+                total_memory,
+                total_disk,
+                states,
+            )
+        });
 
     if use_json {
-        // Match node-triton JSON format
-        // Build instances object with state counts
-        let mut states: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-        for m in &machines {
-            let state = enum_to_display(&m.state);
-            *states.entry(state).or_insert(0) += 1;
-        }
-
         let info = serde_json::json!({
-            "login": acc.login,
+            "login": login,
             "name": full_name,
-            "email": acc.email,
+            "email": email,
             "url": profile_url,
             // Decimal MB→bytes matches node-triton do_info.js:71-72
             "totalDisk": total_disk * 1000 * 1000,
             "totalMemory": total_memory * 1000 * 1000,
-            "totalInstances": machines.len(),
+            "totalInstances": machine_count,
             "instances": states,
         });
         json::print_json(&info)?;
     } else {
-        // Match node-triton text format
-        // Build instances object with state counts
-        let mut states: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-        for m in &machines {
-            let state = enum_to_display(&m.state);
-            *states.entry(state).or_insert(0) += 1;
-        }
-
-        println!("login: {}", acc.login);
+        println!("login: {}", login);
         println!("name: {}", full_name);
-        println!("email: {}", acc.email);
+        println!("email: {}", email);
         println!("url: {}", profile_url);
-        // Decimal MB→bytes per node-triton do_info.js:71-72, then
-        // humanSizeFromBytes (common.js:355) for display
         println!(
             "totalDisk: {}",
             human_size_from_bytes(total_disk * 1000 * 1000)
@@ -84,7 +89,7 @@ pub async fn run(client: &TypedClient, use_json: bool) -> Result<()> {
             "totalMemory: {}",
             human_size_from_bytes(total_memory * 1000 * 1000)
         );
-        println!("instances: {}", machines.len());
+        println!("instances: {}", machine_count);
         for (state, count) in &states {
             println!("    {}: {}", state, count);
         }
