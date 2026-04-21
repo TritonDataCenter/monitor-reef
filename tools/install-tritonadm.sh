@@ -55,7 +55,11 @@ fi
 UPDATES_URL="${UPDATES_URL:-https://updates.tritondatacenter.com}"
 CHANNEL="experimental"
 INSTALL_DIR="/opt/triton/tritonadm"
-SYMLINK="/opt/local/bin/tritonadm"
+# Match sdcadm's convention: /opt/smartdc/bin/<tool> -> installed bin.
+# On a headnode /opt/smartdc/bin always exists and is on PATH; the old
+# default of /opt/local/bin assumed pkgsrc was bootstrapped on the GZ,
+# which isn't true on a plain headnode.
+SYMLINK="/opt/smartdc/bin/tritonadm"
 NO_SYMLINK=false
 UUID=""
 LOCAL_SHAR=""
@@ -182,17 +186,21 @@ installed_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
 source=$INSTALL_SOURCE
 EOF
 
-    # Symlink so 'tritonadm' is on PATH. Default /opt/local/bin exists on
-    # an illumos GZ; on other hosts we skip with a warning.
+    # Symlink so 'tritonadm' is on PATH. Default /opt/smartdc/bin matches
+    # where sdcadm's symlink lives on a headnode. mkdir -p so the create
+    # works even if the parent dir is missing (common on dev hosts); if
+    # that still fails, we skip with an actionable message rather than
+    # trying to second-guess the operator's layout.
     SYMLINK_OK=false
-    if [[ "$NO_SYMLINK" == "true" ]]; then
-        :
-    elif [[ -d "$(dirname "$SYMLINK")" && -w "$(dirname "$SYMLINK")" ]]; then
-        ln -sf "$INSTALL_DIR/bin/tritonadm" "$SYMLINK"
-        SYMLINK_OK=true
-    else
-        echo "==> Skipping symlink: $(dirname "$SYMLINK") is missing or unwritable"
-        echo "    Override with --symlink <path> or use --no-symlink to silence."
+    if [[ "$NO_SYMLINK" != "true" ]]; then
+        mkdir -p "$(dirname "$SYMLINK")" 2>/dev/null || true
+        if [[ -d "$(dirname "$SYMLINK")" ]] \
+                && ln -sf "$INSTALL_DIR/bin/tritonadm" "$SYMLINK" 2>/dev/null; then
+            SYMLINK_OK=true
+        else
+            echo "==> Skipping symlink: couldn't create $SYMLINK"
+            echo "    Override with --symlink <path> or use --no-symlink to silence."
+        fi
     fi
 
     echo
@@ -216,8 +224,8 @@ fi
 # extracts itself and re-invokes THIS script in embedded mode above.
 #
 FORWARDED_ARGS=()
-[[ "$INSTALL_DIR" != "/opt/triton/tritonadm"     ]] && FORWARDED_ARGS+=(--install-dir "$INSTALL_DIR")
-[[ "$SYMLINK"     != "/opt/local/bin/tritonadm" ]] && FORWARDED_ARGS+=(--symlink "$SYMLINK")
+[[ "$INSTALL_DIR" != "/opt/triton/tritonadm"    ]] && FORWARDED_ARGS+=(--install-dir "$INSTALL_DIR")
+[[ "$SYMLINK"     != "/opt/smartdc/bin/tritonadm" ]] && FORWARDED_ARGS+=(--symlink "$SYMLINK")
 [[ "$NO_SYMLINK"  == "true"                     ]] && FORWARDED_ARGS+=(--no-symlink)
 
 if [[ -n "$LOCAL_SHAR" ]]; then
