@@ -128,7 +128,7 @@ pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
 
     println!("Using channel {channel}");
 
-    let installed = read_installed_version(VERSION_FILE);
+    let installed = read_installed_version(VERSION_FILE).await;
     match &installed {
         Some(v) => println!(
             "Installed tritonadm: uuid={} version={}",
@@ -398,8 +398,8 @@ fn acquire_self_update_lock() -> Result<File> {
 
 /// Parse the KEY=VALUE file install.sh writes. Returns None on missing
 /// file or when uuid= isn't present (treat as "no tritonadm installed").
-fn read_installed_version(path: &str) -> Option<HashMap<String, String>> {
-    let content = std::fs::read_to_string(path).ok()?;
+async fn read_installed_version(path: &str) -> Option<HashMap<String, String>> {
+    let content = tokio::fs::read_to_string(path).await.ok()?;
     let mut map = HashMap::new();
     for line in content.lines() {
         let line = line.trim();
