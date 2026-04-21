@@ -13,7 +13,10 @@
 
 use anyhow::{Context, Result};
 use camino::Utf8Path;
-use serde_json::Value;
+use serde_json::{Map, Value, json};
+
+/// Filename of the merged gateway spec produced by [`apply_gateway_merge`].
+const GATEWAY_SPEC_NAME: &str = "triton-gateway-api.json";
 
 /// Apply post-generation transforms, writing patched specs to a separate directory.
 ///
@@ -65,6 +68,13 @@ pub fn apply_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Res
         transform_mahi_sitter_spec(&mahi_sitter_source, &dest)
             .context("failed to transform mahi-sitter-api.json")?;
     }
+
+    // Build the merged gateway spec. This must run after the cloudapi
+    // patch above, because the gateway merge reads the *patched*
+    // cloudapi spec (accurate cloudapi wire format) as one of its two
+    // sources.
+    apply_gateway_merge(generated_dir, patched_dir)
+        .context("failed to build triton-gateway-api.json")?;
 
     Ok(())
 }
@@ -118,6 +128,8 @@ pub fn check_transforms(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Res
         "mahi-sitter-api.json",
         apply_all_mahi_sitter_patches,
     )?;
+
+    all_fresh &= check_gateway_merge(generated_dir, patched_dir)?;
 
     Ok(all_fresh)
 }
@@ -631,6 +643,356 @@ fn patch_mahi_sitter_snapshot_binary(spec: &mut Value) -> Result<()> {
     Ok(())
 }
 
+// --- Gateway merge (triton-gateway-api.json) ---
+//
+// The gateway merge combines the patched cloudapi-api.json with the
+// generated triton-api.json to produce a single external OpenAPI spec
+// covering every endpoint the triton-gateway service exposes:
+//
+//   * tritonapi native `/v1/*` endpoints (auth / ping / jwks)
+//   * cloudapi proxied `/{account}/*` endpoints (the gateway re-signs
+//     these with an operator SSH key on its way out)
+//
+// Downstream TypeScript (web) and Go (Terraform provider) clients
+// consume this merged spec instead of stitching two specs themselves.
+// Phase 2 of the tritonapi profile plan also uses this spec as the
+// input to a Rust `triton-gateway-client` crate.
+//
+// This is a port of `mariana-trench/openapi-manager/src/transforms.rs`
+// with four deliberate changes:
+//
+//   1. Both source specs are in-repo (no cargo-metadata gymnastics).
+//   2. Paths are NOT rewritten. Mariana-trench maps
+//      `/{account}/...` → `/api/v1/...` because user-portal is a
+//      web frontend with its own URL conventions. The gateway is the
+//      canonical public surface, so we keep `/{account}/...` verbatim
+//      to preserve method-signature parity with cloudapi-client.
+//      (`/my/...` is a separate alias the gateway resolves at runtime.)
+//   3. No `x-datacenter` header injection. User-portal fronts multiple
+//      DCs; triton-gateway is per-DC.
+//   4. `components.schemas.Error` collision is resolved in favour of
+//      tritonapi's shape (cloudapi's variant is explicitly dropped).
+//      This is correct *because* the gateway translates cloudapi error
+//      bodies to the tritonapi shape at runtime — see
+//      `services/triton-gateway/src/error_translate.rs`. Without that
+//      translation this merge would be lying about the wire format.
+
+/// Build `patched/triton-gateway-api.json` by merging the patched
+/// cloudapi spec with the generated tritonapi spec.
+fn apply_gateway_merge(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Result<()> {
+    let Some((cloudapi_spec, tritonapi_spec)) = load_gateway_sources(generated_dir, patched_dir)?
+    else {
+        return Ok(());
+    };
+
+    let merged = merge_gateway_specs(&cloudapi_spec, &tritonapi_spec)?;
+
+    let dest = patched_dir.join(GATEWAY_SPEC_NAME);
+    let output =
+        serde_json::to_string_pretty(&merged).context("failed to serialize merged gateway spec")?;
+    std::fs::write(&dest, output).with_context(|| format!("failed to write {}", dest))?;
+
+    eprintln!("Wrote merged gateway spec to {}", dest);
+    Ok(())
+}
+
+/// Verify `patched/triton-gateway-api.json` is up-to-date relative to its
+/// two source specs. Returns `true` when fresh.
+fn check_gateway_merge(generated_dir: &Utf8Path, patched_dir: &Utf8Path) -> Result<bool> {
+    let Some((cloudapi_spec, tritonapi_spec)) = load_gateway_sources(generated_dir, patched_dir)?
+    else {
+        return Ok(true);
+    };
+
+    let expected = merge_gateway_specs(&cloudapi_spec, &tritonapi_spec)?;
+    let expected_text =
+        serde_json::to_string_pretty(&expected).context("failed to serialize expected spec")?;
+
+    let dest = patched_dir.join(GATEWAY_SPEC_NAME);
+    if !dest.exists() {
+        eprintln!(
+            "Patched spec missing: {}\n  fix: run `make openapi-generate`",
+            dest
+        );
+        return Ok(false);
+    }
+
+    let actual = std::fs::read_to_string(&dest).context("failed to read merged gateway spec")?;
+    if expected_text.trim_end() != actual.trim_end() {
+        eprintln!(
+            "Patched spec is stale: {}\n  fix: run `make openapi-generate`",
+            dest
+        );
+        Ok(false)
+    } else {
+        eprintln!("  Fresh patched spec: {}", dest);
+        Ok(true)
+    }
+}
+
+/// Load the two source specs for the gateway merge, or return
+/// `Ok(None)` if either is missing (treat as "nothing to do").
+fn load_gateway_sources(
+    generated_dir: &Utf8Path,
+    patched_dir: &Utf8Path,
+) -> Result<Option<(Value, Value)>> {
+    let cloudapi_path = patched_dir.join("cloudapi-api.json");
+    let tritonapi_path = generated_dir.join("triton-api.json");
+
+    if !cloudapi_path.exists() || !tritonapi_path.exists() {
+        return Ok(None);
+    }
+
+    let cloudapi_text = std::fs::read_to_string(&cloudapi_path)
+        .with_context(|| format!("failed to read {}", cloudapi_path))?;
+    let tritonapi_text = std::fs::read_to_string(&tritonapi_path)
+        .with_context(|| format!("failed to read {}", tritonapi_path))?;
+
+    let cloudapi_spec: Value = serde_json::from_str(&cloudapi_text)
+        .with_context(|| format!("failed to parse {}", cloudapi_path))?;
+    let tritonapi_spec: Value = serde_json::from_str(&tritonapi_text)
+        .with_context(|| format!("failed to parse {}", tritonapi_path))?;
+
+    Ok(Some((cloudapi_spec, tritonapi_spec)))
+}
+
+/// Merge the cloudapi and tritonapi specs into a single gateway spec.
+///
+/// The output takes tritonapi as the base (its paths, schemas, and
+/// components are assumed to be "fresher" per the Phase 0 error
+/// translation agreement) and overlays the cloudapi paths and schemas.
+/// Known collisions (`Error`) are resolved in favour of tritonapi;
+/// any other schema collisions are logged as a warning so they get
+/// human review.
+fn merge_gateway_specs(cloudapi_spec: &Value, tritonapi_spec: &Value) -> Result<Value> {
+    let mut merged = Map::new();
+
+    // Synthesize the `info` block. We draw the version from the
+    // tritonapi crate (already embedded in its generated spec) to keep
+    // this consistent with how openapi-manager sources versions for
+    // every other API — see `crate_version` in main.rs.
+    let tritonapi_version = tritonapi_spec
+        .pointer("/info/version")
+        .and_then(|v| v.as_str())
+        .unwrap_or("0.1.0");
+    merged.insert("openapi".to_string(), json!("3.0.3"));
+    merged.insert(
+        "info".to_string(),
+        json!({
+            "title": "Triton Gateway API",
+            "description": "Merged public surface of the triton-gateway service: \
+                tritonapi `/v1/*` endpoints plus the cloudapi `/{account}/*` \
+                endpoints it proxies. This spec is the single source of truth \
+                for downstream TypeScript (web) and Go (Terraform provider) \
+                client generators, and for the Rust `triton-gateway-client` \
+                crate.",
+            "version": tritonapi_version,
+        }),
+    );
+
+    // Merge paths. No collisions are expected (tritonapi is `/v1/*`,
+    // cloudapi is `/{account}/*`) but we still detect and error on
+    // them rather than silently clobbering.
+    let mut paths = Map::new();
+    copy_paths_into(
+        &mut paths,
+        tritonapi_spec.get("paths"),
+        "triton-api.json",
+        "cloudapi-api.json",
+    )?;
+    copy_paths_into(
+        &mut paths,
+        cloudapi_spec.get("paths"),
+        "cloudapi-api.json",
+        "triton-api.json",
+    )?;
+    merged.insert("paths".to_string(), Value::Object(paths));
+
+    // Build components.
+    let components = build_components(cloudapi_spec, tritonapi_spec)?;
+    merged.insert("components".to_string(), Value::Object(components));
+
+    // Global security scheme — every gateway request needs a Bearer
+    // JWT. (The gateway also accepts HTTP Signature on the cloudapi
+    // leg as a fallback during testing, but that's not surfaced in
+    // the public spec.)
+    merged.insert("security".to_string(), json!([{ "bearerAuth": [] }]));
+
+    // Merge tags (sorted union).
+    merged.insert(
+        "tags".to_string(),
+        Value::Array(merge_tag_lists(&[
+            tritonapi_spec.get("tags"),
+            cloudapi_spec.get("tags"),
+        ])),
+    );
+
+    Ok(Value::Object(merged))
+}
+
+/// Copy every entry from `src` into `dst`, erroring on collision.
+fn copy_paths_into(
+    dst: &mut Map<String, Value>,
+    src: Option<&Value>,
+    src_name: &str,
+    other_name: &str,
+) -> Result<()> {
+    let Some(obj) = src.and_then(|v| v.as_object()) else {
+        return Ok(());
+    };
+    for (path, methods) in obj {
+        if dst.contains_key(path) {
+            anyhow::bail!(
+                "path `{}` appears in both {} and {}; gateway merge cannot safely \
+                 pick one. Resolve the collision in the source specs.",
+                path,
+                src_name,
+                other_name,
+            );
+        }
+        dst.insert(path.clone(), methods.clone());
+    }
+    Ok(())
+}
+
+/// Build the merged `components` object. Tritonapi wins for any schema
+/// or response collision — today that's just `Error`, which is the
+/// whole reason Phase 0 exists. Any other collision is logged as a
+/// warning so a human can decide whether the gateway merge is still
+/// safe.
+fn build_components(cloudapi_spec: &Value, tritonapi_spec: &Value) -> Result<Map<String, Value>> {
+    let mut components = Map::new();
+
+    // Schemas: tritonapi wins on collision (see module comment above).
+    let mut schemas = Map::new();
+    merge_component_map(
+        &mut schemas,
+        tritonapi_spec.pointer("/components/schemas"),
+        cloudapi_spec.pointer("/components/schemas"),
+        "schema",
+        &["Error"],
+    );
+    components.insert("schemas".to_string(), Value::Object(schemas));
+
+    // Responses: same precedence rule. `Error` also lives here.
+    let mut responses = Map::new();
+    merge_component_map(
+        &mut responses,
+        tritonapi_spec.pointer("/components/responses"),
+        cloudapi_spec.pointer("/components/responses"),
+        "response",
+        &["Error"],
+    );
+    components.insert("responses".to_string(), Value::Object(responses));
+
+    // Fold in any other component buckets tritonapi happens to define
+    // (`parameters`, `requestBodies`, `headers`, ...). Unlikely for
+    // our current surface but cheap and correct.
+    if let Some(tri_components) = tritonapi_spec.get("components").and_then(|v| v.as_object()) {
+        for (key, value) in tri_components {
+            if key == "schemas" || key == "responses" || key == "securitySchemes" {
+                continue;
+            }
+            components.insert(key.clone(), value.clone());
+        }
+    }
+    if let Some(cloud_components) = cloudapi_spec.get("components").and_then(|v| v.as_object()) {
+        for (key, value) in cloud_components {
+            if key == "schemas" || key == "responses" || key == "securitySchemes" {
+                continue;
+            }
+            if let Some(existing) = components.get(key)
+                && existing != value
+            {
+                eprintln!(
+                    "  warning: gateway merge: components.{} differs between cloudapi \
+                     and tritonapi specs; keeping tritonapi's copy",
+                    key
+                );
+                continue;
+            }
+            components
+                .entry(key.clone())
+                .or_insert_with(|| value.clone());
+        }
+    }
+
+    // Bearer security scheme (global) — identical to the mariana-trench
+    // portal merge.
+    let mut security_schemes = Map::new();
+    security_schemes.insert(
+        "bearerAuth".to_string(),
+        json!({
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "JWT issued by the gateway's `/v1/auth/login` endpoint.",
+        }),
+    );
+    components.insert(
+        "securitySchemes".to_string(),
+        Value::Object(security_schemes),
+    );
+
+    Ok(components)
+}
+
+/// Merge `primary` and `secondary` component maps into `dst`. Primary
+/// wins on collision. Entries whose name appears in `expected_collisions`
+/// are merged silently; any other collision is logged as a warning so
+/// a human can audit the merge during review.
+fn merge_component_map(
+    dst: &mut Map<String, Value>,
+    primary: Option<&Value>,
+    secondary: Option<&Value>,
+    kind: &str,
+    expected_collisions: &[&str],
+) {
+    if let Some(obj) = primary.and_then(|v| v.as_object()) {
+        for (name, value) in obj {
+            dst.insert(name.clone(), value.clone());
+        }
+    }
+    if let Some(obj) = secondary.and_then(|v| v.as_object()) {
+        for (name, value) in obj {
+            if dst.contains_key(name) {
+                if !expected_collisions.contains(&name.as_str()) {
+                    eprintln!(
+                        "  warning: gateway merge: {} `{}` defined in both source \
+                         specs; keeping tritonapi's copy",
+                        kind, name
+                    );
+                }
+                continue;
+            }
+            dst.insert(name.clone(), value.clone());
+        }
+    }
+}
+
+/// Merge a list of `tags` arrays (each a `Vec<{name, ...}>`) into a
+/// sorted, deduplicated-by-name array. Using a `BTreeSet` keeps the
+/// output deterministic across runs.
+fn merge_tag_lists(tag_sources: &[Option<&Value>]) -> Vec<Value> {
+    let mut by_name: std::collections::BTreeMap<String, Value> = std::collections::BTreeMap::new();
+    for source in tag_sources {
+        let Some(arr) = source.and_then(|v| v.as_array()) else {
+            continue;
+        };
+        for tag in arr {
+            if let Some(name) = tag.get("name").and_then(|v| v.as_str()) {
+                // First occurrence wins, mostly so tritonapi's
+                // descriptions (if any) don't get overwritten by
+                // cloudapi's.
+                by_name
+                    .entry(name.to_string())
+                    .or_insert_with(|| tag.clone());
+            }
+        }
+    }
+    by_name.into_values().collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -746,5 +1108,194 @@ mod tests {
         // Now generate the correct patched file
         apply_transforms(&generated, &patched).unwrap();
         assert!(check_transforms(&generated, &patched).unwrap());
+    }
+
+    /// Minimal synthetic cloudapi-shaped spec for gateway-merge tests.
+    fn cloudapi_fixture() -> Value {
+        serde_json::json!({
+            "openapi": "3.0.3",
+            "info": { "title": "Triton CloudAPI", "version": "9.20.0" },
+            "paths": {
+                "/{account}/machines": {
+                    "get": {
+                        "tags": ["machines"],
+                        "operationId": "list_machines",
+                        "responses": { "200": { "description": "ok" } }
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    "Error": {
+                        "type": "object",
+                        "properties": {
+                            "code": { "type": "string" },
+                            "message": { "type": "string" }
+                        },
+                        "required": ["code"]
+                    },
+                    "Machine": {
+                        "type": "object",
+                        "properties": { "id": { "type": "string" } }
+                    }
+                },
+                "responses": {
+                    "Error": {
+                        "description": "Error",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/Error" }
+                            }
+                        }
+                    }
+                }
+            },
+            "tags": [{ "name": "machines" }]
+        })
+    }
+
+    /// Minimal synthetic tritonapi-shaped spec for gateway-merge tests.
+    fn tritonapi_fixture() -> Value {
+        serde_json::json!({
+            "openapi": "3.0.3",
+            "info": { "title": "Triton API", "version": "0.1.0" },
+            "paths": {
+                "/v1/auth/login": {
+                    "post": {
+                        "tags": ["auth"],
+                        "operationId": "auth_login",
+                        "responses": { "200": { "description": "ok" } }
+                    }
+                }
+            },
+            "components": {
+                "schemas": {
+                    "Error": {
+                        "type": "object",
+                        "properties": {
+                            "error_code": { "type": "string" },
+                            "message": { "type": "string" },
+                            "request_id": { "type": "string" }
+                        },
+                        "required": ["message", "request_id"]
+                    },
+                    "LoginRequest": {
+                        "type": "object",
+                        "properties": { "username": { "type": "string" } }
+                    }
+                },
+                "responses": {
+                    "Error": {
+                        "description": "Error",
+                        "content": {
+                            "application/json": {
+                                "schema": { "$ref": "#/components/schemas/Error" }
+                            }
+                        }
+                    }
+                }
+            },
+            "tags": [{ "name": "auth" }]
+        })
+    }
+
+    #[test]
+    fn test_gateway_merge_combines_paths_and_keeps_tritonapi_error() {
+        let cloudapi = cloudapi_fixture();
+        let tritonapi = tritonapi_fixture();
+
+        let merged = merge_gateway_specs(&cloudapi, &tritonapi).unwrap();
+
+        // Paths merged: tritonapi and cloudapi both present.
+        assert!(merged["paths"]["/{account}/machines"].is_object());
+        assert!(merged["paths"]["/v1/auth/login"].is_object());
+
+        // Error schema: tritonapi's shape wins (has error_code, not code).
+        let error = &merged["components"]["schemas"]["Error"];
+        assert!(
+            error["properties"]["error_code"].is_object(),
+            "tritonapi Error shape should win (had error_code)"
+        );
+        assert!(
+            error["properties"]["code"].is_null(),
+            "cloudapi Error shape should be dropped (had code)"
+        );
+        assert_eq!(
+            error["required"].as_array().unwrap(),
+            &[
+                serde_json::json!("message"),
+                serde_json::json!("request_id")
+            ]
+        );
+
+        // Non-colliding schemas from both specs are carried through.
+        assert!(merged["components"]["schemas"]["Machine"].is_object());
+        assert!(merged["components"]["schemas"]["LoginRequest"].is_object());
+
+        // Bearer security scheme added + global security set.
+        assert_eq!(
+            merged["components"]["securitySchemes"]["bearerAuth"]["scheme"],
+            "bearer"
+        );
+        assert_eq!(
+            merged["security"][0]["bearerAuth"]
+                .as_array()
+                .unwrap()
+                .len(),
+            0
+        );
+
+        // Tags are the sorted union.
+        let tag_names: Vec<&str> = merged["tags"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(tag_names, vec!["auth", "machines"]);
+
+        // Info block is synthesized.
+        assert_eq!(merged["info"]["title"], "Triton Gateway API");
+        assert_eq!(merged["info"]["version"], "0.1.0");
+    }
+
+    #[test]
+    fn test_gateway_merge_rejects_path_collision() {
+        let mut cloudapi = cloudapi_fixture();
+        // Make cloudapi claim a tritonapi-shaped path too.
+        let login = cloudapi["paths"]["/{account}/machines"].clone();
+        cloudapi["paths"]
+            .as_object_mut()
+            .unwrap()
+            .insert("/v1/auth/login".to_string(), login);
+
+        let tritonapi = tritonapi_fixture();
+        let result = merge_gateway_specs(&cloudapi, &tritonapi);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("/v1/auth/login"));
+    }
+
+    #[test]
+    fn test_gateway_merge_writes_and_checks() {
+        let temp_dir = TempDir::new().unwrap();
+        let root = Utf8Path::from_path(temp_dir.path()).unwrap();
+        let generated = root.join("generated");
+        let patched = root.join("patched");
+        std::fs::create_dir_all(&generated).unwrap();
+        std::fs::create_dir_all(&patched).unwrap();
+
+        // Write the sources in the locations apply_gateway_merge reads.
+        write_spec(&patched.join("cloudapi-api.json"), &cloudapi_fixture());
+        write_spec(&generated.join("triton-api.json"), &tritonapi_fixture());
+
+        apply_gateway_merge(&generated, &patched).unwrap();
+        assert!(patched.join(GATEWAY_SPEC_NAME).exists());
+        assert!(check_gateway_merge(&generated, &patched).unwrap());
+
+        // Tamper with the merged file; check should now fail.
+        let merged_path = patched.join(GATEWAY_SPEC_NAME);
+        let original = std::fs::read_to_string(&merged_path).unwrap();
+        std::fs::write(&merged_path, original.replacen("Gateway", "Tampered", 1)).unwrap();
+        assert!(!check_gateway_merge(&generated, &patched).unwrap());
     }
 }
