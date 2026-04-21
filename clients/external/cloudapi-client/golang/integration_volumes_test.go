@@ -19,6 +19,20 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
+func TestIntegration_ListVolumeSizes(t *testing.T) {
+	ctx := context.Background()
+
+	resp, err := testClient.ListVolumeSizesWithResponse(ctx, testAccount)
+	if err != nil {
+		t.Fatalf("ListVolumeSizes: %v", err)
+	}
+	requireOK(t, resp.StatusCode(), resp.Body)
+
+	if resp.JSON200 == nil {
+		t.Fatal("expected JSON200 to be non-nil")
+	}
+}
+
 func TestIntegration_Volumes_CRUD(t *testing.T) {
 	skipUnlessWriteActions(t)
 	if !testConfig.AllowVolumesTests {

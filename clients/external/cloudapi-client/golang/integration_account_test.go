@@ -13,6 +13,8 @@ package cloudapi_test
 import (
 	"context"
 	"testing"
+
+	cloudapi "github.com/TritonDataCenter/monitor-reef/clients/external/cloudapi-client/golang"
 )
 
 func TestIntegration_GetAccount(t *testing.T) {
@@ -82,5 +84,150 @@ func TestIntegration_ListServices(t *testing.T) {
 
 	if resp.JSON200 == nil {
 		t.Fatal("expected JSON200 to be non-nil")
+	}
+}
+
+func TestIntegration_HeadConfig(t *testing.T) {
+	ctx := context.Background()
+
+	resp, err := testClient.HeadConfigWithResponse(ctx, testAccount)
+	if err != nil {
+		t.Fatalf("HeadConfig: %v", err)
+	}
+	requireOK(t, resp.StatusCode(), nil)
+}
+
+func TestIntegration_UpdateAccount(t *testing.T) {
+	skipUnlessWriteActions(t)
+	ctx := context.Background()
+
+	// Get current account to capture original values.
+	getResp, err := testClient.GetAccountWithResponse(ctx, testAccount)
+	if err != nil {
+		t.Fatalf("GetAccount: %v", err)
+	}
+	requireOK(t, getResp.StatusCode(), getResp.Body)
+	original := getResp.JSON200
+
+	// Update company name.
+	newCompany := "inttest-company"
+	updateResp, err := testClient.UpdateAccountWithResponse(ctx, testAccount, cloudapi.UpdateAccountJSONRequestBody{
+		CompanyName: &newCompany,
+	})
+	if err != nil {
+		t.Fatalf("UpdateAccount: %v", err)
+	}
+	requireOK(t, updateResp.StatusCode(), updateResp.Body)
+
+	// Restore original company name.
+	t.Cleanup(func() {
+		origCompany := ""
+		if original.CompanyName != nil {
+			origCompany = *original.CompanyName
+		}
+		_, _ = testClient.UpdateAccountWithResponse(context.Background(), testAccount, cloudapi.UpdateAccountJSONRequestBody{
+			CompanyName: &origCompany,
+		})
+	})
+
+	if updateResp.JSON200 == nil {
+		t.Fatal("expected JSON200 to be non-nil")
+	}
+	if updateResp.JSON200.CompanyName == nil || *updateResp.JSON200.CompanyName != newCompany {
+		t.Errorf("expected company name %q, got %v", newCompany, updateResp.JSON200.CompanyName)
+	}
+}
+
+func TestIntegration_UpdateConfig(t *testing.T) {
+	skipUnlessWriteActions(t)
+	ctx := context.Background()
+
+	// Get current config to capture original default_network.
+	getResp, err := testClient.GetConfigWithResponse(ctx, testAccount)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	requireOK(t, getResp.StatusCode(), getResp.Body)
+	originalNetwork := getResp.JSON200.DefaultNetwork
+
+	// Find a network to set as default.
+	netResp, err := testClient.ListNetworksWithResponse(ctx, testAccount)
+	if err != nil {
+		t.Fatalf("ListNetworks: %v", err)
+	}
+	if netResp.JSON200 == nil || len(*netResp.JSON200) == 0 {
+		t.Skip("no networks available")
+	}
+	newDefault := (*netResp.JSON200)[0].ID
+
+	updateResp, err := testClient.UpdateConfigWithResponse(ctx, testAccount, cloudapi.UpdateConfigJSONRequestBody{
+		DefaultNetwork: &newDefault,
+	})
+	if err != nil {
+		t.Fatalf("UpdateConfig: %v", err)
+	}
+	requireOK(t, updateResp.StatusCode(), updateResp.Body)
+
+	// Restore original.
+	t.Cleanup(func() {
+		if originalNetwork != nil {
+			_, _ = testClient.UpdateConfigWithResponse(context.Background(), testAccount, cloudapi.UpdateConfigJSONRequestBody{
+				DefaultNetwork: originalNetwork,
+			})
+		}
+	})
+
+	if updateResp.JSON200 == nil {
+		t.Fatal("expected JSON200 to be non-nil")
+	}
+}
+
+func TestIntegration_GetDatacenter(t *testing.T) {
+	ctx := context.Background()
+
+	// List datacenters to find one.
+	listResp, err := testClient.ListDatacentersWithResponse(ctx, testAccount)
+	if err != nil {
+		t.Fatalf("ListDatacenters: %v", err)
+	}
+	if listResp.JSON200 == nil || len(*listResp.JSON200) == 0 {
+		t.Skip("no datacenters available")
+	}
+
+	// Pick the first datacenter name.
+	var dcName string
+	for name := range *listResp.JSON200 {
+		dcName = name
+		break
+	}
+
+	resp, err := testClient.GetDatacenterWithResponse(ctx, testAccount, dcName)
+	if err != nil {
+		t.Fatalf("GetDatacenter(%s): %v", dcName, err)
+	}
+	requireOK(t, resp.StatusCode(), resp.Body)
+}
+
+func TestIntegration_GetProvisioningLimits(t *testing.T) {
+	ctx := context.Background()
+
+	resp, err := testClient.GetProvisioningLimitsWithResponse(ctx, testAccount)
+	if err != nil {
+		t.Fatalf("GetProvisioningLimits: %v", err)
+	}
+	requireOK(t, resp.StatusCode(), resp.Body)
+}
+
+func TestIntegration_ListForeignDatacenters(t *testing.T) {
+	ctx := context.Background()
+
+	resp, err := testClient.ListForeignDatacentersWithResponse(ctx, testAccount)
+	if err != nil {
+		t.Fatalf("ListForeignDatacenters: %v", err)
+	}
+	// May return 200 with empty list or 404 in single-DC setups.
+	sc := resp.StatusCode()
+	if sc != 200 && sc != 404 {
+		t.Fatalf("expected 200 or 404, got %d: %s", sc, string(resp.Body))
 	}
 }

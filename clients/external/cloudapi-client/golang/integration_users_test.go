@@ -63,6 +63,30 @@ func TestIntegration_Users_CRUD(t *testing.T) {
 		t.Errorf("expected login %q, got %q", userLogin, getResp.JSON200.Login)
 	}
 
+	// Head user.
+	headUserResp, err := testClient.HeadUserWithResponse(ctx, testAccount, userID)
+	if err != nil {
+		t.Fatalf("HeadUser: %v", err)
+	}
+	requireOK(t, headUserResp.StatusCode(), nil)
+
+	// Head users collection.
+	headUsersResp, err := testClient.HeadUsersWithResponse(ctx, testAccount)
+	if err != nil {
+		t.Fatalf("HeadUsers: %v", err)
+	}
+	requireOK(t, headUsersResp.StatusCode(), nil)
+
+	// Update user.
+	newCompany := "inttest-company"
+	updateResp, err := testClient.UpdateUserWithResponse(ctx, testAccount, userID, cloudapi.UpdateUserJSONRequestBody{
+		CompanyName: &newCompany,
+	})
+	if err != nil {
+		t.Fatalf("UpdateUser: %v", err)
+	}
+	requireOK(t, updateResp.StatusCode(), updateResp.Body)
+
 	// List users and verify our user is present.
 	listResp, err := testClient.ListUsersWithResponse(ctx, testAccount)
 	if err != nil {

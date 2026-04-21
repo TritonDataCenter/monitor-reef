@@ -34,6 +34,16 @@ func TestIntegration_ListMachines(t *testing.T) {
 	}
 }
 
+func TestIntegration_HeadMachines(t *testing.T) {
+	ctx := context.Background()
+
+	resp, err := testClient.HeadMachinesWithResponse(ctx, testAccount, &cloudapi.HeadMachinesParams{})
+	if err != nil {
+		t.Fatalf("HeadMachines: %v", err)
+	}
+	requireOK(t, resp.StatusCode(), nil)
+}
+
 // TestIntegration_Machine_Lifecycle exercises the full machine CRUD lifecycle,
 // following the triton-go TestAcc_Instance pattern:
 // Create → wait running → parallel reads → snapshots → stop/start → rename → delete.
@@ -99,6 +109,15 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 			}
 		})
 
+		t.Run("HeadMachine", func(t *testing.T) {
+			t.Parallel()
+			resp, err := testClient.HeadMachineWithResponse(ctx, testAccount, machineID)
+			if err != nil {
+				t.Fatalf("HeadMachine: %v", err)
+			}
+			requireOK(t, resp.StatusCode(), nil)
+		})
+
 		t.Run("ListMachines_ByName", func(t *testing.T) {
 			t.Parallel()
 			resp, err := testClient.ListMachinesWithResponse(ctx, testAccount, &cloudapi.ListMachinesParams{
@@ -122,6 +141,15 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 			requireOK(t, resp.StatusCode(), resp.Body)
 		})
 
+		t.Run("HeadMachineTags", func(t *testing.T) {
+			t.Parallel()
+			resp, err := testClient.HeadMachineTagsWithResponse(ctx, testAccount, machineID)
+			if err != nil {
+				t.Fatalf("HeadMachineTags: %v", err)
+			}
+			requireOK(t, resp.StatusCode(), nil)
+		})
+
 		t.Run("AddMachineTags", func(t *testing.T) {
 			t.Parallel()
 			resp, err := testClient.AddMachineTagsWithResponse(ctx, testAccount, machineID,
@@ -140,6 +168,15 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 				t.Fatalf("ListMachineMetadata: %v", err)
 			}
 			requireOK(t, resp.StatusCode(), resp.Body)
+		})
+
+		t.Run("HeadMachineMetadata", func(t *testing.T) {
+			t.Parallel()
+			resp, err := testClient.HeadMachineMetadataWithResponse(ctx, testAccount, machineID)
+			if err != nil {
+				t.Fatalf("HeadMachineMetadata: %v", err)
+			}
+			requireOK(t, resp.StatusCode(), nil)
 		})
 
 		t.Run("AddMachineMetadata", func(t *testing.T) {
@@ -173,6 +210,15 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 			requireOK(t, resp.StatusCode(), resp.Body)
 		})
 
+		t.Run("HeadAudit", func(t *testing.T) {
+			t.Parallel()
+			resp, err := testClient.HeadAuditWithResponse(ctx, testAccount, machineID)
+			if err != nil {
+				t.Fatalf("HeadAudit: %v", err)
+			}
+			requireOK(t, resp.StatusCode(), nil)
+		})
+
 		t.Run("ListNics", func(t *testing.T) {
 			t.Parallel()
 			resp, err := testClient.ListNicsWithResponse(ctx, testAccount, machineID)
@@ -185,6 +231,40 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 			}
 		})
 
+		t.Run("HeadNics", func(t *testing.T) {
+			t.Parallel()
+			resp, err := testClient.HeadNicsWithResponse(ctx, testAccount, machineID)
+			if err != nil {
+				t.Fatalf("HeadNics: %v", err)
+			}
+			requireOK(t, resp.StatusCode(), nil)
+		})
+
+		t.Run("NicGetAndHead", func(t *testing.T) {
+			t.Parallel()
+			// List NICs to find a MAC address.
+			listResp, err := testClient.ListNicsWithResponse(ctx, testAccount, machineID)
+			if err != nil {
+				t.Fatalf("ListNics: %v", err)
+			}
+			if listResp.JSON200 == nil || len(*listResp.JSON200) == 0 {
+				t.Skip("no NICs available")
+			}
+			mac := (*listResp.JSON200)[0].Mac
+
+			getResp, err := testClient.GetNicWithResponse(ctx, testAccount, machineID, mac)
+			if err != nil {
+				t.Fatalf("GetNic(%s): %v", mac, err)
+			}
+			requireOK(t, getResp.StatusCode(), getResp.Body)
+
+			headResp, err := testClient.HeadNicWithResponse(ctx, testAccount, machineID, mac)
+			if err != nil {
+				t.Fatalf("HeadNic(%s): %v", mac, err)
+			}
+			requireOK(t, headResp.StatusCode(), nil)
+		})
+
 		t.Run("ListMachineFirewallRules", func(t *testing.T) {
 			t.Parallel()
 			resp, err := testClient.ListMachineFirewallRulesWithResponse(ctx, testAccount, machineID)
@@ -192,6 +272,41 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 				t.Fatalf("ListMachineFirewallRules: %v", err)
 			}
 			requireOK(t, resp.StatusCode(), resp.Body)
+		})
+
+		t.Run("HeadMachineFirewallRules", func(t *testing.T) {
+			t.Parallel()
+			resp, err := testClient.HeadMachineFirewallRulesWithResponse(ctx, testAccount, machineID)
+			if err != nil {
+				t.Fatalf("HeadMachineFirewallRules: %v", err)
+			}
+			requireOK(t, resp.StatusCode(), nil)
+		})
+
+		t.Run("ListMachineDisks", func(t *testing.T) {
+			t.Parallel()
+			resp, err := testClient.ListMachineDisksWithResponse(ctx, testAccount, machineID)
+			if err != nil {
+				t.Fatalf("ListMachineDisks: %v", err)
+			}
+			// May return 200 or 409 (not supported on this brand).
+			sc := resp.StatusCode()
+			if sc != 200 && sc != 409 {
+				t.Fatalf("expected 200 or 409, got %d: %s", sc, string(resp.Body))
+			}
+		})
+
+		t.Run("HeadMachineDisks", func(t *testing.T) {
+			t.Parallel()
+			resp, err := testClient.HeadMachineDisksWithResponse(ctx, testAccount, machineID)
+			if err != nil {
+				t.Fatalf("HeadMachineDisks: %v", err)
+			}
+			// May return 200 or 409 (not supported on this brand).
+			sc := resp.StatusCode()
+			if sc != 200 && sc != 409 {
+				t.Fatalf("expected 200 or 409, got %d", sc)
+			}
 		})
 	})
 
@@ -218,6 +333,13 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 		}
 		requireOK(t, getSnap.StatusCode(), getSnap.Body)
 
+		// Head snapshot.
+		headSnap, err := testClient.HeadMachineSnapshotWithResponse(ctx, testAccount, machineID, snapName)
+		if err != nil {
+			t.Fatalf("HeadMachineSnapshot: %v", err)
+		}
+		requireOK(t, headSnap.StatusCode(), nil)
+
 		// List snapshots.
 		listSnap, err := testClient.ListMachineSnapshotsWithResponse(ctx, testAccount, machineID)
 		if err != nil {
@@ -225,12 +347,117 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 		}
 		requireOK(t, listSnap.StatusCode(), listSnap.Body)
 
+		// Head snapshots collection.
+		headSnaps, err := testClient.HeadMachineSnapshotsWithResponse(ctx, testAccount, machineID)
+		if err != nil {
+			t.Fatalf("HeadMachineSnapshots: %v", err)
+		}
+		requireOK(t, headSnaps.StatusCode(), nil)
+
 		// Delete snapshot.
 		delSnap, err := testClient.DeleteMachineSnapshotWithResponse(ctx, testAccount, machineID, snapName)
 		if err != nil {
 			t.Fatalf("DeleteMachineSnapshot: %v", err)
 		}
 		requireOK(t, delSnap.StatusCode(), delSnap.Body)
+	})
+
+	// Step 5b: Tag operations (sequential).
+	t.Run("TagOperations", func(t *testing.T) {
+		// Get individual tag.
+		getTagResp, err := testClient.GetMachineTagWithResponse(ctx, testAccount, machineID, "tag1")
+		if err != nil {
+			t.Fatalf("GetMachineTag: %v", err)
+		}
+		requireOK(t, getTagResp.StatusCode(), getTagResp.Body)
+
+		// Head individual tag.
+		headTagResp, err := testClient.HeadMachineTagWithResponse(ctx, testAccount, machineID, "tag1")
+		if err != nil {
+			t.Fatalf("HeadMachineTag: %v", err)
+		}
+		requireOK(t, headTagResp.StatusCode(), nil)
+
+		// Replace all tags.
+		replaceResp, err := testClient.ReplaceMachineTagsWithResponse(ctx, testAccount, machineID,
+			cloudapi.TagsRequest{"newtag": "newvalue"},
+		)
+		if err != nil {
+			t.Fatalf("ReplaceMachineTags: %v", err)
+		}
+		requireOK(t, replaceResp.StatusCode(), replaceResp.Body)
+
+		// Delete individual tag.
+		delTagResp, err := testClient.DeleteMachineTagWithResponse(ctx, testAccount, machineID, "newtag")
+		if err != nil {
+			t.Fatalf("DeleteMachineTag: %v", err)
+		}
+		requireOK(t, delTagResp.StatusCode(), delTagResp.Body)
+
+		// Re-add tags so DeleteMachineTags has something to delete.
+		_, err = testClient.AddMachineTagsWithResponse(ctx, testAccount, machineID,
+			cloudapi.TagsRequest{"tmp1": "val1", "tmp2": "val2"},
+		)
+		if err != nil {
+			t.Fatalf("AddMachineTags (re-add): %v", err)
+		}
+
+		// Delete all tags.
+		delAllResp, err := testClient.DeleteMachineTagsWithResponse(ctx, testAccount, machineID)
+		if err != nil {
+			t.Fatalf("DeleteMachineTags: %v", err)
+		}
+		requireOK(t, delAllResp.StatusCode(), delAllResp.Body)
+	})
+
+	// Step 5c: Metadata operations (sequential).
+	t.Run("MetadataOperations", func(t *testing.T) {
+		// Add metadata key via the dedicated endpoint.
+		addResp, err := testClient.AddMachineMetadataWithResponse(ctx, testAccount, machineID,
+			cloudapi.AddMetadataRequest{"mdkey1": "mdval1", "mdkey2": "mdval2"},
+		)
+		if err != nil {
+			t.Fatalf("AddMachineMetadata: %v", err)
+		}
+		requireOK(t, addResp.StatusCode(), addResp.Body)
+
+		// Head metadata key. Metadata propagation is async, so this
+		// exercises the endpoint but may get 404 if not yet propagated.
+		headKeyResp, err := testClient.HeadMachineMetadataKeyWithResponse(ctx, testAccount, machineID, "mdkey1")
+		if err != nil {
+			t.Fatalf("HeadMachineMetadataKey: %v", err)
+		}
+		sc := headKeyResp.StatusCode()
+		if sc != 200 && sc != 404 {
+			t.Fatalf("HeadMachineMetadataKey: expected 200 or 404, got %d", sc)
+		}
+
+		// Get metadata key.
+		getKeyResp, err := testClient.GetMachineMetadataWithResponse(ctx, testAccount, machineID, "mdkey1")
+		if err != nil {
+			t.Fatalf("GetMachineMetadata: %v", err)
+		}
+		sc = getKeyResp.StatusCode()
+		if sc != 200 && sc != 404 {
+			t.Fatalf("GetMachineMetadata: expected 200 or 404, got %d: %s", sc, string(getKeyResp.Body))
+		}
+
+		// Delete single metadata key.
+		delKeyResp, err := testClient.DeleteMachineMetadataWithResponse(ctx, testAccount, machineID, "mdkey1")
+		if err != nil {
+			t.Fatalf("DeleteMachineMetadata: %v", err)
+		}
+		sc = delKeyResp.StatusCode()
+		if sc != 200 && sc != 204 && sc != 404 {
+			t.Fatalf("DeleteMachineMetadata: expected 200/204/404, got %d: %s", sc, string(delKeyResp.Body))
+		}
+
+		// Delete all metadata.
+		delAllResp, err := testClient.DeleteAllMachineMetadataWithResponse(ctx, testAccount, machineID)
+		if err != nil {
+			t.Fatalf("DeleteAllMachineMetadata: %v", err)
+		}
+		requireOK(t, delAllResp.StatusCode(), delAllResp.Body)
 	})
 
 	// Step 6: Stop and start.

@@ -122,3 +122,61 @@ func TestIntegration_GetPackage(t *testing.T) {
 		t.Errorf("expected package name %q, got %q", pkg.Name, resp.JSON200.Name)
 	}
 }
+
+func TestIntegration_HeadImages(t *testing.T) {
+	ctx := context.Background()
+
+	resp, err := testClient.HeadImagesWithResponse(ctx, testAccount, &cloudapi.HeadImagesParams{})
+	if err != nil {
+		t.Fatalf("HeadImages: %v", err)
+	}
+	requireOK(t, resp.StatusCode(), nil)
+}
+
+func TestIntegration_HeadImage(t *testing.T) {
+	ctx := context.Background()
+
+	listResp, err := testClient.ListImagesWithResponse(ctx, testAccount, &cloudapi.ListImagesParams{})
+	if err != nil {
+		t.Fatalf("ListImages: %v", err)
+	}
+	if listResp.JSON200 == nil || len(*listResp.JSON200) == 0 {
+		t.Skip("no images available")
+	}
+
+	img := (*listResp.JSON200)[0]
+	resp, err := testClient.HeadImageWithResponse(ctx, testAccount, img.ID)
+	if err != nil {
+		t.Fatalf("HeadImage(%s): %v", img.ID, err)
+	}
+	requireOK(t, resp.StatusCode(), nil)
+}
+
+func TestIntegration_HeadPackages(t *testing.T) {
+	ctx := context.Background()
+
+	resp, err := testClient.HeadPackagesWithResponse(ctx, testAccount)
+	if err != nil {
+		t.Fatalf("HeadPackages: %v", err)
+	}
+	requireOK(t, resp.StatusCode(), nil)
+}
+
+func TestIntegration_HeadPackage(t *testing.T) {
+	ctx := context.Background()
+
+	listResp, err := testClient.ListPackagesWithResponse(ctx, testAccount)
+	if err != nil {
+		t.Fatalf("ListPackages: %v", err)
+	}
+	if listResp.JSON200 == nil || len(*listResp.JSON200) == 0 {
+		t.Skip("no packages available")
+	}
+
+	pkg := (*listResp.JSON200)[0]
+	resp, err := testClient.HeadPackageWithResponse(ctx, testAccount, pkg.Name)
+	if err != nil {
+		t.Fatalf("HeadPackage(%s): %v", pkg.Name, err)
+	}
+	requireOK(t, resp.StatusCode(), nil)
+}

@@ -31,6 +31,16 @@ func TestIntegration_ListFirewallRules(t *testing.T) {
 	}
 }
 
+func TestIntegration_HeadFirewallRules(t *testing.T) {
+	ctx := context.Background()
+
+	resp, err := testClient.HeadFirewallRulesWithResponse(ctx, testAccount)
+	if err != nil {
+		t.Fatalf("HeadFirewallRules: %v", err)
+	}
+	requireOK(t, resp.StatusCode(), nil)
+}
+
 func TestIntegration_FirewallRules_CRUD(t *testing.T) {
 	skipUnlessWriteActions(t)
 	ctx := context.Background()
@@ -72,6 +82,27 @@ func TestIntegration_FirewallRules_CRUD(t *testing.T) {
 	if getResp.JSON200.Rule != ruleText {
 		t.Errorf("expected rule text %q, got %q", ruleText, getResp.JSON200.Rule)
 	}
+
+	// Head rule.
+	headResp, err := testClient.HeadFirewallRuleWithResponse(ctx, testAccount, ruleID)
+	if err != nil {
+		t.Fatalf("HeadFirewallRule: %v", err)
+	}
+	requireOK(t, headResp.StatusCode(), nil)
+
+	// List machines affected by rule.
+	listMachResp, err := testClient.ListFirewallRuleMachinesWithResponse(ctx, testAccount, ruleID)
+	if err != nil {
+		t.Fatalf("ListFirewallRuleMachines: %v", err)
+	}
+	requireOK(t, listMachResp.StatusCode(), listMachResp.Body)
+
+	// Head machines affected by rule.
+	headMachResp, err := testClient.HeadFirewallRuleMachinesWithResponse(ctx, testAccount, ruleID)
+	if err != nil {
+		t.Fatalf("HeadFirewallRuleMachines: %v", err)
+	}
+	requireOK(t, headMachResp.StatusCode(), nil)
 
 	// Update rule description.
 	updateResp, err := testClient.UpdateFirewallRuleWithResponse(ctx, testAccount, ruleID, cloudapi.UpdateFirewallRuleJSONRequestBody{

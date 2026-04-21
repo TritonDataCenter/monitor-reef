@@ -40,7 +40,8 @@ var (
 type TestConfig struct {
 	AllowWriteActions bool `json:"allowWriteActions"`
 	AllowVolumesTests bool `json:"allowVolumesTests"`
-	SkipKvmTests      bool `json:"skipKvmTests"`
+	AllowFabricTests  bool `json:"allowFabricTests"`
+	SkipHvmTests      bool `json:"skipHvmTests"`
 	SkipFlexDiskTests bool `json:"skipFlexDiskTests"`
 }
 

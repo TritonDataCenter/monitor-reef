@@ -73,6 +73,20 @@ func TestIntegration_Keys_CRUD(t *testing.T) {
 		t.Errorf("GetKey: expected name %q, got %q", keyName, getResp.JSON200.Name)
 	}
 
+	// Head key.
+	headKeyResp, err := testClient.HeadKeyWithResponse(ctx, testAccount, keyName)
+	if err != nil {
+		t.Fatalf("HeadKey: %v", err)
+	}
+	requireOK(t, headKeyResp.StatusCode(), nil)
+
+	// Head keys collection.
+	headKeysResp, err := testClient.HeadKeysWithResponse(ctx, testAccount)
+	if err != nil {
+		t.Fatalf("HeadKeys: %v", err)
+	}
+	requireOK(t, headKeysResp.StatusCode(), nil)
+
 	// List keys and verify our key is present.
 	listResp, err := testClient.ListKeysWithResponse(ctx, testAccount)
 	if err != nil {
