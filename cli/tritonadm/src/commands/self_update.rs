@@ -15,7 +15,9 @@
 //! after successful extraction.
 
 use std::collections::HashMap;
+use std::fs::{File, OpenOptions};
 use std::os::unix::fs::PermissionsExt;
+use std::os::unix::io::AsRawFd;
 use std::os::unix::process::CommandExt;
 use std::process::Command;
 
@@ -33,6 +35,12 @@ const VERSION_FILE: &str = "/opt/triton/tritonadm/etc/version";
 /// INSTALLER_DIR so both tools touch the same place on the GZ.
 const INSTALLER_DIR: &str = "/var/tmp";
 
+/// Advisory flock(2) path. Serializes concurrent `tritonadm self-update`
+/// (and `tritonadm self-update` racing with another orchestrator calling
+/// the shar). `/var/run` is tmpfs on the GZ; the lock file is effectively
+/// a no-op persisted across boots.
+const LOCK_FILE: &str = "/var/run/tritonadm-self-update.lock";
+
 pub struct SelfUpdateOpts {
     pub updates_url: String,
     /// Optional — None means "auto-detect". Passed through to
@@ -48,6 +56,13 @@ pub struct SelfUpdateOpts {
 }
 
 pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
+    // Serialize self-update invocations. flock on a file in /var/run;
+    // LOCK_NB so we fail fast rather than block if another run is
+    // already in flight. The returned File is held for the rest of
+    // this function (and across the eventual exec(), since flock is
+    // preserved across exec as long as the fd stays open).
+    let _lock = acquire_self_update_lock().context("self-update lock")?;
+
     let http = triton_tls::build_http_client(false)
         .await
         .context("failed to build HTTP client")?;
@@ -173,6 +188,33 @@ pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
     println!("Run tritonadm installer ({installer_path})");
     let err = Command::new(&installer_path).exec();
     Err(anyhow!("failed to exec {installer_path}: {err}"))
+}
+
+/// flock(LOCK_EX|LOCK_NB) on LOCK_FILE. Returns the open file so the
+/// caller can hold the lock for the duration of the update (dropping
+/// the file closes the fd, which releases the flock). Fails fast with
+/// a clear message if another self-update is already running.
+fn acquire_self_update_lock() -> Result<File> {
+    let f = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(LOCK_FILE)
+        .with_context(|| format!("failed to open lockfile {LOCK_FILE}"))?;
+    // SAFETY: libc::flock takes a raw fd and integer flags. fd is
+    // guaranteed valid until `f` is dropped.
+    let ret = unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) };
+    if ret != 0 {
+        let err = std::io::Error::last_os_error();
+        if err.raw_os_error() == Some(libc::EWOULDBLOCK) {
+            anyhow::bail!(
+                "another `tritonadm self-update` is already running \
+                 (holds lock {LOCK_FILE})"
+            );
+        }
+        return Err(err).with_context(|| format!("flock({LOCK_FILE}) failed"));
+    }
+    Ok(f)
 }
 
 /// Parse the KEY=VALUE file install.sh writes. Returns None on missing

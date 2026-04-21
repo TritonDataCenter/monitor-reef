@@ -25,6 +25,7 @@ clap_complete = "4.4"
 futures-util = "0.3"
 imgapi-api = { path = "../../apis/imgapi-api" }
 imgapi-client = { path = "../../clients/internal/imgapi-client" }
+libc = "0.2"
 mahi-api = { path = "../../apis/mahi-api" }
 mahi-client = { path = "../../clients/internal/mahi-client" }
 mahi-sitter-client = { path = "../../clients/internal/mahi-sitter-client" }
