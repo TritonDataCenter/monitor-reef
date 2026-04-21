@@ -97,6 +97,37 @@ fn configure_cloudapi(settings: &mut GenerationSettings) {
         .with_patch("AccessKeyStatus", &value_enum_patch);
 }
 
+fn configure_triton_gateway(settings: &mut GenerationSettings) {
+    // Merged spec covers both the tritonapi surface and cloudapi (proxied).
+    // ValueEnum patches mirror cloudapi's list — every enum that cloudapi-
+    // client patches is present in the merged spec and can be used as a
+    // CLI argument (see CLAUDE.md §3 "client-generator Patch Consistency").
+    // triton-api itself has no clap::ValueEnum enums today; add patches
+    // here if any are introduced.
+    let value_enum_patch = TypePatch::default().with_derive("clap::ValueEnum").clone();
+
+    settings
+        .with_interface(progenitor::InterfaceStyle::Builder)
+        .with_tag(progenitor::TagStyle::Merged)
+        .with_inner_type(syn::parse_quote!(crate::auth::GatewayAuthConfig))
+        .with_pre_hook_async(syn::parse_quote!(crate::auth::add_auth_headers))
+        .with_derive("schemars::JsonSchema")
+        .with_patch("Brand", &value_enum_patch)
+        .with_patch("Brand2", &value_enum_patch)
+        .with_patch("MachineState", &value_enum_patch)
+        .with_patch("MachineType", &value_enum_patch)
+        .with_patch("ImageState", &value_enum_patch)
+        .with_patch("ImageType", &value_enum_patch)
+        .with_patch("DiskState", &value_enum_patch)
+        .with_patch("MigrationAction", &value_enum_patch)
+        .with_patch("MigrationState", &value_enum_patch)
+        .with_patch("NicState", &value_enum_patch)
+        .with_patch("SnapshotState", &value_enum_patch)
+        .with_patch("VolumeState", &value_enum_patch)
+        .with_patch("VolumeType", &value_enum_patch)
+        .with_patch("AccessKeyStatus", &value_enum_patch);
+}
+
 fn configure_sapi(settings: &mut GenerationSettings) {
     settings
         .with_interface(progenitor::InterfaceStyle::Builder)
@@ -232,6 +263,12 @@ static CLIENTS: &[ClientConfig] = &[
         spec_path: "openapi-specs/patched/mahi-sitter-api.json",
         output_path: "clients/internal/mahi-sitter-client/src/generated.rs",
         configure: configure_mahi_sitter,
+    },
+    ClientConfig {
+        name: "triton-gateway-client",
+        spec_path: "openapi-specs/patched/triton-gateway-api.json",
+        output_path: "clients/internal/triton-gateway-client/src/generated.rs",
+        configure: configure_triton_gateway,
     },
 ];
 

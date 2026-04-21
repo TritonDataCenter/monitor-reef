@@ -4812,6 +4812,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "triton-gateway-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "base64 0.22.1",
+ "clap",
+ "cloudapi-api",
+ "progenitor-client",
+ "rand 0.9.2",
+ "reqwest",
+ "schemars",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "triton-api",
+ "triton-auth",
+ "uuid",
+]
+
+[[package]]
 name = "triton-tls"
 version = "0.1.0"
 dependencies = [
@@ -4831,11 +4853,13 @@ dependencies = [
  "anyhow",
  "assert_cmd",
  "bytes",
+ "chrono",
  "clap",
  "clap_complete",
  "futures-util",
  "imgapi-api",
  "imgapi-client",
+ "libc",
  "mahi-api",
  "mahi-client",
  "mahi-sitter-client",

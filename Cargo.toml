@@ -31,6 +31,7 @@ members = [
     "clients/internal/napi-client",
     "clients/internal/papi-client",
     "clients/internal/sapi-client",
+    "clients/internal/triton-gateway-client",
     "clients/internal/vmapi-client",
     "libs/triton-auth",
     "libs/triton-auth-session",
