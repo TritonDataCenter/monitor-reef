@@ -55,6 +55,15 @@ pipeline {
                 sh('make check')
             }
         }*/
+        stage('pkgin') {
+            // tools/mk-shar needs GNU sharutils. The 24.4.1 builder image
+            // has it available via pkgsrc but not installed by default;
+            // install it here so the build is self-contained. Mirrors the
+            // manta-rebalancer branch's pattern for flex.
+            steps{
+                sh('pkgin -y in gsharutils')
+            }
+        }
         stage('build triton-api image') {
            steps {
                joyBuildImageAndUpload(dir: 'images/triton-api')
