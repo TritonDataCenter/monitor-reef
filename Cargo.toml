@@ -35,6 +35,7 @@ members = [
     "clients/internal/vmapi-client",
     "libs/triton-auth",
     "libs/triton-auth-session",
+    "libs/triton-pagination",
     "libs/triton-tls",
     "client-generator",
     "openapi-manager",

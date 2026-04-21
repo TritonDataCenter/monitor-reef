@@ -737,6 +737,7 @@ dependencies = [
  "thiserror 2.0.18",
  "tokio",
  "triton-auth",
+ "triton-pagination",
  "urlencoding",
  "uuid",
 ]
@@ -4833,7 +4834,15 @@ dependencies = [
  "tokio",
  "triton-api",
  "triton-auth",
+ "triton-pagination",
  "uuid",
+]
+
+[[package]]
+name = "triton-pagination"
+version = "0.1.0"
+dependencies = [
+ "tokio",
 ]
 
 [[package]]

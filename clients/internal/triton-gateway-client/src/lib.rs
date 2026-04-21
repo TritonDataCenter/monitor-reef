@@ -48,6 +48,14 @@
 
 pub mod auth;
 
+/// Re-export of the shared limit/offset pagination helper.
+///
+/// The helper itself lives in `triton-pagination` so both this crate and
+/// `cloudapi-client` can share a single implementation. Gateway-route
+/// list commands in the CLI reach for `triton_gateway_client::pagination`
+/// through this alias.
+pub use triton_pagination as pagination;
+
 // Allow unwrap in generated code — Progenitor uses it in Client::new().
 #[allow(clippy::unwrap_used)]
 mod generated;
