@@ -29,7 +29,6 @@ import (
 const (
 	RSA_SHA512     = "rsa-sha512"
 	ECDSA_SHA512   = "ecdsa-sha512"
-	DSA_SHA512     = "dsa-sha512"
 	ED25519_SHA512 = "ed25519-sha512"
 )
 
@@ -68,7 +67,7 @@ func NewPrivateKeySigner(input PrivateKeySignerInput) (*PrivateKeySigner, error)
 		return nil, fmt.Errorf("unable to format display public key: %w", err)
 	}
 	if matchKeyFingerprint != keyFingerprintMD5 {
-		return nil, errors.New("Private key file does not match public key fingerprint")
+		return nil, errors.New("private key file does not match public key fingerprint")
 	}
 
 	signer := &PrivateKeySigner{
@@ -86,14 +85,14 @@ func NewPrivateKeySigner(input PrivateKeySignerInput) (*PrivateKeySigner, error)
 
 	_, algorithm, err := signer.SignRaw("HelloWorld")
 	if err != nil {
-		return nil, fmt.Errorf("Cannot sign using ssh agent: %s", err)
+		return nil, fmt.Errorf("cannot verify signing with private key: %w", err)
 	}
 	signer.algorithm = algorithm
 
 	return signer, nil
 }
 
-func (s *PrivateKeySigner) Sign(dateHeader string, isManta bool) (string, error) {
+func (s *PrivateKeySigner) Sign(dateHeader string) (string, error) {
 	const headerName = "date"
 
 	message := fmt.Sprintf("%s: %s", headerName, dateHeader)
@@ -106,7 +105,6 @@ func (s *PrivateKeySigner) Sign(dateHeader string, isManta bool) (string, error)
 		UserName:    s.userName,
 		AccountName: s.accountName,
 		Fingerprint: s.formattedKeyFingerprint,
-		IsManta:     isManta,
 	}
 
 	return fmt.Sprintf(authorizationHeaderFormat, key.generate(), algoName, headerName, signedBase64), nil
@@ -132,12 +130,11 @@ func (s *PrivateKeySigner) SignRaw(toSign string) (string, string, error) {
 		hash := s.hashFunc.New()
 		hash.Write(message)
 		digest := hash.Sum(nil)
-		r, s, err := ecdsa.Sign(rand.Reader, key, digest)
+		sigR, sigS, err := ecdsa.Sign(rand.Reader, key, digest)
 		if err != nil {
 			return "", "", fmt.Errorf("failed to create signature using ECDSA key: %w", err)
 		}
-		signature := ECDSASignature{R: r, S: s}
-		signed, err := asn1.Marshal(signature)
+		signed, err := asn1.Marshal(ECDSASignature{R: sigR, S: sigS})
 		if err != nil {
 			return "", "", fmt.Errorf("unable to marshal ECDSA signature: %w", err)
 		}

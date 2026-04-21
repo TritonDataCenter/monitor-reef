@@ -9,4 +9,6 @@ output: clients/external/cloudapi-client/golang/cloudapi.gen.go
 generate:
   client: true
   models: true
-  embedded-spec: true
+  embedded-spec: false
+output-options:
+  name-normalizer: ToCamelCaseWithInitialisms

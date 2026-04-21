@@ -10,7 +10,7 @@ package authentication
 
 import (
 	"fmt"
-	"regexp"
+	"strings"
 )
 
 type httpAuthSignature interface {
@@ -19,17 +19,15 @@ type httpAuthSignature interface {
 }
 
 func keyFormatToKeyType(keyFormat string) (string, error) {
-	if keyFormat == "ssh-rsa" {
+	switch keyFormat {
+	case "ssh-rsa", "rsa-sha2-256", "rsa-sha2-512":
 		return "rsa", nil
-	}
-
-	if keyFormat == "ssh-ed25519" {
+	case "ssh-ed25519":
 		return "ed25519", nil
+	default:
+		if strings.HasPrefix(keyFormat, "ecdsa-sha2-") {
+			return "ecdsa", nil
+		}
+		return "", fmt.Errorf("unknown key format: %s", keyFormat)
 	}
-
-	if regexp.MustCompile("^ecdsa-sha2-*").Match([]byte(keyFormat)) {
-		return "ecdsa", nil
-	}
-
-	return "", fmt.Errorf("Unknown key format: %s", keyFormat)
 }

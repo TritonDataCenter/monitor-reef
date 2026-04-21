@@ -10,9 +10,12 @@ package authentication
 
 import (
 	"crypto"
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/md5"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
@@ -90,6 +93,8 @@ func TestKeyFormatToKeyType(t *testing.T) {
 		wantErr bool
 	}{
 		{"ssh-rsa", "rsa", false},
+		{"rsa-sha2-256", "rsa", false},
+		{"rsa-sha2-512", "rsa", false},
 		{"ssh-ed25519", "ed25519", false},
 		{"ecdsa-sha2-nistp256", "ecdsa", false},
 		{"ecdsa-sha2-nistp384", "ecdsa", false},
@@ -189,7 +194,7 @@ func TestPrivateKeySignerEd25519(t *testing.T) {
 	}
 
 	t.Run("Sign", func(t *testing.T) {
-		header, err := signer.Sign("Thu, 01 Jan 2025 00:00:00 GMT", false)
+		header, err := signer.Sign("Thu, 01 Jan 2025 00:00:00 GMT")
 		if err != nil {
 			t.Fatalf("Sign: %v", err)
 		}
@@ -274,25 +279,6 @@ func TestKeyIDGenerate(t *testing.T) {
 			},
 			expect: "/myaccount/users/myuser/keys/aa:bb:cc",
 		},
-		{
-			name: "manta with user",
-			input: KeyID{
-				AccountName: "myaccount",
-				UserName:    "myuser",
-				Fingerprint: "aa:bb:cc",
-				IsManta:     true,
-			},
-			expect: "/myaccount/myuser/keys/aa:bb:cc",
-		},
-		{
-			name: "manta no user",
-			input: KeyID{
-				AccountName: "myaccount",
-				Fingerprint: "aa:bb:cc",
-				IsManta:     true,
-			},
-			expect: "/myaccount/keys/aa:bb:cc",
-		},
 	}
 
 	for _, tc := range tests {
@@ -300,6 +286,374 @@ func TestKeyIDGenerate(t *testing.T) {
 			got := tc.input.generate()
 			if got != tc.expect {
 				t.Errorf("generate() = %q, want %q", got, tc.expect)
+			}
+		})
+	}
+}
+
+// ---------------------------------------------------------------------------
+// RSA key generation helper
+// ---------------------------------------------------------------------------
+
+func generateRSAKey(t *testing.T) (*rsa.PrivateKey, []byte, string) {
+	t.Helper()
+
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("rsa.GenerateKey: %v", err)
+	}
+
+	pkcs8, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		t.Fatalf("MarshalPKCS8PrivateKey: %v", err)
+	}
+
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8})
+	fingerprint := computeFingerprint(t, priv.Public())
+
+	return priv, pemBytes, fingerprint
+}
+
+// ---------------------------------------------------------------------------
+// ECDSA key generation helper
+// ---------------------------------------------------------------------------
+
+func generateECDSAKey(t *testing.T) (*ecdsa.PrivateKey, []byte, string) {
+	t.Helper()
+
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("ecdsa.GenerateKey: %v", err)
+	}
+
+	pkcs8, err := x509.MarshalPKCS8PrivateKey(priv)
+	if err != nil {
+		t.Fatalf("MarshalPKCS8PrivateKey: %v", err)
+	}
+
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pkcs8})
+	fingerprint := computeFingerprint(t, priv.Public())
+
+	return priv, pemBytes, fingerprint
+}
+
+// ---------------------------------------------------------------------------
+// PrivateKeySigner with RSA
+// ---------------------------------------------------------------------------
+
+func TestPrivateKeySignerRSA(t *testing.T) {
+	priv, pemBytes, fingerprint := generateRSAKey(t)
+
+	signer, err := NewPrivateKeySigner(PrivateKeySignerInput{
+		KeyID:              fingerprint,
+		PrivateKeyMaterial: pemBytes,
+		AccountName:        "testaccount",
+		Username:           "testuser",
+	})
+	if err != nil {
+		t.Fatalf("NewPrivateKeySigner: %v", err)
+	}
+
+	if signer.DefaultAlgorithm() != RSA_SHA512 {
+		t.Errorf("DefaultAlgorithm() = %q, want %q", signer.DefaultAlgorithm(), RSA_SHA512)
+	}
+
+	if signer.KeyFingerprint() != fingerprint {
+		t.Errorf("KeyFingerprint() = %q, want %q", signer.KeyFingerprint(), fingerprint)
+	}
+
+	t.Run("Sign", func(t *testing.T) {
+		header, err := signer.Sign("Thu, 01 Jan 2025 00:00:00 GMT")
+		if err != nil {
+			t.Fatalf("Sign: %v", err)
+		}
+
+		if !strings.HasPrefix(header, "Signature keyId=\"") {
+			t.Errorf("header should start with 'Signature keyId=\"', got: %s", header)
+		}
+		if !strings.Contains(header, `algorithm="rsa-sha512"`) {
+			t.Errorf("header missing algorithm, got: %s", header)
+		}
+	})
+
+	t.Run("SignRaw verify", func(t *testing.T) {
+		message := "verify me"
+		signedBase64, algo, err := signer.SignRaw(message)
+		if err != nil {
+			t.Fatalf("SignRaw: %v", err)
+		}
+
+		if algo != RSA_SHA512 {
+			t.Errorf("algorithm = %q, want %q", algo, RSA_SHA512)
+		}
+
+		sigBytes, err := base64.StdEncoding.DecodeString(signedBase64)
+		if err != nil {
+			t.Fatalf("base64 decode: %v", err)
+		}
+
+		hash := crypto.SHA512.New()
+		hash.Write([]byte(message))
+		digest := hash.Sum(nil)
+		if err := rsa.VerifyPKCS1v15(&priv.PublicKey, crypto.SHA512, digest, sigBytes); err != nil {
+			t.Errorf("rsa.VerifyPKCS1v15 failed: %v", err)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// PrivateKeySigner with ECDSA
+// ---------------------------------------------------------------------------
+
+func TestPrivateKeySignerECDSA(t *testing.T) {
+	_, pemBytes, fingerprint := generateECDSAKey(t)
+
+	signer, err := NewPrivateKeySigner(PrivateKeySignerInput{
+		KeyID:              fingerprint,
+		PrivateKeyMaterial: pemBytes,
+		AccountName:        "testaccount",
+	})
+	if err != nil {
+		t.Fatalf("NewPrivateKeySigner: %v", err)
+	}
+
+	if signer.DefaultAlgorithm() != ECDSA_SHA512 {
+		t.Errorf("DefaultAlgorithm() = %q, want %q", signer.DefaultAlgorithm(), ECDSA_SHA512)
+	}
+
+	t.Run("Sign", func(t *testing.T) {
+		header, err := signer.Sign("Thu, 01 Jan 2025 00:00:00 GMT")
+		if err != nil {
+			t.Fatalf("Sign: %v", err)
+		}
+		if !strings.Contains(header, `algorithm="ecdsa-sha512"`) {
+			t.Errorf("header missing algorithm, got: %s", header)
+		}
+	})
+
+	t.Run("SignRaw returns base64", func(t *testing.T) {
+		signedBase64, algo, err := signer.SignRaw("sign me")
+		if err != nil {
+			t.Fatalf("SignRaw: %v", err)
+		}
+		if algo != ECDSA_SHA512 {
+			t.Errorf("algorithm = %q, want %q", algo, ECDSA_SHA512)
+		}
+		_, err = base64.StdEncoding.DecodeString(signedBase64)
+		if err != nil {
+			t.Fatalf("base64 decode: %v", err)
+		}
+	})
+}
+
+// ---------------------------------------------------------------------------
+// PrivateKeySigner with invalid PEM
+// ---------------------------------------------------------------------------
+
+func TestPrivateKeySignerInvalidPEM(t *testing.T) {
+	_, err := NewPrivateKeySigner(PrivateKeySignerInput{
+		KeyID:              "aa:bb:cc",
+		PrivateKeyMaterial: []byte("not a key"),
+		AccountName:        "testaccount",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid PEM, got nil")
+	}
+	if !strings.Contains(err.Error(), "unable to parse private key") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// PrivateKeySigner without username (KeyID path coverage)
+// ---------------------------------------------------------------------------
+
+func TestPrivateKeySignerNoUsername(t *testing.T) {
+	_, pemBytes, fingerprint := generateEd25519Key(t)
+
+	signer, err := NewPrivateKeySigner(PrivateKeySignerInput{
+		KeyID:              fingerprint,
+		PrivateKeyMaterial: pemBytes,
+		AccountName:        "testaccount",
+	})
+	if err != nil {
+		t.Fatalf("NewPrivateKeySigner: %v", err)
+	}
+
+	header, err := signer.Sign("Thu, 01 Jan 2025 00:00:00 GMT")
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+
+	// Without a username, the keyId path should be /account/keys/fp.
+	if strings.Contains(header, "/users/") {
+		t.Errorf("header should not contain /users/ without a username, got: %s", header)
+	}
+	if !strings.Contains(header, "/testaccount/keys/") {
+		t.Errorf("header missing /testaccount/keys/, got: %s", header)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// TestSigner
+// ---------------------------------------------------------------------------
+
+func TestTestSigner(t *testing.T) {
+	signer, err := NewTestSigner()
+	if err != nil {
+		t.Fatalf("NewTestSigner: %v", err)
+	}
+
+	if got := signer.DefaultAlgorithm(); got != "" {
+		t.Errorf("DefaultAlgorithm() = %q, want empty", got)
+	}
+
+	if got := signer.KeyFingerprint(); got != "" {
+		t.Errorf("KeyFingerprint() = %q, want empty", got)
+	}
+
+	sig, err := signer.Sign("some date")
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+	if sig != "" {
+		t.Errorf("Sign() = %q, want empty", sig)
+	}
+
+	raw, algo, err := signer.SignRaw("data")
+	if err != nil {
+		t.Fatalf("SignRaw: %v", err)
+	}
+	if raw != "" || algo != "" {
+		t.Errorf("SignRaw() = (%q, %q), want empty", raw, algo)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Signature type constructors and interface methods
+// ---------------------------------------------------------------------------
+
+func TestRSASignature(t *testing.T) {
+	blob := []byte("fake-rsa-signature")
+	sig, err := newRSASignature(blob, "rsa-sha512")
+	if err != nil {
+		t.Fatalf("newRSASignature: %v", err)
+	}
+
+	if got := sig.SignatureType(); got != "rsa-sha512" {
+		t.Errorf("SignatureType() = %q, want %q", got, "rsa-sha512")
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(sig.String())
+	if err != nil {
+		t.Fatalf("base64 decode: %v", err)
+	}
+	if string(decoded) != string(blob) {
+		t.Errorf("String() decoded = %q, want %q", decoded, blob)
+	}
+}
+
+func TestEd25519SignatureValid(t *testing.T) {
+	blob := make([]byte, ed25519.SignatureSize)
+	for i := range blob {
+		blob[i] = byte(i)
+	}
+
+	sig, err := newEd25519Signature(blob)
+	if err != nil {
+		t.Fatalf("newEd25519Signature: %v", err)
+	}
+
+	if got := sig.SignatureType(); got != ED25519_SHA512 {
+		t.Errorf("SignatureType() = %q, want %q", got, ED25519_SHA512)
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(sig.String())
+	if err != nil {
+		t.Fatalf("base64 decode: %v", err)
+	}
+	if len(decoded) != ed25519.SignatureSize {
+		t.Errorf("String() decoded length = %d, want %d", len(decoded), ed25519.SignatureSize)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// formatPublicKeyFingerprint with RSA and ECDSA
+// ---------------------------------------------------------------------------
+
+func TestFormatPublicKeyFingerprintRSA(t *testing.T) {
+	rsaKey, _, rsaFP := generateRSAKey(t)
+
+	got, err := formatPublicKeyFingerprint(rsaKey, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != rsaFP {
+		t.Errorf("fingerprint = %q, want %q", got, rsaFP)
+	}
+}
+
+func TestFormatPublicKeyFingerprintECDSA(t *testing.T) {
+	ecKey, _, ecFP := generateECDSAKey(t)
+
+	got, err := formatPublicKeyFingerprint(ecKey, true)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != ecFP {
+		t.Errorf("fingerprint = %q, want %q", got, ecFP)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// parseAgentSignature and rsaFormatToAlgorithm
+// ---------------------------------------------------------------------------
+
+func TestParseAgentSignatureEd25519(t *testing.T) {
+	blob := make([]byte, ed25519.SignatureSize)
+	sig, err := parseAgentSignature("ssh-ed25519", blob)
+	if err != nil {
+		t.Fatalf("parseAgentSignature: %v", err)
+	}
+	if got := sig.SignatureType(); got != ED25519_SHA512 {
+		t.Errorf("SignatureType() = %q, want %q", got, ED25519_SHA512)
+	}
+}
+
+func TestParseAgentSignatureRSA(t *testing.T) {
+	blob := []byte("fake-rsa-blob")
+	sig, err := parseAgentSignature("rsa-sha2-512", blob)
+	if err != nil {
+		t.Fatalf("parseAgentSignature: %v", err)
+	}
+	if got := sig.SignatureType(); got != "rsa-sha512" {
+		t.Errorf("SignatureType() = %q, want %q", got, "rsa-sha512")
+	}
+}
+
+func TestParseAgentSignatureUnknownFormat(t *testing.T) {
+	_, err := parseAgentSignature("ssh-dss", nil)
+	if err == nil {
+		t.Fatal("expected error for unknown format, got nil")
+	}
+}
+
+func TestRSAFormatToAlgorithm(t *testing.T) {
+	tests := []struct {
+		format string
+		want   string
+	}{
+		{"rsa-sha2-256", "rsa-sha256"},
+		{"rsa-sha2-512", "rsa-sha512"},
+		{"ssh-rsa", "rsa-sha1"},
+		{"unknown", "rsa-sha1"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.format, func(t *testing.T) {
+			got := rsaFormatToAlgorithm(tc.format)
+			if got != tc.want {
+				t.Errorf("rsaFormatToAlgorithm(%q) = %q, want %q", tc.format, got, tc.want)
 			}
 		})
 	}

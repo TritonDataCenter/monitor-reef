@@ -35,6 +35,7 @@ type SSHAgentSigner struct {
 	accountName             string
 	userName                string
 
+	conn net.Conn
 	agent agent.Agent
 	key   ssh.PublicKey
 }
@@ -61,6 +62,7 @@ func NewSSHAgentSigner(input SSHAgentSignerInput) (*SSHAgentSigner, error) {
 	signer := &SSHAgentSigner{
 		keyFingerprint: input.KeyID,
 		accountName:    input.AccountName,
+		conn:           conn,
 		agent:          ag,
 	}
 
@@ -80,7 +82,7 @@ func NewSSHAgentSigner(input SSHAgentSignerInput) (*SSHAgentSigner, error) {
 
 	_, algorithm, err := signer.SignRaw("HelloWorld")
 	if err != nil {
-		return nil, fmt.Errorf("Cannot sign using ssh agent: %s", err)
+		return nil, fmt.Errorf("cannot sign using ssh agent: %w", err)
 	}
 	signer.algorithm = algorithm
 
@@ -109,59 +111,33 @@ func (s *SSHAgentSigner) MatchKey() (ssh.PublicKey, error) {
 
 		if keyFingerprintStripped == finalizedMD5 || keyFingerprintStripped == finalizedSHA256 {
 			matchingKey = key
+			break
 		}
 	}
 
 	if matchingKey == nil {
-		return nil, fmt.Errorf("No key in the SSH Agent matches fingerprint: %s", s.keyFingerprint)
+		return nil, fmt.Errorf("no key in the SSH agent matches fingerprint: %s", s.keyFingerprint)
 	}
 
 	return matchingKey, nil
 }
 
-func (s *SSHAgentSigner) Sign(dateHeader string, isManta bool) (string, error) {
+func (s *SSHAgentSigner) Sign(dateHeader string) (string, error) {
 	const headerName = "date"
 
-	signature, err := s.agent.Sign(s.key, []byte(fmt.Sprintf("%s: %s", headerName, dateHeader)))
+	message := fmt.Sprintf("%s: %s", headerName, dateHeader)
+	signedBase64, algoName, err := s.SignRaw(message)
 	if err != nil {
-		return "", fmt.Errorf("unable to sign date header: %w", err)
-	}
-
-	keyFormat, err := keyFormatToKeyType(signature.Format)
-	if err != nil {
-		return "", fmt.Errorf("unable to format signature: %w", err)
+		return "", err
 	}
 
 	key := &KeyID{
 		UserName:    s.userName,
 		AccountName: s.accountName,
 		Fingerprint: s.formattedKeyFingerprint,
-		IsManta:     isManta,
 	}
 
-	var authSignature httpAuthSignature
-	switch keyFormat {
-	case "rsa":
-		authSignature, err = newRSASignature(signature.Blob)
-		if err != nil {
-			return "", fmt.Errorf("unable to read RSA signature: %w", err)
-		}
-	case "ecdsa":
-		authSignature, err = newECDSASignature(signature.Blob)
-		if err != nil {
-			return "", fmt.Errorf("unable to read ECDSA signature: %w", err)
-		}
-	case "ed25519":
-		authSignature, err = newEd25519Signature(signature.Blob)
-		if err != nil {
-			return "", fmt.Errorf("unable to read Ed25519 signature: %w", err)
-		}
-	default:
-		return "", fmt.Errorf("Unsupported algorithm from SSH agent: %s", signature.Format)
-	}
-
-	return fmt.Sprintf(authorizationHeaderFormat, key.generate(),
-		authSignature.SignatureType(), headerName, authSignature.String()), nil
+	return fmt.Sprintf(authorizationHeaderFormat, key.generate(), algoName, headerName, signedBase64), nil
 }
 
 func (s *SSHAgentSigner) SignRaw(toSign string) (string, string, error) {
@@ -170,33 +146,44 @@ func (s *SSHAgentSigner) SignRaw(toSign string) (string, string, error) {
 		return "", "", fmt.Errorf("unable to sign string: %w", err)
 	}
 
-	keyFormat, err := keyFormatToKeyType(signature.Format)
+	authSig, err := parseAgentSignature(signature.Format, signature.Blob)
 	if err != nil {
-		return "", "", fmt.Errorf("unable to format key: %w", err)
+		return "", "", err
 	}
 
-	var authSignature httpAuthSignature
+	return authSig.String(), authSig.SignatureType(), nil
+}
+
+// parseAgentSignature maps an SSH agent signature to an httpAuthSignature.
+func parseAgentSignature(format string, blob []byte) (httpAuthSignature, error) {
+	keyFormat, err := keyFormatToKeyType(format)
+	if err != nil {
+		return nil, fmt.Errorf("unable to format key: %w", err)
+	}
+
 	switch keyFormat {
 	case "rsa":
-		authSignature, err = newRSASignature(signature.Blob)
-		if err != nil {
-			return "", "", fmt.Errorf("unable to read RSA signature: %w", err)
-		}
+		return newRSASignature(blob, rsaFormatToAlgorithm(format))
 	case "ecdsa":
-		authSignature, err = newECDSASignature(signature.Blob)
-		if err != nil {
-			return "", "", fmt.Errorf("unable to read ECDSA signature: %w", err)
-		}
+		return newECDSASignature(blob)
 	case "ed25519":
-		authSignature, err = newEd25519Signature(signature.Blob)
-		if err != nil {
-			return "", "", fmt.Errorf("unable to read Ed25519 signature: %w", err)
-		}
+		return newEd25519Signature(blob)
 	default:
-		return "", "", fmt.Errorf("Unsupported algorithm from SSH agent: %s", signature.Format)
+		return nil, fmt.Errorf("unsupported algorithm from SSH agent: %s", format)
 	}
+}
 
-	return authSignature.String(), authSignature.SignatureType(), nil
+// rsaFormatToAlgorithm maps SSH agent RSA signature formats to HTTP Signature
+// algorithm names.
+func rsaFormatToAlgorithm(format string) string {
+	switch format {
+	case "rsa-sha2-256":
+		return "rsa-sha256"
+	case "rsa-sha2-512":
+		return "rsa-sha512"
+	default:
+		return "rsa-sha1"
+	}
 }
 
 func (s *SSHAgentSigner) KeyFingerprint() string {
@@ -205,4 +192,9 @@ func (s *SSHAgentSigner) KeyFingerprint() string {
 
 func (s *SSHAgentSigner) DefaultAlgorithm() string {
 	return s.algorithm
+}
+
+// Close closes the underlying SSH agent connection.
+func (s *SSHAgentSigner) Close() error {
+	return s.conn.Close()
 }

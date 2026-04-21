@@ -32,6 +32,8 @@ include ./deps/eng/tools/mk/Makefile.rust.targ
 .PHONY: openapi-generate openapi-list openapi-check
 .PHONY: dev-setup workspace-test integration-test
 .PHONY: list coverage arch-lint doc-lint
+.PHONY: go-test go-build go-vet go-coverage
+.PHONY: go-test-integration go-test-integration-readonly
 .PHONY: clients-generate clients-check
 
 # Default target
@@ -283,6 +285,7 @@ check:: | $(CARGO_NEXTEST_EXEC) $(CARGO_EXEC) ## Run all validation checks (CI-r
 	$(MAKE) arch-lint
 	$(MAKE) openapi-check
 	$(MAKE) clients-check
+	$(MAKE) go-test
 	TRITON_CONFIG_DIR=/nonexistent $(CARGO) nextest run --workspace
 	@echo ""
 	@echo "All validation checks passed!"
@@ -310,6 +313,46 @@ clients-list: | $(CARGO_EXEC) ## List all managed clients
 # Regenerate everything (OpenAPI specs + client code)
 regen-clients: openapi-generate clients-generate ## Regenerate OpenAPI specs and client code
 	@echo "All specs and clients regenerated. Test with: make test"
+
+# Go client targets (external cloudapi-client)
+GO_CLIENT_DIR = clients/external/cloudapi-client/golang
+GO_MODULE = github.com/TritonDataCenter/monitor-reef/clients/external/cloudapi-client/golang
+
+go-build: ## Build Go cloudapi client
+	cd $(GO_CLIENT_DIR) && go build ./...
+
+go-vet: ## Vet Go cloudapi client
+	cd $(GO_CLIENT_DIR) && go vet ./...
+
+go-test: ## Run Go cloudapi client tests
+	cd $(GO_CLIENT_DIR) && go test ./... -count=1
+
+go-coverage: ## Run Go cloudapi client tests with coverage report
+	cd $(GO_CLIENT_DIR) && go test ./... -count=1 -coverprofile=cover.out -coverpkg=./... \
+		&& echo "" \
+		&& echo "=== Coverage (excluding generated code) ===" \
+		&& go tool cover -func=cover.out | grep -v "cloudapi.gen.go" \
+		&& rm -f cover.out
+
+go-test-integration: ## Run Go integration tests (requires TRITON_TEST=1 and TRITON_* env vars)
+	@if [ -z "$(TRITON_TEST)" ]; then echo "Usage: TRITON_TEST=1 make go-test-integration"; echo "Requires TRITON_URL, TRITON_ACCOUNT, TRITON_KEY_ID, and TRITON_KEY_MATERIAL (or SSH_AUTH_SOCK)"; exit 1; fi
+	cd $(GO_CLIENT_DIR) && go test -v -count=1 -tags integration \
+		-timeout 60m \
+		-run 'TestIntegration_' \
+		-coverpkg=$(GO_MODULE)/... \
+		-coverprofile=integration-cover.out \
+		. \
+		&& echo "" \
+		&& echo "=== Integration Test Coverage ===" \
+		&& go tool cover -func=integration-cover.out \
+		&& rm -f integration-cover.out
+
+go-test-integration-readonly: ## Run read-only Go integration tests (safe, no resource creation)
+	@if [ -z "$(TRITON_TEST)" ]; then echo "Usage: TRITON_TEST=1 make go-test-integration-readonly"; exit 1; fi
+	cd $(GO_CLIENT_DIR) && go test -v -count=1 -tags integration \
+		-timeout 10m \
+		-run 'TestIntegration_(GetAccount|HeadAccount|GetConfig|ListDatacenters|GetDatacenter|ListServices|ListImages|GetImage|ListPackages|GetPackage|ListNetworks|GetNetwork|ListMachines$$|ListFirewallRules$$)' \
+		.
 
 # Doc-lint: check that doc comments don't leak implementation details into OpenAPI specs
 DOC_LINT_PATTERNS = serde_json\|rename_all\|Dropshot\|Progenitor\|schemars\|helper method\|Service implementation\|Rust field\|Rust error\|Rust client

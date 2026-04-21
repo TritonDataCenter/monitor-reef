@@ -19,30 +19,16 @@ import (
 )
 
 type ecdsaSignature struct {
-	hashAlgorithm string
-	R             *big.Int
-	S             *big.Int
+	signatureType string
+	encoded       string
 }
 
 func (s *ecdsaSignature) SignatureType() string {
-	return fmt.Sprintf("ecdsa-%s", s.hashAlgorithm)
+	return s.signatureType
 }
 
 func (s *ecdsaSignature) String() string {
-	toEncode := struct {
-		R *big.Int
-		S *big.Int
-	}{
-		R: s.R,
-		S: s.S,
-	}
-
-	signatureBytes, err := asn1.Marshal(toEncode)
-	if err != nil {
-		panic(fmt.Sprintf("Error marshaling signature: %s", err))
-	}
-
-	return base64.StdEncoding.EncodeToString(signatureBytes)
+	return s.encoded
 }
 
 func newECDSASignature(signatureBlob []byte) (*ecdsaSignature, error) {
@@ -52,7 +38,7 @@ func newECDSASignature(signatureBlob []byte) (*ecdsaSignature, error) {
 	}
 
 	if err := ssh.Unmarshal(signatureBlob, &ecSig); err != nil {
-		return nil, fmt.Errorf("unable to unmarshall signature: %w", err)
+		return nil, fmt.Errorf("unable to unmarshal ecdsa signature: %w", err)
 	}
 
 	rValue := ecSig.R.Bytes()
@@ -63,12 +49,21 @@ func newECDSASignature(signatureBlob []byte) (*ecdsaSignature, error) {
 	case 65, 66:
 		hashAlgorithm = "sha512"
 	default:
-		return nil, fmt.Errorf("Unsupported key length: %d", len(rValue))
+		return nil, fmt.Errorf("unsupported ecdsa key length: %d", len(rValue))
+	}
+
+	toEncode := struct {
+		R *big.Int
+		S *big.Int
+	}{R: ecSig.R, S: ecSig.S}
+
+	signatureBytes, err := asn1.Marshal(toEncode)
+	if err != nil {
+		return nil, fmt.Errorf("unable to marshal ecdsa signature: %w", err)
 	}
 
 	return &ecdsaSignature{
-		hashAlgorithm: hashAlgorithm,
-		R:             ecSig.R,
-		S:             ecSig.S,
+		signatureType: fmt.Sprintf("ecdsa-%s", hashAlgorithm),
+		encoded:       base64.StdEncoding.EncodeToString(signatureBytes),
 	}, nil
 }

@@ -9,3 +9,7 @@
 
 # Test configuration (contains credentials)
 cli/triton-cli/tests/config.json
+clients/external/cloudapi-client/golang/testconfig.json
+
+# Go coverage artifacts
+clients/external/cloudapi-client/golang/*.out

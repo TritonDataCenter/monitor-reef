@@ -1,0 +1,6 @@
+{
+    "allowWriteActions": false,
+    "allowVolumesTests": true,
+    "skipKvmTests": false,
+    "skipFlexDiskTests": false
+}

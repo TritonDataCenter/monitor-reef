@@ -38,6 +38,24 @@ jobs:
         run: |
           make check
 
+  go-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # 5.0.1
+
+      - name: Set up Go
+        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # 5.5.0
+        with:
+          go-version-file: clients/external/cloudapi-client/golang/go.mod
+          cache-dependency-path: clients/external/cloudapi-client/golang/go.sum
+
+      - name: Go vet
+        run: make go-vet
+
+      - name: Go test with coverage
+        run: make go-coverage
+
   build-triton:
     needs: build-test-validate
     strategy:

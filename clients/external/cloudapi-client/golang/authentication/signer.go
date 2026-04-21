@@ -13,6 +13,6 @@ const authorizationHeaderFormat = `Signature keyId="%s",algorithm="%s",headers="
 type Signer interface {
 	DefaultAlgorithm() string
 	KeyFingerprint() string
-	Sign(dateHeader string, isManta bool) (string, error)
+	Sign(dateHeader string) (string, error)
 	SignRaw(toSign string) (string, string, error)
 }
