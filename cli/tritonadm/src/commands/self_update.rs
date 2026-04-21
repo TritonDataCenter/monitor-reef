@@ -18,11 +18,13 @@ use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::io::AsRawFd;
-use std::os::unix::process::CommandExt;
-use std::process::Command;
+use std::path::PathBuf;
+use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, anyhow};
+use chrono::Utc;
 use futures_util::TryStreamExt;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use uuid::Uuid;
 
 use imgapi_client::Client;
@@ -40,6 +42,11 @@ const INSTALLER_DIR: &str = "/var/tmp";
 /// the shar). `/var/run` is tmpfs on the GZ; the lock file is effectively
 /// a no-op persisted across boots.
 const LOCK_FILE: &str = "/var/run/tritonadm-self-update.lock";
+
+/// Parent of the per-run workdir where we capture installer stdout/stderr
+/// to install.log. Matches sdcadm's /var/sdcadm/self-updates/<stamp>/
+/// convention, but under /var/log so log-rotation can own it.
+const LOG_ROOT: &str = "/var/log/tritonadm-self-updates";
 
 pub struct SelfUpdateOpts {
     pub updates_url: String,
@@ -208,16 +215,108 @@ pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
     perms.set_mode(0o755);
     tokio::fs::set_permissions(&installer_path, perms).await?;
 
-    // exec() replaces our process. The shar's stdout/stderr inherit
-    // our tty, so `tritonadm self-update` is an interactive UX (unlike
-    // sdcadm's get-tritonadm which redirects to install.log).
-    println!("Run tritonadm installer ({installer_path})");
-    let mut cmd = Command::new(&installer_path);
-    if opts.verbose {
+    // Spawn the installer and tee its stdout/stderr to both our tty
+    // and /var/log/tritonadm-self-updates/<stamp>/install.log. We used
+    // to exec() into the shar, but that lost the audit trail and made
+    // the command unsuitable for automation — matches sdcadm's
+    // workdir + install.log pattern now.
+    let stamp = Utc::now().format("%Y%m%dT%H%M%SZ").to_string();
+    let workdir = PathBuf::from(LOG_ROOT).join(&stamp);
+    tokio::fs::create_dir_all(&workdir)
+        .await
+        .with_context(|| format!("failed to create workdir {}", workdir.display()))?;
+    let log_path = workdir.join("install.log");
+    println!("Run tritonadm installer (log at {})", log_path.display());
+    let status = run_installer_with_tee(&installer_path, &log_path, opts.verbose)
+        .await
+        .with_context(|| format!("failed to run installer {installer_path}"))?;
+    if !status.success() {
+        anyhow::bail!(
+            "tritonadm installer exited with {status}; \
+             see {}",
+            log_path.display(),
+        );
+    }
+    Ok(())
+}
+
+/// Spawn the installer with its stdout+stderr piped through us. Each
+/// line we read is written to the operator's terminal AND appended to
+/// install.log, so an automation caller can review the full output and
+/// an interactive operator sees progress in real time. Returns the
+/// exit status; the caller decides how to react to non-zero.
+async fn run_installer_with_tee(
+    installer: &str,
+    log_path: &std::path::Path,
+    verbose: bool,
+) -> Result<std::process::ExitStatus> {
+    let log_file = tokio::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_path)
+        .await
+        .with_context(|| format!("failed to open {}", log_path.display()))?;
+    let log = std::sync::Arc::new(tokio::sync::Mutex::new(log_file));
+
+    let mut cmd = tokio::process::Command::new(installer);
+    cmd.stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        // No stdin — the installer shouldn't prompt.
+        .stdin(Stdio::null());
+    if verbose {
         cmd.env("TRACE", "1");
     }
-    let err = cmd.exec();
-    Err(anyhow!("failed to exec {installer_path}: {err}"))
+    let mut child = cmd
+        .spawn()
+        .with_context(|| format!("failed to spawn {installer}"))?;
+
+    let stdout = child.stdout.take().context("child stdout unavailable")?;
+    let stderr = child.stderr.take().context("child stderr unavailable")?;
+
+    let stdout_task = tokio::spawn(tee_lines(stdout, log.clone(), /*to_stderr=*/ false));
+    let stderr_task = tokio::spawn(tee_lines(stderr, log, /*to_stderr=*/ true));
+
+    let status = child.wait().await.context("waiting for installer")?;
+    // Best-effort: ensure any residual buffered output is drained
+    // before we return; errors here are advisory only.
+    let _ = stdout_task.await;
+    let _ = stderr_task.await;
+    Ok(status)
+}
+
+/// Read lines from `reader`, appending each to the shared log file
+/// and echoing to our stdout or stderr. stderr lines go to stderr so
+/// the operator sees red-flag messages in their usual place; both
+/// streams end up interleaved in install.log by order of arrival.
+async fn tee_lines<R>(
+    reader: R,
+    log: std::sync::Arc<tokio::sync::Mutex<tokio::fs::File>>,
+    to_stderr: bool,
+) -> Result<()>
+where
+    R: tokio::io::AsyncRead + Unpin,
+{
+    let mut buf = BufReader::new(reader);
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        let n = buf
+            .read_until(b'\n', &mut line)
+            .await
+            .context("reading installer output")?;
+        if n == 0 {
+            return Ok(());
+        }
+        if to_stderr {
+            let mut stderr = tokio::io::stderr();
+            stderr.write_all(&line).await.ok();
+        } else {
+            let mut stdout = tokio::io::stdout();
+            stdout.write_all(&line).await.ok();
+        }
+        let mut log = log.lock().await;
+        log.write_all(&line).await.ok();
+    }
 }
 
 /// Check that we're running in the global zone on a Triton headnode.
