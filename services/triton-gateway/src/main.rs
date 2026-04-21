@@ -11,6 +11,8 @@
 //! eventually proxy everything else to CloudAPI. Dies when tritonapi is
 //! complete.
 
+mod error_translate;
+
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -32,6 +34,14 @@ use serde::Deserialize;
 use tracing::{Instrument, error, info, info_span, warn};
 use triton_auth::{AuthConfig, KeySource};
 use triton_auth_session::{Claims, JwksClient};
+
+use crate::error_translate::{gateway_error_response, translate_cloudapi_error, truncate_for_log};
+
+/// Upper bound on how many bytes we'll collect from an upstream CloudAPI
+/// response when translating an error body. CloudAPI error payloads are tiny
+/// (a JSON object with a couple of short strings); 64 KiB is generous and
+/// guards against a runaway upstream body inflating gateway memory.
+const MAX_TRANSLATE_BODY_BYTES: usize = 64 * 1024;
 
 /// Per-request identifier used for log correlation across gateway and backends.
 /// Stored in request extensions so the proxy handler can read it and forward
@@ -343,8 +353,18 @@ async fn authenticate_cloudapi_request(
     jwks: &JwksClient,
     req: &mut axum::extract::Request,
 ) -> Result<(), Response> {
+    let request_id = req
+        .extensions()
+        .get::<RequestId>()
+        .map(|r| r.0.clone())
+        .unwrap_or_default();
     let Some(token) = extract_token(req.headers()) else {
-        return Err((StatusCode::UNAUTHORIZED, "missing auth token\n").into_response());
+        return Err(gateway_error_response(
+            StatusCode::UNAUTHORIZED,
+            "MissingAuthToken",
+            "missing auth token",
+            &request_id,
+        ));
     };
     match jwks.verify_token(&token).await {
         Ok(claims) => {
@@ -353,7 +373,12 @@ async fn authenticate_cloudapi_request(
         }
         Err(e) => {
             warn!("JWT verification failed: {e}");
-            Err((StatusCode::UNAUTHORIZED, "invalid auth token\n").into_response())
+            Err(gateway_error_response(
+                StatusCode::UNAUTHORIZED,
+                "InvalidAuthToken",
+                "invalid auth token",
+                &request_id,
+            ))
         }
     }
 }
@@ -442,12 +467,21 @@ async fn proxy_to_cloudapi(
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
     mut req: axum::extract::Request,
 ) -> Response {
+    // Pull the gateway-assigned request ID up front so every error path below
+    // can stamp it into the translated error body.
+    let gateway_request_id = req
+        .extensions()
+        .get::<RequestId>()
+        .map(|r| r.0.clone())
+        .unwrap_or_default();
+
     let Some(target) = state.cloudapi.as_ref() else {
-        return (
+        return gateway_error_response(
             StatusCode::NOT_IMPLEMENTED,
-            "triton-gateway: no cloudapi_url configured\n",
-        )
-            .into_response();
+            "CloudapiProxyDisabled",
+            "triton-gateway: no cloudapi_url configured",
+            &gateway_request_id,
+        );
     };
     if let Some(jwks) = state.jwks.as_ref()
         && let Err(resp) = authenticate_cloudapi_request(jwks, &mut req).await
@@ -459,7 +493,108 @@ async fn proxy_to_cloudapi(
     {
         return resp;
     }
-    dispatch(&state, target, peer_addr, req, "CloudAPI").await
+
+    // WebSocket upgrades stream raw bytes end-to-end after the initial 101
+    // handshake -- there's no JSON error envelope to translate and touching
+    // the body would break the upgrade. Short-circuit straight through.
+    if is_websocket_upgrade(req.headers()) {
+        return dispatch(&state, target, peer_addr, req, "CloudAPI").await;
+    }
+
+    let resp = dispatch(&state, target, peer_addr, req, "CloudAPI").await;
+    maybe_translate_upstream_error(resp, &gateway_request_id).await
+}
+
+/// Inspect an upstream CloudAPI response; if it's non-2xx, collect the body
+/// bytes, log them for debugging, translate the envelope to tritonapi's
+/// `Error` shape, and re-emit with the original status + headers. 2xx and
+/// informational/redirect statuses pass through untouched.
+async fn maybe_translate_upstream_error(resp: Response, gateway_request_id: &str) -> Response {
+    let status = resp.status();
+    if status.is_success() || status.is_informational() || status.is_redirection() {
+        return resp;
+    }
+
+    let (mut parts, body) = resp.into_parts();
+    let body_bytes = match axum::body::to_bytes(body, MAX_TRANSLATE_BODY_BYTES).await {
+        Ok(b) => b,
+        Err(e) => {
+            // If we couldn't read the upstream body (too large, connection
+            // drop mid-body, etc.) there's nothing useful to translate. Emit
+            // a synthetic tritonapi-shaped error so the client still gets a
+            // uniform envelope, and preserve the original status.
+            warn!(
+                request_id = %gateway_request_id,
+                status = status.as_u16(),
+                error = %e,
+                "failed to read upstream body for error translation",
+            );
+            return gateway_error_response(
+                status,
+                "UpstreamError",
+                format!(
+                    "cloudapi response body unreadable (status={} {}): {}",
+                    status.as_u16(),
+                    status.canonical_reason().unwrap_or("Error"),
+                    e
+                ),
+                gateway_request_id,
+            );
+        }
+    };
+
+    // Structured log of the raw upstream body -- translation discards detail
+    // (e.g., CloudAPI's `errors[]` array), so operators debugging a failure
+    // need the pre-translation form. Use lossy UTF-8 so binary bodies don't
+    // break the log line.
+    let logged = truncate_for_log(&body_bytes);
+    let logged_str = String::from_utf8_lossy(logged);
+    let truncated = body_bytes.len() > logged.len();
+    warn!(
+        request_id = %gateway_request_id,
+        status = status.as_u16(),
+        upstream_body_bytes = body_bytes.len(),
+        upstream_body_truncated = truncated,
+        upstream_body = %logged_str,
+        "translating non-2xx upstream body to tritonapi error shape",
+    );
+
+    let translated = translate_cloudapi_error(&body_bytes, status, gateway_request_id);
+    let json_body = match serde_json::to_vec(&translated) {
+        Ok(v) => v,
+        Err(e) => {
+            // Serializing a 3-string struct should never fail, but fall back
+            // to a plain-text body rather than panicking the request. Still
+            // non-2xx, so callers will see the failure.
+            error!(
+                request_id = %gateway_request_id,
+                error = %e,
+                "failed to serialize translated error body"
+            );
+            return gateway_error_response(
+                status,
+                "UpstreamError",
+                format!(
+                    "cloudapi returned status {}; error translation failed",
+                    status.as_u16()
+                ),
+                gateway_request_id,
+            );
+        }
+    };
+
+    // Overwrite content-type/length for the new JSON body but preserve every
+    // other header the upstream set (request-id, tracing, cache hints, ...).
+    parts.headers.remove(http::header::CONTENT_LENGTH);
+    parts.headers.remove(http::header::CONTENT_TYPE);
+    parts.headers.insert(
+        http::header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json"),
+    );
+    if let Ok(len_hv) = HeaderValue::from_str(&json_body.len().to_string()) {
+        parts.headers.insert(http::header::CONTENT_LENGTH, len_hv);
+    }
+    Response::from_parts(parts, Body::from(json_body))
 }
 
 /// Rewrite `/my/...` to `/{claims.username}/...`, strip the JWT
@@ -471,6 +606,11 @@ async fn sign_cloudapi_request(
     signer: &AuthConfig,
     req: &mut axum::extract::Request,
 ) -> Result<(), Response> {
+    let request_id = req
+        .extensions()
+        .get::<RequestId>()
+        .map(|r| r.0.clone())
+        .unwrap_or_default();
     let claims = req
         .extensions()
         .get::<Arc<Claims>>()
@@ -479,13 +619,23 @@ async fn sign_cloudapi_request(
             // Should be unreachable: authenticate_cloudapi_request always
             // inserts Claims before we get here. Belt-and-braces 500.
             error!("sign_cloudapi_request called without Claims in extensions");
-            (StatusCode::INTERNAL_SERVER_ERROR, "missing claims\n").into_response()
+            gateway_error_response(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "MissingClaims",
+                "missing claims",
+                &request_id,
+            )
         })?;
 
     // Rewrite /my/... paths so CloudAPI scopes to the authenticated user.
     rewrite_my_prefix(req, &claims.username).map_err(|e| {
         error!("failed to rewrite request URI: {e}");
-        (StatusCode::BAD_REQUEST, "malformed request URI\n").into_response()
+        gateway_error_response(
+            StatusCode::BAD_REQUEST,
+            "MalformedRequestUri",
+            "malformed request URI",
+            &request_id,
+        )
     })?;
 
     req.headers_mut().remove(http::header::AUTHORIZATION);
@@ -502,16 +652,31 @@ async fn sign_cloudapi_request(
         .await
         .map_err(|e| {
             error!("CloudAPI signing failed: {e}");
-            (StatusCode::BAD_GATEWAY, "signing failed\n").into_response()
+            gateway_error_response(
+                StatusCode::BAD_GATEWAY,
+                "SigningFailed",
+                "signing failed",
+                &request_id,
+            )
         })?;
 
     let date_value = HeaderValue::from_str(&date_header).map_err(|e| {
         error!("Date header not ASCII-safe: {e}");
-        (StatusCode::INTERNAL_SERVER_ERROR, "bad date header\n").into_response()
+        gateway_error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "BadDateHeader",
+            "bad date header",
+            &request_id,
+        )
     })?;
     let auth_value = HeaderValue::from_str(&auth_header).map_err(|e| {
         error!("Authorization header not ASCII-safe: {e}");
-        (StatusCode::INTERNAL_SERVER_ERROR, "bad signature header\n").into_response()
+        gateway_error_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "BadSignatureHeader",
+            "bad signature header",
+            &request_id,
+        )
     })?;
 
     req.headers_mut().insert(http::header::DATE, date_value);
@@ -933,5 +1098,166 @@ impl ServerCertVerifier for NoCertVerification {
             SignatureScheme::ED25519,
             SignatureScheme::ED448,
         ]
+    }
+}
+
+#[cfg(test)]
+mod upstream_translate_tests {
+    //! Exercise `maybe_translate_upstream_error` end-to-end: build a
+    //! `Response` shaped like what CloudAPI would return, hand it to the
+    //! helper, and assert the re-emitted response body deserializes as a
+    //! tritonapi `Error` (never a CloudAPI `Error`).
+    //!
+    //! This is the integration-style check called out in Phase 0: "fire a
+    //! GET against a known-404 cloudapi path through the gateway, assert
+    //! the response body parses as tritonapi `Error`." We don't spin up a
+    //! real TCP upstream here -- collecting an axum `Body` exercises the
+    //! same code path and keeps the test hermetic.
+    use super::*;
+    use crate::error_translate::TritonapiError;
+
+    const GATEWAY_RID: &str = "gateway-rid-test";
+
+    /// Build a `Response` with the given status and JSON body as CloudAPI
+    /// would (`Content-Type: application/json`, `x-request-id` echoed).
+    fn cloudapi_response(status: StatusCode, body_json: &str) -> Response {
+        Response::builder()
+            .status(status)
+            .header(http::header::CONTENT_TYPE, "application/json")
+            .header("x-request-id", "cloudapi-echoed-rid")
+            .body(Body::from(body_json.to_string()))
+            .expect("building a static test response always succeeds")
+    }
+
+    async fn read_body_as_triton_error(resp: Response) -> (StatusCode, TritonapiError) {
+        let status = resp.status();
+        let (_, body) = resp.into_parts();
+        let bytes = axum::body::to_bytes(body, 64 * 1024).await.expect("body");
+        let parsed: TritonapiError =
+            serde_json::from_slice(&bytes).expect("translated body must be tritonapi-shaped");
+        (status, parsed)
+    }
+
+    #[tokio::test]
+    async fn passes_2xx_through_without_touching_body() {
+        let resp = cloudapi_response(StatusCode::OK, r#"{"ok":true}"#);
+        let translated = maybe_translate_upstream_error(resp, GATEWAY_RID).await;
+        assert_eq!(translated.status(), StatusCode::OK);
+        // Body must be untouched -- still the CloudAPI JSON, not a
+        // tritonapi Error envelope.
+        let (_, body) = translated.into_parts();
+        let bytes = axum::body::to_bytes(body, 64 * 1024)
+            .await
+            .expect("body readable");
+        assert_eq!(&bytes[..], br#"{"ok":true}"#);
+    }
+
+    #[tokio::test]
+    async fn translates_cloudapi_404_into_tritonapi_shape() {
+        // This mirrors the Phase 0 integration check: a 404 from CloudAPI
+        // must land on the wire as a tritonapi `Error`.
+        let resp = cloudapi_response(
+            StatusCode::NOT_FOUND,
+            r#"{"code":"ResourceNotFound","message":"VM not found","request_id":"cloudapi-rid-1"}"#,
+        );
+        let translated = maybe_translate_upstream_error(resp, GATEWAY_RID).await;
+        let (status, err) = read_body_as_triton_error(translated).await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        assert_eq!(err.error_code.as_deref(), Some("ResourceNotFound"));
+        assert_eq!(err.message, "VM not found");
+        // Upstream supplied a request_id -- preserve it rather than
+        // overwriting with the gateway's.
+        assert_eq!(err.request_id, "cloudapi-rid-1");
+    }
+
+    #[tokio::test]
+    async fn translation_rejects_cloudapi_native_shape() {
+        // Regression guard: once translated, the body MUST NOT still parse
+        // as the legacy cloudapi `{code, message?, request_id?}` envelope
+        // with `code` as the primary key. (The tritonapi shape requires a
+        // required `message` and renames `code` to `error_code`.)
+        let resp = cloudapi_response(
+            StatusCode::BAD_REQUEST,
+            r#"{"code":"InvalidArgument","message":"bad input"}"#,
+        );
+        let translated = maybe_translate_upstream_error(resp, GATEWAY_RID).await;
+        let (_, body) = translated.into_parts();
+        let bytes = axum::body::to_bytes(body, 64 * 1024).await.unwrap();
+        let v: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        // tritonapi shape renames the field -- the raw `code` key must not
+        // be present in the translated body.
+        assert!(
+            v.get("code").is_none(),
+            "translated body should not carry cloudapi's `code` field, got: {v}",
+        );
+        assert!(
+            v.get("error_code").is_some(),
+            "tritonapi error_code missing"
+        );
+        assert!(v.get("message").is_some(), "tritonapi message missing");
+        assert!(
+            v.get("request_id").is_some(),
+            "tritonapi request_id missing"
+        );
+    }
+
+    #[tokio::test]
+    async fn injects_gateway_request_id_when_upstream_omits_it() {
+        let resp = cloudapi_response(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            r#"{"code":"InternalError"}"#,
+        );
+        let translated = maybe_translate_upstream_error(resp, GATEWAY_RID).await;
+        let (status, err) = read_body_as_triton_error(translated).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(err.error_code.as_deref(), Some("InternalError"));
+        assert_eq!(err.request_id, GATEWAY_RID);
+    }
+
+    #[tokio::test]
+    async fn translates_non_json_upstream_body_into_upstream_error() {
+        let resp = Response::builder()
+            .status(StatusCode::BAD_GATEWAY)
+            .header(http::header::CONTENT_TYPE, "text/html")
+            .body(Body::from("<html>nginx: bad gateway</html>"))
+            .unwrap();
+        let translated = maybe_translate_upstream_error(resp, GATEWAY_RID).await;
+        let (status, err) = read_body_as_triton_error(translated).await;
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        assert_eq!(err.error_code.as_deref(), Some("UpstreamError"));
+        assert_eq!(err.request_id, GATEWAY_RID);
+        assert!(err.message.contains("non-JSON"), "got: {}", err.message);
+    }
+
+    #[tokio::test]
+    async fn rewrites_content_type_to_json_on_translation() {
+        let resp = cloudapi_response(StatusCode::NOT_FOUND, r#"{"code":"ResourceNotFound"}"#);
+        let translated = maybe_translate_upstream_error(resp, GATEWAY_RID).await;
+        let ct = translated
+            .headers()
+            .get(http::header::CONTENT_TYPE)
+            .expect("content-type present")
+            .to_str()
+            .unwrap();
+        assert!(
+            ct.starts_with("application/json"),
+            "translated response must advertise JSON content-type, got: {ct}",
+        );
+    }
+
+    #[tokio::test]
+    async fn preserves_non_content_headers_on_translation() {
+        // Upstream `x-request-id` and other non-body headers must survive
+        // the body rewrite so downstream observability still correlates.
+        let resp = cloudapi_response(StatusCode::NOT_FOUND, r#"{"code":"ResourceNotFound"}"#);
+        let translated = maybe_translate_upstream_error(resp, GATEWAY_RID).await;
+        assert_eq!(
+            translated
+                .headers()
+                .get("x-request-id")
+                .and_then(|v| v.to_str().ok()),
+            Some("cloudapi-echoed-rid"),
+            "upstream x-request-id header must pass through",
+        );
     }
 }
