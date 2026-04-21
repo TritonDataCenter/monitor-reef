@@ -321,8 +321,23 @@ impl Cli {
     ///
     /// Uses `resolve_profile` as the single source of truth for profile
     /// resolution, then applies CLI/env overrides on top.
+    ///
+    /// This function is SSH-only — Phase 3 of the tritonapi rollout adds
+    /// Bearer-JWT profiles but leaves the cloudapi command path unchanged
+    /// (Phase 4 is where non-auth commands route through the gateway
+    /// client). If a tritonapi-kind profile is resolved here we refuse
+    /// up-front with an actionable message rather than trying to coerce it
+    /// into an SSH client.
     async fn build_client(&self) -> Result<(TypedClient, Profile)> {
         let profile = resolve_profile(self.profile.as_deref()).await?;
+        let ssh = profile.require_ssh_key().map_err(|_| {
+            anyhow::anyhow!(
+                "profile '{}' uses tritonapi auth; this command still runs against \
+                 cloudapi directly. Use 'triton login/logout/whoami' on tritonapi \
+                 profiles, or switch to an SSH profile for this operation.",
+                profile.name()
+            )
+        })?;
 
         // Allow CLI/env overrides on top of the resolved profile.
         // self.url/account/key_id pick up TRITON_* vars via clap's `env`.
@@ -343,7 +358,7 @@ impl Cli {
                     None
                 }
             })
-            .unwrap_or_else(|| profile.url.clone());
+            .unwrap_or_else(|| ssh.url.clone());
         let final_account = self
             .account
             .clone()
@@ -354,7 +369,7 @@ impl Cli {
                     None
                 }
             })
-            .unwrap_or_else(|| profile.account.clone());
+            .unwrap_or_else(|| ssh.account.clone());
         let final_key_id = self
             .key_id
             .clone()
@@ -365,7 +380,7 @@ impl Cli {
                     None
                 }
             })
-            .unwrap_or_else(|| profile.key_id.clone());
+            .unwrap_or_else(|| ssh.key_id.clone());
 
         let key_source = triton_auth::KeySource::auto(&final_key_id);
 
@@ -411,15 +426,15 @@ impl Cli {
         let mut auth_config = triton_auth::AuthConfig::new(final_account, key_source);
 
         // Apply RBAC options: CLI overrides profile
-        if let Some(user) = self.user.as_ref().or(profile.user.as_ref()) {
+        if let Some(user) = self.user.as_ref().or(ssh.user.as_ref()) {
             auth_config = auth_config.with_user(user.clone());
         }
         if !self.role.is_empty() {
             auth_config = auth_config.with_roles(self.role.clone());
-        } else if let Some(roles) = &profile.roles {
+        } else if let Some(roles) = &ssh.roles {
             auth_config = auth_config.with_roles(roles.clone());
         }
-        if let Some(act_as) = self.act_as.as_ref().or(profile.act_as_account.as_ref()) {
+        if let Some(act_as) = self.act_as.as_ref().or(ssh.act_as_account.as_ref()) {
             auth_config = auth_config.with_act_as(act_as.clone());
         }
         if let Some(version) = &self.accept_version {
@@ -427,7 +442,7 @@ impl Cli {
         }
 
         // Insecure mode: CLI flag or profile setting
-        let insecure = self.insecure || profile.insecure;
+        let insecure = self.insecure || ssh.insecure;
 
         let http_client = build_http_client(insecure).await?;
         Ok((

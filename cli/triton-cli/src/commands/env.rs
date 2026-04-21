@@ -11,6 +11,29 @@ use crate::config::{Profile, resolve_profile};
 use anyhow::Result;
 use std::collections::BTreeMap;
 
+/// View of a profile flattened into just the fields `triton env` needs.
+///
+/// The smartdc section uses SSH-specific data (SDC_KEY_ID, SDC_USER); for
+/// tritonapi profiles those fields are absent and the section emits a
+/// note instead of fake values.
+struct EnvProfileView<'a> {
+    name: &'a str,
+    /// SSH-specific data, present only for SSH profiles. `triton env
+    /// --smartdc` on a tritonapi profile emits a warning comment; the
+    /// triton/docker sections still work because they don't rely on SSH
+    /// fields.
+    ssh: Option<&'a crate::config::SshKeyProfile>,
+}
+
+impl<'a> EnvProfileView<'a> {
+    fn from(profile: &'a Profile) -> Self {
+        Self {
+            name: profile.name(),
+            ssh: profile.as_ssh_key(),
+        }
+    }
+}
+
 /// Read Docker environment variables from the profile's setup.json file.
 ///
 /// Returns `None` if the setup.json file does not exist (docker not configured),
@@ -55,7 +78,7 @@ pub async fn generate_env(
     unset: bool,
 ) -> Result<()> {
     let profile = resolve_profile(profile_name).await?;
-    let docker_env = read_docker_env(&profile.name).await;
+    let docker_env = read_docker_env(profile.name()).await;
 
     // If docker was explicitly requested but setup.json is missing, error out.
     // (In unset mode the static var list is used, so no setup.json is needed.)
@@ -63,8 +86,8 @@ pub async fn generate_env(
         anyhow::bail!(
             "Could not find Docker environment setup for profile \"{}\". \
              Run 'triton profile docker-setup {}' to set up.",
-            profile.name,
-            profile.name
+            profile.name(),
+            profile.name()
         );
     }
     let docker_env = docker_env.unwrap_or_default();
@@ -75,44 +98,28 @@ pub async fn generate_env(
     let emit_docker = emit_all || docker_section;
     let emit_smartdc = emit_all || smartdc_section;
 
+    let view = EnvProfileView::from(&profile);
+
     match shell {
         "bash" | "sh" | "zsh" => {
             if unset {
                 print_posix_unsets(emit_triton, emit_docker, emit_smartdc);
             } else {
-                print_posix_exports(
-                    &profile,
-                    &docker_env,
-                    emit_triton,
-                    emit_docker,
-                    emit_smartdc,
-                );
+                print_posix_exports(&view, &docker_env, emit_triton, emit_docker, emit_smartdc);
             }
         }
         "csh" | "tcsh" => {
             if unset {
                 print_csh_unsets(emit_triton, emit_docker, emit_smartdc);
             } else {
-                print_csh_exports(
-                    &profile,
-                    &docker_env,
-                    emit_triton,
-                    emit_docker,
-                    emit_smartdc,
-                );
+                print_csh_exports(&view, &docker_env, emit_triton, emit_docker, emit_smartdc);
             }
         }
         "fish" => {
             if unset {
                 print_fish_unsets(emit_triton, emit_docker, emit_smartdc);
             } else {
-                print_fish_exports(
-                    &profile,
-                    &docker_env,
-                    emit_triton,
-                    emit_docker,
-                    emit_smartdc,
-                );
+                print_fish_exports(&view, &docker_env, emit_triton, emit_docker, emit_smartdc);
             }
         }
         "powershell" | "pwsh" => {
@@ -120,7 +127,7 @@ pub async fn generate_env(
                 print_powershell_unsets(emit_triton, emit_docker, emit_smartdc);
             } else {
                 print_powershell_exports(
-                    &profile,
+                    &view,
                     &docker_env,
                     emit_triton,
                     emit_docker,
@@ -132,13 +139,7 @@ pub async fn generate_env(
             if unset {
                 print_posix_unsets(emit_triton, emit_docker, emit_smartdc);
             } else {
-                print_posix_exports(
-                    &profile,
-                    &docker_env,
-                    emit_triton,
-                    emit_docker,
-                    emit_smartdc,
-                );
+                print_posix_exports(&view, &docker_env, emit_triton, emit_docker, emit_smartdc);
             }
         }
     }
@@ -208,7 +209,7 @@ const SMARTDC_VARS: &[&str] = &[
 ];
 
 fn print_posix_exports(
-    profile: &Profile,
+    view: &EnvProfileView<'_>,
     docker_env: &BTreeMap<String, Option<String>>,
     emit_triton: bool,
     emit_docker: bool,
@@ -218,7 +219,7 @@ fn print_posix_exports(
         println!("# triton");
         println!(
             "export TRITON_PROFILE=\"{}\"",
-            shell_escape_double(&profile.name)
+            shell_escape_double(view.name)
         );
     }
 
@@ -234,26 +235,31 @@ fn print_posix_exports(
 
     if emit_smartdc {
         println!("# smartdc");
-        println!("export SDC_URL=\"{}\"", shell_escape_double(&profile.url));
-        println!(
-            "export SDC_ACCOUNT=\"{}\"",
-            shell_escape_double(&profile.account)
-        );
-
-        if let Some(user) = &profile.user {
-            println!("export SDC_USER=\"{}\"", shell_escape_double(user));
-        } else {
-            println!("unset SDC_USER");
-        }
-
-        println!(
-            "export SDC_KEY_ID=\"{}\"",
-            shell_escape_double(&profile.key_id)
-        );
-        if profile.insecure {
-            println!("export SDC_TESTING=\"true\"");
-        } else {
-            println!("unset SDC_TESTING");
+        match view.ssh {
+            Some(ssh) => {
+                println!("export SDC_URL=\"{}\"", shell_escape_double(&ssh.url));
+                println!(
+                    "export SDC_ACCOUNT=\"{}\"",
+                    shell_escape_double(&ssh.account)
+                );
+                if let Some(user) = &ssh.user {
+                    println!("export SDC_USER=\"{}\"", shell_escape_double(user));
+                } else {
+                    println!("unset SDC_USER");
+                }
+                println!("export SDC_KEY_ID=\"{}\"", shell_escape_double(&ssh.key_id));
+                if ssh.insecure {
+                    println!("export SDC_TESTING=\"true\"");
+                } else {
+                    println!("unset SDC_TESTING");
+                }
+            }
+            None => {
+                println!(
+                    "# (skipped: profile '{}' uses tritonapi/JWT auth; SDC_* exports are SSH-only)",
+                    view.name
+                );
+            }
         }
     }
 
@@ -286,7 +292,7 @@ fn print_posix_unsets(emit_triton: bool, emit_docker: bool, emit_smartdc: bool) 
 }
 
 fn print_csh_exports(
-    profile: &Profile,
+    view: &EnvProfileView<'_>,
     docker_env: &BTreeMap<String, Option<String>>,
     emit_triton: bool,
     emit_docker: bool,
@@ -296,7 +302,7 @@ fn print_csh_exports(
         println!("# triton");
         println!(
             "setenv TRITON_PROFILE \"{}\"",
-            shell_escape_double(&profile.name)
+            shell_escape_double(view.name)
         );
     }
 
@@ -312,26 +318,31 @@ fn print_csh_exports(
 
     if emit_smartdc {
         println!("# smartdc");
-        println!("setenv SDC_URL \"{}\"", shell_escape_double(&profile.url));
-        println!(
-            "setenv SDC_ACCOUNT \"{}\"",
-            shell_escape_double(&profile.account)
-        );
-
-        if let Some(user) = &profile.user {
-            println!("setenv SDC_USER \"{}\"", shell_escape_double(user));
-        } else {
-            println!("unsetenv SDC_USER");
-        }
-
-        println!(
-            "setenv SDC_KEY_ID \"{}\"",
-            shell_escape_double(&profile.key_id)
-        );
-        if profile.insecure {
-            println!("setenv SDC_TESTING \"true\"");
-        } else {
-            println!("unsetenv SDC_TESTING");
+        match view.ssh {
+            Some(ssh) => {
+                println!("setenv SDC_URL \"{}\"", shell_escape_double(&ssh.url));
+                println!(
+                    "setenv SDC_ACCOUNT \"{}\"",
+                    shell_escape_double(&ssh.account)
+                );
+                if let Some(user) = &ssh.user {
+                    println!("setenv SDC_USER \"{}\"", shell_escape_double(user));
+                } else {
+                    println!("unsetenv SDC_USER");
+                }
+                println!("setenv SDC_KEY_ID \"{}\"", shell_escape_double(&ssh.key_id));
+                if ssh.insecure {
+                    println!("setenv SDC_TESTING \"true\"");
+                } else {
+                    println!("unsetenv SDC_TESTING");
+                }
+            }
+            None => {
+                println!(
+                    "# (skipped: profile '{}' uses tritonapi/JWT auth; SDC_* exports are SSH-only)",
+                    view.name
+                );
+            }
         }
     }
 
@@ -363,7 +374,7 @@ fn print_csh_unsets(emit_triton: bool, emit_docker: bool, emit_smartdc: bool) {
 }
 
 fn print_fish_exports(
-    profile: &Profile,
+    view: &EnvProfileView<'_>,
     docker_env: &BTreeMap<String, Option<String>>,
     emit_triton: bool,
     emit_docker: bool,
@@ -373,7 +384,7 @@ fn print_fish_exports(
         println!("# triton");
         println!(
             "set -gx TRITON_PROFILE '{}'",
-            shell_escape_single(&profile.name)
+            shell_escape_single(view.name)
         );
     }
 
@@ -389,26 +400,31 @@ fn print_fish_exports(
 
     if emit_smartdc {
         println!("# smartdc");
-        println!("set -gx SDC_URL '{}'", shell_escape_single(&profile.url));
-        println!(
-            "set -gx SDC_ACCOUNT '{}'",
-            shell_escape_single(&profile.account)
-        );
-
-        if let Some(user) = &profile.user {
-            println!("set -gx SDC_USER '{}'", shell_escape_single(user));
-        } else {
-            println!("set -e SDC_USER");
-        }
-
-        println!(
-            "set -gx SDC_KEY_ID '{}'",
-            shell_escape_single(&profile.key_id)
-        );
-        if profile.insecure {
-            println!("set -gx SDC_TESTING 'true'");
-        } else {
-            println!("set -e SDC_TESTING");
+        match view.ssh {
+            Some(ssh) => {
+                println!("set -gx SDC_URL '{}'", shell_escape_single(&ssh.url));
+                println!(
+                    "set -gx SDC_ACCOUNT '{}'",
+                    shell_escape_single(&ssh.account)
+                );
+                if let Some(user) = &ssh.user {
+                    println!("set -gx SDC_USER '{}'", shell_escape_single(user));
+                } else {
+                    println!("set -e SDC_USER");
+                }
+                println!("set -gx SDC_KEY_ID '{}'", shell_escape_single(&ssh.key_id));
+                if ssh.insecure {
+                    println!("set -gx SDC_TESTING 'true'");
+                } else {
+                    println!("set -e SDC_TESTING");
+                }
+            }
+            None => {
+                println!(
+                    "# (skipped: profile '{}' uses tritonapi/JWT auth; SDC_* exports are SSH-only)",
+                    view.name
+                );
+            }
         }
     }
 
@@ -440,7 +456,7 @@ fn print_fish_unsets(emit_triton: bool, emit_docker: bool, emit_smartdc: bool) {
 }
 
 fn print_powershell_exports(
-    profile: &Profile,
+    view: &EnvProfileView<'_>,
     docker_env: &BTreeMap<String, Option<String>>,
     emit_triton: bool,
     emit_docker: bool,
@@ -450,7 +466,7 @@ fn print_powershell_exports(
         println!("# triton");
         println!(
             "$env:TRITON_PROFILE = '{}'",
-            shell_escape_powershell(&profile.name)
+            shell_escape_powershell(view.name)
         );
     }
 
@@ -468,26 +484,34 @@ fn print_powershell_exports(
 
     if emit_smartdc {
         println!("# smartdc");
-        println!("$env:SDC_URL = '{}'", shell_escape_powershell(&profile.url));
-        println!(
-            "$env:SDC_ACCOUNT = '{}'",
-            shell_escape_powershell(&profile.account)
-        );
-
-        if let Some(user) = &profile.user {
-            println!("$env:SDC_USER = '{}'", shell_escape_powershell(user));
-        } else {
-            println!("Remove-Item Env:SDC_USER -ErrorAction SilentlyContinue");
-        }
-
-        println!(
-            "$env:SDC_KEY_ID = '{}'",
-            shell_escape_powershell(&profile.key_id)
-        );
-        if profile.insecure {
-            println!("$env:SDC_TESTING = 'true'");
-        } else {
-            println!("Remove-Item Env:SDC_TESTING -ErrorAction SilentlyContinue");
+        match view.ssh {
+            Some(ssh) => {
+                println!("$env:SDC_URL = '{}'", shell_escape_powershell(&ssh.url));
+                println!(
+                    "$env:SDC_ACCOUNT = '{}'",
+                    shell_escape_powershell(&ssh.account)
+                );
+                if let Some(user) = &ssh.user {
+                    println!("$env:SDC_USER = '{}'", shell_escape_powershell(user));
+                } else {
+                    println!("Remove-Item Env:SDC_USER -ErrorAction SilentlyContinue");
+                }
+                println!(
+                    "$env:SDC_KEY_ID = '{}'",
+                    shell_escape_powershell(&ssh.key_id)
+                );
+                if ssh.insecure {
+                    println!("$env:SDC_TESTING = 'true'");
+                } else {
+                    println!("Remove-Item Env:SDC_TESTING -ErrorAction SilentlyContinue");
+                }
+            }
+            None => {
+                println!(
+                    "# (skipped: profile '{}' uses tritonapi/JWT auth; SDC_* exports are SSH-only)",
+                    view.name
+                );
+            }
         }
     }
 }

@@ -832,11 +832,13 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
                         println!("  - Generate SSH key for user '{}'", user.login);
                         println!(
                             "  - Upload key '{}-{}' to CloudAPI",
-                            profile.name, user.login
+                            profile.name(),
+                            user.login
                         );
                         println!(
                             "  - Create CLI profile '{}-user-{}'",
-                            profile.name, user.login
+                            profile.name(),
+                            user.login
                         );
                     }
                 }
@@ -1453,24 +1455,36 @@ async fn generate_ssh_key(
     Ok((key_path, public_key, key_name))
 }
 
-/// Create a CLI profile for an RBAC user
+/// Create a CLI profile for an RBAC user.
+///
+/// RBAC-apply --dev-create-keys-and-profiles is intrinsically an SSH-auth
+/// flow (it installs a generated SSH key in the user's RBAC account), so
+/// the base profile must itself be SSH-kind. Callers have already filtered
+/// for that by the time we land here, but we re-check as a sanity guard.
 async fn create_user_profile(
     base_profile: &Profile,
     user_login: &str,
     key_fingerprint: &str,
 ) -> Result<String> {
-    let profile_name = format!("{}-user-{}", base_profile.name, user_login);
+    let base_ssh = base_profile.require_ssh_key().map_err(|_| {
+        anyhow::anyhow!(
+            "rbac apply --dev-create-keys-and-profiles only works with an \
+             SSH-key base profile; '{}' is a tritonapi profile",
+            base_profile.name()
+        )
+    })?;
+    let profile_name = format!("{}-user-{}", base_ssh.name, user_login);
 
-    let profile = Profile {
+    let profile = Profile::SshKey(crate::config::SshKeyProfile {
         name: profile_name.clone(),
-        url: base_profile.url.clone(),
-        account: base_profile.account.clone(),
+        url: base_ssh.url.clone(),
+        account: base_ssh.account.clone(),
         key_id: key_fingerprint.to_string(),
-        insecure: base_profile.insecure,
+        insecure: base_ssh.insecure,
         user: Some(user_login.to_string()),
         roles: None,
-        act_as_account: base_profile.act_as_account.clone(),
-    };
+        act_as_account: base_ssh.act_as_account.clone(),
+    });
 
     profile.save().await?;
     Ok(profile_name)
@@ -1510,7 +1524,7 @@ async fn execute_dev_actions(
             println!("  Generating SSH key for user '{}'...", user.login);
         }
         let (key_path, public_key, key_name) =
-            generate_ssh_key(&user.login, &base_profile.name, key_type).await?;
+            generate_ssh_key(&user.login, base_profile.name(), key_type).await?;
 
         if !use_json {
             println!("    Key saved to: {}", key_path.display());
@@ -1552,7 +1566,7 @@ async fn execute_dev_actions(
         }
 
         // Create CLI profile
-        let profile_name = format!("{}-user-{}", base_profile.name, user.login);
+        let profile_name = format!("{}-user-{}", base_profile.name(), user.login);
         if !use_json {
             println!("  Creating CLI profile '{}'...", profile_name);
         }
@@ -1580,7 +1594,8 @@ async fn execute_dev_actions(
         for user in users {
             println!(
                 "  triton -p {}-user-{} <command>",
-                base_profile.name, user.login
+                base_profile.name(),
+                user.login
             );
         }
     }

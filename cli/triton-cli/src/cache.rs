@@ -98,10 +98,10 @@ impl ImageCache {
 /// Format: `{account}@{url_without_protocol}` with special chars replaced by `_`.
 fn profile_slug(profile: &Profile) -> String {
     let url_part = profile
-        .url
+        .url()
         .trim_start_matches("https://")
         .trim_start_matches("http://");
-    let raw = format!("{}@{}", profile.account, url_part);
+    let raw = format!("{}@{}", profile.account(), url_part);
     raw.chars()
         .map(|c| {
             if c.is_alphanumeric() || c == '@' || c == '.' || c == '-' {
