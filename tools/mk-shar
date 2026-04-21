@@ -87,7 +87,7 @@ if command -v gshar >/dev/null 2>&1 && gshar --version 2>/dev/null | grep -q 'GN
 elif command -v shar >/dev/null 2>&1 && shar --version 2>/dev/null | grep -q 'GNU sharutils'; then
     SHAR=shar
 fi
-[[ -n "$SHAR" ]] || fatal "GNU sharutils not found. On SmartOS: 'pkgin -y in sharutils'. On macOS: 'brew install sharutils' (installs as 'gshar')."
+[[ -n "$SHAR" ]] || fatal "GNU sharutils not found. On SmartOS: 'pkgin -y in gsharutils'. On macOS: 'brew install sharutils' (installs as 'gshar')."
 
 # Pick GNU tar if available (gtar on illumos, tar on Linux). macOS ships
 # BSD tar but it also accepts the flags we use.
