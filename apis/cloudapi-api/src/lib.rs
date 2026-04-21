@@ -26,8 +26,8 @@
 
 use dropshot::{
     Body, HttpError, HttpResponseAccepted, HttpResponseCreated, HttpResponseDeleted,
-    HttpResponseOk, Path, Query, RequestContext, TypedBody, WebsocketChannelResult,
-    WebsocketConnection,
+    HttpResponseFound, HttpResponseOk, Path, Query, RequestContext, TypedBody,
+    WebsocketChannelResult, WebsocketConnection,
 };
 use http::Response;
 
@@ -1882,6 +1882,8 @@ pub trait CloudApi {
     ) -> Result<HttpResponseOk<Datacenters>, HttpError>;
 
     /// Get datacenter
+    ///
+    /// Returns a 302 redirect to the named datacenter's CloudAPI URL.
     #[endpoint {
         method = GET,
         path = "/{account}/datacenters/{dc}",
@@ -1890,7 +1892,7 @@ pub trait CloudApi {
     async fn get_datacenter(
         rqctx: RequestContext<Self::Context>,
         path: Path<DatacenterPath>,
-    ) -> Result<HttpResponseOk<String>, HttpError>;
+    ) -> Result<HttpResponseFound, HttpError>;
 
     /// List foreign datacenters
     ///

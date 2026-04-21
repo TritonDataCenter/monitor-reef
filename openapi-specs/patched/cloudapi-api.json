@@ -4007,6 +4007,7 @@
     },
     "/{account}/datacenters/{dc}": {
       "get": {
+        "description": "Returns a 302 redirect to the named datacenter's CloudAPI URL.",
         "operationId": "get_datacenter",
         "parameters": [
           {
@@ -4029,16 +4030,18 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
+          "302": {
+            "description": "redirect (found)",
+            "headers": {
+              "location": {
+                "description": "HTTP \"Location\" header",
+                "required": true,
                 "schema": {
-                  "title": "String",
                   "type": "string"
-                }
+                },
+                "style": "simple"
               }
-            },
-            "description": "successful operation"
+            }
           },
           "4XX": {
             "$ref": "#/components/responses/Error"

@@ -693,6 +693,7 @@
           "datacenters"
         ],
         "summary": "Get datacenter",
+        "description": "Returns a 302 redirect to the named datacenter's CloudAPI URL.",
         "operationId": "get_datacenter",
         "parameters": [
           {
@@ -715,12 +716,14 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "successful operation",
-            "content": {
-              "application/json": {
+          "302": {
+            "description": "redirect (found)",
+            "headers": {
+              "location": {
+                "description": "HTTP \"Location\" header",
+                "style": "simple",
+                "required": true,
                 "schema": {
-                  "title": "String",
                   "type": "string"
                 }
               }

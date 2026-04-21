@@ -16553,7 +16553,7 @@ impl Client {
         builder::ReplaceDatacentersCollectionRoleTags::new(self)
     }
 
-    #[doc = "Get datacenter\n\nSends a `GET` request to `/{account}/datacenters/{dc}`\n\nArguments:\n- `account`: Account login name\n- `dc`: Datacenter name\n```ignore\nlet response = client.get_datacenter()\n    .account(account)\n    .dc(dc)\n    .send()\n    .await;\n```"]
+    #[doc = "Get datacenter\n\nReturns a 302 redirect to the named datacenter's CloudAPI URL.\n\nSends a `GET` request to `/{account}/datacenters/{dc}`\n\nArguments:\n- `account`: Account login name\n- `dc`: Datacenter name\n```ignore\nlet response = client.get_datacenter()\n    .account(account)\n    .dc(dc)\n    .send()\n    .await;\n```"]
     pub fn get_datacenter(&self) -> builder::GetDatacenter<'_> {
         builder::GetDatacenter::new(self)
     }
@@ -18915,9 +18915,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `GET` request to `/{account}/datacenters/{dc}`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::string::String>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<types::Error>> {
             let Self {
                 client,
                 account,
@@ -18937,15 +18935,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .get(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.get(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "get_datacenter",
             };
@@ -18958,7 +18948,7 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
+                200..=299 => Ok(ResponseValue::stream(response)),
                 400u16..=499u16 => Err(Error::ErrorResponse(
                     ResponseValue::from_response(response).await?,
                 )),
