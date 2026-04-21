@@ -17729,7 +17729,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Account>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!("{}/{}", client.baseurl, encode_path(&account.to_string()),);
@@ -17739,15 +17739,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_account",
             };
@@ -17760,14 +17752,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -17982,9 +17968,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/accesskeys`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::AccessKey>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -17998,15 +17982,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_access_keys",
             };
@@ -18019,14 +17995,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -18373,7 +18343,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/accesskeys/{accesskeyid}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::AccessKey>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -18393,15 +18363,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_access_key",
             };
@@ -18414,14 +18376,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -18706,7 +18662,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/config`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Config>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -18720,15 +18676,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_config",
             };
@@ -18741,14 +18689,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -19239,10 +19181,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/fabrics/default/vlans`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::FabricVlan>>, Error<types::Error>>
-        {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -19256,15 +19195,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_fabric_vlans",
             };
@@ -19277,14 +19208,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -19633,7 +19558,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/fabrics/default/vlans/{vlan_id}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::FabricVlan>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -19653,15 +19578,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_fabric_vlan",
             };
@@ -19674,14 +19591,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -19942,9 +19853,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/fabrics/default/vlans/{vlan_id}/networks`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Network>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -19964,15 +19873,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_fabric_networks",
             };
@@ -19985,14 +19886,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -20399,7 +20294,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/fabrics/default/vlans/{vlan_id}/networks/{id}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Network>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -20422,15 +20317,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_fabric_network",
             };
@@ -20443,14 +20330,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -20959,10 +20840,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/fwrules`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::FirewallRule>>, Error<types::Error>>
-        {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -20976,15 +20854,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_firewall_rules",
             };
@@ -20997,14 +20867,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -21478,7 +21342,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/fwrules/{id}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::FirewallRule>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -21498,15 +21362,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_firewall_rule",
             };
@@ -21519,14 +21375,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -21844,9 +21694,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/fwrules/{id}/machines`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Machine>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -21866,15 +21714,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_firewall_rule_machines",
             };
@@ -21887,14 +21727,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -22450,9 +22284,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/images`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Image>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -22486,10 +22318,6 @@ pub mod builder {
             let mut request = client
                 .client
                 .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
                 .query(&progenitor_client::QueryParam::new("name", &name))
                 .query(&progenitor_client::QueryParam::new("os", &os))
                 .query(&progenitor_client::QueryParam::new("owner", &owner))
@@ -22511,14 +22339,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -22989,7 +22811,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/images/{dataset}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Image>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -23009,15 +22831,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_image",
             };
@@ -23030,14 +22844,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -23357,9 +23165,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/keys`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::SshKey>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -23373,15 +23179,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_keys",
             };
@@ -23394,14 +23192,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -23750,7 +23542,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/keys/{name}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::SshKey>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -23770,15 +23562,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_key",
             };
@@ -23791,14 +23575,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -24436,9 +24214,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Machine>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -24482,10 +24258,6 @@ pub mod builder {
             let mut request = client
                 .client
                 .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
                 .query(&progenitor_client::QueryParam::new("brand", &brand))
                 .query(&progenitor_client::QueryParam::new(
                     "credentials",
@@ -24515,14 +24287,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -24993,7 +24759,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Machine>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -25013,15 +24779,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine",
             };
@@ -25034,14 +24792,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -25178,10 +24930,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/audit`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::AuditEntry>>, Error<types::Error>>
-        {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -25201,15 +24950,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_audit",
             };
@@ -25222,14 +24963,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -25485,9 +25220,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/disks`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Disk>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -25507,15 +25240,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine_disks",
             };
@@ -25528,14 +25253,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -25939,7 +25658,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/disks/{disk}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Disk>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -25962,15 +25681,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine_disk",
             };
@@ -25983,14 +25694,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -26127,10 +25832,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/fwrules`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::FirewallRule>>, Error<types::Error>>
-        {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -26150,15 +25852,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine_firewall_rules",
             };
@@ -26171,14 +25865,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -26519,12 +26207,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/metadata`"]
-        pub async fn send(
-            self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -26544,15 +26227,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine_metadata",
             };
@@ -26565,14 +26240,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -26841,9 +26510,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/metadata/{key}`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::string::String>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -26866,15 +26533,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine_metadata_key",
             };
@@ -26887,14 +26546,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -27359,9 +27012,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/nics`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Nic>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -27381,15 +27032,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_nics",
             };
@@ -27402,14 +27045,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -27676,7 +27313,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/nics/{mac}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Nic>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -27699,15 +27336,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_nic",
             };
@@ -27720,14 +27349,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -27985,9 +27608,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/snapshots`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Snapshot>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -28007,15 +27628,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine_snapshots",
             };
@@ -28028,14 +27641,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -28408,7 +28015,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/snapshots/{name}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Snapshot>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -28431,15 +28038,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine_snapshot",
             };
@@ -28452,14 +28051,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -28911,12 +28504,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/tags`"]
-        pub async fn send(
-            self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -28936,15 +28524,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine_tags",
             };
@@ -28957,14 +28537,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -29233,9 +28807,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/machines/{machine}/tags/{tag}`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::string::String>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -29258,15 +28830,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_machine_tag",
             };
@@ -29279,14 +28843,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -29855,9 +29413,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/networks`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Network>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -29871,15 +29427,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_networks",
             };
@@ -29892,14 +29440,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -30157,7 +29699,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/networks/{network}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Network>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -30177,15 +29719,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_network",
             };
@@ -30198,14 +29732,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -30341,9 +29869,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/networks/{network}/ips`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::NetworkIp>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -30363,15 +29889,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_network_ips",
             };
@@ -30384,14 +29902,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -30689,7 +30201,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/networks/{network}/ips/{ip_address}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::NetworkIp>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -30712,15 +30224,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_network_ip",
             };
@@ -30733,14 +30237,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -30955,9 +30453,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/packages`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Package>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -30971,15 +30467,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_packages",
             };
@@ -30992,14 +30480,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -31257,7 +30739,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/packages/{package}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Package>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -31277,15 +30759,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_package",
             };
@@ -31298,14 +30772,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -31625,9 +31093,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/policies`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Policy>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -31641,15 +31107,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_policies",
             };
@@ -31662,14 +31120,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -32138,7 +31590,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/policies/{policy}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Policy>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -32158,15 +31610,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_policy",
             };
@@ -32179,14 +31623,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -32506,9 +31944,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/roles`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::Role>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -32522,15 +31958,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_roles",
             };
@@ -32543,14 +31971,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -33019,7 +32441,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/roles/{role}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::Role>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -33039,15 +32461,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_role",
             };
@@ -33060,14 +32474,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -33569,9 +32977,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/users`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::User>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -33585,15 +32991,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_users",
             };
@@ -33606,14 +33004,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -34082,7 +33474,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/users/{uuid}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::User>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -34102,15 +33494,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_user",
             };
@@ -34123,14 +33507,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -34390,9 +33768,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/users/{uuid}/accesskeys`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::AccessKey>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -34412,15 +33788,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_user_access_keys",
             };
@@ -34433,14 +33801,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -34844,7 +34206,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/users/{uuid}/accesskeys/{accesskeyid}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::AccessKey>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -34867,15 +34229,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_user_access_key",
             };
@@ -34888,14 +34242,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -35397,9 +34745,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/users/{uuid}/keys`"]
-        pub async fn send(
-            self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::SshKey>>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -35419,15 +34765,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_user_keys",
             };
@@ -35440,14 +34778,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
@@ -35853,7 +35185,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `HEAD` request to `/{account}/users/{uuid}/keys/{name}`"]
-        pub async fn send(self) -> Result<ResponseValue<types::SshKey>, Error<types::Error>> {
+        pub async fn send(self) -> Result<ResponseValue<ByteStream>, Error<ByteStream>> {
             let Self {
                 client,
                 account,
@@ -35876,15 +35208,7 @@ pub mod builder {
                 ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
             );
             #[allow(unused_mut)]
-            let mut request = client
-                .client
-                .head(url)
-                .header(
-                    ::reqwest::header::ACCEPT,
-                    ::reqwest::header::HeaderValue::from_static("application/json"),
-                )
-                .headers(header_map)
-                .build()?;
+            let mut request = client.client.head(url).headers(header_map).build()?;
             let info = OperationInfo {
                 operation_id: "head_user_key",
             };
@@ -35897,14 +35221,8 @@ pub mod builder {
             client.post(&result, &info).await?;
             let response = result?;
             match response.status().as_u16() {
-                200u16 => ResponseValue::from_response(response).await,
-                400u16..=499u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                500u16..=599u16 => Err(Error::ErrorResponse(
-                    ResponseValue::from_response(response).await?,
-                )),
-                _ => Err(Error::UnexpectedResponse(response)),
+                200..=299 => Ok(ResponseValue::stream(response)),
+                _ => Err(Error::ErrorResponse(ResponseValue::stream(response))),
             }
         }
     }
