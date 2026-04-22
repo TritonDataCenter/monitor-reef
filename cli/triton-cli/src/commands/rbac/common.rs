@@ -7,19 +7,29 @@
 //! Common utilities for RBAC commands
 
 use anyhow::Result;
-use cloudapi_client::TypedClient;
+use cloudapi_api::User;
+
+use crate::client::AnyClient;
+use crate::dispatch;
 
 /// Resolve a user login name or UUID to a UUID string
-pub async fn resolve_user(id_or_login: &str, client: &TypedClient) -> Result<String> {
+pub async fn resolve_user(id_or_login: &str, client: &AnyClient) -> Result<String> {
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_login) {
         // NOTE: We accept the parsed ID without verifying it exists server-side, matching node-triton's behavior.
         return Ok(uuid.to_string());
     }
 
     let account = client.effective_account();
-    let response = client.inner().list_users().account(account).send().await?;
-
-    let users = response.into_inner();
+    let users: Vec<User> = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .list_users()
+            .account(account)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<Vec<User>>(serde_json::to_value(&resp)?)?
+    });
 
     for user in &users {
         if user.login == id_or_login {

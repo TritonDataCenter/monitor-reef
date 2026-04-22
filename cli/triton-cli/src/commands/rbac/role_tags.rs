@@ -10,9 +10,10 @@ use std::io::Write;
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
 
+use crate::client::AnyClient;
 use crate::output::json;
+use crate::{dispatch, dispatch_with_types};
 
 use super::common::resolve_user;
 
@@ -124,7 +125,7 @@ pub struct RoleTagsEditArgs {
 }
 
 impl RoleTagsCommand {
-    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
         match self {
             Self::Set(args) => role_tags_set(args, client, use_json).await,
             Self::Add(args) => role_tags_add(args, client, use_json).await,
@@ -135,8 +136,10 @@ impl RoleTagsCommand {
     }
 }
 
-/// Set role tags on a resource (replaces all existing tags)
-async fn role_tags_set(args: RoleTagsSetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+/// Set role tags on a resource (replaces all existing tags).
+///
+/// Returns the (name, role_tag) pair from the server response.
+async fn role_tags_set(args: RoleTagsSetArgs, client: &AnyClient, use_json: bool) -> Result<()> {
     if !args.force {
         use dialoguer::Confirm;
         if !Confirm::new()
@@ -154,115 +157,182 @@ async fn role_tags_set(args: RoleTagsSetArgs, client: &TypedClient, use_json: bo
 
     let account = client.effective_account();
     let resource_id = resolve_resource_id(&args.resource_type, &args.resource, client).await?;
+    let roles = args.roles.clone();
 
-    let request = cloudapi_client::types::ReplaceRoleTagsRequest {
-        role_tag: args.roles.clone(),
-    };
-
-    let response = match args.resource_type {
+    // Each per-crate ReplaceRoleTagsRequest has the same wire shape; build
+    // the body via typed dispatch and capture the (name, role_tag) pair.
+    let (name, role_tag): (String, Vec<String>) = match args.resource_type {
         RoleTagResource::Instance => {
             let uuid = parse_resource_uuid(&resource_id, &args.resource_type)?;
-            client
-                .inner()
-                .replace_machine_role_tags()
-                .account(account)
-                .machine(uuid)
-                .body(request)
-                .send()
-                .await?
-                .into_inner()
+            dispatch_with_types!(client, |c, t| {
+                let request = t::ReplaceRoleTagsRequest {
+                    role_tag: roles.clone(),
+                };
+                let resp = c
+                    .inner()
+                    .replace_machine_role_tags()
+                    .account(account)
+                    .machine(uuid)
+                    .body(request)
+                    .send()
+                    .await?
+                    .into_inner();
+                (resp.name.clone(), resp.role_tag.clone())
+            })
         }
         RoleTagResource::Image => {
             let uuid = parse_resource_uuid(&resource_id, &args.resource_type)?;
-            client
-                .inner()
-                .replace_image_role_tags()
-                .account(account)
-                .dataset(uuid)
-                .body(request)
-                .send()
-                .await?
-                .into_inner()
+            dispatch_with_types!(client, |c, t| {
+                let request = t::ReplaceRoleTagsRequest {
+                    role_tag: roles.clone(),
+                };
+                let resp = c
+                    .inner()
+                    .replace_image_role_tags()
+                    .account(account)
+                    .dataset(uuid)
+                    .body(request)
+                    .send()
+                    .await?
+                    .into_inner();
+                (resp.name.clone(), resp.role_tag.clone())
+            })
         }
         RoleTagResource::Network => {
             let uuid = parse_resource_uuid(&resource_id, &args.resource_type)?;
-            client
-                .inner()
-                .replace_network_role_tags()
-                .account(account)
-                .network(uuid)
-                .body(request)
-                .send()
-                .await?
-                .into_inner()
+            dispatch_with_types!(client, |c, t| {
+                let request = t::ReplaceRoleTagsRequest {
+                    role_tag: roles.clone(),
+                };
+                let resp = c
+                    .inner()
+                    .replace_network_role_tags()
+                    .account(account)
+                    .network(uuid)
+                    .body(request)
+                    .send()
+                    .await?
+                    .into_inner();
+                (resp.name.clone(), resp.role_tag.clone())
+            })
         }
-        RoleTagResource::Package => client
-            .inner()
-            .replace_package_role_tags()
-            .account(account)
-            .package(&resource_id)
-            .body(request)
-            .send()
-            .await?
-            .into_inner(),
-        RoleTagResource::Key => client
-            .inner()
-            .replace_key_role_tags()
-            .account(account)
-            .name(&resource_id)
-            .body(request)
-            .send()
-            .await?
-            .into_inner(),
+        RoleTagResource::Package => {
+            dispatch_with_types!(client, |c, t| {
+                let request = t::ReplaceRoleTagsRequest {
+                    role_tag: roles.clone(),
+                };
+                let resp = c
+                    .inner()
+                    .replace_package_role_tags()
+                    .account(account)
+                    .package(&resource_id)
+                    .body(request)
+                    .send()
+                    .await?
+                    .into_inner();
+                (resp.name.clone(), resp.role_tag.clone())
+            })
+        }
+        RoleTagResource::Key => {
+            dispatch_with_types!(client, |c, t| {
+                let request = t::ReplaceRoleTagsRequest {
+                    role_tag: roles.clone(),
+                };
+                let resp = c
+                    .inner()
+                    .replace_key_role_tags()
+                    .account(account)
+                    .name(&resource_id)
+                    .body(request)
+                    .send()
+                    .await?
+                    .into_inner();
+                (resp.name.clone(), resp.role_tag.clone())
+            })
+        }
         RoleTagResource::Fwrule => {
             let uuid = parse_resource_uuid(&resource_id, &args.resource_type)?;
-            client
-                .inner()
-                .replace_fwrule_role_tags()
-                .account(account)
-                .id(uuid)
-                .body(request)
-                .send()
-                .await?
-                .into_inner()
+            dispatch_with_types!(client, |c, t| {
+                let request = t::ReplaceRoleTagsRequest {
+                    role_tag: roles.clone(),
+                };
+                let resp = c
+                    .inner()
+                    .replace_fwrule_role_tags()
+                    .account(account)
+                    .id(uuid)
+                    .body(request)
+                    .send()
+                    .await?
+                    .into_inner();
+                (resp.name.clone(), resp.role_tag.clone())
+            })
         }
-        RoleTagResource::User => client
-            .inner()
-            .replace_user_role_tags()
-            .account(account)
-            .uuid(&resource_id)
-            .body(request)
-            .send()
-            .await?
-            .into_inner(),
-        RoleTagResource::Role => client
-            .inner()
-            .replace_role_role_tags()
-            .account(account)
-            .role(&resource_id)
-            .body(request)
-            .send()
-            .await?
-            .into_inner(),
-        RoleTagResource::Policy => client
-            .inner()
-            .replace_policy_role_tags()
-            .account(account)
-            .policy(&resource_id)
-            .body(request)
-            .send()
-            .await?
-            .into_inner(),
+        RoleTagResource::User => {
+            dispatch_with_types!(client, |c, t| {
+                let request = t::ReplaceRoleTagsRequest {
+                    role_tag: roles.clone(),
+                };
+                let resp = c
+                    .inner()
+                    .replace_user_role_tags()
+                    .account(account)
+                    .uuid(&resource_id)
+                    .body(request)
+                    .send()
+                    .await?
+                    .into_inner();
+                (resp.name.clone(), resp.role_tag.clone())
+            })
+        }
+        RoleTagResource::Role => {
+            dispatch_with_types!(client, |c, t| {
+                let request = t::ReplaceRoleTagsRequest {
+                    role_tag: roles.clone(),
+                };
+                let resp = c
+                    .inner()
+                    .replace_role_role_tags()
+                    .account(account)
+                    .role(&resource_id)
+                    .body(request)
+                    .send()
+                    .await?
+                    .into_inner();
+                (resp.name.clone(), resp.role_tag.clone())
+            })
+        }
+        RoleTagResource::Policy => {
+            dispatch_with_types!(client, |c, t| {
+                let request = t::ReplaceRoleTagsRequest {
+                    role_tag: roles.clone(),
+                };
+                let resp = c
+                    .inner()
+                    .replace_policy_role_tags()
+                    .account(account)
+                    .policy(&resource_id)
+                    .body(request)
+                    .send()
+                    .await?
+                    .into_inner();
+                (resp.name.clone(), resp.role_tag.clone())
+            })
+        }
     };
 
     if use_json {
-        json::print_json(&response)?;
+        let obj = serde_json::json!({
+            "name": name,
+            "role-tag": role_tag,
+        });
+        json::print_json(&obj)?;
     } else {
-        println!("Set role tags on {}:", response.name);
-        if response.role_tag.is_empty() {
+        println!("Set role tags on {}:", name);
+        if role_tag.is_empty() {
             println!("  (no role tags)");
         } else {
-            for tag in &response.role_tag {
+            for tag in &role_tag {
                 println!("  - {}", tag);
             }
         }
@@ -272,7 +342,7 @@ async fn role_tags_set(args: RoleTagsSetArgs, client: &TypedClient, use_json: bo
 }
 
 /// Add a role tag to a resource (preserves existing tags)
-async fn role_tags_add(args: RoleTagsAddArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+async fn role_tags_add(args: RoleTagsAddArgs, client: &AnyClient, use_json: bool) -> Result<()> {
     let resource_id = resolve_resource_id(&args.resource_type, &args.resource, client).await?;
 
     // GET current tags
@@ -296,7 +366,7 @@ async fn role_tags_add(args: RoleTagsAddArgs, client: &TypedClient, use_json: bo
 /// Remove a role tag from a resource
 async fn role_tags_remove(
     args: RoleTagsRemoveArgs,
-    client: &TypedClient,
+    client: &AnyClient,
     use_json: bool,
 ) -> Result<()> {
     if !args.force {
@@ -335,7 +405,7 @@ async fn role_tags_remove(
 /// Clear all role tags from a resource
 async fn role_tags_clear(
     args: RoleTagsClearArgs,
-    client: &TypedClient,
+    client: &AnyClient,
     use_json: bool,
 ) -> Result<()> {
     if !args.force {
@@ -363,11 +433,7 @@ async fn role_tags_clear(
 }
 
 /// Edit role tags in $EDITOR
-async fn role_tags_edit(
-    args: RoleTagsEditArgs,
-    client: &TypedClient,
-    use_json: bool,
-) -> Result<()> {
+async fn role_tags_edit(args: RoleTagsEditArgs, client: &AnyClient, use_json: bool) -> Result<()> {
     let resource_id = resolve_resource_id(&args.resource_type, &args.resource, client).await?;
 
     // GET current tags
@@ -448,7 +514,7 @@ fn text_to_role_tags(text: &str) -> Vec<String> {
 async fn resolve_resource_id(
     resource_type: &RoleTagResource,
     resource: &str,
-    client: &TypedClient,
+    client: &AnyClient,
 ) -> Result<String> {
     let account = client.effective_account();
 
@@ -458,28 +524,37 @@ async fn resolve_resource_id(
             if let Ok(uuid) = uuid::Uuid::parse_str(resource) {
                 Ok(uuid.to_string())
             } else {
-                // Search for instance by name
-                let response = client
-                    .inner()
-                    .list_machines()
-                    .account(account)
-                    .name(resource)
-                    .send()
-                    .await?;
-                let machines = response.into_inner();
-                if machines.is_empty() {
+                // Search for instance by name; return value is a JSON Value so
+                // we can read id out without sharing the per-crate Machine type.
+                let machines: serde_json::Value = dispatch!(client, |c| {
+                    let resp = c
+                        .inner()
+                        .list_machines()
+                        .account(account)
+                        .name(resource)
+                        .send()
+                        .await?
+                        .into_inner();
+                    serde_json::to_value(&resp)?
+                });
+                let arr = machines.as_array().cloned().unwrap_or_default();
+                if arr.is_empty() {
                     Err(crate::errors::ResourceNotFoundError(format!(
                         "Instance not found: {}",
                         resource
                     ))
                     .into())
-                } else if machines.len() > 1 {
+                } else if arr.len() > 1 {
                     Err(anyhow::anyhow!(
                         "Multiple instances found with name '{}'. Please use UUID.",
                         resource
                     ))
                 } else {
-                    Ok(machines[0].id.to_string())
+                    let id = arr[0]
+                        .get("id")
+                        .and_then(|v| v.as_str())
+                        .ok_or_else(|| anyhow::anyhow!("Missing id on matched instance"))?;
+                    Ok(id.to_string())
                 }
             }
         }
@@ -492,17 +567,24 @@ async fn resolve_resource_id(
             if let Ok(uuid) = uuid::Uuid::parse_str(resource) {
                 Ok(uuid.to_string())
             } else {
-                // Search for network by name
-                let response = client
-                    .inner()
-                    .list_networks()
-                    .account(account)
-                    .send()
-                    .await?;
-                let networks = response.into_inner();
-                for net in &networks {
-                    if net.name == resource {
-                        return Ok(net.id.to_string());
+                // Search for network by name via JSON
+                let networks: serde_json::Value = dispatch!(client, |c| {
+                    let resp = c
+                        .inner()
+                        .list_networks()
+                        .account(account)
+                        .send()
+                        .await?
+                        .into_inner();
+                    serde_json::to_value(&resp)?
+                });
+                if let Some(arr) = networks.as_array() {
+                    for net in arr {
+                        if net.get("name").and_then(|v| v.as_str()) == Some(resource)
+                            && let Some(id) = net.get("id").and_then(|v| v.as_str())
+                        {
+                            return Ok(id.to_string());
+                        }
                     }
                 }
                 Err(crate::errors::ResourceNotFoundError(format!(
@@ -547,106 +629,147 @@ async fn resolve_resource_id(
 async fn get_current_role_tags(
     resource_type: &RoleTagResource,
     resource_id: &str,
-    client: &TypedClient,
+    client: &AnyClient,
 ) -> Result<Vec<String>> {
     let account = client.effective_account();
 
-    match resource_type {
+    // Each GET endpoint returns a typed object; we extract role_tag via JSON
+    // so the per-crate types stay inside the dispatch arm.
+    let value: serde_json::Value = match resource_type {
         RoleTagResource::Instance => {
             let uuid = parse_resource_uuid(resource_id, resource_type)?;
-            let machine = client.get_machine(account, &uuid).await?;
-            Ok(machine.role_tag.unwrap_or_default())
+            dispatch!(client, |c| {
+                let resp = c
+                    .inner()
+                    .get_machine()
+                    .account(account)
+                    .machine(uuid)
+                    .send()
+                    .await?
+                    .into_inner();
+                serde_json::to_value(&resp)?
+            })
         }
         RoleTagResource::Image => {
             let uuid = parse_resource_uuid(resource_id, resource_type)?;
-            let image = client
-                .inner()
-                .get_image()
-                .account(account)
-                .dataset(uuid)
-                .send()
-                .await?
-                .into_inner();
-            Ok(image.role_tag.unwrap_or_default())
+            dispatch!(client, |c| {
+                let resp = c
+                    .inner()
+                    .get_image()
+                    .account(account)
+                    .dataset(uuid)
+                    .send()
+                    .await?
+                    .into_inner();
+                serde_json::to_value(&resp)?
+            })
         }
         RoleTagResource::Network => {
             let uuid = parse_resource_uuid(resource_id, resource_type)?;
-            let network = client
-                .inner()
-                .get_network()
-                .account(account)
-                .network(uuid)
-                .send()
-                .await?
-                .into_inner();
-            Ok(network.role_tag.unwrap_or_default())
+            dispatch!(client, |c| {
+                let resp = c
+                    .inner()
+                    .get_network()
+                    .account(account)
+                    .network(uuid)
+                    .send()
+                    .await?
+                    .into_inner();
+                serde_json::to_value(&resp)?
+            })
         }
         RoleTagResource::Package => {
-            let package = client
-                .inner()
-                .get_package()
-                .account(account)
-                .package(resource_id)
-                .send()
-                .await?
-                .into_inner();
-            Ok(package.role_tag.unwrap_or_default())
+            dispatch!(client, |c| {
+                let resp = c
+                    .inner()
+                    .get_package()
+                    .account(account)
+                    .package(resource_id)
+                    .send()
+                    .await?
+                    .into_inner();
+                serde_json::to_value(&resp)?
+            })
         }
         RoleTagResource::Key => {
-            let key = client
-                .inner()
-                .get_key()
-                .account(account)
-                .name(resource_id)
-                .send()
-                .await?
-                .into_inner();
-            Ok(key.role_tag.unwrap_or_default())
+            dispatch!(client, |c| {
+                let resp = c
+                    .inner()
+                    .get_key()
+                    .account(account)
+                    .name(resource_id)
+                    .send()
+                    .await?
+                    .into_inner();
+                serde_json::to_value(&resp)?
+            })
         }
         RoleTagResource::Fwrule => {
             let uuid = parse_resource_uuid(resource_id, resource_type)?;
-            let rule = client
-                .inner()
-                .get_firewall_rule()
-                .account(account)
-                .id(uuid)
-                .send()
-                .await?
-                .into_inner();
-            Ok(rule.role_tag.unwrap_or_default())
+            dispatch!(client, |c| {
+                let resp = c
+                    .inner()
+                    .get_firewall_rule()
+                    .account(account)
+                    .id(uuid)
+                    .send()
+                    .await?
+                    .into_inner();
+                serde_json::to_value(&resp)?
+            })
         }
         RoleTagResource::User => {
-            let user = client
-                .inner()
-                .get_user()
-                .account(account)
-                .uuid(resource_id)
-                .send()
-                .await?
-                .into_inner();
-            Ok(user.role_tag.unwrap_or_default())
+            dispatch!(client, |c| {
+                let resp = c
+                    .inner()
+                    .get_user()
+                    .account(account)
+                    .uuid(resource_id)
+                    .send()
+                    .await?
+                    .into_inner();
+                serde_json::to_value(&resp)?
+            })
         }
         RoleTagResource::Role => {
-            let role = client
-                .inner()
-                .get_role()
-                .account(account)
-                .role(resource_id)
-                .send()
-                .await?
-                .into_inner();
-            Ok(role.role_tag.unwrap_or_default())
+            dispatch!(client, |c| {
+                let resp = c
+                    .inner()
+                    .get_role()
+                    .account(account)
+                    .role(resource_id)
+                    .send()
+                    .await?
+                    .into_inner();
+                serde_json::to_value(&resp)?
+            })
         }
         RoleTagResource::Policy => {
-            let policy = client
-                .inner()
-                .get_policy()
-                .account(account)
-                .policy(resource_id)
-                .send()
-                .await?
-                .into_inner();
-            Ok(policy.role_tag.unwrap_or_default())
+            dispatch!(client, |c| {
+                let resp = c
+                    .inner()
+                    .get_policy()
+                    .account(account)
+                    .policy(resource_id)
+                    .send()
+                    .await?
+                    .into_inner();
+                serde_json::to_value(&resp)?
+            })
         }
-    }
+    };
+
+    // Extract role_tag or role-tag, defaulting to an empty list
+    let tags = value
+        .get("role-tag")
+        .or_else(|| value.get("role_tag"))
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    Ok(tags)
 }

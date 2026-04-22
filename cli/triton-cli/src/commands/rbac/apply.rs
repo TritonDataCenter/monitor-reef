@@ -8,14 +8,17 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
+use cloudapi_api::{Policy, Role, SshKey, User};
 use serde::Deserialize;
+use serde_json::json;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tokio::process::Command;
 
+use crate::client::AnyClient;
 use crate::config::{Config, Profile, paths};
-use crate::output::{json, table};
+use crate::output::{json as output_json, table};
+use crate::{dispatch, dispatch_with_types};
 
 use super::common::resolve_user;
 
@@ -243,40 +246,82 @@ struct ApplySummary {
 /// RBAC info JSON output structure
 #[derive(serde::Serialize)]
 pub struct RbacInfo {
-    users: Vec<cloudapi_client::types::User>,
-    roles: Vec<cloudapi_client::types::Role>,
-    policies: Vec<cloudapi_client::types::Policy>,
+    users: Vec<User>,
+    roles: Vec<Role>,
+    policies: Vec<Policy>,
 }
 
-pub async fn rbac_info(args: InfoArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+/// Fetch users/roles/policies concurrently via `AnyClient`, each round-tripped
+/// to the canonical API type.
+async fn fetch_rbac_state(client: &AnyClient) -> Result<(Vec<User>, Vec<Role>, Vec<Policy>)> {
     let account = client.effective_account();
 
-    // Fetch all RBAC data concurrently
-    let (users_result, roles_result, policies_result) = tokio::join!(
-        client.inner().list_users().account(account).send(),
-        client.inner().list_roles().account(account).send(),
-        client.inner().list_policies().account(account).send(),
-    );
+    // Note: we don't use tokio::join! here because the dispatch! macro can't
+    // expand inside an async-block-in-expression without extra fuss. The three
+    // calls are sequential; same order-of-magnitude cost as node-triton.
+    let users: Vec<User> = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .list_users()
+            .account(account)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<Vec<User>>(serde_json::to_value(&resp)?)?
+    });
+    let roles: Vec<Role> = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .list_roles()
+            .account(account)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<Vec<Role>>(serde_json::to_value(&resp)?)?
+    });
+    let policies: Vec<Policy> = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .list_policies()
+            .account(account)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<Vec<Policy>>(serde_json::to_value(&resp)?)?
+    });
 
-    let users = users_result?.into_inner();
-    let roles = roles_result?.into_inner();
-    let policies = policies_result?.into_inner();
+    Ok((users, roles, policies))
+}
+
+/// Fetch a user's SSH keys as canonical `SshKey` objects.
+async fn fetch_user_keys(client: &AnyClient, user_id: &str) -> Result<Vec<SshKey>> {
+    let account = client.effective_account();
+    let keys: Vec<SshKey> = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .list_user_keys()
+            .account(account)
+            .uuid(user_id)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<Vec<SshKey>>(serde_json::to_value(&resp)?)?
+    });
+    Ok(keys)
+}
+
+pub async fn rbac_info(args: InfoArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+    // Fetch all RBAC data
+    let (users, roles, policies) = fetch_rbac_state(client).await?;
 
     // If --all flag is set, fetch keys for each user
     let mut key_fetch_errors: Vec<String> = Vec::new();
-    let user_keys: HashMap<String, Vec<cloudapi_client::types::SshKey>> = if args.all {
+    let user_keys: HashMap<String, Vec<SshKey>> = if args.all {
         let mut keys_map = HashMap::new();
         for user in &users {
-            let keys_result = client
-                .inner()
-                .list_user_keys()
-                .account(account)
-                .uuid(user.id.to_string())
-                .send()
-                .await;
-            match keys_result {
+            match fetch_user_keys(client, &user.id.to_string()).await {
                 Ok(keys) => {
-                    keys_map.insert(user.id.to_string(), keys.into_inner());
+                    keys_map.insert(user.id.to_string(), keys);
                 }
                 Err(e) => {
                     eprintln!(
@@ -313,7 +358,7 @@ pub async fn rbac_info(args: InfoArgs, client: &TypedClient, use_json: bool) -> 
             roles,
             policies,
         };
-        json::print_json(&info)?;
+        output_json::print_json(&info)?;
     } else {
         // Summary section
         println!("RBAC Summary");
@@ -400,7 +445,7 @@ pub async fn rbac_info(args: InfoArgs, client: &TypedClient, use_json: bool) -> 
     Ok(())
 }
 
-pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+pub async fn rbac_apply(args: ApplyArgs, client: &AnyClient, use_json: bool) -> Result<()> {
     // Resolve the current profile for dev mode (if enabled)
     let base_profile = if args.dev_create_keys_and_profiles {
         let profile_name = Config::load()
@@ -435,32 +480,14 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
         )
     })?;
 
-    let account = client.effective_account();
-
     // Fetch current state
-    let (users_result, roles_result, policies_result) = tokio::join!(
-        client.inner().list_users().account(account).send(),
-        client.inner().list_roles().account(account).send(),
-        client.inner().list_policies().account(account).send(),
-    );
-
-    let current_users = users_result?.into_inner();
-    let current_roles = roles_result?.into_inner();
-    let current_policies = policies_result?.into_inner();
+    let (current_users, current_roles, current_policies) = fetch_rbac_state(client).await?;
 
     // Fetch current SSH keys for each user
-    let mut current_user_keys: HashMap<String, Vec<cloudapi_client::types::SshKey>> =
-        HashMap::new();
+    let mut current_user_keys: HashMap<String, Vec<SshKey>> = HashMap::new();
     for user in &current_users {
-        if let Ok(keys) = client
-            .inner()
-            .list_user_keys()
-            .account(account)
-            .uuid(user.id.to_string())
-            .send()
-            .await
-        {
-            current_user_keys.insert(user.login.clone(), keys.into_inner());
+        if let Ok(keys) = fetch_user_keys(client, &user.id.to_string()).await {
+            current_user_keys.insert(user.login.clone(), keys);
         }
     }
 
@@ -722,7 +749,7 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
 
     if changes.is_empty() {
         if use_json {
-            json::print_json(&ApplyResult {
+            output_json::print_json(&ApplyResult {
                 changes: vec![],
                 summary: ApplySummary {
                     users_created: 0,
@@ -811,7 +838,7 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
                     }
                 })
                 .collect();
-            json::print_json(&serde_json::json!({
+            output_json::print_json(&serde_json::json!({
                 "dry_run": true,
                 "changes": change_results,
             }))?;
@@ -960,7 +987,7 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
     }
 
     if use_json {
-        json::print_json(&ApplyResult {
+        output_json::print_json(&ApplyResult {
             changes: results,
             summary,
         })?;
@@ -1117,7 +1144,21 @@ async fn load_user_keys(user: &RbacConfigUser, config_dir: &Path) -> Result<Vec<
     Ok(keys)
 }
 
-async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Result<()> {
+/// Build a JSON member-ref object for inclusion in role bodies.
+fn member_ref_json(login: &str, is_default: bool) -> serde_json::Value {
+    json!({
+        "type": "subuser",
+        "login": login,
+        "default": is_default,
+    })
+}
+
+/// Build a JSON policy-ref object.
+fn policy_ref_json(name: &str) -> serde_json::Value {
+    json!({ "name": name })
+}
+
+async fn execute_rbac_change(change: &RbacChange, client: &AnyClient) -> Result<()> {
     let account = client.effective_account();
 
     match change {
@@ -1128,22 +1169,25 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             last_name,
             company_name,
         } => {
-            let request = cloudapi_client::types::CreateUserRequest {
-                login: login.clone(),
-                email: email.clone(),
-                password: generate_password()?,
-                company_name: company_name.clone(),
-                first_name: first_name.clone(),
-                last_name: last_name.clone(),
-                phone: None,
-            };
-            client
-                .inner()
-                .create_user()
-                .account(account)
-                .body(request)
-                .send()
-                .await?;
+            let password = generate_password()?;
+            dispatch_with_types!(client, |c, t| {
+                let request = t::CreateUserRequest {
+                    login: login.clone(),
+                    email: email.clone(),
+                    password: password.clone(),
+                    company_name: company_name.clone(),
+                    first_name: first_name.clone(),
+                    last_name: last_name.clone(),
+                    phone: None,
+                };
+                c.inner()
+                    .create_user()
+                    .account(account)
+                    .body(request)
+                    .send()
+                    .await?;
+                Ok::<(), anyhow::Error>(())
+            })?;
             Ok(())
         }
         RbacChange::UpdateUser {
@@ -1154,32 +1198,36 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             company_name,
         } => {
             let user_id = resolve_user(login, client).await?;
-            let request = cloudapi_client::types::UpdateUserRequest {
-                email: email.clone(),
-                company_name: company_name.clone(),
-                first_name: first_name.clone(),
-                last_name: last_name.clone(),
-                phone: None,
-            };
-            client
-                .inner()
-                .update_user()
-                .account(account)
-                .uuid(&user_id)
-                .body(request)
-                .send()
-                .await?;
+            dispatch_with_types!(client, |c, t| {
+                let request = t::UpdateUserRequest {
+                    email: email.clone(),
+                    company_name: company_name.clone(),
+                    first_name: first_name.clone(),
+                    last_name: last_name.clone(),
+                    phone: None,
+                };
+                c.inner()
+                    .update_user()
+                    .account(account)
+                    .uuid(&user_id)
+                    .body(request)
+                    .send()
+                    .await?;
+                Ok::<(), anyhow::Error>(())
+            })?;
             Ok(())
         }
         RbacChange::DeleteUser { login } => {
             let user_id = resolve_user(login, client).await?;
-            client
-                .inner()
-                .delete_user()
-                .account(account)
-                .uuid(&user_id)
-                .send()
-                .await?;
+            dispatch!(client, |c| {
+                c.inner()
+                    .delete_user()
+                    .account(account)
+                    .uuid(&user_id)
+                    .send()
+                    .await?;
+                Ok::<(), anyhow::Error>(())
+            })?;
             Ok(())
         }
         RbacChange::CreatePolicy {
@@ -1187,18 +1235,20 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             description,
             rules,
         } => {
-            let request = cloudapi_client::types::CreatePolicyRequest {
-                name: name.clone(),
-                rules: rules.clone(),
-                description: description.clone(),
-            };
-            client
-                .inner()
-                .create_policy()
-                .account(account)
-                .body(request)
-                .send()
-                .await?;
+            dispatch_with_types!(client, |c, t| {
+                let request = t::CreatePolicyRequest {
+                    name: name.clone(),
+                    rules: rules.clone(),
+                    description: description.clone(),
+                };
+                c.inner()
+                    .create_policy()
+                    .account(account)
+                    .body(request)
+                    .send()
+                    .await?;
+                Ok::<(), anyhow::Error>(())
+            })?;
             Ok(())
         }
         RbacChange::UpdatePolicy {
@@ -1206,29 +1256,33 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             description,
             rules,
         } => {
-            let request = cloudapi_client::types::UpdatePolicyRequest {
-                name: None,
-                rules: rules.clone(),
-                description: description.clone(),
-            };
-            client
-                .inner()
-                .update_policy()
-                .account(account)
-                .policy(name)
-                .body(request)
-                .send()
-                .await?;
+            dispatch_with_types!(client, |c, t| {
+                let request = t::UpdatePolicyRequest {
+                    name: None,
+                    rules: rules.clone(),
+                    description: description.clone(),
+                };
+                c.inner()
+                    .update_policy()
+                    .account(account)
+                    .policy(name)
+                    .body(request)
+                    .send()
+                    .await?;
+                Ok::<(), anyhow::Error>(())
+            })?;
             Ok(())
         }
         RbacChange::DeletePolicy { name } => {
-            client
-                .inner()
-                .delete_policy()
-                .account(account)
-                .policy(name)
-                .send()
-                .await?;
+            dispatch!(client, |c| {
+                c.inner()
+                    .delete_policy()
+                    .account(account)
+                    .policy(name)
+                    .send()
+                    .await?;
+                Ok::<(), anyhow::Error>(())
+            })?;
             Ok(())
         }
         RbacChange::CreateRole {
@@ -1238,54 +1292,33 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             policies,
         } => {
             // Merge members (default=false) and default_members (default=true)
-            let mut member_refs: Vec<cloudapi_client::types::MemberRef> = members
-                .iter()
-                .map(|m| cloudapi_client::types::MemberRef {
-                    type_: cloudapi_client::types::MemberType::Subuser,
-                    login: Some(m.clone()),
-                    id: None,
-                    default: Some(false),
-                })
-                .collect();
-            member_refs.extend(
-                default_members
-                    .iter()
-                    .map(|m| cloudapi_client::types::MemberRef {
-                        type_: cloudapi_client::types::MemberType::Subuser,
-                        login: Some(m.clone()),
-                        id: None,
-                        default: Some(true),
-                    }),
-            );
+            let mut member_refs: Vec<serde_json::Value> =
+                members.iter().map(|m| member_ref_json(m, false)).collect();
+            member_refs.extend(default_members.iter().map(|m| member_ref_json(m, true)));
 
-            let request = cloudapi_client::types::CreateRoleRequest {
-                name: name.clone(),
-                policies: if policies.is_empty() {
-                    None
-                } else {
-                    Some(
-                        policies
-                            .iter()
-                            .map(|p| cloudapi_client::types::PolicyRef {
-                                name: Some(p.clone()),
-                                id: None,
-                            })
-                            .collect(),
-                    )
-                },
-                members: if member_refs.is_empty() {
-                    None
-                } else {
-                    Some(member_refs)
-                },
-            };
-            client
-                .inner()
-                .create_role()
-                .account(account)
-                .body(request)
-                .send()
-                .await?;
+            let mut body = serde_json::Map::new();
+            body.insert("name".to_string(), json!(name));
+            if !policies.is_empty() {
+                body.insert(
+                    "policies".to_string(),
+                    serde_json::Value::Array(policies.iter().map(|p| policy_ref_json(p)).collect()),
+                );
+            }
+            if !member_refs.is_empty() {
+                body.insert("members".to_string(), serde_json::Value::Array(member_refs));
+            }
+            let body_value = serde_json::Value::Object(body);
+
+            dispatch_with_types!(client, |c, t| {
+                let request: t::CreateRoleRequest = serde_json::from_value(body_value.clone())?;
+                c.inner()
+                    .create_role()
+                    .account(account)
+                    .body(request)
+                    .send()
+                    .await?;
+                Ok::<(), anyhow::Error>(())
+            })?;
             Ok(())
         }
         RbacChange::UpdateRole {
@@ -1294,69 +1327,58 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             default_members,
             policies,
         } => {
-            // Convert members + default_members to MemberRef vec
-            let member_refs: Option<Vec<cloudapi_client::types::MemberRef>> =
-                match (members, default_members) {
-                    (None, None) => None,
-                    _ => {
-                        let mut refs: Vec<cloudapi_client::types::MemberRef> = members
-                            .as_ref()
-                            .map(|ms| {
-                                ms.iter()
-                                    .map(|m| cloudapi_client::types::MemberRef {
-                                        type_: cloudapi_client::types::MemberType::Subuser,
-                                        login: Some(m.clone()),
-                                        id: None,
-                                        default: Some(false),
-                                    })
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-                        if let Some(dms) = default_members {
-                            refs.extend(dms.iter().map(|m| cloudapi_client::types::MemberRef {
-                                type_: cloudapi_client::types::MemberType::Subuser,
-                                login: Some(m.clone()),
-                                id: None,
-                                default: Some(true),
-                            }));
-                        }
-                        Some(refs)
+            // Convert members + default_members to JSON array of member refs
+            let member_refs_json: Option<Vec<serde_json::Value>> = match (members, default_members)
+            {
+                (None, None) => None,
+                _ => {
+                    let mut refs: Vec<serde_json::Value> = members
+                        .as_ref()
+                        .map(|ms| ms.iter().map(|m| member_ref_json(m, false)).collect())
+                        .unwrap_or_default();
+                    if let Some(dms) = default_members {
+                        refs.extend(dms.iter().map(|m| member_ref_json(m, true)));
                     }
-                };
-
-            let policy_refs: Option<Vec<cloudapi_client::types::PolicyRef>> =
-                policies.as_ref().map(|ps| {
-                    ps.iter()
-                        .map(|p| cloudapi_client::types::PolicyRef {
-                            name: Some(p.clone()),
-                            id: None,
-                        })
-                        .collect()
-                });
-
-            let request = cloudapi_client::types::UpdateRoleRequest {
-                name: None,
-                policies: policy_refs,
-                members: member_refs,
+                    Some(refs)
+                }
             };
-            client
-                .inner()
-                .update_role()
-                .account(account)
-                .role(name)
-                .body(request)
-                .send()
-                .await?;
+
+            let policy_refs_json: Option<Vec<serde_json::Value>> = policies
+                .as_ref()
+                .map(|ps| ps.iter().map(|p| policy_ref_json(p)).collect());
+
+            let mut body = serde_json::Map::new();
+            if let Some(refs) = member_refs_json {
+                body.insert("members".to_string(), serde_json::Value::Array(refs));
+            }
+            if let Some(refs) = policy_refs_json {
+                body.insert("policies".to_string(), serde_json::Value::Array(refs));
+            }
+            let body_value = serde_json::Value::Object(body);
+
+            dispatch_with_types!(client, |c, t| {
+                let request: t::UpdateRoleRequest = serde_json::from_value(body_value.clone())?;
+                c.inner()
+                    .update_role()
+                    .account(account)
+                    .role(name)
+                    .body(request)
+                    .send()
+                    .await?;
+                Ok::<(), anyhow::Error>(())
+            })?;
             Ok(())
         }
         RbacChange::DeleteRole { name } => {
-            client
-                .inner()
-                .delete_role()
-                .account(account)
-                .role(name)
-                .send()
-                .await?;
+            dispatch!(client, |c| {
+                c.inner()
+                    .delete_role()
+                    .account(account)
+                    .role(name)
+                    .send()
+                    .await?;
+                Ok::<(), anyhow::Error>(())
+            })?;
             Ok(())
         }
         RbacChange::CreateKey {
@@ -1365,18 +1387,20 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             key_material,
         } => {
             let user_id = resolve_user(user_login, client).await?;
-            let request = cloudapi_client::types::CreateSshKeyRequest {
-                name: key_name.clone(),
-                key: key_material.clone(),
-            };
-            client
-                .inner()
-                .create_user_key()
-                .account(account)
-                .uuid(&user_id)
-                .body(request)
-                .send()
-                .await?;
+            dispatch_with_types!(client, |c, t| {
+                let request = t::CreateSshKeyRequest {
+                    name: key_name.clone(),
+                    key: key_material.clone(),
+                };
+                c.inner()
+                    .create_user_key()
+                    .account(account)
+                    .uuid(&user_id)
+                    .body(request)
+                    .send()
+                    .await?;
+                Ok::<(), anyhow::Error>(())
+            })?;
             Ok(())
         }
         RbacChange::DeleteKey {
@@ -1384,14 +1408,16 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
             key_name,
         } => {
             let user_id = resolve_user(user_login, client).await?;
-            client
-                .inner()
-                .delete_user_key()
-                .account(account)
-                .uuid(&user_id)
-                .name(key_name)
-                .send()
-                .await?;
+            dispatch!(client, |c| {
+                c.inner()
+                    .delete_user_key()
+                    .account(account)
+                    .uuid(&user_id)
+                    .name(key_name)
+                    .send()
+                    .await?;
+                Ok::<(), anyhow::Error>(())
+            })?;
             Ok(())
         }
     }
@@ -1494,7 +1520,7 @@ async fn create_user_profile(
 async fn execute_dev_actions(
     users: &[RbacConfigUser],
     base_profile: &Profile,
-    client: &TypedClient,
+    client: &AnyClient,
     _dry_run: bool,
     use_json: bool,
     key_type: &DevKeyType,
@@ -1541,24 +1567,26 @@ async fn execute_dev_actions(
             );
         }
 
-        let request = cloudapi_client::types::CreateSshKeyRequest {
-            name: key_name.clone(),
-            key: public_key,
-        };
+        let uploaded_key: SshKey = dispatch_with_types!(client, |c, t| {
+            let request = t::CreateSshKeyRequest {
+                name: key_name.clone(),
+                key: public_key.clone(),
+            };
+            let resp = c
+                .inner()
+                .create_user_key()
+                .account(account)
+                .uuid(&user_id)
+                .body(request)
+                .send()
+                .await
+                .map_err(|e| {
+                    anyhow::anyhow!("Failed to upload key for user '{}': {}", user.login, e)
+                })?
+                .into_inner();
+            serde_json::from_value::<SshKey>(serde_json::to_value(&resp)?)?
+        });
 
-        let key_response = client
-            .inner()
-            .create_user_key()
-            .account(account)
-            .uuid(&user_id)
-            .body(request)
-            .send()
-            .await
-            .map_err(|e| {
-                anyhow::anyhow!("Failed to upload key for user '{}': {}", user.login, e)
-            })?;
-
-        let uploaded_key = key_response.into_inner();
         let fingerprint = &uploaded_key.fingerprint;
 
         if !use_json {
@@ -1603,19 +1631,11 @@ async fn execute_dev_actions(
     Ok(())
 }
 
-pub async fn rbac_reset(args: ResetArgs, client: &TypedClient) -> Result<()> {
+pub async fn rbac_reset(args: ResetArgs, client: &AnyClient) -> Result<()> {
     let account = client.effective_account();
 
     // Fetch current state
-    let (users_result, roles_result, policies_result) = tokio::join!(
-        client.inner().list_users().account(account).send(),
-        client.inner().list_roles().account(account).send(),
-        client.inner().list_policies().account(account).send(),
-    );
-
-    let users = users_result?.into_inner();
-    let roles = roles_result?.into_inner();
-    let policies = policies_result?.into_inner();
+    let (users, roles, policies) = fetch_rbac_state(client).await?;
 
     let total = users.len() + roles.len() + policies.len();
 
@@ -1684,49 +1704,53 @@ pub async fn rbac_reset(args: ResetArgs, client: &TypedClient) -> Result<()> {
 
     // Delete roles
     for role in &roles {
-        if let Err(e) = client
-            .inner()
-            .delete_role()
-            .account(account)
-            .role(&role.name)
-            .send()
-            .await
-        {
-            errors.push(format!("Failed to delete role '{}': {}", role.name, e));
-        } else {
-            println!("Deleted role '{}'", role.name);
+        let res: Result<()> = dispatch!(client, |c| {
+            c.inner()
+                .delete_role()
+                .account(account)
+                .role(&role.name)
+                .send()
+                .await?;
+            Ok::<(), anyhow::Error>(())
+        });
+        match res {
+            Ok(()) => println!("Deleted role '{}'", role.name),
+            Err(e) => errors.push(format!("Failed to delete role '{}': {}", role.name, e)),
         }
     }
 
     // Delete users
     for user in &users {
-        if let Err(e) = client
-            .inner()
-            .delete_user()
-            .account(account)
-            .uuid(user.id.to_string())
-            .send()
-            .await
-        {
-            errors.push(format!("Failed to delete user '{}': {}", user.login, e));
-        } else {
-            println!("Deleted user '{}'", user.login);
+        let user_id = user.id.to_string();
+        let res: Result<()> = dispatch!(client, |c| {
+            c.inner()
+                .delete_user()
+                .account(account)
+                .uuid(&user_id)
+                .send()
+                .await?;
+            Ok::<(), anyhow::Error>(())
+        });
+        match res {
+            Ok(()) => println!("Deleted user '{}'", user.login),
+            Err(e) => errors.push(format!("Failed to delete user '{}': {}", user.login, e)),
         }
     }
 
     // Delete policies
     for policy in &policies {
-        if let Err(e) = client
-            .inner()
-            .delete_policy()
-            .account(account)
-            .policy(&policy.name)
-            .send()
-            .await
-        {
-            errors.push(format!("Failed to delete policy '{}': {}", policy.name, e));
-        } else {
-            println!("Deleted policy '{}'", policy.name);
+        let res: Result<()> = dispatch!(client, |c| {
+            c.inner()
+                .delete_policy()
+                .account(account)
+                .policy(&policy.name)
+                .send()
+                .await?;
+            Ok::<(), anyhow::Error>(())
+        });
+        match res {
+            Ok(()) => println!("Deleted policy '{}'", policy.name),
+            Err(e) => errors.push(format!("Failed to delete policy '{}': {}", policy.name, e)),
         }
     }
 

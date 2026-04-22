@@ -8,12 +8,14 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
+use cloudapi_api::{Role, SshKey, User};
 use serde::Deserialize;
 
+use crate::client::AnyClient;
 use crate::define_columns;
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::{dispatch, dispatch_with_types};
 
 use super::common::resolve_user;
 use super::editor;
@@ -156,7 +158,7 @@ pub struct UserDeleteArgs {
 }
 
 impl RbacUserCommand {
-    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
         // If a subcommand is provided, use the modern pattern
         if let Some(cmd) = self.command {
             return match cmd {
@@ -213,19 +215,26 @@ impl RbacUserCommand {
 
 pub async fn list_users(
     table_args: &TableFormatArgs,
-    client: &TypedClient,
+    client: &AnyClient,
     use_json: bool,
 ) -> Result<()> {
     let account = client.effective_account();
-    let response = client.inner().list_users().account(account).send().await?;
-
-    let users = response.into_inner();
+    let users: Vec<User> = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .list_users()
+            .account(account)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<Vec<User>>(serde_json::to_value(&resp)?)?
+    });
 
     if use_json {
         json::print_json_stream(&users)?;
     } else {
         define_columns! {
-            UserColumn for cloudapi_client::types::User, long_from: 4, {
+            UserColumn for User, long_from: 4, {
                 Login("LOGIN") => |user| user.login.clone(),
                 Email("EMAIL") => |user| user.email.clone(),
                 Name("NAME") => |user| {
@@ -255,30 +264,36 @@ pub async fn list_users(
     Ok(())
 }
 
-async fn get_user(args: UserGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+async fn get_user(args: UserGetArgs, client: &AnyClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
     let user_id = resolve_user(&args.user, client).await?;
 
-    let response = client
-        .inner()
-        .get_user()
-        .account(account)
-        .uuid(&user_id)
-        .send()
-        .await?;
-
-    let user = response.into_inner();
-
-    // Optionally fetch keys if -k/--keys flag is set
-    let keys = if args.keys {
-        let keys_response = client
+    let user: User = dispatch!(client, |c| {
+        let resp = c
             .inner()
-            .list_user_keys()
+            .get_user()
             .account(account)
             .uuid(&user_id)
             .send()
-            .await?;
-        Some(keys_response.into_inner())
+            .await?
+            .into_inner();
+        serde_json::from_value::<User>(serde_json::to_value(&resp)?)?
+    });
+
+    // Optionally fetch keys if -k/--keys flag is set
+    let keys: Option<Vec<SshKey>> = if args.keys {
+        let k: Vec<SshKey> = dispatch!(client, |c| {
+            let resp = c
+                .inner()
+                .list_user_keys()
+                .account(account)
+                .uuid(&user_id)
+                .send()
+                .await?
+                .into_inner();
+            serde_json::from_value::<Vec<SshKey>>(serde_json::to_value(&resp)?)?
+        });
+        Some(k)
     } else {
         None
     };
@@ -286,8 +301,16 @@ async fn get_user(args: UserGetArgs, client: &TypedClient, use_json: bool) -> Re
     // Optionally fetch roles if -r/--roles flag is set
     let (user_roles, user_default_roles) = if args.roles {
         // Fetch all roles and check which ones the user belongs to
-        let roles_response = client.inner().list_roles().account(account).send().await?;
-        let all_roles = roles_response.into_inner();
+        let all_roles: Vec<Role> = dispatch!(client, |c| {
+            let resp = c
+                .inner()
+                .list_roles()
+                .account(account)
+                .send()
+                .await?
+                .into_inner();
+            serde_json::from_value::<Vec<Role>>(serde_json::to_value(&resp)?)?
+        });
 
         let mut roles = Vec::new();
         let mut default_roles = Vec::new();
@@ -391,7 +414,7 @@ async fn get_user(args: UserGetArgs, client: &TypedClient, use_json: bool) -> Re
     Ok(())
 }
 
-async fn create_user(args: UserCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+async fn create_user(args: UserCreateArgs, client: &AnyClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
 
     // Prompt for password if not provided
@@ -406,25 +429,33 @@ async fn create_user(args: UserCreateArgs, client: &TypedClient, use_json: bool)
         }
     };
 
-    let request = cloudapi_client::types::CreateUserRequest {
-        login: args.login.clone(),
-        email: args.email,
-        password,
-        company_name: args.company_name,
-        first_name: args.first_name,
-        last_name: args.last_name,
-        phone: None,
-    };
+    let login = args.login.clone();
+    let email = args.email.clone();
+    let company_name = args.company_name.clone();
+    let first_name = args.first_name.clone();
+    let last_name = args.last_name.clone();
 
-    let response = client
-        .inner()
-        .create_user()
-        .account(account)
-        .body(request)
-        .send()
-        .await?;
+    let user: User = dispatch_with_types!(client, |c, t| {
+        let request = t::CreateUserRequest {
+            login: login.clone(),
+            email: email.clone(),
+            password: password.clone(),
+            company_name: company_name.clone(),
+            first_name: first_name.clone(),
+            last_name: last_name.clone(),
+            phone: None,
+        };
+        let resp = c
+            .inner()
+            .create_user()
+            .account(account)
+            .body(request)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<User>(serde_json::to_value(&resp)?)?
+    });
 
-    let user = response.into_inner();
     println!("Created user '{}' ({})", user.login, user.id);
 
     if use_json {
@@ -434,28 +465,35 @@ async fn create_user(args: UserCreateArgs, client: &TypedClient, use_json: bool)
     Ok(())
 }
 
-async fn update_user(args: UserUpdateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+async fn update_user(args: UserUpdateArgs, client: &AnyClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
     let user_id = resolve_user(&args.user, client).await?;
 
-    let request = cloudapi_client::types::UpdateUserRequest {
-        email: args.email,
-        company_name: args.company_name,
-        first_name: args.first_name,
-        last_name: args.last_name,
-        phone: None,
-    };
+    let email = args.email.clone();
+    let company_name = args.company_name.clone();
+    let first_name = args.first_name.clone();
+    let last_name = args.last_name.clone();
 
-    let response = client
-        .inner()
-        .update_user()
-        .account(account)
-        .uuid(&user_id)
-        .body(request)
-        .send()
-        .await?;
+    let user: User = dispatch_with_types!(client, |c, t| {
+        let request = t::UpdateUserRequest {
+            email: email.clone(),
+            company_name: company_name.clone(),
+            first_name: first_name.clone(),
+            last_name: last_name.clone(),
+            phone: None,
+        };
+        let resp = c
+            .inner()
+            .update_user()
+            .account(account)
+            .uuid(&user_id)
+            .body(request)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<User>(serde_json::to_value(&resp)?)?
+    });
 
-    let user = response.into_inner();
     println!("Updated user '{}'", user.login);
 
     if use_json {
@@ -465,7 +503,7 @@ async fn update_user(args: UserUpdateArgs, client: &TypedClient, use_json: bool)
     Ok(())
 }
 
-pub async fn delete_users(args: UserDeleteArgs, client: &TypedClient) -> Result<()> {
+pub async fn delete_users(args: UserDeleteArgs, client: &AnyClient) -> Result<()> {
     for user_ref in &args.users {
         if !args.force {
             use dialoguer::Confirm;
@@ -481,13 +519,15 @@ pub async fn delete_users(args: UserDeleteArgs, client: &TypedClient) -> Result<
         let user_id = resolve_user(user_ref, client).await?;
         let account = client.effective_account();
 
-        client
-            .inner()
-            .delete_user()
-            .account(account)
-            .uuid(&user_id)
-            .send()
-            .await?;
+        dispatch!(client, |c| {
+            c.inner()
+                .delete_user()
+                .account(account)
+                .uuid(&user_id)
+                .send()
+                .await?;
+            Ok::<(), anyhow::Error>(())
+        })?;
 
         println!("Deleted user '{}'", user_ref);
     }
@@ -501,11 +541,7 @@ pub async fn delete_users(args: UserDeleteArgs, client: &TypedClient) -> Result<
 /// - A file path
 /// - stdin (when file is "-")
 /// - Interactive prompts (when file is None)
-async fn add_user_from_file(
-    file: Option<&str>,
-    client: &TypedClient,
-    use_json: bool,
-) -> Result<()> {
+async fn add_user_from_file(file: Option<&str>, client: &AnyClient, use_json: bool) -> Result<()> {
     use std::io::{self, Read};
 
     // Read JSON input based on source
@@ -609,25 +645,27 @@ async fn add_user_from_file(
 
     // Create the user
     let account = client.effective_account();
-    let request = cloudapi_client::types::CreateUserRequest {
-        login: login.clone(),
-        email,
-        password,
-        company_name,
-        first_name,
-        last_name,
-        phone,
-    };
+    let user: User = dispatch_with_types!(client, |c, t| {
+        let request = t::CreateUserRequest {
+            login: login.clone(),
+            email: email.clone(),
+            password: password.clone(),
+            company_name: company_name.clone(),
+            first_name: first_name.clone(),
+            last_name: last_name.clone(),
+            phone: phone.clone(),
+        };
+        let resp = c
+            .inner()
+            .create_user()
+            .account(account)
+            .body(request)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<User>(serde_json::to_value(&resp)?)?
+    });
 
-    let response = client
-        .inner()
-        .create_user()
-        .account(account)
-        .body(request)
-        .send()
-        .await?;
-
-    let user = response.into_inner();
     println!("Created user '{}' ({})", user.login, user.id);
 
     if use_json {
@@ -660,7 +698,7 @@ struct UserEdit {
 }
 
 /// Convert a User to commented YAML for editing
-fn user_to_commented_yaml(user: &cloudapi_client::types::User, account: &str) -> String {
+fn user_to_commented_yaml(user: &User, account: &str) -> String {
     let company = user.company_name.as_deref().unwrap_or("");
     let first = user.first_name.as_deref().unwrap_or("");
     let last = user.last_name.as_deref().unwrap_or("");
@@ -703,19 +741,22 @@ phone: {phone}
 }
 
 /// Edit user in $EDITOR (legacy -e flag support)
-async fn edit_user_in_editor(user_ref: &str, client: &TypedClient) -> Result<()> {
+async fn edit_user_in_editor(user_ref: &str, client: &AnyClient) -> Result<()> {
     let account = client.effective_account().to_owned();
     let user_id = resolve_user(user_ref, client).await?;
 
     // Fetch current user
-    let response = client
-        .inner()
-        .get_user()
-        .account(&account)
-        .uuid(&user_id)
-        .send()
-        .await?;
-    let user = response.into_inner();
+    let user: User = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .get_user()
+            .account(&account)
+            .uuid(&user_id)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<User>(serde_json::to_value(&resp)?)?
+    });
 
     let filename = format!("{}-user-{}.yaml", account, user.login);
     let original_yaml = user_to_commented_yaml(&user, &account);
@@ -731,24 +772,29 @@ async fn edit_user_in_editor(user_ref: &str, client: &TypedClient) -> Result<()>
 
         match serde_yaml::from_str::<UserEdit>(&result.content) {
             Ok(edited) => {
-                // Build update request
-                let request = cloudapi_client::types::UpdateUserRequest {
-                    email: Some(edited.email),
-                    company_name: edited.company_name,
-                    first_name: edited.first_name,
-                    last_name: edited.last_name,
-                    phone: edited.phone,
-                };
+                let email = Some(edited.email);
+                let company_name = edited.company_name;
+                let first_name = edited.first_name;
+                let last_name = edited.last_name;
+                let phone = edited.phone;
 
-                // Update the user
-                client
-                    .inner()
-                    .update_user()
-                    .account(&account)
-                    .uuid(&user_id)
-                    .body(request)
-                    .send()
-                    .await?;
+                dispatch_with_types!(client, |c, t| {
+                    let request = t::UpdateUserRequest {
+                        email: email.clone(),
+                        company_name: company_name.clone(),
+                        first_name: first_name.clone(),
+                        last_name: last_name.clone(),
+                        phone: phone.clone(),
+                    };
+                    c.inner()
+                        .update_user()
+                        .account(&account)
+                        .uuid(&user_id)
+                        .body(request)
+                        .send()
+                        .await?;
+                    Ok::<(), anyhow::Error>(())
+                })?;
 
                 println!("Updated user \"{}\"", user.login);
                 return Ok(());
