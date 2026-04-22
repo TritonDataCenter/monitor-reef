@@ -8,11 +8,12 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
+use cloudapi_api::Machine;
 use std::path::Path;
 
 use crate::client::AnyClient;
 use crate::output::{enum_to_display, json};
+use crate::{dispatch, dispatch_with_types};
 
 #[derive(Args, Clone)]
 pub struct CreateArgs {
@@ -119,152 +120,156 @@ pub struct CreateArgs {
 
 pub async fn run(
     args: CreateArgs,
-    any_client: &AnyClient,
+    client: &AnyClient,
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
-    // `instance create` needs image + package + network resolution, all of
-    // which still use the cloudapi-client wrappers. Porting those through
-    // the gateway is its own slice; for now tritonapi profiles error
-    // cleanly.
-    let client: &TypedClient = match any_client {
-        AnyClient::CloudApi(c) => c,
-        AnyClient::Gateway { .. } => {
-            anyhow::bail!(
-                "`triton instance create` is not yet supported for tritonapi profiles \
-                 (image/package/network resolution is still cloudapi-direct). Use an SSH \
-                 profile for this command."
-            );
-        }
-    };
     let account = client.effective_account();
 
-    // Resolve image (could be name@version or UUID) — accepts AnyClient.
-    let image_id = crate::commands::image::resolve_image(&args.image, any_client, cache)
+    // Resolve image (could be name@version or UUID)
+    let image_id = crate::commands::image::resolve_image(&args.image, client, cache)
         .await?
         .to_string();
 
     // Resolve package (could be name or UUID)
     let package_id = resolve_package(&args.package, client).await?;
 
-    // Build create request using the builder pattern
-    let mut request = cloudapi_client::types::CreateMachineRequest::builder()
-        .image(image_id)
-        .package(package_id);
+    // Build the request as a `serde_json::Value`. Node.js CloudAPI accepts
+    // the modern tags / metadata objects directly, so we match that wire
+    // format and hand the Value off to each per-client Progenitor
+    // `types::CreateMachineRequest` via serde round-trip inside the
+    // dispatch arm.
+    let mut body = serde_json::Map::new();
+    body.insert("image".to_string(), serde_json::Value::String(image_id));
+    body.insert("package".to_string(), serde_json::Value::String(package_id));
 
     if let Some(name) = &args.name {
-        request = request.name(name.clone());
+        body.insert("name".to_string(), serde_json::Value::String(name.clone()));
     }
     if args.firewall {
-        request = request.firewall_enabled(true);
+        body.insert(
+            "firewall_enabled".to_string(),
+            serde_json::Value::Bool(true),
+        );
     }
     if args.deletion_protection {
-        request = request.deletion_protection(true);
+        body.insert(
+            "deletion_protection".to_string(),
+            serde_json::Value::Bool(true),
+        );
     }
-
-    // Handle brand
-    if let Some(brand) = args.brand {
-        request = request.brand(brand);
-    }
-
-    // Handle delegate dataset
     if args.delegate_dataset {
-        request = request.delegate_dataset(true);
+        body.insert(
+            "delegate_dataset".to_string(),
+            serde_json::Value::Bool(true),
+        );
     }
-
-    // Handle encrypted
     if args.encrypted {
-        request = request.encrypted(true);
+        body.insert("encrypted".to_string(), serde_json::Value::Bool(true));
+    }
+    if args.allow_shared_images {
+        body.insert(
+            "allow_shared_images".to_string(),
+            serde_json::Value::Bool(true),
+        );
     }
 
-    // Handle allow shared images
-    if args.allow_shared_images {
-        request = request.allow_shared_images(true);
+    // Brand: CLI uses Progenitor's `Brand2` (has ValueEnum); serialize to
+    // its wire-format string and pass through unchanged.
+    if let Some(brand) = &args.brand {
+        body.insert("brand".to_string(), serde_json::to_value(brand)?);
     }
 
     // Handle networks (simple mode - plain UUIDs wrapped as NetworkObject)
     // The pre-hook in cloudapi-client simplifies these to plain UUID strings
     // when no ipv4_ips or primary are set, matching node-triton's wire format.
-    if let Some(networks) = &args.network {
-        let network_strs: Vec<&str> = networks
-            .iter()
-            .flat_map(|n| n.split(','))
-            .map(|s| s.trim())
-            .collect();
-        let mut network_objects: Vec<cloudapi_client::types::NetworkObject> = Vec::new();
-        for network_str in network_strs {
-            let network_id =
-                super::super::network::resolve_network_with_get(network_str, any_client).await?;
-            network_objects.push(cloudapi_client::types::NetworkObject {
-                ipv4_uuid: network_id,
-                ipv4_ips: None,
-                primary: None,
-            });
-        }
-        request = request.networks(network_objects);
-    }
-
-    // Handle NICs (advanced mode - also uses networks field)
-    if let Some(nics) = &args.nic {
-        let nic_specs = parse_nic_specs(nics, any_client).await?;
-        request = request.networks(nic_specs);
+    let network_objects: Option<Vec<cloudapi_api::NetworkObject>> =
+        if let Some(networks) = &args.network {
+            let network_strs: Vec<&str> = networks
+                .iter()
+                .flat_map(|n| n.split(','))
+                .map(|s| s.trim())
+                .collect();
+            let mut list = Vec::new();
+            for network_str in network_strs {
+                let network_id =
+                    super::super::network::resolve_network_with_get(network_str, client).await?;
+                list.push(cloudapi_api::NetworkObject {
+                    ipv4_uuid: network_id,
+                    ipv4_ips: None,
+                    primary: None,
+                });
+            }
+            Some(list)
+        } else if let Some(nics) = &args.nic {
+            Some(parse_nic_specs(nics, client).await?)
+        } else {
+            None
+        };
+    if let Some(nets) = &network_objects {
+        body.insert("networks".to_string(), serde_json::to_value(nets)?);
     }
 
     // Handle affinity rules
     if let Some(affinity) = &args.affinity {
-        request = request.affinity(affinity.clone());
+        body.insert("affinity".to_string(), serde_json::to_value(affinity)?);
     }
 
     // Build metadata from --metadata, --metadata-file, and --script
     let metadata = build_metadata(&args).await?;
     if !metadata.is_empty() {
-        // arch-lint: allow(no-sync-io) reason="metadata() is a builder method, not filesystem I/O"
-        request = request.metadata(metadata);
+        body.insert("metadata".to_string(), serde_json::Value::Object(metadata));
     }
 
     // Build tags from --tag
     let tags = build_tags(&args)?;
     if !tags.is_empty() {
-        request = request.tags(tags);
+        body.insert("tags".to_string(), serde_json::Value::Object(tags));
     }
 
     // Handle volumes
-    if let Some(volumes) = &args.volume {
-        let volume_mounts = parse_volume_specs(volumes)?;
-        request = request.volumes(Some(volume_mounts));
+    let volume_mounts = args
+        .volume
+        .as_ref()
+        .map(|v| parse_volume_specs(v))
+        .transpose()?;
+    if let Some(mounts) = &volume_mounts {
+        body.insert("volumes".to_string(), serde_json::to_value(mounts)?);
     }
 
     // Handle disks
-    if let Some(disks) = &args.disk {
-        let disk_specs = parse_disk_specs(disks)?;
-        request = request.disks(Some(disk_specs));
+    let disk_specs = args
+        .disk
+        .as_ref()
+        .map(|d| parse_disk_specs(d))
+        .transpose()?;
+    if let Some(disks) = &disk_specs {
+        body.insert("disks".to_string(), serde_json::to_value(disks)?);
     }
 
-    // Build the final request
-    let request: cloudapi_client::types::CreateMachineRequest =
-        request
-            .try_into()
-            .map_err(|e: cloudapi_client::types::error::ConversionError| {
-                anyhow::anyhow!("Failed to build request: {}", e)
-            })?;
+    let body_value = serde_json::Value::Object(body);
 
     // Handle dry-run mode
     if args.dry_run {
         eprintln!("Dry-run mode: Instance would be created with:");
         if use_json {
-            json::print_json(&request)?;
+            json::print_json(&body_value)?;
         } else {
-            println!("  Image: {}", request.image);
-            println!("  Package: {}", request.package);
-            if let Some(name) = &request.name {
+            if let Some(image) = body_value.get("image").and_then(|v| v.as_str()) {
+                println!("  Image: {}", image);
+            }
+            if let Some(pkg) = body_value.get("package").and_then(|v| v.as_str()) {
+                println!("  Package: {}", pkg);
+            }
+            if let Some(name) = body_value.get("name").and_then(|v| v.as_str()) {
                 println!("  Name: {}", name);
             }
-            if let Some(brand) = &request.brand {
+            if let Some(brand) = &args.brand {
                 println!("  Brand: {}", enum_to_display(brand));
             }
-            if let Some(networks) = &request.networks {
-                println!("  Networks: {} specified", networks.len());
-                for net in networks {
+            if let Some(nets) = &network_objects {
+                println!("  Networks: {} specified", nets.len());
+                for net in nets {
                     let mut desc = net.ipv4_uuid.to_string();
                     if let Some(ips) = &net.ipv4_ips {
                         desc.push_str(&format!(" ({})", ips.join(", ")));
@@ -275,13 +280,13 @@ pub async fn run(
                     println!("    - {}", desc);
                 }
             }
-            if let Some(metadata) = &request.metadata {
+            if let Some(md) = body_value.get("metadata").and_then(|v| v.as_object()) {
                 println!(
                     "  Metadata keys: {}",
-                    metadata.keys().cloned().collect::<Vec<_>>().join(", ")
+                    md.keys().cloned().collect::<Vec<_>>().join(", ")
                 );
             }
-            if let Some(tags) = &request.tags {
+            if let Some(tags) = body_value.get("tags").and_then(|v| v.as_object()) {
                 println!(
                     "  Tags: {}",
                     tags.iter()
@@ -290,39 +295,48 @@ pub async fn run(
                         .join(", ")
                 );
             }
-            if request.firewall_enabled == Some(true) {
+            if args.firewall {
                 println!("  Firewall: enabled");
             }
-            if request.deletion_protection == Some(true) {
+            if args.deletion_protection {
                 println!("  Deletion protection: enabled");
             }
-            if request.delegate_dataset == Some(true) {
+            if args.delegate_dataset {
                 println!("  Delegate dataset: enabled");
             }
-            if request.encrypted == Some(true) {
+            if args.encrypted {
                 println!("  Encrypted: enabled");
             }
-            if request.allow_shared_images == Some(true) {
+            if args.allow_shared_images {
                 println!("  Allow shared images: enabled");
             }
-            if let Some(volumes) = &request.volumes {
-                println!("  Volumes: {} specified", volumes.len());
+            if let Some(mounts) = &volume_mounts {
+                println!("  Volumes: {} specified", mounts.len());
             }
-            if let Some(disks) = &request.disks {
+            if let Some(disks) = &disk_specs {
                 println!("  Disks: {} specified", disks.len());
             }
         }
         return Ok(());
     }
 
-    // Create the instance using the legacy-compatible method
-    // This transforms tags/metadata to the format expected by Node.js CloudAPI
-    let machine = client
-        .create_machine(account, &request)
-        .await
-        .map_err(|e| anyhow::anyhow!("Failed to create machine: {}", e))?;
-    let id_str = machine.id.to_string();
+    // Per-client typed `body(V)` takes `V: TryInto<types::CreateMachineRequest>`;
+    // serialize the canonical JSON once, deserialize into each arm's type.
+    let machine: Machine = dispatch_with_types!(client, |c, t| {
+        let body: t::CreateMachineRequest = serde_json::from_value(body_value.clone())?;
+        let resp = c
+            .inner()
+            .create_machine()
+            .account(account)
+            .body(body)
+            .send()
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to create machine: {}", e))?
+            .into_inner();
+        serde_json::from_value::<Machine>(serde_json::to_value(&resp)?)?
+    });
 
+    let id_str = machine.id.to_string();
     eprintln!("Creating instance {} ({})", &machine.name, &id_str[..8]);
 
     // Wait if requested
@@ -332,15 +346,11 @@ pub async fn run(
             json::print_json(&machine)?;
         }
         eprintln!("Waiting for instance to be running...");
-        // `wait_for_states` now takes `&AnyClient`; since `create_image`
-        // is SSH-only we wrap our `TypedClient` here. The dispatch macro
-        // handles both arms but only the CloudApi arm can run in this
-        // path.
         let (_final_state, final_machine_json) = super::wait::wait_for_states(
             machine.id,
             &[cloudapi_client::types::MachineState::Running],
             args.wait_timeout,
-            any_client,
+            client,
         )
         .await?;
         eprintln!("Instance is running");
@@ -475,7 +485,7 @@ fn parse_key_value_file(s: &str) -> Result<(String, String)> {
 }
 
 /// Parse volume specifications
-fn parse_volume_specs(volumes: &[String]) -> Result<Vec<cloudapi_client::types::VolumeMount>> {
+fn parse_volume_specs(volumes: &[String]) -> Result<Vec<cloudapi_api::VolumeMount>> {
     let mut result = Vec::new();
     for spec in volumes {
         let mount = parse_volume_spec(spec)?;
@@ -488,7 +498,7 @@ fn parse_volume_specs(volumes: &[String]) -> Result<Vec<cloudapi_client::types::
 /// Formats:
 ///   NAME[@MOUNTPOINT] - mounts at /MOUNTPOINT or /<name>
 ///   NAME:MODE:MOUNTPOINT - explicit mode and mountpoint
-fn parse_volume_spec(spec: &str) -> Result<cloudapi_client::types::VolumeMount> {
+fn parse_volume_spec(spec: &str) -> Result<cloudapi_api::VolumeMount> {
     // Try NAME:MODE:MOUNTPOINT format first
     let parts: Vec<&str> = spec.split(':').collect();
     if parts.len() == 3 {
@@ -497,8 +507,8 @@ fn parse_volume_spec(spec: &str) -> Result<cloudapi_client::types::VolumeMount> 
         let mountpoint = parts[2].to_string();
 
         let mode = match mode_str {
-            "rw" => cloudapi_client::types::MountMode::Rw,
-            "ro" => cloudapi_client::types::MountMode::Ro,
+            "rw" => cloudapi_api::MountMode::Rw,
+            "ro" => cloudapi_api::MountMode::Ro,
             _ => {
                 return Err(anyhow::anyhow!(
                     "Invalid volume mode '{}'. Expected 'ro' or 'rw'",
@@ -507,11 +517,11 @@ fn parse_volume_spec(spec: &str) -> Result<cloudapi_client::types::VolumeMount> 
             }
         };
 
-        return Ok(cloudapi_client::types::VolumeMount {
+        return Ok(cloudapi_api::VolumeMount {
             name,
             mode: Some(mode),
             mountpoint,
-            type_: None,
+            volume_type: None,
         });
     }
 
@@ -519,27 +529,27 @@ fn parse_volume_spec(spec: &str) -> Result<cloudapi_client::types::VolumeMount> 
     if let Some(idx) = spec.find('@') {
         let name = spec[..idx].to_string();
         let mountpoint = spec[idx + 1..].to_string();
-        Ok(cloudapi_client::types::VolumeMount {
+        Ok(cloudapi_api::VolumeMount {
             name,
             mode: None, // defaults to "rw"
             mountpoint,
-            type_: None,
+            volume_type: None,
         })
     } else {
         // Just NAME, use /<name> as mountpoint
         let name = spec.to_string();
         let mountpoint = format!("/{}", name);
-        Ok(cloudapi_client::types::VolumeMount {
+        Ok(cloudapi_api::VolumeMount {
             name,
             mode: None,
             mountpoint,
-            type_: None,
+            volume_type: None,
         })
     }
 }
 
 /// Parse disk specifications
-fn parse_disk_specs(disks: &[String]) -> Result<Vec<cloudapi_client::types::DiskSpec>> {
+fn parse_disk_specs(disks: &[String]) -> Result<Vec<cloudapi_api::DiskSpec>> {
     let mut result = Vec::new();
     for (i, spec) in disks.iter().enumerate() {
         let disk = parse_disk_spec(spec, i == 0)?;
@@ -552,7 +562,7 @@ fn parse_disk_specs(disks: &[String]) -> Result<Vec<cloudapi_client::types::Disk
 /// Formats:
 ///   SIZE - plain size (e.g., "10240" for 10GB in MB, or "10G" for 10GB)
 ///   IMAGE:SIZE - image UUID followed by size
-fn parse_disk_spec(spec: &str, is_first: bool) -> Result<cloudapi_client::types::DiskSpec> {
+fn parse_disk_spec(spec: &str, is_first: bool) -> Result<cloudapi_api::DiskSpec> {
     let parts: Vec<&str> = spec.split(':').collect();
 
     if parts.len() == 2 {
@@ -561,7 +571,7 @@ fn parse_disk_spec(spec: &str, is_first: bool) -> Result<cloudapi_client::types:
             .parse()
             .map_err(|_| anyhow::anyhow!("Invalid image UUID in disk spec: {}", parts[0]))?;
         let size = parse_size(parts[1])?;
-        Ok(cloudapi_client::types::DiskSpec {
+        Ok(cloudapi_api::DiskSpec {
             image: Some(image),
             size: Some(size),
             block_size: None,
@@ -570,7 +580,7 @@ fn parse_disk_spec(spec: &str, is_first: bool) -> Result<cloudapi_client::types:
     } else if parts.len() == 1 {
         // SIZE only format
         let size = parse_size(parts[0])?;
-        Ok(cloudapi_client::types::DiskSpec {
+        Ok(cloudapi_api::DiskSpec {
             image: None,
             size: Some(size),
             block_size: None,
@@ -618,7 +628,7 @@ fn parse_size(s: &str) -> Result<u64> {
 async fn parse_nic_specs(
     nics: &[String],
     client: &AnyClient,
-) -> Result<Vec<cloudapi_client::types::NetworkObject>> {
+) -> Result<Vec<cloudapi_api::NetworkObject>> {
     let mut result = Vec::new();
     for spec in nics {
         let nic = parse_nic_spec(spec, client).await?;
@@ -736,54 +746,53 @@ fn parse_nic_spec_fields(spec: &str) -> Result<ParsedNicSpec> {
 /// Parse a single NIC specification into a NetworkObject
 /// Format: network=UUID[,ip=IP][,primary]
 /// Also accepts node-triton format: ipv4_uuid=UUID[,ipv4_ips=IP]
-async fn parse_nic_spec(
-    spec: &str,
-    client: &AnyClient,
-) -> Result<cloudapi_client::types::NetworkObject> {
+async fn parse_nic_spec(spec: &str, client: &AnyClient) -> Result<cloudapi_api::NetworkObject> {
     let parsed = parse_nic_spec_fields(spec)?;
 
     // Resolve network name to UUID if needed
     let resolved_network = super::super::network::resolve_network(&parsed.network, client).await?;
 
-    Ok(cloudapi_client::types::NetworkObject {
+    Ok(cloudapi_api::NetworkObject {
         ipv4_uuid: resolved_network,
         ipv4_ips: parsed.ip.map(|ip| vec![ip]),
         primary: parsed.primary,
     })
 }
 
-async fn resolve_package(id_or_name: &str, client: &TypedClient) -> Result<String> {
+async fn resolve_package(id_or_name: &str, client: &AnyClient) -> Result<String> {
     // First try as full UUID - use parsed form to normalize to lowercase
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
         return Ok(uuid.to_string());
     }
 
     let account = client.effective_account();
-    let response = client
-        .inner()
-        .list_packages()
-        .account(account)
-        .send()
-        .await?;
-
-    let packages = response.into_inner();
+    let packages: Vec<(uuid::Uuid, String)> = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .list_packages()
+            .account(account)
+            .send()
+            .await?
+            .into_inner();
+        resp.into_iter().map(|p| (p.id, p.name)).collect()
+    });
 
     // Check if it looks like a short UUID (hex characters only)
     let is_short_uuid = id_or_name.chars().all(|c| c.is_ascii_hexdigit());
 
     if is_short_uuid {
         // Find by UUID prefix
-        for pkg in &packages {
-            let pkg_id_str = pkg.id.to_string();
+        for (id, _) in &packages {
+            let pkg_id_str = id.to_string();
             if pkg_id_str.starts_with(id_or_name) {
                 return Ok(pkg_id_str);
             }
         }
     } else {
         // Find by name
-        for pkg in &packages {
-            if pkg.name == id_or_name {
-                return Ok(pkg.id.to_string());
+        for (id, name) in &packages {
+            if name == id_or_name {
+                return Ok(id.to_string());
             }
         }
     }
@@ -895,14 +904,14 @@ mod tests {
         let mount = parse_volume_spec("myvolume:ro:/data").unwrap();
         assert_eq!(mount.name, "myvolume");
         assert_eq!(mount.mountpoint, "/data");
-        assert_eq!(mount.mode, Some(cloudapi_client::types::MountMode::Ro));
+        assert_eq!(mount.mode, Some(cloudapi_api::MountMode::Ro));
     }
 
     #[test]
     fn test_parse_volume_spec_rw_mode() {
         let mount = parse_volume_spec("myvolume:rw:/data").unwrap();
         assert_eq!(mount.name, "myvolume");
-        assert_eq!(mount.mode, Some(cloudapi_client::types::MountMode::Rw));
+        assert_eq!(mount.mode, Some(cloudapi_api::MountMode::Rw));
     }
 
     #[test]
