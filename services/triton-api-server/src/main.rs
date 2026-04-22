@@ -4,6 +4,15 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
+// Both modules are scaffolding for the `/v1/auth/login-ssh` handler.
+// The handler wire-up (which consumes the classifier + verifier) lands
+// in a follow-up slice per docs/tutorials/adding-a-tritonapi-feature.md;
+// `dead_code` is expected until that commit.
+#[allow(dead_code)]
+mod auth_scheme;
+#[allow(dead_code)]
+mod http_sig;
+
 use anyhow::{Context, Result};
 use dropshot::{
     ClientErrorStatusCode, ConfigDropshot, ConfigLogging, ConfigLoggingLevel, HttpError,

@@ -18,12 +18,24 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+base64 = "0.22"
 dropshot = { workspace = true }
+ed25519-dalek = { version = "2", features = ["rand_core"] }
 http = { workspace = true }
+p256 = { workspace = true }
+p384 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
+rsa = { version = "0.9", features = ["sha2"] }
 rustls = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+sha2 = "0.10"
+thiserror = { workspace = true }
+# ssh-key's p256/p384 features pull in the TryFrom conversions into
+# p256/p384 VerifyingKey, which is what the HTTP-Sig verifier wants.
+# triton-auth only enables the generic "ecdsa" feature (dep:sec1), which
+# is not enough on its own.
+ssh-key = { version = "0.6", features = ["ed25519", "rsa", "ecdsa", "p256", "p384"] }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
@@ -32,3 +44,8 @@ triton-auth-session = { path = "../../libs/triton-auth-session" }
 triton-tls = { path = "../../libs/triton-tls" }
 url = { version = "2", features = ["serde"] }
 uuid = { workspace = true }
+
+[dev-dependencies]
+# Tests generate fresh keys with rand and sign via the raw crypto
+# crates; no file-based key fixtures are checked in.
+rand = { workspace = true }
