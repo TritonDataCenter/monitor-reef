@@ -548,14 +548,65 @@ fn check_clock_skew(headers: &http::HeaderMap) -> Result<(), HttpError> {
 }
 
 /// Mahi's `keys` field holds fingerprint -> key blob. The blob shape is
-/// "deployment-specific" per `apis/mahi-api/src/types/common.rs` but in
-/// practice on Triton deployments it's the OpenSSH-format public key
-/// string (e.g., `"ssh-rsa AAAAB3Nz… comment"`). Accept a bare string
-/// and parse; anything else returns an error the caller collapses into
-/// an opaque verification failure.
+/// "deployment-specific" per `apis/mahi-api/src/types/common.rs`. On
+/// Triton deployments observed so far it's a PEM SubjectPublicKeyInfo
+/// string (`-----BEGIN PUBLIC KEY-----…-----END PUBLIC KEY-----`) --
+/// that's what `sdc-useradm add-key` on headnodes produces and what
+/// mahi replicates from UFDS. Some deployments also store the
+/// OpenSSH form (`ssh-rsa AAAAB3Nz… comment`) directly. Try OpenSSH
+/// first (cheap, fails fast on the PEM prefix), then fall back to
+/// PEM parsing per-algorithm and wrap the resulting typed key into
+/// an `ssh_key::PublicKey` for the verifier.
 fn parse_openssh_key(blob: &serde_json::Value) -> Result<ssh_key::PublicKey, &'static str> {
     let s = blob.as_str().ok_or("mahi key blob is not a string")?;
-    ssh_key::PublicKey::from_openssh(s.trim()).map_err(|_| "OpenSSH parse failed")
+    let trimmed = s.trim();
+
+    if let Ok(key) = ssh_key::PublicKey::from_openssh(trimmed) {
+        return Ok(key);
+    }
+
+    // PEM SubjectPublicKeyInfo. The PEM label is always `PUBLIC KEY`
+    // for pkcs8, so we try each algorithm's decoder in turn and wrap
+    // the first one that accepts via ssh-key's intermediate
+    // `ssh_key::public::<algo>PublicKey` types (same pattern the
+    // http_sig tests use to build keys for signing). RSA, P-256,
+    // P-384, Ed25519 cover the allowlisted signature algorithms the
+    // verifier supports.
+    // Bringing one `DecodePublicKey` trait into scope activates
+    // `from_public_key_pem` for every type that impls it; we don't
+    // need a separate `use` for each crate's re-export.
+    use p256::pkcs8::DecodePublicKey as _;
+    if let Ok(k) = rsa::RsaPublicKey::from_public_key_pem(trimmed) {
+        let ssh_pub =
+            ssh_key::public::RsaPublicKey::try_from(k).map_err(|_| "RSA pubkey wrap failed")?;
+        return Ok(ssh_key::PublicKey::new(
+            ssh_key::public::KeyData::from(ssh_pub),
+            "",
+        ));
+    }
+    if let Ok(k) = p256::ecdsa::VerifyingKey::from_public_key_pem(trimmed) {
+        let ssh_pub = ssh_key::public::EcdsaPublicKey::from(k);
+        return Ok(ssh_key::PublicKey::new(
+            ssh_key::public::KeyData::from(ssh_pub),
+            "",
+        ));
+    }
+    if let Ok(k) = p384::ecdsa::VerifyingKey::from_public_key_pem(trimmed) {
+        let ssh_pub = ssh_key::public::EcdsaPublicKey::from(k);
+        return Ok(ssh_key::PublicKey::new(
+            ssh_key::public::KeyData::from(ssh_pub),
+            "",
+        ));
+    }
+    if let Ok(k) = ed25519_dalek::VerifyingKey::from_public_key_pem(trimmed) {
+        let ssh_pub = ssh_key::public::Ed25519PublicKey::from(k);
+        return Ok(ssh_key::PublicKey::new(
+            ssh_key::public::KeyData::from(ssh_pub),
+            "",
+        ));
+    }
+
+    Err("key blob is neither OpenSSH nor PEM in any supported algorithm")
 }
 
 /// Issue `(access_token, refresh_token, user_info)` from a verified
@@ -912,9 +963,34 @@ mod login_ssh_helper_tests {
         assert!(err.contains("not a string"));
     }
 
+    /// Representative PEM public key from a coal mahi record --
+    /// parse_openssh_key must accept the PEM SubjectPublicKeyInfo
+    /// format mahi actually serves (not just the OpenSSH
+    /// `ssh-rsa AAAA...` form).
+    #[test]
+    fn parse_openssh_key_accepts_pem_rsa() {
+        let pem = "-----BEGIN PUBLIC KEY-----\n\
+                   MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA2ZJ0HuUBvtemiZLxdXfE\n\
+                   1arIAw560pwv225NocRBBADzEBAvt57ridDIZFXjN4Y2UzIf+XMDARsNwWNSQ75D\n\
+                   DWh8FMHmLN4+5fDRm+Ae4fDVhclV25SY9WODT/x8wh0xzCphIRH9Qz2H0mYrhwBF\n\
+                   oeoyJRshADejHN0xA02rMsyZ6tQ3sgFHkK/9yUrf4VTHob7B+l677CbpuFa/qtFd\n\
+                   7nEp+k36uhTrvdMeYulfGus7fEK4BiEa5CjNO/0M0m3onN5av5wabi2/RgkLuRoj\n\
+                   Hg4diJSSs77zFsEMOwAw7UT+AxuhiT4oqxcxKhtgxhSOU6sBMyDpBSwUp2rprXLl\n\
+                   s8yGHCBXuEv9y2TXhp7vTITfZ3G3C7hu+8VclVGQJuKAGrFIL1i5tBjOXc3tnIaI\n\
+                   pIYKz/zN/ugexvirf+OdRFMnzL5iwZQUuaG7+QdnvBIsGvtEiQjPPg14gRn0GUoX\n\
+                   lCvtdcBkqbT24bt7hBFqxJIvd04Eb3hC2XXXZBaZwDFdAgMBAAE=\n\
+                   -----END PUBLIC KEY-----\n";
+        let key = parse_openssh_key(&serde_json::json!(pem)).expect("PEM RSA must parse");
+        // Sanity: it's recognized as an RSA key.
+        assert!(matches!(key.key_data(), ssh_key::public::KeyData::Rsa(_)));
+    }
+
     #[test]
     fn parse_openssh_key_garbage_string_rejected() {
         let err = parse_openssh_key(&serde_json::json!("not an openssh key")).unwrap_err();
-        assert!(err.contains("OpenSSH parse failed"));
+        assert!(
+            err.contains("neither OpenSSH nor PEM"),
+            "unexpected error message: {err}"
+        );
     }
 }

@@ -21,11 +21,14 @@ anyhow = { workspace = true }
 base64 = "0.22"
 chrono = "0.4"
 dropshot = { workspace = true }
-ed25519-dalek = { version = "2", features = ["rand_core"] }
+ed25519-dalek = { version = "2", features = ["rand_core", "pkcs8", "pem"] }
 http = { workspace = true }
 p256 = { workspace = true }
-p384 = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
-rsa = { version = "0.9", features = ["sha2"] }
+# `pem` feature gives us `from_public_key_pem` for the PEM-format
+# public keys mahi stores; p384 has no workspace entry, so pin it here
+# to match the p256 feature set plus what the verifier already needs.
+p384 = { version = "0.13", default-features = false, features = ["ecdsa", "pem", "pkcs8", "std"] }
+rsa = { version = "0.9", features = ["sha2", "pem"] }
 rustls = { workspace = true }
 secrecy = { workspace = true }
 serde = { workspace = true }

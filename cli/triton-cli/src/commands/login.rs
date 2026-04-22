@@ -4,12 +4,19 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-//! `triton login` — exchange an SSH key for a tritonapi JWT.
+//! `triton login` — exchange credentials for a tritonapi JWT.
 //!
-//! The profile's SSH key signs a request to `POST /v1/auth/login-ssh`
-//! on the configured URL (gateway or triton-api-server direct). The
-//! server verifies the signature against the account's keys in mahi
-//! and returns an access token + refresh token. We stash both at
+//! Two flows, sharing the same token-storage tail:
+//!
+//!   * **SSH-key login** (default): the profile's SSH key signs a
+//!     request to `POST /v1/auth/login-ssh`. The server verifies the
+//!     signature against the account's keys in mahi and issues a JWT
+//!     pair.
+//!   * **Password login** (`--user <login>` or a profile with no
+//!     keyId): prompts for the LDAP password, then calls
+//!     `POST /v1/auth/login` which binds against UFDS directly.
+//!
+//! Either path produces the same `LoginResponse`, which we stash at
 //! `~/.triton/tokens/<profile>.json` (mode 0600, atomic write) so
 //! subsequent commands can present the JWT as Bearer. The token file
 //! lives outside the profile file intentionally -- older CLIs won't
@@ -18,10 +25,24 @@
 //! format.
 
 use anyhow::{Context, Result, anyhow};
+use clap::Args;
 use serde::{Deserialize, Serialize};
 use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::LoginResponse;
 
 use crate::config::{Profile, paths};
+
+#[derive(Args, Clone, Debug, Default)]
+pub struct LoginArgs {
+    /// Force password login for this login name. Without this flag,
+    /// `triton login` uses the profile's SSH key to authenticate via
+    /// `/v1/auth/login-ssh`. With it, prompts for the LDAP password
+    /// and authenticates via `/v1/auth/login`. Useful when the profile
+    /// has no keyId or the operator wants to exercise the password
+    /// path explicitly.
+    #[arg(short = 'u', long = "user")]
+    pub user: Option<String>,
+}
 
 /// Persisted form of a successful `/v1/auth/login-ssh` exchange.
 /// Written to `~/.triton/tokens/<profile>.json`. Deliberately flat
@@ -41,14 +62,16 @@ pub struct StoredTokens {
     pub issued_at: i64,
 }
 
-pub async fn run(client: &TypedClient, profile: &Profile, use_json: bool) -> Result<()> {
-    let response = client
-        .inner()
-        .auth_login_ssh()
-        .send()
-        .await
-        .map_err(|e| anyhow!("login failed: {e}"))?;
-    let login = response.into_inner();
+pub async fn run(
+    args: LoginArgs,
+    client: &TypedClient,
+    profile: &Profile,
+    use_json: bool,
+) -> Result<()> {
+    let login = match args.user {
+        Some(username) => password_login(client, &username).await?,
+        None => ssh_login(client).await?,
+    };
 
     let stored = StoredTokens {
         token: login.token.clone(),
@@ -87,6 +110,39 @@ pub async fn run(client: &TypedClient, profile: &Profile, use_json: bool) -> Res
     }
 
     Ok(())
+}
+
+async fn ssh_login(client: &TypedClient) -> Result<LoginResponse> {
+    let response = client
+        .inner()
+        .auth_login_ssh()
+        .send()
+        .await
+        .map_err(|e| anyhow!("SSH login failed: {e}"))?;
+    Ok(response.into_inner())
+}
+
+async fn password_login(client: &TypedClient, username: &str) -> Result<LoginResponse> {
+    // `TRITON_PASSWORD` is an undocumented escape hatch for non-tty
+    // flows (integration tests, scripted operator runbooks). An
+    // interactive prompt is the primary UX.
+    let password = match std::env::var("TRITON_PASSWORD").ok() {
+        Some(p) => p,
+        None => rpassword::prompt_password(format!("Password for {username}: "))
+            .map_err(|e| anyhow!("failed to read password: {e}"))?,
+    };
+    let body = triton_gateway_client::types::LoginRequest {
+        username: username.to_string(),
+        password,
+    };
+    let response = client
+        .inner()
+        .auth_login()
+        .body(body)
+        .send()
+        .await
+        .map_err(|e| anyhow!("password login failed: {e}"))?;
+    Ok(response.into_inner())
 }
 
 /// Write tokens atomically with mode 0600. Create-parent-dir on
