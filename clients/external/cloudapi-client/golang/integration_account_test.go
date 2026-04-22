@@ -109,25 +109,31 @@ func TestIntegration_UpdateAccount(t *testing.T) {
 	requireOK(t, getResp.StatusCode(), getResp.Body)
 	original := getResp.JSON200
 
-	// Update company name.
+	// Update company name, address, city, and state.
 	newCompany := "inttest-company"
+	newAddress := "123 Integration Test Blvd"
+	newCity := "Testville"
+	newState := "TX"
 	updateResp, err := testClient.UpdateAccountWithResponse(ctx, testAccount, cloudapi.UpdateAccountJSONRequestBody{
 		CompanyName: &newCompany,
+		Address:     &newAddress,
+		City:        &newCity,
+		State:       &newState,
 	})
 	if err != nil {
 		t.Fatalf("UpdateAccount: %v", err)
 	}
 	requireOK(t, updateResp.StatusCode(), updateResp.Body)
 
-	// Restore original company name.
+	// Restore original values.
 	t.Cleanup(func() {
-		origCompany := ""
-		if original.CompanyName != nil {
-			origCompany = *original.CompanyName
+		restore := cloudapi.UpdateAccountJSONRequestBody{
+			CompanyName: ptrOrEmpty(original.CompanyName),
+			Address:     ptrOrEmpty(original.Address),
+			City:        ptrOrEmpty(original.City),
+			State:       ptrOrEmpty(original.State),
 		}
-		_, _ = testClient.UpdateAccountWithResponse(context.Background(), testAccount, cloudapi.UpdateAccountJSONRequestBody{
-			CompanyName: &origCompany,
-		})
+		_, _ = testClient.UpdateAccountWithResponse(context.Background(), testAccount, restore)
 	})
 
 	if updateResp.JSON200 == nil {
@@ -135,6 +141,15 @@ func TestIntegration_UpdateAccount(t *testing.T) {
 	}
 	if updateResp.JSON200.CompanyName == nil || *updateResp.JSON200.CompanyName != newCompany {
 		t.Errorf("expected company name %q, got %v", newCompany, updateResp.JSON200.CompanyName)
+	}
+	if updateResp.JSON200.Address == nil || *updateResp.JSON200.Address != newAddress {
+		t.Errorf("expected address %q, got %v", newAddress, updateResp.JSON200.Address)
+	}
+	if updateResp.JSON200.City == nil || *updateResp.JSON200.City != newCity {
+		t.Errorf("expected city %q, got %v", newCity, updateResp.JSON200.City)
+	}
+	if updateResp.JSON200.State == nil || *updateResp.JSON200.State != newState {
+		t.Errorf("expected state %q, got %v", newState, updateResp.JSON200.State)
 	}
 }
 

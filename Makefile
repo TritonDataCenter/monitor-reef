@@ -33,7 +33,7 @@ include ./deps/eng/tools/mk/Makefile.rust.targ
 .PHONY: dev-setup workspace-test integration-test
 .PHONY: list coverage arch-lint doc-lint
 .PHONY: go-test go-build go-vet go-coverage
-.PHONY: go-test-integration go-test-integration-readonly
+.PHONY: go-test-integration
 .PHONY: clients-generate clients-check
 
 # Default target
@@ -346,13 +346,6 @@ go-test-integration: ## Run Go integration tests (requires TRITON_TEST=1 and TRI
 		&& echo "=== Integration Test Coverage ===" \
 		&& go tool cover -func=integration-cover.out \
 		&& rm -f integration-cover.out
-
-go-test-integration-readonly: ## Run read-only Go integration tests (safe, no resource creation)
-	@if [ -z "$(TRITON_TEST)" ]; then echo "Usage: TRITON_TEST=1 make go-test-integration-readonly"; exit 1; fi
-	cd $(GO_CLIENT_DIR) && go test -v -count=1 -tags integration \
-		-timeout 10m \
-		-run 'TestIntegration_(GetAccount|HeadAccount|GetConfig|ListDatacenters|GetDatacenter|ListServices|ListImages|GetImage|ListPackages|GetPackage|ListNetworks|GetNetwork|ListMachines$$|ListFirewallRules$$)' \
-		.
 
 # Doc-lint: check that doc comments don't leak implementation details into OpenAPI specs
 DOC_LINT_PATTERNS = serde_json\|rename_all\|Dropshot\|Progenitor\|schemars\|helper method\|Service implementation\|Rust field\|Rust error\|Rust client

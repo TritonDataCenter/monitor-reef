@@ -157,6 +157,16 @@ func ptr[T any](v T) *T {
 	return &v
 }
 
+// ptrOrEmpty returns a pointer to the value if non-nil, or a pointer to the
+// zero value. Useful for restoring optional fields that may have been nil.
+func ptrOrEmpty(s *string) *string {
+	if s != nil {
+		return s
+	}
+	empty := ""
+	return &empty
+}
+
 // waitForMachineName polls GetMachine until the machine's name matches the
 // expected value or the timeout expires.
 func waitForMachineName(t *testing.T, machineID openapi_types.UUID, wantName string, timeout time.Duration) {
