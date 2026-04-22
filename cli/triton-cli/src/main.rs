@@ -605,7 +605,7 @@ async fn try_main() -> Result<()> {
             command.clone().run(&client, cli.json).await
         }
         Commands::Vlan { command } => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Volume { command } if command.is_empty_variadic() => Ok(()),
@@ -725,7 +725,7 @@ async fn try_main() -> Result<()> {
             .await
         }
         Commands::Vlans => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::vlan::VlanCommand::List(commands::vlan::VlanListArgs {
                 filters: vec![],
                 table: Default::default(),
