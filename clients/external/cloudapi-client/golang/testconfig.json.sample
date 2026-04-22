@@ -1,7 +1,7 @@
 {
     "allowWriteActions": false,
-    "allowVolumesTests": true,
-    "skipHvmTests": false,
+    "allowVolumesTests": false,
+    "allowHvmTests": false,
     "allowFabricTests": false,
-    "skipFlexDiskTests": false
+    "allowFlexDiskTests": false
 }

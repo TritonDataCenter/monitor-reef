@@ -41,8 +41,8 @@ type TestConfig struct {
 	AllowWriteActions bool `json:"allowWriteActions"`
 	AllowVolumesTests bool `json:"allowVolumesTests"`
 	AllowFabricTests  bool `json:"allowFabricTests"`
-	SkipHvmTests      bool `json:"skipHvmTests"`
-	SkipFlexDiskTests bool `json:"skipFlexDiskTests"`
+	AllowHvmTests     bool `json:"allowHvmTests"`
+	AllowFlexDiskTests bool `json:"allowFlexDiskTests"`
 }
 
 // TestMain sets up the shared authenticated client for all integration tests.
@@ -259,6 +259,89 @@ func cleanupMachine(t *testing.T, machineID openapi_types.UUID) {
 	_, err = testClient.DeleteMachineWithResponse(ctx, testAccount, machineID)
 	if err != nil {
 		t.Logf("cleanup: delete machine %s: %v", machineID, err)
+	}
+}
+
+// waitForMachineSnapshot polls GetMachineSnapshot until the snapshot reaches
+// the "created" state or the timeout expires. Snapshot creation is async
+// (VMAPI job). Returns the final snapshot state observed.
+func waitForMachineSnapshot(t *testing.T, machineID openapi_types.UUID, snapName string, timeout time.Duration) string {
+	t.Helper()
+
+	ctx := context.Background()
+	deadline := time.Now().Add(timeout)
+
+	for {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for snapshot %q on machine %s to reach created state", snapName, machineID)
+		}
+
+		resp, err := testClient.GetMachineSnapshotWithResponse(ctx, testAccount, machineID, snapName)
+		if err != nil {
+			t.Fatalf("GetMachineSnapshot while waiting: %v", err)
+		}
+		if resp.StatusCode() == 200 && resp.JSON200 != nil {
+			state, _ := resp.JSON200.State.AsSnapshotState0()
+			if state == cloudapi.SnapshotState0Created {
+				return string(state)
+			}
+			// If snapshot went straight to "deleted" or "failed", stop waiting.
+			if state == cloudapi.SnapshotState0Deleted || state == cloudapi.SnapshotState0Failed {
+				return string(state)
+			}
+		}
+
+		time.Sleep(3 * time.Second)
+	}
+}
+
+// waitForMachineTag polls GetMachineTag until the tag exists or the timeout
+// expires. Tag updates are async (VMAPI job).
+func waitForMachineTag(t *testing.T, machineID openapi_types.UUID, tagName string, timeout time.Duration) {
+	t.Helper()
+
+	ctx := context.Background()
+	deadline := time.Now().Add(timeout)
+
+	for {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for tag %q on machine %s", tagName, machineID)
+		}
+
+		resp, err := testClient.GetMachineTagWithResponse(ctx, testAccount, machineID, tagName)
+		if err != nil {
+			t.Fatalf("GetMachineTag while waiting: %v", err)
+		}
+		if resp.StatusCode() == 200 {
+			return
+		}
+
+		time.Sleep(3 * time.Second)
+	}
+}
+
+// waitForMachineMetadata polls GetMachineMetadata until the key exists or the
+// timeout expires. Metadata updates are async (VMAPI job → cn-agent).
+func waitForMachineMetadata(t *testing.T, machineID openapi_types.UUID, key string, timeout time.Duration) {
+	t.Helper()
+
+	ctx := context.Background()
+	deadline := time.Now().Add(timeout)
+
+	for {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for metadata key %q on machine %s", key, machineID)
+		}
+
+		resp, err := testClient.GetMachineMetadataWithResponse(ctx, testAccount, machineID, key)
+		if err != nil {
+			t.Fatalf("GetMachineMetadata while waiting: %v", err)
+		}
+		if resp.StatusCode() == 200 {
+			return
+		}
+
+		time.Sleep(3 * time.Second)
 	}
 }
 

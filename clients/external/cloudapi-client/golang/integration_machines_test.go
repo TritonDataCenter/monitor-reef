@@ -320,13 +320,8 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 		})
 	})
 
-	// Step 5: Snapshots (sequential, skip for bhyve — not supported).
+	// Step 5: Snapshots (sequential).
 	t.Run("Snapshots", func(t *testing.T) {
-		brand, _ := machine.Brand.AsVMBrand0()
-		if brand == cloudapi.VMBrand0Bhyve {
-			t.Skip("snapshots not supported on bhyve VMs")
-		}
-
 		snapName := randName("snap")
 		createSnap, err := testClient.CreateMachineSnapshotWithResponse(ctx, testAccount, machineID,
 			cloudapi.CreateMachineSnapshotJSONRequestBody{Name: ptr(snapName)},
@@ -336,19 +331,30 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 		}
 		requireOK(t, createSnap.StatusCode(), createSnap.Body)
 
-		// Get snapshot.
+		// Wait for snapshot to reach a terminal state (async VMAPI job).
+		// On some brands the snapshot may be auto-deleted immediately.
+		finalState := waitForMachineSnapshot(t, machineID, snapName, 2*time.Minute)
+		t.Logf("snapshot %s reached state %q", snapName, finalState)
+
+		// Get snapshot (may be in deleted state but record still exists briefly).
 		getSnap, err := testClient.GetMachineSnapshotWithResponse(ctx, testAccount, machineID, snapName)
 		if err != nil {
 			t.Fatalf("GetMachineSnapshot: %v", err)
 		}
-		requireOK(t, getSnap.StatusCode(), getSnap.Body)
+		sc := getSnap.StatusCode()
+		if sc != 200 && sc != 404 {
+			t.Fatalf("GetMachineSnapshot: expected 200 or 404, got %d: %s", sc, string(getSnap.Body))
+		}
 
 		// Head snapshot.
 		headSnap, err := testClient.HeadMachineSnapshotWithResponse(ctx, testAccount, machineID, snapName)
 		if err != nil {
 			t.Fatalf("HeadMachineSnapshot: %v", err)
 		}
-		requireOK(t, headSnap.StatusCode(), nil)
+		sc = headSnap.StatusCode()
+		if sc != 200 && sc != 404 {
+			t.Fatalf("HeadMachineSnapshot: expected 200 or 404, got %d", sc)
+		}
 
 		// List snapshots.
 		listSnap, err := testClient.ListMachineSnapshotsWithResponse(ctx, testAccount, machineID)
@@ -364,20 +370,21 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 		}
 		requireOK(t, headSnaps.StatusCode(), nil)
 
-		// Delete snapshot.
+		// Delete snapshot — may 404 if already auto-deleted.
 		delSnap, err := testClient.DeleteMachineSnapshotWithResponse(ctx, testAccount, machineID, snapName)
 		if err != nil {
 			t.Fatalf("DeleteMachineSnapshot: %v", err)
 		}
-		requireOK(t, delSnap.StatusCode(), delSnap.Body)
+		sc = delSnap.StatusCode()
+		if sc != 200 && sc != 204 && sc != 404 {
+			t.Fatalf("DeleteMachineSnapshot: expected 200/204/404, got %d: %s", sc, string(delSnap.Body))
+		}
 	})
 
 	// Step 5b: Tag operations (sequential).
-	// Tag updates are async (VMAPI job) — AddMachineTags returns 200 but
-	// tags may not be immediately visible via Get/Head/List. We exercise
-	// all endpoints but accept 404 on individual tag reads.
+	// Tag updates are async (VMAPI job) — poll until tags are visible.
 	t.Run("TagOperations", func(t *testing.T) {
-		// Replace all tags (exercises ReplaceMachineTags).
+		// Replace all tags.
 		replaceResp, err := testClient.ReplaceMachineTagsWithResponse(ctx, testAccount, machineID,
 			cloudapi.TagsRequest{"tag1": "value1", "tag2": "value2"},
 		)
@@ -386,35 +393,29 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 		}
 		requireOK(t, replaceResp.StatusCode(), replaceResp.Body)
 
-		// Get individual tag — may 404 due to async propagation.
+		// Wait for tag to propagate.
+		waitForMachineTag(t, machineID, "tag1", 2*time.Minute)
+
+		// Get individual tag.
 		getTagResp, err := testClient.GetMachineTagWithResponse(ctx, testAccount, machineID, "tag1")
 		if err != nil {
 			t.Fatalf("GetMachineTag: %v", err)
 		}
-		sc := getTagResp.StatusCode()
-		if sc != 200 && sc != 404 {
-			t.Fatalf("GetMachineTag: expected 200 or 404, got %d: %s", sc, string(getTagResp.Body))
-		}
+		requireOK(t, getTagResp.StatusCode(), getTagResp.Body)
 
 		// Head individual tag.
 		headTagResp, err := testClient.HeadMachineTagWithResponse(ctx, testAccount, machineID, "tag1")
 		if err != nil {
 			t.Fatalf("HeadMachineTag: %v", err)
 		}
-		sc = headTagResp.StatusCode()
-		if sc != 200 && sc != 404 {
-			t.Fatalf("HeadMachineTag: expected 200 or 404, got %d", sc)
-		}
+		requireOK(t, headTagResp.StatusCode(), nil)
 
-		// Delete individual tag — may 404 if not yet propagated.
+		// Delete individual tag.
 		delTagResp, err := testClient.DeleteMachineTagWithResponse(ctx, testAccount, machineID, "tag1")
 		if err != nil {
 			t.Fatalf("DeleteMachineTag: %v", err)
 		}
-		sc = delTagResp.StatusCode()
-		if sc != 200 && sc != 204 && sc != 404 {
-			t.Fatalf("DeleteMachineTag: expected 200/204/404, got %d: %s", sc, string(delTagResp.Body))
-		}
+		requireOK(t, delTagResp.StatusCode(), delTagResp.Body)
 
 		// Delete all tags.
 		delAllResp, err := testClient.DeleteMachineTagsWithResponse(ctx, testAccount, machineID)
@@ -425,8 +426,9 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 	})
 
 	// Step 5c: Metadata operations (sequential).
+	// Metadata updates are async (VMAPI job → cn-agent) — poll until visible.
 	t.Run("MetadataOperations", func(t *testing.T) {
-		// Add metadata key via the dedicated endpoint.
+		// Add metadata keys via the dedicated endpoint.
 		addResp, err := testClient.AddMachineMetadataWithResponse(ctx, testAccount, machineID,
 			cloudapi.AddMetadataRequest{"mdkey1": "mdval1", "mdkey2": "mdval2"},
 		)
@@ -435,16 +437,18 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 		}
 		requireOK(t, addResp.StatusCode(), addResp.Body)
 
-		// Head metadata key. Metadata propagation is async, so this may
-		// get 404. CloudAPI may also return 405 if HEAD is not supported
-		// on individual metadata keys.
+		// Wait for metadata to propagate.
+		waitForMachineMetadata(t, machineID, "mdkey1", 2*time.Minute)
+
+		// Head metadata key. CloudAPI may return 405 if HEAD is not
+		// supported on individual metadata keys.
 		headKeyResp, err := testClient.HeadMachineMetadataKeyWithResponse(ctx, testAccount, machineID, "mdkey1")
 		if err != nil {
 			t.Fatalf("HeadMachineMetadataKey: %v", err)
 		}
 		sc := headKeyResp.StatusCode()
-		if sc != 200 && sc != 404 && sc != 405 {
-			t.Fatalf("HeadMachineMetadataKey: expected 200, 404, or 405, got %d", sc)
+		if sc != 200 && sc != 405 {
+			t.Fatalf("HeadMachineMetadataKey: expected 200 or 405, got %d", sc)
 		}
 
 		// Get metadata key.
@@ -452,20 +456,14 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetMachineMetadata: %v", err)
 		}
-		sc = getKeyResp.StatusCode()
-		if sc != 200 && sc != 404 {
-			t.Fatalf("GetMachineMetadata: expected 200 or 404, got %d: %s", sc, string(getKeyResp.Body))
-		}
+		requireOK(t, getKeyResp.StatusCode(), getKeyResp.Body)
 
 		// Delete single metadata key.
 		delKeyResp, err := testClient.DeleteMachineMetadataWithResponse(ctx, testAccount, machineID, "mdkey1")
 		if err != nil {
 			t.Fatalf("DeleteMachineMetadata: %v", err)
 		}
-		sc = delKeyResp.StatusCode()
-		if sc != 200 && sc != 204 && sc != 404 {
-			t.Fatalf("DeleteMachineMetadata: expected 200/204/404, got %d: %s", sc, string(delKeyResp.Body))
-		}
+		requireOK(t, delKeyResp.StatusCode(), delKeyResp.Body)
 
 		// Delete all metadata.
 		delAllResp, err := testClient.DeleteAllMachineMetadataWithResponse(ctx, testAccount, machineID)
