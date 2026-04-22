@@ -57,6 +57,16 @@ func NewSSHAgentSigner(input SSHAgentSignerInput) (*SSHAgentSigner, error) {
 		return nil, fmt.Errorf("unable to dial SSH agent: %w", err)
 	}
 
+	// Close the connection if construction fails at any subsequent step.
+	// The caller never receives the SSHAgentSigner on error, so they
+	// cannot call Close() themselves.
+	success := false
+	defer func() {
+		if !success {
+			conn.Close()
+		}
+	}()
+
 	ag := agent.NewClient(conn)
 
 	signer := &SSHAgentSigner{
@@ -86,6 +96,7 @@ func NewSSHAgentSigner(input SSHAgentSignerInput) (*SSHAgentSigner, error) {
 	}
 	signer.algorithm = algorithm
 
+	success = true
 	return signer, nil
 }
 

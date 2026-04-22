@@ -20,10 +20,14 @@ import (
 	"encoding/base64"
 	"encoding/pem"
 	"fmt"
+	"net"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
+	"golang.org/x/crypto/ssh/agent"
 )
 
 // helper: generate an ed25519 private key and return the raw key, its PEM
@@ -635,6 +639,50 @@ func TestParseAgentSignatureUnknownFormat(t *testing.T) {
 	_, err := parseAgentSignature("ssh-dss", nil)
 	if err == nil {
 		t.Fatal("expected error for unknown format, got nil")
+	}
+}
+
+func TestNewSSHAgentSigner_ClosesConnOnFailure(t *testing.T) {
+	// Start a minimal SSH agent on a temporary Unix socket with no keys
+	// loaded. NewSSHAgentSigner should fail on MatchKey (no matching key)
+	// and close the connection rather than leaking it.
+
+	socketPath := filepath.Join(t.TempDir(), "agent.sock")
+	listener, err := net.Listen("unix", socketPath)
+	if err != nil {
+		t.Fatalf("net.Listen: %v", err)
+	}
+	defer listener.Close()
+
+	// Track whether the server-side connection was closed.
+	connClosed := make(chan struct{})
+	go func() {
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		// Serve an empty keyring — no keys available.
+		agent.ServeAgent(agent.NewKeyring(), conn)
+		// ServeAgent returns when the client closes the connection.
+		close(connClosed)
+	}()
+
+	t.Setenv("SSH_AUTH_SOCK", socketPath)
+
+	_, err = NewSSHAgentSigner(SSHAgentSignerInput{
+		KeyID:       "nonexistent:fingerprint",
+		AccountName: "test",
+	})
+	if err == nil {
+		t.Fatal("expected error from NewSSHAgentSigner with no matching key")
+	}
+
+	// The connection should be closed promptly after the error.
+	select {
+	case <-connClosed:
+		// Success — connection was cleaned up.
+	case <-time.After(5 * time.Second):
+		t.Error("connection was not closed after NewSSHAgentSigner failed (leaked)")
 	}
 }
 
