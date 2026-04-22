@@ -140,6 +140,8 @@ func (s *PrivateKeySigner) SignRaw(toSign string) (string, string, error) {
 		}
 		signedBase64 = base64.StdEncoding.EncodeToString(signed)
 	case ed25519.PrivateKey:
+		// Ed25519 performs internal SHA-512 hashing per RFC 8032;
+		// do not pre-hash the message.
 		algoName = ED25519_SHA512
 		signed := ed25519.Sign(key, message)
 		signedBase64 = base64.StdEncoding.EncodeToString(signed)
