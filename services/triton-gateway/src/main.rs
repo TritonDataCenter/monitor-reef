@@ -326,6 +326,60 @@ async fn shutdown_signal() {
     info!("shutdown signal received, draining in-flight requests");
 }
 
+/// Which flavor of auth the incoming cloudapi request is presenting.
+///
+/// The gateway plays two quite different roles on the `/{account}/*`
+/// surface depending on this. Bearer/cookie traffic is tritonapi
+/// profile traffic (JWT issued by triton-api-server's `/v1/auth/*`):
+/// the gateway verifies the token and re-signs outbound requests with
+/// the operator SSH key so cloudapi sees a signed request from a
+/// privileged principal. HTTP Signature traffic is legacy cloudapi
+/// traffic (node-triton, terraform-provider-triton, the Rust
+/// triton-auth crate): cloudapi verifies the signature itself against
+/// the user's SSH key in UFDS, and the gateway's job is to stay out of
+/// the way so the client works unmodified.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AuthScheme {
+    /// `Authorization: Bearer …` or a legacy `auth=<jwt>` cookie (the
+    /// UI session cookie). Goes through JWT verification + operator
+    /// key resigning.
+    Bearer,
+    /// `Authorization: Signature keyId="…",algorithm="…",…` — the
+    /// draft-cavage shape cloudapi's Restify implementation expects.
+    /// Passes through verbatim.
+    HttpSignature,
+    /// No recognized auth. Passes through so cloudapi emits its own
+    /// 401 in its own wire shape; the gateway deliberately doesn't
+    /// impersonate cloudapi's unauthenticated error.
+    None,
+}
+
+/// Classify the inbound `Authorization` header (falling back to the
+/// legacy `auth=` cookie) so [`proxy_to_cloudapi`] can route to the
+/// right middleware. The `Signature` prefix takes precedence over any
+/// cookie since a cookie alongside an HTTP-Sig header is pathological
+/// -- prefer the explicit scheme the client chose.
+fn auth_scheme(headers: &http::HeaderMap) -> AuthScheme {
+    if let Some(auth) = headers
+        .get(http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+    {
+        if auth.starts_with("Bearer ") {
+            return AuthScheme::Bearer;
+        }
+        if auth.starts_with("Signature ") {
+            return AuthScheme::HttpSignature;
+        }
+    }
+    // No (or unrecognized) Authorization header. The browser UI flow
+    // puts the JWT in an `auth=` cookie instead of a header; honor that
+    // so a signed-in browser session can still hit /{account}/* paths.
+    if extract_token(headers).is_some() {
+        return AuthScheme::Bearer;
+    }
+    AuthScheme::None
+}
+
 /// Pull a bearer token from either `Authorization: Bearer …` or the
 /// `auth` cookie. Mirrors `triton-api-server`'s extract_token; browsers
 /// use the cookie, CLIs use the header.
@@ -492,15 +546,27 @@ async fn proxy_to_cloudapi(
             &gateway_request_id,
         );
     };
-    if let Some(jwks) = state.jwks.as_ref()
-        && let Err(resp) = authenticate_cloudapi_request(jwks, &mut req).await
-    {
-        return resp;
-    }
-    if let Some(signer) = state.cloudapi_signer.as_ref()
-        && let Err(resp) = sign_cloudapi_request(signer, &mut req).await
-    {
-        return resp;
+
+    // Branch on the client's auth scheme. Only Bearer-JWT traffic gets
+    // verified + resigned with the operator key (the tritonapi profile
+    // path). HTTP Signature and unauthenticated requests pass through
+    // verbatim so legacy cloudapi clients -- node-triton,
+    // terraform-provider-triton, anything speaking the draft-cavage HTTP
+    // Signature dialect cloudapi understands -- work unmodified against
+    // the gateway. For HTTP Signature requests, cloudapi itself verifies
+    // the signature against the user's SSH key in UFDS; the gateway
+    // deliberately stays out of that path.
+    if auth_scheme(req.headers()) == AuthScheme::Bearer {
+        if let Some(jwks) = state.jwks.as_ref()
+            && let Err(resp) = authenticate_cloudapi_request(jwks, &mut req).await
+        {
+            return resp;
+        }
+        if let Some(signer) = state.cloudapi_signer.as_ref()
+            && let Err(resp) = sign_cloudapi_request(signer, &mut req).await
+        {
+            return resp;
+        }
     }
 
     // Responses from upstream pass through verbatim — the gateway is a
@@ -1010,5 +1076,112 @@ impl ServerCertVerifier for NoCertVerification {
             SignatureScheme::ED25519,
             SignatureScheme::ED448,
         ]
+    }
+}
+
+#[cfg(test)]
+mod auth_scheme_tests {
+    //! `auth_scheme` is what decides whether a cloudapi request
+    //! traverses the JWT+operator-sign middleware or passes through as
+    //! a legacy HTTP-Signature-authenticated request. Getting the
+    //! classification wrong flips the gateway between "transparent
+    //! proxy for node-triton" and "401s everything that isn't a JWT",
+    //! so the branching deserves exercised coverage.
+    use super::*;
+    use http::{HeaderMap, HeaderValue, header};
+
+    fn headers_with(auth: Option<&str>, cookie: Option<&str>) -> HeaderMap {
+        let mut h = HeaderMap::new();
+        if let Some(a) = auth {
+            h.insert(header::AUTHORIZATION, HeaderValue::from_str(a).unwrap());
+        }
+        if let Some(c) = cookie {
+            h.insert(header::COOKIE, HeaderValue::from_str(c).unwrap());
+        }
+        h
+    }
+
+    #[test]
+    fn bearer_authorization_header_is_bearer() {
+        let h = headers_with(Some("Bearer eyJ.jwt.token"), None);
+        assert_eq!(auth_scheme(&h), AuthScheme::Bearer);
+    }
+
+    #[test]
+    fn http_signature_authorization_header_is_http_signature() {
+        let h = headers_with(
+            Some(
+                r#"Signature keyId="/user/keys/fp",algorithm="rsa-sha256",headers="date (request-target)",signature="abc=""#,
+            ),
+            None,
+        );
+        assert_eq!(auth_scheme(&h), AuthScheme::HttpSignature);
+    }
+
+    #[test]
+    fn auth_cookie_without_authorization_header_is_bearer() {
+        // Browser UI sessions store the JWT in a cookie rather than a
+        // header -- honor that so a signed-in browser still hits
+        // /{account}/* through the JWT+resign path.
+        let h = headers_with(None, Some("auth=eyJ.jwt.token; other=1"));
+        assert_eq!(auth_scheme(&h), AuthScheme::Bearer);
+    }
+
+    #[test]
+    fn signature_header_wins_over_auth_cookie() {
+        // A client presenting both an HTTP-Sig header and an auth
+        // cookie is pathological, but the explicit scheme the client
+        // chose for THIS request must win. Otherwise a browser session
+        // left over from a previous login could silently pin cloudapi
+        // traffic onto the JWT path even when the user deliberately
+        // signed the request with their SSH key.
+        let h = headers_with(
+            Some(r#"Signature keyId="/user/keys/fp",algorithm="rsa-sha256","#),
+            Some("auth=eyJ.jwt.token"),
+        );
+        assert_eq!(auth_scheme(&h), AuthScheme::HttpSignature);
+    }
+
+    #[test]
+    fn bearer_header_wins_over_signature_cookie() {
+        // Symmetric with the above: explicit Bearer header beats any
+        // cookie (which shouldn't realistically be "auth=" containing a
+        // signature anyway, but exercise the precedence).
+        let h = headers_with(Some("Bearer x.y.z"), Some("auth=other"));
+        assert_eq!(auth_scheme(&h), AuthScheme::Bearer);
+    }
+
+    #[test]
+    fn no_auth_and_no_cookie_is_none() {
+        let h = headers_with(None, None);
+        assert_eq!(auth_scheme(&h), AuthScheme::None);
+    }
+
+    #[test]
+    fn unrecognized_authorization_scheme_is_none() {
+        // Basic, Digest, etc. -- not something cloudapi or tritonapi
+        // accept. Treat as unauthenticated so cloudapi's own 401
+        // surface takes over rather than the gateway silently pinning
+        // the request onto some middleware path.
+        let h = headers_with(Some("Basic dXNlcjpwYXNz"), None);
+        assert_eq!(auth_scheme(&h), AuthScheme::None);
+    }
+
+    #[test]
+    fn bare_signature_token_is_not_http_signature() {
+        // `Signature` with no parameters is not a valid HTTP-Sig
+        // authorization value; require the space+params that a real
+        // signed request carries.
+        let h = headers_with(Some("Signature"), None);
+        assert_eq!(auth_scheme(&h), AuthScheme::None);
+    }
+
+    #[test]
+    fn auth_cookie_alongside_other_cookies_still_detected() {
+        // The cookie-splitting logic lives in extract_token; regression
+        // check that we're not accidentally requiring `auth=` to be the
+        // only or first cookie.
+        let h = headers_with(None, Some("session=abc; auth=jwt; tracking=xyz"));
+        assert_eq!(auth_scheme(&h), AuthScheme::Bearer);
     }
 }
