@@ -581,7 +581,7 @@ async fn try_main() -> Result<()> {
             command.clone().run(&client, cli.json, cache.as_ref()).await
         }
         Commands::Image { command } => {
-            let (client, profile) = cli.build_client().await?;
+            let (client, profile) = cli.build_any_client().await?;
             let cache = cache::ImageCache::new(&profile).await;
             command.clone().run(&client, cli.json, cache.as_ref()).await
         }
@@ -677,7 +677,7 @@ async fn try_main() -> Result<()> {
             commands::instance::delete::run(args.clone(), &client).await
         }
         Commands::Imgs(args) => {
-            let (client, profile) = cli.build_client().await?;
+            let (client, profile) = cli.build_any_client().await?;
             let cache = cache::ImageCache::new(&profile).await;
             commands::image::ImageCommand::List(args.clone())
                 .run(&client, cli.json, cache.as_ref())

@@ -139,8 +139,8 @@ pub async fn run(
     };
     let account = client.effective_account();
 
-    // Resolve image (could be name@version or UUID)
-    let image_id = crate::commands::image::resolve_image(&args.image, client, cache)
+    // Resolve image (could be name@version or UUID) — accepts AnyClient.
+    let image_id = crate::commands::image::resolve_image(&args.image, any_client, cache)
         .await?
         .to_string();
 
