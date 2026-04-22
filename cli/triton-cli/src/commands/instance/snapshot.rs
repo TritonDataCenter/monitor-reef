@@ -316,7 +316,7 @@ async fn wait_for_snapshot_deleted(
                 Err(_) => None,
                 Ok(resp) => {
                     let snap: Snapshot = serde_json::from_value::<Snapshot>(serde_json::to_value(
-                        &resp.into_inner(),
+                        resp.into_inner(),
                     )?)?;
                     Some(snap.state)
                 }

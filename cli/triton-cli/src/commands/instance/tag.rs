@@ -189,7 +189,7 @@ async fn fetch_machine_state(
             .send()
             .await?
             .into_inner();
-        let state_value = serde_json::to_value(&resp.state)?;
+        let state_value = serde_json::to_value(resp.state)?;
         serde_json::from_value::<MachineState>(state_value)?
     });
     Ok(state)
@@ -254,7 +254,7 @@ async fn get_tag(args: TagGetArgs, client: &AnyClient) -> Result<()> {
     let value = tags
         .get(&args.key)
         .cloned()
-        .unwrap_or_else(|| Value::String(single_value));
+        .unwrap_or(Value::String(single_value));
 
     if args.json {
         // Output as JSON (e.g., "bar" for strings, true for bools)

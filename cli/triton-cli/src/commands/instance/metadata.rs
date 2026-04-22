@@ -234,7 +234,7 @@ async fn set_metadata(args: MetadataSetArgs, client: &AnyClient) -> Result<()> {
                 .send()
                 .await?
                 .into_inner();
-            serde_json::from_value::<MachineState>(serde_json::to_value(&resp.state)?)?
+            serde_json::from_value::<MachineState>(serde_json::to_value(resp.state)?)?
         }))
     } else {
         None

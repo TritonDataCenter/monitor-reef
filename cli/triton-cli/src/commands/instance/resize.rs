@@ -60,7 +60,7 @@ async fn wait_for_resize(
                 .await?
                 .into_inner();
             // `state` serializes as a lowercase wire string; compare as text.
-            let state_str = serde_json::to_value(&resp.state)?
+            let state_str = serde_json::to_value(resp.state)?
                 .as_str()
                 .unwrap_or("")
                 .to_string();

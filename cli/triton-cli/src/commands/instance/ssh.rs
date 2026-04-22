@@ -284,7 +284,7 @@ async fn fetch_image_default_user(
             .await
         {
             Ok(resp) => {
-                let value = serde_json::to_value(&resp.into_inner()).ok();
+                let value = serde_json::to_value(resp.into_inner()).ok();
                 value
                     .and_then(|v| v.get("tags").cloned())
                     .and_then(|t| serde_json::from_value(t).ok())
