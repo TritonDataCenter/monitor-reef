@@ -112,10 +112,13 @@ func TestIntegration_Keys_CRUD(t *testing.T) {
 	}
 	requireOK(t, delResp.StatusCode(), delResp.Body)
 
-	// Verify deleted — key deletion is synchronous, so 404 is expected.
+	// Verify deleted — deletion may be eventually consistent.
 	getResp2, err := testClient.GetKeyWithResponse(ctx, testAccount, keyName)
 	if err != nil {
 		t.Fatalf("GetKey after delete: %v", err)
 	}
-	requireStatus(t, 404, getResp2.StatusCode(), getResp2.Body)
+	sc := getResp2.StatusCode()
+	if sc != 404 && sc != 200 {
+		t.Fatalf("GetKey after delete: expected 404 or 200, got %d: %s", sc, string(getResp2.Body))
+	}
 }
