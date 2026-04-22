@@ -10,10 +10,12 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
+use cloudapi_api::{Network, NetworkIp};
 
+use crate::client::AnyClient;
 use crate::output::json::{self, print_json_stream};
 use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::{dispatch, dispatch_with_types};
 
 #[derive(Args, Clone)]
 pub struct NetworkListArgs {
@@ -186,7 +188,7 @@ impl NetworkCommand {
         Ok(())
     }
 
-    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
         match self {
             Self::List(args) => list_networks(args, client, use_json).await,
             Self::Get(args) => get_network(args, client, use_json).await,
@@ -200,7 +202,7 @@ impl NetworkCommand {
 }
 
 impl NetworkIpCommand {
-    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
         match self {
             Self::List(args) => list_network_ips(args, client, use_json).await,
             Self::Get(args) => get_network_ip(args, client, use_json).await,
@@ -243,21 +245,30 @@ fn apply_positional_filters(args: &mut NetworkListArgs) -> Result<()> {
     Ok(())
 }
 
+/// Fetch all networks as canonical `cloudapi_api::Network` through the
+/// dispatched client.
+async fn fetch_networks(client: &AnyClient) -> Result<Vec<Network>> {
+    let account = client.effective_account();
+    let nets: Vec<Network> = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .list_networks()
+            .account(account)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<Vec<Network>>(serde_json::to_value(&resp)?)?
+    });
+    Ok(nets)
+}
+
 async fn list_networks(
     mut args: NetworkListArgs,
-    client: &TypedClient,
+    client: &AnyClient,
     use_json: bool,
 ) -> Result<()> {
     apply_positional_filters(&mut args)?;
-    let account = client.effective_account();
-    let response = client
-        .inner()
-        .list_networks()
-        .account(account)
-        .send()
-        .await?;
-
-    let all_networks = response.into_inner();
+    let all_networks = fetch_networks(client).await?;
 
     // Apply public filter if specified
     let mut networks: Vec<_> = if let Some(public_filter) = args.public {
@@ -311,19 +322,21 @@ async fn list_networks(
     Ok(())
 }
 
-async fn get_network(args: NetworkGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+async fn get_network(args: NetworkGetArgs, client: &AnyClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
     let network_uuid = resolve_network(&args.network, client).await?;
 
-    let response = client
-        .inner()
-        .get_network()
-        .account(account)
-        .network(network_uuid)
-        .send()
-        .await?;
-
-    let network = response.into_inner();
+    let network: Network = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .get_network()
+            .account(account)
+            .network(network_uuid)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<Network>(serde_json::to_value(&resp)?)?
+    });
 
     if use_json {
         json::print_json(&network)?;
@@ -334,15 +347,24 @@ async fn get_network(args: NetworkGetArgs, client: &TypedClient, use_json: bool)
     Ok(())
 }
 
-async fn get_default_network(client: &TypedClient, use_json: bool) -> Result<()> {
+async fn get_default_network(client: &AnyClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
-    let response = client.inner().get_config().account(account).send().await?;
-
-    let config = response.into_inner();
+    let config_json: serde_json::Value = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .get_config()
+            .account(account)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::to_value(&resp)?
+    });
 
     if use_json {
-        json::print_json(&config)?;
-    } else if let Some(default_network) = &config.default_network {
+        json::print_json(&config_json)?;
+    } else if let Some(default_network) =
+        config_json.get("default_network").and_then(|v| v.as_str())
+    {
         println!("{}", default_network);
     } else {
         println!("No default network configured");
@@ -351,32 +373,29 @@ async fn get_default_network(client: &TypedClient, use_json: bool) -> Result<()>
     Ok(())
 }
 
-async fn set_default_network(args: NetworkSetDefaultArgs, client: &TypedClient) -> Result<()> {
+async fn set_default_network(args: NetworkSetDefaultArgs, client: &AnyClient) -> Result<()> {
     let account = client.effective_account();
     let network_uuid = resolve_network(&args.network, client).await?;
 
-    let request = cloudapi_client::types::UpdateConfigRequest {
-        default_network: Some(network_uuid),
-    };
-
-    client
-        .inner()
-        .update_config()
-        .account(account)
-        .body(request)
-        .send()
-        .await?;
+    dispatch_with_types!(client, |c, t| {
+        let body = t::UpdateConfigRequest {
+            default_network: Some(network_uuid),
+        };
+        c.inner()
+            .update_config()
+            .account(account)
+            .body(body)
+            .send()
+            .await?;
+        Ok::<(), anyhow::Error>(())
+    })?;
 
     println!("Default network set to {}", network_uuid);
 
     Ok(())
 }
 
-async fn create_network(
-    args: NetworkCreateArgs,
-    client: &TypedClient,
-    use_json: bool,
-) -> Result<()> {
+async fn create_network(args: NetworkCreateArgs, client: &AnyClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
 
     // Note: gateway/no-nat validation is in NetworkCommand::pre_validate()
@@ -409,28 +428,35 @@ async fn create_network(
         None => serde_json::Value::Object(serde_json::Map::new()),
     });
 
-    let request = cloudapi_client::types::CreateFabricNetworkRequest {
-        name: args.name.clone(),
-        description: args.description,
-        subnet: args.subnet,
-        provision_start_ip: args.start_ip,
-        provision_end_ip: args.end_ip,
-        gateway: args.gateway,
-        resolvers,
-        routes,
-        internet_nat: if args.no_nat { Some(false) } else { None },
-    };
+    let vlan_id = args.vlan_id;
 
-    let response = client
-        .inner()
-        .create_fabric_network()
-        .account(account)
-        .vlan_id(args.vlan_id)
-        .body(request)
-        .send()
-        .await?;
+    // Per-client typed body: `create_fabric_network().body(V)` takes
+    // `V: TryInto<types::CreateFabricNetworkRequest>` and the Progenitor
+    // type differs per crate.
+    let network: Network = dispatch_with_types!(client, |c, t| {
+        let body = t::CreateFabricNetworkRequest {
+            name: args.name.clone(),
+            description: args.description.clone(),
+            subnet: args.subnet.clone(),
+            provision_start_ip: args.start_ip.clone(),
+            provision_end_ip: args.end_ip.clone(),
+            gateway: args.gateway.clone(),
+            resolvers: resolvers.clone(),
+            routes: routes.clone(),
+            internet_nat: if args.no_nat { Some(false) } else { None },
+        };
+        let resp = c
+            .inner()
+            .create_fabric_network()
+            .account(account)
+            .vlan_id(vlan_id)
+            .body(body)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<Network>(serde_json::to_value(&resp)?)?
+    });
 
-    let network = response.into_inner();
     let network_id_str = network.id.to_string();
 
     eprintln!(
@@ -446,7 +472,7 @@ async fn create_network(
     Ok(())
 }
 
-async fn delete_network(args: NetworkDeleteArgs, client: &TypedClient) -> Result<()> {
+async fn delete_network(args: NetworkDeleteArgs, client: &AnyClient) -> Result<()> {
     let account = client.effective_account();
 
     // Resolve network and get its details
@@ -472,14 +498,16 @@ async fn delete_network(args: NetworkDeleteArgs, client: &TypedClient) -> Result
         .parse()
         .map_err(|_| anyhow::anyhow!("Invalid network UUID: {}", network_id))?;
 
-    client
-        .inner()
-        .delete_fabric_network()
-        .account(account)
-        .vlan_id(vlan_id)
-        .id(network_uuid)
-        .send()
-        .await?;
+    dispatch!(client, |c| {
+        c.inner()
+            .delete_fabric_network()
+            .account(account)
+            .vlan_id(vlan_id)
+            .id(network_uuid)
+            .send()
+            .await?;
+        Ok::<(), anyhow::Error>(())
+    })?;
 
     println!("Deleted network {} ({})", network_name, &network_id[..8]);
 
@@ -489,43 +517,50 @@ async fn delete_network(args: NetworkDeleteArgs, client: &TypedClient) -> Result
 /// Resolve network name or ID to (UUID string, name, vlan_id) for fabric networks
 async fn resolve_fabric_network(
     id_or_name: &str,
-    client: &TypedClient,
+    client: &AnyClient,
 ) -> Result<(String, String, u16)> {
     let account = client.effective_account();
 
-    // List all fabric VLANs first
-    let vlans_response = client
-        .inner()
-        .list_fabric_vlans()
-        .account(account)
-        .send()
-        .await?;
-    let vlans = vlans_response.into_inner();
+    // List all fabric VLANs first. Pull a stable (name, vlan_id) pair set
+    // out of the dispatched client.
+    let vlans: Vec<(String, u16)> = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .list_fabric_vlans()
+            .account(account)
+            .send()
+            .await?
+            .into_inner();
+        resp.into_iter().map(|v| (v.name, v.vlan_id)).collect()
+    });
 
     // Search through all VLANs for the network
-    for vlan in &vlans {
-        let networks_response = client
-            .inner()
-            .list_fabric_networks()
-            .account(account)
-            .vlan_id(vlan.vlan_id)
-            .send()
-            .await?;
-        let networks = networks_response.into_inner();
+    for (_vlan_name, vlan_id) in &vlans {
+        let networks: Vec<(uuid::Uuid, String)> = dispatch!(client, |c| {
+            let resp = c
+                .inner()
+                .list_fabric_networks()
+                .account(account)
+                .vlan_id(*vlan_id)
+                .send()
+                .await?
+                .into_inner();
+            resp.into_iter().map(|n| (n.id, n.name)).collect()
+        });
 
-        for net in &networks {
-            let net_id_str = net.id.to_string();
+        for (net_id, net_name) in &networks {
+            let net_id_str = net_id.to_string();
             // Match by UUID
             if net_id_str == id_or_name {
-                return Ok((net_id_str, net.name.clone(), vlan.vlan_id));
+                return Ok((net_id_str, net_name.clone(), *vlan_id));
             }
             // Match by short ID
             if id_or_name.len() >= 8 && net_id_str.starts_with(id_or_name) {
-                return Ok((net_id_str, net.name.clone(), vlan.vlan_id));
+                return Ok((net_id_str, net_name.clone(), *vlan_id));
             }
             // Match by name
-            if net.name == id_or_name {
-                return Ok((net_id_str, net.name.clone(), vlan.vlan_id));
+            if net_name == id_or_name {
+                return Ok((net_id_str, net_name.clone(), *vlan_id));
             }
         }
     }
@@ -538,21 +573,23 @@ async fn resolve_fabric_network(
 
 async fn list_network_ips(
     args: NetworkIpListArgs,
-    client: &TypedClient,
+    client: &AnyClient,
     use_json: bool,
 ) -> Result<()> {
     let account = client.effective_account();
     let network_uuid = resolve_network(&args.network, client).await?;
 
-    let response = client
-        .inner()
-        .list_network_ips()
-        .account(account)
-        .network(network_uuid)
-        .send()
-        .await?;
-
-    let ips = response.into_inner();
+    let ips: Vec<NetworkIp> = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .list_network_ips()
+            .account(account)
+            .network(network_uuid)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<Vec<NetworkIp>>(serde_json::to_value(&resp)?)?
+    });
 
     if use_json {
         json::print_json(&ips)?;
@@ -599,24 +636,23 @@ async fn list_network_ips(
     Ok(())
 }
 
-async fn get_network_ip(
-    args: NetworkIpGetArgs,
-    client: &TypedClient,
-    use_json: bool,
-) -> Result<()> {
+async fn get_network_ip(args: NetworkIpGetArgs, client: &AnyClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
     let network_uuid = resolve_network(&args.network, client).await?;
+    let ip_addr = args.ip.clone();
 
-    let response = client
-        .inner()
-        .get_network_ip()
-        .account(account)
-        .network(network_uuid)
-        .ip_address(&args.ip)
-        .send()
-        .await?;
-
-    let ip = response.into_inner();
+    let ip: NetworkIp = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .get_network_ip()
+            .account(account)
+            .network(network_uuid)
+            .ip_address(&ip_addr)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<NetworkIp>(serde_json::to_value(&resp)?)?
+    });
 
     if use_json {
         json::print_json(&ip)?;
@@ -629,11 +665,12 @@ async fn get_network_ip(
 
 async fn update_network_ip(
     args: NetworkIpUpdateArgs,
-    client: &TypedClient,
+    client: &AnyClient,
     use_json: bool,
 ) -> Result<()> {
     let account = client.effective_account();
     let network_uuid = resolve_network(&args.network, client).await?;
+    let ip_addr = args.ip.clone();
 
     // Parse update data from file or command line
     let reserved = if let Some(file_path) = &args.file {
@@ -653,19 +690,21 @@ async fn update_network_ip(
         args.reserve.unwrap_or(false)
     };
 
-    let request = cloudapi_client::types::UpdateNetworkIpRequest { reserved };
-
-    let response = client
-        .inner()
-        .update_network_ip()
-        .account(account)
-        .network(network_uuid)
-        .ip_address(&args.ip)
-        .body(request)
-        .send()
-        .await?;
-
-    let ip = response.into_inner();
+    // `update_network_ip().body(V)` takes `V: TryInto<types::UpdateNetworkIpRequest>`.
+    let ip: NetworkIp = dispatch_with_types!(client, |c, t| {
+        let body = t::UpdateNetworkIpRequest { reserved };
+        let resp = c
+            .inner()
+            .update_network_ip()
+            .account(account)
+            .network(network_uuid)
+            .ip_address(&ip_addr)
+            .body(body)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<NetworkIp>(serde_json::to_value(&resp)?)?
+    });
 
     eprintln!("Updated IP {}", ip.ip);
 
@@ -677,7 +716,7 @@ async fn update_network_ip(
 }
 
 /// Resolve network name or short ID to full UUID
-pub async fn resolve_network(id_or_name: &str, client: &TypedClient) -> Result<uuid::Uuid> {
+pub async fn resolve_network(id_or_name: &str, client: &AnyClient) -> Result<uuid::Uuid> {
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
         // If already a UUID, use it directly (matches node-triton's _stepNetId
         // which short-circuits on UUID input without a GET call)
@@ -685,28 +724,30 @@ pub async fn resolve_network(id_or_name: &str, client: &TypedClient) -> Result<u
     }
 
     let account = client.effective_account();
-    let response = client
-        .inner()
-        .list_networks()
-        .account(account)
-        .send()
-        .await?;
-
-    let networks = response.into_inner();
+    let networks: Vec<(uuid::Uuid, String)> = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .list_networks()
+            .account(account)
+            .send()
+            .await?
+            .into_inner();
+        resp.into_iter().map(|n| (n.id, n.name)).collect()
+    });
 
     // Try short ID match first
     if id_or_name.len() >= 8 {
-        for net in &networks {
-            if net.id.to_string().starts_with(id_or_name) {
-                return Ok(net.id);
+        for (id, _) in &networks {
+            if id.to_string().starts_with(id_or_name) {
+                return Ok(*id);
             }
         }
     }
 
     // Try exact name match
-    for net in &networks {
-        if net.name == id_or_name {
-            return Ok(net.id);
+    for (id, name) in &networks {
+        if name == id_or_name {
+            return Ok(*id);
         }
     }
 
@@ -716,14 +757,37 @@ pub async fn resolve_network(id_or_name: &str, client: &TypedClient) -> Result<u
 /// Resolve network, always validating via GET even for UUIDs.
 /// Matches node-triton's `getNetwork` which does a GET for UUIDs
 /// (unlike `_stepNetId` which short-circuits).
-pub async fn resolve_network_with_get(
-    id_or_name: &str,
-    client: &TypedClient,
-) -> Result<uuid::Uuid> {
+pub async fn resolve_network_with_get(id_or_name: &str, client: &AnyClient) -> Result<uuid::Uuid> {
     let account = client.effective_account();
 
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
         // Validate the network exists via GET
+        dispatch!(client, |c| {
+            c.inner()
+                .get_network()
+                .account(account)
+                .network(uuid.to_string())
+                .send()
+                .await?;
+            Ok::<(), anyhow::Error>(())
+        })?;
+        return Ok(uuid);
+    }
+
+    // For names/short IDs, list and match
+    resolve_network(id_or_name, client).await
+}
+
+/// SSH-only shim for `resolve_network_with_get`, kept while
+/// `commands::volume` still holds a `cloudapi_client::TypedClient`. The
+/// volume family's port to [`AnyClient`] removes this entirely.
+pub async fn resolve_network_with_get_ssh(
+    id_or_name: &str,
+    client: &cloudapi_client::TypedClient,
+) -> Result<uuid::Uuid> {
+    let account = client.effective_account();
+
+    if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
         client
             .inner()
             .get_network()
@@ -734,6 +798,28 @@ pub async fn resolve_network_with_get(
         return Ok(uuid);
     }
 
-    // For names/short IDs, list and match
-    resolve_network(id_or_name, client).await
+    // Name / short-ID path: list, match, no GET verification.
+    let resp = client
+        .inner()
+        .list_networks()
+        .account(account)
+        .send()
+        .await?;
+    let networks = resp.into_inner();
+
+    if id_or_name.len() >= 8 {
+        for net in &networks {
+            if net.id.to_string().starts_with(id_or_name) {
+                return Ok(net.id);
+            }
+        }
+    }
+
+    for net in &networks {
+        if net.name == id_or_name {
+            return Ok(net.id);
+        }
+    }
+
+    Err(crate::errors::ResourceNotFoundError(format!("Network not found: {}", id_or_name)).into())
 }

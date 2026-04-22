@@ -194,7 +194,7 @@ pub async fn run(
         let mut network_objects: Vec<cloudapi_client::types::NetworkObject> = Vec::new();
         for network_str in network_strs {
             let network_id =
-                super::super::network::resolve_network_with_get(network_str, client).await?;
+                super::super::network::resolve_network_with_get(network_str, any_client).await?;
             network_objects.push(cloudapi_client::types::NetworkObject {
                 ipv4_uuid: network_id,
                 ipv4_ips: None,
@@ -206,7 +206,7 @@ pub async fn run(
 
     // Handle NICs (advanced mode - also uses networks field)
     if let Some(nics) = &args.nic {
-        let nic_specs = parse_nic_specs(nics, client).await?;
+        let nic_specs = parse_nic_specs(nics, any_client).await?;
         request = request.networks(nic_specs);
     }
 
@@ -617,7 +617,7 @@ fn parse_size(s: &str) -> Result<u64> {
 /// Parse NIC specifications into NetworkObject array
 async fn parse_nic_specs(
     nics: &[String],
-    client: &TypedClient,
+    client: &AnyClient,
 ) -> Result<Vec<cloudapi_client::types::NetworkObject>> {
     let mut result = Vec::new();
     for spec in nics {
@@ -738,7 +738,7 @@ fn parse_nic_spec_fields(spec: &str) -> Result<ParsedNicSpec> {
 /// Also accepts node-triton format: ipv4_uuid=UUID[,ipv4_ips=IP]
 async fn parse_nic_spec(
     spec: &str,
-    client: &TypedClient,
+    client: &AnyClient,
 ) -> Result<cloudapi_client::types::NetworkObject> {
     let parsed = parse_nic_spec_fields(spec)?;
 

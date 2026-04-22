@@ -596,7 +596,7 @@ async fn try_main() -> Result<()> {
         }
         Commands::Network { command } => {
             command.pre_validate()?;
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Fwrule { command } if command.is_empty_variadic() => Ok(()),
@@ -690,7 +690,7 @@ async fn try_main() -> Result<()> {
                 .await
         }
         Commands::Nets(args) => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::network::NetworkCommand::List(args.clone())
                 .run(&client, cli.json)
                 .await
