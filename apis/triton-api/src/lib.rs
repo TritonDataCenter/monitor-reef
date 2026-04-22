@@ -44,6 +44,24 @@ pub trait TritonApi {
         body: TypedBody<LoginRequest>,
     ) -> Result<HttpResponseHeaders<HttpResponseOk<LoginResponse>>, HttpError>;
 
+    /// Exchange a proof-of-SSH-key-ownership for an access + refresh
+    /// token pair. The caller presents an `Authorization: Signature …`
+    /// header (draft-cavage HTTP Signature, same dialect cloudapi
+    /// accepts). The server resolves the key via mahi, verifies the
+    /// signature, and issues tokens via the same path the password
+    /// login uses.
+    ///
+    /// Request body is empty — all auth material is in the headers.
+    /// Response mirrors `POST /v1/auth/login`.
+    #[endpoint {
+        method = POST,
+        path = "/v1/auth/login-ssh",
+        tags = ["auth"],
+    }]
+    async fn auth_login_ssh(
+        rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseHeaders<HttpResponseOk<LoginResponse>>, HttpError>;
+
     /// Revoke all outstanding refresh tokens for the caller and clear
     /// the auth cookie. Accepts an expired access token so that callers
     /// whose session has already expired can still log out cleanly.

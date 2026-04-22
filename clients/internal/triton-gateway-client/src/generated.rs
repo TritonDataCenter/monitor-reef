@@ -17098,6 +17098,11 @@ impl Client {
         builder::AuthLogin::new(self)
     }
 
+    #[doc = "Exchange a proof-of-SSH-key-ownership for an access + refresh\n\ntoken pair. The caller presents an `Authorization: Signature …` header (draft-cavage HTTP Signature, same dialect cloudapi accepts). The server resolves the key via mahi, verifies the signature, and issues tokens via the same path the password login uses.\n\nRequest body is empty — all auth material is in the headers. Response mirrors `POST /v1/auth/login`.\n\nSends a `POST` request to `/v1/auth/login-ssh`\n\n```ignore\nlet response = client.auth_login_ssh()\n    .send()\n    .await;\n```"]
+    pub fn auth_login_ssh(&self) -> builder::AuthLoginSsh<'_> {
+        builder::AuthLoginSsh::new(self)
+    }
+
     #[doc = "Revoke all outstanding refresh tokens for the caller and clear\n\nthe auth cookie. Accepts an expired access token so that callers whose session has already expired can still log out cleanly.\n\nSends a `POST` request to `/v1/auth/logout`\n\n```ignore\nlet response = client.auth_logout()\n    .send()\n    .await;\n```"]
     pub fn auth_logout(&self) -> builder::AuthLogout<'_> {
         builder::AuthLogout::new(self)
@@ -18194,6 +18199,62 @@ pub mod builder {
                 .build()?;
             let info = OperationInfo {
                 operation_id: "auth_login",
+            };
+            match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
+                Ok(_) => (),
+                Err(e) => return Err(Error::Custom(e.to_string())),
+            }
+            client.pre(&mut request, &info).await?;
+            let result = client.exec(request, &info).await;
+            client.post(&result, &info).await?;
+            let response = result?;
+            match response.status().as_u16() {
+                200u16 => ResponseValue::from_response(response).await,
+                400u16..=499u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                500u16..=599u16 => Err(Error::ErrorResponse(
+                    ResponseValue::from_response(response).await?,
+                )),
+                _ => Err(Error::UnexpectedResponse(response)),
+            }
+        }
+    }
+
+    #[doc = "Builder for [`Client::auth_login_ssh`]\n\n[`Client::auth_login_ssh`]: super::Client::auth_login_ssh"]
+    #[derive(Debug, Clone)]
+    pub struct AuthLoginSsh<'a> {
+        client: &'a super::Client,
+    }
+
+    impl<'a> AuthLoginSsh<'a> {
+        pub fn new(client: &'a super::Client) -> Self {
+            Self { client: client }
+        }
+
+        #[doc = "Sends a `POST` request to `/v1/auth/login-ssh`"]
+        pub async fn send(
+            self,
+        ) -> Result<ResponseValue<types::LoginResponse>, Error<types::Error>> {
+            let Self { client } = self;
+            let url = format!("{}/v1/auth/login-ssh", client.baseurl,);
+            let mut header_map = ::reqwest::header::HeaderMap::with_capacity(1usize);
+            header_map.append(
+                ::reqwest::header::HeaderName::from_static("api-version"),
+                ::reqwest::header::HeaderValue::from_static(super::Client::api_version()),
+            );
+            #[allow(unused_mut)]
+            let mut request = client
+                .client
+                .post(url)
+                .header(
+                    ::reqwest::header::ACCEPT,
+                    ::reqwest::header::HeaderValue::from_static("application/json"),
+                )
+                .headers(header_map)
+                .build()?;
+            let info = OperationInfo {
+                operation_id: "auth_login_ssh",
             };
             match (crate::auth::add_auth_headers)(&client.inner, &mut request).await {
                 Ok(_) => (),

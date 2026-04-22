@@ -215,6 +215,16 @@ impl TritonApi for TritonApiImpl {
         Ok(response)
     }
 
+    async fn auth_login_ssh(
+        _rqctx: RequestContext<Self::Context>,
+    ) -> Result<HttpResponseHeaders<HttpResponseOk<LoginResponse>>, HttpError> {
+        // Stub: wired into the trait so spec + client generation carry the
+        // endpoint shape. The verifier + mahi key lookup + JWT issuance land
+        // in a follow-up slice per
+        // docs/tutorials/adding-a-tritonapi-feature.md.
+        Err(auth_unavailable())
+    }
+
     async fn auth_logout(
         rqctx: RequestContext<Self::Context>,
     ) -> Result<HttpResponseHeaders<HttpResponseOk<LogoutResponse>>, HttpError> {

@@ -3491,6 +3491,34 @@
         ]
       }
     },
+    "/v1/auth/login-ssh": {
+      "post": {
+        "description": "token pair. The caller presents an `Authorization: Signature …` header (draft-cavage HTTP Signature, same dialect cloudapi accepts). The server resolves the key via mahi, verifies the signature, and issues tokens via the same path the password login uses.\n\nRequest body is empty — all auth material is in the headers. Response mirrors `POST /v1/auth/login`.",
+        "operationId": "auth_login_ssh",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LoginResponse"
+                }
+              }
+            },
+            "description": "successful operation"
+          },
+          "4XX": {
+            "$ref": "#/components/responses/Error"
+          },
+          "5XX": {
+            "$ref": "#/components/responses/Error"
+          }
+        },
+        "summary": "Exchange a proof-of-SSH-key-ownership for an access + refresh",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
     "/v1/auth/logout": {
       "post": {
         "description": "the auth cookie. Accepts an expired access token so that callers whose session has already expired can still log out cleanly.",
