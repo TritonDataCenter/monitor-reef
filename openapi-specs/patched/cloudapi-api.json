@@ -2574,9 +2574,9 @@
           },
           "policies": {
             "default": [],
-            "description": "Policies (policy UUIDs or names)",
+            "description": "Policies attached to this role",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/PolicyRef"
             },
             "type": "array"
           },

@@ -11528,11 +11528,11 @@
             "type": "string"
           },
           "policies": {
-            "description": "Policies (policy UUIDs or names)",
+            "description": "Policies attached to this role",
             "default": [],
             "type": "array",
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/PolicyRef"
             }
           },
           "role-tag": {

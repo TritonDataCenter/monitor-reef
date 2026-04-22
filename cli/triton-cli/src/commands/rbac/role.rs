@@ -204,7 +204,7 @@ pub async fn list_roles(
         define_columns! {
             RoleColumn for cloudapi_client::types::Role, long_from: 3, {
                 Name("NAME") => |role| role.name.clone(),
-                Policies("POLICIES") => |role| role.policies.join(", "),
+                Policies("POLICIES") => |role| role.policies.iter().filter_map(|p| p.name.as_deref()).collect::<Vec<_>>().join(", "),
                 Members("MEMBERS") => |role| role.members.join(", "),
                 // --- long-only columns below ---
                 Id("ID") => |role| role.id.to_string(),
@@ -241,7 +241,11 @@ async fn get_role(args: RoleGetArgs, client: &TypedClient, use_json: bool) -> Re
             if role.policies.is_empty() {
                 "-".to_string()
             } else {
-                role.policies.join(", ")
+                role.policies
+                    .iter()
+                    .filter_map(|p| p.name.as_deref())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             }
         );
         println!(
@@ -616,7 +620,12 @@ struct RoleEdit {
 /// Convert a Role to commented YAML for editing
 fn role_to_commented_yaml(role: &cloudapi_client::types::Role, account: &str) -> String {
     let members = editor::format_yaml_list(&role.members, "  ");
-    let policies = editor::format_yaml_list(&role.policies, "  ");
+    let policy_names: Vec<String> = role
+        .policies
+        .iter()
+        .filter_map(|p| p.name.clone())
+        .collect();
+    let policies = editor::format_yaml_list(&policy_names, "  ");
     let default_members = editor::format_yaml_list(&role.default_members, "  ");
 
     format!(

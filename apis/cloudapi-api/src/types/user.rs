@@ -176,9 +176,9 @@ pub struct Role {
     /// Default members (user UUIDs or logins)
     #[serde(default)]
     pub default_members: Vec<String>,
-    /// Policies (policy UUIDs or names)
+    /// Policies attached to this role
     #[serde(default)]
-    pub policies: Vec<String>,
+    pub policies: Vec<PolicyRef>,
     /// Role tags for RBAC
     #[serde(rename = "role-tag", default, skip_serializing_if = "Option::is_none")]
     pub role_tag: Option<RoleTags>,

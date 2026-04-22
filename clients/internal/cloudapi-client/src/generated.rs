@@ -6420,11 +6420,11 @@ pub mod types {
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
     #[doc = "    \"policies\": {"]
-    #[doc = "      \"description\": \"Policies (policy UUIDs or names)\","]
+    #[doc = "      \"description\": \"Policies attached to this role\","]
     #[doc = "      \"default\": [],"]
     #[doc = "      \"type\": \"array\","]
     #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
+    #[doc = "        \"$ref\": \"#/components/schemas/PolicyRef\""]
     #[doc = "      }"]
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
@@ -6455,9 +6455,9 @@ pub mod types {
         pub members: ::std::vec::Vec<::std::string::String>,
         #[doc = "Role name"]
         pub name: ::std::string::String,
-        #[doc = "Policies (policy UUIDs or names)"]
+        #[doc = "Policies attached to this role"]
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
-        pub policies: ::std::vec::Vec<::std::string::String>,
+        pub policies: ::std::vec::Vec<PolicyRef>,
         #[doc = "Role tags for RBAC"]
         #[serde(
             rename = "role-tag",
@@ -14521,10 +14521,8 @@ pub mod types {
                 ::std::string::String,
             >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
-            policies: ::std::result::Result<
-                ::std::vec::Vec<::std::string::String>,
-                ::std::string::String,
-            >,
+            policies:
+                ::std::result::Result<::std::vec::Vec<super::PolicyRef>, ::std::string::String>,
             role_tag: ::std::result::Result<
                 ::std::option::Option<::std::vec::Vec<::std::string::String>>,
                 ::std::string::String,
@@ -14587,7 +14585,7 @@ pub mod types {
             }
             pub fn policies<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T: ::std::convert::TryInto<::std::vec::Vec<super::PolicyRef>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.policies = value

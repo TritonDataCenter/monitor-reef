@@ -363,7 +363,11 @@ pub async fn rbac_info(args: InfoArgs, client: &TypedClient, use_json: bool) -> 
                 let policies_str = if role.policies.is_empty() {
                     stylize("no policies", "red")
                 } else {
-                    role.policies.join(", ")
+                    role.policies
+                        .iter()
+                        .filter_map(|p| p.name.as_deref())
+                        .collect::<Vec<_>>()
+                        .join(", ")
                 };
                 let members_str = if role.members.is_empty() {
                     "-".to_string()
@@ -636,7 +640,11 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
                 cdm != wdm
             };
             let policies_differ = {
-                let mut cp: Vec<_> = current.policies.clone();
+                let mut cp: Vec<String> = current
+                    .policies
+                    .iter()
+                    .filter_map(|p| p.name.clone())
+                    .collect();
                 let mut wp: Vec<_> = role.policies.clone();
                 cp.sort();
                 wp.sort();

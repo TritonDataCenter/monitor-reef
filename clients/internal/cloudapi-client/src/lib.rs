@@ -177,6 +177,7 @@ pub use cloudapi_api::{
     PackagePath,
     Policy,
     PolicyPath,
+    PolicyRef,
     ProvisioningLimit,
     ProvisioningLimits,
     RebootMachineRequest,

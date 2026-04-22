@@ -2160,8 +2160,8 @@ type Role struct {
 	// Name Role name
 	Name string `json:"name"`
 
-	// Policies Policies (policy UUIDs or names)
-	Policies *[]string `json:"policies,omitempty"`
+	// Policies Policies attached to this role
+	Policies *[]PolicyRef `json:"policies,omitempty"`
 
 	// RoleTag Role tags for RBAC
 	RoleTag *[]string `json:"role-tag,omitempty"`
