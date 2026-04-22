@@ -66,14 +66,15 @@ func WithTLSInsecure() ClientOption {
 }
 
 // TLSInsecureFromEnv returns WithTLSInsecure if TRITON_TLS_INSECURE is set to
-// a truthy value ("1", "true", "yes"). Otherwise it returns nil.
+// a truthy value ("1", "true", "yes"). Otherwise it returns a no-op option.
+// The result is always safe to pass to NewClient without nil-checking.
 func TLSInsecureFromEnv() ClientOption {
 	val := os.Getenv("TRITON_TLS_INSECURE")
 	switch val {
 	case "1", "true", "yes":
 		return WithTLSInsecure()
 	default:
-		return nil
+		return func(_ *Client) error { return nil }
 	}
 }
 
