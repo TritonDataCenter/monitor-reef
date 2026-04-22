@@ -11,19 +11,13 @@ use std::collections::HashMap;
 use anyhow::Result;
 use chrono::DateTime;
 use clap::{Args, Subcommand};
-use cloudapi_api::Image;
-// `cloudapi_api::ImageState` / `ImageType` lack `clap::ValueEnum` (CLAUDE.md §2
-// violation); CLI args still use the Progenitor-patched copies from
-// `cloudapi_client::types`. At dispatch boundaries we round-trip via serde
-// because both serialize to the same wire format.
-use cloudapi_client::types::ImageState as CliImageState;
+use cloudapi_client::TypedClient;
+use cloudapi_client::types::{Image, ImageState};
 use dialoguer::Confirm;
 use serde_json::Value;
 
-use crate::client::AnyClient;
 use crate::output::table::{TableBuilder, TableFormatArgs, col};
 use crate::output::{enum_to_display, json, opt_enum_to_display, parse_filter_enum, table};
-use crate::{dispatch, dispatch_with_types};
 
 #[derive(Subcommand, Clone)]
 pub enum ImageCommand {
@@ -289,7 +283,7 @@ pub struct ImageTagDeleteArgs {
 impl ImageCommand {
     pub async fn run(
         self,
-        client: &AnyClient,
+        client: &TypedClient,
         use_json: bool,
         cache: Option<&crate::cache::ImageCache>,
     ) -> Result<()> {
@@ -313,7 +307,7 @@ impl ImageCommand {
 impl ImageTagCommand {
     pub async fn run(
         self,
-        client: &AnyClient,
+        client: &TypedClient,
         use_json: bool,
         cache: Option<&crate::cache::ImageCache>,
     ) -> Result<()> {
@@ -337,7 +331,7 @@ fn is_valid_filter(key: &str) -> bool {
 /// Apply positional key=value filters to the ImageListArgs, merging with any
 /// existing --flag values. Positional filters override flags if both are set.
 /// Returns an optional owner UUID filter (from `owner=` positional arg).
-fn apply_positional_filters(args: &mut ImageListArgs) -> Result<Option<uuid::Uuid>> {
+fn apply_positional_filters(args: &mut ImageListArgs) -> Result<Option<cloudapi_client::Uuid>> {
     let mut owner = None;
     for filter in std::mem::take(&mut args.filters) {
         let (key, value) = filter
@@ -378,77 +372,9 @@ fn apply_positional_filters(args: &mut ImageListArgs) -> Result<Option<uuid::Uui
     Ok(owner)
 }
 
-/// Fetch a list of images as canonical `cloudapi_api::Image` through the
-/// dispatched client. Progenitor-generated image types differ per client; we
-/// serialize to `serde_json::Value` inside the dispatch arm and deserialize
-/// into the canonical type outside, so downstream filtering/printing works
-/// on a single Rust type.
-#[allow(clippy::too_many_arguments)]
-async fn fetch_images_raw(
-    client: &AnyClient,
-    name: Option<&str>,
-    version: Option<&str>,
-    os: Option<&str>,
-    state: Option<cloudapi_client::types::ImageState>,
-    public: bool,
-    image_type: Option<cloudapi_client::types::ImageType>,
-    owner: Option<uuid::Uuid>,
-) -> Result<Vec<Image>> {
-    let account = client.effective_account();
-    let images: Vec<Image> = dispatch_with_types!(client, |c, t| {
-        let mut req = c.inner().list_images().account(account);
-        if let Some(name) = name {
-            req = req.name(name);
-        }
-        if let Some(version) = version {
-            req = req.version(version);
-        }
-        if let Some(os) = os {
-            req = req.os(os);
-        }
-        if let Some(s) = state {
-            let s: t::ImageState = serde_json::from_value(serde_json::to_value(s)?)?;
-            req = req.state(s);
-        }
-        if public {
-            req = req.public(true);
-        }
-        if let Some(it) = image_type {
-            let it: t::ImageType = serde_json::from_value(serde_json::to_value(it)?)?;
-            req = req.type_(it);
-        }
-        if let Some(o) = owner {
-            req = req.owner(o);
-        }
-        let resp = req.send().await?.into_inner();
-        serde_json::from_value::<Vec<Image>>(serde_json::to_value(&resp)?)?
-    });
-    Ok(images)
-}
-
-/// Fetch all images (no filters) via the dispatched client. Used by the
-/// cache population path.
-async fn fetch_all_images(client: &AnyClient) -> Result<Vec<Image>> {
-    fetch_images_raw(client, None, None, None, None, false, None, None).await
-}
-
-/// Convert canonical images back to the Progenitor type the cache expects
-/// and write them out. Silent on conversion failure — the cache is a
-/// performance optimization, never a correctness dependency.
-async fn save_to_cache(cache: Option<&crate::cache::ImageCache>, images: &[Image]) {
-    let Some(c) = cache else { return };
-    let Ok(value) = serde_json::to_value(images) else {
-        return;
-    };
-    let Ok(gen_images) = serde_json::from_value::<Vec<cloudapi_client::types::Image>>(value) else {
-        return;
-    };
-    c.save_list(&gen_images).await;
-}
-
 async fn list_images(
     mut args: ImageListArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
@@ -464,35 +390,48 @@ async fn list_images(
         && owner.is_none();
     let is_default_state = args.state.is_none() && !args.all;
 
-    // Try cache for unfiltered default queries. The cache stores Progenitor
-    // `cloudapi_client::types::Image` values (shared with `instance list`);
-    // we round-trip to canonical `cloudapi_api::Image` at the boundary.
+    // Try cache for unfiltered default queries
     let images = if is_unfiltered && is_default_state {
         match cache {
             Some(c) => match c.load_list().await {
-                Some(cached) => {
-                    serde_json::from_value::<Vec<Image>>(serde_json::to_value(&cached)?)?
-                }
+                Some(cached) => cached,
                 None => {
-                    let fetched = fetch_all_images(client).await?;
-                    save_to_cache(cache, &fetched).await;
+                    let response = client.inner().list_images().account(account).send().await?;
+                    let fetched = response.into_inner();
+                    c.save_list(&fetched).await;
                     fetched
                 }
             },
-            None => fetch_all_images(client).await?,
+            None => {
+                let response = client.inner().list_images().account(account).send().await?;
+                response.into_inner()
+            }
         }
     } else {
-        fetch_images_raw(
-            client,
-            args.name.as_deref(),
-            args.version.as_deref(),
-            args.os.as_deref(),
-            args.state,
-            args.public,
-            args.image_type,
-            owner,
-        )
-        .await?
+        let mut req = client.inner().list_images().account(account);
+        if let Some(name) = &args.name {
+            req = req.name(name);
+        }
+        if let Some(version) = &args.version {
+            req = req.version(version);
+        }
+        if let Some(os) = &args.os {
+            req = req.os(os);
+        }
+        if let Some(state) = args.state {
+            req = req.state(state);
+        }
+        if args.public {
+            req = req.public(true);
+        }
+        if let Some(image_type) = args.image_type {
+            req = req.type_(image_type);
+        }
+        if let Some(owner) = owner {
+            req = req.owner(owner);
+        }
+        let response = req.send().await?;
+        response.into_inner()
     };
 
     // Filter to active-only for default state queries since the cache may
@@ -503,7 +442,7 @@ async fn list_images(
             .filter(|img| {
                 img.state
                     .as_ref()
-                    .is_none_or(|s| matches!(s, cloudapi_api::ImageState::Active))
+                    .is_none_or(|s| matches!(s, ImageState::Active))
             })
             .collect()
     } else {
@@ -519,16 +458,8 @@ async fn list_images(
             .iter()
             .any(|img| img.acl.as_ref().is_some_and(|a| !a.is_empty()));
         let account_uuid = if has_acl {
-            let id: uuid::Uuid = dispatch!(client, |c| {
-                c.inner()
-                    .get_account()
-                    .account(account)
-                    .send()
-                    .await?
-                    .into_inner()
-                    .id
-            });
-            Some(id)
+            let account_info = client.inner().get_account().account(account).send().await?;
+            Some(account_info.into_inner().id)
         } else {
             None
         };
@@ -555,7 +486,7 @@ fn compute_image_flags(img: &Image, account_uuid: Option<&uuid::Uuid>) -> String
     if img
         .state
         .as_ref()
-        .is_some_and(|s| !matches!(s, cloudapi_api::ImageState::Active))
+        .is_some_and(|s| !matches!(s, ImageState::Active))
     {
         flags.push('X');
     }
@@ -597,7 +528,7 @@ fn print_images_table(
             compute_image_flags(img, account_uuid)
         }),
         col("OS", |img: &Image| img.os.clone()),
-        col("TYPE", |img: &Image| enum_to_display(&img.image_type)),
+        col("TYPE", |img: &Image| enum_to_display(&img.type_)),
         col("PUBDATE", |img: &Image| format_pubdate(&img.published_at)),
         col("STATE", |img: &Image| {
             img.state
@@ -653,32 +584,24 @@ fn format_pubdate(published_at: &Option<String>) -> String {
     }
 }
 
-/// Fetch a single image by UUID via the dispatched client. Returns the
-/// canonical `cloudapi_api::Image`.
-async fn fetch_image(client: &AnyClient, image_uuid: uuid::Uuid) -> Result<Image> {
-    let account = client.effective_account();
-    let image: Image = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .get_image()
-            .account(account)
-            .dataset(image_uuid)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Image>(serde_json::to_value(&resp)?)?
-    });
-    Ok(image)
-}
-
 async fn get_image(
     args: ImageGetArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
+    let account = client.effective_account();
     let image_uuid = resolve_image(&args.image, client, cache).await?;
-    let image = fetch_image(client, image_uuid).await?;
+
+    let response = client
+        .inner()
+        .get_image()
+        .account(account)
+        .dataset(image_uuid)
+        .send()
+        .await?;
+
+    let image = response.into_inner();
 
     if use_json {
         json::print_json(&image)?;
@@ -689,9 +612,10 @@ async fn get_image(
     Ok(())
 }
 
-async fn create_image(args: ImageCreateArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
-    let machine_id = super::instance::get::resolve_instance(&args.instance, client).await?;
+    let machine_id =
+        crate::commands::instance::get::resolve_instance(&args.instance, client).await?;
 
     // ACL is Vec<Uuid> (account UUIDs)
     let acl = if let Some(acl_strings) = &args.acl {
@@ -723,6 +647,17 @@ async fn create_image(args: ImageCreateArgs, client: &AnyClient, use_json: bool)
         Some(tag_map)
     } else {
         None
+    };
+
+    let request = cloudapi_client::CreateImageRequest {
+        machine: machine_id,
+        name: args.name.clone(),
+        version: args.version.clone(),
+        description: args.description.clone(),
+        homepage: args.homepage.clone(),
+        eula: args.eula.clone(),
+        acl,
+        tags,
     };
 
     // Handle dry-run
@@ -757,31 +692,14 @@ async fn create_image(args: ImageCreateArgs, client: &AnyClient, use_json: bool)
         return Ok(());
     }
 
-    // `create_or_import_image().body(V)` takes `V: TryInto<serde_json::Value>`
-    // (action-dispatch endpoint), so we serialize the canonical
-    // `cloudapi_api::CreateImageRequest` once and pass it to both arms.
-    let request = cloudapi_api::CreateImageRequest {
-        machine: machine_id,
-        name: args.name.clone(),
-        version: args.version.clone(),
-        description: args.description.clone(),
-        homepage: args.homepage.clone(),
-        eula: args.eula.clone(),
-        acl,
-        tags,
-    };
-    let body = serde_json::to_value(&request)?;
-    let image: Image = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .create_or_import_image()
-            .account(account)
-            .body(body.clone())
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Image>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .create_or_import_image()
+        .account(account)
+        .body(serde_json::to_value(&request)?)
+        .send()
+        .await?;
+    let image = response.into_inner();
     eprintln!(
         "Creating image {} ({})",
         image.name,
@@ -791,7 +709,7 @@ async fn create_image(args: ImageCreateArgs, client: &AnyClient, use_json: bool)
     if args.wait {
         wait_for_image_states(
             image.id,
-            &[CliImageState::Active, CliImageState::Failed],
+            &[ImageState::Active, ImageState::Failed],
             600,
             client,
         )
@@ -808,7 +726,7 @@ async fn create_image(args: ImageCreateArgs, client: &AnyClient, use_json: bool)
 
 async fn delete_images(
     args: ImageDeleteArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
     let account = client.effective_account();
@@ -827,15 +745,13 @@ async fn delete_images(
             }
         }
 
-        dispatch!(client, |c| {
-            c.inner()
-                .delete_image()
-                .account(account)
-                .dataset(image_uuid)
-                .send()
-                .await?;
-            Ok::<(), anyhow::Error>(())
-        })?;
+        client
+            .inner()
+            .delete_image()
+            .account(account)
+            .dataset(image_uuid)
+            .send()
+            .await?;
 
         println!("Deleted image {}", image_name);
     }
@@ -845,7 +761,7 @@ async fn delete_images(
 
 async fn clone_image(
     args: ImageCloneArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
@@ -863,21 +779,7 @@ async fn clone_image(
         return Ok(());
     }
 
-    // Mirrors `cloudapi_client::TypedClient::clone_image`:
-    // POST /{account}/images/{dataset}?action=clone with empty body.
-    let image: Image = dispatch_with_types!(client, |c, t| {
-        let resp = c
-            .inner()
-            .update_image()
-            .account(account)
-            .dataset(image_uuid.to_string())
-            .action(t::ImageAction::Clone)
-            .body(serde_json::json!({}))
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Image>(serde_json::to_value(&resp)?)?
-    });
+    let image = client.clone_image(account, &image_uuid).await?;
     eprintln!(
         "Cloned image {} ({})",
         image.name,
@@ -893,35 +795,18 @@ async fn clone_image(
 
 async fn copy_image(
     args: ImageCopyArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
-    // `copy` talks to TWO datacenters: the current one (to list datacenters
-    // and resolve the image) and the destination DC (to drive the
-    // import-from-datacenter POST). The source-side listing uses the
-    // dispatched `AnyClient`; the destination-side write needs a fresh
-    // `cloudapi_client::TypedClient` built from the existing auth config —
-    // but gateway profiles don't own a cloudapi AuthConfig, so this command
-    // stays SSH-only for now.
-    let src_client = match client {
-        AnyClient::CloudApi { client: c, .. } => c,
-        AnyClient::Gateway { .. } => {
-            anyhow::bail!(
-                "`triton image copy` is not yet supported for tritonapi profiles \
-                 (cross-DC writes require a cloudapi AuthConfig). Use an SSH profile \
-                 for this command."
-            );
-        }
-    };
-    let account = src_client.effective_account();
+    let account = client.effective_account();
     let dest_dc = &args.datacenter;
 
     // Resolve the image (supports name@version, shortID, UUID)
     let image_uuid = resolve_image(&args.image, client, cache).await?;
 
     // List datacenters to find destination URL and our own DC name
-    let datacenters = src_client
+    let datacenters = client
         .inner()
         .list_datacenters()
         .account(account)
@@ -939,7 +824,7 @@ async fn copy_image(
     })?;
 
     // Determine our current DC name by reverse-looking up the base URL
-    let my_url = src_client.baseurl().trim_end_matches('/');
+    let my_url = client.baseurl().trim_end_matches('/');
     let source_dc = datacenters
         .iter()
         .find(|(_, url)| url.trim_end_matches('/') == my_url)
@@ -961,10 +846,10 @@ async fn copy_image(
     }
 
     // Create a client for the destination datacenter
-    let dest_client = cloudapi_client::TypedClient::new_with_http_client(
+    let dest_client = TypedClient::new_with_http_client(
         dest_url,
-        src_client.auth_config().clone(),
-        src_client.http_client().clone(),
+        client.auth_config().clone(),
+        client.http_client().clone(),
     );
 
     let image = dest_client
@@ -988,10 +873,11 @@ async fn copy_image(
 
 async fn update_image(
     args: ImageUpdateArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
+    let account = client.effective_account();
     let image_uuid = resolve_image(&args.image, client, cache).await?;
 
     // Start with --flag values
@@ -1059,17 +945,19 @@ async fn update_image(
         updated_fields.push("eula");
     }
 
-    let image: Image = update_image_metadata(
-        client,
-        image_uuid,
+    let request = cloudapi_client::UpdateImageRequest {
         name,
         version,
         description,
         homepage,
         eula,
-        None,
-    )
-    .await?;
+        acl: None,
+        tags: None,
+    };
+
+    let image = client
+        .update_image_metadata(account, &image_uuid, &request)
+        .await?;
 
     if updated_fields.is_empty() {
         eprintln!("Updated image {}", image.name);
@@ -1088,53 +976,9 @@ async fn update_image(
     Ok(())
 }
 
-/// Send an `action=update` POST to update image metadata. Mirrors
-/// `cloudapi_client::TypedClient::update_image_metadata`, but dispatches
-/// across both client variants.
-///
-/// `tags` is `Option<HashMap<String, Value>>` so the tag-set / tag-delete
-/// paths can reuse this without touching the plain name/version fields.
-#[allow(clippy::too_many_arguments)]
-async fn update_image_metadata(
-    client: &AnyClient,
-    image_uuid: uuid::Uuid,
-    name: Option<String>,
-    version: Option<String>,
-    description: Option<String>,
-    homepage: Option<String>,
-    eula: Option<String>,
-    tags: Option<HashMap<String, Value>>,
-) -> Result<Image> {
-    let account = client.effective_account();
-    let request = cloudapi_api::UpdateImageRequest {
-        name,
-        version,
-        description,
-        homepage,
-        eula,
-        acl: None,
-        tags,
-    };
-    let body = serde_json::to_value(&request)?;
-    let image: Image = dispatch_with_types!(client, |c, t| {
-        let resp = c
-            .inner()
-            .update_image()
-            .account(account)
-            .dataset(image_uuid.to_string())
-            .action(t::ImageAction::Update)
-            .body(body.clone())
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Image>(serde_json::to_value(&resp)?)?
-    });
-    Ok(image)
-}
-
 async fn export_image(
     args: ImageExportArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
@@ -1149,25 +993,9 @@ async fn export_image(
         return Ok(());
     }
 
-    // Send action=export with manta_path in the body. Both the action and
-    // per-client ImageAction live inside the dispatch arm.
-    let manta_path = args.manta_path.clone();
-    let image: Image = dispatch_with_types!(client, |c, t| {
-        let body = serde_json::json!({
-            "action": t::ImageAction::Export,
-            "manta_path": manta_path,
-        });
-        let resp = c
-            .inner()
-            .update_image()
-            .account(account)
-            .dataset(image_uuid.to_string())
-            .body(body)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Image>(serde_json::to_value(&resp)?)?
-    });
+    let image = client
+        .export_image(account, &image_uuid, args.manta_path.clone())
+        .await?;
 
     eprintln!("Exporting image {} to {}", image.name, args.manta_path);
 
@@ -1180,10 +1008,11 @@ async fn export_image(
 
 async fn wait_image(
     args: ImageWaitArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
+    let account = client.effective_account();
     let total = args.images.len();
     let state_names: Vec<String> = args.states.iter().map(enum_to_display).collect();
 
@@ -1191,23 +1020,20 @@ async fn wait_image(
     let mut images_to_wait: Vec<(uuid::Uuid, String)> = Vec::new(); // (id, display_name)
     let mut done = 0;
 
-    // Compare current canonical state against the CLI-provided
-    // `cloudapi_client::types::ImageState`s via serde round-trip (same wire
-    // format on both sides).
-    let cli_states: Vec<Option<cloudapi_api::ImageState>> = args
-        .states
-        .iter()
-        .map(|s| serde_json::from_value(serde_json::to_value(s)?).map_err(Into::into))
-        .collect::<Result<_>>()?;
-
     for image_ref in &args.images {
         let image_uuid = resolve_image(image_ref, client, cache).await?;
-        let image = fetch_image(client, image_uuid).await?;
 
-        if cli_states
-            .iter()
-            .any(|s| s.as_ref() == image.state.as_ref())
-        {
+        // Get current state
+        let response = client
+            .inner()
+            .get_image()
+            .account(account)
+            .dataset(image_uuid)
+            .send()
+            .await?;
+        let image = response.into_inner();
+
+        if args.states.iter().any(|s| image.state.as_ref() == Some(s)) {
             done += 1;
             let current_state = opt_enum_to_display(image.state.as_ref());
             eprintln!(
@@ -1269,7 +1095,7 @@ async fn wait_image(
 /// - Short ID is the first segment of UUID (before first dash)
 pub async fn resolve_image(
     id_or_name: &str,
-    client: &AnyClient,
+    client: &TypedClient,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<uuid::Uuid> {
     resolve_image_inner(id_or_name, client, cache, true).await
@@ -1279,7 +1105,7 @@ pub async fn resolve_image(
 /// Used by delete paths where node-triton skips the verification.
 async fn resolve_image_no_verify(
     id_or_name: &str,
-    client: &AnyClient,
+    client: &TypedClient,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<uuid::Uuid> {
     resolve_image_inner(id_or_name, client, cache, false).await
@@ -1287,23 +1113,22 @@ async fn resolve_image_no_verify(
 
 async fn resolve_image_inner(
     id_or_name: &str,
-    client: &AnyClient,
+    client: &TypedClient,
     cache: Option<&crate::cache::ImageCache>,
     verify_uuid: bool,
 ) -> Result<uuid::Uuid> {
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
         if verify_uuid {
             // Verify the image exists (matches node-triton's getImage call)
+            // In emit-payload mode, the exec hook returns a fake response
             let account = client.effective_account();
-            dispatch!(client, |c| {
-                c.inner()
-                    .get_image()
-                    .account(account)
-                    .dataset(uuid.to_string())
-                    .send()
-                    .await?;
-                Ok::<(), anyhow::Error>(())
-            })?;
+            client
+                .inner()
+                .get_image()
+                .account(account)
+                .dataset(uuid.to_string())
+                .send()
+                .await?;
         }
         return Ok(uuid);
     }
@@ -1315,21 +1140,33 @@ async fn resolve_image_inner(
         (id_or_name, None)
     };
 
-    // For unfiltered lookups (no version), try cache first. Cache stores
-    // Progenitor `cloudapi_client::types::Image`; round-trip to canonical.
+    let account = client.effective_account();
+
+    // For unfiltered lookups (no version), try cache first
     let images = if let Some(v) = version {
         // Version-filtered request — always go to API
-        fetch_images_raw(client, Some(name), Some(v), None, None, false, None, None).await?
+        let response = client
+            .inner()
+            .list_images()
+            .account(account)
+            .name(name)
+            .version(v)
+            .send()
+            .await?;
+        response.into_inner()
     } else {
         let cached = match cache {
             Some(c) => c.load_list().await,
             None => None,
         };
         if let Some(cached) = cached {
-            serde_json::from_value::<Vec<Image>>(serde_json::to_value(&cached)?)?
+            cached
         } else {
-            let fetched = fetch_all_images(client).await?;
-            save_to_cache(cache, &fetched).await;
+            let response = client.inner().list_images().account(account).send().await?;
+            let fetched = response.into_inner();
+            if let Some(c) = cache {
+                c.save_list(&fetched).await;
+            }
             fetched
         }
     };
@@ -1372,26 +1209,30 @@ fn resolve_from_list(images: &[Image], name: &str) -> Result<uuid::Uuid> {
 
 async fn wait_for_image_states(
     image_uuid: uuid::Uuid,
-    target_states: &[CliImageState],
+    target_states: &[ImageState],
     timeout_secs: u64,
-    client: &AnyClient,
+    client: &TypedClient,
 ) -> Result<Image> {
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
 
-    // Round-trip target states into canonical enum for comparison.
-    let canonical_targets: Vec<cloudapi_api::ImageState> = target_states
-        .iter()
-        .map(|s| serde_json::from_value(serde_json::to_value(s)?).map_err(Into::into))
-        .collect::<Result<_>>()?;
-
+    let account = client.effective_account();
     let start = Instant::now();
     let timeout = Duration::from_secs(timeout_secs);
 
     loop {
-        let image = fetch_image(client, image_uuid).await?;
+        let response = client
+            .inner()
+            .get_image()
+            .account(account)
+            .dataset(image_uuid)
+            .send()
+            .await?;
 
-        if canonical_targets
+        let image = response.into_inner();
+
+        // Check if current state matches any target state
+        if target_states
             .iter()
             .any(|s| image.state.as_ref() == Some(s))
         {
@@ -1412,13 +1253,13 @@ async fn wait_for_image_states(
 
 async fn share_image(
     args: ImageShareArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
     let account = client.effective_account();
     let image_uuid = resolve_image_no_verify(&args.image, client, cache).await?;
-    let target_account: uuid::Uuid = args
+    let target_account: cloudapi_client::Uuid = args
         .account
         .parse()
         .map_err(|_| anyhow::anyhow!("Invalid account UUID: {}", args.account))?;
@@ -1431,35 +1272,14 @@ async fn share_image(
         return Ok(());
     }
 
-    // Mirrors `cloudapi_client::TypedClient::share_image`: GET to read ACL,
-    // mutate, POST action=update with the full ACL.
-    let image = fetch_image(client, image_uuid).await?;
-    let mut acl: Vec<uuid::Uuid> = image.acl.unwrap_or_default();
-    if !acl.contains(&target_account) {
-        acl.push(target_account);
-    }
+    let image = client
+        .share_image(account, &image_uuid, target_account)
+        .await?;
 
-    let updated: Image = dispatch_with_types!(client, |c, t| {
-        let resp = c
-            .inner()
-            .update_image()
-            .account(account)
-            .dataset(image_uuid.to_string())
-            .action(t::ImageAction::Update)
-            .body(serde_json::json!({"acl": acl}))
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Image>(serde_json::to_value(&resp)?)?
-    });
-
-    eprintln!(
-        "Shared image {} with account {}",
-        updated.name, args.account
-    );
+    eprintln!("Shared image {} with account {}", image.name, args.account);
 
     if use_json {
-        json::print_json(&updated)?;
+        json::print_json(&image)?;
     }
 
     Ok(())
@@ -1467,13 +1287,13 @@ async fn share_image(
 
 async fn unshare_image(
     args: ImageUnshareArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
     let account = client.effective_account();
     let image_uuid = resolve_image_no_verify(&args.image, client, cache).await?;
-    let target_account: uuid::Uuid = args
+    let target_account: cloudapi_client::Uuid = args
         .account
         .parse()
         .map_err(|_| anyhow::anyhow!("Invalid account UUID: {}", args.account))?;
@@ -1486,31 +1306,17 @@ async fn unshare_image(
         return Ok(());
     }
 
-    let image = fetch_image(client, image_uuid).await?;
-    let mut acl: Vec<uuid::Uuid> = image.acl.unwrap_or_default();
-    acl.retain(|a| a != &target_account);
-
-    let updated: Image = dispatch_with_types!(client, |c, t| {
-        let resp = c
-            .inner()
-            .update_image()
-            .account(account)
-            .dataset(image_uuid.to_string())
-            .action(t::ImageAction::Update)
-            .body(serde_json::json!({"acl": acl}))
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Image>(serde_json::to_value(&resp)?)?
-    });
+    let image = client
+        .unshare_image(account, &image_uuid, target_account)
+        .await?;
 
     eprintln!(
         "Unshared image {} from account {}",
-        updated.name, args.account
+        image.name, args.account
     );
 
     if use_json {
-        json::print_json(&updated)?;
+        json::print_json(&image)?;
     }
 
     Ok(())
@@ -1522,12 +1328,23 @@ async fn unshare_image(
 
 async fn list_image_tags(
     args: ImageTagListArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
+    let account = client.effective_account();
     let image_uuid = resolve_image(&args.image, client, cache).await?;
-    let image = fetch_image(client, image_uuid).await?;
+
+    // Get image to retrieve tags
+    let response = client
+        .inner()
+        .get_image()
+        .account(account)
+        .dataset(image_uuid)
+        .send()
+        .await?;
+
+    let image = response.into_inner();
     let tags = image.tags.unwrap_or_default();
 
     if use_json {
@@ -1551,11 +1368,22 @@ async fn list_image_tags(
 
 async fn get_image_tag(
     args: ImageTagGetArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
+    let account = client.effective_account();
     let image_uuid = resolve_image(&args.image, client, cache).await?;
-    let image = fetch_image(client, image_uuid).await?;
+
+    // Get image to retrieve tags
+    let response = client
+        .inner()
+        .get_image()
+        .account(account)
+        .dataset(image_uuid)
+        .send()
+        .await?;
+
+    let image = response.into_inner();
     let tags = image.tags.unwrap_or_default();
 
     if let Some(value) = tags.get(&args.key) {
@@ -1577,12 +1405,22 @@ async fn get_image_tag(
 
 async fn set_image_tags(
     args: ImageTagSetArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
+    let account = client.effective_account();
     let image_uuid = resolve_image(&args.image, client, cache).await?;
-    let image = fetch_image(client, image_uuid).await?;
 
+    // Get existing image to merge tags
+    let response = client
+        .inner()
+        .get_image()
+        .account(account)
+        .dataset(image_uuid)
+        .send()
+        .await?;
+
+    let image = response.into_inner();
     // Convert Map to HashMap
     let mut tags: HashMap<String, Value> = image.tags.unwrap_or_default().into_iter().collect();
 
@@ -1598,7 +1436,20 @@ async fn set_image_tags(
         }
     }
 
-    update_image_metadata(client, image_uuid, None, None, None, None, None, Some(tags)).await?;
+    // Update image with new tags
+    let request = cloudapi_client::UpdateImageRequest {
+        name: None,
+        version: None,
+        description: None,
+        homepage: None,
+        eula: None,
+        acl: None,
+        tags: Some(tags.clone()),
+    };
+
+    client
+        .update_image_metadata(account, &image_uuid, &request)
+        .await?;
 
     for tag in &args.tags {
         if let Some((key, value)) = tag.split_once('=') {
@@ -1611,7 +1462,7 @@ async fn set_image_tags(
 
 async fn delete_image_tag(
     args: ImageTagDeleteArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
     if !args.force
@@ -1623,9 +1474,19 @@ async fn delete_image_tag(
         return Ok(());
     }
 
+    let account = client.effective_account();
     let image_uuid = resolve_image(&args.image, client, cache).await?;
-    let image = fetch_image(client, image_uuid).await?;
 
+    // Get existing image to remove tag
+    let response = client
+        .inner()
+        .get_image()
+        .account(account)
+        .dataset(image_uuid)
+        .send()
+        .await?;
+
+    let image = response.into_inner();
     // Convert Map to HashMap
     let mut tags: HashMap<String, Value> = image.tags.unwrap_or_default().into_iter().collect();
 
@@ -1637,7 +1498,20 @@ async fn delete_image_tag(
         .into());
     }
 
-    update_image_metadata(client, image_uuid, None, None, None, None, None, Some(tags)).await?;
+    // Update image with removed tag
+    let request = cloudapi_client::UpdateImageRequest {
+        name: None,
+        version: None,
+        description: None,
+        homepage: None,
+        eula: None,
+        acl: None,
+        tags: Some(tags),
+    };
+
+    client
+        .update_image_metadata(account, &image_uuid, &request)
+        .await?;
 
     println!("Deleted tag {}", args.key);
 
@@ -1647,32 +1521,19 @@ async fn delete_image_tag(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use cloudapi_api::{ImageState, ImageType};
+    use cloudapi_client::types::ImageType;
 
     /// Build a minimal Image with sensible defaults for testing.
     fn test_image() -> Image {
-        Image {
-            id: uuid::Uuid::nil(),
-            name: "test".to_string(),
-            version: "1.0.0".to_string(),
-            os: "linux".to_string(),
-            image_type: ImageType::ZoneDataset,
-            state: Some(ImageState::Active),
-            description: None,
-            homepage: None,
-            eula: None,
-            requirements: Default::default(),
-            files: None,
-            tags: None,
-            acl: None,
-            owner: None,
-            public: None,
-            published_at: None,
-            origin: None,
-            image_size: None,
-            error: None,
-            role_tag: None,
-        }
+        Image::builder()
+            .id(uuid::Uuid::nil())
+            .name("test")
+            .version("1.0.0")
+            .os("linux")
+            .type_(ImageType::ZoneDataset)
+            .state(Some(ImageState::Active))
+            .try_into()
+            .unwrap()
     }
 
     #[test]

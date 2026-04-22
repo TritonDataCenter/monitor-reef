@@ -18,8 +18,8 @@ mod user;
 
 use anyhow::Result;
 use clap::Subcommand;
+use cloudapi_client::TypedClient;
 
-use crate::client::AnyClient;
 use crate::output::table::TableFormatArgs;
 
 pub use accesskeys::{RbacAccesskeyCommand, UserAccesskeysArgs};
@@ -76,7 +76,7 @@ pub enum RbacCommand {
 }
 
 impl RbacCommand {
-    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
             Self::Info(args) => apply::rbac_info(args, client, use_json).await,
             Self::Apply(args) => apply::rbac_apply(args, client, use_json).await,

@@ -8,14 +8,12 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_api::Policy;
+use cloudapi_client::TypedClient;
 use serde::Deserialize;
 
-use crate::client::AnyClient;
 use crate::define_columns;
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
-use crate::{dispatch, dispatch_with_types};
 
 use super::editor;
 
@@ -130,7 +128,7 @@ pub struct PolicyDeleteArgs {
 }
 
 impl RbacPolicyCommand {
-    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         // If a subcommand is provided, use the modern pattern
         if let Some(cmd) = self.command {
             return match cmd {
@@ -185,26 +183,24 @@ impl RbacPolicyCommand {
 
 pub async fn list_policies(
     table_args: &TableFormatArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
     let account = client.effective_account();
-    let policies: Vec<Policy> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .list_policies()
-            .account(account)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Vec<Policy>>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .list_policies()
+        .account(account)
+        .send()
+        .await?;
+
+    let policies = response.into_inner();
 
     if use_json {
         json::print_json_stream(&policies)?;
     } else {
         define_columns! {
-            PolicyColumn for Policy, long_from: 3, {
+            PolicyColumn for cloudapi_client::types::Policy, long_from: 3, {
                 Name("NAME") => |policy| policy.name.clone(),
                 Description("DESCRIPTION") => |policy| {
                     policy.description.clone().unwrap_or_else(|| "-".to_string())
@@ -226,20 +222,18 @@ pub async fn list_policies(
     Ok(())
 }
 
-async fn get_policy(args: PolicyGetArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn get_policy(args: PolicyGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
 
-    let policy: Policy = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .get_policy()
-            .account(account)
-            .policy(&args.policy)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Policy>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .get_policy()
+        .account(account)
+        .policy(&args.policy)
+        .send()
+        .await?;
+
+    let policy = response.into_inner();
 
     if use_json {
         json::print_json(&policy)?;
@@ -259,7 +253,7 @@ async fn get_policy(args: PolicyGetArgs, client: &AnyClient, use_json: bool) -> 
     Ok(())
 }
 
-async fn create_policy(args: PolicyCreateArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn create_policy(args: PolicyCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
 
     if args.rule.is_empty() {
@@ -268,27 +262,21 @@ async fn create_policy(args: PolicyCreateArgs, client: &AnyClient, use_json: boo
         ));
     }
 
-    let name = args.name.clone();
-    let rules = args.rule.clone();
-    let description = args.description.clone();
+    let request = cloudapi_client::types::CreatePolicyRequest {
+        name: args.name.clone(),
+        rules: args.rule,
+        description: args.description,
+    };
 
-    let policy: Policy = dispatch_with_types!(client, |c, t| {
-        let request = t::CreatePolicyRequest {
-            name: name.clone(),
-            rules: rules.clone(),
-            description: description.clone(),
-        };
-        let resp = c
-            .inner()
-            .create_policy()
-            .account(account)
-            .body(request)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Policy>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .create_policy()
+        .account(account)
+        .body(request)
+        .send()
+        .await?;
 
+    let policy = response.into_inner();
     println!("Created policy '{}' ({})", policy.name, policy.id);
 
     if use_json {
@@ -298,35 +286,29 @@ async fn create_policy(args: PolicyCreateArgs, client: &AnyClient, use_json: boo
     Ok(())
 }
 
-async fn update_policy(args: PolicyUpdateArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn update_policy(args: PolicyUpdateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
 
-    let name = args.name.clone();
-    let rules_opt = if args.rule.is_empty() {
-        None
-    } else {
-        Some(args.rule.clone())
+    let request = cloudapi_client::types::UpdatePolicyRequest {
+        name: args.name,
+        rules: if args.rule.is_empty() {
+            None
+        } else {
+            Some(args.rule)
+        },
+        description: args.description,
     };
-    let description = args.description.clone();
 
-    let policy: Policy = dispatch_with_types!(client, |c, t| {
-        let request = t::UpdatePolicyRequest {
-            name: name.clone(),
-            rules: rules_opt.clone(),
-            description: description.clone(),
-        };
-        let resp = c
-            .inner()
-            .update_policy()
-            .account(account)
-            .policy(&args.policy)
-            .body(request)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Policy>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .update_policy()
+        .account(account)
+        .policy(&args.policy)
+        .body(request)
+        .send()
+        .await?;
 
+    let policy = response.into_inner();
     println!("Updated policy '{}'", policy.name);
 
     if use_json {
@@ -336,7 +318,7 @@ async fn update_policy(args: PolicyUpdateArgs, client: &AnyClient, use_json: boo
     Ok(())
 }
 
-pub async fn delete_policies(args: PolicyDeleteArgs, client: &AnyClient) -> Result<()> {
+pub async fn delete_policies(args: PolicyDeleteArgs, client: &TypedClient) -> Result<()> {
     for policy_ref in &args.policies {
         if !args.force {
             use dialoguer::Confirm;
@@ -354,26 +336,22 @@ pub async fn delete_policies(args: PolicyDeleteArgs, client: &AnyClient) -> Resu
         // Verify policy exists via GET first (matches node-triton's getPolicy call),
         // then delete using the original reference (name or UUID).
         if uuid::Uuid::parse_str(policy_ref).is_err() {
-            dispatch!(client, |c| {
-                c.inner()
-                    .get_policy()
-                    .account(account)
-                    .policy(policy_ref)
-                    .send()
-                    .await?;
-                Ok::<(), anyhow::Error>(())
-            })?;
-        }
-
-        dispatch!(client, |c| {
-            c.inner()
-                .delete_policy()
+            client
+                .inner()
+                .get_policy()
                 .account(account)
                 .policy(policy_ref)
                 .send()
                 .await?;
-            Ok::<(), anyhow::Error>(())
-        })?;
+        }
+
+        client
+            .inner()
+            .delete_policy()
+            .account(account)
+            .policy(policy_ref)
+            .send()
+            .await?;
 
         println!("Deleted policy '{}'", policy_ref);
     }
@@ -389,7 +367,7 @@ pub async fn delete_policies(args: PolicyDeleteArgs, client: &AnyClient) -> Resu
 /// - Interactive prompts (when file is None)
 async fn add_policy_from_file(
     file: Option<&str>,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
     use std::io::{self, Read};
@@ -476,23 +454,21 @@ async fn add_policy_from_file(
 
     // Create the policy
     let account = client.effective_account();
-    let policy: Policy = dispatch_with_types!(client, |c, t| {
-        let request = t::CreatePolicyRequest {
-            name: name.clone(),
-            rules: rules.clone(),
-            description: description.clone(),
-        };
-        let resp = c
-            .inner()
-            .create_policy()
-            .account(account)
-            .body(request)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Policy>(serde_json::to_value(&resp)?)?
-    });
+    let request = cloudapi_client::types::CreatePolicyRequest {
+        name: name.clone(),
+        rules,
+        description,
+    };
 
+    let response = client
+        .inner()
+        .create_policy()
+        .account(account)
+        .body(request)
+        .send()
+        .await?;
+
+    let policy = response.into_inner();
     println!("Created policy '{}' ({})", policy.name, policy.id);
 
     if use_json {
@@ -516,7 +492,7 @@ struct PolicyEdit {
 }
 
 /// Convert a Policy to commented YAML for editing
-fn policy_to_commented_yaml(policy: &Policy, account: &str) -> String {
+fn policy_to_commented_yaml(policy: &cloudapi_client::types::Policy, account: &str) -> String {
     let rules = editor::format_yaml_list(&policy.rules, "  ");
     let description = policy.description.as_deref().unwrap_or("");
 
@@ -546,21 +522,18 @@ rules:
 }
 
 /// Edit policy in $EDITOR (legacy -e flag support)
-async fn edit_policy_in_editor(policy_ref: &str, client: &AnyClient) -> Result<()> {
+async fn edit_policy_in_editor(policy_ref: &str, client: &TypedClient) -> Result<()> {
     let account = client.effective_account().to_owned();
 
     // Fetch current policy
-    let policy: Policy = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .get_policy()
-            .account(&account)
-            .policy(policy_ref)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Policy>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .get_policy()
+        .account(&account)
+        .policy(policy_ref)
+        .send()
+        .await?;
+    let policy = response.into_inner();
 
     let filename = format!("{}-policy-{}.yaml", account, policy.name);
     let original_yaml = policy_to_commented_yaml(&policy, &account);
@@ -585,26 +558,22 @@ async fn edit_policy_in_editor(policy_ref: &str, client: &AnyClient) -> Result<(
                     continue;
                 }
 
-                // Build update request and apply
-                let name = Some(edited.name.clone());
-                let rules_opt = Some(edited.rules.clone());
-                let description = edited.description.clone();
+                // Build update request
+                let request = cloudapi_client::types::UpdatePolicyRequest {
+                    name: Some(edited.name.clone()),
+                    rules: Some(edited.rules),
+                    description: edited.description,
+                };
 
-                dispatch_with_types!(client, |c, t| {
-                    let request = t::UpdatePolicyRequest {
-                        name: name.clone(),
-                        rules: rules_opt.clone(),
-                        description: description.clone(),
-                    };
-                    c.inner()
-                        .update_policy()
-                        .account(&account)
-                        .policy(&policy.name)
-                        .body(request)
-                        .send()
-                        .await?;
-                    Ok::<(), anyhow::Error>(())
-                })?;
+                // Update the policy
+                client
+                    .inner()
+                    .update_policy()
+                    .account(&account)
+                    .policy(&policy.name)
+                    .body(request)
+                    .send()
+                    .await?;
 
                 println!("Updated policy \"{}\"", edited.name);
                 return Ok(());

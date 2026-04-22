@@ -8,12 +8,10 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_api::SshKey;
+use cloudapi_client::TypedClient;
 
-use crate::client::AnyClient;
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
-use crate::{dispatch, dispatch_with_types};
 
 use super::common::resolve_user;
 
@@ -46,7 +44,7 @@ pub struct RbacKeyCommand {
 }
 
 impl RbacKeyCommand {
-    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         if self.add {
             // -a/--add: add key from file
             if self.args.len() < 2 {
@@ -121,21 +119,23 @@ pub struct UserKeyDeleteArgs {
     pub force: bool,
 }
 
-pub async fn list_user_keys(args: UserKeysArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+pub async fn list_user_keys(
+    args: UserKeysArgs,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
     let account = client.effective_account();
     let user_id = resolve_user(&args.user, client).await?;
 
-    let keys: Vec<SshKey> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .list_user_keys()
-            .account(account)
-            .uuid(&user_id)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Vec<SshKey>>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .list_user_keys()
+        .account(account)
+        .uuid(&user_id)
+        .send()
+        .await?;
+
+    let keys = response.into_inner();
 
     if use_json {
         json::print_json_stream(&keys)?;
@@ -154,22 +154,24 @@ pub async fn list_user_keys(args: UserKeysArgs, client: &AnyClient, use_json: bo
     Ok(())
 }
 
-pub async fn get_user_key(args: UserKeyGetArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+pub async fn get_user_key(
+    args: UserKeyGetArgs,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
     let account = client.effective_account();
     let user_id = resolve_user(&args.user, client).await?;
 
-    let key: SshKey = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .get_user_key()
-            .account(account)
-            .uuid(&user_id)
-            .name(&args.key)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<SshKey>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .get_user_key()
+        .account(account)
+        .uuid(&user_id)
+        .name(&args.key)
+        .send()
+        .await?;
+
+    let key = response.into_inner();
 
     if use_json {
         json::print_json(&key)?;
@@ -182,7 +184,11 @@ pub async fn get_user_key(args: UserKeyGetArgs, client: &AnyClient, use_json: bo
     Ok(())
 }
 
-pub async fn add_user_key(args: UserKeyAddArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+pub async fn add_user_key(
+    args: UserKeyAddArgs,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
     let account = client.effective_account();
     let user_id = resolve_user(&args.user, client).await?;
 
@@ -196,24 +202,21 @@ pub async fn add_user_key(args: UserKeyAddArgs, client: &AnyClient, use_json: bo
         args.key.clone()
     };
 
-    let name = args.name.clone();
-    let key: SshKey = dispatch_with_types!(client, |c, t| {
-        let request = t::CreateSshKeyRequest {
-            name: name.clone(),
-            key: key_data.clone(),
-        };
-        let resp = c
-            .inner()
-            .create_user_key()
-            .account(account)
-            .uuid(&user_id)
-            .body(request)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<SshKey>(serde_json::to_value(&resp)?)?
-    });
+    let request = cloudapi_client::types::CreateSshKeyRequest {
+        name: args.name.clone(),
+        key: key_data,
+    };
 
+    let response = client
+        .inner()
+        .create_user_key()
+        .account(account)
+        .uuid(&user_id)
+        .body(request)
+        .send()
+        .await?;
+
+    let key = response.into_inner();
     println!("Added key '{}' to user", key.name);
 
     if use_json {
@@ -223,7 +226,7 @@ pub async fn add_user_key(args: UserKeyAddArgs, client: &AnyClient, use_json: bo
     Ok(())
 }
 
-pub async fn delete_user_key(args: UserKeyDeleteArgs, client: &AnyClient) -> Result<()> {
+pub async fn delete_user_key(args: UserKeyDeleteArgs, client: &TypedClient) -> Result<()> {
     if !args.force {
         use dialoguer::Confirm;
         if !Confirm::new()
@@ -242,16 +245,14 @@ pub async fn delete_user_key(args: UserKeyDeleteArgs, client: &AnyClient) -> Res
     let account = client.effective_account();
     let user_id = resolve_user(&args.user, client).await?;
 
-    dispatch!(client, |c| {
-        c.inner()
-            .delete_user_key()
-            .account(account)
-            .uuid(&user_id)
-            .name(&args.key)
-            .send()
-            .await?;
-        Ok::<(), anyhow::Error>(())
-    })?;
+    client
+        .inner()
+        .delete_user_key()
+        .account(account)
+        .uuid(&user_id)
+        .name(&args.key)
+        .send()
+        .await?;
 
     println!("Deleted key '{}' from user '{}'", args.key, args.user);
 
@@ -263,7 +264,7 @@ async fn add_key_from_file(
     user: &str,
     file: &str,
     name: Option<String>,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
     use std::io::{self, Read};
@@ -295,23 +296,21 @@ async fn add_key_from_file(
         }
     };
 
-    let key: SshKey = dispatch_with_types!(client, |c, t| {
-        let request = t::CreateSshKeyRequest {
-            name: key_name.clone(),
-            key: key_data.clone(),
-        };
-        let resp = c
-            .inner()
-            .create_user_key()
-            .account(account)
-            .uuid(&user_id)
-            .body(request)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<SshKey>(serde_json::to_value(&resp)?)?
-    });
+    let request = cloudapi_client::types::CreateSshKeyRequest {
+        name: key_name.clone(),
+        key: key_data,
+    };
 
+    let response = client
+        .inner()
+        .create_user_key()
+        .account(account)
+        .uuid(&user_id)
+        .body(request)
+        .send()
+        .await?;
+
+    let key = response.into_inner();
     println!(
         "Added user {} key \"{}\"{}",
         user,
@@ -331,7 +330,7 @@ async fn add_key_from_file(
 }
 
 /// Delete multiple keys (legacy -d flag support)
-async fn delete_keys(user: &str, keys: Vec<String>, yes: bool, client: &AnyClient) -> Result<()> {
+async fn delete_keys(user: &str, keys: Vec<String>, yes: bool, client: &TypedClient) -> Result<()> {
     let account = client.effective_account();
     let user_id = resolve_user(user, client).await?;
 
@@ -347,16 +346,14 @@ async fn delete_keys(user: &str, keys: Vec<String>, yes: bool, client: &AnyClien
             }
         }
 
-        dispatch!(client, |c| {
-            c.inner()
-                .delete_user_key()
-                .account(account)
-                .uuid(&user_id)
-                .name(key)
-                .send()
-                .await?;
-            Ok::<(), anyhow::Error>(())
-        })?;
+        client
+            .inner()
+            .delete_user_key()
+            .account(account)
+            .uuid(&user_id)
+            .name(key)
+            .send()
+            .await?;
 
         println!("Deleted user {} key \"{}\"", user, key);
     }

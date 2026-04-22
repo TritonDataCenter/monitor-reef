@@ -15,11 +15,9 @@ use std::process::Command;
 
 use anyhow::{Context, Result};
 use clap::Args;
-use cloudapi_api::Machine;
+use cloudapi_client::TypedClient;
+use cloudapi_client::types::Machine;
 use serde_json::Value;
-
-use crate::client::AnyClient;
-use crate::dispatch;
 
 /// Tag constants for SSH configuration on instances
 const TAG_SSH_IP: &str = "tritoncli.ssh.ip";
@@ -98,30 +96,9 @@ fn parse_instance_arg(instance: &str) -> (Option<&str>, &str) {
     (None, instance)
 }
 
-/// Fetch a machine in canonical `cloudapi_api::Machine` form so the SSH
-/// config resolution below doesn't depend on which client was used.
-async fn fetch_machine(
-    client: &AnyClient,
-    account: &str,
-    machine_id: uuid::Uuid,
-) -> Result<Machine> {
-    let machine: Machine = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .get_machine()
-            .account(account)
-            .machine(machine_id)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Machine>(serde_json::to_value(&resp)?)?
-    });
-    Ok(machine)
-}
-
 pub async fn run(
     mut args: SshArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
     // Support USER@instance syntax (e.g. "debian@myvm"). The user portion
@@ -134,7 +111,8 @@ pub async fn run(
     let account = client.effective_account();
 
     // Get instance details
-    let machine = fetch_machine(client, account, machine_id)
+    let machine = client
+        .get_machine(account, &machine_id)
         .await
         .context("Failed to get instance")?;
 
@@ -149,7 +127,7 @@ pub async fn run(
 async fn resolve_ssh_config(
     args: &SshArgs,
     machine: &Machine,
-    client: &AnyClient,
+    client: &TypedClient,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<SshConfig> {
     // Determine target IP - check tritoncli.ssh.ip tag first, then primary_ip
@@ -202,7 +180,7 @@ async fn resolve_ssh_config(
 /// Resolve SSH proxy configuration from instance tags
 async fn resolve_proxy_config(
     machine: &Machine,
-    client: &AnyClient,
+    client: &TypedClient,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<Option<ProxyConfig>> {
     // Check if instance has tritoncli.ssh.proxy tag
@@ -218,7 +196,8 @@ async fn resolve_proxy_config(
         .await
         .with_context(|| format!("Failed to resolve SSH proxy instance '{}'", proxy_ref))?;
 
-    let proxy_machine = fetch_machine(client, account, proxy_id)
+    let proxy_machine = client
+        .get_machine(account, &proxy_id)
         .await
         .with_context(|| format!("Failed to get SSH proxy instance '{}'", proxy_ref))?;
 
@@ -254,7 +233,7 @@ async fn resolve_proxy_config(
 /// Fetch an image by UUID and get its default user
 async fn fetch_image_default_user(
     image_id: uuid::Uuid,
-    client: &AnyClient,
+    client: &TypedClient,
     cache: Option<&crate::cache::ImageCache>,
 ) -> String {
     // Try cache first (uses longer GET_TTL)
@@ -273,68 +252,40 @@ async fn fetch_image_default_user(
 
     let account = client.effective_account();
 
-    // Cache miss — fetch from API, convert to a tags map.
-    let tags_map: Option<serde_json::Map<String, Value>> = dispatch!(client, |c| {
-        match c
-            .inner()
-            .get_image()
-            .account(account)
-            .dataset(image_id)
-            .send()
-            .await
-        {
-            Ok(resp) => {
-                let value = serde_json::to_value(resp.into_inner()).ok();
-                value
-                    .and_then(|v| v.get("tags").cloned())
-                    .and_then(|t| serde_json::from_value(t).ok())
-            }
-            Err(e) => {
-                tracing::debug!("Failed to fetch image for default user, using root: {}", e);
-                None
-            }
-        }
-    });
+    // Cache miss — fetch from API
+    let image_result = client
+        .inner()
+        .get_image()
+        .account(account)
+        .dataset(image_id)
+        .send()
+        .await;
 
-    if let Some(tags) = tags_map
-        && let Some(user) = get_tag_string(&tags, TAG_DEFAULT_USER)
-    {
-        return user;
+    match image_result {
+        Ok(response) => {
+            let image = response.into_inner();
+            if let Some(ref tags) = image.tags
+                && let Some(user) = get_tag_string(tags, TAG_DEFAULT_USER)
+            {
+                return user;
+            }
+            "root".to_string()
+        }
+        Err(e) => {
+            tracing::debug!("Failed to fetch image for default user, using root: {}", e);
+            "root".to_string()
+        }
     }
-    "root".to_string()
 }
 
-/// Extract a string value from tags.
-///
-/// The canonical `cloudapi_api::Machine.tags` aliases
-/// `vmapi_api::Tags = HashMap<String, Value>`, whereas cache-loaded
-/// `Image.tags` use `serde_json::Map<String, Value>`. We use a trait
-/// bound so both key/value map types work.
-fn get_tag_string<M>(tags: &M, key: &str) -> Option<String>
-where
-    M: TagsMap,
-{
-    tags.get_tag(key).and_then(|v| match v {
+/// Extract a string value from tags (uses serde_json::Map from generated types)
+fn get_tag_string(tags: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
+    tags.get(key).and_then(|v| match v {
         Value::String(s) => Some(s.clone()),
+        // Also handle if someone stored it as a number
         Value::Number(n) => Some(n.to_string()),
         _ => None,
     })
-}
-
-trait TagsMap {
-    fn get_tag(&self, key: &str) -> Option<&Value>;
-}
-
-impl TagsMap for std::collections::HashMap<String, Value> {
-    fn get_tag(&self, key: &str) -> Option<&Value> {
-        self.get(key)
-    }
-}
-
-impl TagsMap for serde_json::Map<String, Value> {
-    fn get_tag(&self, key: &str) -> Option<&Value> {
-        self.get(key)
-    }
 }
 
 /// Build and execute the SSH command

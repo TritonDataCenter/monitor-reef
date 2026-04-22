@@ -9,18 +9,13 @@
 pub mod paths;
 pub mod profile;
 
-#[allow(unused_imports)] // TritonApiProfile used by upcoming auth commits
-pub use profile::{Config, Profile, SshKeyProfile, TritonApiProfile};
+pub use profile::{Config, Profile};
 
 use anyhow::Result;
 
 /// Build an "env" profile from environment variables
 ///
 /// Reference: node-triton lib/config.js:275-317
-///
-/// env-profile is always SSH-kind — the legacy `TRITON_*` / `SDC_*` env
-/// vocabulary is SSH-shaped. TritonAPI (JWT) profiles must be managed via
-/// `triton login` + on-disk profile files; there is no env-var shortcut.
 pub fn env_profile() -> Result<Profile> {
     let url = std::env::var("TRITON_URL")
         .or_else(|_| std::env::var("SDC_URL"))
@@ -34,29 +29,20 @@ pub fn env_profile() -> Result<Profile> {
         .or_else(|_| std::env::var("SDC_KEY_ID"))
         .map_err(|_| anyhow::anyhow!("TRITON_KEY_ID or SDC_KEY_ID must be set"))?;
 
-    let mut ssh = SshKeyProfile {
-        name: "env".to_string(),
-        url,
-        account,
-        key_id,
-        insecure: false,
-        user: None,
-        roles: None,
-        act_as_account: None,
-    };
+    let mut profile = Profile::new("env".to_string(), url, account, key_id);
 
     // Optional settings
     if let Ok(user) = std::env::var("TRITON_USER").or_else(|_| std::env::var("SDC_USER")) {
-        ssh.user = Some(user);
+        profile.user = Some(user);
     }
 
     if let Ok(insecure) =
         std::env::var("TRITON_TLS_INSECURE").or_else(|_| std::env::var("SDC_TLS_INSECURE"))
     {
-        ssh.insecure = insecure == "1" || insecure.to_lowercase() == "true";
+        profile.insecure = insecure == "1" || insecure.to_lowercase() == "true";
     }
 
-    Ok(Profile::SshKey(ssh))
+    Ok(profile)
 }
 
 /// Check if all required environment variables for an env profile are available.

@@ -10,12 +10,11 @@ use std::collections::HashMap;
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_api::{Image, Machine, VmapiBrand};
+use cloudapi_client::TypedClient;
+use cloudapi_client::pagination::{DEFAULT_PAGE_SIZE, paginate_all};
+use cloudapi_client::types::{Brand, Machine};
 use serde::Serialize;
-use triton_pagination::{DEFAULT_PAGE_SIZE, paginate_all};
 
-use crate::client::AnyClient;
-use crate::dispatch_with_types;
 use crate::output::table::{TableBuilder, TableFormatArgs, col};
 use crate::output::{self, enum_to_display, json, parse_filter_enum};
 
@@ -47,7 +46,7 @@ impl AugmentedMachine {
 
         let flags = {
             let mut flags = Vec::new();
-            if m.brand == VmapiBrand::Bhyve {
+            if m.brand == Brand::Bhyve {
                 flags.push('B');
             }
             if m.docker.unwrap_or(false) {
@@ -56,7 +55,7 @@ impl AugmentedMachine {
             if m.firewall_enabled.unwrap_or(false) {
                 flags.push('F');
             }
-            if m.brand == VmapiBrand::Kvm {
+            if m.brand == Brand::Kvm {
                 flags.push('K');
             }
             if m.deletion_protection.unwrap_or(false) {
@@ -205,7 +204,7 @@ fn apply_positional_filters(
 
 pub async fn run(
     mut args: ListArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
@@ -225,89 +224,60 @@ pub async fn run(
 
     // Clone filter values that need to move into the pagination closure
     let name = args.name.clone();
-    // Serialize each enum filter once, as wire strings, so each dispatch
-    // arm can deserialize back to its per-client enum (both clients use
-    // identical wire formats from the shared OpenAPI schema).
-    let state_str = args
-        .state
-        .as_ref()
-        .and_then(|s| serde_json::to_value(s).ok())
-        .and_then(|v| v.as_str().map(|s| s.to_string()));
-    let brand_str = args
-        .brand
-        .as_ref()
-        .and_then(|b| serde_json::to_value(b).ok())
-        .and_then(|v| v.as_str().map(|s| s.to_string()));
-    let machine_type_str = machine_type
-        .as_ref()
-        .and_then(|t| serde_json::to_value(t).ok())
-        .and_then(|v| v.as_str().map(|s| s.to_string()));
+    let state = args.state;
+    let brand = args.brand;
     let memory = args.memory;
     let docker = args.docker;
     let credentials = args.credentials;
     let tags = args.tag.clone();
     let max_results = args.limit;
 
-    // Pagination captures the (variant-agnostic) filter state and returns
-    // a `Vec<Machine>` of canonical `cloudapi_api::Machine` values.
-    let fetch_machines = async {
-        paginate_all(DEFAULT_PAGE_SIZE, max_results, |limit, offset| {
-            let account = account.to_string();
-            let name = name.clone();
-            let tags = tags.clone();
-            let state_str = state_str.clone();
-            let brand_str = brand_str.clone();
-            let machine_type_str = machine_type_str.clone();
-            async move {
-                let page: Vec<Machine> = dispatch_with_types!(client, |c, t| {
-                    let mut req = c.inner().list_machines().account(&account);
-                    if let Some(name) = &name {
-                        req = req.name(name);
-                    }
-                    if let Some(state_str) = &state_str {
-                        let state: t::MachineState =
-                            serde_json::from_value(serde_json::Value::String(state_str.clone()))?;
-                        req = req.state(state);
-                    }
-                    if let Some(image) = image_uuid {
-                        req = req.image(image);
-                    }
-                    if let Some(brand_str) = &brand_str {
-                        let brand: t::Brand =
-                            serde_json::from_value(serde_json::Value::String(brand_str.clone()))?;
-                        req = req.brand(brand);
-                    }
-                    if let Some(memory) = memory {
-                        req = req.memory(memory as i64);
-                    }
-                    if let Some(docker) = docker {
-                        req = req.docker(docker);
-                    }
-                    if credentials {
-                        req = req.credentials(true);
-                    }
-                    if let Some(mt_str) = &machine_type_str {
-                        let mt: t::MachineType =
-                            serde_json::from_value(serde_json::Value::String(mt_str.clone()))?;
-                        req = req.type_(mt);
-                    }
-                    // Handle tags - CloudAPI uses tag.key=value format
-                    if let Some(tags) = &tags {
-                        for tag in tags {
-                            if let Some((key, value)) = tag.split_once('=') {
-                                req = req.tag(format!("tag.{}={}", key, value));
-                            }
-                        }
-                    }
-                    req = req.limit(limit).offset(offset);
-                    let resp = req.send().await?.into_inner();
-                    serde_json::from_value::<Vec<Machine>>(serde_json::to_value(&resp)?)?
-                });
-                Ok::<_, anyhow::Error>(page)
+    let fetch_machines = paginate_all(DEFAULT_PAGE_SIZE, max_results, |limit, offset| {
+        let account = account.to_string();
+        let name = name.clone();
+        let tags = tags.clone();
+        async move {
+            let mut req = client.inner().list_machines().account(&account);
+
+            if let Some(name) = &name {
+                req = req.name(name);
             }
-        })
-        .await
-    };
+            if let Some(state) = state {
+                req = req.state(state);
+            }
+            if let Some(image) = image_uuid {
+                req = req.image(image);
+            }
+            if let Some(brand) = brand {
+                req = req.brand(brand);
+            }
+            if let Some(memory) = memory {
+                req = req.memory(memory as i64);
+            }
+            if let Some(docker) = docker {
+                req = req.docker(docker);
+            }
+            if credentials {
+                req = req.credentials(true);
+            }
+            if let Some(mt) = machine_type {
+                req = req.type_(mt);
+            }
+            // Handle tags - CloudAPI uses tag.key=value format
+            if let Some(tags) = &tags {
+                for tag in tags {
+                    if let Some((key, value)) = tag.split_once('=') {
+                        req = req.tag(format!("tag.{}={}", key, value));
+                    }
+                }
+            }
+
+            req = req.limit(limit).offset(offset);
+
+            let resp = req.send().await?;
+            Ok::<_, cloudapi_client::Error<cloudapi_client::types::Error>>(resp.into_inner())
+        }
+    });
 
     // Try loading images from cache first to avoid a parallel API call
     let cached_images = match cache {
@@ -324,36 +294,20 @@ pub async fn run(
             .collect();
         (machines, map)
     } else {
-        // Cache miss — fetch machines and images in parallel. Images come
-        // back per-client typed, so we convert to `cloudapi_api::Image`
-        // for the cache write and name map.
-        let images_future = async {
-            let images: Vec<Image> = dispatch_with_types!(client, |c, t| {
-                let resp = c
-                    .inner()
-                    .list_images()
-                    .account(account)
-                    .state(t::ImageState::All)
-                    .send()
-                    .await?
-                    .into_inner();
-                serde_json::from_value::<Vec<Image>>(serde_json::to_value(&resp)?)?
-            });
-            Ok::<_, anyhow::Error>(images)
-        };
-        let (machines_result, images_result) = tokio::join!(fetch_machines, images_future);
+        // Cache miss — fetch machines and images in parallel
+        let images_req = client
+            .inner()
+            .list_images()
+            .account(account)
+            .state(cloudapi_client::types::ImageState::All)
+            .send();
+        let (machines_result, images_response) = tokio::join!(fetch_machines, images_req);
         let machines = machines_result?;
-        let map: HashMap<uuid::Uuid, String> = match images_result {
-            Ok(images) => {
+        let map: HashMap<uuid::Uuid, String> = match images_response {
+            Ok(r) => {
+                let images = r.into_inner();
                 if let Some(c) = cache {
-                    // Cache uses the Progenitor image type; round-trip
-                    // back to what the cache expects.
-                    if let Ok(gen_images) = serde_json::from_value::<
-                        Vec<cloudapi_client::types::Image>,
-                    >(serde_json::to_value(&images)?)
-                    {
-                        c.save_list(&gen_images).await;
-                    }
+                    c.save_list(&images).await;
                 }
                 images
                     .into_iter()
@@ -418,7 +372,7 @@ fn print_machines_table(
         col("STATE", |m: &&Machine| enum_to_display(&m.state)),
         col("FLAGS", |m: &&Machine| {
             let mut flags = Vec::new();
-            if m.brand == VmapiBrand::Bhyve {
+            if m.brand == Brand::Bhyve {
                 flags.push('B');
             }
             if m.docker.unwrap_or(false) {
@@ -427,7 +381,7 @@ fn print_machines_table(
             if m.firewall_enabled.unwrap_or(false) {
                 flags.push('F');
             }
-            if m.brand == VmapiBrand::Kvm {
+            if m.brand == Brand::Kvm {
                 flags.push('K');
             }
             if m.deletion_protection.unwrap_or(false) {

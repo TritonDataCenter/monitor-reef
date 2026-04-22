@@ -6,16 +6,13 @@
 
 //! Instance tag subcommands
 
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::types::MachineState;
+use cloudapi_client::TypedClient;
+use cloudapi_client::types::TagsRequest;
 use serde_json::{Map, Value};
-
-use crate::client::AnyClient;
-use crate::dispatch;
 
 #[derive(Subcommand, Clone)]
 pub enum TagCommand {
@@ -139,7 +136,7 @@ pub struct TagReplaceAllArgs {
 }
 
 impl TagCommand {
-    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
             Self::List(args) => list_tags(args, client, use_json).await,
             Self::Get(args) => get_tag(args, client).await,
@@ -150,60 +147,24 @@ impl TagCommand {
     }
 }
 
-/// Fetch the current tags map for `machine_id` as a canonical JSON object
-/// (wire representation). The per-client `TagsRequest` type alias is
-/// structurally a `HashMap<String, Value>` but the concrete generated type
-/// differs, so we round-trip through `serde_json::Value` at the boundary.
-async fn fetch_machine_tags(
-    client: &AnyClient,
-    account: &str,
-    machine_id: uuid::Uuid,
-) -> Result<HashMap<String, Value>> {
-    let tags: HashMap<String, Value> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .list_machine_tags()
-            .account(account)
-            .machine(machine_id)
-            .send()
-            .await?
-            .into_inner();
-        let value = serde_json::to_value(&resp)?;
-        serde_json::from_value::<HashMap<String, Value>>(value)?
-    });
-    Ok(tags)
-}
-
-/// Fetch the machine state as the canonical `cloudapi_api::MachineState`.
-async fn fetch_machine_state(
-    client: &AnyClient,
-    account: &str,
-    machine_id: uuid::Uuid,
-) -> Result<MachineState> {
-    let state: MachineState = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .get_machine()
-            .account(account)
-            .machine(machine_id)
-            .send()
-            .await?
-            .into_inner();
-        let state_value = serde_json::to_value(resp.state)?;
-        serde_json::from_value::<MachineState>(state_value)?
-    });
-    Ok(state)
-}
-
 /// List tags on an instance
 ///
 /// Output format matches node-triton:
 /// - Without -j: pretty-printed JSON
 /// - With -j: compact JSON
-pub async fn list_tags(args: TagListArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+pub async fn list_tags(args: TagListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
-    let tags = fetch_machine_tags(client, account, machine_id).await?;
+
+    let response = client
+        .inner()
+        .list_machine_tags()
+        .account(account)
+        .machine(machine_id)
+        .send()
+        .await?;
+
+    let tags = response.into_inner();
 
     // node-triton always outputs JSON for tag list
     // -j means compact JSON, otherwise pretty-print
@@ -221,40 +182,34 @@ pub async fn list_tags(args: TagListArgs, client: &AnyClient, use_json: bool) ->
 /// Output format matches node-triton:
 /// - Without -j: plain value (string representation)
 /// - With -j: JSON-encoded value (e.g., "bar" for string, true for bool)
-async fn get_tag(args: TagGetArgs, client: &AnyClient) -> Result<()> {
+async fn get_tag(args: TagGetArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
 
-    // The per-tag endpoint returns a bare string; the full map gives the
-    // typed value (bool / number / string). Fall back to the endpoint
-    // response when the key isn't found in the list (unlikely but safe).
-    let (single_value, tags): (String, HashMap<String, Value>) = dispatch!(client, |c| {
-        let single = c
-            .inner()
-            .get_machine_tag()
-            .account(account)
-            .machine(machine_id)
-            .tag(&args.key)
-            .send()
-            .await?
-            .into_inner();
-        let list = c
-            .inner()
-            .list_machine_tags()
-            .account(account)
-            .machine(machine_id)
-            .send()
-            .await?
-            .into_inner();
-        let list_value = serde_json::to_value(&list)?;
-        let tags = serde_json::from_value::<HashMap<String, Value>>(list_value)?;
-        (single, tags)
-    });
+    let response = client
+        .inner()
+        .get_machine_tag()
+        .account(account)
+        .machine(machine_id)
+        .tag(&args.key)
+        .send()
+        .await?;
 
-    let value = tags
-        .get(&args.key)
-        .cloned()
-        .unwrap_or(Value::String(single_value));
+    // The API returns a string, but for tags it could be a typed value
+    // We need to get all tags to know the actual type
+    let tags_response = client
+        .inner()
+        .list_machine_tags()
+        .account(account)
+        .machine(machine_id)
+        .send()
+        .await?;
+
+    let tags = tags_response.into_inner();
+    let value = tags.get(&args.key).cloned().unwrap_or_else(|| {
+        // Fallback to the direct response if not found in tags
+        Value::String(response.into_inner())
+    });
 
     if args.json {
         // Output as JSON (e.g., "bar" for strings, true for bools)
@@ -331,7 +286,7 @@ async fn load_tags_from_file(file_path: &std::path::Path) -> Result<Map<String, 
 }
 
 /// Set tags and output the resulting tags as JSON
-async fn set_tags(args: TagSetArgs, client: &AnyClient) -> Result<()> {
+async fn set_tags(args: TagSetArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
 
@@ -365,29 +320,23 @@ async fn set_tags(args: TagSetArgs, client: &AnyClient) -> Result<()> {
     }
 
     let expected_tags: Map<String, Value> = tag_map.clone();
-    // Both clients' `TagsRequest` type alias implements
-    // `From<Map<String, Value>>`, and `.body(V)` is `V: TryInto<TagsRequest>`.
-    // Passing the raw map lets each arm coerce to the per-client
-    // `TagsRequest` without naming the type.
-    let body = tag_map;
+    let request = TagsRequest::from(tag_map);
 
     // Capture current state before tag operation so --wait uses the correct target
     let pre_state = if args.wait {
-        Some(fetch_machine_state(client, account, machine_id).await?)
+        Some(client.get_machine(account, &machine_id).await?.state)
     } else {
         None
     };
 
-    dispatch!(client, |c| {
-        c.inner()
-            .add_machine_tags()
-            .account(account)
-            .machine(machine_id)
-            .body(body)
-            .send()
-            .await?;
-        Ok::<(), anyhow::Error>(())
-    })?;
+    client
+        .inner()
+        .add_machine_tags()
+        .account(account)
+        .machine(machine_id)
+        .body(request)
+        .send()
+        .await?;
 
     if let Some(target_state) = pre_state {
         super::wait::wait_for_state(machine_id, target_state, args.wait_timeout, client).await?;
@@ -398,7 +347,16 @@ async fn set_tags(args: TagSetArgs, client: &AnyClient) -> Result<()> {
 
     // Output the updated tags (matching node-triton behavior)
     if !args.quiet {
-        let updated_tags = fetch_machine_tags(client, account, machine_id).await?;
+        // Fetch all tags to show the complete set
+        let response = client
+            .inner()
+            .list_machine_tags()
+            .account(account)
+            .machine(machine_id)
+            .send()
+            .await?;
+
+        let updated_tags = response.into_inner();
 
         // -j means compact JSON, otherwise pretty-print
         if args.json {
@@ -416,7 +374,7 @@ async fn set_tags(args: TagSetArgs, client: &AnyClient) -> Result<()> {
 /// Output format matches node-triton:
 /// - For each deleted tag: "Deleted tag NAME on instance INST"
 /// - For --all: "Deleted all tags on instance INST"
-async fn delete_tag(args: TagDeleteArgs, client: &AnyClient) -> Result<()> {
+async fn delete_tag(args: TagDeleteArgs, client: &TypedClient) -> Result<()> {
     // Validate args
     if args.all && !args.keys.is_empty() {
         return Err(anyhow::anyhow!("cannot specify both tag names and --all"));
@@ -430,22 +388,20 @@ async fn delete_tag(args: TagDeleteArgs, client: &AnyClient) -> Result<()> {
 
     // Capture current state before tag operation so --wait uses the correct target
     let pre_state = if args.wait {
-        Some(fetch_machine_state(client, account, machine_id).await?)
+        Some(client.get_machine(account, &machine_id).await?.state)
     } else {
         None
     };
 
     if args.all {
         // Delete all tags
-        dispatch!(client, |c| {
-            c.inner()
-                .delete_machine_tags()
-                .account(account)
-                .machine(machine_id)
-                .send()
-                .await?;
-            Ok::<(), anyhow::Error>(())
-        })?;
+        client
+            .inner()
+            .delete_machine_tags()
+            .account(account)
+            .machine(machine_id)
+            .send()
+            .await?;
 
         if let Some(target_state) = pre_state {
             super::wait::wait_for_state(machine_id, target_state, args.wait_timeout, client)
@@ -463,17 +419,14 @@ async fn delete_tag(args: TagDeleteArgs, client: &AnyClient) -> Result<()> {
         let unique_keys: Vec<_> = args.keys.iter().filter(|k| seen.insert(*k)).collect();
 
         for key in &unique_keys {
-            let key_str = key.as_str();
-            dispatch!(client, |c| {
-                c.inner()
-                    .delete_machine_tag()
-                    .account(account)
-                    .machine(machine_id)
-                    .tag(key_str)
-                    .send()
-                    .await?;
-                Ok::<(), anyhow::Error>(())
-            })?;
+            client
+                .inner()
+                .delete_machine_tag()
+                .account(account)
+                .machine(machine_id)
+                .tag(key.as_str())
+                .send()
+                .await?;
 
             println!("Deleted tag {} on instance {}", key, args.instance);
         }
@@ -494,7 +447,7 @@ async fn delete_tag(args: TagDeleteArgs, client: &AnyClient) -> Result<()> {
 /// Replace all tags on an instance
 ///
 /// Output format matches node-triton: JSON with updated tags
-async fn replace_all_tags(args: TagReplaceAllArgs, client: &AnyClient) -> Result<()> {
+async fn replace_all_tags(args: TagReplaceAllArgs, client: &TypedClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
 
@@ -528,26 +481,23 @@ async fn replace_all_tags(args: TagReplaceAllArgs, client: &AnyClient) -> Result
     }
 
     let expected_tags: Map<String, Value> = tag_map.clone();
-    // See set_tags() for the Map<String, Value> → TagsRequest rationale.
-    let body = tag_map;
+    let request = TagsRequest::from(tag_map);
 
     // Capture current state before tag operation so --wait uses the correct target
     let pre_state = if args.wait {
-        Some(fetch_machine_state(client, account, machine_id).await?)
+        Some(client.get_machine(account, &machine_id).await?.state)
     } else {
         None
     };
 
-    dispatch!(client, |c| {
-        c.inner()
-            .replace_machine_tags()
-            .account(account)
-            .machine(machine_id)
-            .body(body)
-            .send()
-            .await?;
-        Ok::<(), anyhow::Error>(())
-    })?;
+    client
+        .inner()
+        .replace_machine_tags()
+        .account(account)
+        .machine(machine_id)
+        .body(request)
+        .send()
+        .await?;
 
     if let Some(target_state) = pre_state {
         super::wait::wait_for_state(machine_id, target_state, args.wait_timeout, client).await?;
@@ -558,7 +508,16 @@ async fn replace_all_tags(args: TagReplaceAllArgs, client: &AnyClient) -> Result
 
     // Output the updated tags (matching node-triton behavior)
     if !args.quiet {
-        let updated_tags = fetch_machine_tags(client, account, machine_id).await?;
+        // Fetch all tags to show the complete set
+        let response = client
+            .inner()
+            .list_machine_tags()
+            .account(account)
+            .machine(machine_id)
+            .send()
+            .await?;
+
+        let updated_tags = response.into_inner();
 
         // -j means compact JSON, otherwise pretty-print
         if args.json {
@@ -577,7 +536,7 @@ async fn wait_for_tags_exact(
     machine_id: uuid::Uuid,
     expected: &Map<String, Value>,
     timeout_secs: u64,
-    client: &AnyClient,
+    client: &TypedClient,
 ) -> Result<()> {
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
@@ -587,7 +546,15 @@ async fn wait_for_tags_exact(
     let timeout = Duration::from_secs(timeout_secs);
 
     loop {
-        let tags = fetch_machine_tags(client, account, machine_id).await?;
+        let response = client
+            .inner()
+            .list_machine_tags()
+            .account(account)
+            .machine(machine_id)
+            .send()
+            .await?;
+
+        let tags = response.into_inner();
         if tags.len() == expected.len() && expected.iter().all(|(k, v)| tags.get(k) == Some(v)) {
             return Ok(());
         }
@@ -606,7 +573,7 @@ async fn wait_for_tags_deleted(
     machine_id: uuid::Uuid,
     keys: &[&str],
     timeout_secs: u64,
-    client: &AnyClient,
+    client: &TypedClient,
 ) -> Result<()> {
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
@@ -616,7 +583,15 @@ async fn wait_for_tags_deleted(
     let timeout = Duration::from_secs(timeout_secs);
 
     loop {
-        let tags = fetch_machine_tags(client, account, machine_id).await?;
+        let response = client
+            .inner()
+            .list_machine_tags()
+            .account(account)
+            .machine(machine_id)
+            .send()
+            .await?;
+
+        let tags = response.into_inner();
         if keys.iter().all(|k| !tags.contains_key(*k)) {
             return Ok(());
         }
@@ -633,7 +608,7 @@ async fn wait_for_tags(
     machine_id: uuid::Uuid,
     expected: &Map<String, Value>,
     timeout_secs: u64,
-    client: &AnyClient,
+    client: &TypedClient,
 ) -> Result<()> {
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
@@ -643,7 +618,15 @@ async fn wait_for_tags(
     let timeout = Duration::from_secs(timeout_secs);
 
     loop {
-        let tags = fetch_machine_tags(client, account, machine_id).await?;
+        let response = client
+            .inner()
+            .list_machine_tags()
+            .account(account)
+            .machine(machine_id)
+            .send()
+            .await?;
+
+        let tags = response.into_inner();
         if expected.iter().all(|(k, v)| tags.get(k) == Some(v)) {
             return Ok(());
         }

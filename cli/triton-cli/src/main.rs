@@ -11,9 +11,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
 use cloudapi_client::TypedClient;
 
-mod auth;
 mod cache;
-mod client;
 mod commands;
 mod config;
 mod errors;
@@ -308,15 +306,6 @@ enum Commands {
     /// Make raw authenticated API requests to CloudAPI
     #[command(hide = true)]
     Cloudapi(commands::cloudapi::CloudApiArgs),
-
-    /// Log in to a triton-gateway (tritonapi profiles only)
-    Login(commands::login::LoginArgs),
-
-    /// Log out of a triton-gateway (tritonapi profiles only)
-    Logout,
-
-    /// Show the identity backing the current Bearer JWT
-    Whoami(commands::whoami::WhoamiArgs),
 }
 
 /// Build a reqwest HTTP client with CA cert fallback for platforms where
@@ -332,23 +321,8 @@ impl Cli {
     ///
     /// Uses `resolve_profile` as the single source of truth for profile
     /// resolution, then applies CLI/env overrides on top.
-    ///
-    /// This function is SSH-only — Phase 3 of the tritonapi rollout adds
-    /// Bearer-JWT profiles but leaves the cloudapi command path unchanged
-    /// (Phase 4 is where non-auth commands route through the gateway
-    /// client). If a tritonapi-kind profile is resolved here we refuse
-    /// up-front with an actionable message rather than trying to coerce it
-    /// into an SSH client.
     async fn build_client(&self) -> Result<(TypedClient, Profile)> {
         let profile = resolve_profile(self.profile.as_deref()).await?;
-        let ssh = profile.require_ssh_key().map_err(|_| {
-            anyhow::anyhow!(
-                "profile '{}' uses tritonapi auth; this command still runs against \
-                 cloudapi directly. Use 'triton login/logout/whoami' on tritonapi \
-                 profiles, or switch to an SSH profile for this operation.",
-                profile.name()
-            )
-        })?;
 
         // Allow CLI/env overrides on top of the resolved profile.
         // self.url/account/key_id pick up TRITON_* vars via clap's `env`.
@@ -369,7 +343,7 @@ impl Cli {
                     None
                 }
             })
-            .unwrap_or_else(|| ssh.url.clone());
+            .unwrap_or_else(|| profile.url.clone());
         let final_account = self
             .account
             .clone()
@@ -380,7 +354,7 @@ impl Cli {
                     None
                 }
             })
-            .unwrap_or_else(|| ssh.account.clone());
+            .unwrap_or_else(|| profile.account.clone());
         let final_key_id = self
             .key_id
             .clone()
@@ -391,7 +365,7 @@ impl Cli {
                     None
                 }
             })
-            .unwrap_or_else(|| ssh.key_id.clone());
+            .unwrap_or_else(|| profile.key_id.clone());
 
         let key_source = triton_auth::KeySource::auto(&final_key_id);
 
@@ -437,15 +411,15 @@ impl Cli {
         let mut auth_config = triton_auth::AuthConfig::new(final_account, key_source);
 
         // Apply RBAC options: CLI overrides profile
-        if let Some(user) = self.user.as_ref().or(ssh.user.as_ref()) {
+        if let Some(user) = self.user.as_ref().or(profile.user.as_ref()) {
             auth_config = auth_config.with_user(user.clone());
         }
         if !self.role.is_empty() {
             auth_config = auth_config.with_roles(self.role.clone());
-        } else if let Some(roles) = &ssh.roles {
+        } else if let Some(roles) = &profile.roles {
             auth_config = auth_config.with_roles(roles.clone());
         }
-        if let Some(act_as) = self.act_as.as_ref().or(ssh.act_as_account.as_ref()) {
+        if let Some(act_as) = self.act_as.as_ref().or(profile.act_as_account.as_ref()) {
             auth_config = auth_config.with_act_as(act_as.clone());
         }
         if let Some(version) = &self.accept_version {
@@ -453,59 +427,13 @@ impl Cli {
         }
 
         // Insecure mode: CLI flag or profile setting
-        let insecure = self.insecure || ssh.insecure;
+        let insecure = self.insecure || profile.insecure;
 
         let http_client = build_http_client(insecure).await?;
         Ok((
             TypedClient::new_with_http_client(&final_url, auth_config, http_client),
             profile,
         ))
-    }
-
-    /// Like [`Self::build_client`] but dispatches based on the resolved
-    /// profile's auth kind. SSH profiles still land on cloudapi; tritonapi
-    /// profiles build a Bearer-JWT gateway client. Commands that have been
-    /// ported to [`client::AnyClient`] use this; the rest still call
-    /// `build_client` directly and will error on tritonapi profiles.
-    async fn build_any_client(&self) -> Result<(client::AnyClient, Profile)> {
-        let profile = resolve_profile(self.profile.as_deref()).await?;
-        match &profile {
-            Profile::SshKey(ssh) => {
-                // Reuse the existing SSH construction path in full (profile
-                // resolution there is idempotent with ours above because
-                // `resolve_profile` is cheap and deterministic).
-                let insecure = self.insecure || ssh.insecure;
-                let (typed, p) = self.build_client().await?;
-                Ok((
-                    client::AnyClient::CloudApi {
-                        client: typed,
-                        insecure,
-                    },
-                    p,
-                ))
-            }
-            Profile::TritonApi(tp) => {
-                let provider =
-                    auth::token_provider::FileTokenProvider::load(&tp.name, &tp.url, tp.insecure)
-                        .await?;
-                let gw_auth =
-                    triton_gateway_client::GatewayAuthConfig::bearer(provider.clone() as _);
-                let http_client = build_http_client(tp.insecure).await?;
-                let typed = triton_gateway_client::TypedClient::new_with_http_client(
-                    &tp.url,
-                    gw_auth,
-                    http_client,
-                );
-                Ok((
-                    client::AnyClient::Gateway {
-                        client: typed,
-                        account: tp.account.clone(),
-                        insecure: tp.insecure,
-                    },
-                    profile,
-                ))
-            }
-        }
     }
 }
 
@@ -584,139 +512,139 @@ async fn try_main() -> Result<()> {
         }
         Commands::Instance { command } if command.is_empty_variadic() => Ok(()),
         Commands::Instance { command } => {
-            let (client, profile) = cli.build_any_client().await?;
+            let (client, profile) = cli.build_client().await?;
             let cache = cache::ImageCache::new(&profile).await;
             command.clone().run(&client, cli.json, cache.as_ref()).await
         }
         Commands::Image { command } => {
-            let (client, profile) = cli.build_any_client().await?;
+            let (client, profile) = cli.build_client().await?;
             let cache = cache::ImageCache::new(&profile).await;
             command.clone().run(&client, cli.json, cache.as_ref()).await
         }
         Commands::Key { command } if command.is_empty_variadic() => Ok(()),
         Commands::Key { command } => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Accesskey { command } => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Network { command } => {
             command.pre_validate()?;
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Fwrule { command } if command.is_empty_variadic() => Ok(()),
         Commands::Fwrule { command } => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Vlan { command } => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Volume { command } if command.is_empty_variadic() => Ok(()),
         Commands::Volume { command } => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Package { command } => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Account { command } => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Rbac { command } => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Info => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::info::run(&client, cli.json).await
         }
         Commands::Datacenters(args) => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::datacenters::run(args.clone(), &client, cli.json).await
         }
         Commands::Services(args) => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::services::run(args.clone(), &client, cli.json).await
         }
         Commands::Changefeed(args) => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::changefeed::run(args.clone(), &client, cli.json).await
         }
         Commands::Insts(args) => {
-            let (client, profile) = cli.build_any_client().await?;
+            let (client, profile) = cli.build_client().await?;
             let cache = cache::ImageCache::new(&profile).await;
             commands::instance::list::run(args.clone(), &client, cli.json, cache.as_ref()).await
         }
         Commands::Create(args) => {
-            let (client, profile) = cli.build_any_client().await?;
+            let (client, profile) = cli.build_client().await?;
             let cache = cache::ImageCache::new(&profile).await;
             commands::instance::create::run(args.clone(), &client, cli.json, cache.as_ref()).await
         }
         Commands::Ssh(args) => {
-            let (client, profile) = cli.build_any_client().await?;
+            let (client, profile) = cli.build_client().await?;
             let cache = cache::ImageCache::new(&profile).await;
             commands::instance::ssh::run(args.clone(), &client, cache.as_ref()).await
         }
         Commands::Start(args) if args.instances.is_empty() => Ok(()),
         Commands::Start(args) => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::lifecycle::start(args.clone(), &client).await
         }
         Commands::Stop(args) if args.instances.is_empty() => Ok(()),
         Commands::Stop(args) => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::lifecycle::stop(args.clone(), &client).await
         }
         Commands::Reboot(args) if args.instances.is_empty() => Ok(()),
         Commands::Reboot(args) => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::lifecycle::reboot(args.clone(), &client).await
         }
         Commands::Delete(args) if args.instances.is_empty() => Ok(()),
         Commands::Delete(args) => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::delete::run(args.clone(), &client).await
         }
         Commands::Imgs(args) => {
-            let (client, profile) = cli.build_any_client().await?;
+            let (client, profile) = cli.build_client().await?;
             let cache = cache::ImageCache::new(&profile).await;
             commands::image::ImageCommand::List(args.clone())
                 .run(&client, cli.json, cache.as_ref())
                 .await
         }
         Commands::Pkgs(args) => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::package::PackageCommand::List(args.clone())
                 .run(&client, cli.json)
                 .await
         }
         Commands::Nets(args) => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::network::NetworkCommand::List(args.clone())
                 .run(&client, cli.json)
                 .await
         }
         Commands::Vols(args) => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::volume::VolumeCommand::List(args.clone())
                 .run(&client, cli.json)
                 .await
         }
         Commands::Accesskeys(args) => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::accesskey::AccesskeyCommand::List(args.clone())
                 .run(&client, cli.json)
                 .await
         }
         Commands::Keys => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::key::KeyCommand::List(commands::key::KeyListArgs {
                 table: Default::default(),
                 authorized_keys: false,
@@ -725,7 +653,7 @@ async fn try_main() -> Result<()> {
             .await
         }
         Commands::Fwrules => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::fwrule::FwruleCommand::List(commands::fwrule::FwruleListArgs {
                 table: Default::default(),
             })
@@ -733,7 +661,7 @@ async fn try_main() -> Result<()> {
             .await
         }
         Commands::Vlans => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::vlan::VlanCommand::List(commands::vlan::VlanListArgs {
                 filters: vec![],
                 table: Default::default(),
@@ -750,27 +678,27 @@ async fn try_main() -> Result<()> {
             .await
         }
         Commands::Ip(args) => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::get::ip(args.clone(), &client).await
         }
         Commands::Disks(args) => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::disk::list_disks(args.clone(), &client, cli.json).await
         }
         Commands::Snapshots(args) => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::snapshot::list_snapshots(args.clone(), &client, cli.json).await
         }
         Commands::Tags(args) => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::tag::list_tags(args.clone(), &client, cli.json).await
         }
         Commands::Metadatas(args) => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::metadata::list_metadata(args.clone(), &client, cli.json).await
         }
         Commands::Nics(args) => {
-            let (client, _profile) = cli.build_any_client().await?;
+            let (client, _profile) = cli.build_client().await?;
             commands::instance::nic::list_nics(args.clone(), &client, cli.json).await
         }
         Commands::Completion { shell } => {
@@ -797,11 +725,6 @@ async fn try_main() -> Result<()> {
         Commands::Cloudapi(args) => {
             let (client, _profile) = cli.build_client().await?;
             commands::cloudapi::run(args.clone(), &client).await
-        }
-        Commands::Login(args) => commands::login::run(args.clone(), cli.profile.as_deref()).await,
-        Commands::Logout => commands::logout::run(cli.profile.as_deref()).await,
-        Commands::Whoami(args) => {
-            commands::whoami::run(args.clone(), cli.profile.as_deref(), cli.json).await
         }
     }
 }

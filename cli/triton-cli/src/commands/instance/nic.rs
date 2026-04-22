@@ -8,15 +8,13 @@
 
 use anyhow::{Result, anyhow};
 use clap::{Args, Subcommand};
-use cloudapi_api::Nic;
+use cloudapi_client::TypedClient;
 use dialoguer::Confirm;
 use serde::{Deserialize, Serialize};
 
-use crate::client::AnyClient;
 use crate::define_columns;
 use crate::output::table::{TableBuilder, TableFormatArgs};
 use crate::output::{enum_to_display, json, parse_filter_enum};
-use crate::{dispatch, dispatch_with_types};
 
 #[derive(Subcommand, Clone)]
 pub enum NicCommand {
@@ -94,7 +92,7 @@ pub struct NicRemoveArgs {
 }
 
 impl NicCommand {
-    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
             Self::List(args) => list_nics(args, client, use_json).await,
             Self::Get(args) => get_nic(args, client, use_json).await,
@@ -116,8 +114,8 @@ struct NicOutput {
     network: String,
 }
 
-impl From<&Nic> for NicOutput {
-    fn from(nic: &Nic) -> Self {
+impl From<&cloudapi_client::types::Nic> for NicOutput {
+    fn from(nic: &cloudapi_client::types::Nic) -> Self {
         NicOutput {
             ip: nic.ip.clone(),
             mac: nic.mac.clone(),
@@ -143,23 +141,19 @@ fn netmask_to_cidr(netmask: &str) -> Option<u8> {
     Some(octets.iter().map(|b| b.count_ones() as u8).sum())
 }
 
-pub async fn list_nics(args: NicListArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+pub async fn list_nics(args: NicListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
 
-    let nics_raw: Vec<Nic> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .list_nics()
-            .account(account)
-            .machine(machine_id)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Vec<Nic>>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .list_nics()
+        .account(account)
+        .machine(machine_id)
+        .send()
+        .await?;
 
-    let mut nics: Vec<NicOutput> = nics_raw.iter().map(NicOutput::from).collect();
+    let mut nics: Vec<NicOutput> = response.into_inner().iter().map(NicOutput::from).collect();
     nics.sort_by(|a, b| a.ip.cmp(&b.ip));
 
     // Apply filters
@@ -220,23 +214,20 @@ pub async fn list_nics(args: NicListArgs, client: &AnyClient, use_json: bool) ->
     Ok(())
 }
 
-async fn get_nic(args: NicGetArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn get_nic(args: NicGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
-    let mac_stripped = args.mac.replace(':', "");
 
-    let nic: Nic = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .get_nic()
-            .account(account)
-            .machine(machine_id)
-            .mac(mac_stripped.clone())
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Nic>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .get_nic()
+        .account(account)
+        .machine(machine_id)
+        .mac(args.mac.replace(':', ""))
+        .send()
+        .await?;
+
+    let nic = response.into_inner();
 
     if use_json {
         json::print_json(&NicOutput::from(&nic))?;
@@ -269,7 +260,7 @@ fn parse_nic_opts(args: &[String]) -> Result<(String, Option<String>)> {
         .map(|uuid| (uuid, ipv4_ips))
 }
 
-async fn add_nic(args: NicAddArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn add_nic(args: NicAddArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
 
@@ -295,23 +286,21 @@ async fn add_nic(args: NicAddArgs, client: &AnyClient, use_json: bool) -> Result
 
     let network: uuid::Uuid = network_str.parse()?;
 
-    let primary = args.primary;
-    let nic: Nic = dispatch_with_types!(client, |c, t| {
-        let body = t::AddNicRequest {
-            network,
-            primary: Some(primary),
-        };
-        let resp = c
-            .inner()
-            .add_nic()
-            .account(account)
-            .machine(machine_id)
-            .body(body)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Nic>(serde_json::to_value(&resp)?)?
-    });
+    let request = cloudapi_client::types::AddNicRequest {
+        network,
+        primary: Some(args.primary),
+    };
+
+    let response = client
+        .inner()
+        .add_nic()
+        .account(account)
+        .machine(machine_id)
+        .body(request)
+        .send()
+        .await?;
+
+    let nic = response.into_inner();
 
     if args.wait && !use_json {
         println!("Creating NIC {}", nic.mac);
@@ -337,7 +326,7 @@ async fn add_nic(args: NicAddArgs, client: &AnyClient, use_json: bool) -> Result
     Ok(())
 }
 
-async fn remove_nic(args: NicRemoveArgs, client: &AnyClient) -> Result<()> {
+async fn remove_nic(args: NicRemoveArgs, client: &TypedClient) -> Result<()> {
     if !args.force
         && !Confirm::new()
             .with_prompt(format!("Delete NIC \"{}\"?", args.mac))
@@ -350,18 +339,15 @@ async fn remove_nic(args: NicRemoveArgs, client: &AnyClient) -> Result<()> {
 
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
-    let mac_stripped = args.mac.replace(':', "");
 
-    dispatch!(client, |c| {
-        c.inner()
-            .remove_nic()
-            .account(account)
-            .machine(machine_id)
-            .mac(mac_stripped.clone())
-            .send()
-            .await?;
-        Ok::<(), anyhow::Error>(())
-    })?;
+    client
+        .inner()
+        .remove_nic()
+        .account(account)
+        .machine(machine_id)
+        .mac(args.mac.replace(':', ""))
+        .send()
+        .await?;
 
     // Match node-triton output exactly
     println!("Deleted NIC {}", args.mac);

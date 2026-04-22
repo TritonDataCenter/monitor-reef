@@ -8,11 +8,10 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_api::Package;
+use cloudapi_client::TypedClient;
+use cloudapi_client::types::Package;
 
-use crate::client::AnyClient;
 use crate::define_columns;
-use crate::dispatch;
 use crate::output::table::{TableBuilder, TableFormatArgs};
 use crate::output::{format_mb, json};
 
@@ -74,7 +73,7 @@ pub struct PackageGetArgs {
 }
 
 impl PackageCommand {
-    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
             Self::List(args) => list_packages(args, client, use_json).await,
             Self::Get(args) => get_package(args, client, use_json).await,
@@ -133,32 +132,21 @@ fn apply_positional_filters(args: &mut PackageListArgs) -> Result<()> {
     Ok(())
 }
 
-/// List all packages visible to the caller.
-///
-/// Fetches once from the dispatched client, converts per-client
-/// `Package` Progenitor types into the canonical `cloudapi_api::Package`
-/// via a JSON round-trip, then applies client-side filtering/sorting
-/// against the canonical type.
 async fn list_packages(
     mut args: PackageListArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
     apply_positional_filters(&mut args)?;
 
     let account = client.effective_account();
-
-    let all_packages: Vec<Package> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .list_packages()
-            .account(account)
-            .send()
-            .await?
-            .into_inner();
-        let value = serde_json::to_value(&resp)?;
-        serde_json::from_value::<Vec<Package>>(value)?
-    });
+    let response = client
+        .inner()
+        .list_packages()
+        .account(account)
+        .send()
+        .await?;
+    let all_packages = response.into_inner();
 
     // Client-side filtering
     let packages: Vec<_> = all_packages
@@ -277,77 +265,68 @@ async fn list_packages(
     Ok(())
 }
 
-async fn get_package(args: PackageGetArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn get_package(args: PackageGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
     let package_id = resolve_package(&args.package, client).await?;
 
-    let package_json: serde_json::Value = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .get_package()
-            .account(account)
-            .package(&package_id)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::to_value(&resp)?
-    });
+    let response = client
+        .inner()
+        .get_package()
+        .account(account)
+        .package(&package_id)
+        .send()
+        .await?;
+
+    let package = response.into_inner();
 
     if use_json {
-        json::print_json(&package_json)?;
+        json::print_json(&package)?;
     } else {
-        json::print_json_pretty(&package_json)?;
+        json::print_json_pretty(&package)?;
     }
 
     Ok(())
 }
 
 /// Resolve package name or short ID to full UUID
-pub async fn resolve_package(id_or_name: &str, client: &AnyClient) -> Result<String> {
-    let account = client.effective_account();
-
+pub async fn resolve_package(id_or_name: &str, client: &TypedClient) -> Result<String> {
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
         // Verify the package exists (matches node-triton's getPackage call)
         // In emit-payload mode, the exec hook returns a fake response
-        dispatch!(client, |c| {
-            c.inner()
-                .get_package()
-                .account(account)
-                .package(uuid.to_string())
-                .send()
-                .await?;
-            Ok::<(), anyhow::Error>(())
-        })?;
+        let account = client.effective_account();
+        client
+            .inner()
+            .get_package()
+            .account(account)
+            .package(uuid.to_string())
+            .send()
+            .await?;
         return Ok(uuid.to_string());
     }
 
-    // Fetch the package list once and match by short-ID or exact name.
-    let packages: Vec<(String, String)> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .list_packages()
-            .account(account)
-            .send()
-            .await?
-            .into_inner();
-        resp.into_iter()
-            .map(|p| (p.id.to_string(), p.name))
-            .collect()
-    });
+    let account = client.effective_account();
+    let response = client
+        .inner()
+        .list_packages()
+        .account(account)
+        .send()
+        .await?;
+
+    let packages = response.into_inner();
 
     // Try short ID match first (at least 8 characters)
     if id_or_name.len() >= 8 {
-        for (id, _) in &packages {
-            if id.starts_with(id_or_name) {
-                return Ok(id.clone());
+        for pkg in &packages {
+            if pkg.id.to_string().starts_with(id_or_name) {
+                return Ok(pkg.id.to_string());
             }
         }
     }
 
     // Try exact name match
-    for (id, name) in &packages {
-        if name == id_or_name {
-            return Ok(id.clone());
+    for pkg in &packages {
+        if pkg.name == id_or_name {
+            return Ok(pkg.id.to_string());
         }
     }
 

@@ -6,7 +6,7 @@
 
 //! Profile management commands
 
-use crate::config::{Config, Profile, SshKeyProfile, paths, resolve_profile};
+use crate::config::{Config, Profile, paths, resolve_profile};
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
 use anyhow::Result;
@@ -170,7 +170,7 @@ async fn list_profiles(args: ProfileListArgs) -> Result<()> {
 
     // Try to get the current profile (might be "env" from environment variables)
     let current_profile = resolve_profile(None).await.ok();
-    let current_name = current_profile.as_ref().map(|p| p.name().to_string());
+    let current_name = current_profile.as_ref().map(|p| p.name.as_str());
 
     // Build list of profiles to display, including "env" if it's the current one
     let mut profiles_to_show: Vec<Profile> = Vec::new();
@@ -193,7 +193,7 @@ async fn list_profiles(args: ProfileListArgs) -> Result<()> {
 
     if args.json {
         for profile in &profiles_to_show {
-            let is_curr = current_name.as_deref() == Some(profile.name());
+            let is_curr = Some(profile.name.as_str()) == current_name;
             let mut value = serde_json::to_value(profile)?;
             if let Some(obj) = value.as_object_mut() {
                 obj.insert("curr".to_string(), serde_json::Value::Bool(is_curr));
@@ -201,32 +201,23 @@ async fn list_profiles(args: ProfileListArgs) -> Result<()> {
             json::print_json(&value)?;
         }
     } else {
-        // Table keeps the legacy SSH-flavored column set (KEYID / USER) for
-        // compatibility with operators' existing scripts; tritonapi
-        // profiles fill those cells with "-".
         let mut tbl = TableBuilder::new(&["NAME", "CURR", "ACCOUNT", "USER", "URL"])
             .with_long_headers(&["KEYID", "INSECURE"]);
         for profile in &profiles_to_show {
-            let marker = if current_name.as_deref() == Some(profile.name()) {
+            let marker = if Some(profile.name.as_str()) == current_name {
                 "*"
             } else {
                 ""
             };
-            let (user, key_id) = match profile.as_ssh_key() {
-                Some(ssh) => (
-                    ssh.user.as_deref().unwrap_or("-").to_string(),
-                    ssh.key_id.clone(),
-                ),
-                None => ("-".to_string(), "-".to_string()),
-            };
+            let user = profile.user.as_deref().unwrap_or("-");
             tbl.add_row(vec![
-                profile.name().to_string(),
+                profile.name.clone(),
                 marker.to_string(),
-                profile.account().to_string(),
-                user,
-                profile.url().to_string(),
-                key_id,
-                profile.insecure().to_string(),
+                profile.account.clone(),
+                user.to_string(),
+                profile.url.clone(),
+                profile.key_id.clone(),
+                profile.insecure.to_string(),
             ]);
         }
         tbl.print(&args.table)?;
@@ -244,7 +235,7 @@ async fn get_profile(name: Option<String>, use_json: bool) -> Result<()> {
         resolve_profile(None)
             .await
             .ok()
-            .is_some_and(|current| current.name() == profile.name())
+            .is_some_and(|current| current.name == profile.name)
     };
 
     if use_json {
@@ -256,30 +247,19 @@ async fn get_profile(name: Option<String>, use_json: bool) -> Result<()> {
         json::print_json(&value)?;
     } else {
         // Match node-triton text format: lowercase labels, no padding
-        println!("name: {}", profile.name());
-        println!("account: {}", profile.account());
+        println!("name: {}", profile.name);
+        println!("account: {}", profile.account);
         println!("curr: {}", is_curr);
-        match &profile {
-            Profile::SshKey(ssh) => {
-                println!("keyId: {}", ssh.key_id);
-                println!("url: {}", ssh.url);
-                if ssh.insecure {
-                    println!("insecure: {}", ssh.insecure);
-                }
-                if let Some(user) = &ssh.user {
-                    println!("user: {}", user);
-                }
-                if let Some(roles) = &ssh.roles {
-                    println!("roles: {}", roles.join(", "));
-                }
-            }
-            Profile::TritonApi(api) => {
-                println!("auth: tritonapi");
-                println!("url: {}", api.url);
-                if api.insecure {
-                    println!("insecure: {}", api.insecure);
-                }
-            }
+        println!("keyId: {}", profile.key_id);
+        println!("url: {}", profile.url);
+        if profile.insecure {
+            println!("insecure: {}", profile.insecure);
+        }
+        if let Some(user) = &profile.user {
+            println!("user: {}", user);
+        }
+        if let Some(roles) = &profile.roles {
+            println!("roles: {}", roles.join(", "));
         }
     }
     Ok(())
@@ -319,33 +299,25 @@ async fn create_profile(
 
         // Derive profile name from the filename if not present in JSON
         // (node-triton profiles don't include a "name" field)
-        if profile.name().is_empty() {
+        if profile.name.is_empty() {
             if file_path.as_os_str() == "-" {
                 return Err(anyhow::anyhow!(
                     "Profile JSON from stdin must include a \"name\" field"
                 ));
             }
-            let stem = file_path
+            profile.name = file_path
                 .file_stem()
                 .ok_or_else(|| anyhow::anyhow!("Cannot derive profile name from file path"))?
                 .to_string_lossy()
                 .to_string();
-            profile.set_name(stem);
         }
 
         // Check if profile already exists
-        if Profile::list_all()
-            .await?
-            .iter()
-            .any(|n| n == profile.name())
-        {
-            return Err(anyhow::anyhow!(
-                "Profile '{}' already exists",
-                profile.name()
-            ));
+        if Profile::list_all().await?.contains(&profile.name) {
+            return Err(anyhow::anyhow!("Profile '{}' already exists", profile.name));
         }
 
-        let profile_name = profile.name().to_string();
+        let profile_name = profile.name.clone();
         profile.save().await?;
         println!("Created profile '{}' from file", profile_name);
 
@@ -365,26 +337,11 @@ async fn create_profile(
         return Ok(());
     }
 
-    // Load defaults from source profile if --copy is specified.
-    //
-    // `profile create` (without --file) is SSH-flavored — it prompts for an
-    // SSH key fingerprint. A tritonapi copy source has no key fingerprint
-    // so we reject it with a clear message rather than silently dropping
-    // data.
-    let copy_profile: Option<SshKeyProfile> = if let Some(ref copy_name) = copy {
-        let loaded = Profile::load(copy_name).await.map_err(|_| {
+    // Load defaults from source profile if --copy is specified
+    let copy_profile = if let Some(ref copy_name) = copy {
+        Some(Profile::load(copy_name).await.map_err(|_| {
             anyhow::anyhow!("no such profile from which to copy: \"{}\"", copy_name)
-        })?;
-        match loaded {
-            Profile::SshKey(ssh) => Some(ssh),
-            Profile::TritonApi(_) => {
-                return Err(anyhow::anyhow!(
-                    "cannot --copy from tritonapi profile '{}' into an SSH profile; \
-                     use a different source or edit the target profile file directly",
-                    copy_name
-                ));
-            }
-        }
+        })?)
     } else {
         None
     };
@@ -459,7 +416,7 @@ async fn create_profile(
         (None, None, None)
     };
 
-    let profile = Profile::SshKey(SshKeyProfile {
+    let profile = Profile {
         name: name.clone(),
         url,
         account,
@@ -468,7 +425,7 @@ async fn create_profile(
         user,
         roles,
         act_as_account,
-    });
+    };
 
     profile.save().await?;
     println!("Created profile '{}'", name);
@@ -501,40 +458,24 @@ async fn create_profile(
 async fn edit_profile(name: &str) -> Result<()> {
     let mut profile = Profile::load(name).await?;
 
-    // Interactive edit is SSH-flavored (prompts for an SSH key fingerprint
-    // and the cloudapi URL). We don't expose an interactive editor for
-    // tritonapi profiles — operators who need to change the gateway URL
-    // can edit the file directly, and credential rotation happens via
-    // `triton login`.
-    let ssh = profile.as_ssh_key_mut().ok_or_else(|| {
-        anyhow::anyhow!(
-            "'triton profile edit {}' is only supported for SSH-key profiles; \
-             the tritonapi profile '{}' should be modified by editing its JSON \
-             file directly (~/.triton/profiles.d/{}.json)",
-            name,
-            name,
-            name
-        )
-    })?;
-
-    ssh.url = Input::new()
+    profile.url = Input::new()
         .with_prompt("CloudAPI URL")
-        .default(ssh.url.clone())
+        .default(profile.url)
         .interact_text()?;
 
-    ssh.account = Input::new()
+    profile.account = Input::new()
         .with_prompt("Account name")
-        .default(ssh.account.clone())
+        .default(profile.account)
         .interact_text()?;
 
-    ssh.key_id = Input::new()
+    profile.key_id = Input::new()
         .with_prompt("SSH key fingerprint")
-        .default(ssh.key_id.clone())
+        .default(profile.key_id)
         .interact_text()?;
 
-    ssh.insecure = Confirm::new()
+    profile.insecure = Confirm::new()
         .with_prompt("Skip TLS verification?")
-        .default(ssh.insecure)
+        .default(profile.insecure)
         .interact()?;
 
     profile.save().await?;
@@ -584,27 +525,27 @@ async fn set_current_profile(name: &str) -> Result<()> {
 
 /// Setup Docker TLS certificates for a profile
 async fn docker_setup(name: Option<String>, lifetime: u32, yes: bool) -> Result<()> {
-    // Resolve the profile. Docker auth uses client TLS certs derived from
-    // the profile's SSH key, so this command requires SSH-kind profiles.
+    // Resolve the profile
     let profile = resolve_profile(name.as_deref()).await?;
-    let profile_name = profile.name().to_string();
-    let ssh = profile.require_ssh_key()?;
-    let account = ssh.act_as_account.as_deref().unwrap_or(&ssh.account);
+    let account = profile
+        .act_as_account
+        .as_deref()
+        .unwrap_or(&profile.account);
 
     println!(
         "Setting up Docker for profile \"{}\" (account: {})",
-        profile_name, account
+        profile.name, account
     );
 
     // Check for Docker service
-    let auth_config = AuthConfig::new(&ssh.account, KeySource::auto(&ssh.key_id));
-    let client = TypedClient::new(&ssh.url, auth_config);
+    let auth_config = AuthConfig::new(&profile.account, KeySource::auto(&profile.key_id));
+    let client = TypedClient::new(&profile.url, auth_config);
 
     println!("Checking for Docker service...");
     let services = client
         .inner()
         .list_services()
-        .account(&ssh.account)
+        .account(&profile.account)
         .send()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to list services: {}", e))?
@@ -637,7 +578,7 @@ async fn docker_setup(name: Option<String>, lifetime: u32, yes: bool) -> Result<
     }
 
     // Generate certificates
-    let generator = CertGenerator::new(&ssh.key_id).map_err(|e| {
+    let generator = CertGenerator::new(&profile.key_id).map_err(|e| {
         anyhow::anyhow!(
             "Failed to setup certificate generator: {}. Make sure your SSH key is \
              loaded in the SSH agent and is not Ed25519 (use RSA or ECDSA).",
@@ -655,7 +596,7 @@ async fn docker_setup(name: Option<String>, lifetime: u32, yes: bool) -> Result<
 
     // Create directory for Docker certs
     let config_dir = paths::config_dir();
-    let docker_dir = config_dir.join("docker").join(&profile_name);
+    let docker_dir = config_dir.join("docker").join(&profile.name);
     fs::create_dir_all(&docker_dir)?;
 
     // Write certificates
@@ -676,7 +617,7 @@ async fn docker_setup(name: Option<String>, lifetime: u32, yes: bool) -> Result<
     println!("Downloading CA certificate from {}...", ca_url);
 
     let ca_client = reqwest::ClientBuilder::new()
-        .danger_accept_invalid_certs(ssh.insecure)
+        .danger_accept_invalid_certs(profile.insecure)
         .build()?;
 
     let ca_response = ca_client
@@ -694,13 +635,13 @@ async fn docker_setup(name: Option<String>, lifetime: u32, yes: bool) -> Result<
 
     // Write setup.json for reference
     let setup_json = serde_json::json!({
-        "profile": profile_name,
+        "profile": profile.name,
         "account": account,
         "time": chrono::Utc::now().to_rfc3339(),
         "env": {
             "DOCKER_CERT_PATH": docker_dir.to_string_lossy(),
             "DOCKER_HOST": docker_url,
-            "DOCKER_TLS_VERIFY": if ssh.insecure { serde_json::Value::Null } else { serde_json::json!("1") },
+            "DOCKER_TLS_VERIFY": if profile.insecure { serde_json::Value::Null } else { serde_json::json!("1") },
             "COMPOSE_HTTP_TIMEOUT": "300"
         }
     });
@@ -710,42 +651,42 @@ async fn docker_setup(name: Option<String>, lifetime: u32, yes: bool) -> Result<
     println!();
     println!(
         "Successfully setup profile \"{}\" to use Docker.",
-        profile_name
+        profile.name
     );
     println!();
     println!("To setup environment variables to use the Docker client, run:");
-    println!("    eval \"$(triton env --docker {})\"", profile_name);
+    println!("    eval \"$(triton env --docker {})\"", profile.name);
     println!("    docker info");
     println!();
     println!("Or you can place the commands in your shell profile, e.g.:");
-    println!("    triton env --docker {} >> ~/.profile", profile_name);
+    println!("    triton env --docker {} >> ~/.profile", profile.name);
 
     Ok(())
 }
 
 /// Generate CMON client certificates for a profile
 async fn cmon_certgen(name: Option<String>, lifetime: u32, yes: bool) -> Result<()> {
-    // Resolve the profile. CMON, like Docker, authenticates with client
-    // TLS certs derived from the SSH key, so this requires SSH-kind.
+    // Resolve the profile
     let profile = resolve_profile(name.as_deref()).await?;
-    let profile_name = profile.name().to_string();
-    let ssh = profile.require_ssh_key()?;
-    let account = ssh.act_as_account.as_deref().unwrap_or(&ssh.account);
+    let account = profile
+        .act_as_account
+        .as_deref()
+        .unwrap_or(&profile.account);
 
     println!(
         "Generating CMON certificates for profile \"{}\" (account: {})",
-        profile_name, account
+        profile.name, account
     );
 
     // Check for CMON service
-    let auth_config = AuthConfig::new(&ssh.account, KeySource::auto(&ssh.key_id));
-    let client = TypedClient::new(&ssh.url, auth_config);
+    let auth_config = AuthConfig::new(&profile.account, KeySource::auto(&profile.key_id));
+    let client = TypedClient::new(&profile.url, auth_config);
 
     println!("Checking for CMON service...");
     let services = client
         .inner()
         .list_services()
-        .account(&ssh.account)
+        .account(&profile.account)
         .send()
         .await
         .map_err(|e| anyhow::anyhow!("Failed to list services: {}", e))?
@@ -788,7 +729,7 @@ async fn cmon_certgen(name: Option<String>, lifetime: u32, yes: bool) -> Result<
     }
 
     // Generate certificates
-    let generator = CertGenerator::new(&ssh.key_id).map_err(|e| {
+    let generator = CertGenerator::new(&profile.key_id).map_err(|e| {
         anyhow::anyhow!(
             "Failed to setup certificate generator: {}. Make sure your SSH key is \
              loaded in the SSH agent and is not Ed25519 (use RSA or ECDSA).",

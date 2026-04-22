@@ -8,15 +8,13 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_api::Role;
+use cloudapi_client::TypedClient;
+use cloudapi_client::types::{MemberRef, MemberType, PolicyRef};
 use serde::Deserialize;
-use serde_json::json;
 
-use crate::client::AnyClient;
 use crate::define_columns;
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
-use crate::{dispatch, dispatch_with_types};
 
 use super::editor;
 
@@ -137,7 +135,7 @@ pub struct RoleDeleteArgs {
 }
 
 impl RbacRoleCommand {
-    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         // If a subcommand is provided, use the modern pattern
         if let Some(cmd) = self.command {
             return match cmd {
@@ -192,26 +190,19 @@ impl RbacRoleCommand {
 
 pub async fn list_roles(
     table_args: &TableFormatArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
     let account = client.effective_account();
-    let roles: Vec<Role> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .list_roles()
-            .account(account)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Vec<Role>>(serde_json::to_value(&resp)?)?
-    });
+    let response = client.inner().list_roles().account(account).send().await?;
+
+    let roles = response.into_inner();
 
     if use_json {
         json::print_json_stream(&roles)?;
     } else {
         define_columns! {
-            RoleColumn for Role, long_from: 3, {
+            RoleColumn for cloudapi_client::types::Role, long_from: 3, {
                 Name("NAME") => |role| role.name.clone(),
                 Policies("POLICIES") => |role| role.policies.join(", "),
                 Members("MEMBERS") => |role| role.members.join(", "),
@@ -227,20 +218,18 @@ pub async fn list_roles(
     Ok(())
 }
 
-async fn get_role(args: RoleGetArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn get_role(args: RoleGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
 
-    let role: Role = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .get_role()
-            .account(account)
-            .role(&args.role)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Role>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .get_role()
+        .account(account)
+        .role(&args.role)
+        .send()
+        .await?;
+
+    let role = response.into_inner();
 
     if use_json {
         json::print_json(&role)?;
@@ -276,57 +265,55 @@ async fn get_role(args: RoleGetArgs, client: &AnyClient, use_json: bool) -> Resu
     Ok(())
 }
 
-/// Build a JSON member-ref object for inclusion in role bodies.
-fn member_ref_json(login: &str, is_default: bool) -> serde_json::Value {
-    json!({
-        "type": "subuser",
-        "login": login,
-        "default": is_default,
-    })
+/// Build a MemberRef from a login string
+fn member_ref(login: &str, is_default: bool) -> MemberRef {
+    MemberRef {
+        type_: MemberType::Subuser,
+        login: Some(login.to_string()),
+        id: None,
+        default: Some(is_default),
+    }
 }
 
-/// Build a JSON policy-ref object.
-fn policy_ref_json(name: &str) -> serde_json::Value {
-    json!({ "name": name })
+/// Build a PolicyRef from a policy name
+fn policy_ref(name: &str) -> PolicyRef {
+    PolicyRef {
+        name: Some(name.to_string()),
+        id: None,
+    }
 }
 
-async fn create_role(args: RoleCreateArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn create_role(args: RoleCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
 
-    // Merge --member (default=false) and --default-member (default=true)
-    let mut member_refs: Vec<serde_json::Value> = args
-        .member
-        .iter()
-        .map(|m| member_ref_json(m, false))
-        .collect();
-    member_refs.extend(args.default_member.iter().map(|m| member_ref_json(m, true)));
+    // Merge --member (default=false) and --default-member (default=true) into MemberRef vec
+    let mut member_refs: Vec<MemberRef> =
+        args.member.iter().map(|m| member_ref(m, false)).collect();
+    member_refs.extend(args.default_member.iter().map(|m| member_ref(m, true)));
 
-    let mut body = serde_json::Map::new();
-    body.insert("name".to_string(), json!(args.name));
-    if !args.policy.is_empty() {
-        body.insert(
-            "policies".to_string(),
-            serde_json::Value::Array(args.policy.iter().map(|p| policy_ref_json(p)).collect()),
-        );
-    }
-    if !member_refs.is_empty() {
-        body.insert("members".to_string(), serde_json::Value::Array(member_refs));
-    }
-    let body_value = serde_json::Value::Object(body);
+    let request = cloudapi_client::types::CreateRoleRequest {
+        name: args.name.clone(),
+        policies: if args.policy.is_empty() {
+            None
+        } else {
+            Some(args.policy.iter().map(|p| policy_ref(p)).collect())
+        },
+        members: if member_refs.is_empty() {
+            None
+        } else {
+            Some(member_refs)
+        },
+    };
 
-    let role: Role = dispatch_with_types!(client, |c, t| {
-        let request: t::CreateRoleRequest = serde_json::from_value(body_value.clone())?;
-        let resp = c
-            .inner()
-            .create_role()
-            .account(account)
-            .body(request)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Role>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .create_role()
+        .account(account)
+        .body(request)
+        .send()
+        .await?;
 
+    let role = response.into_inner();
     println!("Created role '{}' ({})", role.name, role.id);
 
     if use_json {
@@ -336,46 +323,38 @@ async fn create_role(args: RoleCreateArgs, client: &AnyClient, use_json: bool) -
     Ok(())
 }
 
-async fn update_role(args: RoleUpdateArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn update_role(args: RoleUpdateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
 
-    // Merge --member (default=false) and --default-member (default=true)
-    let mut member_refs: Vec<serde_json::Value> = args
-        .member
-        .iter()
-        .map(|m| member_ref_json(m, false))
-        .collect();
-    member_refs.extend(args.default_member.iter().map(|m| member_ref_json(m, true)));
+    // Merge --member (default=false) and --default-member (default=true) into MemberRef vec
+    let mut member_refs: Vec<MemberRef> =
+        args.member.iter().map(|m| member_ref(m, false)).collect();
+    member_refs.extend(args.default_member.iter().map(|m| member_ref(m, true)));
 
-    let mut body = serde_json::Map::new();
-    if let Some(n) = &args.name {
-        body.insert("name".to_string(), json!(n));
-    }
-    if !args.policy.is_empty() {
-        body.insert(
-            "policies".to_string(),
-            serde_json::Value::Array(args.policy.iter().map(|p| policy_ref_json(p)).collect()),
-        );
-    }
-    if !member_refs.is_empty() {
-        body.insert("members".to_string(), serde_json::Value::Array(member_refs));
-    }
-    let body_value = serde_json::Value::Object(body);
+    let request = cloudapi_client::types::UpdateRoleRequest {
+        name: args.name,
+        policies: if args.policy.is_empty() {
+            None
+        } else {
+            Some(args.policy.iter().map(|p| policy_ref(p)).collect())
+        },
+        members: if member_refs.is_empty() {
+            None
+        } else {
+            Some(member_refs)
+        },
+    };
 
-    let role: Role = dispatch_with_types!(client, |c, t| {
-        let request: t::UpdateRoleRequest = serde_json::from_value(body_value.clone())?;
-        let resp = c
-            .inner()
-            .update_role()
-            .account(account)
-            .role(&args.role)
-            .body(request)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Role>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .update_role()
+        .account(account)
+        .role(&args.role)
+        .body(request)
+        .send()
+        .await?;
 
+    let role = response.into_inner();
     println!("Updated role '{}'", role.name);
 
     if use_json {
@@ -385,7 +364,7 @@ async fn update_role(args: RoleUpdateArgs, client: &AnyClient, use_json: bool) -
     Ok(())
 }
 
-pub async fn delete_roles(args: RoleDeleteArgs, client: &AnyClient) -> Result<()> {
+pub async fn delete_roles(args: RoleDeleteArgs, client: &TypedClient) -> Result<()> {
     for role_ref in &args.roles {
         if !args.force {
             use dialoguer::Confirm;
@@ -403,26 +382,22 @@ pub async fn delete_roles(args: RoleDeleteArgs, client: &AnyClient) -> Result<()
         // Verify role exists via GET first (matches node-triton's getRole call),
         // then delete using the original reference (name or UUID).
         if uuid::Uuid::parse_str(role_ref).is_err() {
-            dispatch!(client, |c| {
-                c.inner()
-                    .get_role()
-                    .account(account)
-                    .role(role_ref)
-                    .send()
-                    .await?;
-                Ok::<(), anyhow::Error>(())
-            })?;
-        }
-
-        dispatch!(client, |c| {
-            c.inner()
-                .delete_role()
+            client
+                .inner()
+                .get_role()
                 .account(account)
                 .role(role_ref)
                 .send()
                 .await?;
-            Ok::<(), anyhow::Error>(())
-        })?;
+        }
+
+        client
+            .inner()
+            .delete_role()
+            .account(account)
+            .role(role_ref)
+            .send()
+            .await?;
 
         println!("Deleted role '{}'", role_ref);
     }
@@ -436,7 +411,11 @@ pub async fn delete_roles(args: RoleDeleteArgs, client: &AnyClient) -> Result<()
 /// - A file path
 /// - stdin (when file is "-")
 /// - Interactive prompts (when file is None)
-async fn add_role_from_file(file: Option<&str>, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn add_role_from_file(
+    file: Option<&str>,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
     use std::io::{self, Read};
 
     // Read JSON input based on source
@@ -521,7 +500,7 @@ async fn add_role_from_file(file: Option<&str>, client: &AnyClient, use_json: bo
         .to_string();
 
     // Extract policies: support both string array and object array formats
-    let policies_vec: Vec<serde_json::Value> = json_data
+    let policies: Option<Vec<PolicyRef>> = json_data
         .get("policies")
         .and_then(|v| v.as_array())
         .map(|arr| {
@@ -529,20 +508,26 @@ async fn add_role_from_file(file: Option<&str>, client: &AnyClient, use_json: bo
                 .filter_map(|v| {
                     if let Some(s) = v.as_str() {
                         // Old format: plain string
-                        Some(policy_ref_json(s))
+                        Some(policy_ref(s))
                     } else if v.is_object() {
                         // New format: {"name": "...", "id": "..."}
-                        Some(v.clone())
+                        match serde_json::from_value::<PolicyRef>(v.clone()) {
+                            Ok(p) => Some(p),
+                            Err(e) => {
+                                eprintln!("warning: skipping malformed policy entry: {e}");
+                                None
+                            }
+                        }
                     } else {
                         None
                     }
                 })
                 .collect()
         })
-        .unwrap_or_default();
+        .filter(|v: &Vec<PolicyRef>| !v.is_empty());
 
     // Extract members: support both string array and object array formats
-    let mut member_refs: Vec<serde_json::Value> = json_data
+    let mut member_refs: Vec<MemberRef> = json_data
         .get("members")
         .and_then(|v| v.as_array())
         .map(|arr| {
@@ -550,10 +535,16 @@ async fn add_role_from_file(file: Option<&str>, client: &AnyClient, use_json: bo
                 .filter_map(|v| {
                     if let Some(s) = v.as_str() {
                         // Old format: plain string login
-                        Some(member_ref_json(s, false))
+                        Some(member_ref(s, false))
                     } else if v.is_object() {
                         // New format: {"type": "subuser", "login": "..."}
-                        Some(v.clone())
+                        match serde_json::from_value::<MemberRef>(v.clone()) {
+                            Ok(m) => Some(m),
+                            Err(e) => {
+                                eprintln!("warning: skipping malformed member entry: {e}");
+                                None
+                            }
+                        }
                     } else {
                         None
                     }
@@ -569,40 +560,34 @@ async fn add_role_from_file(file: Option<&str>, client: &AnyClient, use_json: bo
     if let Some(arr) = default_members_val.and_then(|v| v.as_array()) {
         for v in arr {
             if let Some(s) = v.as_str() {
-                member_refs.push(member_ref_json(s, true));
+                member_refs.push(member_ref(s, true));
             }
         }
     }
 
-    // Build create body
-    let mut body = serde_json::Map::new();
-    body.insert("name".to_string(), serde_json::Value::String(name.clone()));
-    if !policies_vec.is_empty() {
-        body.insert(
-            "policies".to_string(),
-            serde_json::Value::Array(policies_vec),
-        );
-    }
-    if !member_refs.is_empty() {
-        body.insert("members".to_string(), serde_json::Value::Array(member_refs));
-    }
-    let body_value = serde_json::Value::Object(body);
+    let members: Option<Vec<MemberRef>> = if member_refs.is_empty() {
+        None
+    } else {
+        Some(member_refs)
+    };
 
     // Create the role
     let account = client.effective_account();
-    let role: Role = dispatch_with_types!(client, |c, t| {
-        let request: t::CreateRoleRequest = serde_json::from_value(body_value.clone())?;
-        let resp = c
-            .inner()
-            .create_role()
-            .account(account)
-            .body(request)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Role>(serde_json::to_value(&resp)?)?
-    });
+    let request = cloudapi_client::types::CreateRoleRequest {
+        name: name.clone(),
+        policies,
+        members,
+    };
 
+    let response = client
+        .inner()
+        .create_role()
+        .account(account)
+        .body(request)
+        .send()
+        .await?;
+
+    let role = response.into_inner();
     println!("Created role '{}' ({})", role.name, role.id);
 
     if use_json {
@@ -629,7 +614,7 @@ struct RoleEdit {
 }
 
 /// Convert a Role to commented YAML for editing
-fn role_to_commented_yaml(role: &Role, account: &str) -> String {
+fn role_to_commented_yaml(role: &cloudapi_client::types::Role, account: &str) -> String {
     let members = editor::format_yaml_list(&role.members, "  ");
     let policies = editor::format_yaml_list(&role.policies, "  ");
     let default_members = editor::format_yaml_list(&role.default_members, "  ");
@@ -665,21 +650,18 @@ default_members:
 }
 
 /// Edit role in $EDITOR (legacy -e flag support)
-async fn edit_role_in_editor(role_ref: &str, client: &AnyClient) -> Result<()> {
+async fn edit_role_in_editor(role_ref: &str, client: &TypedClient) -> Result<()> {
     let account = client.effective_account().to_owned();
 
     // Fetch current role
-    let role: Role = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .get_role()
-            .account(&account)
-            .role(role_ref)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Role>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .get_role()
+        .account(&account)
+        .role(role_ref)
+        .send()
+        .await?;
+    let role = response.into_inner();
 
     let filename = format!("{}-role-{}.yaml", account, role.name);
     let original_yaml = role_to_commented_yaml(&role, &account);
@@ -695,45 +677,38 @@ async fn edit_role_in_editor(role_ref: &str, client: &AnyClient) -> Result<()> {
 
         match serde_yaml::from_str::<RoleEdit>(&result.content) {
             Ok(edited) => {
-                // Merge members + default_members into JSON array
-                let mut member_refs: Vec<serde_json::Value> = edited
+                // Merge members and default_members into MemberRef vec
+                let mut member_refs: Vec<MemberRef> = edited
                     .members
                     .iter()
-                    .map(|m| member_ref_json(m, false))
+                    .map(|m| member_ref(m, false))
                     .collect();
-                member_refs.extend(
-                    edited
-                        .default_members
-                        .iter()
-                        .map(|m| member_ref_json(m, true)),
-                );
+                member_refs.extend(edited.default_members.iter().map(|m| member_ref(m, true)));
 
-                let mut body = serde_json::Map::new();
-                body.insert("name".to_string(), json!(edited.name));
-                if !member_refs.is_empty() {
-                    body.insert("members".to_string(), serde_json::Value::Array(member_refs));
-                }
-                if !edited.policies.is_empty() {
-                    body.insert(
-                        "policies".to_string(),
-                        serde_json::Value::Array(
-                            edited.policies.iter().map(|p| policy_ref_json(p)).collect(),
-                        ),
-                    );
-                }
-                let body_value = serde_json::Value::Object(body);
+                // Build update request
+                let request = cloudapi_client::types::UpdateRoleRequest {
+                    name: Some(edited.name.clone()),
+                    members: if member_refs.is_empty() {
+                        None
+                    } else {
+                        Some(member_refs)
+                    },
+                    policies: if edited.policies.is_empty() {
+                        None
+                    } else {
+                        Some(edited.policies.iter().map(|p| policy_ref(p)).collect())
+                    },
+                };
 
-                dispatch_with_types!(client, |c, t| {
-                    let request: t::UpdateRoleRequest = serde_json::from_value(body_value.clone())?;
-                    c.inner()
-                        .update_role()
-                        .account(&account)
-                        .role(&role.name)
-                        .body(request)
-                        .send()
-                        .await?;
-                    Ok::<(), anyhow::Error>(())
-                })?;
+                // Update the role
+                client
+                    .inner()
+                    .update_role()
+                    .account(&account)
+                    .role(&role.name)
+                    .body(request)
+                    .send()
+                    .await?;
 
                 println!("Updated role \"{}\"", edited.name);
                 return Ok(());

@@ -8,17 +8,13 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_api::{Volume, VolumeSize};
-// CLI filter / default-value enums need `clap::ValueEnum`, which is patched
-// onto the Progenitor copies but not the canonical `cloudapi_api` ones. At
-// dispatch boundaries we round-trip via serde (same wire format).
+use cloudapi_client::TypedClient;
+
 use cloudapi_client::types::{VolumeState, VolumeType};
 
-use crate::client::AnyClient;
 use crate::output::enum_to_display;
 use crate::output::table::{TableBuilder, TableFormatArgs};
 use crate::output::{self, json, parse_filter_enum};
-use crate::{dispatch, dispatch_with_types};
 
 #[derive(Args, Clone)]
 pub struct VolumeListArgs {
@@ -135,7 +131,7 @@ impl VolumeCommand {
         }
     }
 
-    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
             Self::List(args) => list_volumes(args, client, use_json).await,
             Self::Get(args) => get_volume(args, client, use_json).await,
@@ -189,52 +185,14 @@ fn apply_positional_filters(args: &mut VolumeListArgs) -> Result<()> {
     Ok(())
 }
 
-/// Fetch all volumes as canonical `cloudapi_api::Volume`.
-async fn fetch_volumes(client: &AnyClient) -> Result<Vec<Volume>> {
-    let account = client.effective_account();
-    let volumes: Vec<Volume> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .list_volumes()
-            .account(account)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Vec<Volume>>(serde_json::to_value(&resp)?)?
-    });
-    Ok(volumes)
-}
-
-/// Fetch a single volume by UUID or string id.
-async fn fetch_volume(client: &AnyClient, id: &str) -> Result<Volume> {
-    let account = client.effective_account();
-    let volume: Volume = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .get_volume()
-            .account(account)
-            .id(id)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Volume>(serde_json::to_value(&resp)?)?
-    });
-    Ok(volume)
-}
-
-async fn list_volumes(mut args: VolumeListArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn list_volumes(
+    mut args: VolumeListArgs,
+    client: &TypedClient,
+    use_json: bool,
+) -> Result<()> {
     apply_positional_filters(&mut args)?;
-    let all_volumes = fetch_volumes(client).await?;
-
-    // Round-trip the filter-only CLI enums to canonical types once.
-    let state_filter: Option<cloudapi_api::VolumeState> = match args.state {
-        Some(s) => Some(serde_json::from_value(serde_json::to_value(s)?)?),
-        None => None,
-    };
-    let type_filter: Option<cloudapi_api::VolumeType> = match args.volume_type {
-        Some(t) => Some(serde_json::from_value(serde_json::to_value(t)?)?),
-        None => None,
-    };
+    let account = client.effective_account();
+    let all_volumes = client.list_volumes(account).await?;
 
     // Apply client-side filters
     let volumes: Vec<_> = all_volumes
@@ -245,8 +203,8 @@ async fn list_volumes(mut args: VolumeListArgs, client: &AnyClient, use_json: bo
             {
                 return false;
             }
-            if let Some(ref state) = state_filter
-                && vol.state != *state
+            if let Some(state) = args.state
+                && vol.state != state
             {
                 return false;
             }
@@ -255,8 +213,8 @@ async fn list_volumes(mut args: VolumeListArgs, client: &AnyClient, use_json: bo
             {
                 return false;
             }
-            if let Some(ref vtype) = type_filter
-                && vol.volume_type != *vtype
+            if let Some(vtype) = args.volume_type
+                && vol.type_ != vtype
             {
                 return false;
             }
@@ -277,11 +235,11 @@ async fn list_volumes(mut args: VolumeListArgs, client: &AnyClient, use_json: bo
                 vol.id.to_string()[..8].to_string(),
                 vol.name.clone(),
                 format_volume_size(vol.size),
-                enum_to_display(&vol.volume_type),
+                enum_to_display(&vol.type_),
                 enum_to_display(&vol.state),
-                output::format_age(&vol.created),
+                output::format_age(&vol.created.to_string()),
                 vol.id.to_string(),
-                vol.created.clone(),
+                vol.created.to_string(),
             ]);
         }
         tbl.print(&args.table)?;
@@ -290,9 +248,11 @@ async fn list_volumes(mut args: VolumeListArgs, client: &AnyClient, use_json: bo
     Ok(())
 }
 
-async fn get_volume(args: VolumeGetArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn get_volume(args: VolumeGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+    let account = client.effective_account();
     let volume_id = resolve_volume(&args.volume, client).await?;
-    let volume = fetch_volume(client, &volume_id.to_string()).await?;
+
+    let volume = client.get_volume(account, &volume_id.to_string()).await?;
 
     let normalized = volume_to_json(&volume)?;
     if use_json {
@@ -306,9 +266,10 @@ async fn get_volume(args: VolumeGetArgs, client: &AnyClient, use_json: bool) -> 
 
 /// Serialize a volume to JSON, ensuring `"tags": {}` is present even when empty.
 ///
-/// Node.js `triton` always outputs `"tags": {}`, so we normalize at the
-/// output layer regardless of serializer.
-fn volume_to_json(vol: &Volume) -> Result<serde_json::Value> {
+/// Progenitor's generated `Volume` type uses `skip_serializing_if = "Map::is_empty"`
+/// on `tags`, which omits the field when empty. Node.js `triton` always outputs
+/// `"tags": {}`, so we normalize here at the output layer.
+fn volume_to_json(vol: &cloudapi_client::types::Volume) -> Result<serde_json::Value> {
     let mut v = serde_json::to_value(vol)?;
     if let Some(obj) = v.as_object_mut() {
         obj.entry("tags")
@@ -415,7 +376,7 @@ fn parse_tags(tag_list: &[String]) -> Result<serde_json::Map<String, serde_json:
     Ok(tags)
 }
 
-async fn create_volume(args: VolumeCreateArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
 
     // Warn about affinity if specified (not currently supported by API)
@@ -423,11 +384,18 @@ async fn create_volume(args: VolumeCreateArgs, client: &AnyClient, use_json: boo
         tracing::warn!("--affinity option is not currently supported by the API");
     }
 
-    // Parse size (or default to smallest available)
+    // Parse size
     let size = if let Some(size_str) = &args.size {
         parse_volume_size(size_str)?
     } else {
-        let sizes = fetch_volume_sizes(client).await?;
+        // Use smallest available size (default behavior per node-triton)
+        let sizes_response = client
+            .inner()
+            .list_volume_sizes()
+            .account(account)
+            .send()
+            .await?;
+        let sizes = sizes_response.into_inner();
         sizes.iter().map(|s| s.size).min().unwrap_or(10240) // Fallback: 10 GiB in MiB
     };
 
@@ -443,31 +411,15 @@ async fn create_volume(args: VolumeCreateArgs, client: &AnyClient, use_json: boo
     // Parse tags
     let tags = args.tags.as_ref().map(|t| parse_tags(t)).transpose()?;
 
-    // Per-arm typed body — `create_volume().body(V)` takes
-    // `V: TryInto<types::CreateVolumeRequest>`. The CLI arg is the
-    // Progenitor enum copy; round-trip to each arm's Progenitor
-    // enum via serde.
-    let type_cli = args.r#type;
-    let name = args.name.clone();
-    let volume: Volume = dispatch_with_types!(client, |c, t| {
-        let type_: t::VolumeType = serde_json::from_value(serde_json::to_value(type_cli)?)?;
-        let body = t::CreateVolumeRequest {
-            name: name.clone(),
-            type_: Some(type_),
-            size,
-            networks: networks.clone(),
-            tags: tags.clone(),
-        };
-        let resp = c
-            .inner()
-            .create_volume()
-            .account(account)
-            .body(body)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Volume>(serde_json::to_value(&resp)?)?
-    });
+    let request = cloudapi_client::types::CreateVolumeRequest {
+        name: args.name.clone(),
+        type_: Some(args.r#type),
+        size,
+        networks,
+        tags,
+    };
+
+    let volume = client.create_volume(account, request).await?;
 
     let should_wait = args.wait > 0;
     let wait_timeout = args.wait_timeout.unwrap_or(300); // Default 5 minutes
@@ -484,7 +436,7 @@ async fn create_volume(args: VolumeCreateArgs, client: &AnyClient, use_json: boo
 
         if use_json {
             json::print_json(&volume_to_json(&final_volume)?)?;
-        } else if final_volume.state == cloudapi_api::VolumeState::Ready {
+        } else if final_volume.state == VolumeState::Ready {
             println!(
                 "Created volume {} ({}) - {} MiB",
                 final_volume.name,
@@ -516,21 +468,20 @@ async fn create_volume(args: VolumeCreateArgs, client: &AnyClient, use_json: boo
 
 async fn wait_for_volume_ready(
     volume_id: &str,
-    client: &AnyClient,
+    client: &TypedClient,
     timeout_secs: u64,
-) -> Result<Volume> {
+) -> Result<cloudapi_client::types::Volume> {
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
 
+    let account = client.effective_account();
     let start = Instant::now();
     let timeout = Duration::from_secs(timeout_secs);
 
     loop {
-        let volume = fetch_volume(client, volume_id).await?;
+        let volume = client.get_volume(account, volume_id).await?;
 
-        if volume.state == cloudapi_api::VolumeState::Ready
-            || volume.state == cloudapi_api::VolumeState::Failed
-        {
+        if volume.state == VolumeState::Ready || volume.state == VolumeState::Failed {
             return Ok(volume);
         }
 
@@ -544,7 +495,7 @@ async fn wait_for_volume_ready(
     }
 }
 
-async fn delete_volumes(args: VolumeDeleteArgs, client: &AnyClient) -> Result<()> {
+async fn delete_volumes(args: VolumeDeleteArgs, client: &TypedClient) -> Result<()> {
     let account = client.effective_account();
 
     for volume_name in &args.volumes {
@@ -561,15 +512,13 @@ async fn delete_volumes(args: VolumeDeleteArgs, client: &AnyClient) -> Result<()
             }
         }
 
-        dispatch!(client, |c| {
-            c.inner()
-                .delete_volume()
-                .account(account)
-                .id(volume_id)
-                .send()
-                .await?;
-            Ok::<(), anyhow::Error>(())
-        })?;
+        client
+            .inner()
+            .delete_volume()
+            .account(account)
+            .id(volume_id)
+            .send()
+            .await?;
 
         println!("Deleting volume {}", volume_name);
 
@@ -583,28 +532,20 @@ async fn delete_volumes(args: VolumeDeleteArgs, client: &AnyClient) -> Result<()
     Ok(())
 }
 
-/// Fetch available volume sizes as canonical `cloudapi_api::VolumeSize`s.
-async fn fetch_volume_sizes(client: &AnyClient) -> Result<Vec<VolumeSize>> {
-    let account = client.effective_account();
-    let sizes: Vec<VolumeSize> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .list_volume_sizes()
-            .account(account)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Vec<VolumeSize>>(serde_json::to_value(&resp)?)?
-    });
-    Ok(sizes)
-}
-
 async fn list_volume_sizes(
     args: VolumeSizesArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
-    let sizes = fetch_volume_sizes(client).await?;
+    let account = client.effective_account();
+    let response = client
+        .inner()
+        .list_volume_sizes()
+        .account(account)
+        .send()
+        .await?;
+
+    let sizes = response.into_inner();
 
     if use_json {
         json::print_json(&sizes)?;
@@ -620,37 +561,35 @@ async fn list_volume_sizes(
 }
 
 /// Resolve volume name or short ID to full UUID
-pub async fn resolve_volume(id_or_name: &str, client: &AnyClient) -> Result<uuid::Uuid> {
+pub async fn resolve_volume(id_or_name: &str, client: &TypedClient) -> Result<uuid::Uuid> {
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_name) {
         // NOTE: We accept the parsed ID without verifying it exists server-side, matching node-triton's behavior.
         return Ok(uuid);
     }
 
     let account = client.effective_account();
-    let volumes: Vec<(uuid::Uuid, String)> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .list_volumes()
-            .account(account)
-            .send()
-            .await?
-            .into_inner();
-        resp.into_iter().map(|v| (v.id, v.name)).collect()
-    });
+    let response = client
+        .inner()
+        .list_volumes()
+        .account(account)
+        .send()
+        .await?;
+
+    let volumes = response.into_inner();
 
     // Try short ID match first (at least 8 characters)
     if id_or_name.len() >= 8 {
-        for (id, _) in &volumes {
-            if id.to_string().starts_with(id_or_name) {
-                return Ok(*id);
+        for vol in &volumes {
+            if vol.id.to_string().starts_with(id_or_name) {
+                return Ok(vol.id);
             }
         }
     }
 
     // Try exact name match
-    for (id, name) in &volumes {
-        if name == id_or_name {
-            return Ok(*id);
+    for vol in &volumes {
+        if vol.name == id_or_name {
+            return Ok(vol.id);
         }
     }
 
@@ -659,23 +598,22 @@ pub async fn resolve_volume(id_or_name: &str, client: &AnyClient) -> Result<uuid
 
 async fn wait_for_volume_deletion(
     volume_id: &str,
-    client: &AnyClient,
+    client: &TypedClient,
     timeout_secs: u64,
 ) -> Result<()> {
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
 
+    let account = client.effective_account();
     let start = Instant::now();
     let timeout = Duration::from_secs(timeout_secs);
 
     loop {
-        // A deleted volume returns 404, which surfaces as an error here.
-        // We treat any error as "deleted" (matching the previous behavior).
-        let result = fetch_volume(client, volume_id).await;
+        let result = client.get_volume(account, volume_id).await;
 
         match result {
             Ok(volume) => {
-                if volume.state == cloudapi_api::VolumeState::Failed {
+                if volume.state == VolumeState::Failed {
                     return Err(anyhow::anyhow!("Volume deletion failed"));
                 }
             }

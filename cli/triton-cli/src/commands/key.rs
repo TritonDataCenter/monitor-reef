@@ -8,12 +8,10 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_api::SshKey;
+use cloudapi_client::TypedClient;
 
-use crate::client::AnyClient;
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
-use crate::{dispatch, dispatch_with_types};
 
 #[derive(Args, Clone)]
 pub struct KeyListArgs {
@@ -72,7 +70,7 @@ impl KeyCommand {
         }
     }
 
-    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
             Self::List(args) => list_keys(args, client, use_json).await,
             Self::Get(args) => get_key(args, client, use_json).await,
@@ -82,20 +80,11 @@ impl KeyCommand {
     }
 }
 
-async fn list_keys(args: KeyListArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn list_keys(args: KeyListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
+    let response = client.inner().list_keys().account(account).send().await?;
 
-    let mut keys: Vec<SshKey> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .list_keys()
-            .account(account)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Vec<SshKey>>(serde_json::to_value(&resp)?)?
-    });
-
+    let mut keys = response.into_inner();
     // Sort by name (case-insensitive) to match node-triton behavior
     keys.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
 
@@ -122,20 +111,17 @@ async fn list_keys(args: KeyListArgs, client: &AnyClient, use_json: bool) -> Res
     Ok(())
 }
 
-async fn get_key(args: KeyGetArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn get_key(args: KeyGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
+    let response = client
+        .inner()
+        .get_key()
+        .account(account)
+        .name(&args.key)
+        .send()
+        .await?;
 
-    let key: SshKey = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .get_key()
-            .account(account)
-            .name(&args.key)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<SshKey>(serde_json::to_value(&resp)?)?
-    });
+    let key = response.into_inner();
 
     if use_json {
         json::print_json(&key)?;
@@ -146,7 +132,7 @@ async fn get_key(args: KeyGetArgs, client: &AnyClient, use_json: bool) -> Result
     Ok(())
 }
 
-async fn add_key(args: KeyAddArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn add_key(args: KeyAddArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
 
     // Read key from file or stdin
@@ -167,24 +153,21 @@ async fn add_key(args: KeyAddArgs, client: &AnyClient, use_json: bool) -> Result
             .unwrap_or("key")
             .to_string()
     });
-    let key_body = key_content.clone();
 
-    let key: SshKey = dispatch_with_types!(client, |c, t| {
-        let request = t::CreateSshKeyRequest {
-            name: name.clone(),
-            key: key_body.clone(),
-        };
-        let resp = c
-            .inner()
-            .create_key()
-            .account(account)
-            .body(request)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<SshKey>(serde_json::to_value(&resp)?)?
-    });
+    let request = cloudapi_client::types::CreateSshKeyRequest {
+        name: name.clone(),
+        key: key_content.clone(),
+    };
 
+    let response = client
+        .inner()
+        .create_key()
+        .account(account)
+        .body(request)
+        .send()
+        .await?;
+
+    let key = response.into_inner();
     println!("Added key '{}' ({})", key.name, key.fingerprint);
 
     if use_json {
@@ -194,7 +177,7 @@ async fn add_key(args: KeyAddArgs, client: &AnyClient, use_json: bool) -> Result
     Ok(())
 }
 
-async fn delete_keys(args: KeyDeleteArgs, client: &AnyClient) -> Result<()> {
+async fn delete_keys(args: KeyDeleteArgs, client: &TypedClient) -> Result<()> {
     let account = client.effective_account();
 
     for key_name in &args.keys {
@@ -209,15 +192,13 @@ async fn delete_keys(args: KeyDeleteArgs, client: &AnyClient) -> Result<()> {
             }
         }
 
-        dispatch!(client, |c| {
-            c.inner()
-                .delete_key()
-                .account(account)
-                .name(key_name)
-                .send()
-                .await?;
-            Ok::<(), anyhow::Error>(())
-        })?;
+        client
+            .inner()
+            .delete_key()
+            .account(account)
+            .name(key_name)
+            .send()
+            .await?;
 
         println!("Deleted key '{}'", key_name);
     }

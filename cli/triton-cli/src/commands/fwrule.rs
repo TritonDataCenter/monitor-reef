@@ -8,13 +8,11 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_api::{FirewallRule, Machine};
+use cloudapi_client::TypedClient;
 
-use crate::client::AnyClient;
 use crate::output::enum_to_display;
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
-use crate::{dispatch, dispatch_with_types};
 
 #[derive(Args, Clone)]
 pub struct FwruleListArgs {
@@ -125,7 +123,7 @@ impl FwruleCommand {
         }
     }
 
-    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
             Self::List(args) => list_rules(args, client, use_json).await,
             Self::Get(args) => get_rule(args, client, use_json).await,
@@ -139,25 +137,16 @@ impl FwruleCommand {
     }
 }
 
-/// Fetch all firewall rules through the dispatched client as canonical
-/// `cloudapi_api::FirewallRule`.
-async fn fetch_rules(client: &AnyClient) -> Result<Vec<FirewallRule>> {
+async fn list_rules(args: FwruleListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
-    let rules: Vec<FirewallRule> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .list_firewall_rules()
-            .account(account)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Vec<FirewallRule>>(serde_json::to_value(&resp)?)?
-    });
-    Ok(rules)
-}
+    let response = client
+        .inner()
+        .list_firewall_rules()
+        .account(account)
+        .send()
+        .await?;
 
-async fn list_rules(args: FwruleListArgs, client: &AnyClient, use_json: bool) -> Result<()> {
-    let mut rules = fetch_rules(client).await?;
+    let mut rules = response.into_inner();
     rules.sort_by(|a, b| a.rule.cmp(&b.rule));
 
     if use_json {
@@ -188,21 +177,19 @@ async fn list_rules(args: FwruleListArgs, client: &AnyClient, use_json: bool) ->
     Ok(())
 }
 
-async fn get_rule(args: FwruleGetArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn get_rule(args: FwruleGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
     let rule_id = resolve_rule(&args.id, client).await?;
 
-    let rule: FirewallRule = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .get_firewall_rule()
-            .account(account)
-            .id(rule_id)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<FirewallRule>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .get_firewall_rule()
+        .account(account)
+        .id(rule_id)
+        .send()
+        .await?;
+
+    let rule = response.into_inner();
 
     if use_json {
         json::print_json(&rule)?;
@@ -213,26 +200,24 @@ async fn get_rule(args: FwruleGetArgs, client: &AnyClient, use_json: bool) -> Re
     Ok(())
 }
 
-async fn create_rule(args: FwruleCreateArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn create_rule(args: FwruleCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
 
-    let rule: FirewallRule = dispatch_with_types!(client, |c, t| {
-        let body = t::CreateFirewallRuleRequest {
-            rule: args.rule.clone(),
-            enabled: Some(!args.disabled),
-            log: if args.log { Some(true) } else { None },
-            description: args.description.clone(),
-        };
-        let resp = c
-            .inner()
-            .create_firewall_rule()
-            .account(account)
-            .body(body)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<FirewallRule>(serde_json::to_value(&resp)?)?
-    });
+    let request = cloudapi_client::types::CreateFirewallRuleRequest {
+        rule: args.rule.clone(),
+        enabled: Some(!args.disabled),
+        log: if args.log { Some(true) } else { None },
+        description: args.description.clone(),
+    };
+
+    let response = client
+        .inner()
+        .create_firewall_rule()
+        .account(account)
+        .body(request)
+        .send()
+        .await?;
+    let rule = response.into_inner();
 
     eprintln!(
         "Created firewall rule {} ({}{})",
@@ -248,7 +233,7 @@ async fn create_rule(args: FwruleCreateArgs, client: &AnyClient, use_json: bool)
     Ok(())
 }
 
-async fn delete_rules(args: FwruleDeleteArgs, client: &AnyClient) -> Result<()> {
+async fn delete_rules(args: FwruleDeleteArgs, client: &TypedClient) -> Result<()> {
     let account = client.effective_account();
 
     for rule_id in &args.ids {
@@ -265,15 +250,13 @@ async fn delete_rules(args: FwruleDeleteArgs, client: &AnyClient) -> Result<()> 
             }
         }
 
-        dispatch!(client, |c| {
-            c.inner()
-                .delete_firewall_rule()
-                .account(account)
-                .id(resolved_id)
-                .send()
-                .await?;
-            Ok::<(), anyhow::Error>(())
-        })?;
+        client
+            .inner()
+            .delete_firewall_rule()
+            .account(account)
+            .id(resolved_id)
+            .send()
+            .await?;
 
         println!("Deleted firewall rule {}", rule_id);
     }
@@ -281,21 +264,19 @@ async fn delete_rules(args: FwruleDeleteArgs, client: &AnyClient) -> Result<()> 
     Ok(())
 }
 
-async fn enable_rules(args: FwruleEnableArgs, client: &AnyClient) -> Result<()> {
+async fn enable_rules(args: FwruleEnableArgs, client: &TypedClient) -> Result<()> {
     let account = client.effective_account();
 
     for rule_id in &args.ids {
         let resolved_id = resolve_rule(rule_id, client).await?;
 
-        dispatch!(client, |c| {
-            c.inner()
-                .enable_firewall_rule()
-                .account(account)
-                .id(resolved_id)
-                .send()
-                .await?;
-            Ok::<(), anyhow::Error>(())
-        })?;
+        client
+            .inner()
+            .enable_firewall_rule()
+            .account(account)
+            .id(resolved_id)
+            .send()
+            .await?;
 
         println!("Enabled firewall rule {}", rule_id);
     }
@@ -303,21 +284,19 @@ async fn enable_rules(args: FwruleEnableArgs, client: &AnyClient) -> Result<()> 
     Ok(())
 }
 
-async fn disable_rules(args: FwruleDisableArgs, client: &AnyClient) -> Result<()> {
+async fn disable_rules(args: FwruleDisableArgs, client: &TypedClient) -> Result<()> {
     let account = client.effective_account();
 
     for rule_id in &args.ids {
         let resolved_id = resolve_rule(rule_id, client).await?;
 
-        dispatch!(client, |c| {
-            c.inner()
-                .disable_firewall_rule()
-                .account(account)
-                .id(resolved_id)
-                .send()
-                .await?;
-            Ok::<(), anyhow::Error>(())
-        })?;
+        client
+            .inner()
+            .disable_firewall_rule()
+            .account(account)
+            .id(resolved_id)
+            .send()
+            .await?;
 
         println!("Disabled firewall rule {}", rule_id);
     }
@@ -325,7 +304,7 @@ async fn disable_rules(args: FwruleDisableArgs, client: &AnyClient) -> Result<()
     Ok(())
 }
 
-async fn update_rule(args: FwruleUpdateArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn update_rule(args: FwruleUpdateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
     let rule_id = resolve_rule(&args.id, client).await?;
 
@@ -387,37 +366,35 @@ async fn update_rule(args: FwruleUpdateArgs, client: &AnyClient, use_json: bool)
         updated_fields.push("log");
     }
 
-    let updated: FirewallRule = dispatch_with_types!(client, |c, t| {
-        let body = t::UpdateFirewallRuleRequest {
-            rule: rule.clone(),
-            enabled,
-            log,
-            description: description.clone(),
-        };
-        let resp = c
-            .inner()
-            .update_firewall_rule()
-            .account(account)
-            .id(rule_id)
-            .body(body)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<FirewallRule>(serde_json::to_value(&resp)?)?
-    });
+    let request = cloudapi_client::types::UpdateFirewallRuleRequest {
+        rule,
+        enabled,
+        log,
+        description,
+    };
+
+    let response = client
+        .inner()
+        .update_firewall_rule()
+        .account(account)
+        .id(rule_id)
+        .body(request)
+        .send()
+        .await?;
+    let rule = response.into_inner();
 
     if updated_fields.is_empty() {
-        eprintln!("Updated firewall rule {}", &updated.id.to_string()[..8]);
+        eprintln!("Updated firewall rule {}", &rule.id.to_string()[..8]);
     } else {
         eprintln!(
             "Updated firewall rule {} (fields: {})",
-            &updated.id.to_string()[..8],
+            &rule.id.to_string()[..8],
             updated_fields.join(", ")
         );
     }
 
     if use_json {
-        json::print_json(&updated)?;
+        json::print_json(&rule)?;
     }
 
     Ok(())
@@ -425,23 +402,21 @@ async fn update_rule(args: FwruleUpdateArgs, client: &AnyClient, use_json: bool)
 
 async fn list_rule_instances(
     args: FwruleInstancesArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
     let account = client.effective_account();
     let rule_id = resolve_rule(&args.id, client).await?;
 
-    let mut machines: Vec<Machine> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .list_firewall_rule_machines()
-            .account(account)
-            .id(rule_id)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Vec<Machine>>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .list_firewall_rule_machines()
+        .account(account)
+        .id(rule_id)
+        .send()
+        .await?;
+
+    let mut machines = response.into_inner();
     machines.sort_by(|a, b| a.created.cmp(&b.created));
 
     if use_json {
@@ -469,29 +444,27 @@ async fn list_rule_instances(
 }
 
 /// Resolve firewall rule short ID to full UUID
-async fn resolve_rule(id_or_short: &str, client: &AnyClient) -> Result<uuid::Uuid> {
+async fn resolve_rule(id_or_short: &str, client: &TypedClient) -> Result<uuid::Uuid> {
     if let Ok(uuid) = uuid::Uuid::parse_str(id_or_short) {
         // NOTE: We accept the parsed ID without verifying it exists server-side, matching node-triton's behavior.
         return Ok(uuid);
     }
 
     let account = client.effective_account();
-    let rule_ids: Vec<uuid::Uuid> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .list_firewall_rules()
-            .account(account)
-            .send()
-            .await?
-            .into_inner();
-        resp.into_iter().map(|r| r.id).collect()
-    });
+    let response = client
+        .inner()
+        .list_firewall_rules()
+        .account(account)
+        .send()
+        .await?;
+
+    let rules = response.into_inner();
 
     // Try short ID match (at least 8 characters)
     if id_or_short.len() >= 8 {
-        for id in &rule_ids {
-            if id.to_string().starts_with(id_or_short) {
-                return Ok(*id);
+        for rule in &rules {
+            if rule.id.to_string().starts_with(id_or_short) {
+                return Ok(rule.id);
             }
         }
     }

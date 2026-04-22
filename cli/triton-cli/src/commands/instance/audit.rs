@@ -8,11 +8,10 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_api::AuditEntry;
+use cloudapi_client::TypedClient;
+use cloudapi_client::types::AuditEntry;
 
-use crate::client::AnyClient;
 use crate::define_columns;
-use crate::dispatch;
 use crate::output::table::{TableBuilder, TableFormatArgs};
 use crate::output::{enum_to_display, json};
 
@@ -29,25 +28,19 @@ pub struct AuditArgs {
     pub table: TableFormatArgs,
 }
 
-pub async fn run(args: AuditArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+pub async fn run(args: AuditArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
 
-    // Re-materialize the per-client Progenitor `AuditEntry` into the
-    // canonical `cloudapi_api::AuditEntry` so the column renderer below is
-    // variant-agnostic.
-    let audits: Vec<AuditEntry> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .machine_audit()
-            .account(account)
-            .machine(machine_id)
-            .send()
-            .await?
-            .into_inner();
-        let value = serde_json::to_value(&resp)?;
-        serde_json::from_value::<Vec<AuditEntry>>(value)?
-    });
+    let response = client
+        .inner()
+        .machine_audit()
+        .account(account)
+        .machine(machine_id)
+        .send()
+        .await?;
+
+    let audits = response.into_inner();
 
     if use_json {
         json::print_json_stream(&audits)?;

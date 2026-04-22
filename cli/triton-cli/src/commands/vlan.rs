@@ -11,12 +11,10 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_api::{FabricVlan, Network};
+use cloudapi_client::TypedClient;
 
-use crate::client::AnyClient;
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
-use crate::{dispatch, dispatch_with_types};
 
 /// Pre-parsed VLAN list filters (CLI-only, not an API type).
 #[derive(Debug, Default)]
@@ -132,7 +130,7 @@ pub struct VlanNetworksArgs {
 }
 
 impl VlanCommand {
-    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         match self {
             Self::List(args) => list_vlans(args, client, use_json).await,
             Self::Get(args) => get_vlan(args, client, use_json).await,
@@ -144,25 +142,16 @@ impl VlanCommand {
     }
 }
 
-/// Fetch all fabric VLANs as canonical `cloudapi_api::FabricVlan`
-/// through the dispatched client.
-async fn fetch_vlans(client: &AnyClient) -> Result<Vec<FabricVlan>> {
+async fn list_vlans(args: VlanListArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
-    let vlans: Vec<FabricVlan> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .list_fabric_vlans()
-            .account(account)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Vec<FabricVlan>>(serde_json::to_value(&resp)?)?
-    });
-    Ok(vlans)
-}
+    let response = client
+        .inner()
+        .list_fabric_vlans()
+        .account(account)
+        .send()
+        .await?;
 
-async fn list_vlans(args: VlanListArgs, client: &AnyClient, use_json: bool) -> Result<()> {
-    let vlans = fetch_vlans(client).await?;
+    let vlans = response.into_inner();
 
     let filters = parse_vlan_filters(&args.filters)?;
 
@@ -211,21 +200,19 @@ async fn list_vlans(args: VlanListArgs, client: &AnyClient, use_json: bool) -> R
     Ok(())
 }
 
-async fn get_vlan(args: VlanGetArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn get_vlan(args: VlanGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
     let vlan_id = resolve_vlan(&args.vlan, client).await?;
 
-    let vlan: FabricVlan = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .get_fabric_vlan()
-            .account(account)
-            .vlan_id(vlan_id)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<FabricVlan>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .get_fabric_vlan()
+        .account(account)
+        .vlan_id(vlan_id)
+        .send()
+        .await?;
+
+    let vlan = response.into_inner();
 
     if use_json {
         json::print_json(&vlan)?;
@@ -237,55 +224,50 @@ async fn get_vlan(args: VlanGetArgs, client: &AnyClient, use_json: bool) -> Resu
 }
 
 /// Resolve VLAN name or ID to numeric VLAN ID
-async fn resolve_vlan(id_or_name: &str, client: &AnyClient) -> Result<u16> {
+async fn resolve_vlan(id_or_name: &str, client: &TypedClient) -> Result<u16> {
     // Try parsing as numeric ID first
     if let Ok(vlan_id) = id_or_name.parse::<u16>() {
         // NOTE: We accept the parsed ID without verifying it exists server-side, matching node-triton's behavior.
         return Ok(vlan_id);
     }
 
-    // Otherwise, look up by name. Pull a stable (name, vlan_id) tuple list
-    // out of the dispatch arm.
+    // Otherwise, look up by name
     let account = client.effective_account();
-    let vlans: Vec<(String, u16)> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .list_fabric_vlans()
-            .account(account)
-            .send()
-            .await?
-            .into_inner();
-        resp.into_iter().map(|v| (v.name, v.vlan_id)).collect()
-    });
+    let response = client
+        .inner()
+        .list_fabric_vlans()
+        .account(account)
+        .send()
+        .await?;
 
-    for (name, vlan_id) in &vlans {
-        if name == id_or_name {
-            return Ok(*vlan_id);
+    let vlans = response.into_inner();
+
+    for vlan in &vlans {
+        if vlan.name == id_or_name {
+            return Ok(vlan.vlan_id);
         }
     }
 
     Err(crate::errors::ResourceNotFoundError(format!("VLAN not found: {}", id_or_name)).into())
 }
 
-async fn create_vlan(args: VlanCreateArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn create_vlan(args: VlanCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
 
-    let vlan: FabricVlan = dispatch_with_types!(client, |c, t| {
-        let body = t::CreateFabricVlanRequest {
-            vlan_id: args.vlan_id,
-            name: args.name.clone(),
-            description: args.description.clone(),
-        };
-        let resp = c
-            .inner()
-            .create_fabric_vlan()
-            .account(account)
-            .body(body)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<FabricVlan>(serde_json::to_value(&resp)?)?
-    });
+    let request = cloudapi_client::types::CreateFabricVlanRequest {
+        vlan_id: args.vlan_id,
+        name: args.name.clone(),
+        description: args.description.clone(),
+    };
+
+    let response = client
+        .inner()
+        .create_fabric_vlan()
+        .account(account)
+        .body(request)
+        .send()
+        .await?;
+    let vlan = response.into_inner();
 
     if use_json {
         // Output JSON only (node-triton compat)
@@ -297,7 +279,7 @@ async fn create_vlan(args: VlanCreateArgs, client: &AnyClient, use_json: bool) -
     Ok(())
 }
 
-async fn delete_vlans(args: VlanDeleteArgs, client: &AnyClient) -> Result<()> {
+async fn delete_vlans(args: VlanDeleteArgs, client: &TypedClient) -> Result<()> {
     let account = client.effective_account();
 
     for vlan in &args.vlans {
@@ -314,15 +296,13 @@ async fn delete_vlans(args: VlanDeleteArgs, client: &AnyClient) -> Result<()> {
             }
         }
 
-        dispatch!(client, |c| {
-            c.inner()
-                .delete_fabric_vlan()
-                .account(account)
-                .vlan_id(vlan_id)
-                .send()
-                .await?;
-            Ok::<(), anyhow::Error>(())
-        })?;
+        client
+            .inner()
+            .delete_fabric_vlan()
+            .account(account)
+            .vlan_id(vlan_id)
+            .send()
+            .await?;
 
         println!("Deleted VLAN {}", vlan_id);
     }
@@ -330,7 +310,7 @@ async fn delete_vlans(args: VlanDeleteArgs, client: &AnyClient) -> Result<()> {
     Ok(())
 }
 
-async fn update_vlan(args: VlanUpdateArgs, client: &AnyClient, use_json: bool) -> Result<()> {
+async fn update_vlan(args: VlanUpdateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
     let vlan_id = resolve_vlan(&args.vlan, client).await?;
 
@@ -394,35 +374,30 @@ async fn update_vlan(args: VlanUpdateArgs, client: &AnyClient, use_json: bool) -
         }
     }
 
-    let updated: FabricVlan = dispatch_with_types!(client, |c, t| {
-        let body = t::UpdateFabricVlanRequest {
-            name: name.clone(),
-            description: description.clone(),
-        };
-        let resp = c
-            .inner()
-            .update_fabric_vlan()
-            .account(account)
-            .vlan_id(vlan_id)
-            .body(body)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<FabricVlan>(serde_json::to_value(&resp)?)?
-    });
+    let request = cloudapi_client::types::UpdateFabricVlanRequest { name, description };
+
+    let response = client
+        .inner()
+        .update_fabric_vlan()
+        .account(account)
+        .vlan_id(vlan_id)
+        .body(request)
+        .send()
+        .await?;
+    let vlan = response.into_inner();
 
     if updated_fields.is_empty() {
-        eprintln!("Updated VLAN {}", updated.vlan_id);
+        eprintln!("Updated VLAN {}", vlan.vlan_id);
     } else {
         eprintln!(
             "Updated VLAN {} (fields: {})",
-            updated.vlan_id,
+            vlan.vlan_id,
             updated_fields.join(", ")
         );
     }
 
     if use_json {
-        json::print_json(&updated)?;
+        json::print_json(&vlan)?;
     }
 
     Ok(())
@@ -430,23 +405,21 @@ async fn update_vlan(args: VlanUpdateArgs, client: &AnyClient, use_json: bool) -
 
 async fn list_vlan_networks(
     args: VlanNetworksArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
     let account = client.effective_account();
     let vlan_id = resolve_vlan(&args.vlan, client).await?;
 
-    let networks: Vec<Network> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .list_fabric_networks()
-            .account(account)
-            .vlan_id(vlan_id)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Vec<Network>>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .list_fabric_networks()
+        .account(account)
+        .vlan_id(vlan_id)
+        .send()
+        .await?;
+
+    let networks = response.into_inner();
 
     if use_json {
         // Output NDJSON format (one JSON object per line) like node-triton

@@ -8,13 +8,11 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_api::{AccessKey, CreateAccessKeyResponse};
+use cloudapi_client::TypedClient;
 use cloudapi_client::types::AccessKeyStatus;
 
-use crate::client::AnyClient;
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
-use crate::{dispatch, dispatch_with_types};
 
 use super::common::resolve_user;
 
@@ -66,7 +64,7 @@ pub struct RbacAccesskeyCommand {
 }
 
 impl RbacAccesskeyCommand {
-    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
         if self.create {
             if self.args.is_empty() {
                 anyhow::bail!(
@@ -118,24 +116,21 @@ impl RbacAccesskeyCommand {
 
 pub async fn list_user_access_keys(
     args: UserAccesskeysArgs,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
     let account = client.effective_account();
     let user_id = resolve_user(&args.user, client).await?;
 
-    let mut keys: Vec<AccessKey> = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .list_user_access_keys()
-            .account(account)
-            .uuid(&user_id)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<Vec<AccessKey>>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .list_user_access_keys()
+        .account(account)
+        .uuid(&user_id)
+        .send()
+        .await?;
 
+    let mut keys = response.into_inner();
     keys.sort_by(|a, b| a.created.cmp(&b.created));
 
     if use_json {
@@ -161,29 +156,27 @@ pub async fn list_user_access_keys(
 async fn get_user_access_key(
     user: &str,
     accesskeyid: &str,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
     let account = client.effective_account();
     let user_id = resolve_user(user, client).await?;
 
-    let key_json: serde_json::Value = dispatch!(client, |c| {
-        let resp = c
-            .inner()
-            .get_user_access_key()
-            .account(account)
-            .uuid(&user_id)
-            .accesskeyid(accesskeyid)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::to_value(&resp)?
-    });
+    let response = client
+        .inner()
+        .get_user_access_key()
+        .account(account)
+        .uuid(&user_id)
+        .accesskeyid(accesskeyid)
+        .send()
+        .await?;
+
+    let key = response.into_inner();
 
     if use_json {
-        json::print_json(&key_json)?;
+        json::print_json(&key)?;
     } else {
-        json::print_json_pretty(&key_json)?;
+        json::print_json_pretty(&key)?;
     }
 
     Ok(())
@@ -193,38 +186,27 @@ async fn create_user_access_key(
     user: &str,
     status: Option<AccessKeyStatus>,
     description: Option<String>,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
     let account = client.effective_account();
     let user_id = resolve_user(user, client).await?;
 
-    // Serialize status to wire string so each arm can parse its own enum.
-    let status_str = status
-        .as_ref()
-        .and_then(|s| serde_json::to_value(s).ok())
-        .and_then(|v| v.as_str().map(|s| s.to_string()));
+    let request = cloudapi_client::types::CreateAccessKeyRequest {
+        status,
+        description,
+    };
 
-    let key: CreateAccessKeyResponse = dispatch_with_types!(client, |c, t| {
-        let status: Option<t::AccessKeyStatus> = status_str
-            .as_ref()
-            .map(|s| serde_json::from_value(serde_json::Value::String(s.clone())))
-            .transpose()?;
-        let request = t::CreateAccessKeyRequest {
-            status,
-            description: description.clone(),
-        };
-        let resp = c
-            .inner()
-            .create_user_access_key()
-            .account(account)
-            .uuid(&user_id)
-            .body(request)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::from_value::<CreateAccessKeyResponse>(serde_json::to_value(&resp)?)?
-    });
+    let response = client
+        .inner()
+        .create_user_access_key()
+        .account(account)
+        .uuid(&user_id)
+        .body(request)
+        .send()
+        .await?;
+
+    let key = response.into_inner();
 
     if use_json {
         json::print_json(&key)?;
@@ -243,47 +225,34 @@ async fn update_user_access_key(
     accesskeyid: &str,
     status: Option<AccessKeyStatus>,
     description: Option<String>,
-    client: &AnyClient,
+    client: &TypedClient,
     use_json: bool,
 ) -> Result<()> {
     let account = client.effective_account();
     let user_id = resolve_user(user, client).await?;
 
-    // Serialize status to wire string so each arm can parse its own enum.
-    let status_str = status
-        .as_ref()
-        .and_then(|s| serde_json::to_value(s).ok())
-        .and_then(|v| v.as_str().map(|s| s.to_string()));
+    let request = cloudapi_client::types::UpdateAccessKeyRequest {
+        status,
+        description,
+    };
 
-    let key_json: serde_json::Value = dispatch_with_types!(client, |c, t| {
-        let status: Option<t::AccessKeyStatus> = status_str
-            .as_ref()
-            .map(|s| serde_json::from_value(serde_json::Value::String(s.clone())))
-            .transpose()?;
-        let request = t::UpdateAccessKeyRequest {
-            status,
-            description: description.clone(),
-        };
-        let resp = c
-            .inner()
-            .update_user_access_key()
-            .account(account)
-            .uuid(&user_id)
-            .accesskeyid(accesskeyid)
-            .body(request)
-            .send()
-            .await?
-            .into_inner();
-        serde_json::to_value(&resp)?
-    });
+    let response = client
+        .inner()
+        .update_user_access_key()
+        .account(account)
+        .uuid(&user_id)
+        .accesskeyid(accesskeyid)
+        .body(request)
+        .send()
+        .await?;
+
+    let key = response.into_inner();
 
     if use_json {
-        json::print_json(&key_json)?;
+        json::print_json(&key)?;
     } else {
-        if let Some(id) = key_json.get("accesskeyid").and_then(|v| v.as_str()) {
-            println!("Updated access key {}", id);
-        }
-        json::print_json_pretty(&key_json)?;
+        println!("Updated access key {}", key.accesskeyid);
+        json::print_json_pretty(&key)?;
     }
 
     Ok(())
@@ -293,7 +262,7 @@ async fn delete_user_access_keys(
     user: &str,
     ids: Vec<String>,
     force: bool,
-    client: &AnyClient,
+    client: &TypedClient,
 ) -> Result<()> {
     let account = client.effective_account();
     let user_id = resolve_user(user, client).await?;
@@ -310,16 +279,14 @@ async fn delete_user_access_keys(
             }
         }
 
-        dispatch!(client, |c| {
-            c.inner()
-                .delete_user_access_key()
-                .account(account)
-                .uuid(&user_id)
-                .accesskeyid(id)
-                .send()
-                .await?;
-            Ok::<(), anyhow::Error>(())
-        })?;
+        client
+            .inner()
+            .delete_user_access_key()
+            .account(account)
+            .uuid(&user_id)
+            .accesskeyid(id)
+            .send()
+            .await?;
 
         println!("Deleted user {} access key '{}'", user, id);
     }

@@ -8,10 +8,8 @@
 
 use anyhow::Result;
 use clap::Args;
+use cloudapi_client::TypedClient;
 use cloudapi_client::types::MachineState;
-
-use crate::client::AnyClient;
-use crate::dispatch;
 
 #[derive(Args, Clone)]
 pub struct StartArgs {
@@ -59,39 +57,7 @@ pub struct RebootArgs {
     pub wait_timeout: u64,
 }
 
-/// Body for the cloudapi action-dispatch endpoint.
-///
-/// Mirrors `cloudapi_client::ActionBody` but defined locally so the
-/// dispatch arm can hand an opaque `serde_json::Value` to either generated
-/// client's `update_machine().body(...)` builder.
-fn start_body(origin: Option<&str>) -> serde_json::Value {
-    let mut obj = serde_json::Map::new();
-    obj.insert("action".into(), serde_json::Value::String("start".into()));
-    if let Some(o) = origin {
-        obj.insert("origin".into(), serde_json::Value::String(o.into()));
-    }
-    serde_json::Value::Object(obj)
-}
-
-fn stop_body(origin: Option<&str>) -> serde_json::Value {
-    let mut obj = serde_json::Map::new();
-    obj.insert("action".into(), serde_json::Value::String("stop".into()));
-    if let Some(o) = origin {
-        obj.insert("origin".into(), serde_json::Value::String(o.into()));
-    }
-    serde_json::Value::Object(obj)
-}
-
-fn reboot_body(origin: Option<&str>) -> serde_json::Value {
-    let mut obj = serde_json::Map::new();
-    obj.insert("action".into(), serde_json::Value::String("reboot".into()));
-    if let Some(o) = origin {
-        obj.insert("origin".into(), serde_json::Value::String(o.into()));
-    }
-    serde_json::Value::Object(obj)
-}
-
-pub async fn start(args: StartArgs, client: &AnyClient) -> Result<()> {
+pub async fn start(args: StartArgs, client: &TypedClient) -> Result<()> {
     let total = args.instances.len();
     let mut errors = Vec::new();
 
@@ -107,31 +73,18 @@ pub async fn start(args: StartArgs, client: &AnyClient) -> Result<()> {
         let account = client.effective_account();
         let id_str = machine_id.to_string();
 
-        let start_result: anyhow::Result<()> = if let Some(ref snap) = args.snapshot {
-            dispatch!(client, |c| {
-                c.inner()
-                    .start_machine_from_snapshot()
-                    .account(account)
-                    .machine(machine_id)
-                    .name(snap)
-                    .send()
-                    .await
-                    .map(|_| ())
-                    .map_err(anyhow::Error::from)
-            })
+        let start_result = if let Some(ref snap) = args.snapshot {
+            client
+                .inner()
+                .start_machine_from_snapshot()
+                .account(account)
+                .machine(machine_id)
+                .name(snap)
+                .send()
+                .await
+                .map(|_| ())
         } else {
-            let body = start_body(None);
-            dispatch!(client, |c| {
-                c.inner()
-                    .update_machine()
-                    .account(account)
-                    .machine(machine_id)
-                    .body(body)
-                    .send()
-                    .await
-                    .map(|_| ())
-                    .map_err(anyhow::Error::from)
-            })
+            client.start_machine(account, &machine_id, None).await
         };
 
         if let Err(e) = start_result {
@@ -177,7 +130,7 @@ pub async fn start(args: StartArgs, client: &AnyClient) -> Result<()> {
     }
 }
 
-pub async fn stop(args: StopArgs, client: &AnyClient) -> Result<()> {
+pub async fn stop(args: StopArgs, client: &TypedClient) -> Result<()> {
     let total = args.instances.len();
     let mut errors = Vec::new();
 
@@ -193,20 +146,7 @@ pub async fn stop(args: StopArgs, client: &AnyClient) -> Result<()> {
         let account = client.effective_account();
         let id_str = machine_id.to_string();
 
-        let body = stop_body(None);
-        let result: anyhow::Result<()> = dispatch!(client, |c| {
-            c.inner()
-                .update_machine()
-                .account(account)
-                .machine(machine_id)
-                .body(body)
-                .send()
-                .await
-                .map(|_| ())
-                .map_err(anyhow::Error::from)
-        });
-
-        if let Err(e) = result {
+        if let Err(e) = client.stop_machine(account, &machine_id, None).await {
             #[cfg(debug_assertions)]
             if e.to_string()
                 .contains(cloudapi_client::EMIT_PAYLOAD_SENTINEL)
@@ -249,7 +189,7 @@ pub async fn stop(args: StopArgs, client: &AnyClient) -> Result<()> {
     }
 }
 
-pub async fn reboot(args: RebootArgs, client: &AnyClient) -> Result<()> {
+pub async fn reboot(args: RebootArgs, client: &TypedClient) -> Result<()> {
     let total = args.instances.len();
     let mut errors = Vec::new();
 
@@ -269,20 +209,7 @@ pub async fn reboot(args: RebootArgs, client: &AnyClient) -> Result<()> {
         // corresponding audit entry later.
         let reboot_time = chrono::Utc::now().to_rfc3339();
 
-        let body = reboot_body(None);
-        let result: anyhow::Result<()> = dispatch!(client, |c| {
-            c.inner()
-                .update_machine()
-                .account(account)
-                .machine(machine_id)
-                .body(body)
-                .send()
-                .await
-                .map(|_| ())
-                .map_err(anyhow::Error::from)
-        });
-
-        if let Err(e) = result {
+        if let Err(e) = client.reboot_machine(account, &machine_id, None).await {
             #[cfg(debug_assertions)]
             if e.to_string()
                 .contains(cloudapi_client::EMIT_PAYLOAD_SENTINEL)
