@@ -4,13 +4,7 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-// Both modules are scaffolding for the `/v1/auth/login-ssh` handler.
-// The handler wire-up (which consumes the classifier + verifier) lands
-// in a follow-up slice per docs/tutorials/adding-a-tritonapi-feature.md;
-// `dead_code` is expected until that commit.
-#[allow(dead_code)]
 mod auth_scheme;
-#[allow(dead_code)]
 mod http_sig;
 
 use anyhow::{Context, Result};
@@ -186,52 +180,94 @@ impl TritonApi for TritonApiImpl {
             .lookup(&user.login)
             .await
             .map_err(session_error_to_http)?;
-        let account = auth_info.account;
-
-        let roles: Vec<Role> = account
-            .groups
-            .as_deref()
-            .unwrap_or(&[])
-            .iter()
-            .map(|g| Role::from(g.as_str()))
-            .collect();
-        let is_operator = account.is_operator.unwrap_or(false);
-
-        let token = jwt
-            .create_token(account.uuid, &account.login, &roles)
-            .map_err(session_error_to_http)?;
-        let refresh_token = jwt
-            .create_refresh_token(account.uuid, &account.login, &roles)
-            .await;
-
-        let is_admin = is_operator || triton_auth_session::roles_imply_admin(&roles);
-        let user_info = UserInfo {
-            id: account.uuid,
-            username: account.login.clone(),
-            email: account.email.clone(),
-            name: account.cn.clone(),
-            company: account.company.clone(),
-            is_admin,
-        };
-
-        let cookie = build_auth_cookie(&token, jwt.access_ttl_secs(), ctx.cookie_secure);
-        let mut response = HttpResponseHeaders::new_unnamed(HttpResponseOk(LoginResponse {
-            token,
-            refresh_token,
-            user: user_info,
-        }));
-        set_cookie_header(response.headers_mut(), cookie);
-        Ok(response)
+        issue_login_response(jwt, &auth_info, ctx.cookie_secure).await
     }
 
     async fn auth_login_ssh(
-        _rqctx: RequestContext<Self::Context>,
+        rqctx: RequestContext<Self::Context>,
     ) -> Result<HttpResponseHeaders<HttpResponseOk<LoginResponse>>, HttpError> {
-        // Stub: wired into the trait so spec + client generation carry the
-        // endpoint shape. The verifier + mahi key lookup + JWT issuance land
-        // in a follow-up slice per
-        // docs/tutorials/adding-a-tritonapi-feature.md.
-        Err(auth_unavailable())
+        let ctx = rqctx.context();
+        let jwt = ctx.jwt.as_ref().ok_or_else(auth_unavailable)?;
+        let mahi = ctx.mahi.as_ref().ok_or_else(auth_unavailable)?;
+
+        // 1. Classify. This endpoint only accepts HTTP Signature -- Bearer
+        //    wouldn't make sense (the whole point is bootstrapping a session
+        //    from a fresh key), and unauthenticated requests must fail
+        //    clearly rather than falling through to a misleading error.
+        let auth_params = match auth_scheme::classify(rqctx.request.headers()) {
+            auth_scheme::ApiAuthScheme::HttpSignature(v) => v,
+            auth_scheme::ApiAuthScheme::Bearer(_) => {
+                return Err(HttpError::for_client_error(
+                    Some("WrongAuthScheme".to_string()),
+                    dropshot::ClientErrorStatusCode::UNAUTHORIZED,
+                    "this endpoint requires HTTP Signature auth; Bearer is \
+                     not accepted on /v1/auth/login-ssh"
+                        .to_string(),
+                ));
+            }
+            auth_scheme::ApiAuthScheme::None => {
+                return Err(unauthorized());
+            }
+        };
+
+        // 2. Parse the Authorization value.
+        let parsed = http_sig::parse_signature_params(&auth_params)
+            .map_err(|e| sig_parse_error(&e.to_string()))?;
+
+        // 3. Parse keyId. Only the account-level form is accepted today;
+        //    sub-user keys (`/{account}/users/{user}/keys/{fp}`) need an
+        //    extra mahi lookup hop and get a specific 400 until that
+        //    lands.
+        let (account_name, fingerprint) = parse_key_id(&parsed.key_id)?;
+
+        // 4. Clock-skew sanity check on the Date header. Signatures that
+        //    are too stale or too far in the future are almost always a
+        //    sign of a misconfigured client clock; surface that clearly
+        //    rather than letting it look like a signature failure.
+        check_clock_skew(rqctx.request.headers())?;
+
+        // 5. Mahi lookup. Any failure here -- account doesn't exist, mahi
+        //    is unreachable, key not on this account -- collapses into
+        //    the same opaque SignatureVerificationFailed so an attacker
+        //    probing with arbitrary account names can't distinguish
+        //    "account exists" from "account doesn't".
+        let auth_info = mahi
+            .lookup(&account_name)
+            .await
+            .map_err(|_| sig_verify_failed())?;
+        let Some(keys) = auth_info.account.keys.as_ref() else {
+            return Err(sig_verify_failed());
+        };
+        let Some(key_blob) = keys.get(&fingerprint) else {
+            return Err(sig_verify_failed());
+        };
+        let public_key = parse_openssh_key(key_blob).map_err(|_| sig_verify_failed())?;
+
+        // 6. Reconstruct the signing string and verify.
+        let path_and_query = rqctx
+            .request
+            .uri()
+            .path_and_query()
+            .map(|p| p.as_str().to_string())
+            .unwrap_or_else(|| "/".to_string());
+        let signing_string = http_sig::build_signing_string(
+            rqctx.request.method().as_str(),
+            &path_and_query,
+            rqctx.request.headers(),
+            &parsed.headers,
+        )
+        .map_err(|e| sig_parse_error(&e.to_string()))?;
+        http_sig::verify_signature(
+            &public_key,
+            &parsed.algorithm,
+            signing_string.as_bytes(),
+            &parsed.signature,
+        )
+        .map_err(|_| sig_verify_failed())?;
+
+        // 7. Signature verified. Issue tokens through the same path the
+        //    password login uses.
+        issue_login_response(jwt, &auth_info, ctx.cookie_secure).await
     }
 
     async fn auth_logout(
@@ -398,6 +434,175 @@ fn auth_unavailable() -> HttpError {
         Some("ServiceUnavailable".to_string()),
         "authentication is not configured on this tritonapi instance".to_string(),
     )
+}
+
+/// Collapse every "I can't verify this signature" failure mode --
+/// account missing from mahi, fingerprint not on the account, crypto
+/// rejected it, OpenSSH blob unparseable -- into one opaque 401 so an
+/// attacker probing with arbitrary keyIds can't enumerate accounts or
+/// distinguish "account doesn't exist" from "wrong key".
+fn sig_verify_failed() -> HttpError {
+    HttpError::for_client_error(
+        Some("SignatureVerificationFailed".to_string()),
+        ClientErrorStatusCode::UNAUTHORIZED,
+        "signature verification failed".to_string(),
+    )
+}
+
+/// Parser-level failure (malformed Authorization value, unsupported
+/// algorithm, missing header referenced by the signature). These are
+/// client bugs rather than auth attempts, so they get a 400 with a
+/// specific message.
+fn sig_parse_error(detail: &str) -> HttpError {
+    HttpError::for_client_error(
+        Some("MalformedSignature".to_string()),
+        ClientErrorStatusCode::BAD_REQUEST,
+        format!("invalid HTTP Signature: {detail}"),
+    )
+}
+
+/// Split a draft-cavage keyId of the form `/{account}/keys/{fp}` into
+/// `(account, fingerprint)`. Rejects the sub-user form
+/// (`/{account}/users/{user}/keys/{fp}`) with a specific 400 so the
+/// caller learns why rather than getting a generic verification
+/// failure; sub-user support needs an extra mahi lookup hop and lands
+/// in a follow-up slice.
+fn parse_key_id(key_id: &str) -> Result<(String, String), HttpError> {
+    // Can't just `split('/')` -- SHA256 fingerprints are
+    // `SHA256:<base64>` and the base64 alphabet includes `/`, so the
+    // fingerprint itself may contain slashes. Locate the `/keys/`
+    // separator explicitly; everything after it is the opaque
+    // fingerprint, everything before it is either `{account}` or
+    // `{account}/users/{user}`.
+    let malformed = || {
+        HttpError::for_client_error(
+            Some("MalformedKeyId".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            format!("keyId must be /{{account}}/keys/{{fingerprint}}, got: {key_id}"),
+        )
+    };
+    let stripped = key_id.strip_prefix('/').unwrap_or(key_id);
+    let keys_pos = stripped.find("/keys/").ok_or_else(malformed)?;
+    let (prefix, rest) = stripped.split_at(keys_pos);
+    let fingerprint = &rest["/keys/".len()..];
+    if fingerprint.is_empty() {
+        return Err(malformed());
+    }
+    let prefix_parts: Vec<&str> = prefix.split('/').collect();
+    match prefix_parts.as_slice() {
+        [account] if !account.is_empty() => Ok(((*account).to_string(), fingerprint.to_string())),
+        [_, "users", _] => Err(HttpError::for_client_error(
+            Some("SubuserKeyIdNotSupported".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "sub-user keyIds (/{account}/users/{user}/keys/{fp}) are not \
+             yet supported on /v1/auth/login-ssh; use an account-level \
+             key"
+            .to_string(),
+        )),
+        _ => Err(malformed()),
+    }
+}
+
+/// Upper bound on `Date` header skew (each direction). Five minutes
+/// matches the cloudapi/restify convention and is generous enough to
+/// tolerate typical client clock drift without letting replay attempts
+/// run indefinitely.
+const DATE_SKEW_WINDOW_SECS: i64 = 300;
+
+fn check_clock_skew(headers: &http::HeaderMap) -> Result<(), HttpError> {
+    let Some(raw) = headers
+        .get(http::header::DATE)
+        .and_then(|v| v.to_str().ok())
+    else {
+        // The signing string almost always includes `date`, so a missing
+        // Date header would fail later at signing-string construction
+        // anyway -- but surface the condition clearly here rather than
+        // relying on that downstream error.
+        return Err(HttpError::for_client_error(
+            Some("MissingDateHeader".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "request is missing a Date header".to_string(),
+        ));
+    };
+    let parsed = chrono::DateTime::parse_from_rfc2822(raw).map_err(|_| {
+        HttpError::for_client_error(
+            Some("MalformedDateHeader".to_string()),
+            ClientErrorStatusCode::BAD_REQUEST,
+            "Date header is not RFC 2822 format".to_string(),
+        )
+    })?;
+    let skew = chrono::Utc::now()
+        .signed_duration_since(parsed.with_timezone(&chrono::Utc))
+        .num_seconds();
+    if skew.abs() > DATE_SKEW_WINDOW_SECS {
+        return Err(HttpError::for_client_error(
+            Some("ClockSkew".to_string()),
+            ClientErrorStatusCode::UNAUTHORIZED,
+            format!(
+                "Date header differs from server time by {skew}s (allowed: \
+                 ±{DATE_SKEW_WINDOW_SECS}s) -- check client clock"
+            ),
+        ));
+    }
+    Ok(())
+}
+
+/// Mahi's `keys` field holds fingerprint -> key blob. The blob shape is
+/// "deployment-specific" per `apis/mahi-api/src/types/common.rs` but in
+/// practice on Triton deployments it's the OpenSSH-format public key
+/// string (e.g., `"ssh-rsa AAAAB3Nz… comment"`). Accept a bare string
+/// and parse; anything else returns an error the caller collapses into
+/// an opaque verification failure.
+fn parse_openssh_key(blob: &serde_json::Value) -> Result<ssh_key::PublicKey, &'static str> {
+    let s = blob.as_str().ok_or("mahi key blob is not a string")?;
+    ssh_key::PublicKey::from_openssh(s.trim()).map_err(|_| "OpenSSH parse failed")
+}
+
+/// Issue `(access_token, refresh_token, user_info)` from a verified
+/// mahi account record, plus the `Set-Cookie` header for browser
+/// clients. Shared tail of `auth_login` (password-verified) and
+/// `auth_login_ssh` (signature-verified); everything past the auth
+/// primitive is identical.
+async fn issue_login_response(
+    jwt: &JwtService,
+    auth_info: &triton_auth_session::AuthInfo,
+    cookie_secure: bool,
+) -> Result<HttpResponseHeaders<HttpResponseOk<LoginResponse>>, HttpError> {
+    let account = &auth_info.account;
+    let roles: Vec<Role> = account
+        .groups
+        .as_deref()
+        .unwrap_or(&[])
+        .iter()
+        .map(|g| Role::from(g.as_str()))
+        .collect();
+    let is_operator = account.is_operator.unwrap_or(false);
+
+    let token = jwt
+        .create_token(account.uuid, &account.login, &roles)
+        .map_err(session_error_to_http)?;
+    let refresh_token = jwt
+        .create_refresh_token(account.uuid, &account.login, &roles)
+        .await;
+
+    let is_admin = is_operator || triton_auth_session::roles_imply_admin(&roles);
+    let user_info = UserInfo {
+        id: account.uuid,
+        username: account.login.clone(),
+        email: account.email.clone(),
+        name: account.cn.clone(),
+        company: account.company.clone(),
+        is_admin,
+    };
+
+    let cookie = build_auth_cookie(&token, jwt.access_ttl_secs(), cookie_secure);
+    let mut response = HttpResponseHeaders::new_unnamed(HttpResponseOk(LoginResponse {
+        token,
+        refresh_token,
+        user: user_info,
+    }));
+    set_cookie_header(response.headers_mut(), cookie);
+    Ok(response)
 }
 
 async fn build_jwt_service(cfg: &JwtConfigFile) -> Result<JwtService> {
@@ -575,4 +780,141 @@ async fn shutdown_signal() {
         _ = sigterm_fut => {},
     }
     info!("shutdown signal received, draining in-flight requests");
+}
+
+#[cfg(test)]
+mod login_ssh_helper_tests {
+    //! Coverage for the helpers the /v1/auth/login-ssh handler layers
+    //! on top of the classifier + verifier: keyId parsing, clock-skew
+    //! enforcement, OpenSSH blob extraction. End-to-end handler tests
+    //! need mahi+jwt mocking and land separately.
+    use super::*;
+
+    #[test]
+    fn parse_key_id_account_form_ok() {
+        let (account, fp) = parse_key_id("/admin/keys/0f:7d:59:bc").unwrap();
+        assert_eq!(account, "admin");
+        assert_eq!(fp, "0f:7d:59:bc");
+    }
+
+    #[test]
+    fn parse_key_id_accepts_sha256_fingerprint() {
+        let (account, fp) =
+            parse_key_id("/admin/keys/SHA256:29ZAWD34TsVSP+FfrqK776oo6FcrOg+Ysp/ZVLNAZRA").unwrap();
+        assert_eq!(account, "admin");
+        assert_eq!(fp, "SHA256:29ZAWD34TsVSP+FfrqK776oo6FcrOg+Ysp/ZVLNAZRA");
+    }
+
+    #[test]
+    fn parse_key_id_subuser_form_rejected_with_specific_error() {
+        // Sub-user form must produce a 400 with SubuserKeyIdNotSupported
+        // rather than falling through to the generic MalformedKeyId path
+        // -- the distinction tells the caller "this feature isn't built
+        // yet" vs. "your keyId is malformed".
+        let err = parse_key_id("/admin/users/bob/keys/0f:7d").unwrap_err();
+        assert_eq!(err.error_code.as_deref(), Some("SubuserKeyIdNotSupported"));
+    }
+
+    #[test]
+    fn parse_key_id_malformed_missing_keys_segment() {
+        let err = parse_key_id("/admin/0f:7d").unwrap_err();
+        assert_eq!(err.error_code.as_deref(), Some("MalformedKeyId"));
+    }
+
+    #[test]
+    fn parse_key_id_malformed_empty_account() {
+        let err = parse_key_id("//keys/0f:7d").unwrap_err();
+        assert_eq!(err.error_code.as_deref(), Some("MalformedKeyId"));
+    }
+
+    #[test]
+    fn parse_key_id_malformed_empty_fingerprint() {
+        let err = parse_key_id("/admin/keys/").unwrap_err();
+        assert_eq!(err.error_code.as_deref(), Some("MalformedKeyId"));
+    }
+
+    #[test]
+    fn parse_key_id_accepts_no_leading_slash() {
+        // Some clients omit the leading slash; accept both forms since
+        // the split-and-match logic handles either identically.
+        let (account, fp) = parse_key_id("admin/keys/abc").unwrap();
+        assert_eq!(account, "admin");
+        assert_eq!(fp, "abc");
+    }
+
+    fn headers_with_date(value: &str) -> http::HeaderMap {
+        let mut h = http::HeaderMap::new();
+        h.insert(
+            http::header::DATE,
+            http::HeaderValue::from_str(value).unwrap(),
+        );
+        h
+    }
+
+    #[test]
+    fn clock_skew_missing_date_header() {
+        let err = check_clock_skew(&http::HeaderMap::new()).unwrap_err();
+        assert_eq!(err.error_code.as_deref(), Some("MissingDateHeader"));
+    }
+
+    #[test]
+    fn clock_skew_malformed_date() {
+        let err = check_clock_skew(&headers_with_date("not a date")).unwrap_err();
+        assert_eq!(err.error_code.as_deref(), Some("MalformedDateHeader"));
+    }
+
+    #[test]
+    fn clock_skew_now_accepted() {
+        // `chrono::Utc::now()` formatted as RFC 2822 is always within
+        // the window regardless of wall time.
+        let now = chrono::Utc::now()
+            .format("%a, %d %b %Y %H:%M:%S GMT")
+            .to_string();
+        assert!(check_clock_skew(&headers_with_date(&now)).is_ok());
+    }
+
+    #[test]
+    fn clock_skew_too_old_rejected() {
+        let stale = (chrono::Utc::now() - chrono::Duration::seconds(DATE_SKEW_WINDOW_SECS + 60))
+            .format("%a, %d %b %Y %H:%M:%S GMT")
+            .to_string();
+        let err = check_clock_skew(&headers_with_date(&stale)).unwrap_err();
+        assert_eq!(err.error_code.as_deref(), Some("ClockSkew"));
+    }
+
+    #[test]
+    fn clock_skew_too_far_future_rejected() {
+        let future = (chrono::Utc::now() + chrono::Duration::seconds(DATE_SKEW_WINDOW_SECS + 60))
+            .format("%a, %d %b %Y %H:%M:%S GMT")
+            .to_string();
+        let err = check_clock_skew(&headers_with_date(&future)).unwrap_err();
+        assert_eq!(err.error_code.as_deref(), Some("ClockSkew"));
+    }
+
+    #[test]
+    fn clock_skew_within_window_accepted() {
+        // Just inside the window in both directions -- exercise the
+        // boundary, not just the happy middle.
+        for offset in [-DATE_SKEW_WINDOW_SECS + 5, DATE_SKEW_WINDOW_SECS - 5] {
+            let d = (chrono::Utc::now() + chrono::Duration::seconds(offset))
+                .format("%a, %d %b %Y %H:%M:%S GMT")
+                .to_string();
+            assert!(
+                check_clock_skew(&headers_with_date(&d)).is_ok(),
+                "offset {offset}s should be within window"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_openssh_key_non_string_rejected() {
+        let err = parse_openssh_key(&serde_json::json!({"key": "ssh-rsa AAAA"})).unwrap_err();
+        assert!(err.contains("not a string"));
+    }
+
+    #[test]
+    fn parse_openssh_key_garbage_string_rejected() {
+        let err = parse_openssh_key(&serde_json::json!("not an openssh key")).unwrap_err();
+        assert!(err.contains("OpenSSH parse failed"));
+    }
 }
