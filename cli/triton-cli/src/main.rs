@@ -610,7 +610,7 @@ async fn try_main() -> Result<()> {
         }
         Commands::Volume { command } if command.is_empty_variadic() => Ok(()),
         Commands::Volume { command } => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Package { command } => {
@@ -696,7 +696,7 @@ async fn try_main() -> Result<()> {
                 .await
         }
         Commands::Vols(args) => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::volume::VolumeCommand::List(args.clone())
                 .run(&client, cli.json)
                 .await
