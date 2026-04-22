@@ -26,7 +26,6 @@ use tokio_tungstenite::{
     Connector, MaybeTlsStream, WebSocketStream,
     tungstenite::{Message, handshake::client::generate_key, protocol::WebSocketConfig},
 };
-use triton_gateway_client::GatewayAuthMethod;
 
 use crate::client::AnyClient;
 use crate::output::enum_to_display;
@@ -47,13 +46,12 @@ pub async fn run(args: ChangefeedArgs, client: &AnyClient, use_json: bool) -> Re
         .replace("http://", "ws://");
     let changefeed_url = format!("{}/{}/changefeed", ws_url, account);
 
-    // Compute the auth headers for the WS upgrade. The two client protocols
-    // authenticate differently: cloudapi-direct signs each request with an
-    // HTTP Signature (Date + Authorization headers), while the gateway
-    // accepts a Bearer JWT that it validates once at upgrade time.
+    // Compute the auth headers for the WS upgrade via the shared
+    // WebsocketAuth helper — SSH profiles produce an HTTP Signature,
+    // tritonapi profiles produce a Bearer JWT.
     let uri: Uri = changefeed_url.parse()?;
     let path = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
-    let (date, authorization) = auth_headers_for(client, path).await?;
+    let (date, authorization) = client.websocket_auth().headers(path).await?;
     let insecure = client.insecure();
 
     println!("Connecting to changefeed at {}...", base_url);
@@ -137,35 +135,6 @@ pub async fn run(args: ChangefeedArgs, client: &AnyClient, use_json: bool) -> Re
     }
 
     Ok(())
-}
-
-/// Compute the `(date_header, authorization_header)` pair appropriate
-/// for the client variant. SSH profiles produce an HTTP Signature;
-/// gateway profiles produce a Bearer JWT (or fall back to an HTTP
-/// Signature if the gateway config was set up with `SshKey`, which we
-/// support symmetrically even though operators rarely pick it).
-async fn auth_headers_for(client: &AnyClient, path: &str) -> Result<(Option<String>, String)> {
-    match client {
-        AnyClient::CloudApi { client: c, .. } => {
-            let auth = c.auth_config();
-            let (date, authorization) = triton_auth::sign_request(auth, "GET", path).await?;
-            Ok((Some(date), authorization))
-        }
-        AnyClient::Gateway { client: c, .. } => {
-            let cfg = c.auth_config();
-            match &cfg.method {
-                GatewayAuthMethod::Bearer(provider) => {
-                    let token = provider.current_token().await?;
-                    Ok((None, format!("Bearer {token}")))
-                }
-                GatewayAuthMethod::SshKey(inner) => {
-                    let (date, authorization) =
-                        triton_auth::sign_request(inner, "GET", path).await?;
-                    Ok((Some(date), authorization))
-                }
-            }
-        }
-    }
 }
 
 /// Handle a changefeed message

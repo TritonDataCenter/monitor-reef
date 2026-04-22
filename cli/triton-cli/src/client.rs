@@ -24,7 +24,8 @@
 //! `&cloudapi_client::TypedClient` directly.
 
 use cloudapi_client::TypedClient as CloudApiTyped;
-use triton_gateway_client::TypedClient as GatewayTyped;
+use std::sync::Arc;
+use triton_gateway_client::{GatewayAuthMethod, TypedClient as GatewayTyped};
 
 /// Either a cloudapi-direct client or a gateway (Bearer JWT) client.
 ///
@@ -80,6 +81,58 @@ impl AnyClient {
     pub fn insecure(&self) -> bool {
         match self {
             Self::CloudApi { insecure, .. } | Self::Gateway { insecure, .. } => *insecure,
+        }
+    }
+
+    /// Extract a clonable auth source suitable for out-of-band consumers
+    /// (WebSocket upgrades) that need to stamp auth headers on requests
+    /// the Progenitor pre-hook doesn't see. The returned [`WebsocketAuth`]
+    /// carries either the cloudapi `AuthConfig` (HTTP Signature) or an
+    /// `Arc<dyn TokenProvider>` (Bearer JWT), both of which are cheap to
+    /// clone and can be stored in an `Arc<State>` shared across tasks.
+    pub fn websocket_auth(&self) -> WebsocketAuth {
+        match self {
+            Self::CloudApi { client, .. } => {
+                WebsocketAuth::HttpSignature(client.auth_config().clone())
+            }
+            Self::Gateway { client, .. } => match &client.auth_config().method {
+                GatewayAuthMethod::Bearer(provider) => WebsocketAuth::Bearer(provider.clone()),
+                GatewayAuthMethod::SshKey(cfg) => WebsocketAuth::HttpSignature(cfg.clone()),
+            },
+        }
+    }
+}
+
+/// Clonable auth source for WebSocket upgrade requests. Both variants
+/// produce an `Authorization` header (plus a `Date` for HTTP Signature)
+/// that the caller stamps on the upgrade request. Cheap to clone because
+/// `AuthConfig` is `Clone` and `TokenProvider` lives behind an `Arc`.
+#[derive(Clone)]
+pub enum WebsocketAuth {
+    /// Cloudapi / HTTP Signature: sign per-request with an SSH key, emit
+    /// `Date` + `Authorization: Signature …`.
+    HttpSignature(triton_auth::AuthConfig),
+    /// Gateway / Bearer JWT: pull the current token from the provider,
+    /// emit `Authorization: Bearer <jwt>`. The provider handles proactive
+    /// refresh near expiry.
+    Bearer(Arc<dyn triton_gateway_client::TokenProvider>),
+}
+
+impl WebsocketAuth {
+    /// Compute `(date, authorization)` headers for a WS upgrade to `path`
+    /// (the request-target portion of the URL, not the full URL). Called
+    /// once per outbound WS connection; for Bearer profiles this
+    /// transparently refreshes the token if it's near expiry.
+    pub async fn headers(&self, path: &str) -> anyhow::Result<(Option<String>, String)> {
+        match self {
+            Self::HttpSignature(auth) => {
+                let (date, authz) = triton_auth::sign_request(auth, "GET", path).await?;
+                Ok((Some(date), authz))
+            }
+            Self::Bearer(provider) => {
+                let token = provider.current_token().await?;
+                Ok((None, format!("Bearer {token}")))
+            }
         }
     }
 }

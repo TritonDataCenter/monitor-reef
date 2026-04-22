@@ -29,15 +29,14 @@ use axum::{
     routing::get,
 };
 use clap::Args;
-use cloudapi_client::{ClientInfo, TypedClient};
 use futures_util::{SinkExt, StreamExt};
 
-use crate::client::AnyClient;
+use crate::client::{AnyClient, WebsocketAuth};
 use http::Uri;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio_tungstenite::{
-    MaybeTlsStream, WebSocketStream,
+    Connector, MaybeTlsStream, WebSocketStream,
     tungstenite::{Message, handshake::client::generate_key, protocol::WebSocketConfig},
 };
 
@@ -76,34 +75,23 @@ pub struct VncInfo {
     pub url: String,
 }
 
-/// State shared with WebSocket proxy handlers
+/// State shared with WebSocket proxy handlers. The `auth` and `insecure`
+/// fields are cheap to clone (AuthConfig is `Clone`, `Arc<dyn TokenProvider>`
+/// is an Arc, bool is trivial), so multiple concurrent client connections
+/// can each independently compute fresh upgrade headers without contention.
 struct WsProxyState {
     vnc_url: String,
-    auth_config: triton_auth::AuthConfig,
+    auth: WebsocketAuth,
+    insecure: bool,
 }
 
 pub async fn run(args: VncArgs, any_client: &AnyClient, json: bool) -> Result<()> {
-    // Resolve the instance through the `AnyClient` so short-id / name
-    // lookup works on either profile type…
     let machine_id = resolve_instance(&args.instance, any_client).await?;
+    let account = any_client.effective_account();
 
-    // …then refuse the WebSocket stage if we're on a tritonapi profile.
-    // The gateway doesn't proxy WS traffic with JWT re-signing yet, so
-    // VNC remains a cloudapi-direct (HTTP-Signature) operation.
-    let client: &TypedClient = match any_client {
-        AnyClient::CloudApi { client: c, .. } => c,
-        AnyClient::Gateway { .. } => {
-            anyhow::bail!(
-                "`triton instance vnc` is not yet supported for tritonapi profiles \
-                 (JWT-over-WebSocket is not wired up). Use an SSH profile for this command."
-            );
-        }
-    };
-
-    let account = client.effective_account();
-
-    // Build WebSocket URL
-    let base_url = client.inner().baseurl();
+    // Build WebSocket URL — same `{account}/{machine}/vnc` path shape under
+    // both protocols; the gateway accepts it and re-signs to cloudapi.
+    let base_url = any_client.baseurl();
     let ws_url = base_url
         .replace("https://", "wss://")
         .replace("http://", "ws://");
@@ -123,11 +111,13 @@ pub async fn run(args: VncArgs, any_client: &AnyClient, json: bool) -> Result<()
         return Ok(());
     }
 
-    // Choose proxy mode
+    let auth = any_client.websocket_auth();
+    let insecure = any_client.insecure();
+
     if args.websocket {
-        run_websocket_mode(&args, vnc_url, client, json).await
+        run_websocket_mode(&args, vnc_url, auth, insecure, json).await
     } else {
-        run_tcp_mode(&args, vnc_url, client, json).await
+        run_tcp_mode(&args, vnc_url, auth, insecure, json).await
     }
 }
 
@@ -135,7 +125,8 @@ pub async fn run(args: VncArgs, any_client: &AnyClient, json: bool) -> Result<()
 async fn run_tcp_mode(
     args: &VncArgs,
     vnc_url: String,
-    client: &TypedClient,
+    auth: WebsocketAuth,
+    insecure: bool,
     _json: bool,
 ) -> Result<()> {
     let bind_addr = format!("{}:{}", args.bind, args.port);
@@ -162,9 +153,11 @@ async fn run_tcp_mode(
                 let (tcp_stream, peer_addr) = result?;
                 println!("Connection from {}", peer_addr);
 
-                // Connect to CloudAPI WebSocket
-                println!("Connecting to CloudAPI VNC endpoint...");
-                match connect_authenticated_websocket(&vnc_url, client.auth_config()).await {
+                // Connect to the upstream VNC WebSocket (cloudapi directly
+                // under an SSH profile, through the gateway under a
+                // tritonapi profile).
+                println!("Connecting to upstream VNC endpoint...");
+                match connect_authenticated_websocket(&vnc_url, &auth, insecure).await {
                     Ok(ws_stream) => {
                         println!("Connected! Bridging VNC traffic...");
 
@@ -193,12 +186,14 @@ async fn run_tcp_mode(
 async fn run_websocket_mode(
     args: &VncArgs,
     vnc_url: String,
-    client: &TypedClient,
+    auth: WebsocketAuth,
+    insecure: bool,
     _json: bool,
 ) -> Result<()> {
     let state = Arc::new(WsProxyState {
         vnc_url: vnc_url.clone(),
-        auth_config: client.auth_config().clone(),
+        auth,
+        insecure,
     });
 
     // noVNC connects to /websockify by default, but also support root path
@@ -250,32 +245,36 @@ async fn ws_handler(
 async fn handle_ws_connection(browser_ws: AxumWebSocket, state: Arc<WsProxyState>) {
     println!("Browser connected via WebSocket");
 
-    // Connect to CloudAPI WebSocket
-    let cloudapi_ws =
-        match connect_authenticated_websocket(&state.vnc_url, &state.auth_config).await {
+    // Connect to the upstream VNC WebSocket (cloudapi or gateway).
+    let upstream_ws =
+        match connect_authenticated_websocket(&state.vnc_url, &state.auth, state.insecure).await {
             Ok(ws) => ws,
             // arch-lint: allow(no-error-swallowing) reason="WebSocket handler cannot propagate errors; log and close gracefully"
             Err(e) => {
-                tracing::error!("failed to connect to CloudAPI: {}", e);
+                tracing::error!("failed to connect upstream: {}", e);
                 return;
             }
         };
 
-    println!("Connected to CloudAPI, bridging...");
+    println!("Connected upstream, bridging...");
 
     // Bridge the two WebSocket connections
     // arch-lint: allow(no-error-swallowing) reason="Handler cannot return errors to WebSocket framework; log and cleanup"
-    if let Err(e) = bridge_websockets(browser_ws, cloudapi_ws).await {
+    if let Err(e) = bridge_websockets(browser_ws, upstream_ws).await {
         tracing::error!("WebSocket bridge error: {}", e);
     }
 
     println!("Browser disconnected");
 }
 
-/// Connect to the CloudAPI WebSocket endpoint with HTTP signature authentication
+/// Connect to the upstream VNC WebSocket with pre-computed auth headers
+/// from the shared `WebsocketAuth` helper (HTTP Signature for SSH
+/// profiles, Bearer JWT for tritonapi profiles) and a TLS connector that
+/// honors the profile's `insecure` flag.
 async fn connect_authenticated_websocket(
     ws_url: &str,
-    auth_config: &triton_auth::AuthConfig,
+    auth: &WebsocketAuth,
+    insecure: bool,
 ) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>> {
     let uri: Uri = ws_url.parse()?;
 
@@ -284,33 +283,39 @@ async fn connect_authenticated_websocket(
         .ok_or_else(|| anyhow!("No host in WebSocket URL"))?;
     let path = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
 
-    // Sign the request using triton-auth
-    let (date_header, auth_header) = triton_auth::sign_request(auth_config, "GET", path).await?;
+    let (date_header, auth_header) = auth.headers(path).await?;
 
-    // Build WebSocket request with auth headers
-    // Include binary subprotocol for VNC - some servers require this
-    let request = http::Request::builder()
+    let mut builder = http::Request::builder()
         .uri(ws_url)
         .header("Host", host)
-        .header("Date", &date_header)
         .header("Authorization", &auth_header)
         .header("Connection", "Upgrade")
         .header("Upgrade", "websocket")
         .header("Sec-WebSocket-Version", "13")
         .header("Sec-WebSocket-Key", generate_key())
-        .header("Sec-WebSocket-Protocol", "binary")
-        .body(())?;
+        .header("Sec-WebSocket-Protocol", "binary");
+    if let Some(date) = date_header.as_deref() {
+        builder = builder.header("Date", date);
+    }
+    let request = builder.body(())?;
 
-    // Configure WebSocket with larger limits for VNC traffic
-    // VNC can send large frames, and some servers may not strictly follow RFC limits
+    // VNC traffic needs larger frame/message limits than the default.
     let mut ws_config = WebSocketConfig::default();
     ws_config.max_frame_size = Some(16 * 1024 * 1024); // 16 MB max frame
     ws_config.max_message_size = Some(64 * 1024 * 1024); // 64 MB max message
     ws_config.accept_unmasked_frames = true; // Server-to-client frames shouldn't be masked per RFC
 
-    // Connect with timeout
-    let connect_future =
-        tokio_tungstenite::connect_async_with_config(request, Some(ws_config), false);
+    let connector = {
+        let tls_config = triton_tls::build_rustls_client_config(insecure).await;
+        Some(Connector::Rustls(Arc::new(tls_config)))
+    };
+
+    let connect_future = tokio_tungstenite::connect_async_tls_with_config(
+        request,
+        Some(ws_config),
+        false,
+        connector,
+    );
     let (ws_stream, _response) =
         tokio::time::timeout(std::time::Duration::from_secs(30), connect_future)
             .await
