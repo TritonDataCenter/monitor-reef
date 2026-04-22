@@ -187,3 +187,67 @@ pub async fn build_http_client(insecure: bool) -> Result<reqwest::Client, reqwes
 
     builder.build()
 }
+
+/// Build a `rustls::ClientConfig` with the same three-tier cert fallback
+/// as [`build_http_client`], for callers that need raw TLS rather than
+/// reqwest (e.g. `tokio_tungstenite::Connector::Rustls`).
+///
+/// When `insecure` is true, certificate validation is skipped entirely
+/// via a dangerous custom verifier that accepts any presented cert.
+pub async fn build_rustls_client_config(insecure: bool) -> rustls::ClientConfig {
+    install_default_crypto_provider();
+
+    if insecure {
+        rustls::ClientConfig::builder()
+            .dangerous()
+            .with_custom_certificate_verifier(std::sync::Arc::new(NoCertVerifier))
+            .with_no_client_auth()
+    } else {
+        let root_store = build_root_cert_store().await;
+        rustls::ClientConfig::builder()
+            .with_root_certificates(root_store)
+            .with_no_client_auth()
+    }
+}
+
+/// Dangerous certificate verifier that accepts any presented certificate.
+/// Only used when the caller has opted into insecure mode.
+#[derive(Debug)]
+struct NoCertVerifier;
+
+impl rustls::client::danger::ServerCertVerifier for NoCertVerifier {
+    fn verify_server_cert(
+        &self,
+        _end_entity: &rustls::pki_types::CertificateDer<'_>,
+        _intermediates: &[rustls::pki_types::CertificateDer<'_>],
+        _server_name: &rustls::pki_types::ServerName<'_>,
+        _ocsp_response: &[u8],
+        _now: rustls::pki_types::UnixTime,
+    ) -> Result<rustls::client::danger::ServerCertVerified, rustls::Error> {
+        Ok(rustls::client::danger::ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        _message: &[u8],
+        _cert: &rustls::pki_types::CertificateDer<'_>,
+        _dss: &rustls::DigitallySignedStruct,
+    ) -> Result<rustls::client::danger::HandshakeSignatureValid, rustls::Error> {
+        Ok(rustls::client::danger::HandshakeSignatureValid::assertion())
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
+        rustls::crypto::ring::default_provider()
+            .signature_verification_algorithms
+            .supported_schemes()
+    }
+}

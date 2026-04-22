@@ -27,9 +27,16 @@ use cloudapi_client::TypedClient as CloudApiTyped;
 use triton_gateway_client::TypedClient as GatewayTyped;
 
 /// Either a cloudapi-direct client or a gateway (Bearer JWT) client.
+///
+/// Both variants carry the profile's `insecure` flag so non-HTTP
+/// consumers (WebSocket upgrades, for example) can set up their own
+/// TLS stack without reaching back to the profile.
 pub enum AnyClient {
     /// SSH profile — talks straight to cloudapi, signs with an SSH key.
-    CloudApi(CloudApiTyped),
+    CloudApi {
+        client: CloudApiTyped,
+        insecure: bool,
+    },
     /// Tritonapi profile — talks to the gateway with a Bearer JWT. The
     /// `account` is captured at construction time because the gateway's
     /// Progenitor client doesn't carry it the way cloudapi's `AuthConfig`
@@ -37,6 +44,7 @@ pub enum AnyClient {
     Gateway {
         client: GatewayTyped,
         account: String,
+        insecure: bool,
     },
 }
 
@@ -49,7 +57,7 @@ impl AnyClient {
     /// and makes the wire traffic readable.
     pub fn effective_account(&self) -> &str {
         match self {
-            Self::CloudApi(c) => c.effective_account(),
+            Self::CloudApi { client, .. } => client.effective_account(),
             Self::Gateway { account, .. } => account,
         }
     }
@@ -58,11 +66,20 @@ impl AnyClient {
     /// profiles, gateway URL for tritonapi).
     pub fn baseurl(&self) -> &str {
         match self {
-            Self::CloudApi(c) => {
+            Self::CloudApi { client, .. } => {
                 use cloudapi_client::ClientInfo;
-                c.inner().baseurl()
+                client.inner().baseurl()
             }
             Self::Gateway { client, .. } => client.baseurl(),
+        }
+    }
+
+    /// Whether this client was built with TLS verification disabled.
+    /// Used by out-of-band consumers (WebSocket upgrades) that need to
+    /// construct their own TLS stack.
+    pub fn insecure(&self) -> bool {
+        match self {
+            Self::CloudApi { insecure, .. } | Self::Gateway { insecure, .. } => *insecure,
         }
     }
 }
@@ -96,7 +113,7 @@ impl AnyClient {
 macro_rules! dispatch {
     ($client:expr, |$c:ident| $body:block) => {
         match $client {
-            $crate::client::AnyClient::CloudApi($c) => $body,
+            $crate::client::AnyClient::CloudApi { client: $c, .. } => $body,
             $crate::client::AnyClient::Gateway { client: $c, .. } => $body,
         }
     };
@@ -121,7 +138,7 @@ macro_rules! dispatch {
 macro_rules! dispatch_with_types {
     ($client:expr, |$c:ident, $t:ident| $body:block) => {
         match $client {
-            $crate::client::AnyClient::CloudApi($c) => {
+            $crate::client::AnyClient::CloudApi { client: $c, .. } => {
                 #[allow(unused_imports)]
                 use cloudapi_client::types as $t;
                 $body

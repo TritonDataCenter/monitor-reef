@@ -470,12 +470,19 @@ impl Cli {
     async fn build_any_client(&self) -> Result<(client::AnyClient, Profile)> {
         let profile = resolve_profile(self.profile.as_deref()).await?;
         match &profile {
-            Profile::SshKey(_) => {
+            Profile::SshKey(ssh) => {
                 // Reuse the existing SSH construction path in full (profile
                 // resolution there is idempotent with ours above because
                 // `resolve_profile` is cheap and deterministic).
+                let insecure = self.insecure || ssh.insecure;
                 let (typed, p) = self.build_client().await?;
-                Ok((client::AnyClient::CloudApi(typed), p))
+                Ok((
+                    client::AnyClient::CloudApi {
+                        client: typed,
+                        insecure,
+                    },
+                    p,
+                ))
             }
             Profile::TritonApi(tp) => {
                 let provider =
@@ -493,6 +500,7 @@ impl Cli {
                     client::AnyClient::Gateway {
                         client: typed,
                         account: tp.account.clone(),
+                        insecure: tp.insecure,
                     },
                     profile,
                 ))
@@ -638,7 +646,7 @@ async fn try_main() -> Result<()> {
             commands::services::run(args.clone(), &client, cli.json).await
         }
         Commands::Changefeed(args) => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::changefeed::run(args.clone(), &client, cli.json).await
         }
         Commands::Insts(args) => {

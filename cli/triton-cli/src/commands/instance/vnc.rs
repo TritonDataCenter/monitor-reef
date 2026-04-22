@@ -91,7 +91,7 @@ pub async fn run(args: VncArgs, any_client: &AnyClient, json: bool) -> Result<()
     // The gateway doesn't proxy WS traffic with JWT re-signing yet, so
     // VNC remains a cloudapi-direct (HTTP-Signature) operation.
     let client: &TypedClient = match any_client {
-        AnyClient::CloudApi(c) => c,
+        AnyClient::CloudApi { client: c, .. } => c,
         AnyClient::Gateway { .. } => {
             anyhow::bail!(
                 "`triton instance vnc` is not yet supported for tritonapi profiles \

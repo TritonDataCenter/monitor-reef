@@ -6,22 +6,29 @@
 
 //! Changefeed command for real-time VM updates
 //!
-//! Subscribe to CloudAPI's feed of VM changes via WebSocket.
+//! Subscribe to CloudAPI's feed of VM changes via WebSocket. The upgrade
+//! request is authenticated out-of-band (HTTP Signature for SSH profiles,
+//! Bearer JWT for tritonapi profiles); once the connection is upgraded,
+//! the WS traffic itself isn't re-authenticated, so token expiry
+//! mid-stream doesn't drop the connection — the server closes it
+//! whenever it sees fit.
 
 use anyhow::{Result, anyhow};
 use clap::Args;
 use cloudapi_client::{
     ChangefeedMessage, ChangefeedResource, ChangefeedSubResource, ChangefeedSubscription,
-    ClientInfo, TypedClient,
 };
 use futures_util::{SinkExt, StreamExt};
 use http::Uri;
+use std::sync::Arc;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{
-    MaybeTlsStream, WebSocketStream,
+    Connector, MaybeTlsStream, WebSocketStream,
     tungstenite::{Message, handshake::client::generate_key, protocol::WebSocketConfig},
 };
+use triton_gateway_client::GatewayAuthMethod;
 
+use crate::client::AnyClient;
 use crate::output::enum_to_display;
 
 #[derive(Args, Clone)]
@@ -31,23 +38,30 @@ pub struct ChangefeedArgs {
     pub instances: Vec<String>,
 }
 
-pub async fn run(args: ChangefeedArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+pub async fn run(args: ChangefeedArgs, client: &AnyClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
 
-    // Build WebSocket URL
-    let base_url = client.inner().baseurl();
+    let base_url = client.baseurl();
     let ws_url = base_url
         .replace("https://", "wss://")
         .replace("http://", "ws://");
     let changefeed_url = format!("{}/{}/changefeed", ws_url, account);
 
-    // Connect to CloudAPI WebSocket
-    println!("Connecting to CloudAPI changefeed...");
+    // Compute the auth headers for the WS upgrade. The two client protocols
+    // authenticate differently: cloudapi-direct signs each request with an
+    // HTTP Signature (Date + Authorization headers), while the gateway
+    // accepts a Bearer JWT that it validates once at upgrade time.
+    let uri: Uri = changefeed_url.parse()?;
+    let path = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
+    let (date, authorization) = auth_headers_for(client, path).await?;
+    let insecure = client.insecure();
+
+    println!("Connecting to changefeed at {}...", base_url);
     let mut ws_stream =
-        connect_authenticated_websocket(&changefeed_url, client.auth_config()).await?;
+        connect_authenticated_websocket(&changefeed_url, date.as_deref(), &authorization, insecure)
+            .await?;
     println!("Connected. Subscribing to VM changes...");
 
-    // Send subscription message
     let vms = if args.instances.is_empty() {
         None
     } else {
@@ -90,7 +104,6 @@ pub async fn run(args: ChangefeedArgs, client: &TypedClient, use_json: bool) -> 
     println!("Press Ctrl+C to stop");
     println!();
 
-    // Handle incoming messages with Ctrl+C support
     loop {
         tokio::select! {
             msg = ws_stream.next() => {
@@ -126,16 +139,41 @@ pub async fn run(args: ChangefeedArgs, client: &TypedClient, use_json: bool) -> 
     Ok(())
 }
 
+/// Compute the `(date_header, authorization_header)` pair appropriate
+/// for the client variant. SSH profiles produce an HTTP Signature;
+/// gateway profiles produce a Bearer JWT (or fall back to an HTTP
+/// Signature if the gateway config was set up with `SshKey`, which we
+/// support symmetrically even though operators rarely pick it).
+async fn auth_headers_for(client: &AnyClient, path: &str) -> Result<(Option<String>, String)> {
+    match client {
+        AnyClient::CloudApi { client: c, .. } => {
+            let auth = c.auth_config();
+            let (date, authorization) = triton_auth::sign_request(auth, "GET", path).await?;
+            Ok((Some(date), authorization))
+        }
+        AnyClient::Gateway { client: c, .. } => {
+            let cfg = c.auth_config();
+            match &cfg.method {
+                GatewayAuthMethod::Bearer(provider) => {
+                    let token = provider.current_token().await?;
+                    Ok((None, format!("Bearer {token}")))
+                }
+                GatewayAuthMethod::SshKey(inner) => {
+                    let (date, authorization) =
+                        triton_auth::sign_request(inner, "GET", path).await?;
+                    Ok((Some(date), authorization))
+                }
+            }
+        }
+    }
+}
+
 /// Handle a changefeed message
 fn handle_message(text: &str, use_json: bool) -> Result<()> {
     if use_json {
-        // Raw JSON output
         println!("{}", text);
     } else {
-        // Parse and format nicely
         let msg: ChangefeedMessage = serde_json::from_str(text)?;
-
-        // Format timestamp (published is a string containing millisecond Unix timestamp)
         let timestamp = msg
             .published
             .parse::<i64>()
@@ -163,39 +201,45 @@ fn handle_message(text: &str, use_json: bool) -> Result<()> {
     Ok(())
 }
 
-/// Connect to the CloudAPI WebSocket endpoint with HTTP signature authentication
+/// Connect to the changefeed WebSocket with pre-computed auth headers and
+/// a TLS connector that honors the profile's `insecure` flag.
 async fn connect_authenticated_websocket(
     ws_url: &str,
-    auth_config: &triton_auth::AuthConfig,
+    date: Option<&str>,
+    authorization: &str,
+    insecure: bool,
 ) -> Result<WebSocketStream<MaybeTlsStream<TcpStream>>> {
     let uri: Uri = ws_url.parse()?;
-
     let host = uri
         .host()
         .ok_or_else(|| anyhow!("No host in WebSocket URL"))?;
-    let path = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
 
-    // Sign the request using triton-auth
-    let (date_header, auth_header) = triton_auth::sign_request(auth_config, "GET", path).await?;
-
-    // Build WebSocket request with auth headers
-    let request = http::Request::builder()
+    let mut builder = http::Request::builder()
         .uri(ws_url)
         .header("Host", host)
-        .header("Date", &date_header)
-        .header("Authorization", &auth_header)
+        .header("Authorization", authorization)
         .header("Connection", "Upgrade")
         .header("Upgrade", "websocket")
         .header("Sec-WebSocket-Version", "13")
-        .header("Sec-WebSocket-Key", generate_key())
-        .body(())?;
+        .header("Sec-WebSocket-Key", generate_key());
+    if let Some(date) = date {
+        builder = builder.header("Date", date);
+    }
+    let request = builder.body(())?;
 
-    // Configure WebSocket
     let ws_config = WebSocketConfig::default();
 
-    // Connect with timeout
-    let connect_future =
-        tokio_tungstenite::connect_async_with_config(request, Some(ws_config), false);
+    let connector = {
+        let tls_config = triton_tls::build_rustls_client_config(insecure).await;
+        Some(Connector::Rustls(Arc::new(tls_config)))
+    };
+
+    let connect_future = tokio_tungstenite::connect_async_tls_with_config(
+        request,
+        Some(ws_config),
+        false,
+        connector,
+    );
     let (ws_stream, _response) =
         tokio::time::timeout(std::time::Duration::from_secs(30), connect_future)
             .await

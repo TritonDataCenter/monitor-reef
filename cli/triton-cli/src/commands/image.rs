@@ -905,7 +905,7 @@ async fn copy_image(
     // but gateway profiles don't own a cloudapi AuthConfig, so this command
     // stays SSH-only for now.
     let src_client = match client {
-        AnyClient::CloudApi(c) => c,
+        AnyClient::CloudApi { client: c, .. } => c,
         AnyClient::Gateway { .. } => {
             anyhow::bail!(
                 "`triton image copy` is not yet supported for tritonapi profiles \
