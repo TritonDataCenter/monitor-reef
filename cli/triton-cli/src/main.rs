@@ -587,11 +587,11 @@ async fn try_main() -> Result<()> {
         }
         Commands::Key { command } if command.is_empty_variadic() => Ok(()),
         Commands::Key { command } => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Accesskey { command } => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Network { command } => {
@@ -618,7 +618,7 @@ async fn try_main() -> Result<()> {
             command.clone().run(&client, cli.json).await
         }
         Commands::Account { command } => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Rbac { command } => {
@@ -702,13 +702,13 @@ async fn try_main() -> Result<()> {
                 .await
         }
         Commands::Accesskeys(args) => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::accesskey::AccesskeyCommand::List(args.clone())
                 .run(&client, cli.json)
                 .await
         }
         Commands::Keys => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::key::KeyCommand::List(commands::key::KeyListArgs {
                 table: Default::default(),
                 authorized_keys: false,

@@ -8,9 +8,11 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
+use cloudapi_api::Account;
 use std::path::PathBuf;
 
+use crate::client::AnyClient;
+use crate::dispatch;
 use crate::output::json;
 
 #[derive(Subcommand, Clone)]
@@ -49,7 +51,7 @@ pub struct AccountUpdateArgs {
 }
 
 impl AccountCommand {
-    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
         match self {
             Self::Get => get_account(client, use_json).await,
             Self::Limits => get_limits(client, use_json).await,
@@ -111,11 +113,19 @@ fn long_ago(when: &str) -> String {
     format!("{}s", seconds)
 }
 
-async fn get_account(client: &TypedClient, use_json: bool) -> Result<()> {
+async fn get_account(client: &AnyClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
-    let response = client.inner().get_account().account(account).send().await?;
 
-    let acc = response.into_inner();
+    let acc: Account = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .get_account()
+            .account(account)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<Account>(serde_json::to_value(&resp)?)?
+    });
 
     if use_json {
         json::print_json(&acc)?;
@@ -144,23 +154,25 @@ async fn get_account(client: &TypedClient, use_json: bool) -> Result<()> {
     Ok(())
 }
 
-async fn get_limits(client: &TypedClient, use_json: bool) -> Result<()> {
+async fn get_limits(client: &AnyClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
-    let response = client
-        .inner()
-        .get_provisioning_limits()
-        .account(account)
-        .send()
-        .await?;
 
-    let limits = response.into_inner();
+    let limits_json: serde_json::Value = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .get_provisioning_limits()
+            .account(account)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::to_value(&resp)?
+    });
 
     if use_json {
         // Convert the object-style response to array format for node-triton compatibility
-        let json_value = serde_json::to_value(&limits)?;
         let limits_array: Vec<serde_json::Value> =
-            if let serde_json::Value::Object(map) = json_value {
-                map.into_iter()
+            if let serde_json::Value::Object(map) = &limits_json {
+                map.iter()
                     .filter_map(|(key, value)| {
                         // Only include non-null values
                         if value.is_null() {
@@ -182,8 +194,7 @@ async fn get_limits(client: &TypedClient, use_json: bool) -> Result<()> {
         // Match node-triton output: table with TYPE, USED, LIMIT columns
         println!("{:<10} {:>5}  {:>5}", "TYPE", "USED", "LIMIT");
 
-        let json_value = serde_json::to_value(&limits)?;
-        if let serde_json::Value::Object(map) = json_value {
+        if let serde_json::Value::Object(map) = &limits_json {
             for (key, value) in map {
                 if !value.is_null() {
                     println!("{:<10} {:>5}  {:>5}", key, "-", value);
@@ -195,92 +206,82 @@ async fn get_limits(client: &TypedClient, use_json: bool) -> Result<()> {
     Ok(())
 }
 
-async fn update_account(
-    args: AccountUpdateArgs,
-    client: &TypedClient,
-    use_json: bool,
-) -> Result<()> {
+async fn update_account(args: AccountUpdateArgs, client: &AnyClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
 
-    // Handle file-based input
-    if let Some(file_path) = &args.file {
+    // Build the update body as a plain JSON Value so each dispatch arm
+    // can deserialize into its own per-client
+    // `UpdateAccountRequest` struct.
+    let body_value: serde_json::Value = if let Some(file_path) = &args.file {
         let content = tokio::fs::read_to_string(file_path)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to read file '{}': {}", file_path.display(), e))?;
+        serde_json::from_str(&content)
+            .map_err(|e| anyhow::anyhow!("Failed to parse JSON: {}", e))?
+    } else {
+        // Start with CLI flag values
+        let mut email = args.email.clone();
+        let mut given_name = args.given_name.clone();
+        let mut surname = args.surname.clone();
+        let mut company_name = args.company_name.clone();
+        let mut phone = args.phone.clone();
 
-        let request: cloudapi_client::types::UpdateAccountRequest = serde_json::from_str(&content)
-            .map_err(|e| anyhow::anyhow!("Failed to parse JSON: {}", e))?;
+        // Parse FIELD=VALUE arguments
+        for field in &args.fields {
+            if let Some((key, value)) = field.split_once('=') {
+                match key {
+                    "email" => email = Some(value.to_string()),
+                    "givenName" | "given_name" | "firstName" | "first_name" => {
+                        given_name = Some(value.to_string())
+                    }
+                    "sn" | "surname" | "lastName" | "last_name" => {
+                        surname = Some(value.to_string())
+                    }
+                    "company" | "companyName" | "company_name" => {
+                        company_name = Some(value.to_string())
+                    }
+                    "phone" => phone = Some(value.to_string()),
+                    _ => return Err(anyhow::anyhow!("Unknown field: {}", key)),
+                }
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Invalid field format '{}', expected KEY=VALUE",
+                    field
+                ));
+            }
+        }
 
-        let response = client
+        let mut obj = serde_json::Map::new();
+        if let Some(v) = email {
+            obj.insert("email".into(), serde_json::Value::String(v));
+        }
+        if let Some(v) = given_name {
+            obj.insert("firstName".into(), serde_json::Value::String(v));
+        }
+        if let Some(v) = surname {
+            obj.insert("lastName".into(), serde_json::Value::String(v));
+        }
+        if let Some(v) = company_name {
+            obj.insert("companyName".into(), serde_json::Value::String(v));
+        }
+        if let Some(v) = phone {
+            obj.insert("phone".into(), serde_json::Value::String(v));
+        }
+        serde_json::Value::Object(obj)
+    };
+
+    let acc: Account = crate::dispatch_with_types!(client, |c, t| {
+        let request: t::UpdateAccountRequest = serde_json::from_value(body_value.clone())?;
+        let resp = c
             .inner()
             .update_account()
             .account(account)
             .body(request)
             .send()
-            .await?;
-        let acc = response.into_inner();
-
-        eprintln!("Account updated from file");
-
-        if use_json {
-            json::print_json(&acc)?;
-        }
-
-        return Ok(());
-    }
-
-    // Start with CLI flag values
-    let mut email = args.email.clone();
-    let mut given_name = args.given_name.clone();
-    let mut surname = args.surname.clone();
-    let mut company_name = args.company_name.clone();
-    let mut phone = args.phone.clone();
-
-    // Parse FIELD=VALUE arguments
-    for field in &args.fields {
-        if let Some((key, value)) = field.split_once('=') {
-            match key {
-                "email" => email = Some(value.to_string()),
-                "givenName" | "given_name" | "firstName" | "first_name" => {
-                    given_name = Some(value.to_string())
-                }
-                "sn" | "surname" | "lastName" | "last_name" => surname = Some(value.to_string()),
-                "company" | "companyName" | "company_name" => {
-                    company_name = Some(value.to_string())
-                }
-                "phone" => phone = Some(value.to_string()),
-                _ => return Err(anyhow::anyhow!("Unknown field: {}", key)),
-            }
-        } else {
-            return Err(anyhow::anyhow!(
-                "Invalid field format '{}', expected KEY=VALUE",
-                field
-            ));
-        }
-    }
-
-    let request = cloudapi_client::types::UpdateAccountRequest {
-        email,
-        first_name: given_name,
-        last_name: surname,
-        company_name,
-        phone,
-        address: None,
-        postal_code: None,
-        city: None,
-        state: None,
-        country: None,
-        triton_cns_enabled: None,
-    };
-
-    let response = client
-        .inner()
-        .update_account()
-        .account(account)
-        .body(request)
-        .send()
-        .await?;
-    let acc = response.into_inner();
+            .await?
+            .into_inner();
+        serde_json::from_value::<Account>(serde_json::to_value(&resp)?)?
+    });
 
     eprintln!("Account updated");
 
