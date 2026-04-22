@@ -229,7 +229,7 @@ fn test_instance_migration_estimate_no_args() {
 // test. These tests verify the CLI interface and output format work correctly.
 // =============================================================================
 
-use cloudapi_client::Migration;
+use triton_gateway_client::Migration;
 
 /// Test `triton instance migration get ID` returns migration status
 /// This test verifies the command runs and handles "no migration" case gracefully
@@ -451,7 +451,7 @@ fn test_instance_migration_estimate_json() {
 
     if success {
         // Should be valid JSON with size field
-        let estimate: cloudapi_client::MigrationEstimate =
+        let estimate: triton_gateway_client::MigrationEstimate =
             serde_json::from_str(&stdout).expect("should parse estimate JSON");
         assert!(estimate.size > 0, "size should be positive");
     }

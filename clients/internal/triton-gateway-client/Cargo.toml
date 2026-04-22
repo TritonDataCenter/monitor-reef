@@ -42,6 +42,8 @@ thiserror = { workspace = true }
 # Progenitor patches enums with `#[derive(clap::ValueEnum)]` so CLI consumers
 # can use generated types directly (mirrors cloudapi-client).
 clap = { workspace = true }
+# Constructing fake HTTP responses in emit-payload mode (debug builds only)
+http = "1"
 # Bearer and SSH both stamp headers on reqwest::Request
 # (reqwest re-exports http's HeaderValue / HeaderName)
 

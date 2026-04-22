@@ -8,9 +8,9 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::{Snapshot, SnapshotState};
 use dialoguer::Confirm;
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::{Snapshot, SnapshotState};
 
 use crate::define_columns;
 use crate::output::json;
@@ -190,7 +190,7 @@ async fn create_snapshot(
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
 
-    let request = cloudapi_client::types::CreateSnapshotRequest {
+    let request = triton_gateway_client::types::CreateSnapshotRequest {
         name: Some(args.name.clone()),
     };
 
@@ -233,7 +233,7 @@ async fn wait_for_snapshot_state(
     target: SnapshotState,
     timeout_secs: u64,
     client: &TypedClient,
-) -> Result<cloudapi_client::types::Snapshot> {
+) -> Result<triton_gateway_client::types::Snapshot> {
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
 

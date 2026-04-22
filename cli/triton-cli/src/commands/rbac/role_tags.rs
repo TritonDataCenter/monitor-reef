@@ -10,7 +10,7 @@ use std::io::Write;
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
+use triton_gateway_client::TypedClient;
 
 use crate::output::json;
 
@@ -155,7 +155,7 @@ async fn role_tags_set(args: RoleTagsSetArgs, client: &TypedClient, use_json: bo
     let account = client.effective_account();
     let resource_id = resolve_resource_id(&args.resource_type, &args.resource, client).await?;
 
-    let request = cloudapi_client::types::ReplaceRoleTagsRequest {
+    let request = triton_gateway_client::types::ReplaceRoleTagsRequest {
         role_tag: args.roles.clone(),
     };
 

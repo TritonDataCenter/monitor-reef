@@ -18,9 +18,9 @@
 mod common;
 
 use assert_cmd::Command;
-use cloudapi_client::Image;
 use predicates::prelude::*;
 use serde_json::Value;
+use triton_gateway_client::Image;
 
 fn triton_cmd() -> Command {
     Command::cargo_bin("triton").expect("Failed to find triton binary")
@@ -560,8 +560,8 @@ fn test_image_list_filter_by_os() {
 #[test]
 #[ignore = "requires API access - run with make triton-test-api"]
 fn test_image_list_filter_by_state() {
-    use cloudapi_client::ImageState;
     use common::{json_stream_parse, safe_triton};
+    use triton_gateway_client::ImageState;
 
     common::config::require_integration_config();
 

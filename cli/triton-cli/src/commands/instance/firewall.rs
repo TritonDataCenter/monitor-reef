@@ -8,8 +8,8 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::FirewallRule;
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::FirewallRule;
 
 use crate::define_columns;
 use crate::output::json;

@@ -11,11 +11,11 @@ use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::{AuthConfig, KeySource, TypedClient};
 use dialoguer::{Confirm, Input};
 use std::fs;
 use std::path::PathBuf;
 use triton_auth::{CertGenerator, CertPurpose, DEFAULT_CERT_LIFETIME_DAYS};
+use triton_gateway_client::{AuthConfig, KeySource, TypedClient};
 
 #[derive(Args, Clone)]
 pub struct ProfileListArgs {
@@ -539,7 +539,10 @@ async fn docker_setup(name: Option<String>, lifetime: u32, yes: bool) -> Result<
 
     // Check for Docker service
     let auth_config = AuthConfig::new(&profile.account, KeySource::auto(&profile.key_id));
-    let client = TypedClient::new(&profile.url, auth_config);
+    let client = TypedClient::new(
+        &profile.url,
+        triton_gateway_client::GatewayAuthConfig::ssh_key(auth_config),
+    );
 
     println!("Checking for Docker service...");
     let services = client
@@ -680,7 +683,10 @@ async fn cmon_certgen(name: Option<String>, lifetime: u32, yes: bool) -> Result<
 
     // Check for CMON service
     let auth_config = AuthConfig::new(&profile.account, KeySource::auto(&profile.key_id));
-    let client = TypedClient::new(&profile.url, auth_config);
+    let client = TypedClient::new(
+        &profile.url,
+        triton_gateway_client::GatewayAuthConfig::ssh_key(auth_config),
+    );
 
     println!("Checking for CMON service...");
     let services = client

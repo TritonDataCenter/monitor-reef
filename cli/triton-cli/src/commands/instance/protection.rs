@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
 use tokio::time::sleep;
+use triton_gateway_client::TypedClient;
 
 #[derive(Args, Clone)]
 pub struct EnableProtectionArgs {

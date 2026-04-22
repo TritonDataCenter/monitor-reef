@@ -8,8 +8,8 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
 use std::path::Path;
+use triton_gateway_client::TypedClient;
 
 use crate::output::{enum_to_display, json};
 
@@ -65,7 +65,7 @@ pub struct CreateArgs {
 
     /// Instance brand. If not specified, inferred from the image.
     #[arg(long, short = 'b', value_enum)]
-    pub brand: Option<cloudapi_client::types::Brand2>,
+    pub brand: Option<triton_gateway_client::types::Brand2>,
 
     /// Volume to mount (NAME[@MOUNTPOINT] or NAME:MODE:MOUNTPOINT).
     /// MODE can be 'ro' or 'rw' (default: 'rw').
@@ -133,7 +133,7 @@ pub async fn run(
     let package_id = resolve_package(&args.package, client).await?;
 
     // Build create request using the builder pattern
-    let mut request = cloudapi_client::types::CreateMachineRequest::builder()
+    let mut request = triton_gateway_client::types::CreateMachineRequest::builder()
         .image(image_id)
         .package(package_id);
 
@@ -168,7 +168,7 @@ pub async fn run(
     }
 
     // Handle networks (simple mode - plain UUIDs wrapped as NetworkObject)
-    // The pre-hook in cloudapi-client simplifies these to plain UUID strings
+    // The pre-hook in triton-gateway-client simplifies these to plain UUID strings
     // when no ipv4_ips or primary are set, matching node-triton's wire format.
     if let Some(networks) = &args.network {
         let network_strs: Vec<&str> = networks
@@ -176,11 +176,11 @@ pub async fn run(
             .flat_map(|n| n.split(','))
             .map(|s| s.trim())
             .collect();
-        let mut network_objects: Vec<cloudapi_client::types::NetworkObject> = Vec::new();
+        let mut network_objects: Vec<triton_gateway_client::types::NetworkObject> = Vec::new();
         for network_str in network_strs {
             let network_id =
                 super::super::network::resolve_network_with_get(network_str, client).await?;
-            network_objects.push(cloudapi_client::types::NetworkObject {
+            network_objects.push(triton_gateway_client::types::NetworkObject {
                 ipv4_uuid: network_id,
                 ipv4_ips: None,
                 primary: None,
@@ -226,10 +226,10 @@ pub async fn run(
     }
 
     // Build the final request
-    let request: cloudapi_client::types::CreateMachineRequest =
+    let request: triton_gateway_client::types::CreateMachineRequest =
         request
             .try_into()
-            .map_err(|e: cloudapi_client::types::error::ConversionError| {
+            .map_err(|e: triton_gateway_client::types::error::ConversionError| {
                 anyhow::anyhow!("Failed to build request: {}", e)
             })?;
 
@@ -319,7 +319,7 @@ pub async fn run(
         eprintln!("Waiting for instance to be running...");
         let final_machine = super::wait::wait_for_states(
             machine.id,
-            &[cloudapi_client::types::MachineState::Running],
+            &[triton_gateway_client::types::MachineState::Running],
             args.wait_timeout,
             client,
         )
@@ -456,7 +456,9 @@ fn parse_key_value_file(s: &str) -> Result<(String, String)> {
 }
 
 /// Parse volume specifications
-fn parse_volume_specs(volumes: &[String]) -> Result<Vec<cloudapi_client::types::VolumeMount>> {
+fn parse_volume_specs(
+    volumes: &[String],
+) -> Result<Vec<triton_gateway_client::types::VolumeMount>> {
     let mut result = Vec::new();
     for spec in volumes {
         let mount = parse_volume_spec(spec)?;
@@ -469,7 +471,7 @@ fn parse_volume_specs(volumes: &[String]) -> Result<Vec<cloudapi_client::types::
 /// Formats:
 ///   NAME[@MOUNTPOINT] - mounts at /MOUNTPOINT or /<name>
 ///   NAME:MODE:MOUNTPOINT - explicit mode and mountpoint
-fn parse_volume_spec(spec: &str) -> Result<cloudapi_client::types::VolumeMount> {
+fn parse_volume_spec(spec: &str) -> Result<triton_gateway_client::types::VolumeMount> {
     // Try NAME:MODE:MOUNTPOINT format first
     let parts: Vec<&str> = spec.split(':').collect();
     if parts.len() == 3 {
@@ -478,8 +480,8 @@ fn parse_volume_spec(spec: &str) -> Result<cloudapi_client::types::VolumeMount> 
         let mountpoint = parts[2].to_string();
 
         let mode = match mode_str {
-            "rw" => cloudapi_client::types::MountMode::Rw,
-            "ro" => cloudapi_client::types::MountMode::Ro,
+            "rw" => triton_gateway_client::types::MountMode::Rw,
+            "ro" => triton_gateway_client::types::MountMode::Ro,
             _ => {
                 return Err(anyhow::anyhow!(
                     "Invalid volume mode '{}'. Expected 'ro' or 'rw'",
@@ -488,7 +490,7 @@ fn parse_volume_spec(spec: &str) -> Result<cloudapi_client::types::VolumeMount> 
             }
         };
 
-        return Ok(cloudapi_client::types::VolumeMount {
+        return Ok(triton_gateway_client::types::VolumeMount {
             name,
             mode: Some(mode),
             mountpoint,
@@ -500,7 +502,7 @@ fn parse_volume_spec(spec: &str) -> Result<cloudapi_client::types::VolumeMount> 
     if let Some(idx) = spec.find('@') {
         let name = spec[..idx].to_string();
         let mountpoint = spec[idx + 1..].to_string();
-        Ok(cloudapi_client::types::VolumeMount {
+        Ok(triton_gateway_client::types::VolumeMount {
             name,
             mode: None, // defaults to "rw"
             mountpoint,
@@ -510,7 +512,7 @@ fn parse_volume_spec(spec: &str) -> Result<cloudapi_client::types::VolumeMount> 
         // Just NAME, use /<name> as mountpoint
         let name = spec.to_string();
         let mountpoint = format!("/{}", name);
-        Ok(cloudapi_client::types::VolumeMount {
+        Ok(triton_gateway_client::types::VolumeMount {
             name,
             mode: None,
             mountpoint,
@@ -520,7 +522,7 @@ fn parse_volume_spec(spec: &str) -> Result<cloudapi_client::types::VolumeMount> 
 }
 
 /// Parse disk specifications
-fn parse_disk_specs(disks: &[String]) -> Result<Vec<cloudapi_client::types::DiskSpec>> {
+fn parse_disk_specs(disks: &[String]) -> Result<Vec<triton_gateway_client::types::DiskSpec>> {
     let mut result = Vec::new();
     for (i, spec) in disks.iter().enumerate() {
         let disk = parse_disk_spec(spec, i == 0)?;
@@ -533,7 +535,7 @@ fn parse_disk_specs(disks: &[String]) -> Result<Vec<cloudapi_client::types::Disk
 /// Formats:
 ///   SIZE - plain size (e.g., "10240" for 10GB in MB, or "10G" for 10GB)
 ///   IMAGE:SIZE - image UUID followed by size
-fn parse_disk_spec(spec: &str, is_first: bool) -> Result<cloudapi_client::types::DiskSpec> {
+fn parse_disk_spec(spec: &str, is_first: bool) -> Result<triton_gateway_client::types::DiskSpec> {
     let parts: Vec<&str> = spec.split(':').collect();
 
     if parts.len() == 2 {
@@ -542,7 +544,7 @@ fn parse_disk_spec(spec: &str, is_first: bool) -> Result<cloudapi_client::types:
             .parse()
             .map_err(|_| anyhow::anyhow!("Invalid image UUID in disk spec: {}", parts[0]))?;
         let size = parse_size(parts[1])?;
-        Ok(cloudapi_client::types::DiskSpec {
+        Ok(triton_gateway_client::types::DiskSpec {
             image: Some(image),
             size: Some(size),
             block_size: None,
@@ -551,7 +553,7 @@ fn parse_disk_spec(spec: &str, is_first: bool) -> Result<cloudapi_client::types:
     } else if parts.len() == 1 {
         // SIZE only format
         let size = parse_size(parts[0])?;
-        Ok(cloudapi_client::types::DiskSpec {
+        Ok(triton_gateway_client::types::DiskSpec {
             image: None,
             size: Some(size),
             block_size: None,
@@ -599,7 +601,7 @@ fn parse_size(s: &str) -> Result<u64> {
 async fn parse_nic_specs(
     nics: &[String],
     client: &TypedClient,
-) -> Result<Vec<cloudapi_client::types::NetworkObject>> {
+) -> Result<Vec<triton_gateway_client::types::NetworkObject>> {
     let mut result = Vec::new();
     for spec in nics {
         let nic = parse_nic_spec(spec, client).await?;
@@ -720,13 +722,13 @@ fn parse_nic_spec_fields(spec: &str) -> Result<ParsedNicSpec> {
 async fn parse_nic_spec(
     spec: &str,
     client: &TypedClient,
-) -> Result<cloudapi_client::types::NetworkObject> {
+) -> Result<triton_gateway_client::types::NetworkObject> {
     let parsed = parse_nic_spec_fields(spec)?;
 
     // Resolve network name to UUID if needed
     let resolved_network = super::super::network::resolve_network(&parsed.network, client).await?;
 
-    Ok(cloudapi_client::types::NetworkObject {
+    Ok(triton_gateway_client::types::NetworkObject {
         ipv4_uuid: resolved_network,
         ipv4_ips: parsed.ip.map(|ip| vec![ip]),
         primary: parsed.primary,
@@ -876,14 +878,20 @@ mod tests {
         let mount = parse_volume_spec("myvolume:ro:/data").unwrap();
         assert_eq!(mount.name, "myvolume");
         assert_eq!(mount.mountpoint, "/data");
-        assert_eq!(mount.mode, Some(cloudapi_client::types::MountMode::Ro));
+        assert_eq!(
+            mount.mode,
+            Some(triton_gateway_client::types::MountMode::Ro)
+        );
     }
 
     #[test]
     fn test_parse_volume_spec_rw_mode() {
         let mount = parse_volume_spec("myvolume:rw:/data").unwrap();
         assert_eq!(mount.name, "myvolume");
-        assert_eq!(mount.mode, Some(cloudapi_client::types::MountMode::Rw));
+        assert_eq!(
+            mount.mode,
+            Some(triton_gateway_client::types::MountMode::Rw)
+        );
     }
 
     #[test]

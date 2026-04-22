@@ -15,9 +15,9 @@ use std::process::Command;
 
 use anyhow::{Context, Result};
 use clap::Args;
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::Machine;
 use serde_json::Value;
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::Machine;
 
 /// Tag constants for SSH configuration on instances
 const TAG_SSH_IP: &str = "tritoncli.ssh.ip";

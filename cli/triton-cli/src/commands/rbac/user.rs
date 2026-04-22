@@ -8,8 +8,8 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
 use serde::Deserialize;
+use triton_gateway_client::TypedClient;
 
 use crate::define_columns;
 use crate::output::json;
@@ -225,7 +225,7 @@ pub async fn list_users(
         json::print_json_stream(&users)?;
     } else {
         define_columns! {
-            UserColumn for cloudapi_client::types::User, long_from: 4, {
+            UserColumn for triton_gateway_client::types::User, long_from: 4, {
                 Login("LOGIN") => |user| user.login.clone(),
                 Email("EMAIL") => |user| user.email.clone(),
                 Name("NAME") => |user| {
@@ -406,7 +406,7 @@ async fn create_user(args: UserCreateArgs, client: &TypedClient, use_json: bool)
         }
     };
 
-    let request = cloudapi_client::types::CreateUserRequest {
+    let request = triton_gateway_client::types::CreateUserRequest {
         login: args.login.clone(),
         email: args.email,
         password,
@@ -438,7 +438,7 @@ async fn update_user(args: UserUpdateArgs, client: &TypedClient, use_json: bool)
     let account = client.effective_account();
     let user_id = resolve_user(&args.user, client).await?;
 
-    let request = cloudapi_client::types::UpdateUserRequest {
+    let request = triton_gateway_client::types::UpdateUserRequest {
         email: args.email,
         company_name: args.company_name,
         first_name: args.first_name,
@@ -609,7 +609,7 @@ async fn add_user_from_file(
 
     // Create the user
     let account = client.effective_account();
-    let request = cloudapi_client::types::CreateUserRequest {
+    let request = triton_gateway_client::types::CreateUserRequest {
         login: login.clone(),
         email,
         password,
@@ -660,7 +660,7 @@ struct UserEdit {
 }
 
 /// Convert a User to commented YAML for editing
-fn user_to_commented_yaml(user: &cloudapi_client::types::User, account: &str) -> String {
+fn user_to_commented_yaml(user: &triton_gateway_client::types::User, account: &str) -> String {
     let company = user.company_name.as_deref().unwrap_or("");
     let first = user.first_name.as_deref().unwrap_or("");
     let last = user.last_name.as_deref().unwrap_or("");
@@ -732,7 +732,7 @@ async fn edit_user_in_editor(user_ref: &str, client: &TypedClient) -> Result<()>
         match serde_yaml::from_str::<UserEdit>(&result.content) {
             Ok(edited) => {
                 // Build update request
-                let request = cloudapi_client::types::UpdateUserRequest {
+                let request = triton_gateway_client::types::UpdateUserRequest {
                     email: Some(edited.email),
                     company_name: edited.company_name,
                     first_name: edited.first_name,

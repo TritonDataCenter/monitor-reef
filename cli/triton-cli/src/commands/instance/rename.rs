@@ -8,7 +8,7 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
+use triton_gateway_client::TypedClient;
 
 #[derive(Args, Clone)]
 pub struct RenameArgs {

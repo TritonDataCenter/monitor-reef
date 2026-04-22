@@ -8,8 +8,8 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::MachineState;
+use triton_gateway_client::TypedClient;
+use triton_gateway_client::types::MachineState;
 
 #[derive(Args, Clone)]
 pub struct StartArgs {
@@ -90,7 +90,7 @@ pub async fn start(args: StartArgs, client: &TypedClient) -> Result<()> {
         if let Err(e) = start_result {
             #[cfg(debug_assertions)]
             if e.to_string()
-                .contains(cloudapi_client::EMIT_PAYLOAD_SENTINEL)
+                .contains(triton_gateway_client::EMIT_PAYLOAD_SENTINEL)
             {
                 continue;
             }
@@ -149,7 +149,7 @@ pub async fn stop(args: StopArgs, client: &TypedClient) -> Result<()> {
         if let Err(e) = client.stop_machine(account, &machine_id, None).await {
             #[cfg(debug_assertions)]
             if e.to_string()
-                .contains(cloudapi_client::EMIT_PAYLOAD_SENTINEL)
+                .contains(triton_gateway_client::EMIT_PAYLOAD_SENTINEL)
             {
                 continue;
             }
@@ -212,7 +212,7 @@ pub async fn reboot(args: RebootArgs, client: &TypedClient) -> Result<()> {
         if let Err(e) = client.reboot_machine(account, &machine_id, None).await {
             #[cfg(debug_assertions)]
             if e.to_string()
-                .contains(cloudapi_client::EMIT_PAYLOAD_SENTINEL)
+                .contains(triton_gateway_client::EMIT_PAYLOAD_SENTINEL)
             {
                 continue;
             }

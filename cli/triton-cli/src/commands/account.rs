@@ -8,8 +8,8 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
 use std::path::PathBuf;
+use triton_gateway_client::TypedClient;
 
 use crate::output::json;
 
@@ -208,8 +208,9 @@ async fn update_account(
             .await
             .map_err(|e| anyhow::anyhow!("Failed to read file '{}': {}", file_path.display(), e))?;
 
-        let request: cloudapi_client::types::UpdateAccountRequest = serde_json::from_str(&content)
-            .map_err(|e| anyhow::anyhow!("Failed to parse JSON: {}", e))?;
+        let request: triton_gateway_client::types::UpdateAccountRequest =
+            serde_json::from_str(&content)
+                .map_err(|e| anyhow::anyhow!("Failed to parse JSON: {}", e))?;
 
         let response = client
             .inner()
@@ -259,7 +260,7 @@ async fn update_account(
         }
     }
 
-    let request = cloudapi_client::types::UpdateAccountRequest {
+    let request = triton_gateway_client::types::UpdateAccountRequest {
         email,
         first_name: given_name,
         last_name: surname,

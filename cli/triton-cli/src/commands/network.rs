@@ -10,7 +10,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
+use triton_gateway_client::TypedClient;
 
 use crate::output::json::{self, print_json_stream};
 use crate::output::table::{TableBuilder, TableFormatArgs};
@@ -355,7 +355,7 @@ async fn set_default_network(args: NetworkSetDefaultArgs, client: &TypedClient) 
     let account = client.effective_account();
     let network_uuid = resolve_network(&args.network, client).await?;
 
-    let request = cloudapi_client::types::UpdateConfigRequest {
+    let request = triton_gateway_client::types::UpdateConfigRequest {
         default_network: Some(network_uuid),
     };
 
@@ -409,7 +409,7 @@ async fn create_network(
         None => serde_json::Value::Object(serde_json::Map::new()),
     });
 
-    let request = cloudapi_client::types::CreateFabricNetworkRequest {
+    let request = triton_gateway_client::types::CreateFabricNetworkRequest {
         name: args.name.clone(),
         description: args.description,
         subnet: args.subnet,
@@ -653,7 +653,7 @@ async fn update_network_ip(
         args.reserve.unwrap_or(false)
     };
 
-    let request = cloudapi_client::types::UpdateNetworkIpRequest { reserved };
+    let request = triton_gateway_client::types::UpdateNetworkIpRequest { reserved };
 
     let response = client
         .inner()

@@ -8,7 +8,7 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
+use triton_gateway_client::TypedClient;
 
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
@@ -154,7 +154,7 @@ async fn add_key(args: KeyAddArgs, client: &TypedClient, use_json: bool) -> Resu
             .to_string()
     });
 
-    let request = cloudapi_client::types::CreateSshKeyRequest {
+    let request = triton_gateway_client::types::CreateSshKeyRequest {
         name: name.clone(),
         key: key_content.clone(),
     };

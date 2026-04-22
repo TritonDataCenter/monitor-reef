@@ -117,7 +117,7 @@ fn test_disable_deletion_protection_wait_flag() {
 // These tests are ignored by default and run with `make triton-test-api`
 // =============================================================================
 
-use cloudapi_client::Machine;
+use triton_gateway_client::Machine;
 
 /// Full deletion protection workflow test
 /// This test creates an instance with deletion protection, tries to delete it

@@ -9,7 +9,7 @@
 use anyhow::Result;
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
-use cloudapi_client::TypedClient;
+use triton_gateway_client::{GatewayAuthConfig, TypedClient};
 
 mod cache;
 mod commands;
@@ -430,8 +430,13 @@ impl Cli {
         let insecure = self.insecure || profile.insecure;
 
         let http_client = build_http_client(insecure).await?;
+        // Wrap the SSH AuthConfig in a GatewayAuthConfig. RBAC fields
+        // (`user`, `roles`) and the orthogonal `accept_version` / `act_as`
+        // headers stay on the inner AuthConfig; the SSH branch of
+        // `add_auth_headers` forwards them on each request.
+        let gw_auth = GatewayAuthConfig::ssh_key(auth_config);
         Ok((
-            TypedClient::new_with_http_client(&final_url, auth_config, http_client),
+            TypedClient::new_with_http_client(&final_url, gw_auth, http_client),
             profile,
         ))
     }
@@ -446,7 +451,7 @@ async fn main() {
         // Emit-payload mode uses a sentinel error to abort the request
         // after printing the payload. Treat it as a successful exit.
         #[cfg(debug_assertions)]
-        if msg.contains(cloudapi_client::EMIT_PAYLOAD_SENTINEL) {
+        if msg.contains(triton_gateway_client::EMIT_PAYLOAD_SENTINEL) {
             return;
         }
 
@@ -472,7 +477,7 @@ async fn try_main() -> Result<()> {
     // comparison testing without sending requests)
     #[cfg(debug_assertions)]
     if cli.emit_payload {
-        cloudapi_client::set_emit_payload_mode(true);
+        triton_gateway_client::set_emit_payload_mode(true);
     }
 
     // Set up logging: always show warnings/errors, verbose adds debug

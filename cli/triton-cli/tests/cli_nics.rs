@@ -146,7 +146,7 @@ fn test_instance_nic_delete_alias() {
 // These tests are ignored by default and run with `make triton-test-api`
 // =============================================================================
 
-use cloudapi_client::{Network, Nic};
+use triton_gateway_client::{Network, Nic};
 
 /// Full instance NIC workflow test
 /// This test creates an instance, adds/lists/deletes NICs, and cleans up.
