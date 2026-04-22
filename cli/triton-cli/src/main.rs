@@ -201,6 +201,12 @@ enum Commands {
     /// Show account info and resource usage
     Info,
 
+    /// Exchange the profile's SSH key for a tritonapi JWT via
+    /// `POST /v1/auth/login-ssh`. The returned token is stashed at
+    /// `~/.triton/tokens/<profile>.json` (mode 0600) for future
+    /// Bearer-authenticated tritonapi calls.
+    Login,
+
     /// List datacenters
     #[command(alias = "dcs")]
     Datacenters(commands::datacenters::DatacenterListArgs),
@@ -569,6 +575,10 @@ async fn try_main() -> Result<()> {
         Commands::Info => {
             let (client, _profile) = cli.build_client().await?;
             commands::info::run(&client, cli.json).await
+        }
+        Commands::Login => {
+            let (client, profile) = cli.build_client().await?;
+            commands::login::run(&client, &profile, cli.json).await
         }
         Commands::Datacenters(args) => {
             let (client, _profile) = cli.build_client().await?;

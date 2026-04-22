@@ -17,6 +17,7 @@ pub mod image;
 pub mod info;
 pub mod instance;
 pub mod key;
+pub mod login;
 pub mod network;
 pub mod package;
 pub mod profile;
