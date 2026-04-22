@@ -601,7 +601,7 @@ async fn try_main() -> Result<()> {
         }
         Commands::Fwrule { command } if command.is_empty_variadic() => Ok(()),
         Commands::Fwrule { command } => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Vlan { command } => {
@@ -717,7 +717,7 @@ async fn try_main() -> Result<()> {
             .await
         }
         Commands::Fwrules => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::fwrule::FwruleCommand::List(commands::fwrule::FwruleListArgs {
                 table: Default::default(),
             })
