@@ -133,7 +133,8 @@ func TestIntegration_UpdateAccount(t *testing.T) {
 			City:        ptrOrEmpty(original.City),
 			State:       ptrOrEmpty(original.State),
 		}
-		_, _ = testClient.UpdateAccountWithResponse(context.Background(), testAccount, restore)
+		resp, err := testClient.UpdateAccountWithResponse(context.Background(), testAccount, restore)
+		cleanupErr(t, "restore account", resp.StatusCode(), err)
 	})
 
 	if updateResp.JSON200 == nil {
@@ -186,9 +187,10 @@ func TestIntegration_UpdateConfig(t *testing.T) {
 	// Restore original.
 	t.Cleanup(func() {
 		if originalNetwork != nil {
-			_, _ = testClient.UpdateConfigWithResponse(context.Background(), testAccount, cloudapi.UpdateConfigJSONRequestBody{
+			resp, err := testClient.UpdateConfigWithResponse(context.Background(), testAccount, cloudapi.UpdateConfigJSONRequestBody{
 				DefaultNetwork: originalNetwork,
 			})
+			cleanupErr(t, "restore default network config", resp.StatusCode(), err)
 		}
 	})
 

@@ -147,6 +147,18 @@ func requireStatus(t *testing.T, want, got int, body []byte) {
 	}
 }
 
+// cleanupErr reports a test error if a cleanup API call failed unexpectedly.
+// HTTP 404 and 410 are tolerated because the test may have already deleted the
+// resource.
+func cleanupErr(t *testing.T, label string, statusCode int, err error) {
+	t.Helper()
+	if err != nil {
+		t.Errorf("cleanup: %s: %v", label, err)
+	} else if statusCode >= 400 && statusCode != 404 && statusCode != 410 {
+		t.Errorf("cleanup: %s: HTTP %d", label, statusCode)
+	}
+}
+
 // randName returns a unique name with the given prefix.
 func randName(prefix string) string {
 	return fmt.Sprintf("%s-%d", prefix, rand.Int())

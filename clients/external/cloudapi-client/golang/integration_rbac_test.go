@@ -78,7 +78,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 	policyID := createPolResp.JSON201.ID.String()
 
 	t.Cleanup(func() {
-		_, _ = testClient.DeletePolicyWithResponse(context.Background(), testAccount, policyID)
+		resp, err := testClient.DeletePolicyWithResponse(context.Background(), testAccount, policyID)
+		cleanupErr(t, "delete policy", resp.StatusCode(), err)
 	})
 
 	// Get policy.
@@ -125,7 +126,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 	roleID := createRoleResp.JSON201.ID.String()
 
 	t.Cleanup(func() {
-		_, _ = testClient.DeleteRoleWithResponse(context.Background(), testAccount, roleID)
+		resp, err := testClient.DeleteRoleWithResponse(context.Background(), testAccount, roleID)
+		cleanupErr(t, "delete role", resp.StatusCode(), err)
 	})
 
 	// Get role and verify the attached policy is returned.
@@ -176,7 +178,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 		}
 		requireOK(t, resp.StatusCode(), resp.Body)
 		// Reset.
-		_, _ = testClient.ReplaceAccountRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		resetResp, resetErr := testClient.ReplaceAccountRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		cleanupErr(t, "reset account role-tags", resetResp.StatusCode(), resetErr)
 
 		// Datacenters collection.
 		resp2, err := testClient.ReplaceDatacentersCollectionRoleTagsWithResponse(ctx, testAccount, roleTags)
@@ -184,7 +187,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 			t.Fatalf("ReplaceDatacentersCollectionRoleTags: %v", err)
 		}
 		requireOK(t, resp2.StatusCode(), resp2.Body)
-		_, _ = testClient.ReplaceDatacentersCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		resetResp, resetErr = testClient.ReplaceDatacentersCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		cleanupErr(t, "reset datacenters role-tags", resetResp.StatusCode(), resetErr)
 
 		// Firewall rules collection.
 		resp3, err := testClient.ReplaceFwrulesCollectionRoleTagsWithResponse(ctx, testAccount, roleTags)
@@ -192,7 +196,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 			t.Fatalf("ReplaceFwrulesCollectionRoleTags: %v", err)
 		}
 		requireOK(t, resp3.StatusCode(), resp3.Body)
-		_, _ = testClient.ReplaceFwrulesCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		resetResp, resetErr = testClient.ReplaceFwrulesCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		cleanupErr(t, "reset fwrules role-tags", resetResp.StatusCode(), resetErr)
 
 		// Images collection.
 		resp4, err := testClient.ReplaceImagesCollectionRoleTagsWithResponse(ctx, testAccount, roleTags)
@@ -200,7 +205,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 			t.Fatalf("ReplaceImagesCollectionRoleTags: %v", err)
 		}
 		requireOK(t, resp4.StatusCode(), resp4.Body)
-		_, _ = testClient.ReplaceImagesCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		resetResp, resetErr = testClient.ReplaceImagesCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		cleanupErr(t, "reset images role-tags", resetResp.StatusCode(), resetErr)
 
 		// Keys collection.
 		resp5, err := testClient.ReplaceKeysCollectionRoleTagsWithResponse(ctx, testAccount, roleTags)
@@ -208,7 +214,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 			t.Fatalf("ReplaceKeysCollectionRoleTags: %v", err)
 		}
 		requireOK(t, resp5.StatusCode(), resp5.Body)
-		_, _ = testClient.ReplaceKeysCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		resetResp, resetErr = testClient.ReplaceKeysCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		cleanupErr(t, "reset keys role-tags", resetResp.StatusCode(), resetErr)
 
 		// Networks collection.
 		resp6, err := testClient.ReplaceNetworksCollectionRoleTagsWithResponse(ctx, testAccount, roleTags)
@@ -216,7 +223,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 			t.Fatalf("ReplaceNetworksCollectionRoleTags: %v", err)
 		}
 		requireOK(t, resp6.StatusCode(), resp6.Body)
-		_, _ = testClient.ReplaceNetworksCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		resetResp, resetErr = testClient.ReplaceNetworksCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		cleanupErr(t, "reset networks role-tags", resetResp.StatusCode(), resetErr)
 
 		// Packages collection.
 		resp7, err := testClient.ReplacePackagesCollectionRoleTagsWithResponse(ctx, testAccount, roleTags)
@@ -224,7 +232,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 			t.Fatalf("ReplacePackagesCollectionRoleTags: %v", err)
 		}
 		requireOK(t, resp7.StatusCode(), resp7.Body)
-		_, _ = testClient.ReplacePackagesCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		resetResp, resetErr = testClient.ReplacePackagesCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		cleanupErr(t, "reset packages role-tags", resetResp.StatusCode(), resetErr)
 
 		// Policies collection.
 		resp8, err := testClient.ReplacePoliciesCollectionRoleTagsWithResponse(ctx, testAccount, roleTags)
@@ -232,7 +241,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 			t.Fatalf("ReplacePoliciesCollectionRoleTags: %v", err)
 		}
 		requireOK(t, resp8.StatusCode(), resp8.Body)
-		_, _ = testClient.ReplacePoliciesCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		resetResp, resetErr = testClient.ReplacePoliciesCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		cleanupErr(t, "reset policies role-tags", resetResp.StatusCode(), resetErr)
 
 		// Roles collection.
 		resp9, err := testClient.ReplaceRolesCollectionRoleTagsWithResponse(ctx, testAccount, roleTags)
@@ -240,7 +250,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 			t.Fatalf("ReplaceRolesCollectionRoleTags: %v", err)
 		}
 		requireOK(t, resp9.StatusCode(), resp9.Body)
-		_, _ = testClient.ReplaceRolesCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		resetResp, resetErr = testClient.ReplaceRolesCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		cleanupErr(t, "reset roles role-tags", resetResp.StatusCode(), resetErr)
 
 		// Services collection.
 		resp10, err := testClient.ReplaceServicesCollectionRoleTagsWithResponse(ctx, testAccount, roleTags)
@@ -248,7 +259,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 			t.Fatalf("ReplaceServicesCollectionRoleTags: %v", err)
 		}
 		requireOK(t, resp10.StatusCode(), resp10.Body)
-		_, _ = testClient.ReplaceServicesCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		resetResp, resetErr = testClient.ReplaceServicesCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		cleanupErr(t, "reset services role-tags", resetResp.StatusCode(), resetErr)
 
 		// Users collection.
 		resp11, err := testClient.ReplaceUsersCollectionRoleTagsWithResponse(ctx, testAccount, roleTags)
@@ -256,7 +268,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 			t.Fatalf("ReplaceUsersCollectionRoleTags: %v", err)
 		}
 		requireOK(t, resp11.StatusCode(), resp11.Body)
-		_, _ = testClient.ReplaceUsersCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		resetResp, resetErr = testClient.ReplaceUsersCollectionRoleTagsWithResponse(ctx, testAccount, emptyTags)
+		cleanupErr(t, "reset users role-tags", resetResp.StatusCode(), resetErr)
 	})
 
 	// --- RoleTags on individual resources ---
@@ -270,7 +283,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 			t.Fatalf("ReplacePolicyRoleTags: %v", err)
 		}
 		requireOK(t, resp.StatusCode(), resp.Body)
-		_, _ = testClient.ReplacePolicyRoleTagsWithResponse(ctx, testAccount, policyID, emptyTags)
+		resetResp, resetErr := testClient.ReplacePolicyRoleTagsWithResponse(ctx, testAccount, policyID, emptyTags)
+		cleanupErr(t, "reset policy role-tags", resetResp.StatusCode(), resetErr)
 
 		// Role role-tags.
 		resp2, err := testClient.ReplaceRoleRoleTagsWithResponse(ctx, testAccount, roleID, roleTags)
@@ -278,7 +292,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 			t.Fatalf("ReplaceRoleRoleTags: %v", err)
 		}
 		requireOK(t, resp2.StatusCode(), resp2.Body)
-		_, _ = testClient.ReplaceRoleRoleTagsWithResponse(ctx, testAccount, roleID, emptyTags)
+		resetResp, resetErr = testClient.ReplaceRoleRoleTagsWithResponse(ctx, testAccount, roleID, emptyTags)
+		cleanupErr(t, "reset role role-tags", resetResp.StatusCode(), resetErr)
 
 		// Network role-tags (pick first network).
 		netResp, err := testClient.ListNetworksWithResponse(ctx, testAccount)
@@ -292,7 +307,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 				t.Fatalf("ReplaceNetworkRoleTags: %v", err)
 			}
 			requireOK(t, resp3.StatusCode(), resp3.Body)
-			_, _ = testClient.ReplaceNetworkRoleTagsWithResponse(ctx, testAccount, netID, emptyTags)
+			resetResp, resetErr := testClient.ReplaceNetworkRoleTagsWithResponse(ctx, testAccount, netID, emptyTags)
+			cleanupErr(t, "reset network role-tags", resetResp.StatusCode(), resetErr)
 		}
 
 		// Package role-tags (pick first package).
@@ -307,7 +323,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 				t.Fatalf("ReplacePackageRoleTags: %v", err)
 			}
 			requireOK(t, resp4.StatusCode(), resp4.Body)
-			_, _ = testClient.ReplacePackageRoleTagsWithResponse(ctx, testAccount, pkgName, emptyTags)
+			resetResp, resetErr := testClient.ReplacePackageRoleTagsWithResponse(ctx, testAccount, pkgName, emptyTags)
+			cleanupErr(t, "reset package role-tags", resetResp.StatusCode(), resetErr)
 		}
 
 		// Image role-tags (pick first image).
@@ -322,7 +339,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 				t.Fatalf("ReplaceImageRoleTags: %v", err)
 			}
 			requireOK(t, resp5.StatusCode(), resp5.Body)
-			_, _ = testClient.ReplaceImageRoleTagsWithResponse(ctx, testAccount, imgID, emptyTags)
+			resetResp, resetErr := testClient.ReplaceImageRoleTagsWithResponse(ctx, testAccount, imgID, emptyTags)
+			cleanupErr(t, "reset image role-tags", resetResp.StatusCode(), resetErr)
 		}
 
 		// Firewall rule role-tags (pick first rule).
@@ -337,7 +355,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 				t.Fatalf("ReplaceFwruleRoleTags: %v", err)
 			}
 			requireOK(t, resp6.StatusCode(), resp6.Body)
-			_, _ = testClient.ReplaceFwruleRoleTagsWithResponse(ctx, testAccount, fwID, emptyTags)
+			resetResp, resetErr := testClient.ReplaceFwruleRoleTagsWithResponse(ctx, testAccount, fwID, emptyTags)
+			cleanupErr(t, "reset fwrule role-tags", resetResp.StatusCode(), resetErr)
 		}
 
 		// Key role-tags (pick first key).
@@ -352,7 +371,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 				t.Fatalf("ReplaceKeyRoleTags: %v", err)
 			}
 			requireOK(t, resp7.StatusCode(), resp7.Body)
-			_, _ = testClient.ReplaceKeyRoleTagsWithResponse(ctx, testAccount, keyName, emptyTags)
+			resetResp, resetErr := testClient.ReplaceKeyRoleTagsWithResponse(ctx, testAccount, keyName, emptyTags)
+			cleanupErr(t, "reset key role-tags", resetResp.StatusCode(), resetErr)
 		}
 
 		// Machine role-tags (pick first machine).
@@ -367,7 +387,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 				t.Fatalf("ReplaceMachineRoleTags: %v", err)
 			}
 			requireOK(t, resp8.StatusCode(), resp8.Body)
-			_, _ = testClient.ReplaceMachineRoleTagsWithResponse(ctx, testAccount, machID, emptyTags)
+			resetResp, resetErr := testClient.ReplaceMachineRoleTagsWithResponse(ctx, testAccount, machID, emptyTags)
+			cleanupErr(t, "reset machine role-tags", resetResp.StatusCode(), resetErr)
 		}
 
 		// User role-tags (use account owner — the testAccount itself acts as a user).
@@ -383,7 +404,8 @@ func TestIntegration_RBAC_CRUD(t *testing.T) {
 				t.Fatalf("ReplaceUserRoleTags: %v", err)
 			}
 			requireOK(t, resp9.StatusCode(), resp9.Body)
-			_, _ = testClient.ReplaceUserRoleTagsWithResponse(ctx, testAccount, userUUID, emptyTags)
+			resetResp, resetErr := testClient.ReplaceUserRoleTagsWithResponse(ctx, testAccount, userUUID, emptyTags)
+			cleanupErr(t, "reset user role-tags", resetResp.StatusCode(), resetErr)
 		}
 	})
 

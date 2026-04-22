@@ -85,7 +85,8 @@ func TestIntegration_UserKeys_CRUD(t *testing.T) {
 	requireOK(t, createResp.StatusCode(), createResp.Body)
 
 	t.Cleanup(func() {
-		_, _ = testClient.DeleteUserKeyWithResponse(context.Background(), testAccount, userID, keyName)
+		resp, err := testClient.DeleteUserKeyWithResponse(context.Background(), testAccount, userID, keyName)
+		cleanupErr(t, "delete user key", resp.StatusCode(), err)
 	})
 
 	// Get user key.
@@ -146,7 +147,8 @@ func TestIntegration_UserAccessKeys_CRUD(t *testing.T) {
 	akID := createResp.JSON201.Accesskeyid
 
 	t.Cleanup(func() {
-		_, _ = testClient.DeleteUserAccessKeyWithResponse(context.Background(), testAccount, userID, akID)
+		resp, err := testClient.DeleteUserAccessKeyWithResponse(context.Background(), testAccount, userID, akID)
+		cleanupErr(t, "delete user access key", resp.StatusCode(), err)
 	})
 
 	// Get user access key.

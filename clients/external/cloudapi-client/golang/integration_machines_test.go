@@ -524,10 +524,11 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 			t.Fatalf("GetMachine before delete: %v", err)
 		}
 		if getResp.JSON200 != nil && getResp.JSON200.State == cloudapi.MachineStateRunning {
-			_, _ = testClient.UpdateMachineWithResponse(ctx, testAccount, machineID,
+			stopResp, stopErr := testClient.UpdateMachineWithResponse(ctx, testAccount, machineID,
 				&cloudapi.UpdateMachineParams{},
 				map[string]interface{}{"action": "stop"},
 			)
+			cleanupErr(t, "stop machine before delete", stopResp.StatusCode(), stopErr)
 			waitForMachineState(t, machineID, cloudapi.MachineStateStopped, 5*time.Minute)
 		}
 
