@@ -8,7 +8,8 @@
 
 use anyhow::Result;
 use clap::Subcommand;
-use cloudapi_client::TypedClient;
+
+use crate::client::AnyClient;
 
 pub mod audit;
 pub mod create;
@@ -153,7 +154,7 @@ impl InstanceCommand {
 
     pub async fn run(
         self,
-        client: &TypedClient,
+        client: &AnyClient,
         json: bool,
         cache: Option<&crate::cache::ImageCache>,
     ) -> Result<()> {

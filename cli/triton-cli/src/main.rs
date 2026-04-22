@@ -576,7 +576,7 @@ async fn try_main() -> Result<()> {
         }
         Commands::Instance { command } if command.is_empty_variadic() => Ok(()),
         Commands::Instance { command } => {
-            let (client, profile) = cli.build_client().await?;
+            let (client, profile) = cli.build_any_client().await?;
             let cache = cache::ImageCache::new(&profile).await;
             command.clone().run(&client, cli.json, cache.as_ref()).await
         }
@@ -614,7 +614,7 @@ async fn try_main() -> Result<()> {
             command.clone().run(&client, cli.json).await
         }
         Commands::Package { command } => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             command.clone().run(&client, cli.json).await
         }
         Commands::Account { command } => {
@@ -642,38 +642,38 @@ async fn try_main() -> Result<()> {
             commands::changefeed::run(args.clone(), &client, cli.json).await
         }
         Commands::Insts(args) => {
-            let (client, profile) = cli.build_client().await?;
+            let (client, profile) = cli.build_any_client().await?;
             let cache = cache::ImageCache::new(&profile).await;
             commands::instance::list::run(args.clone(), &client, cli.json, cache.as_ref()).await
         }
         Commands::Create(args) => {
-            let (client, profile) = cli.build_client().await?;
+            let (client, profile) = cli.build_any_client().await?;
             let cache = cache::ImageCache::new(&profile).await;
             commands::instance::create::run(args.clone(), &client, cli.json, cache.as_ref()).await
         }
         Commands::Ssh(args) => {
-            let (client, profile) = cli.build_client().await?;
+            let (client, profile) = cli.build_any_client().await?;
             let cache = cache::ImageCache::new(&profile).await;
             commands::instance::ssh::run(args.clone(), &client, cache.as_ref()).await
         }
         Commands::Start(args) if args.instances.is_empty() => Ok(()),
         Commands::Start(args) => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::instance::lifecycle::start(args.clone(), &client).await
         }
         Commands::Stop(args) if args.instances.is_empty() => Ok(()),
         Commands::Stop(args) => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::instance::lifecycle::stop(args.clone(), &client).await
         }
         Commands::Reboot(args) if args.instances.is_empty() => Ok(()),
         Commands::Reboot(args) => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::instance::lifecycle::reboot(args.clone(), &client).await
         }
         Commands::Delete(args) if args.instances.is_empty() => Ok(()),
         Commands::Delete(args) => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::instance::delete::run(args.clone(), &client).await
         }
         Commands::Imgs(args) => {
@@ -684,7 +684,7 @@ async fn try_main() -> Result<()> {
                 .await
         }
         Commands::Pkgs(args) => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::package::PackageCommand::List(args.clone())
                 .run(&client, cli.json)
                 .await
@@ -742,27 +742,27 @@ async fn try_main() -> Result<()> {
             .await
         }
         Commands::Ip(args) => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::instance::get::ip(args.clone(), &client).await
         }
         Commands::Disks(args) => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::instance::disk::list_disks(args.clone(), &client, cli.json).await
         }
         Commands::Snapshots(args) => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::instance::snapshot::list_snapshots(args.clone(), &client, cli.json).await
         }
         Commands::Tags(args) => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::instance::tag::list_tags(args.clone(), &client, cli.json).await
         }
         Commands::Metadatas(args) => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::instance::metadata::list_metadata(args.clone(), &client, cli.json).await
         }
         Commands::Nics(args) => {
-            let (client, _profile) = cli.build_client().await?;
+            let (client, _profile) = cli.build_any_client().await?;
             commands::instance::nic::list_nics(args.clone(), &client, cli.json).await
         }
         Commands::Completion { shell } => {

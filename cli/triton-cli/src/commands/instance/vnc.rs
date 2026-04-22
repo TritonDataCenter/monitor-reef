@@ -31,6 +31,8 @@ use axum::{
 use clap::Args;
 use cloudapi_client::{ClientInfo, TypedClient};
 use futures_util::{SinkExt, StreamExt};
+
+use crate::client::AnyClient;
 use http::Uri;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -80,9 +82,25 @@ struct WsProxyState {
     auth_config: triton_auth::AuthConfig,
 }
 
-pub async fn run(args: VncArgs, client: &TypedClient, json: bool) -> Result<()> {
+pub async fn run(args: VncArgs, any_client: &AnyClient, json: bool) -> Result<()> {
+    // Resolve the instance through the `AnyClient` so short-id / name
+    // lookup works on either profile type…
+    let machine_id = resolve_instance(&args.instance, any_client).await?;
+
+    // …then refuse the WebSocket stage if we're on a tritonapi profile.
+    // The gateway doesn't proxy WS traffic with JWT re-signing yet, so
+    // VNC remains a cloudapi-direct (HTTP-Signature) operation.
+    let client: &TypedClient = match any_client {
+        AnyClient::CloudApi(c) => c,
+        AnyClient::Gateway { .. } => {
+            anyhow::bail!(
+                "`triton instance vnc` is not yet supported for tritonapi profiles \
+                 (JWT-over-WebSocket is not wired up). Use an SSH profile for this command."
+            );
+        }
+    };
+
     let account = client.effective_account();
-    let machine_id = resolve_instance(&args.instance, client).await?;
 
     // Build WebSocket URL
     let base_url = client.inner().baseurl();

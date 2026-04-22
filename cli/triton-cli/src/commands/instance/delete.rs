@@ -8,8 +8,10 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
 use dialoguer::Confirm;
+
+use crate::client::AnyClient;
+use crate::dispatch;
 
 #[derive(Args, Clone)]
 pub struct DeleteArgs {
@@ -29,7 +31,7 @@ pub struct DeleteArgs {
     pub wait_timeout: u64,
 }
 
-pub async fn run(args: DeleteArgs, client: &TypedClient) -> Result<()> {
+pub async fn run(args: DeleteArgs, client: &AnyClient) -> Result<()> {
     let account = client.effective_account();
     let total = args.instances.len();
     let mut errors = Vec::new();
@@ -55,14 +57,18 @@ pub async fn run(args: DeleteArgs, client: &TypedClient) -> Result<()> {
             continue;
         }
 
-        if let Err(e) = client
-            .inner()
-            .delete_machine()
-            .account(account)
-            .machine(machine_id)
-            .send()
-            .await
-        {
+        let result: anyhow::Result<()> = dispatch!(client, |c| {
+            c.inner()
+                .delete_machine()
+                .account(account)
+                .machine(machine_id)
+                .send()
+                .await
+                .map(|_| ())
+                .map_err(anyhow::Error::from)
+        });
+
+        if let Err(e) = result {
             #[cfg(debug_assertions)]
             if e.to_string()
                 .contains(cloudapi_client::EMIT_PAYLOAD_SENTINEL)

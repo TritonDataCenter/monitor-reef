@@ -8,10 +8,11 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::{MigrationAction, MigrationState};
+use cloudapi_api::{Migration, MigrationAction, MigrationEstimate, MigrationState};
 
+use crate::client::AnyClient;
 use crate::output::{enum_to_display, json};
+use crate::{dispatch, dispatch_with_types};
 
 #[derive(Subcommand, Clone)]
 pub enum MigrationCommand {
@@ -123,7 +124,7 @@ pub struct MigrationAbortArgs {
 }
 
 impl MigrationCommand {
-    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
         match self {
             Self::Get(args) | Self::List(args) => get_migration(args, client, use_json).await,
             Self::Estimate(args) => estimate_migration(args, client, use_json).await,
@@ -136,24 +137,37 @@ impl MigrationCommand {
     }
 }
 
-async fn get_migration(args: MigrationGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+/// Fetch the current migration status as a canonical
+/// `cloudapi_api::Migration` so the rendering logic stays
+/// variant-agnostic.
+async fn fetch_migration(
+    client: &AnyClient,
+    account: &str,
+    instance_id: uuid::Uuid,
+) -> Result<Migration> {
+    let migration: Migration = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .get_migration()
+            .account(account)
+            .machine(instance_id)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<Migration>(serde_json::to_value(&resp)?)?
+    });
+    Ok(migration)
+}
+
+async fn get_migration(args: MigrationGetArgs, client: &AnyClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
-
-    let response = client
-        .inner()
-        .get_migration()
-        .account(account)
-        .machine(instance_id)
-        .send()
-        .await?;
-
-    let migration = response.into_inner();
+    let migration = fetch_migration(client, account, instance_id).await?;
 
     if use_json {
         json::print_json(&migration)?;
     } else {
-        println!("Instance:   {}", migration.machine);
+        println!("Instance:   {}", migration.vm_uuid);
         println!("State:      {}", enum_to_display(&migration.state));
         println!("Phase:      {}", enum_to_display(&migration.phase));
         if let Some(progress) = migration.progress_percent {
@@ -173,21 +187,23 @@ async fn get_migration(args: MigrationGetArgs, client: &TypedClient, use_json: b
 
 async fn estimate_migration(
     args: MigrationEstimateArgs,
-    client: &TypedClient,
+    client: &AnyClient,
     use_json: bool,
 ) -> Result<()> {
     let account = client.effective_account();
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
 
-    let response = client
-        .inner()
-        .migrate_machine_estimate()
-        .account(account)
-        .machine(instance_id)
-        .send()
-        .await?;
-
-    let estimate = response.into_inner();
+    let estimate: MigrationEstimate = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .migrate_machine_estimate()
+            .account(account)
+            .machine(instance_id)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<MigrationEstimate>(serde_json::to_value(&resp)?)?
+    });
 
     if use_json {
         json::print_json(&estimate)?;
@@ -204,33 +220,59 @@ async fn estimate_migration(
     Ok(())
 }
 
+/// Dispatch a migration action (`begin` / `sync` / `switch` / `abort`)
+/// and return the resulting Migration object in canonical form.
+async fn post_migrate(
+    client: &AnyClient,
+    account: &str,
+    instance_id: uuid::Uuid,
+    action: MigrationAction,
+    affinity: Option<&[String]>,
+) -> Result<Migration> {
+    let affinity_opt = affinity.filter(|a| !a.is_empty()).map(|a| a.to_vec());
+    let migration: Migration = dispatch_with_types!(client, |c, t| {
+        // Round-trip the canonical `MigrationAction` enum into the
+        // per-client one via serde — both variants serialize to
+        // identical wire strings.
+        let client_action: t::MigrationAction =
+            serde_json::from_value(serde_json::to_value(&action)?)?;
+        let body = t::MigrateRequest {
+            action: client_action,
+            affinity: affinity_opt.clone(),
+        };
+        let resp = c
+            .inner()
+            .migrate()
+            .account(account)
+            .machine(instance_id)
+            .body(body)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<Migration>(serde_json::to_value(&resp)?)?
+    });
+    Ok(migration)
+}
+
 async fn begin_migration(
     args: MigrationBeginArgs,
-    client: &TypedClient,
+    client: &AnyClient,
     use_json: bool,
 ) -> Result<()> {
     let account = client.effective_account();
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
     let id_str = instance_id.to_string();
 
-    let request = cloudapi_client::types::MigrateRequest {
-        action: cloudapi_client::types::MigrationAction::Begin,
-        affinity: args.affinity,
-    };
-
-    let response = client
-        .inner()
-        .migrate()
-        .account(account)
-        .machine(instance_id)
-        .body(request)
-        .send()
-        .await?;
-
-    let migration = response.into_inner();
+    let migration = post_migrate(
+        client,
+        account,
+        instance_id,
+        MigrationAction::Begin,
+        args.affinity.as_deref(),
+    )
+    .await?;
 
     if args.wait {
-        // Wait for the action to complete
         wait_for_action(
             instance_id,
             MigrationAction::Begin,
@@ -238,7 +280,6 @@ async fn begin_migration(
             client,
         )
         .await?;
-        // Output node-triton compatible message
         eprintln!("Done - begin finished");
     } else if !args.quiet {
         if use_json {
@@ -253,29 +294,11 @@ async fn begin_migration(
     Ok(())
 }
 
-async fn sync_migration(
-    args: MigrationSyncArgs,
-    client: &TypedClient,
-    use_json: bool,
-) -> Result<()> {
+async fn sync_migration(args: MigrationSyncArgs, client: &AnyClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
 
-    let request = cloudapi_client::types::MigrateRequest {
-        action: cloudapi_client::types::MigrationAction::Sync,
-        affinity: None,
-    };
-
-    let response = client
-        .inner()
-        .migrate()
-        .account(account)
-        .machine(instance_id)
-        .body(request)
-        .send()
-        .await?;
-
-    let migration = response.into_inner();
+    let migration = post_migrate(client, account, instance_id, MigrationAction::Sync, None).await?;
 
     if args.wait {
         wait_for_action(
@@ -298,27 +321,14 @@ async fn sync_migration(
 
 async fn switch_migration(
     args: MigrationSwitchArgs,
-    client: &TypedClient,
+    client: &AnyClient,
     use_json: bool,
 ) -> Result<()> {
     let account = client.effective_account();
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
 
-    let request = cloudapi_client::types::MigrateRequest {
-        action: cloudapi_client::types::MigrationAction::Switch,
-        affinity: None,
-    };
-
-    let response = client
-        .inner()
-        .migrate()
-        .account(account)
-        .machine(instance_id)
-        .body(request)
-        .send()
-        .await?;
-
-    let migration = response.into_inner();
+    let migration =
+        post_migrate(client, account, instance_id, MigrationAction::Switch, None).await?;
 
     if args.wait {
         wait_for_action(
@@ -344,12 +354,12 @@ async fn wait_for_action(
     instance_id: uuid::Uuid,
     action: MigrationAction,
     timeout_secs: u64,
-    client: &TypedClient,
+    client: &AnyClient,
 ) -> Result<()> {
     let account = client.effective_account();
     let start = std::time::Instant::now();
     let timeout = std::time::Duration::from_secs(timeout_secs);
-    let action_display = crate::output::enum_to_display(&action);
+    let action_display = enum_to_display(&action);
 
     loop {
         if start.elapsed() > timeout {
@@ -360,15 +370,7 @@ async fn wait_for_action(
             ));
         }
 
-        let response = client
-            .inner()
-            .get_migration()
-            .account(account)
-            .machine(instance_id)
-            .send()
-            .await?;
-
-        let migration = response.into_inner();
+        let migration = fetch_migration(client, account, instance_id).await?;
 
         match migration.state {
             MigrationState::Successful | MigrationState::Finished | MigrationState::Paused => {
@@ -378,8 +380,8 @@ async fn wait_for_action(
                 return Err(anyhow::anyhow!(
                     "Migration {}: state={}, phase={}",
                     action_display,
-                    crate::output::enum_to_display(&migration.state),
-                    crate::output::enum_to_display(&migration.phase),
+                    enum_to_display(&migration.state),
+                    enum_to_display(&migration.phase),
                 ));
             }
             _ => {
@@ -391,7 +393,7 @@ async fn wait_for_action(
     }
 }
 
-async fn wait_migration(args: MigrationWaitArgs, client: &TypedClient) -> Result<()> {
+async fn wait_migration(args: MigrationWaitArgs, client: &AnyClient) -> Result<()> {
     let account = client.effective_account();
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
 
@@ -408,15 +410,7 @@ async fn wait_migration(args: MigrationWaitArgs, client: &TypedClient) -> Result
             ));
         }
 
-        let response = client
-            .inner()
-            .get_migration()
-            .account(account)
-            .machine(instance_id)
-            .send()
-            .await?;
-
-        let migration = response.into_inner();
+        let migration = fetch_migration(client, account, instance_id).await?;
 
         match migration.state {
             MigrationState::Successful | MigrationState::Finished => {
@@ -426,8 +420,8 @@ async fn wait_migration(args: MigrationWaitArgs, client: &TypedClient) -> Result
             MigrationState::Failed | MigrationState::Aborted => {
                 return Err(anyhow::anyhow!(
                     "Migration {}: phase={}",
-                    crate::output::enum_to_display(&migration.state),
-                    crate::output::enum_to_display(&migration.phase),
+                    enum_to_display(&migration.state),
+                    enum_to_display(&migration.phase),
                 ));
             }
             _ => {
@@ -435,7 +429,7 @@ async fn wait_migration(args: MigrationWaitArgs, client: &TypedClient) -> Result
                     print!(
                         "\rProgress: {:.1}% (phase: {})   ",
                         progress,
-                        crate::output::enum_to_display(&migration.phase),
+                        enum_to_display(&migration.phase),
                     );
                     use std::io::Write;
                     std::io::stdout().flush()?;
@@ -449,28 +443,15 @@ async fn wait_migration(args: MigrationWaitArgs, client: &TypedClient) -> Result
 
 async fn abort_migration(
     args: MigrationAbortArgs,
-    client: &TypedClient,
+    client: &AnyClient,
     use_json: bool,
 ) -> Result<()> {
     let account = client.effective_account();
     let instance_id = super::get::resolve_instance(&args.instance, client).await?;
     let id_str = instance_id.to_string();
 
-    let request = cloudapi_client::types::MigrateRequest {
-        action: cloudapi_client::types::MigrationAction::Abort,
-        affinity: None,
-    };
-
-    let response = client
-        .inner()
-        .migrate()
-        .account(account)
-        .machine(instance_id)
-        .body(request)
-        .send()
-        .await?;
-
-    let migration = response.into_inner();
+    let migration =
+        post_migrate(client, account, instance_id, MigrationAction::Abort, None).await?;
 
     if args.wait {
         wait_for_action(

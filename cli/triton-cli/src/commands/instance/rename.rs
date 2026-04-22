@@ -8,7 +8,9 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
+
+use crate::client::AnyClient;
+use crate::dispatch;
 
 #[derive(Args, Clone)]
 pub struct RenameArgs {
@@ -27,14 +29,30 @@ pub struct RenameArgs {
     pub wait_timeout: u64,
 }
 
-pub async fn run(args: RenameArgs, client: &TypedClient) -> Result<()> {
+/// Build the cloudapi action-dispatch body for a rename.
+fn rename_body(name: &str) -> serde_json::Value {
+    serde_json::json!({
+        "action": "rename",
+        "name": name,
+    })
+}
+
+pub async fn run(args: RenameArgs, client: &AnyClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
     let id_str = machine_id.to_string();
 
-    client
-        .rename_machine(account, &machine_id, args.name.clone(), None)
-        .await?;
+    let body = rename_body(&args.name);
+    dispatch!(client, |c| {
+        c.inner()
+            .update_machine()
+            .account(account)
+            .machine(machine_id)
+            .body(body)
+            .send()
+            .await?;
+        Ok::<(), anyhow::Error>(())
+    })?;
 
     println!("Renaming instance {} to {}", &id_str[..8], args.name);
 
@@ -52,7 +70,7 @@ async fn wait_for_rename(
     machine_id: &uuid::Uuid,
     target_name: &str,
     timeout_secs: u64,
-    client: &TypedClient,
+    client: &AnyClient,
 ) -> Result<()> {
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
@@ -61,16 +79,25 @@ async fn wait_for_rename(
     let timeout = Duration::from_secs(timeout_secs);
 
     loop {
-        let machine = client.get_machine(account, machine_id).await?;
+        let name: String = dispatch!(client, |c| {
+            c.inner()
+                .get_machine()
+                .account(account)
+                .machine(*machine_id)
+                .send()
+                .await?
+                .into_inner()
+                .name
+        });
 
-        if machine.name == target_name {
+        if name == target_name {
             return Ok(());
         }
 
         if start.elapsed() > timeout {
             return Err(anyhow::anyhow!(
                 "Timeout waiting for rename to complete (current name: {})",
-                machine.name,
+                name,
             ));
         }
 

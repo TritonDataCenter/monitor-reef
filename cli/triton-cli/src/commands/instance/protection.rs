@@ -10,8 +10,10 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
 use tokio::time::sleep;
+
+use crate::client::AnyClient;
+use crate::dispatch;
 
 #[derive(Args, Clone)]
 pub struct EnableProtectionArgs {
@@ -43,15 +45,33 @@ pub struct DisableProtectionArgs {
     pub wait_timeout: u64,
 }
 
-pub async fn enable(args: EnableProtectionArgs, client: &TypedClient) -> Result<()> {
+fn protection_body(enabled: bool) -> serde_json::Value {
+    serde_json::json!({
+        "action": if enabled {
+            "enable_deletion_protection"
+        } else {
+            "disable_deletion_protection"
+        },
+    })
+}
+
+pub async fn enable(args: EnableProtectionArgs, client: &AnyClient) -> Result<()> {
     let account = client.effective_account();
 
     for instance in &args.instances {
         let machine_id = super::get::resolve_instance(instance, client).await?;
 
-        client
-            .enable_deletion_protection(account, &machine_id, None)
-            .await?;
+        let body = protection_body(true);
+        dispatch!(client, |c| {
+            c.inner()
+                .update_machine()
+                .account(account)
+                .machine(machine_id)
+                .body(body)
+                .send()
+                .await?;
+            Ok::<(), anyhow::Error>(())
+        })?;
 
         if args.wait {
             wait_for_protection(account, &machine_id, true, args.wait_timeout, client).await?;
@@ -67,15 +87,23 @@ pub async fn enable(args: EnableProtectionArgs, client: &TypedClient) -> Result<
     Ok(())
 }
 
-pub async fn disable(args: DisableProtectionArgs, client: &TypedClient) -> Result<()> {
+pub async fn disable(args: DisableProtectionArgs, client: &AnyClient) -> Result<()> {
     let account = client.effective_account();
 
     for instance in &args.instances {
         let machine_id = super::get::resolve_instance(instance, client).await?;
 
-        client
-            .disable_deletion_protection(account, &machine_id, None)
-            .await?;
+        let body = protection_body(false);
+        dispatch!(client, |c| {
+            c.inner()
+                .update_machine()
+                .account(account)
+                .machine(machine_id)
+                .body(body)
+                .send()
+                .await?;
+            Ok::<(), anyhow::Error>(())
+        })?;
 
         if args.wait {
             wait_for_protection(account, &machine_id, false, args.wait_timeout, client).await?;
@@ -96,14 +124,23 @@ async fn wait_for_protection(
     machine_id: &uuid::Uuid,
     expect_enabled: bool,
     timeout_secs: u64,
-    client: &TypedClient,
+    client: &AnyClient,
 ) -> Result<()> {
     let start = Instant::now();
     let timeout = Duration::from_secs(timeout_secs);
 
     loop {
-        let machine = client.get_machine(account, machine_id).await?;
-        let is_enabled = machine.deletion_protection == Some(true);
+        let is_enabled: bool = dispatch!(client, |c| {
+            let resp = c
+                .inner()
+                .get_machine()
+                .account(account)
+                .machine(*machine_id)
+                .send()
+                .await?
+                .into_inner();
+            resp.deletion_protection.unwrap_or(false)
+        });
 
         if is_enabled == expect_enabled {
             return Ok(());

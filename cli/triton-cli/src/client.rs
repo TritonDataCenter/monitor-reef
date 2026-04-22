@@ -101,3 +101,36 @@ macro_rules! dispatch {
         }
     };
 }
+
+/// Variant of [`dispatch!`] that takes a second `types:` path token,
+/// substituted literally into each arm. Lets the body name per-client
+/// Progenitor types (e.g. `$t::MigrateRequest`) without needing a single
+/// textually shared type path.
+///
+/// # Example
+///
+/// ```ignore
+/// dispatch_with_types!(client, |c, t| {
+///     let body = t::MigrateRequestBuilder::default()
+///         .action(t::MigrationAction::Begin)
+///         .try_into()?;
+///     c.inner().migrate().body(body).send().await?.into_inner()
+/// });
+/// ```
+#[macro_export]
+macro_rules! dispatch_with_types {
+    ($client:expr, |$c:ident, $t:ident| $body:block) => {
+        match $client {
+            $crate::client::AnyClient::CloudApi($c) => {
+                #[allow(unused_imports)]
+                use cloudapi_client::types as $t;
+                $body
+            }
+            $crate::client::AnyClient::Gateway { client: $c, .. } => {
+                #[allow(unused_imports)]
+                use triton_gateway_client::types as $t;
+                $body
+            }
+        }
+    };
+}

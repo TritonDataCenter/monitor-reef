@@ -21,6 +21,7 @@ path = "src/main.rs"
 triton-auth = { path = "../../libs/triton-auth" }
 triton-tls = { path = "../../libs/triton-tls" }
 triton-gateway-client = { path = "../../clients/internal/triton-gateway-client" }
+triton-pagination = { path = "../../libs/triton-pagination" }
 cloudapi-client = { path = "../../clients/internal/cloudapi-client" }
 cloudapi-api = { path = "../../apis/cloudapi-api" }
 async-trait = "0.1"

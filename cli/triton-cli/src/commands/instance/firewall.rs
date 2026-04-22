@@ -8,10 +8,11 @@
 
 use anyhow::Result;
 use clap::Args;
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::FirewallRule;
+use cloudapi_api::FirewallRule;
 
+use crate::client::AnyClient;
 use crate::define_columns;
+use crate::dispatch;
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
 
@@ -36,14 +37,30 @@ pub struct FwrulesArgs {
     pub table: TableFormatArgs,
 }
 
-pub async fn enable(args: EnableFirewallArgs, client: &TypedClient) -> Result<()> {
+fn firewall_body(enabled: bool) -> serde_json::Value {
+    serde_json::json!({
+        "action": if enabled { "enable_firewall" } else { "disable_firewall" },
+    })
+}
+
+pub async fn enable(args: EnableFirewallArgs, client: &AnyClient) -> Result<()> {
     let account = client.effective_account();
 
     for instance in &args.instances {
         let machine_id = super::get::resolve_instance(instance, client).await?;
         let id_str = machine_id.to_string();
 
-        client.enable_firewall(account, &machine_id, None).await?;
+        let body = firewall_body(true);
+        dispatch!(client, |c| {
+            c.inner()
+                .update_machine()
+                .account(account)
+                .machine(machine_id)
+                .body(body)
+                .send()
+                .await?;
+            Ok::<(), anyhow::Error>(())
+        })?;
 
         println!("Enabled firewall for instance {}", &id_str[..8]);
     }
@@ -51,14 +68,24 @@ pub async fn enable(args: EnableFirewallArgs, client: &TypedClient) -> Result<()
     Ok(())
 }
 
-pub async fn disable(args: DisableFirewallArgs, client: &TypedClient) -> Result<()> {
+pub async fn disable(args: DisableFirewallArgs, client: &AnyClient) -> Result<()> {
     let account = client.effective_account();
 
     for instance in &args.instances {
         let machine_id = super::get::resolve_instance(instance, client).await?;
         let id_str = machine_id.to_string();
 
-        client.disable_firewall(account, &machine_id, None).await?;
+        let body = firewall_body(false);
+        dispatch!(client, |c| {
+            c.inner()
+                .update_machine()
+                .account(account)
+                .machine(machine_id)
+                .body(body)
+                .send()
+                .await?;
+            Ok::<(), anyhow::Error>(())
+        })?;
 
         println!("Disabled firewall for instance {}", &id_str[..8]);
     }
@@ -66,19 +93,25 @@ pub async fn disable(args: DisableFirewallArgs, client: &TypedClient) -> Result<
     Ok(())
 }
 
-pub async fn list_rules(args: FwrulesArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+pub async fn list_rules(args: FwrulesArgs, client: &AnyClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
 
-    let response = client
-        .inner()
-        .list_machine_firewall_rules()
-        .account(account)
-        .machine(machine_id)
-        .send()
-        .await?;
-
-    let mut rules = response.into_inner();
+    // Per-client `FirewallRule` types are re-materialized into the
+    // canonical `cloudapi_api::FirewallRule` via a JSON round-trip so the
+    // rendering below is variant-agnostic.
+    let mut rules: Vec<FirewallRule> = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .list_machine_firewall_rules()
+            .account(account)
+            .machine(machine_id)
+            .send()
+            .await?
+            .into_inner();
+        let value = serde_json::to_value(&resp)?;
+        serde_json::from_value::<Vec<FirewallRule>>(value)?
+    });
     rules.sort_by(|a, b| a.rule.cmp(&b.rule));
 
     if use_json {

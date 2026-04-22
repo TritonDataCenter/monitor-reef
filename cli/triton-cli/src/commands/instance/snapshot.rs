@@ -8,13 +8,14 @@
 
 use anyhow::Result;
 use clap::{Args, Subcommand};
-use cloudapi_client::TypedClient;
-use cloudapi_client::types::{Snapshot, SnapshotState};
+use cloudapi_api::{Snapshot, SnapshotState};
 use dialoguer::Confirm;
 
+use crate::client::AnyClient;
 use crate::define_columns;
 use crate::output::json;
 use crate::output::table::{TableBuilder, TableFormatArgs};
+use crate::{dispatch, dispatch_with_types};
 
 #[derive(Subcommand, Clone)]
 pub enum SnapshotCommand {
@@ -103,7 +104,7 @@ pub struct SnapshotBootArgs {
 }
 
 impl SnapshotCommand {
-    pub async fn run(self, client: &TypedClient, use_json: bool) -> Result<()> {
+    pub async fn run(self, client: &AnyClient, use_json: bool) -> Result<()> {
         match self {
             Self::List(args) => list_snapshots(args, client, use_json).await,
             Self::Get(args) => get_snapshot(args, client, use_json).await,
@@ -116,21 +117,23 @@ impl SnapshotCommand {
 
 pub async fn list_snapshots(
     args: SnapshotListArgs,
-    client: &TypedClient,
+    client: &AnyClient,
     use_json: bool,
 ) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
 
-    let response = client
-        .inner()
-        .list_machine_snapshots()
-        .account(account)
-        .machine(machine_id)
-        .send()
-        .await?;
-
-    let mut snapshots = response.into_inner();
+    let mut snapshots: Vec<Snapshot> = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .list_machine_snapshots()
+            .account(account)
+            .machine(machine_id)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<Vec<Snapshot>>(serde_json::to_value(&resp)?)?
+    });
     snapshots.sort_by(|a, b| a.name.cmp(&b.name));
 
     if use_json {
@@ -158,25 +161,27 @@ pub async fn list_snapshots(
     Ok(())
 }
 
-async fn get_snapshot(args: SnapshotGetArgs, client: &TypedClient, use_json: bool) -> Result<()> {
+async fn get_snapshot(args: SnapshotGetArgs, client: &AnyClient, use_json: bool) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
 
-    let response = client
-        .inner()
-        .get_machine_snapshot()
-        .account(account)
-        .machine(machine_id)
-        .name(&args.name)
-        .send()
-        .await?;
-
-    let snapshot = response.into_inner();
+    let snapshot_json: serde_json::Value = dispatch!(client, |c| {
+        let resp = c
+            .inner()
+            .get_machine_snapshot()
+            .account(account)
+            .machine(machine_id)
+            .name(&args.name)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::to_value(&resp)?
+    });
 
     if use_json {
-        json::print_json(&snapshot)?;
+        json::print_json(&snapshot_json)?;
     } else {
-        json::print_json_pretty(&snapshot)?;
+        json::print_json_pretty(&snapshot_json)?;
     }
 
     Ok(())
@@ -184,26 +189,28 @@ async fn get_snapshot(args: SnapshotGetArgs, client: &TypedClient, use_json: boo
 
 async fn create_snapshot(
     args: SnapshotCreateArgs,
-    client: &TypedClient,
+    client: &AnyClient,
     use_json: bool,
 ) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
 
-    let request = cloudapi_client::types::CreateSnapshotRequest {
-        name: Some(args.name.clone()),
-    };
-
-    let response = client
-        .inner()
-        .create_machine_snapshot()
-        .account(account)
-        .machine(machine_id)
-        .body(request)
-        .send()
-        .await?;
-
-    let snapshot = response.into_inner();
+    let snapshot_name = args.name.clone();
+    let snapshot: Snapshot = dispatch_with_types!(client, |c, t| {
+        let body = t::CreateSnapshotRequest {
+            name: Some(snapshot_name.clone()),
+        };
+        let resp = c
+            .inner()
+            .create_machine_snapshot()
+            .account(account)
+            .machine(machine_id)
+            .body(body)
+            .send()
+            .await?
+            .into_inner();
+        serde_json::from_value::<Snapshot>(serde_json::to_value(&resp)?)?
+    });
 
     eprintln!("Creating snapshot {}", snapshot.name);
 
@@ -232,8 +239,8 @@ async fn wait_for_snapshot_state(
     snapshot_name: &str,
     target: SnapshotState,
     timeout_secs: u64,
-    client: &TypedClient,
-) -> Result<cloudapi_client::types::Snapshot> {
+    client: &AnyClient,
+) -> Result<Snapshot> {
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
 
@@ -242,16 +249,18 @@ async fn wait_for_snapshot_state(
     let timeout = Duration::from_secs(timeout_secs);
 
     loop {
-        let response = client
-            .inner()
-            .get_machine_snapshot()
-            .account(account)
-            .machine(machine_id)
-            .name(snapshot_name)
-            .send()
-            .await?;
-
-        let snapshot = response.into_inner();
+        let snapshot: Snapshot = dispatch!(client, |c| {
+            let resp = c
+                .inner()
+                .get_machine_snapshot()
+                .account(account)
+                .machine(machine_id)
+                .name(snapshot_name)
+                .send()
+                .await?
+                .into_inner();
+            serde_json::from_value::<Snapshot>(serde_json::to_value(&resp)?)?
+        });
 
         if snapshot.state == target {
             return Ok(snapshot);
@@ -281,7 +290,7 @@ async fn wait_for_snapshot_deleted(
     machine_id: uuid::Uuid,
     snapshot_name: &str,
     timeout_secs: u64,
-    client: &TypedClient,
+    client: &AnyClient,
 ) -> Result<()> {
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
@@ -291,23 +300,35 @@ async fn wait_for_snapshot_deleted(
     let timeout = Duration::from_secs(timeout_secs);
 
     loop {
-        let response = client
-            .inner()
-            .get_machine_snapshot()
-            .account(account)
-            .machine(machine_id)
-            .name(snapshot_name)
-            .send()
-            .await;
-
-        match response {
-            Err(_) => return Ok(()), // Snapshot not found = deleted
-            Ok(resp) => {
-                let snapshot = resp.into_inner();
-                if snapshot.state == SnapshotState::Failed {
-                    return Err(anyhow::anyhow!("Snapshot deletion failed"));
+        // A successful fetch means the snapshot still exists; a 404 on
+        // send() means it was deleted. We collapse both signals into a
+        // `Option<SnapshotState>` the dispatch arm returns.
+        let state: Option<SnapshotState> = dispatch!(client, |c| {
+            match c
+                .inner()
+                .get_machine_snapshot()
+                .account(account)
+                .machine(machine_id)
+                .name(snapshot_name)
+                .send()
+                .await
+            {
+                Err(_) => None,
+                Ok(resp) => {
+                    let snap: Snapshot = serde_json::from_value::<Snapshot>(serde_json::to_value(
+                        &resp.into_inner(),
+                    )?)?;
+                    Some(snap.state)
                 }
             }
+        });
+
+        match state {
+            None => return Ok(()),
+            Some(SnapshotState::Failed) => {
+                return Err(anyhow::anyhow!("Snapshot deletion failed"));
+            }
+            Some(_) => {}
         }
 
         if start.elapsed() > timeout {
@@ -320,7 +341,7 @@ async fn wait_for_snapshot_deleted(
     }
 }
 
-async fn delete_snapshot(args: SnapshotDeleteArgs, client: &TypedClient) -> Result<()> {
+async fn delete_snapshot(args: SnapshotDeleteArgs, client: &AnyClient) -> Result<()> {
     if !args.force
         && !Confirm::new()
             .with_prompt(format!("Delete snapshot {}?", args.name))
@@ -335,14 +356,16 @@ async fn delete_snapshot(args: SnapshotDeleteArgs, client: &TypedClient) -> Resu
 
     println!("Deleting snapshot \"{}\"", args.name);
 
-    client
-        .inner()
-        .delete_machine_snapshot()
-        .account(account)
-        .machine(machine_id)
-        .name(&args.name)
-        .send()
-        .await?;
+    dispatch!(client, |c| {
+        c.inner()
+            .delete_machine_snapshot()
+            .account(account)
+            .machine(machine_id)
+            .name(&args.name)
+            .send()
+            .await?;
+        Ok::<(), anyhow::Error>(())
+    })?;
 
     if args.wait {
         wait_for_snapshot_deleted(machine_id, &args.name, args.wait_timeout, client).await?;
@@ -353,19 +376,21 @@ async fn delete_snapshot(args: SnapshotDeleteArgs, client: &TypedClient) -> Resu
     Ok(())
 }
 
-async fn boot_snapshot(args: SnapshotBootArgs, client: &TypedClient) -> Result<()> {
+async fn boot_snapshot(args: SnapshotBootArgs, client: &AnyClient) -> Result<()> {
     let machine_id = super::get::resolve_instance(&args.instance, client).await?;
     let account = client.effective_account();
     let id_str = machine_id.to_string();
 
-    client
-        .inner()
-        .start_machine_from_snapshot()
-        .account(account)
-        .machine(machine_id)
-        .name(&args.name)
-        .send()
-        .await?;
+    dispatch!(client, |c| {
+        c.inner()
+            .start_machine_from_snapshot()
+            .account(account)
+            .machine(machine_id)
+            .name(&args.name)
+            .send()
+            .await?;
+        Ok::<(), anyhow::Error>(())
+    })?;
 
     println!(
         "Booting instance {} from snapshot {}",

@@ -4789,6 +4789,7 @@ dependencies = [
  "tracing-subscriber",
  "triton-auth",
  "triton-gateway-client",
+ "triton-pagination",
  "triton-tls",
  "uuid",
 ]

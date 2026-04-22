@@ -615,7 +615,7 @@ async fn get_image(
 async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: bool) -> Result<()> {
     let account = client.effective_account();
     let machine_id =
-        crate::commands::instance::get::resolve_instance(&args.instance, client).await?;
+        crate::commands::instance::get::resolve_instance_ssh(&args.instance, client).await?;
 
     // ACL is Vec<Uuid> (account UUIDs)
     let acl = if let Some(acl_strings) = &args.acl {

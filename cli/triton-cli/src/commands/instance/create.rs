@@ -11,6 +11,7 @@ use clap::Args;
 use cloudapi_client::TypedClient;
 use std::path::Path;
 
+use crate::client::AnyClient;
 use crate::output::{enum_to_display, json};
 
 #[derive(Args, Clone)]
@@ -118,10 +119,24 @@ pub struct CreateArgs {
 
 pub async fn run(
     args: CreateArgs,
-    client: &TypedClient,
+    any_client: &AnyClient,
     use_json: bool,
     cache: Option<&crate::cache::ImageCache>,
 ) -> Result<()> {
+    // `instance create` needs image + package + network resolution, all of
+    // which still use the cloudapi-client wrappers. Porting those through
+    // the gateway is its own slice; for now tritonapi profiles error
+    // cleanly.
+    let client: &TypedClient = match any_client {
+        AnyClient::CloudApi(c) => c,
+        AnyClient::Gateway { .. } => {
+            anyhow::bail!(
+                "`triton instance create` is not yet supported for tritonapi profiles \
+                 (image/package/network resolution is still cloudapi-direct). Use an SSH \
+                 profile for this command."
+            );
+        }
+    };
     let account = client.effective_account();
 
     // Resolve image (could be name@version or UUID)
@@ -317,16 +332,20 @@ pub async fn run(
             json::print_json(&machine)?;
         }
         eprintln!("Waiting for instance to be running...");
-        let final_machine = super::wait::wait_for_states(
+        // `wait_for_states` now takes `&AnyClient`; since `create_image`
+        // is SSH-only we wrap our `TypedClient` here. The dispatch macro
+        // handles both arms but only the CloudApi arm can run in this
+        // path.
+        let (_final_state, final_machine_json) = super::wait::wait_for_states(
             machine.id,
             &[cloudapi_client::types::MachineState::Running],
             args.wait_timeout,
-            client,
+            any_client,
         )
         .await?;
         eprintln!("Instance is running");
         if use_json {
-            json::print_json(&final_machine)?;
+            json::print_json(&final_machine_json)?;
         }
     } else if use_json {
         json::print_json(&machine)?;
