@@ -47,10 +47,8 @@ func TestIntegration_Keys_CRUD(t *testing.T) {
 	requireOK(t, createResp.StatusCode(), createResp.Body)
 
 	t.Cleanup(func() {
-		_, err := testClient.DeleteKeyWithResponse(context.Background(), testAccount, keyName)
-		if err != nil {
-			t.Logf("cleanup: DeleteKey %q: %v", keyName, err)
-		}
+		resp, err := testClient.DeleteKeyWithResponse(context.Background(), testAccount, keyName)
+		cleanupErr(t, "delete key", resp.StatusCode(), err)
 	})
 
 	if createResp.JSON201 == nil {
@@ -114,13 +112,10 @@ func TestIntegration_Keys_CRUD(t *testing.T) {
 	}
 	requireOK(t, delResp.StatusCode(), delResp.Body)
 
-	// Verify deleted — expect 404 (may get 200 if deletion is eventually consistent).
+	// Verify deleted — key deletion is synchronous, so 404 is expected.
 	getResp2, err := testClient.GetKeyWithResponse(ctx, testAccount, keyName)
 	if err != nil {
 		t.Fatalf("GetKey after delete: %v", err)
 	}
-	sc := getResp2.StatusCode()
-	if sc != 404 && sc != 200 {
-		t.Errorf("expected 404 or 200 after delete, got %d", sc)
-	}
+	requireStatus(t, 404, getResp2.StatusCode(), getResp2.Body)
 }
