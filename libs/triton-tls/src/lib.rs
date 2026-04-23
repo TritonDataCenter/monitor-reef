@@ -14,20 +14,31 @@
 //! 2. Extra platform-specific paths (SmartOS pkgsrc, etc.)
 //! 3. Bundled Mozilla roots (via `webpki-roots`) as a last resort
 //!
-//! The crate also owns process-wide installation of the `ring` rustls
-//! crypto provider. Because the workspace builds reqwest with
-//! `rustls-no-provider` (see the top-level `Cargo.toml` for the five
-//! places that must move in lockstep to switch providers), every
-//! `reqwest::Client::builder().build()` and every `rustls::*Config::builder()`
-//! call will panic with "No provider set" unless a default `CryptoProvider`
-//! is installed first. [`build_http_client`] takes care of that for its
-//! own callers; binaries or tests that build rustls configs directly
-//! should call [`install_default_crypto_provider`] themselves before
-//! touching `rustls::ClientConfig::builder()` or `rustls::ServerConfig::builder()`.
+//! The crate also owns process-wide installation of the rustls
+//! `CryptoProvider`. The active backend (ring vs aws-lc-rs) is set by
+//! `tools/crypto-backend.sh` -- invoked via `make use-ring`,
+//! `make use-aws-lc`, or `make crypto-status` -- which rewrites this
+//! file in lockstep with the rustls / hyper-rustls / tokio-rustls /
+//! reqwest / ldap3 feature strings in the workspace `Cargo.toml`.
+//! Because the workspace builds reqwest with `rustls-no-provider` when
+//! on ring, every `reqwest::Client::builder().build()` and every
+//! `rustls::*Config::builder()` call panics with "No provider set"
+//! unless a default `CryptoProvider` is installed first.
+//! [`build_http_client`] takes care of that for its own callers; other
+//! binaries or tests should call [`install_default_crypto_provider`]
+//! themselves before touching `rustls::ClientConfig::builder()` or
+//! `rustls::ServerConfig::builder()`.
 
 use std::sync::Once;
 
-/// Install the `ring` rustls crypto provider as this process's default,
+/// Returns the rustls `CryptoProvider` for the active backend. The
+/// backend identifier on the next line (`ring` or `aws_lc_rs`) is the
+/// single source of truth that `tools/crypto-backend.sh` rewrites.
+fn selected_crypto_provider() -> rustls::crypto::CryptoProvider {
+    rustls::crypto::ring::default_provider()
+}
+
+/// Install the selected rustls crypto provider as this process's default,
 /// exactly once.
 ///
 /// `install_default()` itself is idempotent (the second call returns
@@ -37,7 +48,7 @@ use std::sync::Once;
 pub fn install_default_crypto_provider() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
-        let _ = rustls::crypto::ring::default_provider().install_default();
+        let _ = selected_crypto_provider().install_default();
     });
 }
 
@@ -246,7 +257,7 @@ impl rustls::client::danger::ServerCertVerifier for NoCertVerifier {
     }
 
     fn supported_verify_schemes(&self) -> Vec<rustls::SignatureScheme> {
-        rustls::crypto::ring::default_provider()
+        selected_crypto_provider()
             .signature_verification_algorithms
             .supported_schemes()
     }

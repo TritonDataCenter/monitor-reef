@@ -199,16 +199,9 @@ async fn main() -> Result<()> {
     let config = load_config().await?;
 
     // rustls 0.23 requires a process-global `CryptoProvider` to be installed
-    // before any `ClientConfig` is built. We use the `ring` backend (pulled in
-    // by the `ring` feature of both `rustls` and `hyper-rustls`). This is a
-    // no-op if something else in the process already installed one.
-    if rustls::crypto::ring::default_provider()
-        .install_default()
-        .is_err()
-    {
-        // Another caller beat us to it (only matters in tests / embedding).
-        // Safe to ignore -- whatever is installed is a valid provider.
-    }
+    // before any `ClientConfig` is built. `triton-tls` owns backend selection
+    // (see its `ring` / `aws-lc-rs` features) and the once-guarded install.
+    triton_tls::install_default_crypto_provider();
 
     let client = build_proxy_client(config.tls_verify).await?;
 

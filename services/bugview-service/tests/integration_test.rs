@@ -13,14 +13,6 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Install the `ring` rustls crypto provider so `reqwest::Client::builder()`
-/// doesn't panic with "No provider set". `reqwest` is built with
-/// `rustls-no-provider` at the workspace level; see the workspace
-/// `Cargo.toml` for details. Idempotent -- the second call returns `Err`.
-fn install_default_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-}
-
 /// Guard to ensure subprocess is killed on drop (including panics)
 struct ProcessGuard(std::process::Child);
 
@@ -35,7 +27,7 @@ impl Drop for ProcessGuard {
 /// with the progenitor-generated jira-client.
 #[tokio::test]
 async fn test_jira_stub_server_with_progenitor_client() {
-    install_default_crypto_provider();
+    triton_tls::install_default_crypto_provider();
 
     // ========================================================================
     // Step 1: Start the JIRA stub server
@@ -174,7 +166,7 @@ async fn test_jira_stub_server_with_progenitor_client() {
 /// Test that the stub server correctly filters by label
 #[tokio::test]
 async fn test_stub_jira_label_filtering() {
-    install_default_crypto_provider();
+    triton_tls::install_default_crypto_provider();
 
     let jira_fixtures_dir =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../jira-stub-server/fixtures");
@@ -243,7 +235,7 @@ async fn test_stub_jira_label_filtering() {
 /// 3. The filtering is done by bugview based on labels
 #[tokio::test]
 async fn test_non_public_issues_filtered() {
-    install_default_crypto_provider();
+    triton_tls::install_default_crypto_provider();
 
     let jira_fixtures_dir =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../jira-stub-server/fixtures");
@@ -355,7 +347,7 @@ async fn test_non_public_issues_filtered() {
 /// 3. JSON responses have expected structure
 #[tokio::test(flavor = "multi_thread")]
 async fn test_bugview_service_e2e() {
-    install_default_crypto_provider();
+    triton_tls::install_default_crypto_provider();
 
     // ========================================================================
     // Step 1: Start jira-stub-server

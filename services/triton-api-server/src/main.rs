@@ -752,23 +752,12 @@ async fn build_mahi_service(cfg: &MahiConfigFile) -> Result<MahiService> {
     Ok(MahiService::new(cfg.url.as_str(), http))
 }
 
-/// Install the `ring` rustls crypto provider for this process.
-///
-/// `reqwest` is built with the workspace-level `rustls-no-provider` feature,
-/// so constructing any `reqwest::Client` without a preconfigured TLS config
-/// — which is what `mahi-client::Client::new` does under the hood — panics
-/// with "No provider set" unless a default `CryptoProvider` has been
-/// installed. This mirrors the mitigation already in place in
-/// `bugview-service` and `triton-gateway`; a lasting fix would install the
-/// provider once for the whole workspace. Idempotent: the second call
-/// returns `Err`, which we discard.
-fn install_default_crypto_provider() {
-    let _ = rustls::crypto::ring::default_provider().install_default();
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
-    install_default_crypto_provider();
+    // Install the rustls crypto provider before `mahi-client::Client::new`
+    // (and anything else that builds a reqwest or rustls client) runs.
+    // `triton-tls` owns backend selection.
+    triton_tls::install_default_crypto_provider();
 
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::new(
