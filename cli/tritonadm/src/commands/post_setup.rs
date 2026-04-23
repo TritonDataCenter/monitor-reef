@@ -13,6 +13,8 @@ use serde_json::json;
 use crate::config::TritonConfig;
 use crate::not_yet_implemented;
 
+use super::imgapi_util;
+
 /// Embedded user-script for zone boot (same as sdcadm's etc/setup/user-script).
 const USER_SCRIPT: &str = include_str!("../../etc/setup/user-script");
 
@@ -935,6 +937,21 @@ async fn cmd_add_service(
     for action in &actions {
         match action {
             AddServiceAction::ImportImage => {
+                // IMGAPI refuses a manifest whose origin isn't already
+                // local, so resolve the chain (triton-origin-*, etc.)
+                // before importing the service image itself. Origins
+                // typically live on the updates server's default channel
+                // even when the service image ships on `experimental`;
+                // the helper retries channel-less on failure.
+                imgapi_util::ensure_origin_imported(
+                    &local_imgapi,
+                    &local_imgapi_typed,
+                    target_image.origin,
+                    updates_url,
+                    Some(&channel),
+                )
+                .await?;
+
                 eprintln!(
                     "Importing image {} ({}@{})...",
                     target_image.uuid, target_image.name, target_image.version
