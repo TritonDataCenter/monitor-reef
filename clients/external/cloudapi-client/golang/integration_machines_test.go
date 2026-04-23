@@ -475,27 +475,15 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 
 	// Step 6: Stop and start.
 	t.Run("StopAndStart", func(t *testing.T) {
-		// Stop machine.
-		stopResp, err := testClient.UpdateMachineWithResponse(ctx, testAccount, machineID,
-			&cloudapi.UpdateMachineParams{},
-			map[string]interface{}{"action": "stop"},
-		)
-		if err != nil {
+		if err := typedClient.StopMachine(ctx, testAccount, machineID, cloudapi.StopMachineRequest{}); err != nil {
 			t.Fatalf("stop machine: %v", err)
 		}
-		requireOK(t, stopResp.StatusCode(), stopResp.Body)
 		t.Log("waiting for stopped...")
 		waitForMachineState(t, machineID, cloudapi.MachineStateStopped, 5*time.Minute)
 
-		// Start machine.
-		startResp, err := testClient.UpdateMachineWithResponse(ctx, testAccount, machineID,
-			&cloudapi.UpdateMachineParams{},
-			map[string]interface{}{"action": "start"},
-		)
-		if err != nil {
+		if err := typedClient.StartMachine(ctx, testAccount, machineID, cloudapi.StartMachineRequest{}); err != nil {
 			t.Fatalf("start machine: %v", err)
 		}
-		requireOK(t, startResp.StatusCode(), startResp.Body)
 		t.Log("waiting for running...")
 		waitForMachineState(t, machineID, cloudapi.MachineStateRunning, 5*time.Minute)
 	})
@@ -503,14 +491,9 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 	// Step 7: Rename.
 	t.Run("Rename", func(t *testing.T) {
 		newName := randName("renamed")
-		renameResp, err := testClient.UpdateMachineWithResponse(ctx, testAccount, machineID,
-			&cloudapi.UpdateMachineParams{},
-			map[string]interface{}{"action": "rename", "name": newName},
-		)
-		if err != nil {
+		if err := typedClient.RenameMachine(ctx, testAccount, machineID, cloudapi.RenameMachineRequest{Name: newName}); err != nil {
 			t.Fatalf("rename machine: %v", err)
 		}
-		requireOK(t, renameResp.StatusCode(), renameResp.Body)
 
 		// Rename is async (VMAPI job) — poll until it takes effect.
 		waitForMachineName(t, machineID, newName, 2*time.Minute)
@@ -524,11 +507,9 @@ func TestIntegration_Machine_Lifecycle(t *testing.T) {
 			t.Fatalf("GetMachine before delete: %v", err)
 		}
 		if getResp.JSON200 != nil && getResp.JSON200.State == cloudapi.MachineStateRunning {
-			stopResp, stopErr := testClient.UpdateMachineWithResponse(ctx, testAccount, machineID,
-				&cloudapi.UpdateMachineParams{},
-				map[string]interface{}{"action": "stop"},
-			)
-			cleanupErr(t, "stop machine before delete", stopResp.StatusCode(), stopErr)
+			if err := typedClient.StopMachine(ctx, testAccount, machineID, cloudapi.StopMachineRequest{}); err != nil {
+				t.Logf("cleanup: stop machine before delete: %v", err)
+			}
 			waitForMachineState(t, machineID, cloudapi.MachineStateStopped, 5*time.Minute)
 		}
 

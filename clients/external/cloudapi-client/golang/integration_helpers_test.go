@@ -26,12 +26,14 @@ import (
 	"time"
 
 	cloudapi "github.com/TritonDataCenter/monitor-reef/clients/external/cloudapi-client/golang"
+	"github.com/TritonDataCenter/monitor-reef/clients/external/cloudapi-client/golang/typed"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Package-level state shared by all integration tests.
 var (
 	testClient  *cloudapi.ClientWithResponses
+	typedClient *typed.Client
 	testAccount string
 	testConfig  TestConfig
 )
@@ -102,6 +104,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintf(os.Stderr, "NewAuthenticatedClientWithResponses: %v\n", err)
 		os.Exit(1)
 	}
+	typedClient = typed.New(testClient)
 
 	// Load optional test config.
 	configPath := os.Getenv("TRITON_TEST_CONFIG")
@@ -255,11 +258,7 @@ func cleanupMachine(t *testing.T, machineID openapi_types.UUID) {
 
 	// Stop if running.
 	if resp.JSON200 != nil && resp.JSON200.State == cloudapi.MachineStateRunning {
-		_, err := testClient.UpdateMachineWithResponse(ctx, testAccount, machineID,
-			&cloudapi.UpdateMachineParams{},
-			map[string]interface{}{"action": "stop"},
-		)
-		if err != nil {
+		if err := typedClient.StopMachine(ctx, testAccount, machineID, cloudapi.StopMachineRequest{}); err != nil {
 			t.Logf("cleanup: stop machine %s: %v", machineID, err)
 		}
 
