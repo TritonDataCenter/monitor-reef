@@ -36,6 +36,12 @@ use base64::Engine;
 use ed25519_dalek::Verifier as _;
 use ssh_key::public::KeyData;
 
+/// Re-export of `ssh_key::PublicKey` so callers (e.g. triton-api-server)
+/// can name the return type of [`parse_public_key_blob`] and
+/// [`verify_signature`]'s argument without taking a direct `ssh-key`
+/// dependency. Keeps the crypto-crate surface area owned by this crate.
+pub use ssh_key::PublicKey;
+
 /// Errors surfaced by the HTTP-Signature pipeline.
 ///
 /// Typed so the endpoint handler can map to the right HTTP status:

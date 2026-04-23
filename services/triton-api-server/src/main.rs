@@ -212,11 +212,11 @@ impl TritonApi for TritonApiImpl {
         let parsed = http_sig::parse_signature_params(&auth_params)
             .map_err(|e| sig_parse_error(&e.to_string()))?;
 
-        // 3. Parse keyId. Only the account-level form is accepted today;
-        //    sub-user keys (`/{account}/users/{user}/keys/{fp}`) need an
-        //    extra mahi lookup hop and get a specific 400 until that
-        //    lands.
-        let (account_name, fingerprint) = parse_key_id(&parsed.key_id)?;
+        // 3. Parse keyId. Account-level (`/{account}/keys/{fp}`) and
+        //    sub-user (`/{account}/users/{user}/keys/{fp}`) forms are
+        //    both accepted; the branch affects which mahi record we
+        //    read the key from and which principal the JWT identifies.
+        let parsed_key_id = parse_key_id(&parsed.key_id)?;
 
         // 4. Clock-skew sanity check on the Date header. Signatures that
         //    are too stale or too far in the future are almost always a
@@ -224,29 +224,22 @@ impl TritonApi for TritonApiImpl {
         //    rather than letting it look like a signature failure.
         check_clock_skew(rqctx.request.headers())?;
 
-        // 5. Mahi lookup. Any failure here -- account doesn't exist, mahi
-        //    is unreachable, key not on this account -- collapses into
-        //    the same opaque SignatureVerificationFailed so an attacker
-        //    probing with arbitrary account names can't distinguish
-        //    "account exists" from "account doesn't".
-        let auth_info = mahi
-            .lookup(&account_name)
-            .await
-            .map_err(|_| sig_verify_failed())?;
-        let Some(keys) = auth_info.account.keys.as_ref() else {
-            return Err(sig_verify_failed());
+        // 5. Mahi lookup. Any failure here -- account or sub-user doesn't
+        //    exist, mahi is unreachable, key not on this principal --
+        //    collapses into the same opaque SignatureVerificationFailed
+        //    so an attacker probing with arbitrary names can't
+        //    distinguish "exists" from "doesn't".
+        let auth_info = match &parsed_key_id.subuser {
+            None => mahi
+                .lookup(&parsed_key_id.account)
+                .await
+                .map_err(|_| sig_verify_failed())?,
+            Some(user_login) => mahi
+                .lookup_user(&parsed_key_id.account, user_login)
+                .await
+                .map_err(|_| sig_verify_failed())?,
         };
-        let Some(key_blob) = keys.get(&fingerprint) else {
-            return Err(sig_verify_failed());
-        };
-        // Mahi stores `keys` as fingerprint -> blob; the blob may be a
-        // PEM SubjectPublicKeyInfo string or the OpenSSH `ssh-rsa AAAA...`
-        // form depending on the deployment. Anything else (non-string,
-        // unparseable) collapses to the opaque 401 so probing with
-        // arbitrary account names can't enumerate the directory.
-        let key_str = key_blob.as_str().ok_or_else(sig_verify_failed)?;
-        let public_key =
-            http_sig::parse_public_key_blob(key_str).map_err(|_| sig_verify_failed())?;
+        let public_key = extract_public_key(&auth_info, &parsed_key_id)?;
 
         // 6. Reconstruct the signing string and verify.
         let path_and_query = rqctx
@@ -270,9 +263,20 @@ impl TritonApi for TritonApiImpl {
         )
         .map_err(|_| sig_verify_failed())?;
 
-        // 7. Signature verified. Issue tokens through the same path the
-        //    password login uses.
-        issue_login_response(jwt, &auth_info, ctx.cookie_secure).await
+        // 7. Signature verified. Issue tokens for the matched principal.
+        //    Account-level logins route through the shared
+        //    `issue_login_response` tail that the password path uses;
+        //    sub-user logins take a parallel path because their identity
+        //    + role shape is different (no account.groups to derive
+        //    operator status from, and user.roles is a list of uuids we
+        //    don't currently resolve to names).
+        match parsed_key_id.subuser {
+            None => issue_login_response(jwt, &auth_info, ctx.cookie_secure).await,
+            Some(_) => {
+                let user = auth_info.user.as_ref().ok_or_else(sig_verify_failed)?;
+                issue_subuser_login_response(jwt, user, ctx.cookie_secure).await
+            }
+        }
     }
 
     async fn auth_logout(
@@ -466,13 +470,25 @@ fn sig_parse_error(detail: &str) -> HttpError {
     )
 }
 
-/// Split a draft-cavage keyId of the form `/{account}/keys/{fp}` into
-/// `(account, fingerprint)`. Rejects the sub-user form
-/// (`/{account}/users/{user}/keys/{fp}`) with a specific 400 so the
-/// caller learns why rather than getting a generic verification
-/// failure; sub-user support needs an extra mahi lookup hop and lands
-/// in a follow-up slice.
-fn parse_key_id(key_id: &str) -> Result<(String, String), HttpError> {
+/// Parsed keyId identifying which principal signed a login-ssh request.
+///
+/// `subuser` is `Some` for the sub-user form
+/// (`/{account}/users/{user}/keys/{fp}`) and `None` for the account-level
+/// form (`/{account}/keys/{fp}`). The caller branches on this to pick
+/// the right mahi lookup and JWT-claims shape.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct ParsedKeyId {
+    account: String,
+    subuser: Option<String>,
+    fingerprint: String,
+}
+
+/// Split a draft-cavage keyId into `(account, subuser?, fingerprint)`.
+///
+/// Accepts either `/{account}/keys/{fp}` or
+/// `/{account}/users/{user}/keys/{fp}`. Both forms may omit the leading
+/// slash (some signers do). Any other shape is a 400 `MalformedKeyId`.
+fn parse_key_id(key_id: &str) -> Result<ParsedKeyId, HttpError> {
     // Can't just `split('/')` -- SHA256 fingerprints are
     // `SHA256:<base64>` and the base64 alphabet includes `/`, so the
     // fingerprint itself may contain slashes. Locate the `/keys/`
@@ -483,7 +499,10 @@ fn parse_key_id(key_id: &str) -> Result<(String, String), HttpError> {
         HttpError::for_client_error(
             Some("MalformedKeyId".to_string()),
             ClientErrorStatusCode::BAD_REQUEST,
-            format!("keyId must be /{{account}}/keys/{{fingerprint}}, got: {key_id}"),
+            format!(
+                "keyId must be /{{account}}/keys/{{fingerprint}} or \
+                 /{{account}}/users/{{user}}/keys/{{fingerprint}}, got: {key_id}"
+            ),
         )
     };
     let stripped = key_id.strip_prefix('/').unwrap_or(key_id);
@@ -495,15 +514,16 @@ fn parse_key_id(key_id: &str) -> Result<(String, String), HttpError> {
     }
     let prefix_parts: Vec<&str> = prefix.split('/').collect();
     match prefix_parts.as_slice() {
-        [account] if !account.is_empty() => Ok(((*account).to_string(), fingerprint.to_string())),
-        [_, "users", _] => Err(HttpError::for_client_error(
-            Some("SubuserKeyIdNotSupported".to_string()),
-            ClientErrorStatusCode::BAD_REQUEST,
-            "sub-user keyIds (/{account}/users/{user}/keys/{fp}) are not \
-             yet supported on /v1/auth/login-ssh; use an account-level \
-             key"
-            .to_string(),
-        )),
+        [account] if !account.is_empty() => Ok(ParsedKeyId {
+            account: (*account).to_string(),
+            subuser: None,
+            fingerprint: fingerprint.to_string(),
+        }),
+        [account, "users", user] if !account.is_empty() && !user.is_empty() => Ok(ParsedKeyId {
+            account: (*account).to_string(),
+            subuser: Some((*user).to_string()),
+            fingerprint: fingerprint.to_string(),
+        }),
         _ => Err(malformed()),
     }
 }
@@ -550,6 +570,87 @@ fn check_clock_skew(headers: &http::HeaderMap) -> Result<(), HttpError> {
         ));
     }
     Ok(())
+}
+
+/// Pull the signing public key out of a mahi `AuthInfo`, choosing the
+/// right source record based on whether the keyId named an account-level
+/// or sub-user principal.
+///
+/// Mahi stores `keys` as `fingerprint -> blob` on both account and user
+/// records (since commit acfbaad made the field explicit on the mahi-api
+/// `User` schema so Progenitor preserves it). Any failure -- missing
+/// record, missing key, non-string blob, unparseable blob -- collapses
+/// to the opaque `SignatureVerificationFailed` so probing can't
+/// enumerate which fingerprints exist on which principals.
+fn extract_public_key(
+    auth_info: &triton_auth_session::AuthInfo,
+    parsed_key_id: &ParsedKeyId,
+) -> Result<http_sig::PublicKey, HttpError> {
+    let blob = match &parsed_key_id.subuser {
+        None => auth_info
+            .account
+            .keys
+            .as_ref()
+            .and_then(|keys| keys.get(&parsed_key_id.fingerprint))
+            .and_then(|v| v.as_str())
+            .ok_or_else(sig_verify_failed)?
+            .to_string(),
+        Some(_) => {
+            let user = auth_info.user.as_ref().ok_or_else(sig_verify_failed)?;
+            user.keys
+                .as_ref()
+                .and_then(|keys| keys.get(&parsed_key_id.fingerprint))
+                .and_then(|v| v.as_str())
+                .ok_or_else(sig_verify_failed)?
+                .to_string()
+        }
+    };
+    http_sig::parse_public_key_blob(&blob).map_err(|_| sig_verify_failed())
+}
+
+/// Issue tokens for a verified sub-user SSH login. Parallel to
+/// [`issue_login_response`] but keyed on the mahi `User` record rather
+/// than the `Account`: the JWT's `sub` carries the sub-user's uuid and
+/// `username` carries the sub-user's login, so downstream authorization
+/// sees the sub-user identity.
+///
+/// Roles are always empty and `is_admin` is always false: mahi models
+/// sub-user roles as a list of role uuids (not group names), and
+/// resolving those to the `Role` enum shape the JWT expects needs
+/// additional mahi plumbing that will land in a follow-up slice when
+/// we add real sub-user RBAC. Until then, a sub-user session is
+/// "authenticated but unprivileged"; CloudAPI behind the gateway is
+/// the ultimate authorization check regardless.
+async fn issue_subuser_login_response(
+    jwt: &JwtService,
+    user: &triton_auth_session::mahi::User,
+    cookie_secure: bool,
+) -> Result<HttpResponseHeaders<HttpResponseOk<LoginResponse>>, HttpError> {
+    let roles: Vec<Role> = Vec::new();
+    let token = jwt
+        .create_token(user.uuid, &user.login, &roles)
+        .map_err(session_error_to_http)?;
+    let refresh_token = jwt
+        .create_refresh_token(user.uuid, &user.login, &roles)
+        .await;
+
+    let user_info = UserInfo {
+        id: user.uuid,
+        username: user.login.clone(),
+        email: user.email.clone(),
+        name: user.cn.clone(),
+        company: user.company.clone(),
+        is_admin: false,
+    };
+
+    let cookie = build_auth_cookie(&token, jwt.access_ttl_secs(), cookie_secure);
+    let mut response = HttpResponseHeaders::new_unnamed(HttpResponseOk(LoginResponse {
+        token,
+        refresh_token,
+        user: user_info,
+    }));
+    set_cookie_header(response.headers_mut(), cookie);
+    Ok(response)
 }
 
 /// Issue `(access_token, refresh_token, user_info)` from a verified
@@ -786,27 +887,46 @@ mod login_ssh_helper_tests {
 
     #[test]
     fn parse_key_id_account_form_ok() {
-        let (account, fp) = parse_key_id("/admin/keys/0f:7d:59:bc").unwrap();
-        assert_eq!(account, "admin");
-        assert_eq!(fp, "0f:7d:59:bc");
+        let parsed = parse_key_id("/admin/keys/0f:7d:59:bc").unwrap();
+        assert_eq!(parsed.account, "admin");
+        assert_eq!(parsed.subuser, None);
+        assert_eq!(parsed.fingerprint, "0f:7d:59:bc");
     }
 
     #[test]
     fn parse_key_id_accepts_sha256_fingerprint() {
-        let (account, fp) =
+        let parsed =
             parse_key_id("/admin/keys/SHA256:29ZAWD34TsVSP+FfrqK776oo6FcrOg+Ysp/ZVLNAZRA").unwrap();
-        assert_eq!(account, "admin");
-        assert_eq!(fp, "SHA256:29ZAWD34TsVSP+FfrqK776oo6FcrOg+Ysp/ZVLNAZRA");
+        assert_eq!(parsed.account, "admin");
+        assert_eq!(parsed.subuser, None);
+        assert_eq!(
+            parsed.fingerprint,
+            "SHA256:29ZAWD34TsVSP+FfrqK776oo6FcrOg+Ysp/ZVLNAZRA"
+        );
     }
 
     #[test]
-    fn parse_key_id_subuser_form_rejected_with_specific_error() {
-        // Sub-user form must produce a 400 with SubuserKeyIdNotSupported
-        // rather than falling through to the generic MalformedKeyId path
-        // -- the distinction tells the caller "this feature isn't built
-        // yet" vs. "your keyId is malformed".
-        let err = parse_key_id("/admin/users/bob/keys/0f:7d").unwrap_err();
-        assert_eq!(err.error_code.as_deref(), Some("SubuserKeyIdNotSupported"));
+    fn parse_key_id_subuser_form_ok() {
+        let parsed = parse_key_id("/admin/users/bob/keys/0f:7d:59:bc").unwrap();
+        assert_eq!(parsed.account, "admin");
+        assert_eq!(parsed.subuser.as_deref(), Some("bob"));
+        assert_eq!(parsed.fingerprint, "0f:7d:59:bc");
+    }
+
+    #[test]
+    fn parse_key_id_subuser_form_accepts_sha256_fingerprint() {
+        // Regression guard against re-introducing a split-on-`/` parser
+        // that would misread a SHA256 fingerprint as extra path segments.
+        let parsed = parse_key_id(
+            "/admin/users/bob/keys/SHA256:29ZAWD34TsVSP+FfrqK776oo6FcrOg+Ysp/ZVLNAZRA",
+        )
+        .unwrap();
+        assert_eq!(parsed.account, "admin");
+        assert_eq!(parsed.subuser.as_deref(), Some("bob"));
+        assert_eq!(
+            parsed.fingerprint,
+            "SHA256:29ZAWD34TsVSP+FfrqK776oo6FcrOg+Ysp/ZVLNAZRA"
+        );
     }
 
     #[test]
@@ -822,6 +942,14 @@ mod login_ssh_helper_tests {
     }
 
     #[test]
+    fn parse_key_id_malformed_empty_subuser() {
+        // `/admin/users//keys/fp` matches the sub-user *shape* but an
+        // empty sub-user login is never valid.
+        let err = parse_key_id("/admin/users//keys/0f:7d").unwrap_err();
+        assert_eq!(err.error_code.as_deref(), Some("MalformedKeyId"));
+    }
+
+    #[test]
     fn parse_key_id_malformed_empty_fingerprint() {
         let err = parse_key_id("/admin/keys/").unwrap_err();
         assert_eq!(err.error_code.as_deref(), Some("MalformedKeyId"));
@@ -831,9 +959,15 @@ mod login_ssh_helper_tests {
     fn parse_key_id_accepts_no_leading_slash() {
         // Some clients omit the leading slash; accept both forms since
         // the split-and-match logic handles either identically.
-        let (account, fp) = parse_key_id("admin/keys/abc").unwrap();
-        assert_eq!(account, "admin");
-        assert_eq!(fp, "abc");
+        let parsed = parse_key_id("admin/keys/abc").unwrap();
+        assert_eq!(parsed.account, "admin");
+        assert_eq!(parsed.subuser, None);
+        assert_eq!(parsed.fingerprint, "abc");
+
+        let parsed = parse_key_id("admin/users/bob/keys/abc").unwrap();
+        assert_eq!(parsed.account, "admin");
+        assert_eq!(parsed.subuser.as_deref(), Some("bob"));
+        assert_eq!(parsed.fingerprint, "abc");
     }
 
     fn headers_with_date(value: &str) -> http::HeaderMap {
