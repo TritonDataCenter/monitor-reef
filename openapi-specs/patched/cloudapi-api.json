@@ -336,6 +336,11 @@
         ],
         "type": "object"
       },
+      "CloneImageRequest": {
+        "description": "Request to clone an image",
+        "title": "CloneImageRequest",
+        "type": "object"
+      },
       "Config": {
         "description": "Configuration settings",
         "properties": {
@@ -873,6 +878,32 @@
         "description": "Datacenter map: name -> URL\n\nThe CloudAPI returns datacenters as a map where keys are datacenter names and values are their URLs. Example: ```json {\"us-central-1\": \"https://us-central-1.api.mnx.io\"} ```\n\nThis is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Datacenters = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Datacenters map[string]string` in Go).",
         "type": "object"
       },
+      "DisableDeletionProtectionRequest": {
+        "description": "Request to disable deletion protection",
+        "properties": {
+          "origin": {
+            "default": null,
+            "description": "Origin identifier (defaults to 'cloudapi')",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "DisableDeletionProtectionRequest",
+        "type": "object"
+      },
+      "DisableFirewallRequest": {
+        "description": "Request to disable firewall",
+        "properties": {
+          "origin": {
+            "default": null,
+            "description": "Origin identifier (defaults to 'cloudapi')",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "DisableFirewallRequest",
+        "type": "object"
+      },
       "Disk": {
         "description": "Disk information\n\nNote: CloudAPI returns all disk fields in snake_case, matching the VMAPI wire format passed through the `translate()` function.",
         "properties": {
@@ -997,6 +1028,32 @@
         ],
         "type": "string"
       },
+      "EnableDeletionProtectionRequest": {
+        "description": "Request to enable deletion protection",
+        "properties": {
+          "origin": {
+            "default": null,
+            "description": "Origin identifier (defaults to 'cloudapi')",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "EnableDeletionProtectionRequest",
+        "type": "object"
+      },
+      "EnableFirewallRequest": {
+        "description": "Request to enable firewall",
+        "properties": {
+          "origin": {
+            "default": null,
+            "description": "Origin identifier (defaults to 'cloudapi')",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "EnableFirewallRequest",
+        "type": "object"
+      },
       "Error": {
         "description": "CloudAPI error response",
         "properties": {
@@ -1016,6 +1073,20 @@
         "required": [
           "code"
         ],
+        "type": "object"
+      },
+      "ExportImageRequest": {
+        "description": "Request to export an image",
+        "properties": {
+          "manta_path": {
+            "description": "Manta path for export destination",
+            "type": "string"
+          }
+        },
+        "required": [
+          "manta_path"
+        ],
+        "title": "ExportImageRequest",
         "type": "object"
       },
       "FabricVlan": {
@@ -1401,6 +1472,26 @@
             "type": "string"
           }
         ]
+      },
+      "ImportImageRequest": {
+        "description": "Request to import image from datacenter",
+        "properties": {
+          "datacenter": {
+            "description": "Source datacenter name",
+            "type": "string"
+          },
+          "id": {
+            "description": "Image UUID in source datacenter",
+            "format": "uuid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "datacenter",
+          "id"
+        ],
+        "title": "ImportImageRequest",
+        "type": "object"
       },
       "Machine": {
         "description": "Machine information",
@@ -2530,6 +2621,39 @@
         ],
         "type": "object"
       },
+      "RebootMachineRequest": {
+        "description": "Request to reboot a machine",
+        "properties": {
+          "origin": {
+            "default": null,
+            "description": "Origin identifier (defaults to 'cloudapi')",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "RebootMachineRequest",
+        "type": "object"
+      },
+      "RenameMachineRequest": {
+        "description": "Request to rename a machine",
+        "properties": {
+          "name": {
+            "description": "New machine alias/name (max 189 chars, or 63 if CNS enabled)",
+            "type": "string"
+          },
+          "origin": {
+            "default": null,
+            "description": "Origin identifier (defaults to 'cloudapi')",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "RenameMachineRequest",
+        "type": "object"
+      },
       "ReplaceRoleTagsRequest": {
         "description": "Request to replace role tags",
         "properties": {
@@ -2542,6 +2666,48 @@
             "type": "array"
           }
         },
+        "type": "object"
+      },
+      "ResizeDiskRequest": {
+        "description": "Request to resize disk",
+        "properties": {
+          "dangerous_allow_shrink": {
+            "default": null,
+            "description": "Allow dangerous shrink operation",
+            "nullable": true,
+            "type": "boolean"
+          },
+          "size": {
+            "description": "New size in MB",
+            "format": "uint64",
+            "minimum": 0.0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "size"
+        ],
+        "title": "ResizeDiskRequest",
+        "type": "object"
+      },
+      "ResizeMachineRequest": {
+        "description": "Request to resize a machine",
+        "properties": {
+          "origin": {
+            "default": null,
+            "description": "Origin identifier (defaults to 'cloudapi')",
+            "nullable": true,
+            "type": "string"
+          },
+          "package": {
+            "description": "New package name or UUID",
+            "type": "string"
+          }
+        },
+        "required": [
+          "package"
+        ],
+        "title": "ResizeMachineRequest",
         "type": "object"
       },
       "Role": {
@@ -2714,6 +2880,32 @@
           "key",
           "name"
         ],
+        "type": "object"
+      },
+      "StartMachineRequest": {
+        "description": "Request to start a machine",
+        "properties": {
+          "origin": {
+            "default": null,
+            "description": "Origin identifier (defaults to 'cloudapi')",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "StartMachineRequest",
+        "type": "object"
+      },
+      "StopMachineRequest": {
+        "description": "Request to stop a machine",
+        "properties": {
+          "origin": {
+            "default": null,
+            "description": "Origin identifier (defaults to 'cloudapi')",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "StopMachineRequest",
         "type": "object"
       },
       "TagsRequest": {
@@ -2924,6 +3116,60 @@
         },
         "type": "object"
       },
+      "UpdateImageRequest": {
+        "description": "Request to update an image",
+        "properties": {
+          "acl": {
+            "default": null,
+            "description": "ACL",
+            "items": {
+              "format": "uuid",
+              "type": "string"
+            },
+            "nullable": true,
+            "type": "array"
+          },
+          "description": {
+            "default": null,
+            "description": "Description",
+            "nullable": true,
+            "type": "string"
+          },
+          "eula": {
+            "default": null,
+            "description": "EULA URL",
+            "nullable": true,
+            "type": "string"
+          },
+          "homepage": {
+            "default": null,
+            "description": "Homepage URL",
+            "nullable": true,
+            "type": "string"
+          },
+          "name": {
+            "default": null,
+            "description": "Image name",
+            "nullable": true,
+            "type": "string"
+          },
+          "tags": {
+            "additionalProperties": true,
+            "default": null,
+            "description": "Tags",
+            "nullable": true,
+            "type": "object"
+          },
+          "version": {
+            "default": null,
+            "description": "Image version",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "UpdateImageRequest",
+        "type": "object"
+      },
       "UpdateNetworkIpRequest": {
         "description": "Request to update network IP",
         "properties": {
@@ -3058,6 +3304,19 @@
             "type": "string"
           }
         },
+        "type": "object"
+      },
+      "UpdateVolumeRequest": {
+        "description": "Request to update volume",
+        "properties": {
+          "name": {
+            "default": null,
+            "description": "Volume name",
+            "nullable": true,
+            "type": "string"
+          }
+        },
+        "title": "UpdateVolumeRequest",
         "type": "object"
       },
       "User": {

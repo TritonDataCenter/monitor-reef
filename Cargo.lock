@@ -2373,6 +2373,7 @@ dependencies = [
  "dropshot-api-manager",
  "dropshot-api-manager-types",
  "jira-api",
+ "schemars",
  "semver 1.0.28",
  "serde_json",
  "tempfile",

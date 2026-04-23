@@ -914,6 +914,46 @@ pub mod types {
         }
     }
 
+    #[doc = "Request to clone an image"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"CloneImageRequest\","]
+    #[doc = "  \"description\": \"Request to clone an image\","]
+    #[doc = "  \"type\": \"object\""]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    #[serde(transparent)]
+    pub struct CloneImageRequest(pub ::serde_json::Map<::std::string::String, ::serde_json::Value>);
+    impl ::std::ops::Deref for CloneImageRequest {
+        type Target = ::serde_json::Map<::std::string::String, ::serde_json::Value>;
+        fn deref(&self) -> &::serde_json::Map<::std::string::String, ::serde_json::Value> {
+            &self.0
+        }
+    }
+
+    impl ::std::convert::From<CloneImageRequest>
+        for ::serde_json::Map<::std::string::String, ::serde_json::Value>
+    {
+        fn from(value: CloneImageRequest) -> Self {
+            value.0
+        }
+    }
+
+    impl ::std::convert::From<::serde_json::Map<::std::string::String, ::serde_json::Value>>
+        for CloneImageRequest
+    {
+        fn from(value: ::serde_json::Map<::std::string::String, ::serde_json::Value>) -> Self {
+            Self(value)
+        }
+    }
+
     #[doc = "Configuration settings"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -2111,6 +2151,94 @@ pub mod types {
         }
     }
 
+    #[doc = "Request to disable deletion protection"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"DisableDeletionProtectionRequest\","]
+    #[doc = "  \"description\": \"Request to disable deletion protection\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"origin\": {"]
+    #[doc = "      \"description\": \"Origin identifier (defaults to 'cloudapi')\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct DisableDeletionProtectionRequest {
+        #[doc = "Origin identifier (defaults to 'cloudapi')"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub origin: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for DisableDeletionProtectionRequest {
+        fn default() -> Self {
+            Self {
+                origin: Default::default(),
+            }
+        }
+    }
+
+    impl DisableDeletionProtectionRequest {
+        pub fn builder() -> builder::DisableDeletionProtectionRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request to disable firewall"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"DisableFirewallRequest\","]
+    #[doc = "  \"description\": \"Request to disable firewall\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"origin\": {"]
+    #[doc = "      \"description\": \"Origin identifier (defaults to 'cloudapi')\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct DisableFirewallRequest {
+        #[doc = "Origin identifier (defaults to 'cloudapi')"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub origin: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for DisableFirewallRequest {
+        fn default() -> Self {
+            Self {
+                origin: Default::default(),
+            }
+        }
+    }
+
+    impl DisableFirewallRequest {
+        pub fn builder() -> builder::DisableFirewallRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "Disk information\n\nNote: CloudAPI returns all disk fields in snake_case, matching the VMAPI wire format passed through the `translate()` function."]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -2524,6 +2652,94 @@ pub mod types {
         }
     }
 
+    #[doc = "Request to enable deletion protection"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"EnableDeletionProtectionRequest\","]
+    #[doc = "  \"description\": \"Request to enable deletion protection\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"origin\": {"]
+    #[doc = "      \"description\": \"Origin identifier (defaults to 'cloudapi')\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct EnableDeletionProtectionRequest {
+        #[doc = "Origin identifier (defaults to 'cloudapi')"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub origin: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for EnableDeletionProtectionRequest {
+        fn default() -> Self {
+            Self {
+                origin: Default::default(),
+            }
+        }
+    }
+
+    impl EnableDeletionProtectionRequest {
+        pub fn builder() -> builder::EnableDeletionProtectionRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request to enable firewall"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"EnableFirewallRequest\","]
+    #[doc = "  \"description\": \"Request to enable firewall\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"origin\": {"]
+    #[doc = "      \"description\": \"Origin identifier (defaults to 'cloudapi')\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct EnableFirewallRequest {
+        #[doc = "Origin identifier (defaults to 'cloudapi')"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub origin: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for EnableFirewallRequest {
+        fn default() -> Self {
+            Self {
+                origin: Default::default(),
+            }
+        }
+    }
+
+    impl EnableFirewallRequest {
+        pub fn builder() -> builder::EnableFirewallRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "CloudAPI error response"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -2568,6 +2784,41 @@ pub mod types {
 
     impl Error {
         pub fn builder() -> builder::Error {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request to export an image"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"ExportImageRequest\","]
+    #[doc = "  \"description\": \"Request to export an image\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"manta_path\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"manta_path\": {"]
+    #[doc = "      \"description\": \"Manta path for export destination\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ExportImageRequest {
+        #[doc = "Manta path for export destination"]
+        pub manta_path: ::std::string::String,
+    }
+
+    impl ExportImageRequest {
+        pub fn builder() -> builder::ExportImageRequest {
             Default::default()
         }
     }
@@ -3543,6 +3794,49 @@ pub mod types {
             value: ::std::string::String,
         ) -> ::std::result::Result<Self, self::error::ConversionError> {
             value.parse()
+        }
+    }
+
+    #[doc = "Request to import image from datacenter"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"ImportImageRequest\","]
+    #[doc = "  \"description\": \"Request to import image from datacenter\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"datacenter\","]
+    #[doc = "    \"id\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"datacenter\": {"]
+    #[doc = "      \"description\": \"Source datacenter name\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"id\": {"]
+    #[doc = "      \"description\": \"Image UUID in source datacenter\","]
+    #[doc = "      \"type\": \"string\","]
+    #[doc = "      \"format\": \"uuid\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ImportImageRequest {
+        #[doc = "Source datacenter name"]
+        pub datacenter: ::std::string::String,
+        #[doc = "Image UUID in source datacenter"]
+        pub id: ::uuid::Uuid,
+    }
+
+    impl ImportImageRequest {
+        pub fn builder() -> builder::ImportImageRequest {
+            Default::default()
         }
     }
 
@@ -6333,6 +6627,95 @@ pub mod types {
         }
     }
 
+    #[doc = "Request to reboot a machine"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"RebootMachineRequest\","]
+    #[doc = "  \"description\": \"Request to reboot a machine\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"origin\": {"]
+    #[doc = "      \"description\": \"Origin identifier (defaults to 'cloudapi')\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct RebootMachineRequest {
+        #[doc = "Origin identifier (defaults to 'cloudapi')"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub origin: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for RebootMachineRequest {
+        fn default() -> Self {
+            Self {
+                origin: Default::default(),
+            }
+        }
+    }
+
+    impl RebootMachineRequest {
+        pub fn builder() -> builder::RebootMachineRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request to rename a machine"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"RenameMachineRequest\","]
+    #[doc = "  \"description\": \"Request to rename a machine\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"name\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"description\": \"New machine alias/name (max 189 chars, or 63 if CNS enabled)\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    },"]
+    #[doc = "    \"origin\": {"]
+    #[doc = "      \"description\": \"Origin identifier (defaults to 'cloudapi')\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct RenameMachineRequest {
+        #[doc = "New machine alias/name (max 189 chars, or 63 if CNS enabled)"]
+        pub name: ::std::string::String,
+        #[doc = "Origin identifier (defaults to 'cloudapi')"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub origin: ::std::option::Option<::std::string::String>,
+    }
+
+    impl RenameMachineRequest {
+        pub fn builder() -> builder::RenameMachineRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "Request to replace role tags"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -6377,6 +6760,98 @@ pub mod types {
 
     impl ReplaceRoleTagsRequest {
         pub fn builder() -> builder::ReplaceRoleTagsRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request to resize disk"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"ResizeDiskRequest\","]
+    #[doc = "  \"description\": \"Request to resize disk\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"size\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"dangerous_allow_shrink\": {"]
+    #[doc = "      \"description\": \"Allow dangerous shrink operation\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"boolean\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"size\": {"]
+    #[doc = "      \"description\": \"New size in MB\","]
+    #[doc = "      \"type\": \"integer\","]
+    #[doc = "      \"format\": \"uint64\","]
+    #[doc = "      \"minimum\": 0.0"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ResizeDiskRequest {
+        #[doc = "Allow dangerous shrink operation"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub dangerous_allow_shrink: ::std::option::Option<bool>,
+        #[doc = "New size in MB"]
+        pub size: u64,
+    }
+
+    impl ResizeDiskRequest {
+        pub fn builder() -> builder::ResizeDiskRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request to resize a machine"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"ResizeMachineRequest\","]
+    #[doc = "  \"description\": \"Request to resize a machine\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"required\": ["]
+    #[doc = "    \"package\""]
+    #[doc = "  ],"]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"origin\": {"]
+    #[doc = "      \"description\": \"Origin identifier (defaults to 'cloudapi')\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"package\": {"]
+    #[doc = "      \"description\": \"New package name or UUID\","]
+    #[doc = "      \"type\": \"string\""]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct ResizeMachineRequest {
+        #[doc = "Origin identifier (defaults to 'cloudapi')"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub origin: ::std::option::Option<::std::string::String>,
+        #[doc = "New package name or UUID"]
+        pub package: ::std::string::String,
+    }
+
+    impl ResizeMachineRequest {
+        pub fn builder() -> builder::ResizeMachineRequest {
             Default::default()
         }
     }
@@ -6819,6 +7294,94 @@ pub mod types {
 
     impl SshKey {
         pub fn builder() -> builder::SshKey {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request to start a machine"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"StartMachineRequest\","]
+    #[doc = "  \"description\": \"Request to start a machine\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"origin\": {"]
+    #[doc = "      \"description\": \"Origin identifier (defaults to 'cloudapi')\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StartMachineRequest {
+        #[doc = "Origin identifier (defaults to 'cloudapi')"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub origin: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for StartMachineRequest {
+        fn default() -> Self {
+            Self {
+                origin: Default::default(),
+            }
+        }
+    }
+
+    impl StartMachineRequest {
+        pub fn builder() -> builder::StartMachineRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request to stop a machine"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"StopMachineRequest\","]
+    #[doc = "  \"description\": \"Request to stop a machine\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"origin\": {"]
+    #[doc = "      \"description\": \"Origin identifier (defaults to 'cloudapi')\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct StopMachineRequest {
+        #[doc = "Origin identifier (defaults to 'cloudapi')"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub origin: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for StopMachineRequest {
+        fn default() -> Self {
+            Self {
+                origin: Default::default(),
+            }
+        }
+    }
+
+    impl StopMachineRequest {
+        pub fn builder() -> builder::StopMachineRequest {
             Default::default()
         }
     }
@@ -7376,6 +7939,122 @@ pub mod types {
         }
     }
 
+    #[doc = "Request to update an image"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"UpdateImageRequest\","]
+    #[doc = "  \"description\": \"Request to update an image\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"acl\": {"]
+    #[doc = "      \"description\": \"ACL\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"array\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"items\": {"]
+    #[doc = "        \"type\": \"string\","]
+    #[doc = "        \"format\": \"uuid\""]
+    #[doc = "      }"]
+    #[doc = "    },"]
+    #[doc = "    \"description\": {"]
+    #[doc = "      \"description\": \"Description\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"eula\": {"]
+    #[doc = "      \"description\": \"EULA URL\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"homepage\": {"]
+    #[doc = "      \"description\": \"Homepage URL\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"description\": \"Image name\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    },"]
+    #[doc = "    \"tags\": {"]
+    #[doc = "      \"description\": \"Tags\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"object\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "    },"]
+    #[doc = "    \"version\": {"]
+    #[doc = "      \"description\": \"Image version\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct UpdateImageRequest {
+        #[doc = "ACL"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub acl: ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
+        #[doc = "Description"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub description: ::std::option::Option<::std::string::String>,
+        #[doc = "EULA URL"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub eula: ::std::option::Option<::std::string::String>,
+        #[doc = "Homepage URL"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub homepage: ::std::option::Option<::std::string::String>,
+        #[doc = "Image name"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub name: ::std::option::Option<::std::string::String>,
+        #[doc = "Tags"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub tags:
+            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        #[doc = "Image version"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub version: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for UpdateImageRequest {
+        fn default() -> Self {
+            Self {
+                acl: Default::default(),
+                description: Default::default(),
+                eula: Default::default(),
+                homepage: Default::default(),
+                name: Default::default(),
+                tags: Default::default(),
+                version: Default::default(),
+            }
+        }
+    }
+
+    impl UpdateImageRequest {
+        pub fn builder() -> builder::UpdateImageRequest {
+            Default::default()
+        }
+    }
+
     #[doc = "Request to update network IP"]
     #[doc = r""]
     #[doc = r" <details><summary>JSON schema</summary>"]
@@ -7703,6 +8382,50 @@ pub mod types {
 
     impl UpdateUserRequest {
         pub fn builder() -> builder::UpdateUserRequest {
+            Default::default()
+        }
+    }
+
+    #[doc = "Request to update volume"]
+    #[doc = r""]
+    #[doc = r" <details><summary>JSON schema</summary>"]
+    #[doc = r""]
+    #[doc = r" ```json"]
+    #[doc = "{"]
+    #[doc = "  \"title\": \"UpdateVolumeRequest\","]
+    #[doc = "  \"description\": \"Request to update volume\","]
+    #[doc = "  \"type\": \"object\","]
+    #[doc = "  \"properties\": {"]
+    #[doc = "    \"name\": {"]
+    #[doc = "      \"description\": \"Volume name\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"string\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ]"]
+    #[doc = "    }"]
+    #[doc = "  }"]
+    #[doc = "}"]
+    #[doc = r" ```"]
+    #[doc = r" </details>"]
+    #[derive(
+        :: serde :: Deserialize, :: serde :: Serialize, Clone, Debug, schemars :: JsonSchema,
+    )]
+    pub struct UpdateVolumeRequest {
+        #[doc = "Volume name"]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub name: ::std::option::Option<::std::string::String>,
+    }
+
+    impl ::std::default::Default for UpdateVolumeRequest {
+        fn default() -> Self {
+            Self {
+                name: Default::default(),
+            }
+        }
+    }
+
+    impl UpdateVolumeRequest {
+        pub fn builder() -> builder::UpdateVolumeRequest {
             Default::default()
         }
     }
@@ -10831,6 +11554,106 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct DisableDeletionProtectionRequest {
+            origin: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for DisableDeletionProtectionRequest {
+            fn default() -> Self {
+                Self {
+                    origin: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl DisableDeletionProtectionRequest {
+            pub fn origin<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.origin = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for origin: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<DisableDeletionProtectionRequest>
+            for super::DisableDeletionProtectionRequest
+        {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: DisableDeletionProtectionRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    origin: value.origin?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::DisableDeletionProtectionRequest>
+            for DisableDeletionProtectionRequest
+        {
+            fn from(value: super::DisableDeletionProtectionRequest) -> Self {
+                Self {
+                    origin: Ok(value.origin),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct DisableFirewallRequest {
+            origin: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for DisableFirewallRequest {
+            fn default() -> Self {
+                Self {
+                    origin: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl DisableFirewallRequest {
+            pub fn origin<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.origin = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for origin: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<DisableFirewallRequest> for super::DisableFirewallRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: DisableFirewallRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    origin: value.origin?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::DisableFirewallRequest> for DisableFirewallRequest {
+            fn from(value: super::DisableFirewallRequest) -> Self {
+                Self {
+                    origin: Ok(value.origin),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Disk {
             block_size: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
             boot: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
@@ -11038,6 +11861,106 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct EnableDeletionProtectionRequest {
+            origin: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for EnableDeletionProtectionRequest {
+            fn default() -> Self {
+                Self {
+                    origin: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl EnableDeletionProtectionRequest {
+            pub fn origin<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.origin = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for origin: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<EnableDeletionProtectionRequest>
+            for super::EnableDeletionProtectionRequest
+        {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: EnableDeletionProtectionRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    origin: value.origin?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::EnableDeletionProtectionRequest>
+            for EnableDeletionProtectionRequest
+        {
+            fn from(value: super::EnableDeletionProtectionRequest) -> Self {
+                Self {
+                    origin: Ok(value.origin),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct EnableFirewallRequest {
+            origin: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for EnableFirewallRequest {
+            fn default() -> Self {
+                Self {
+                    origin: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl EnableFirewallRequest {
+            pub fn origin<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.origin = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for origin: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<EnableFirewallRequest> for super::EnableFirewallRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: EnableFirewallRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    origin: value.origin?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::EnableFirewallRequest> for EnableFirewallRequest {
+            fn from(value: super::EnableFirewallRequest) -> Self {
+                Self {
+                    origin: Ok(value.origin),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct Error {
             code: ::std::result::Result<::std::string::String, ::std::string::String>,
             message: ::std::result::Result<
@@ -11112,6 +12035,51 @@ pub mod types {
                     code: Ok(value.code),
                     message: Ok(value.message),
                     request_id: Ok(value.request_id),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct ExportImageRequest {
+            manta_path: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ExportImageRequest {
+            fn default() -> Self {
+                Self {
+                    manta_path: Err("no value supplied for manta_path".to_string()),
+                }
+            }
+        }
+
+        impl ExportImageRequest {
+            pub fn manta_path<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.manta_path = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for manta_path: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ExportImageRequest> for super::ExportImageRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ExportImageRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    manta_path: value.manta_path?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ExportImageRequest> for ExportImageRequest {
+            fn from(value: super::ExportImageRequest) -> Self {
+                Self {
+                    manta_path: Ok(value.manta_path),
                 }
             }
         }
@@ -11972,6 +12940,65 @@ pub mod types {
                     max_ram: Ok(value.max_ram),
                     min_memory: Ok(value.min_memory),
                     min_ram: Ok(value.min_ram),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct ImportImageRequest {
+            datacenter: ::std::result::Result<::std::string::String, ::std::string::String>,
+            id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ImportImageRequest {
+            fn default() -> Self {
+                Self {
+                    datacenter: Err("no value supplied for datacenter".to_string()),
+                    id: Err("no value supplied for id".to_string()),
+                }
+            }
+        }
+
+        impl ImportImageRequest {
+            pub fn datacenter<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.datacenter = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for datacenter: {e}"));
+                self
+            }
+            pub fn id<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::uuid::Uuid>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.id = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for id: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ImportImageRequest> for super::ImportImageRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ImportImageRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    datacenter: value.datacenter?,
+                    id: value.id?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ImportImageRequest> for ImportImageRequest {
+            fn from(value: super::ImportImageRequest) -> Self {
+                Self {
+                    datacenter: Ok(value.datacenter),
+                    id: Ok(value.id),
                 }
             }
         }
@@ -14462,6 +15489,116 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct RebootMachineRequest {
+            origin: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for RebootMachineRequest {
+            fn default() -> Self {
+                Self {
+                    origin: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl RebootMachineRequest {
+            pub fn origin<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.origin = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for origin: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<RebootMachineRequest> for super::RebootMachineRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: RebootMachineRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    origin: value.origin?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::RebootMachineRequest> for RebootMachineRequest {
+            fn from(value: super::RebootMachineRequest) -> Self {
+                Self {
+                    origin: Ok(value.origin),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct RenameMachineRequest {
+            name: ::std::result::Result<::std::string::String, ::std::string::String>,
+            origin: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for RenameMachineRequest {
+            fn default() -> Self {
+                Self {
+                    name: Err("no value supplied for name".to_string()),
+                    origin: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl RenameMachineRequest {
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn origin<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.origin = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for origin: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<RenameMachineRequest> for super::RenameMachineRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: RenameMachineRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    name: value.name?,
+                    origin: value.origin?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::RenameMachineRequest> for RenameMachineRequest {
+            fn from(value: super::RenameMachineRequest) -> Self {
+                Self {
+                    name: Ok(value.name),
+                    origin: Ok(value.origin),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct ReplaceRoleTagsRequest {
             role_tag: ::std::result::Result<
                 ::std::vec::Vec<::std::string::String>,
@@ -14505,6 +15642,128 @@ pub mod types {
             fn from(value: super::ReplaceRoleTagsRequest) -> Self {
                 Self {
                     role_tag: Ok(value.role_tag),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct ResizeDiskRequest {
+            dangerous_allow_shrink:
+                ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
+            size: ::std::result::Result<u64, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ResizeDiskRequest {
+            fn default() -> Self {
+                Self {
+                    dangerous_allow_shrink: Ok(Default::default()),
+                    size: Err("no value supplied for size".to_string()),
+                }
+            }
+        }
+
+        impl ResizeDiskRequest {
+            pub fn dangerous_allow_shrink<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<bool>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.dangerous_allow_shrink = value.try_into().map_err(|e| {
+                    format!("error converting supplied value for dangerous_allow_shrink: {e}")
+                });
+                self
+            }
+            pub fn size<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<u64>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.size = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for size: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ResizeDiskRequest> for super::ResizeDiskRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ResizeDiskRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    dangerous_allow_shrink: value.dangerous_allow_shrink?,
+                    size: value.size?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ResizeDiskRequest> for ResizeDiskRequest {
+            fn from(value: super::ResizeDiskRequest) -> Self {
+                Self {
+                    dangerous_allow_shrink: Ok(value.dangerous_allow_shrink),
+                    size: Ok(value.size),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct ResizeMachineRequest {
+            origin: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            package: ::std::result::Result<::std::string::String, ::std::string::String>,
+        }
+
+        impl ::std::default::Default for ResizeMachineRequest {
+            fn default() -> Self {
+                Self {
+                    origin: Ok(Default::default()),
+                    package: Err("no value supplied for package".to_string()),
+                }
+            }
+        }
+
+        impl ResizeMachineRequest {
+            pub fn origin<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.origin = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for origin: {e}"));
+                self
+            }
+            pub fn package<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::string::String>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.package = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for package: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<ResizeMachineRequest> for super::ResizeMachineRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: ResizeMachineRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    origin: value.origin?,
+                    package: value.package?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::ResizeMachineRequest> for ResizeMachineRequest {
+            fn from(value: super::ResizeMachineRequest) -> Self {
+                Self {
+                    origin: Ok(value.origin),
+                    package: Ok(value.package),
                 }
             }
         }
@@ -14900,6 +16159,102 @@ pub mod types {
                     key: Ok(value.key),
                     name: Ok(value.name),
                     role_tag: Ok(value.role_tag),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct StartMachineRequest {
+            origin: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for StartMachineRequest {
+            fn default() -> Self {
+                Self {
+                    origin: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl StartMachineRequest {
+            pub fn origin<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.origin = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for origin: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StartMachineRequest> for super::StartMachineRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StartMachineRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    origin: value.origin?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StartMachineRequest> for StartMachineRequest {
+            fn from(value: super::StartMachineRequest) -> Self {
+                Self {
+                    origin: Ok(value.origin),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct StopMachineRequest {
+            origin: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for StopMachineRequest {
+            fn default() -> Self {
+                Self {
+                    origin: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl StopMachineRequest {
+            pub fn origin<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.origin = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for origin: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<StopMachineRequest> for super::StopMachineRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: StopMachineRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    origin: value.origin?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::StopMachineRequest> for StopMachineRequest {
+            fn from(value: super::StopMachineRequest) -> Self {
+                Self {
+                    origin: Ok(value.origin),
                 }
             }
         }
@@ -15542,6 +16897,162 @@ pub mod types {
         }
 
         #[derive(Clone, Debug)]
+        pub struct UpdateImageRequest {
+            acl: ::std::result::Result<
+                ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
+                ::std::string::String,
+            >,
+            description: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            eula: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            homepage: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            name: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+            tags: ::std::result::Result<
+                ::std::option::Option<
+                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                >,
+                ::std::string::String,
+            >,
+            version: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for UpdateImageRequest {
+            fn default() -> Self {
+                Self {
+                    acl: Ok(Default::default()),
+                    description: Ok(Default::default()),
+                    eula: Ok(Default::default()),
+                    homepage: Ok(Default::default()),
+                    name: Ok(Default::default()),
+                    tags: Ok(Default::default()),
+                    version: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl UpdateImageRequest {
+            pub fn acl<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::vec::Vec<::uuid::Uuid>>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.acl = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for acl: {e}"));
+                self
+            }
+            pub fn description<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.description = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for description: {e}"));
+                self
+            }
+            pub fn eula<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.eula = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for eula: {e}"));
+                self
+            }
+            pub fn homepage<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.homepage = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for homepage: {e}"));
+                self
+            }
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+            pub fn tags<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<
+                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                        >,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.tags = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for tags: {e}"));
+                self
+            }
+            pub fn version<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.version = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for version: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<UpdateImageRequest> for super::UpdateImageRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: UpdateImageRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self {
+                    acl: value.acl?,
+                    description: value.description?,
+                    eula: value.eula?,
+                    homepage: value.homepage?,
+                    name: value.name?,
+                    tags: value.tags?,
+                    version: value.version?,
+                })
+            }
+        }
+
+        impl ::std::convert::From<super::UpdateImageRequest> for UpdateImageRequest {
+            fn from(value: super::UpdateImageRequest) -> Self {
+                Self {
+                    acl: Ok(value.acl),
+                    description: Ok(value.description),
+                    eula: Ok(value.eula),
+                    homepage: Ok(value.homepage),
+                    name: Ok(value.name),
+                    tags: Ok(value.tags),
+                    version: Ok(value.version),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
         pub struct UpdateNetworkIpRequest {
             reserved: ::std::result::Result<bool, ::std::string::String>,
         }
@@ -15953,6 +17464,52 @@ pub mod types {
                     phone: Ok(value.phone),
                     postal_code: Ok(value.postal_code),
                     state: Ok(value.state),
+                }
+            }
+        }
+
+        #[derive(Clone, Debug)]
+        pub struct UpdateVolumeRequest {
+            name: ::std::result::Result<
+                ::std::option::Option<::std::string::String>,
+                ::std::string::String,
+            >,
+        }
+
+        impl ::std::default::Default for UpdateVolumeRequest {
+            fn default() -> Self {
+                Self {
+                    name: Ok(Default::default()),
+                }
+            }
+        }
+
+        impl UpdateVolumeRequest {
+            pub fn name<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<::std::option::Option<::std::string::String>>,
+                T::Error: ::std::fmt::Display,
+            {
+                self.name = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for name: {e}"));
+                self
+            }
+        }
+
+        impl ::std::convert::TryFrom<UpdateVolumeRequest> for super::UpdateVolumeRequest {
+            type Error = super::error::ConversionError;
+            fn try_from(
+                value: UpdateVolumeRequest,
+            ) -> ::std::result::Result<Self, super::error::ConversionError> {
+                Ok(Self { name: value.name? })
+            }
+        }
+
+        impl ::std::convert::From<super::UpdateVolumeRequest> for UpdateVolumeRequest {
+            fn from(value: super::UpdateVolumeRequest) -> Self {
+                Self {
+                    name: Ok(value.name),
                 }
             }
         }

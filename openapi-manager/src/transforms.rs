@@ -111,7 +111,105 @@ fn transform_cloudapi_spec(source: &Utf8Path, dest: &Utf8Path) -> Result<()> {
 fn apply_all_cloudapi_patches(spec: &mut Value) -> Result<()> {
     patch_cloudapi_error_schema(spec)?;
     patch_empty_202_responses(spec)?;
+    patch_inject_action_request_schemas(spec)?;
     Ok(())
+}
+
+/// Inject per-action request schemas into components.schemas.
+///
+/// The action-dispatch endpoints (`POST /{account}/machines/{machine}`,
+/// `.../images/{dataset}`, `.../volumes/{id}`, `.../disks/{id}`) use
+/// `TypedBody<serde_json::Value>` at the Dropshot trait level because each
+/// action expects a different body shape. That erases the per-action body
+/// types from the OpenAPI spec, leaving downstream code generators
+/// (oapi-codegen for Go, Progenitor for Rust) with `interface{}` /
+/// `serde_json::Value` bodies.
+///
+/// The per-action structs are defined in `apis/cloudapi-api/src/types/` and
+/// carry `JsonSchema` derives. This patch uses schemars directly to emit
+/// their schemas into `components.schemas` so generators can produce named
+/// types. The endpoint signatures still take a free-form body — this patch
+/// only makes the shapes *nameable*, not *enforced*.
+///
+/// See `docs/design/action-dispatch-openapi.md`.
+fn patch_inject_action_request_schemas(spec: &mut Value) -> Result<()> {
+    let mut injected: Vec<(&'static str, Value)> = Vec::new();
+
+    // Machine action bodies.
+    injected.push(action_schema::<cloudapi_api::StartMachineRequest>(
+        "StartMachineRequest",
+    )?);
+    injected.push(action_schema::<cloudapi_api::StopMachineRequest>(
+        "StopMachineRequest",
+    )?);
+    injected.push(action_schema::<cloudapi_api::RebootMachineRequest>(
+        "RebootMachineRequest",
+    )?);
+    injected.push(action_schema::<cloudapi_api::ResizeMachineRequest>(
+        "ResizeMachineRequest",
+    )?);
+    injected.push(action_schema::<cloudapi_api::RenameMachineRequest>(
+        "RenameMachineRequest",
+    )?);
+    injected.push(action_schema::<cloudapi_api::EnableFirewallRequest>(
+        "EnableFirewallRequest",
+    )?);
+    injected.push(action_schema::<cloudapi_api::DisableFirewallRequest>(
+        "DisableFirewallRequest",
+    )?);
+    injected.push(action_schema::<
+        cloudapi_api::EnableDeletionProtectionRequest,
+    >("EnableDeletionProtectionRequest")?);
+    injected.push(action_schema::<
+        cloudapi_api::DisableDeletionProtectionRequest,
+    >("DisableDeletionProtectionRequest")?);
+    // Image action bodies.
+    injected.push(action_schema::<cloudapi_api::UpdateImageRequest>(
+        "UpdateImageRequest",
+    )?);
+    injected.push(action_schema::<cloudapi_api::ExportImageRequest>(
+        "ExportImageRequest",
+    )?);
+    injected.push(action_schema::<cloudapi_api::CloneImageRequest>(
+        "CloneImageRequest",
+    )?);
+    injected.push(action_schema::<cloudapi_api::ImportImageRequest>(
+        "ImportImageRequest",
+    )?);
+    // Volume / disk action bodies.
+    injected.push(action_schema::<cloudapi_api::UpdateVolumeRequest>(
+        "UpdateVolumeRequest",
+    )?);
+    injected.push(action_schema::<cloudapi_api::ResizeDiskRequest>(
+        "ResizeDiskRequest",
+    )?);
+
+    let schemas = spec
+        .pointer_mut("/components/schemas")
+        .and_then(|s| s.as_object_mut())
+        .ok_or_else(|| anyhow::anyhow!("components.schemas not found in spec"))?;
+
+    for (name, schema) in injected {
+        schemas.insert(name.to_string(), schema);
+    }
+
+    Ok(())
+}
+
+/// Generate a self-contained OpenAPI-3 schema for the given type.
+///
+/// Uses `inline_subschemas = true` so the emitted object has no `$ref`s,
+/// matching the inlined-schema convention already used by dropshot's
+/// existing schemas (see e.g. `Tags` / uuid fields in the spec).
+fn action_schema<T: schemars::JsonSchema>(name: &'static str) -> Result<(&'static str, Value)> {
+    let settings = schemars::r#gen::SchemaSettings::openapi3().with(|s| {
+        s.inline_subschemas = true;
+    });
+    let mut generator = schemars::r#gen::SchemaGenerator::new(settings);
+    let root = generator.root_schema_for::<T>();
+    let value = serde_json::to_value(&root.schema)
+        .with_context(|| format!("failed to serialize schema for {}", name))?;
+    Ok((name, value))
 }
 
 /// Patch the Error schema in a parsed OpenAPI spec to match CloudAPI's wire format.
