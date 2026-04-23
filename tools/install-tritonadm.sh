@@ -113,6 +113,28 @@ done
 # tools.
 #
 
+# Relative path from $1 (directory) to $2 (file). Both must be absolute.
+# Used to produce portable symlinks (readlink shows ../../triton/... instead
+# of /opt/triton/...) so the install survives filesystem moves, snapshot
+# copies, and chroot inspection. Portable across bash/ksh93 on illumos GZ;
+# no GNU `realpath --relative-to` dependency.
+relpath() {
+    local from=$1 to=$2
+    local common=$from up=''
+    if [[ "$from" != /* || "$to" != /* ]]; then
+        echo "relpath: both args must be absolute (got '$from', '$to')" >&2
+        return 1
+    fi
+    # Walk `common` up toward `/` until `to` is rooted under it.
+    while [[ "${to#$common/}" == "$to" && "$common" != "/" ]]; do
+        common=$(dirname "$common")
+        up="../$up"
+    done
+    local suffix=${to#$common/}
+    [[ "$common" == "/" ]] && suffix=${to#/}
+    printf '%s%s\n' "$up" "$suffix"
+}
+
 # Pick a sha1 helper that exists on this host. illumos GZ has
 # /usr/bin/digest; most other systems have sha1sum or openssl.
 sha1_of() {
@@ -225,20 +247,27 @@ EOF
     # triton symlink lives in the same directory and can't be renamed
     # independently (operators who want a custom location can symlink by
     # hand — this is a convenience, not policy).
+    #
+    # Link targets are relative (../../triton/tritonadm/bin/...) so the
+    # install survives filesystem moves, snapshot copies, and chroot
+    # inspection. Matches sdcadm's convention.
     SYMLINK_OK=false
     TRITON_SYMLINK_OK=false
     TRITON_SYMLINK="$(dirname "$SYMLINK")/triton"
     if [[ "$NO_SYMLINK" != "true" ]]; then
         mkdir -p "$(dirname "$SYMLINK")" 2>/dev/null || true
-        if [[ -d "$(dirname "$SYMLINK")" ]] \
-                && ln -sf "$INSTALL_DIR/bin/tritonadm" "$SYMLINK" 2>/dev/null; then
+        SYMLINK_DIR=$(dirname "$SYMLINK")
+        TRITONADM_REL=$(relpath "$SYMLINK_DIR" "$INSTALL_DIR/bin/tritonadm")
+        TRITON_REL=$(relpath "$SYMLINK_DIR" "$INSTALL_DIR/bin/triton")
+        if [[ -d "$SYMLINK_DIR" ]] \
+                && ln -sf "$TRITONADM_REL" "$SYMLINK" 2>/dev/null; then
             SYMLINK_OK=true
         else
             echo "==> Skipping symlink: couldn't create $SYMLINK"
             echo "    Override with --symlink <path> or use --no-symlink to silence."
         fi
         if [[ "$SYMLINK_OK" == "true" ]] \
-                && ln -sf "$INSTALL_DIR/bin/triton" "$TRITON_SYMLINK" 2>/dev/null; then
+                && ln -sf "$TRITON_REL" "$TRITON_SYMLINK" 2>/dev/null; then
             TRITON_SYMLINK_OK=true
         fi
     fi
