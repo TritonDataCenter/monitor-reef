@@ -57,8 +57,8 @@ tempfile = { workspace = true }
 build-data = { workspace = true }
 
 [dev-dependencies]
-assert_cmd = "2.0"        # CLI testing with command assertions
-predicates = "3.0"        # Fluent assertions for stdout/stderr
+assert_cmd = { workspace = true }  # CLI testing with command assertions
+predicates = { workspace = true }  # Fluent assertions for stdout/stderr
 test-case = "3.3"         # Parameterized tests
 pretty_assertions = "1.4" # Better diff output for test failures
 hostname = "0.4"          # Get hostname for unique test resource names

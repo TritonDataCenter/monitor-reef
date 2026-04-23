@@ -80,6 +80,7 @@ expect_used = "deny"
 [workspace.dependencies]
 anyhow = "1.0"
 askama = "0.15"
+assert_cmd = "2.0"
 async-trait = "0.1"
 axum = { version = "0.8", features = ["ws"] }
 base64 = "0.22"
@@ -106,6 +107,7 @@ p256 = { version = "0.13", default-features = false, features = ["ecdsa", "jwk",
 progenitor = "0.12"
 progenitor-client = "0.12"
 progenitor-impl = "0.12"
+predicates = "3.0"
 rand = { version = "0.9", features = ["os_rng"] }
 rcgen = { version = "0.14", features = ["pem"] }
 rustfmt-wrapper = "0.2"
