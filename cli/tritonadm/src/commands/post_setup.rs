@@ -1272,10 +1272,18 @@ async fn wait_for_image_active(imgapi: &imgapi_client::Client, uuid: uuid::Uuid)
     anyhow::bail!("timed out waiting for image {uuid} to become active (4 minutes)")
 }
 
-/// Add external NICs to adminui and imgapi zones.
+/// Add external NICs to adminui, imgapi, and triton-api zones.
 ///
-/// Matches sdcadm's `post-setup common-external-nics`. Required before
-/// IMGAPI can reach the updates server to import images.
+/// Matches sdcadm's `post-setup common-external-nics`. Two responsibilities,
+/// mirroring `SdcAdm.prototype.addNics`:
+///
+///  1. Attach an external NIC to every existing instance that lacks one.
+///  2. Update each service's SAPI `params.networks` so *future* instances
+///     inherit the NIC without another run of this command.
+///
+/// Without (2), a reprovision of triton-api — which is created admin-only
+/// to match the adminui/imgapi convention — would come back without an
+/// external NIC and need this command re-run.
 async fn cmd_common_external_nics(urls: &PostSetupUrls) -> Result<()> {
     let http = triton_tls::build_http_client(false)
         .await
@@ -1298,27 +1306,116 @@ async fn cmd_common_external_nics(urls: &PostSetupUrls) -> Result<()> {
         .context("no 'external' network found in NAPI")?;
     let net_uuid = uuid::Uuid::parse_str(&external_net.uuid.to_string())
         .context("failed to parse external network UUID")?;
+    let network_name = external_net.name.clone();
 
-    let svc_names = ["imgapi", "adminui"];
-    let mut changed = false;
+    let svc_names = ["imgapi", "adminui", "triton-api"];
+    let mut any_change = false;
 
     for svc_name in &svc_names {
-        let instances = get_service_instances(&sapi, svc_name).await?;
+        // Look up the service object directly so we can also patch its
+        // SAPI params below. Services that aren't deployed in this DC
+        // are skipped silently (matches sdcadm's behavior for adminui in
+        // headnodes where it's been removed).
+        let services = sapi
+            .list_services()
+            .name(*svc_name)
+            .send()
+            .await
+            .with_context(|| format!("failed to list services for {svc_name}"))?
+            .into_inner();
+        let Some(svc) = services.first() else {
+            continue;
+        };
+
+        let instances = sapi
+            .list_instances()
+            .service_uuid(svc.uuid)
+            .send()
+            .await
+            .with_context(|| format!("failed to list instances for {svc_name}"))?
+            .into_inner();
+
         for inst in &instances {
             if add_nic_if_missing(
                 &napi, &vmapi, inst.uuid, "external", net_uuid, true, svc_name,
             )
             .await?
             {
-                changed = true;
+                any_change = true;
             }
+        }
+
+        if ensure_service_network(&sapi, svc, &network_name, true).await? {
+            any_change = true;
         }
     }
 
-    if !changed {
-        eprintln!("All imgapi and adminui instances already have external NICs.");
+    if !any_change {
+        eprintln!(
+            "All imgapi, adminui, and triton-api instances and service \
+             definitions already have external NICs."
+        );
     }
     Ok(())
+}
+
+/// Merge `network_name` into the SAPI service's `params.networks`.
+///
+/// Mirrors the service-update half of sdcadm's `SdcAdm.prototype.addNics`
+/// (`../sdcadm/lib/sdcadm.js:4464`): the new network is inserted at the
+/// head of the list with `primary` as requested, existing entries keep
+/// their order, and nothing is done if the network is already present.
+///
+/// Returns true if the service was updated.
+async fn ensure_service_network(
+    sapi: &sapi_client::Client,
+    svc: &sapi_client::types::Service,
+    network_name: &str,
+    primary: bool,
+) -> Result<bool> {
+    let existing_networks: Vec<serde_json::Value> = svc
+        .params
+        .as_ref()
+        .and_then(|p| p.get("networks"))
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    // Network entries are either strings (UUIDs) or objects with a "name" key.
+    let already_has = existing_networks.iter().any(|n| {
+        n.get("name").and_then(|v| v.as_str()) == Some(network_name)
+            || n.as_str() == Some(network_name)
+    });
+    if already_has {
+        return Ok(false);
+    }
+
+    let mut new_entry = json!({ "name": network_name });
+    if primary {
+        new_entry["primary"] = json!(true);
+    }
+    let mut new_networks = vec![new_entry];
+    new_networks.extend(existing_networks);
+
+    eprintln!(
+        "Updating SAPI service {} params.networks to include \
+         {network_name} (primary={primary})...",
+        svc.name
+    );
+    let mut params_patch = serde_json::Map::new();
+    params_patch.insert("networks".into(), json!(new_networks));
+    sapi.update_service()
+        .uuid(svc.uuid)
+        .body(sapi_client::types::UpdateServiceBody {
+            action: None,
+            manifests: None,
+            metadata: None,
+            params: Some(params_patch),
+        })
+        .send()
+        .await
+        .with_context(|| format!("failed to update SAPI service {} params.networks", svc.name))?;
+    Ok(true)
 }
 
 /// Get instances of a named service from SAPI.
