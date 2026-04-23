@@ -318,7 +318,15 @@ regen-clients: openapi-generate clients-generate ## Regenerate OpenAPI specs and
 GO_CLIENT_DIR = clients/external/cloudapi-client/golang
 GO_MODULE = github.com/TritonDataCenter/monitor-reef/clients/external/cloudapi-client/golang
 
-go-build: ## Build Go cloudapi client
+OAPI_CODEGEN_VERSION = v2.6.0
+OAPI_CODEGEN = github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@$(OAPI_CODEGEN_VERSION)
+
+go-generate: ## Regenerate Go cloudapi client from openapi-specs/patched/cloudapi-api.json
+	go run $(OAPI_CODEGEN) \
+		-config $(GO_CLIENT_DIR)/cloudapi.cfg.yaml \
+		openapi-specs/patched/cloudapi-api.json
+
+go-build: go-generate ## Build Go cloudapi client (regenerates first)
 	cd $(GO_CLIENT_DIR) && go build ./...
 
 go-vet: ## Vet Go cloudapi client

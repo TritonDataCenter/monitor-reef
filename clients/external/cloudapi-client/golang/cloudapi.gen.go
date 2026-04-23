@@ -1057,6 +1057,9 @@ type ChangePasswordRequest struct {
 	PasswordConfirmation string `json:"password_confirmation"`
 }
 
+// CloneImageRequest Request to clone an image
+type CloneImageRequest = map[string]interface{}
+
 // Config Configuration settings
 type Config struct {
 	// DefaultNetwork Default network UUID
@@ -1314,6 +1317,18 @@ type Datacenter struct {
 // This is a newtype wrapper rather than a type alias because schemars (the JSON Schema generator used by Dropshot) erases type aliases at compile time. A `pub type Datacenters = HashMap<String, String>` produces an anonymous `Map_of_String` schema in OpenAPI, causing code generators (Progenitor, oapi-codegen) to emit unnamed map types. The newtype preserves the name in the schema so generated clients get a proper named type (e.g. `type Datacenters map[string]string` in Go).
 type Datacenters map[string]string
 
+// DisableDeletionProtectionRequest Request to disable deletion protection
+type DisableDeletionProtectionRequest struct {
+	// Origin Origin identifier (defaults to 'cloudapi')
+	Origin *string `json:"origin,omitempty"`
+}
+
+// DisableFirewallRequest Request to disable firewall
+type DisableFirewallRequest struct {
+	// Origin Origin identifier (defaults to 'cloudapi')
+	Origin *string `json:"origin,omitempty"`
+}
+
 // Disk Disk information
 //
 // Note: CloudAPI returns all disk fields in snake_case, matching the VMAPI wire format passed through the `translate()` function.
@@ -1379,6 +1394,18 @@ type DiskSpec struct {
 // DiskState Disk state
 type DiskState string
 
+// EnableDeletionProtectionRequest Request to enable deletion protection
+type EnableDeletionProtectionRequest struct {
+	// Origin Origin identifier (defaults to 'cloudapi')
+	Origin *string `json:"origin,omitempty"`
+}
+
+// EnableFirewallRequest Request to enable firewall
+type EnableFirewallRequest struct {
+	// Origin Origin identifier (defaults to 'cloudapi')
+	Origin *string `json:"origin,omitempty"`
+}
+
 // Error CloudAPI error response
 type Error struct {
 	// Code Error code (e.g., "InvalidCredentials", "ResourceNotFound")
@@ -1389,6 +1416,12 @@ type Error struct {
 
 	// RequestID Request ID for tracing (optional, not always present)
 	RequestID *string `json:"request_id,omitempty"`
+}
+
+// ExportImageRequest Request to export an image
+type ExportImageRequest struct {
+	// MantaPath Manta path for export destination
+	MantaPath string `json:"manta_path"`
 }
 
 // FabricVlan Fabric VLAN information
@@ -1572,6 +1605,15 @@ type ImageType0 string
 
 // ImageType1 Unknown type (forward compatibility)
 type ImageType1 string
+
+// ImportImageRequest Request to import image from datacenter
+type ImportImageRequest struct {
+	// Datacenter Source datacenter name
+	Datacenter string `json:"datacenter"`
+
+	// ID Image UUID in source datacenter
+	ID openapi_types.UUID `json:"id"`
+}
 
 // Machine Machine information
 type Machine struct {
@@ -2140,10 +2182,43 @@ type ProvisioningLimit struct {
 	Value int64 `json:"value"`
 }
 
+// RebootMachineRequest Request to reboot a machine
+type RebootMachineRequest struct {
+	// Origin Origin identifier (defaults to 'cloudapi')
+	Origin *string `json:"origin,omitempty"`
+}
+
+// RenameMachineRequest Request to rename a machine
+type RenameMachineRequest struct {
+	// Name New machine alias/name (max 189 chars, or 63 if CNS enabled)
+	Name string `json:"name"`
+
+	// Origin Origin identifier (defaults to 'cloudapi')
+	Origin *string `json:"origin,omitempty"`
+}
+
 // ReplaceRoleTagsRequest Request to replace role tags
 type ReplaceRoleTagsRequest struct {
 	// RoleTag Role tags (list of role names)
 	RoleTag *[]string `json:"role-tag,omitempty"`
+}
+
+// ResizeDiskRequest Request to resize disk
+type ResizeDiskRequest struct {
+	// DangerousAllowShrink Allow dangerous shrink operation
+	DangerousAllowShrink *bool `json:"dangerous_allow_shrink,omitempty"`
+
+	// Size New size in MB
+	Size uint64 `json:"size"`
+}
+
+// ResizeMachineRequest Request to resize a machine
+type ResizeMachineRequest struct {
+	// Origin Origin identifier (defaults to 'cloudapi')
+	Origin *string `json:"origin,omitempty"`
+
+	// Package New package name or UUID
+	Package string `json:"package"`
 }
 
 // Role Role information
@@ -2225,6 +2300,18 @@ type SSHKey struct {
 
 	// RoleTag Role tags for RBAC
 	RoleTag *[]string `json:"role-tag,omitempty"`
+}
+
+// StartMachineRequest Request to start a machine
+type StartMachineRequest struct {
+	// Origin Origin identifier (defaults to 'cloudapi')
+	Origin *string `json:"origin,omitempty"`
+}
+
+// StopMachineRequest Request to stop a machine
+type StopMachineRequest struct {
+	// Origin Origin identifier (defaults to 'cloudapi')
+	Origin *string `json:"origin,omitempty"`
 }
 
 // TagsRequest Request to add/replace machine tags
@@ -2329,6 +2416,30 @@ type UpdateFirewallRuleRequest struct {
 	Rule *string `json:"rule,omitempty"`
 }
 
+// UpdateImageRequest Request to update an image
+type UpdateImageRequest struct {
+	// ACL ACL
+	ACL *[]openapi_types.UUID `json:"acl,omitempty"`
+
+	// Description Description
+	Description *string `json:"description,omitempty"`
+
+	// Eula EULA URL
+	Eula *string `json:"eula,omitempty"`
+
+	// Homepage Homepage URL
+	Homepage *string `json:"homepage,omitempty"`
+
+	// Name Image name
+	Name *string `json:"name,omitempty"`
+
+	// Tags Tags
+	Tags *map[string]interface{} `json:"tags,omitempty"`
+
+	// Version Image version
+	Version *string `json:"version,omitempty"`
+}
+
 // UpdateNetworkIPRequest Request to update network IP
 type UpdateNetworkIPRequest struct {
 	// Reserved Reserved
@@ -2390,6 +2501,12 @@ type UpdateUserRequest struct {
 
 	// State State or province
 	State *string `json:"state,omitempty"`
+}
+
+// UpdateVolumeRequest Request to update volume
+type UpdateVolumeRequest struct {
+	// Name Volume name
+	Name *string `json:"name,omitempty"`
 }
 
 // User User information
