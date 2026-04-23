@@ -11,6 +11,7 @@ mod dc_maint;
 mod dev;
 mod experimental;
 mod image;
+mod imgapi_util;
 mod mahi;
 mod platform;
 mod post_setup;

@@ -652,31 +652,26 @@ impl ImageCommand {
                     .and_then(|c| c.as_str())
                     .map(String::from);
 
-                // Step 0: Ensure origin image exists locally
-                if let Some(origin_str) = manifest_value.get("origin").and_then(|v| v.as_str()) {
-                    let origin_uuid: Uuid = origin_str
-                        .parse()
-                        .map_err(|e| anyhow::anyhow!("invalid origin UUID: {}", e))?;
-
-                    // Check if origin exists locally
-                    if client.get_image().uuid(origin_uuid).send().await.is_err() {
-                        let source = updates_url.unwrap_or(crate::DEFAULT_UPDATES_URL);
-                        eprintln!(
-                            "Origin image {origin_uuid} not found locally, \
-                             importing from {source}..."
-                        );
-                        typed_client
-                            .import_remote_image(&origin_uuid, source, true)
-                            .await
-                            .map_err(|e| {
-                                anyhow::anyhow!("failed to import origin image {origin_uuid}: {e}")
-                            })?;
-
-                        // Poll until origin is active
-                        wait_for_image_active(&client, origin_uuid).await?;
-                        eprintln!("Origin image {origin_uuid} imported.");
-                    }
-                }
+                // Step 0: Ensure the origin chain is imported locally before
+                // activating this image. IMGAPI refuses manifests whose
+                // ancestors it has never seen.
+                let origin_uuid = manifest_value
+                    .get("origin")
+                    .and_then(|v| v.as_str())
+                    .map(|s| {
+                        s.parse::<Uuid>()
+                            .map_err(|e| anyhow::anyhow!("invalid origin UUID: {}", e))
+                    })
+                    .transpose()?;
+                let source = updates_url.unwrap_or(crate::DEFAULT_UPDATES_URL);
+                super::imgapi_util::ensure_origin_imported(
+                    &client,
+                    &typed_client,
+                    origin_uuid,
+                    source,
+                    None,
+                )
+                .await?;
 
                 // Step 1: Import the manifest (send raw JSON to preserve all fields)
                 eprintln!("Importing image manifest {uuid}...");
@@ -1446,21 +1441,4 @@ impl ImageCommand {
 
         Ok(())
     }
-}
-
-/// Poll local IMGAPI until the image reaches "active" state.
-async fn wait_for_image_active(client: &imgapi_client::Client, uuid: Uuid) -> Result<()> {
-    use std::io::Write;
-    for _ in 0..120 {
-        if let Ok(resp) = client.get_image().uuid(uuid).send().await
-            && resp.into_inner().state == imgapi_client::types::ImageState::Active
-        {
-            eprintln!();
-            return Ok(());
-        }
-        eprint!(".");
-        std::io::stderr().flush().ok();
-        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-    }
-    anyhow::bail!("timed out waiting for image {uuid} to become active (4 minutes)")
 }
