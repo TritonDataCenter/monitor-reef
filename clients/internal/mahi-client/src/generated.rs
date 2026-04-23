@@ -204,6 +204,14 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
+    #[doc = "    \"key_info\": {"]
+    #[doc = "      \"description\": \"Per-fingerprint attestation metadata (`attested`, `pin`, `touch`) replicated from UFDS `sdckey` entries. Keyed by the same fingerprint as `keys`.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"object\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "    },"]
     #[doc = "    \"keys\": {"]
     #[doc = "      \"description\": \"Key fingerprints -> key blobs. Shape is deployment-specific.\","]
     #[doc = "      \"type\": ["]
@@ -303,6 +311,10 @@ pub mod types {
             skip_serializing_if = "::std::option::Option::is_none"
         )]
         pub is_operator: ::std::option::Option<bool>,
+        #[doc = "Per-fingerprint attestation metadata (`attested`, `pin`, `touch`) replicated from UFDS `sdckey` entries. Keyed by the same fingerprint as `keys`."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub key_info:
+            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
         #[doc = "Key fingerprints -> key blobs. Shape is deployment-specific."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub keys:
@@ -2649,6 +2661,22 @@ pub mod types {
     #[doc = "        \"null\""]
     #[doc = "      ]"]
     #[doc = "    },"]
+    #[doc = "    \"key_info\": {"]
+    #[doc = "      \"description\": \"Per-fingerprint attestation metadata (`attested`, `pin`, `touch`) replicated from UFDS `sdckey` entries. Keyed by the same fingerprint as `keys`.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"object\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "    },"]
+    #[doc = "    \"keys\": {"]
+    #[doc = "      \"description\": \"SSH public-key fingerprints -> key blobs, replicated from UFDS `sdckey` entries attached to the sub-user. Shape mirrors [`Account::keys`]: the blob is deployment-specific (PEM SubjectPublicKeyInfo on the Triton deployments we've seen, `ssh-rsa AAAA...` on some others) and verifiers should parse both.\\n\\nMust be modeled explicitly here — if it lived only in `#[serde(flatten)] extra`, Progenitor's regenerated client type would silently drop it at the wire boundary, since the generated client has no catch-all.\","]
+    #[doc = "      \"type\": ["]
+    #[doc = "        \"object\","]
+    #[doc = "        \"null\""]
+    #[doc = "      ],"]
+    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "    },"]
     #[doc = "    \"login\": {"]
     #[doc = "      \"type\": \"string\""]
     #[doc = "    },"]
@@ -2706,6 +2734,14 @@ pub mod types {
         pub email: ::std::option::Option<::std::string::String>,
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub given_name: ::std::option::Option<::std::string::String>,
+        #[doc = "Per-fingerprint attestation metadata (`attested`, `pin`, `touch`) replicated from UFDS `sdckey` entries. Keyed by the same fingerprint as `keys`."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub key_info:
+            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        #[doc = "SSH public-key fingerprints -> key blobs, replicated from UFDS `sdckey` entries attached to the sub-user. Shape mirrors [`Account::keys`]: the blob is deployment-specific (PEM SubjectPublicKeyInfo on the Triton deployments we've seen, `ssh-rsa AAAA...` on some others) and verifiers should parse both.\n\nMust be modeled explicitly here — if it lived only in `#[serde(flatten)] extra`, Progenitor's regenerated client type would silently drop it at the wire boundary, since the generated client has no catch-all."]
+        #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
+        pub keys:
+            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
         pub login: ::std::string::String,
         #[doc = "Role uuids attached at the user level."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
@@ -2927,6 +2963,12 @@ pub mod types {
                 ::std::string::String,
             >,
             is_operator: ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
+            key_info: ::std::result::Result<
+                ::std::option::Option<
+                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                >,
+                ::std::string::String,
+            >,
             keys: ::std::result::Result<
                 ::std::option::Option<
                     ::serde_json::Map<::std::string::String, ::serde_json::Value>,
@@ -2977,6 +3019,7 @@ pub mod types {
                     given_name: Ok(Default::default()),
                     groups: Ok(Default::default()),
                     is_operator: Ok(Default::default()),
+                    key_info: Ok(Default::default()),
                     keys: Ok(Default::default()),
                     login: Err("no value supplied for login".to_string()),
                     phone: Ok(Default::default()),
@@ -3093,6 +3136,20 @@ pub mod types {
                 self.is_operator = value
                     .try_into()
                     .map_err(|e| format!("error converting supplied value for is_operator: {e}"));
+                self
+            }
+            pub fn key_info<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<
+                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                        >,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.key_info = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for key_info: {e}"));
                 self
             }
             pub fn keys<T>(mut self, value: T) -> Self
@@ -3227,6 +3284,7 @@ pub mod types {
                     given_name: value.given_name?,
                     groups: value.groups?,
                     is_operator: value.is_operator?,
+                    key_info: value.key_info?,
                     keys: value.keys?,
                     login: value.login?,
                     phone: value.phone?,
@@ -3255,6 +3313,7 @@ pub mod types {
                     given_name: Ok(value.given_name),
                     groups: Ok(value.groups),
                     is_operator: Ok(value.is_operator),
+                    key_info: Ok(value.key_info),
                     keys: Ok(value.keys),
                     login: Ok(value.login),
                     phone: Ok(value.phone),
@@ -6132,6 +6191,18 @@ pub mod types {
                 ::std::option::Option<::std::string::String>,
                 ::std::string::String,
             >,
+            key_info: ::std::result::Result<
+                ::std::option::Option<
+                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                >,
+                ::std::string::String,
+            >,
+            keys: ::std::result::Result<
+                ::std::option::Option<
+                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                >,
+                ::std::string::String,
+            >,
             login: ::std::result::Result<::std::string::String, ::std::string::String>,
             roles: ::std::result::Result<
                 ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
@@ -6158,6 +6229,8 @@ pub mod types {
                     company: Ok(Default::default()),
                     email: Ok(Default::default()),
                     given_name: Ok(Default::default()),
+                    key_info: Ok(Default::default()),
+                    keys: Ok(Default::default()),
                     login: Err("no value supplied for login".to_string()),
                     roles: Ok(Default::default()),
                     s: Ok(Default::default()),
@@ -6236,6 +6309,34 @@ pub mod types {
                     .map_err(|e| format!("error converting supplied value for given_name: {e}"));
                 self
             }
+            pub fn key_info<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<
+                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                        >,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.key_info = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for key_info: {e}"));
+                self
+            }
+            pub fn keys<T>(mut self, value: T) -> Self
+            where
+                T: ::std::convert::TryInto<
+                        ::std::option::Option<
+                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+                        >,
+                    >,
+                T::Error: ::std::fmt::Display,
+            {
+                self.keys = value
+                    .try_into()
+                    .map_err(|e| format!("error converting supplied value for keys: {e}"));
+                self
+            }
             pub fn login<T>(mut self, value: T) -> Self
             where
                 T: ::std::convert::TryInto<::std::string::String>,
@@ -6308,6 +6409,8 @@ pub mod types {
                     company: value.company?,
                     email: value.email?,
                     given_name: value.given_name?,
+                    key_info: value.key_info?,
+                    keys: value.keys?,
                     login: value.login?,
                     roles: value.roles?,
                     s: value.s?,
@@ -6327,6 +6430,8 @@ pub mod types {
                     company: Ok(value.company),
                     email: Ok(value.email),
                     given_name: Ok(value.given_name),
+                    key_info: Ok(value.key_info),
+                    keys: Ok(value.keys),
                     login: Ok(value.login),
                     roles: Ok(value.roles),
                     s: Ok(value.s),

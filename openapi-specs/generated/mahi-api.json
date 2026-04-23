@@ -1235,6 +1235,12 @@
             "description": "Set by `redislib.getAccount`. Camel-cased on the wire (UFDS bool).",
             "type": "boolean"
           },
+          "key_info": {
+            "nullable": true,
+            "description": "Per-fingerprint attestation metadata (`attested`, `pin`, `touch`) replicated from UFDS `sdckey` entries. Keyed by the same fingerprint as `keys`.",
+            "type": "object",
+            "additionalProperties": true
+          },
           "keys": {
             "nullable": true,
             "description": "Key fingerprints -> key blobs. Shape is deployment-specific.",
@@ -2236,6 +2242,18 @@
           "given_name": {
             "nullable": true,
             "type": "string"
+          },
+          "key_info": {
+            "nullable": true,
+            "description": "Per-fingerprint attestation metadata (`attested`, `pin`, `touch`) replicated from UFDS `sdckey` entries. Keyed by the same fingerprint as `keys`.",
+            "type": "object",
+            "additionalProperties": true
+          },
+          "keys": {
+            "nullable": true,
+            "description": "SSH public-key fingerprints -> key blobs, replicated from UFDS `sdckey` entries attached to the sub-user. Shape mirrors [`Account::keys`]: the blob is deployment-specific (PEM SubjectPublicKeyInfo on the Triton deployments we've seen, `ssh-rsa AAAA...` on some others) and verifiers should parse both.\n\nMust be modeled explicitly here — if it lived only in `#[serde(flatten)] extra`, Progenitor's regenerated client type would silently drop it at the wire boundary, since the generated client has no catch-all.",
+            "type": "object",
+            "additionalProperties": true
           },
           "login": {
             "type": "string"

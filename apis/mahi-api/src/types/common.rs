@@ -101,6 +101,11 @@ pub struct Account {
     /// Key fingerprints -> key blobs. Shape is deployment-specific.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub keys: Option<HashMap<String, serde_json::Value>>,
+    /// Per-fingerprint attestation metadata (`attested`, `pin`, `touch`)
+    /// replicated from UFDS `sdckey` entries. Keyed by the same fingerprint
+    /// as `keys`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_info: Option<HashMap<String, serde_json::Value>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -147,6 +152,23 @@ pub struct User {
     /// Access keys keyed by access-key id. Values contain secret material.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accesskeys: Option<HashMap<String, crate::types::accesskey::AccessKeySecret>>,
+    /// SSH public-key fingerprints -> key blobs, replicated from UFDS
+    /// `sdckey` entries attached to the sub-user. Shape mirrors
+    /// [`Account::keys`]: the blob is deployment-specific (PEM
+    /// SubjectPublicKeyInfo on the Triton deployments we've seen,
+    /// `ssh-rsa AAAA...` on some others) and verifiers should parse both.
+    ///
+    /// Must be modeled explicitly here — if it lived only in
+    /// `#[serde(flatten)] extra`, Progenitor's regenerated client type would
+    /// silently drop it at the wire boundary, since the generated client
+    /// has no catch-all.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub keys: Option<HashMap<String, serde_json::Value>>,
+    /// Per-fingerprint attestation metadata (`attested`, `pin`, `touch`)
+    /// replicated from UFDS `sdckey` entries. Keyed by the same fingerprint
+    /// as `keys`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key_info: Option<HashMap<String, serde_json::Value>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub email: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
