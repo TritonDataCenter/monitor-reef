@@ -49,16 +49,19 @@ struct Cli {
     #[arg(short, long, env = "TRITON_PROFILE")]
     profile: Option<String>,
 
-    /// CloudAPI URL override
-    #[arg(short = 'U', long, env = "TRITON_URL")]
+    /// CloudAPI URL override (also reads $TRITON_URL / $SDC_URL when no
+    /// profile is selected via -p / $TRITON_PROFILE)
+    #[arg(short = 'U', long)]
     url: Option<String>,
 
-    /// Account name override
-    #[arg(short, long, env = "TRITON_ACCOUNT")]
+    /// Account name override (also reads $TRITON_ACCOUNT / $SDC_ACCOUNT
+    /// when no profile is selected via -p / $TRITON_PROFILE)
+    #[arg(short, long)]
     account: Option<String>,
 
-    /// SSH key fingerprint override
-    #[arg(short, long, env = "TRITON_KEY_ID")]
+    /// SSH key fingerprint override (also reads $TRITON_KEY_ID /
+    /// $SDC_KEY_ID when no profile is selected via -p / $TRITON_PROFILE)
+    #[arg(short, long)]
     key_id: Option<String>,
 
     /// Output as JSON
@@ -325,6 +328,39 @@ enum Commands {
     Cloudapi(commands::cloudapi::CloudApiArgs),
 }
 
+/// Resolve an override chain for a single Profile field.
+///
+/// Returns the first populated value from: CLI flag > any env fallback
+/// in order > profile value. Env fallbacks are already zeroed out by
+/// [`env_fallbacks`] when a profile was explicitly selected, so this
+/// helper doesn't need to know about that gate.
+fn override_or_profile(
+    cli: Option<&str>,
+    env_fallbacks: &[Option<String>],
+    profile: &str,
+) -> String {
+    if let Some(v) = cli {
+        return v.to_string();
+    }
+    env_fallbacks
+        .iter()
+        .flatten()
+        .next()
+        .cloned()
+        .unwrap_or_else(|| profile.to_string())
+}
+
+/// Collect the TRITON_* / SDC_* env-var chain that should act as
+/// overrides for a single Profile field. Returns all-`None` when a
+/// profile was explicitly selected so that a stray `export TRITON_URL`
+/// in the caller's shell doesn't silently redirect every command.
+fn env_fallbacks(explicit_profile: bool, triton_var: &str, sdc_var: &str) -> Vec<Option<String>> {
+    if explicit_profile {
+        return vec![None, None];
+    }
+    vec![std::env::var(triton_var).ok(), std::env::var(sdc_var).ok()]
+}
+
 /// Build a reqwest HTTP client with CA cert fallback for platforms where
 /// the default certificate store isn't found (e.g., SmartOS/illumos).
 async fn build_http_client(insecure: bool) -> Result<reqwest::Client> {
@@ -385,17 +421,11 @@ impl Cli {
     /// SDC_URL when no explicit profile selected).
     fn resolve_url_and_insecure(&self, profile: &Profile) -> (String, bool) {
         let explicit_profile = self.profile.is_some() || std::env::var("TRITON_PROFILE").is_ok();
-        let final_url = self
-            .url
-            .clone()
-            .or_else(|| {
-                if !explicit_profile {
-                    std::env::var("SDC_URL").ok()
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| profile.url.clone());
+        let final_url = override_or_profile(
+            self.url.as_deref(),
+            &env_fallbacks(explicit_profile, "TRITON_URL", "SDC_URL"),
+            &profile.url,
+        );
         let insecure = self.insecure || profile.insecure;
         (final_url, insecure)
     }
@@ -404,38 +434,30 @@ impl Cli {
         &self,
         profile: Profile,
     ) -> Result<(TypedClient, Profile)> {
-        // Allow CLI/env overrides on top of the resolved profile.
-        // self.url/account/key_id pick up TRITON_* vars via clap's `env`.
+        // Override precedence for url/account/key_id:
+        //   1. Explicit CLI flag (--url / --account / --key-id)
+        //   2. TRITON_* env var, only when no explicit profile
+        //   3. SDC_* legacy env var, only when no explicit profile
+        //   4. The profile value
         //
-        // SDC_* legacy env vars are only used as overrides when no explicit
-        // profile was selected (via -p or TRITON_PROFILE). When an explicit
-        // profile is chosen, its values take precedence over SDC_* env vars.
-        // (SDC_* vars are already handled by env_profile() when the "env"
-        // profile is active.)
+        // TRITON_* and SDC_* are ignored when the user explicitly picked a
+        // profile (-p / $TRITON_PROFILE): the whole point of picking a
+        // profile is to get its values, and a stray `export TRITON_ACCOUNT`
+        // in the shell shouldn't silently redirect every triton command.
+        // (env_profile() in config/mod.rs still reads them when assembling
+        // the synthetic "env" profile, which is the right place for it.)
         let (final_url, insecure) = self.resolve_url_and_insecure(&profile);
         let explicit_profile = self.profile.is_some() || std::env::var("TRITON_PROFILE").is_ok();
-        let final_account = self
-            .account
-            .clone()
-            .or_else(|| {
-                if !explicit_profile {
-                    std::env::var("SDC_ACCOUNT").ok()
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| profile.account.clone());
-        let final_key_id = self
-            .key_id
-            .clone()
-            .or_else(|| {
-                if !explicit_profile {
-                    std::env::var("SDC_KEY_ID").ok()
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| profile.key_id.clone());
+        let final_account = override_or_profile(
+            self.account.as_deref(),
+            &env_fallbacks(explicit_profile, "TRITON_ACCOUNT", "SDC_ACCOUNT"),
+            &profile.account,
+        );
+        let final_key_id = override_or_profile(
+            self.key_id.as_deref(),
+            &env_fallbacks(explicit_profile, "TRITON_KEY_ID", "SDC_KEY_ID"),
+            &profile.key_id,
+        );
 
         let key_source = triton_auth::KeySource::auto(&final_key_id);
 
@@ -833,6 +855,87 @@ mod tests {
     fn verify_cli_structure() {
         // This will panic if there are any argument conflicts or invalid configurations
         Cli::command().debug_assert();
+    }
+
+    /// `override_or_profile` with no CLI flag and no env fallbacks falls
+    /// back to the profile value.
+    #[test]
+    fn override_or_profile_falls_back_to_profile_when_nothing_overrides() {
+        let got = override_or_profile(None, &[None, None], "profile-value");
+        assert_eq!(got, "profile-value");
+    }
+
+    /// An explicit CLI flag always beats every other source.
+    #[test]
+    fn override_or_profile_cli_flag_wins_over_envs_and_profile() {
+        let got = override_or_profile(
+            Some("from-flag"),
+            &[
+                Some("from-triton".to_string()),
+                Some("from-sdc".to_string()),
+            ],
+            "profile-value",
+        );
+        assert_eq!(got, "from-flag");
+    }
+
+    /// The first populated env fallback wins over later ones and over
+    /// the profile. In practice that means TRITON_* > SDC_*.
+    #[test]
+    fn override_or_profile_first_populated_env_wins() {
+        let got = override_or_profile(
+            None,
+            &[
+                Some("from-triton".to_string()),
+                Some("from-sdc".to_string()),
+            ],
+            "profile-value",
+        );
+        assert_eq!(got, "from-triton");
+
+        // Fall through to SDC_* when TRITON_* is unset.
+        let got = override_or_profile(None, &[None, Some("from-sdc".to_string())], "profile-value");
+        assert_eq!(got, "from-sdc");
+    }
+
+    /// When a profile was explicitly selected, `env_fallbacks` must
+    /// return all-None so neither TRITON_* nor SDC_* can override the
+    /// profile value. This is the regression guard for
+    /// `triton -p foo` quietly using the caller's TRITON_URL.
+    #[test]
+    fn env_fallbacks_yields_none_when_profile_is_explicit() {
+        // SAFETY: single-threaded test, and we restore afterwards. We
+        // don't use serial_test because this test doesn't touch any
+        // global state beyond these two env vars.
+        let prev_triton = std::env::var("TRITON_URL").ok();
+        let prev_sdc = std::env::var("SDC_URL").ok();
+        unsafe {
+            std::env::set_var("TRITON_URL", "https://from-triton");
+            std::env::set_var("SDC_URL", "https://from-sdc");
+        }
+
+        let fallbacks = env_fallbacks(true, "TRITON_URL", "SDC_URL");
+        assert_eq!(fallbacks, vec![None, None]);
+
+        let fallbacks = env_fallbacks(false, "TRITON_URL", "SDC_URL");
+        assert_eq!(
+            fallbacks,
+            vec![
+                Some("https://from-triton".to_string()),
+                Some("https://from-sdc".to_string())
+            ]
+        );
+
+        unsafe {
+            match prev_triton {
+                Some(v) => std::env::set_var("TRITON_URL", v),
+                None => std::env::remove_var("TRITON_URL"),
+            }
+            match prev_sdc {
+                Some(v) => std::env::set_var("SDC_URL", v),
+                None => std::env::remove_var("SDC_URL"),
+            }
+        }
     }
 
     /// Regression test: build_http_client(insecure=true) must accept
