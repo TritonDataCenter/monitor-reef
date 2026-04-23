@@ -68,8 +68,8 @@ impl triton_gateway_client::TokenProvider for CachedTokenProvider {
 
 /// Best-effort load of cached tokens for a profile. Returns `None`
 /// if there's no token file, the file is malformed, or the JWT
-/// appears to be expired. Callers use this to decide between
-/// Bearer auth (if `Some`) and SSH auth (if `None`).
+/// appears to be expired. Pure local read; callers that want to
+/// attempt a refresh on expiry should use [`load_or_refresh`].
 ///
 /// We don't verify the JWT's signature on read -- we trust the
 /// file because we wrote it ourselves with mode 0600. The exp-claim
@@ -82,6 +82,71 @@ pub async fn load_if_fresh(profile_name: &str) -> Option<StoredTokens> {
         return None;
     }
     Some(tokens)
+}
+
+/// Like [`load_if_fresh`], but if the access JWT is expired, attempt
+/// a `POST /v1/auth/refresh` using the stored refresh token. On success
+/// the rotated `(token, refresh_token)` pair is persisted atomically
+/// before the updated `StoredTokens` are returned, so the next
+/// invocation sees a fresh file without re-refreshing. Returns `None`
+/// on any failure (no token file, malformed file, refresh 401, network
+/// down) and the caller falls through to SSH auth.
+pub async fn load_or_refresh(
+    profile_name: &str,
+    gateway_url: &str,
+    insecure: bool,
+) -> Option<StoredTokens> {
+    let path = paths::token_path(profile_name).ok()?;
+    let contents = tokio::fs::read_to_string(&path).await.ok()?;
+    let mut tokens: StoredTokens = serde_json::from_str(&contents).ok()?;
+    if !is_jwt_expired(&tokens.token) {
+        return Some(tokens);
+    }
+    // Access JWT expired. Try the refresh endpoint; if the stored
+    // refresh_token has also been consumed or expired, the server will
+    // 401 and we fall through to SSH. Refresh tokens are single-use,
+    // so a concurrent `triton` invocation winning the race against us
+    // shows up as the same 401 -- also fine.
+    let http = crate::build_http_client(insecure).await.ok()?;
+    let refreshed = call_refresh(&http, gateway_url, &tokens.refresh_token)
+        .await
+        .ok()?;
+    tokens.token = refreshed.token;
+    tokens.refresh_token = refreshed.refresh_token;
+    tokens.issued_at = chrono::Utc::now().timestamp();
+    write_tokens(profile_name, &tokens).await.ok()?;
+    Some(tokens)
+}
+
+/// POST the stored `refresh_token` to `/v1/auth/refresh` and parse the
+/// returned `(token, refresh_token)` pair. Extracted so tests can drive
+/// it against a stub HTTP server without touching the filesystem.
+async fn call_refresh(
+    http: &reqwest::Client,
+    gateway_url: &str,
+    refresh_token: &str,
+) -> Result<RefreshedPair> {
+    let url = format!("{}/v1/auth/refresh", gateway_url.trim_end_matches('/'));
+    let resp = http
+        .post(&url)
+        .json(&serde_json::json!({ "refresh_token": refresh_token }))
+        .send()
+        .await
+        .map_err(|e| anyhow!("refresh request failed: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(anyhow!("refresh endpoint returned {}", resp.status()));
+    }
+    let parsed: RefreshedPair = resp
+        .json()
+        .await
+        .map_err(|e| anyhow!("refresh response parse failed: {e}"))?;
+    Ok(parsed)
+}
+
+#[derive(Debug, Deserialize)]
+struct RefreshedPair {
+    token: String,
+    refresh_token: String,
 }
 
 /// Build a `GatewayAuthConfig::bearer` from a `StoredTokens` + the
@@ -274,4 +339,104 @@ async fn set_mode_if_unix(_: &std::path::Path, _: u32) -> Result<()> {
     // Non-unix (Windows dev builds): rely on the default ACL. Triton
     // deployments are illumos/Linux; this is a dev-ergonomics fallback.
     Ok(())
+}
+
+#[cfg(test)]
+mod refresh_tests {
+    //! Tests for the refresh wire path. We spin a minimal plain-HTTP
+    //! server on a random localhost port and drive `call_refresh`
+    //! against it -- cheaper than standing up the gateway, and the
+    //! refresh endpoint itself is unauthenticated on the wire so we
+    //! don't miss any TLS-specific behaviour by using plain HTTP.
+    //!
+    //! `reqwest` eagerly reaches for the default rustls crypto provider
+    //! even for plain HTTP; `triton_tls::install_default_crypto_provider`
+    //! is idempotent and installs the same provider the production CLI
+    //! uses. The per-test call matches the pattern already established
+    //! by `insecure_mode_accepts_self_signed_cert` in main.rs.
+    use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+
+    fn test_http_client() -> reqwest::Client {
+        triton_tls::install_default_crypto_provider();
+        reqwest::Client::new()
+    }
+
+    /// Spawn a one-shot HTTP server that accepts one connection,
+    /// reads the request (discarded), and writes `response_body` with
+    /// the given HTTP status. Returns the bound base URL. The server
+    /// task ends after the single response.
+    async fn one_shot_http(response_body: Vec<u8>, status: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            let Ok((mut stream, _)) = listener.accept().await else {
+                return;
+            };
+            let mut buf = vec![0u8; 8192];
+            let _ = stream.read(&mut buf).await;
+            let header = format!(
+                "HTTP/1.1 {}\r\nContent-Length: {}\r\nContent-Type: application/json\r\n\r\n",
+                status,
+                response_body.len()
+            );
+            let _ = stream.write_all(header.as_bytes()).await;
+            let _ = stream.write_all(&response_body).await;
+        });
+        format!("http://127.0.0.1:{port}")
+    }
+
+    #[tokio::test]
+    async fn call_refresh_parses_valid_response() {
+        let body = serde_json::to_vec(&serde_json::json!({
+            "token": "new.access.jwt",
+            "refresh_token": "new-refresh-token",
+        }))
+        .unwrap();
+        let url = one_shot_http(body, "200 OK").await;
+        let pair = call_refresh(&test_http_client(), &url, "stale-refresh-token")
+            .await
+            .expect("refresh should succeed");
+        assert_eq!(pair.token, "new.access.jwt");
+        assert_eq!(pair.refresh_token, "new-refresh-token");
+    }
+
+    #[tokio::test]
+    async fn call_refresh_errors_on_401() {
+        let url = one_shot_http(b"{\"error\":\"nope\"}".to_vec(), "401 Unauthorized").await;
+        let err = call_refresh(&test_http_client(), &url, "revoked-refresh-token")
+            .await
+            .expect_err("401 should surface as Err");
+        // Caller only cares that it's an Err (load_or_refresh maps any
+        // Err to None); the exact message is informational.
+        assert!(err.to_string().contains("401"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn call_refresh_errors_on_malformed_body() {
+        let url = one_shot_http(b"not json".to_vec(), "200 OK").await;
+        let err = call_refresh(&test_http_client(), &url, "whatever")
+            .await
+            .expect_err("malformed JSON should surface as Err");
+        assert!(err.to_string().contains("parse"), "got: {err}");
+    }
+
+    #[tokio::test]
+    async fn call_refresh_trims_trailing_slash_on_url() {
+        // Regression: users (and profiles) sometimes have a trailing
+        // slash on the gateway URL. Make sure we don't double up on
+        // `/v1/auth/refresh` -> `//v1/auth/refresh` and 404.
+        let body = serde_json::to_vec(&serde_json::json!({
+            "token": "t",
+            "refresh_token": "r",
+        }))
+        .unwrap();
+        let url = one_shot_http(body, "200 OK").await;
+        let url_with_slash = format!("{url}/");
+        let pair = call_refresh(&test_http_client(), &url_with_slash, "x")
+            .await
+            .expect("trailing-slash URL should still work");
+        assert_eq!(pair.token, "t");
+    }
 }

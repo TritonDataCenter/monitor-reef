@@ -347,8 +347,10 @@ impl Cli {
     /// [`build_ssh_client`] to bypass the Bearer path unconditionally.
     async fn build_client(&self) -> Result<(TypedClient, Profile)> {
         let profile = resolve_profile(self.profile.as_deref()).await?;
-        if let Some(tokens) = commands::login::load_if_fresh(&profile.name).await {
-            let (final_url, insecure) = self.resolve_url_and_insecure(&profile);
+        let (final_url, insecure) = self.resolve_url_and_insecure(&profile);
+        if let Some(tokens) =
+            commands::login::load_or_refresh(&profile.name, &final_url, insecure).await
+        {
             let http_client = build_http_client(insecure).await?;
             // CLI / env overrides stay respected on the Bearer path too --
             // an explicit --account wins, else the profile's account goes
