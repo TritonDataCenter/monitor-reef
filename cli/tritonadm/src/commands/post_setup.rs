@@ -301,7 +301,10 @@ const TRITONAPI_CONFIG: ServiceConfig = ServiceConfig {
     // haproxy needs a persistent /data/tls for the self-signed cert it
     // generates on first boot, so the zone must have a delegated dataset.
     delegate_dataset: true,
-    firewall_enabled: true,
+    // Match cloudapi for now. The default-deny ipf ruleset blocks
+    // outbound traffic the gateway needs (UFDS, Mahi, CloudAPI) until a
+    // tailored ruleset exists; tightening this back up is a follow-up.
+    firewall_enabled: false,
     ensure_manta_nic: false,
     // Admin-only at zone creation; external NIC is attached later by
     // `post-setup common-external-nics`, matching adminui/imgapi.
