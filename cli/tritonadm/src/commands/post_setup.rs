@@ -256,6 +256,12 @@ struct ServiceConfig {
     delegate_dataset: bool,
     firewall_enabled: bool,
     ensure_manta_nic: bool,
+    /// Whether the service's initial SAPI params should include the
+    /// `external` network (as primary). Most services get their external
+    /// NIC baked in at service creation; tritonapi follows the
+    /// adminui/imgapi pattern instead — the zone starts admin-only, and
+    /// `post-setup common-external-nics` adds the external NIC later.
+    include_external_primary: bool,
 }
 
 const CLOUDAPI_CONFIG: ServiceConfig = ServiceConfig {
@@ -265,6 +271,7 @@ const CLOUDAPI_CONFIG: ServiceConfig = ServiceConfig {
     delegate_dataset: true,
     firewall_enabled: false,
     ensure_manta_nic: false,
+    include_external_primary: true,
 };
 
 const GRAFANA_CONFIG: ServiceConfig = ServiceConfig {
@@ -274,6 +281,7 @@ const GRAFANA_CONFIG: ServiceConfig = ServiceConfig {
     delegate_dataset: true,
     firewall_enabled: false,
     ensure_manta_nic: true,
+    include_external_primary: true,
 };
 
 const PORTAL_CONFIG: ServiceConfig = ServiceConfig {
@@ -283,6 +291,7 @@ const PORTAL_CONFIG: ServiceConfig = ServiceConfig {
     delegate_dataset: false,
     firewall_enabled: true,
     ensure_manta_nic: false,
+    include_external_primary: true,
 };
 
 const TRITONAPI_CONFIG: ServiceConfig = ServiceConfig {
@@ -294,6 +303,9 @@ const TRITONAPI_CONFIG: ServiceConfig = ServiceConfig {
     delegate_dataset: true,
     firewall_enabled: true,
     ensure_manta_nic: false,
+    // Admin-only at zone creation; external NIC is attached later by
+    // `post-setup common-external-nics`, matching adminui/imgapi.
+    include_external_primary: false,
 };
 
 /// Actions determined by the prepare phase.
@@ -974,13 +986,15 @@ async fn cmd_add_service(
                 params.insert("archive_on_delete".into(), json!(true));
                 params.insert("delegate_dataset".into(), json!(config.delegate_dataset));
                 params.insert("maintain_resolvers".into(), json!(true));
-                params.insert(
-                    "networks".into(),
+                let networks = if config.include_external_primary {
                     json!([
                         {"name": "admin"},
                         {"name": "external", "primary": true}
-                    ]),
-                );
+                    ])
+                } else {
+                    json!([{"name": "admin"}])
+                };
+                params.insert("networks".into(), networks);
                 params.insert("firewall_enabled".into(), json!(config.firewall_enabled));
                 params.insert(
                     "tags".into(),
