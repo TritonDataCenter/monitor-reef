@@ -26,7 +26,7 @@ clap_complete = { workspace = true }
 futures-util = { workspace = true }
 imgapi-api = { workspace = true }
 imgapi-client = { workspace = true }
-libc = "0.2"
+libc = { workspace = true }
 mahi-api = { workspace = true }
 mahi-client = { workspace = true }
 mahi-sitter-client = { workspace = true }

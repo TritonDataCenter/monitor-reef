@@ -78,6 +78,7 @@ unwrap_used = "deny"
 expect_used = "deny"
 
 [workspace.dependencies]
+aes = "0.8"
 anyhow = "1.0"
 askama = "0.15"
 assert_cmd = "2.0"
@@ -88,29 +89,55 @@ build-data = "0.2"
 bytes = "1"
 camino = "1.1"
 cargo_toml = "0.22"
+cbc = "0.1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4.5", features = ["derive", "env"] }
 clap_complete = "4.4"
+comfy-table = "7.0"
 config = "0.14"
+der = "0.7"
+des = "0.8"
+dialoguer = "0.12"
 dirs = "6.0"
 dropshot = { version = "0.16" }
 dropshot-api-manager = "0.3"
 dropshot-api-manager-types = "0.3"
+dsa = "0.6"
+ed25519-dalek = { version = "2", features = ["rand_core", "pkcs8", "pem"] }
 futures-util = "0.3"
+getrandom = "0.3"
+hostname = "0.4"
 http = "1"
 hyper = { version = "1", features = ["full"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
+indexmap = "2"
+indicatif = "0.18"
 jsonwebtoken = "9.3"
 ldap3 = { version = "0.11", default-features = false, features = ["tls-rustls"] }
+libc = "0.2"
+md-5 = "0.10"
 openapiv3 = "2.0"
 p256 = { version = "0.13", default-features = false, features = ["ecdsa", "jwk", "pem", "std"] }
+p384 = { version = "0.13", default-features = false, features = ["ecdsa", "pem", "pkcs8", "std"] }
+pem-rfc7468 = { version = "1.0", features = ["alloc"] }
+pkcs8 = "0.10"
+predicates = "3.0"
+pretty_assertions = "1.4"
 progenitor = "0.12"
 progenitor-client = "0.12"
 progenitor-impl = "0.12"
-predicates = "3.0"
 rand = { version = "0.9", features = ["os_rng"] }
+# rand_core pinned to 0.6 because the workspace's crypto stack (p256,
+# p384, rsa, ed25519-dalek, ssh-key) uses rand_core 0.6 internally.
+# See libs/triton-auth/Cargo.toml for the longer explanation.
+rand_core = { version = "0.6", features = ["std", "getrandom"] }
 rcgen = { version = "0.14", features = ["pem"] }
+regex = "1.10"
+rpassword = "7"
+rsa = { version = "0.9", features = ["sha2", "pem"] }
 rustfmt-wrapper = "0.2"
+rustls-native-certs = "0.8"
+rustls-pemfile = "2"
 
 #
 # rustls crypto provider selection -- EDIT ALL FIVE PLACES TOGETHER.
@@ -140,13 +167,24 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 # Dropshot 0.16.x requires schemars 0.8.x
 # Do not upgrade to schemars 1.x without also upgrading dropshot
 schemars = { version = "0.8", features = ["derive"] }
+sec1 = { version = "0.7", features = ["pem"] }
 secrecy = { version = "0.10", features = ["serde"] }
 semver = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-strum = { version = "0.27", features = ["derive"] }
 serde_json = "1.0"
+serde_yaml = "0.9"
+serial_test = "3"
+sha1 = "0.10"
+sha2 = "0.10"
+signature = "2.2"
+ssh-encoding = "0.2"
+ssh-key = { version = "0.6", features = ["ed25519", "rsa", "ecdsa", "p256", "p384", "encryption"] }
+strum = { version = "0.27", features = ["derive"] }
+syn = "2.0"
 tempfile = "3"
+test-case = "3.3"
 thiserror = "2.0"
+time = "0.3"
 tokio = { version = "1.48", features = ["full"] }
 tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
 tracing = "0.1"
@@ -154,6 +192,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 url = { version = "2", features = ["serde"] }
 urlencoding = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
+webpki-roots = "1"
 
 #
 # Internal workspace crates.

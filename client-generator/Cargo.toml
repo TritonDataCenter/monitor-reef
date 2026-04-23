@@ -25,4 +25,4 @@ progenitor = { workspace = true }
 progenitor-impl = { workspace = true }
 rustfmt-wrapper = { workspace = true }
 serde_json = { workspace = true }
-syn = "2.0"
+syn = { workspace = true }
