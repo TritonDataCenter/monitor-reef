@@ -15,20 +15,25 @@ license = "MPL-2.0"
 workspace = true
 
 [dependencies]
-ssh-key = { version = "0.6", features = ["ed25519", "rsa", "ecdsa", "encryption"] }
+# ssh-key's p256/p384 features pull in the TryFrom conversions into
+# p256/p384 VerifyingKey that the HTTP-Sig verifier needs.
+ssh-key = { version = "0.6", features = ["ed25519", "rsa", "ecdsa", "p256", "p384", "encryption"] }
 ssh-encoding = "0.2"
 base64 = "0.22"
 md-5 = "0.10"
 chrono = { workspace = true }
+http = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 dirs = "6.0"
 
-# Traditional PEM format support (PKCS#1, SEC1, DSA)
-rsa = { version = "0.9", features = ["sha2"] }
-p256 = { version = "0.13", features = ["ecdsa"] }
-p384 = { version = "0.13", features = ["ecdsa"] }
+# Traditional PEM format support (PKCS#1, SEC1, DSA) and server-side
+# HTTP-Sig verification (RSA PKCS#1 v1.5, P-256/P-384 ECDSA, Ed25519).
+rsa = { version = "0.9", features = ["sha2", "pem"] }
+p256 = { workspace = true }
+p384 = { version = "0.13", default-features = false, features = ["ecdsa", "pem", "pkcs8", "std"] }
+ed25519-dalek = { version = "2", features = ["rand_core", "pkcs8", "pem"] }
 dsa = "0.6"
 sha1 = "0.10"
 sha2 = "0.10"
@@ -44,7 +49,7 @@ des = "0.8"
 
 # X.509 certificate generation for Docker/CMON setup
 rcgen = { version = "0.14", features = ["pem"] }
-rand = "0.8"
+rand = { workspace = true }
 der = "0.7"
 time = "0.3"
 

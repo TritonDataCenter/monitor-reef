@@ -13,19 +13,20 @@
 //! Authorization: Signature keyId="/:account/keys/:fp",algorithm="rsa-sha256",headers="date (request-target)",signature="<b64>"
 //! ```
 //!
-//! The three layers below are intentionally I/O-free so they can be unit
-//! tested without a server, a mahi fixture, or a clock. The
-//! `/v1/auth/login-ssh` handler (a later slice) is the integration point:
-//! it calls [`parse_signature_params`] on the Authorization header value,
-//! resolves the `keyId` via mahi to a public OpenSSH blob, then uses
-//! [`build_signing_string`] and [`verify_signature`] to decide 200/401.
+//! The four layers below are intentionally I/O-free so they can be unit
+//! tested without a server, a mahi fixture, or a clock. The integration
+//! point (e.g. `/v1/auth/login-ssh`) calls [`parse_signature_params`] on
+//! the Authorization header value, resolves the `keyId` via its directory
+//! to a public key blob, uses [`parse_public_key_blob`] to turn that into
+//! an `ssh_key::PublicKey`, and then feeds [`build_signing_string`] and
+//! [`verify_signature`] to decide 200/401.
 //!
 //! Deliberately out of scope here:
 //! - Clock-skew enforcement on the `Date` header -- policy belongs to the
 //!   endpoint handler, not the signature verifier (a long-running replay
 //!   protection job wants different skew windows than an interactive login).
 //! - `keyId` parsing -- the shape varies (account key vs sub-user key) and
-//!   mahi lookup is an I/O concern.
+//!   directory lookup is an I/O concern.
 //! - Network fetch of the public key -- same reason.
 
 use base64::Engine;
@@ -40,7 +41,7 @@ use ssh_key::public::KeyData;
 /// Typed so the endpoint handler can map to the right HTTP status:
 /// malformed input and missing required material are client errors (400),
 /// a verifier reject is authentication failure (401), and a public key
-/// blob that mahi gave us but we can't parse is an internal error (500).
+/// blob the directory gave us but we can't parse is an internal error (500).
 #[derive(Debug, thiserror::Error)]
 pub enum SigError {
     /// The `Authorization` value couldn't be parsed into keyId/algorithm/
@@ -61,8 +62,8 @@ pub enum SigError {
     /// The cryptographic verification failed. 401.
     #[error("signature verification failed")]
     VerificationFailed,
-    /// We couldn't turn the OpenSSH-format public-key blob into a typed
-    /// key -- shouldn't happen for blobs mahi stores. 500.
+    /// We couldn't turn the public-key blob into a typed key -- shouldn't
+    /// happen for blobs the directory stores. 500.
     #[error("failed to parse public key: {0}")]
     KeyParseError(String),
 }
@@ -300,7 +301,74 @@ pub fn build_signing_string(
 }
 
 // ---------------------------------------------------------------------------
-// 3. Verifier
+// 3. Public-key blob parser
+// ---------------------------------------------------------------------------
+
+/// Parse a directory-stored public-key blob into an `ssh_key::PublicKey`.
+///
+/// Triton's mahi stores `keys` as fingerprint -> blob. The blob shape is
+/// "deployment-specific" per `apis/mahi-api/src/types/common.rs`. On
+/// Triton deployments observed so far it's a PEM SubjectPublicKeyInfo
+/// string (`-----BEGIN PUBLIC KEY-----…-----END PUBLIC KEY-----`) --
+/// that's what `sdc-useradm add-key` on headnodes produces and what
+/// mahi replicates from UFDS. Some deployments also store the OpenSSH
+/// form (`ssh-rsa AAAAB3Nz… comment`) directly. This helper tries
+/// OpenSSH first (cheap, fails fast on the PEM prefix), then falls back
+/// to PEM parsing per-algorithm and wraps the resulting typed key into
+/// an `ssh_key::PublicKey` for the verifier.
+pub fn parse_public_key_blob(blob: &str) -> Result<ssh_key::PublicKey, &'static str> {
+    let trimmed = blob.trim();
+
+    if let Ok(key) = ssh_key::PublicKey::from_openssh(trimmed) {
+        return Ok(key);
+    }
+
+    // PEM SubjectPublicKeyInfo. The PEM label is always `PUBLIC KEY`
+    // for pkcs8, so we try each algorithm's decoder in turn and wrap
+    // the first one that accepts via ssh-key's intermediate
+    // `ssh_key::public::<algo>PublicKey` types (same pattern the
+    // verifier tests use to build keys for signing). RSA, P-256,
+    // P-384, Ed25519 cover the allowlisted signature algorithms the
+    // verifier supports.
+    // Bringing one `DecodePublicKey` trait into scope activates
+    // `from_public_key_pem` for every type that impls it; we don't
+    // need a separate `use` for each crate's re-export.
+    use p256::pkcs8::DecodePublicKey as _;
+    if let Ok(k) = rsa::RsaPublicKey::from_public_key_pem(trimmed) {
+        let ssh_pub =
+            ssh_key::public::RsaPublicKey::try_from(k).map_err(|_| "RSA pubkey wrap failed")?;
+        return Ok(ssh_key::PublicKey::new(
+            ssh_key::public::KeyData::from(ssh_pub),
+            "",
+        ));
+    }
+    if let Ok(k) = p256::ecdsa::VerifyingKey::from_public_key_pem(trimmed) {
+        let ssh_pub = ssh_key::public::EcdsaPublicKey::from(k);
+        return Ok(ssh_key::PublicKey::new(
+            ssh_key::public::KeyData::from(ssh_pub),
+            "",
+        ));
+    }
+    if let Ok(k) = p384::ecdsa::VerifyingKey::from_public_key_pem(trimmed) {
+        let ssh_pub = ssh_key::public::EcdsaPublicKey::from(k);
+        return Ok(ssh_key::PublicKey::new(
+            ssh_key::public::KeyData::from(ssh_pub),
+            "",
+        ));
+    }
+    if let Ok(k) = ed25519_dalek::VerifyingKey::from_public_key_pem(trimmed) {
+        let ssh_pub = ssh_key::public::Ed25519PublicKey::from(k);
+        return Ok(ssh_key::PublicKey::new(
+            ssh_key::public::KeyData::from(ssh_pub),
+            "",
+        ));
+    }
+
+    Err("key blob is neither OpenSSH nor PEM in any supported algorithm")
+}
+
+// ---------------------------------------------------------------------------
+// 4. Verifier
 // ---------------------------------------------------------------------------
 
 /// Verify a draft-cavage HTTP signature against an OpenSSH public key.
@@ -449,10 +517,7 @@ mod tests {
     //! signature bytes through `verify_signature`. The sign and verify
     //! halves use the same wire formats cloudapi and node-triton do
     //! (PKCS#1 v1.5 for RSA, DER for ECDSA, raw 64 bytes for Ed25519),
-    //! so a green round-trip here is the same wire-format compatibility
-    //! check `libs/triton-auth::sign_with_key` would give us if it
-    //! worked against ssh-key 0.6.7 -- see the commit message for the
-    //! ssh-key-specific reason we don't call it here.
+    //! so a green round-trip here is a wire-format compatibility check.
     //!
     //! No private-key material is checked in.
     use super::*;
@@ -587,6 +652,28 @@ mod tests {
         let err = build_signing_string("POST", "/x", &headers, &["date".to_string()])
             .expect_err("missing header rejected");
         assert!(matches!(err, SigError::MissingHeader(ref name) if name == "date"));
+    }
+
+    // --- Public-key blob parser tests --------------------------------------
+
+    #[test]
+    fn parse_public_key_blob_accepts_pem_rsa() {
+        // Generate a fresh RSA key and serialise its SPKI PEM the same
+        // way `sdc-useradm add-key` does.
+        use rsa::pkcs8::EncodePublicKey;
+        let sk = rsa::RsaPrivateKey::new(&mut OsRng, 2048).expect("rsa keygen");
+        let pem = sk
+            .to_public_key()
+            .to_public_key_pem(rsa::pkcs8::LineEnding::LF)
+            .expect("to pem");
+        let key = parse_public_key_blob(&pem).expect("PEM RSA must parse");
+        assert!(matches!(key.key_data(), ssh_key::public::KeyData::Rsa(_)));
+    }
+
+    #[test]
+    fn parse_public_key_blob_garbage_rejected() {
+        let err = parse_public_key_blob("not an openssh key").unwrap_err();
+        assert!(err.contains("neither OpenSSH nor PEM"));
     }
 
     // --- Round-trip verifier tests -----------------------------------------

@@ -4,9 +4,6 @@
 //
 // Copyright 2026 Edgecast Cloud LLC.
 
-mod auth_scheme;
-mod http_sig;
-
 use anyhow::{Context, Result};
 use dropshot::{
     ClientErrorStatusCode, ConfigDropshot, ConfigLogging, ConfigLoggingLevel, HttpError,
@@ -21,6 +18,7 @@ use triton_api::{
     Jwk, JwkSet, LoginRequest, LoginResponse, LogoutResponse, PingResponse, RefreshRequest,
     RefreshResponse, SessionResponse, TritonApi, UserInfo,
 };
+use triton_auth::{auth_scheme, http_sig};
 use triton_auth_session::{
     JwtConfig as SessionJwtConfig, JwtService, LdapConfig as SessionLdapConfig, LdapService,
     MahiService, Role, SessionError,
@@ -195,8 +193,8 @@ impl TritonApi for TritonApiImpl {
         //    from a fresh key), and unauthenticated requests must fail
         //    clearly rather than falling through to a misleading error.
         let auth_params = match auth_scheme::classify(rqctx.request.headers()) {
-            auth_scheme::ApiAuthScheme::HttpSignature(v) => v,
-            auth_scheme::ApiAuthScheme::Bearer(_) => {
+            auth_scheme::AuthScheme::HttpSignature(v) => v,
+            auth_scheme::AuthScheme::Bearer(_) => {
                 return Err(HttpError::for_client_error(
                     Some("WrongAuthScheme".to_string()),
                     dropshot::ClientErrorStatusCode::UNAUTHORIZED,
@@ -205,7 +203,7 @@ impl TritonApi for TritonApiImpl {
                         .to_string(),
                 ));
             }
-            auth_scheme::ApiAuthScheme::None => {
+            auth_scheme::AuthScheme::None => {
                 return Err(unauthorized());
             }
         };
@@ -241,7 +239,14 @@ impl TritonApi for TritonApiImpl {
         let Some(key_blob) = keys.get(&fingerprint) else {
             return Err(sig_verify_failed());
         };
-        let public_key = parse_openssh_key(key_blob).map_err(|_| sig_verify_failed())?;
+        // Mahi stores `keys` as fingerprint -> blob; the blob may be a
+        // PEM SubjectPublicKeyInfo string or the OpenSSH `ssh-rsa AAAA...`
+        // form depending on the deployment. Anything else (non-string,
+        // unparseable) collapses to the opaque 401 so probing with
+        // arbitrary account names can't enumerate the directory.
+        let key_str = key_blob.as_str().ok_or_else(sig_verify_failed)?;
+        let public_key =
+            http_sig::parse_public_key_blob(key_str).map_err(|_| sig_verify_failed())?;
 
         // 6. Reconstruct the signing string and verify.
         let path_and_query = rqctx
@@ -545,68 +550,6 @@ fn check_clock_skew(headers: &http::HeaderMap) -> Result<(), HttpError> {
         ));
     }
     Ok(())
-}
-
-/// Mahi's `keys` field holds fingerprint -> key blob. The blob shape is
-/// "deployment-specific" per `apis/mahi-api/src/types/common.rs`. On
-/// Triton deployments observed so far it's a PEM SubjectPublicKeyInfo
-/// string (`-----BEGIN PUBLIC KEY-----…-----END PUBLIC KEY-----`) --
-/// that's what `sdc-useradm add-key` on headnodes produces and what
-/// mahi replicates from UFDS. Some deployments also store the
-/// OpenSSH form (`ssh-rsa AAAAB3Nz… comment`) directly. Try OpenSSH
-/// first (cheap, fails fast on the PEM prefix), then fall back to
-/// PEM parsing per-algorithm and wrap the resulting typed key into
-/// an `ssh_key::PublicKey` for the verifier.
-fn parse_openssh_key(blob: &serde_json::Value) -> Result<ssh_key::PublicKey, &'static str> {
-    let s = blob.as_str().ok_or("mahi key blob is not a string")?;
-    let trimmed = s.trim();
-
-    if let Ok(key) = ssh_key::PublicKey::from_openssh(trimmed) {
-        return Ok(key);
-    }
-
-    // PEM SubjectPublicKeyInfo. The PEM label is always `PUBLIC KEY`
-    // for pkcs8, so we try each algorithm's decoder in turn and wrap
-    // the first one that accepts via ssh-key's intermediate
-    // `ssh_key::public::<algo>PublicKey` types (same pattern the
-    // http_sig tests use to build keys for signing). RSA, P-256,
-    // P-384, Ed25519 cover the allowlisted signature algorithms the
-    // verifier supports.
-    // Bringing one `DecodePublicKey` trait into scope activates
-    // `from_public_key_pem` for every type that impls it; we don't
-    // need a separate `use` for each crate's re-export.
-    use p256::pkcs8::DecodePublicKey as _;
-    if let Ok(k) = rsa::RsaPublicKey::from_public_key_pem(trimmed) {
-        let ssh_pub =
-            ssh_key::public::RsaPublicKey::try_from(k).map_err(|_| "RSA pubkey wrap failed")?;
-        return Ok(ssh_key::PublicKey::new(
-            ssh_key::public::KeyData::from(ssh_pub),
-            "",
-        ));
-    }
-    if let Ok(k) = p256::ecdsa::VerifyingKey::from_public_key_pem(trimmed) {
-        let ssh_pub = ssh_key::public::EcdsaPublicKey::from(k);
-        return Ok(ssh_key::PublicKey::new(
-            ssh_key::public::KeyData::from(ssh_pub),
-            "",
-        ));
-    }
-    if let Ok(k) = p384::ecdsa::VerifyingKey::from_public_key_pem(trimmed) {
-        let ssh_pub = ssh_key::public::EcdsaPublicKey::from(k);
-        return Ok(ssh_key::PublicKey::new(
-            ssh_key::public::KeyData::from(ssh_pub),
-            "",
-        ));
-    }
-    if let Ok(k) = ed25519_dalek::VerifyingKey::from_public_key_pem(trimmed) {
-        let ssh_pub = ssh_key::public::Ed25519PublicKey::from(k);
-        return Ok(ssh_key::PublicKey::new(
-            ssh_key::public::KeyData::from(ssh_pub),
-            "",
-        ));
-    }
-
-    Err("key blob is neither OpenSSH nor PEM in any supported algorithm")
 }
 
 /// Issue `(access_token, refresh_token, user_info)` from a verified
@@ -955,42 +898,5 @@ mod login_ssh_helper_tests {
                 "offset {offset}s should be within window"
             );
         }
-    }
-
-    #[test]
-    fn parse_openssh_key_non_string_rejected() {
-        let err = parse_openssh_key(&serde_json::json!({"key": "ssh-rsa AAAA"})).unwrap_err();
-        assert!(err.contains("not a string"));
-    }
-
-    /// Representative PEM public key from a coal mahi record --
-    /// parse_openssh_key must accept the PEM SubjectPublicKeyInfo
-    /// format mahi actually serves (not just the OpenSSH
-    /// `ssh-rsa AAAA...` form).
-    #[test]
-    fn parse_openssh_key_accepts_pem_rsa() {
-        let pem = "-----BEGIN PUBLIC KEY-----\n\
-                   MIIBojANBgkqhkiG9w0BAQEFAAOCAY8AMIIBigKCAYEA2ZJ0HuUBvtemiZLxdXfE\n\
-                   1arIAw560pwv225NocRBBADzEBAvt57ridDIZFXjN4Y2UzIf+XMDARsNwWNSQ75D\n\
-                   DWh8FMHmLN4+5fDRm+Ae4fDVhclV25SY9WODT/x8wh0xzCphIRH9Qz2H0mYrhwBF\n\
-                   oeoyJRshADejHN0xA02rMsyZ6tQ3sgFHkK/9yUrf4VTHob7B+l677CbpuFa/qtFd\n\
-                   7nEp+k36uhTrvdMeYulfGus7fEK4BiEa5CjNO/0M0m3onN5av5wabi2/RgkLuRoj\n\
-                   Hg4diJSSs77zFsEMOwAw7UT+AxuhiT4oqxcxKhtgxhSOU6sBMyDpBSwUp2rprXLl\n\
-                   s8yGHCBXuEv9y2TXhp7vTITfZ3G3C7hu+8VclVGQJuKAGrFIL1i5tBjOXc3tnIaI\n\
-                   pIYKz/zN/ugexvirf+OdRFMnzL5iwZQUuaG7+QdnvBIsGvtEiQjPPg14gRn0GUoX\n\
-                   lCvtdcBkqbT24bt7hBFqxJIvd04Eb3hC2XXXZBaZwDFdAgMBAAE=\n\
-                   -----END PUBLIC KEY-----\n";
-        let key = parse_openssh_key(&serde_json::json!(pem)).expect("PEM RSA must parse");
-        // Sanity: it's recognized as an RSA key.
-        assert!(matches!(key.key_data(), ssh_key::public::KeyData::Rsa(_)));
-    }
-
-    #[test]
-    fn parse_openssh_key_garbage_string_rejected() {
-        let err = parse_openssh_key(&serde_json::json!("not an openssh key")).unwrap_err();
-        assert!(
-            err.contains("neither OpenSSH nor PEM"),
-            "unexpected error message: {err}"
-        );
     }
 }
