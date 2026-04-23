@@ -22,7 +22,7 @@ triton-auth = { workspace = true }
 triton-tls = { workspace = true }
 triton-gateway-client = { workspace = true }
 cloudapi-api = { workspace = true }
-clap = { workspace = true, features = ["derive", "env"] }
+clap = { workspace = true }
 clap_complete = "4.4"
 tokio = { workspace = true }
 serde = { workspace = true }

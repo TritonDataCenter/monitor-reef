@@ -20,7 +20,7 @@ path = "src/main.rs"
 [dependencies]
 napi-api = { workspace = true }
 napi-client = { workspace = true }
-clap = { workspace = true, features = ["env"] }
+clap = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
