@@ -19,8 +19,8 @@ path = "src/lib.rs"
 
 [dependencies]
 clap = { workspace = true }
-bytes = "1"
-futures-util = "0.3"
+bytes = { workspace = true }
+futures-util = { workspace = true }
 progenitor-client = { workspace = true }
 reqwest = { workspace = true }
 schemars = { workspace = true }

@@ -33,5 +33,5 @@ triton-api = { workspace = true }
 triton-auth = { workspace = true }
 triton-auth-session = { workspace = true }
 triton-tls = { workspace = true }
-url = { version = "2", features = ["serde"] }
+url = { workspace = true }
 uuid = { workspace = true }
