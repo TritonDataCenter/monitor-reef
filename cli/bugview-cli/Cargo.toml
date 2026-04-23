@@ -17,9 +17,9 @@ name = "bugview"
 path = "src/main.rs"
 
 [dependencies]
-bugview-api = { path = "../../apis/bugview-api" }
-bugview-client = { path = "../../clients/internal/bugview-client" }
-jira-api = { path = "../../apis/jira-api" }
+bugview-api = { workspace = true }
+bugview-client = { workspace = true }
+jira-api = { workspace = true }
 clap = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }

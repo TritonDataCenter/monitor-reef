@@ -143,3 +143,36 @@ tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "serde"] }
+
+#
+# Internal workspace crates.
+#
+# All intra-workspace dependencies are declared here and pulled in by
+# consumers with `workspace = true`, so crate Cargo.tomls do not carry
+# relative `../../...` paths.
+#
+bugview-api = { path = "apis/bugview-api" }
+bugview-client = { path = "clients/internal/bugview-client" }
+cloudapi-api = { path = "apis/cloudapi-api" }
+imgapi-api = { path = "apis/imgapi-api" }
+imgapi-client = { path = "clients/internal/imgapi-client" }
+jira-api = { path = "apis/jira-api" }
+jira-client = { path = "clients/internal/jira-client" }
+jira-stub-server = { path = "services/jira-stub-server" }
+mahi-api = { path = "apis/mahi-api" }
+mahi-client = { path = "clients/internal/mahi-client" }
+mahi-sitter-client = { path = "clients/internal/mahi-sitter-client" }
+napi-api = { path = "apis/napi-api" }
+napi-client = { path = "clients/internal/napi-client" }
+papi-api = { path = "apis/papi-api" }
+papi-client = { path = "clients/internal/papi-client" }
+sapi-api = { path = "apis/sapi-api" }
+sapi-client = { path = "clients/internal/sapi-client" }
+triton-api = { path = "apis/triton-api" }
+triton-auth = { path = "libs/triton-auth" }
+triton-auth-session = { path = "libs/triton-auth-session" }
+triton-gateway-client = { path = "clients/internal/triton-gateway-client" }
+triton-pagination = { path = "libs/triton-pagination" }
+triton-tls = { path = "libs/triton-tls" }
+vmapi-api = { path = "apis/vmapi-api" }
+vmapi-client = { path = "clients/internal/vmapi-client" }

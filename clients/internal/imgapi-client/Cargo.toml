@@ -28,4 +28,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 uuid = { workspace = true }
-imgapi-api = { path = "../../../apis/imgapi-api" }
+imgapi-api = { workspace = true }

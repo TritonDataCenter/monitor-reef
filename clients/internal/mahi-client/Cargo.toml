@@ -24,6 +24,6 @@ schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
-mahi-api = { path = "../../../apis/mahi-api" }
+mahi-api = { workspace = true }
 # clap::ValueEnum on generated enum types for CLI consumers
 clap = { workspace = true }

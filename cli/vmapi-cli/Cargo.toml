@@ -18,8 +18,8 @@ name = "vmapi"
 path = "src/main.rs"
 
 [dependencies]
-vmapi-api = { path = "../../apis/vmapi-api" }
-vmapi-client = { path = "../../clients/internal/vmapi-client" }
+vmapi-api = { workspace = true }
+vmapi-client = { workspace = true }
 clap = { workspace = true, features = ["env"] }
 tokio = { workspace = true }
 anyhow = { workspace = true }

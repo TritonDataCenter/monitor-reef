@@ -18,8 +18,8 @@ name = "papi"
 path = "src/main.rs"
 
 [dependencies]
-papi-api = { path = "../../apis/papi-api" }
-papi-client = { path = "../../clients/internal/papi-client" }
+papi-api = { workspace = true }
+papi-client = { workspace = true }
 clap = { workspace = true, features = ["env"] }
 tokio = { workspace = true }
 anyhow = { workspace = true }

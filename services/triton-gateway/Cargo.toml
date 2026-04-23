@@ -29,7 +29,7 @@ serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-triton-auth = { path = "../../libs/triton-auth" }
-triton-auth-session = { path = "../../libs/triton-auth-session" }
-triton-tls = { path = "../../libs/triton-tls" }
+triton-auth = { workspace = true }
+triton-auth-session = { workspace = true }
+triton-tls = { workspace = true }
 uuid = { workspace = true }

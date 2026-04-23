@@ -29,9 +29,9 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-triton-api = { path = "../../apis/triton-api" }
-triton-auth = { path = "../../libs/triton-auth" }
-triton-auth-session = { path = "../../libs/triton-auth-session" }
-triton-tls = { path = "../../libs/triton-tls" }
+triton-api = { workspace = true }
+triton-auth = { workspace = true }
+triton-auth-session = { workspace = true }
+triton-tls = { workspace = true }
 url = { version = "2", features = ["serde"] }
 uuid = { workspace = true }

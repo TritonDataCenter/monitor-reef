@@ -24,4 +24,4 @@ schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
-sapi-api = { path = "../../../apis/sapi-api" }
+sapi-api = { workspace = true }

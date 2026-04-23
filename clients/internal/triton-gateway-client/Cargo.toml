@@ -25,15 +25,15 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 # API-type re-exports (canonical source of truth for enums / structs)
-cloudapi-api = { path = "../../../apis/cloudapi-api" }
-triton-api = { path = "../../../apis/triton-api" }
+cloudapi-api = { workspace = true }
+triton-api = { workspace = true }
 # Required for WebSocket endpoints (Progenitor-generated code)
 base64 = "0.22"
 rand = "0.9"
 # HTTP Signature fallback path delegates to triton-auth
-triton-auth = { path = "../../../libs/triton-auth" }
+triton-auth = { workspace = true }
 # Generic list-endpoint paginator (shared with cloudapi-client)
-triton-pagination = { path = "../../../libs/triton-pagination" }
+triton-pagination = { workspace = true }
 # TokenProvider is a dyn-compatible async trait; needs async-trait for dynamic dispatch
 async-trait = "0.1"
 # TokenProvider errors bubble out as anyhow::Error

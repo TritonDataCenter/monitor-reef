@@ -24,22 +24,22 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 clap = { workspace = true, features = ["derive", "env"] }
 clap_complete = "4.4"
 futures-util = "0.3"
-imgapi-api = { path = "../../apis/imgapi-api" }
-imgapi-client = { path = "../../clients/internal/imgapi-client" }
+imgapi-api = { workspace = true }
+imgapi-client = { workspace = true }
 libc = "0.2"
-mahi-api = { path = "../../apis/mahi-api" }
-mahi-client = { path = "../../clients/internal/mahi-client" }
-mahi-sitter-client = { path = "../../clients/internal/mahi-sitter-client" }
-sapi-client = { path = "../../clients/internal/sapi-client" }
-napi-client = { path = "../../clients/internal/napi-client" }
-papi-client = { path = "../../clients/internal/papi-client" }
+mahi-api = { workspace = true }
+mahi-client = { workspace = true }
+mahi-sitter-client = { workspace = true }
+sapi-client = { workspace = true }
+napi-client = { workspace = true }
+papi-client = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
-triton-tls = { path = "../../libs/triton-tls" }
+triton-tls = { workspace = true }
 uuid = { workspace = true }
-vmapi-client = { path = "../../clients/internal/vmapi-client" }
+vmapi-client = { workspace = true }
 
 [dev-dependencies]
 assert_cmd = "2.0"

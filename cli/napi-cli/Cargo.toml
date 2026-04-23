@@ -18,8 +18,8 @@ name = "napi"
 path = "src/main.rs"
 
 [dependencies]
-napi-api = { path = "../../apis/napi-api" }
-napi-client = { path = "../../clients/internal/napi-client" }
+napi-api = { workspace = true }
+napi-client = { workspace = true }
 clap = { workspace = true, features = ["env"] }
 tokio = { workspace = true }
 anyhow = { workspace = true }
