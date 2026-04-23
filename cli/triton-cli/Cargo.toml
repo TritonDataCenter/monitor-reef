@@ -50,7 +50,7 @@ strum = { workspace = true }
 tokio-tungstenite = { workspace = true }
 futures-util = "0.3"
 http = "1.0"
-axum = { version = "0.8", features = ["ws"] }
+axum = { workspace = true }
 tempfile = { workspace = true }
 
 [build-dependencies]

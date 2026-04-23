@@ -79,7 +79,7 @@ expect_used = "deny"
 
 [workspace.dependencies]
 askama = "0.15"
-axum = "0.8"
+axum = { version = "0.8", features = ["ws"] }
 anyhow = "1.0"
 build-data = "0.2"
 camino = "1.1"
