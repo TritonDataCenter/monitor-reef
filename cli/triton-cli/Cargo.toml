@@ -39,6 +39,8 @@ tracing-subscriber = { workspace = true }
 uuid = { workspace = true }
 getrandom = "0.3"
 rpassword = "7"
+async-trait = "0.1"
+base64 = "0.22"
 chrono = { workspace = true }
 reqwest = { workspace = true }
 strum = { workspace = true }

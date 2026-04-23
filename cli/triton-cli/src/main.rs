@@ -325,21 +325,54 @@ async fn build_http_client(insecure: bool) -> Result<reqwest::Client> {
 }
 
 impl Cli {
-    /// Build an authenticated TypedClient from CLI options or profile
+    /// Build an authenticated TypedClient, preferring a cached
+    /// Bearer JWT from `~/.triton/tokens/<profile>.json` when one is
+    /// fresh, falling back to SSH-HTTP-Signature auth otherwise.
     ///
-    /// Uses `resolve_profile` as the single source of truth for profile
-    /// resolution, then applies CLI/env overrides on top.
+    /// Almost every command wants this: after `triton login`, the
+    /// stashed token exists and the client wraps it as Bearer;
+    /// before login (or after the JWT expires), we sign with the
+    /// profile's SSH key exactly as we did pre-Bearer. The one
+    /// exception is `triton login` itself, which must always present
+    /// an SSH signature to `/v1/auth/login-ssh` and so uses
+    /// [`build_ssh_client`] to bypass the Bearer path unconditionally.
     async fn build_client(&self) -> Result<(TypedClient, Profile)> {
         let profile = resolve_profile(self.profile.as_deref()).await?;
+        if let Some(tokens) = commands::login::load_if_fresh(&profile.name).await {
+            let (final_url, insecure) = self.resolve_url_and_insecure(&profile);
+            let http_client = build_http_client(insecure).await?;
+            // CLI / env overrides stay respected on the Bearer path too --
+            // an explicit --account wins, else the profile's account goes
+            // into every /{account}/* URL we build via effective_account().
+            let account = self
+                .account
+                .clone()
+                .unwrap_or_else(|| profile.account.clone());
+            let gw_auth = commands::login::bearer_auth_from(&tokens, account);
+            return Ok((
+                TypedClient::new_with_http_client(&final_url, gw_auth, http_client),
+                profile,
+            ));
+        }
+        self.build_ssh_client_with_profile(profile).await
+    }
 
-        // Allow CLI/env overrides on top of the resolved profile.
-        // self.url/account/key_id pick up TRITON_* vars via clap's `env`.
-        //
-        // SDC_* legacy env vars are only used as overrides when no explicit
-        // profile was selected (via -p or TRITON_PROFILE). When an explicit
-        // profile is chosen, its values take precedence over SDC_* env vars.
-        // (SDC_* vars are already handled by env_profile() when the "env"
-        // profile is active.)
+    /// Build a TypedClient that ALWAYS uses SSH-HTTP-Signature auth,
+    /// regardless of whether a cached JWT exists. Used by
+    /// `triton login` itself -- the `/v1/auth/login-ssh` endpoint
+    /// rejects Bearer auth by design, so bootstrapping a fresh
+    /// session has to sign with the SSH key.
+    async fn build_ssh_client(&self) -> Result<(TypedClient, Profile)> {
+        let profile = resolve_profile(self.profile.as_deref()).await?;
+        self.build_ssh_client_with_profile(profile).await
+    }
+
+    /// Resolve the URL and `insecure` flag from the profile +
+    /// CLI/env overrides. Factored out so the Bearer path can skip
+    /// the expensive SSH-key setup but still honor the usual
+    /// override precedence (-U/-i, TRITON_URL/TRITON_TLS_INSECURE,
+    /// SDC_URL when no explicit profile selected).
+    fn resolve_url_and_insecure(&self, profile: &Profile) -> (String, bool) {
         let explicit_profile = self.profile.is_some() || std::env::var("TRITON_PROFILE").is_ok();
         let final_url = self
             .url
@@ -352,6 +385,24 @@ impl Cli {
                 }
             })
             .unwrap_or_else(|| profile.url.clone());
+        let insecure = self.insecure || profile.insecure;
+        (final_url, insecure)
+    }
+
+    async fn build_ssh_client_with_profile(
+        &self,
+        profile: Profile,
+    ) -> Result<(TypedClient, Profile)> {
+        // Allow CLI/env overrides on top of the resolved profile.
+        // self.url/account/key_id pick up TRITON_* vars via clap's `env`.
+        //
+        // SDC_* legacy env vars are only used as overrides when no explicit
+        // profile was selected (via -p or TRITON_PROFILE). When an explicit
+        // profile is chosen, its values take precedence over SDC_* env vars.
+        // (SDC_* vars are already handled by env_profile() when the "env"
+        // profile is active.)
+        let (final_url, insecure) = self.resolve_url_and_insecure(&profile);
+        let explicit_profile = self.profile.is_some() || std::env::var("TRITON_PROFILE").is_ok();
         let final_account = self
             .account
             .clone()
@@ -433,9 +484,6 @@ impl Cli {
         if let Some(version) = &self.accept_version {
             auth_config = auth_config.with_accept_version(version.clone());
         }
-
-        // Insecure mode: CLI flag or profile setting
-        let insecure = self.insecure || profile.insecure;
 
         let http_client = build_http_client(insecure).await?;
         // Wrap the SSH AuthConfig in a GatewayAuthConfig. RBAC fields
@@ -579,7 +627,9 @@ async fn try_main() -> Result<()> {
             commands::info::run(&client, cli.json).await
         }
         Commands::Login(args) => {
-            let (client, profile) = cli.build_client().await?;
+            // login bootstraps the session, so it must present SSH auth
+            // regardless of whether a (possibly stale) JWT is cached.
+            let (client, profile) = cli.build_ssh_client().await?;
             commands::login::run(args.clone(), &client, &profile, cli.json).await
         }
         Commands::Datacenters(args) => {

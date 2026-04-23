@@ -38,7 +38,17 @@ type HookError = Box<dyn std::error::Error + Send + Sync>;
 #[derive(Clone)]
 pub enum GatewayAuthMethod {
     /// Stamp `Authorization: Bearer <jwt>` using a pluggable token source.
-    Bearer(Arc<dyn TokenProvider>),
+    ///
+    /// `account` is the account name to substitute into `/{account}/*`
+    /// path segments on cloudapi-proxied calls. The JWT itself identifies
+    /// the caller but Progenitor's generated builders need the account as
+    /// a plain string argument -- for single-user profiles it's just the
+    /// profile's `account` field; for sub-user flows it's still the owning
+    /// account (the sub-user's resources live under it).
+    Bearer {
+        provider: Arc<dyn TokenProvider>,
+        account: String,
+    },
     /// Sign the request with an SSH key (HTTP Signature / RFC 6789 style).
     SshKey(AuthConfig),
 }
@@ -46,7 +56,11 @@ pub enum GatewayAuthMethod {
 impl std::fmt::Debug for GatewayAuthMethod {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Bearer(_) => f.debug_tuple("Bearer").field(&"<TokenProvider>").finish(),
+            Self::Bearer { account, .. } => f
+                .debug_struct("Bearer")
+                .field("provider", &"<TokenProvider>")
+                .field("account", account)
+                .finish(),
             Self::SshKey(cfg) => f.debug_tuple("SshKey").field(cfg).finish(),
         }
     }
@@ -116,9 +130,16 @@ pub struct GatewayAuthConfig {
 
 impl GatewayAuthConfig {
     /// Construct a Bearer-auth config with no orthogonal headers set.
-    pub fn bearer(provider: Arc<dyn TokenProvider>) -> Self {
+    ///
+    /// `account` is the account name that gets stamped into
+    /// `/{account}/*` cloudapi-proxied paths (see [`GatewayAuthMethod::Bearer`]
+    /// for the sub-user caveat).
+    pub fn bearer(provider: Arc<dyn TokenProvider>, account: impl Into<String>) -> Self {
         Self {
-            method: GatewayAuthMethod::Bearer(provider),
+            method: GatewayAuthMethod::Bearer {
+                provider,
+                account: account.into(),
+            },
             accept_version: None,
             act_as: None,
         }
@@ -168,7 +189,7 @@ pub async fn add_auth_headers(
     request: &mut reqwest::Request,
 ) -> Result<(), HookError> {
     match &cfg.method {
-        GatewayAuthMethod::Bearer(provider) => {
+        GatewayAuthMethod::Bearer { provider, .. } => {
             stamp_bearer(provider.as_ref(), request).await?;
         }
         GatewayAuthMethod::SshKey(auth_cfg) => {
@@ -340,7 +361,7 @@ mod tests {
     #[tokio::test]
     async fn bearer_stamps_authorization_header() {
         let provider = Arc::new(MockTokenProvider::new("TEST-JWT-TOKEN"));
-        let cfg = GatewayAuthConfig::bearer(provider.clone());
+        let cfg = GatewayAuthConfig::bearer(provider.clone(), "test-account");
 
         let mut req = blank_request();
         add_auth_headers(&cfg, &mut req)
@@ -369,7 +390,7 @@ mod tests {
     #[tokio::test]
     async fn bearer_stamps_orthogonal_headers_when_set() {
         let provider = Arc::new(MockTokenProvider::new("T"));
-        let cfg = GatewayAuthConfig::bearer(provider)
+        let cfg = GatewayAuthConfig::bearer(provider, "test-account")
             .with_accept_version("~9")
             .with_act_as("other-account");
 

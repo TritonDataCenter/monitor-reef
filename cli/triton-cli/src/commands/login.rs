@@ -24,6 +24,8 @@
 //! backend can replace the file storage without churning the profile
 //! format.
 
+use std::sync::Arc;
+
 use anyhow::{Context, Result, anyhow};
 use clap::Args;
 use serde::{Deserialize, Serialize};
@@ -31,6 +33,95 @@ use triton_gateway_client::TypedClient;
 use triton_gateway_client::types::LoginResponse;
 
 use crate::config::{Profile, paths};
+
+/// `TokenProvider` that hands out a fixed access token loaded from
+/// the profile's cached token file. No refresh logic -- if the
+/// gateway returns 401 we bubble up an error telling the user to
+/// re-run `triton login`. A richer refresh/rotation flow can slot
+/// in later without changing call sites.
+pub struct CachedTokenProvider {
+    token: String,
+}
+
+impl CachedTokenProvider {
+    pub fn new(token: String) -> Self {
+        Self { token }
+    }
+}
+
+#[async_trait::async_trait]
+impl triton_gateway_client::TokenProvider for CachedTokenProvider {
+    async fn current_token(&self) -> anyhow::Result<String> {
+        Ok(self.token.clone())
+    }
+
+    async fn on_unauthorized(&self) -> anyhow::Result<()> {
+        // Fail closed: the triton-gateway-client crate doesn't
+        // actually invoke this today, but if it ever does, we want
+        // the caller to see a clear "re-login" message rather than
+        // silently retrying with the same stale token.
+        Err(anyhow!(
+            "cached token was rejected; run `triton login` to refresh"
+        ))
+    }
+}
+
+/// Best-effort load of cached tokens for a profile. Returns `None`
+/// if there's no token file, the file is malformed, or the JWT
+/// appears to be expired. Callers use this to decide between
+/// Bearer auth (if `Some`) and SSH auth (if `None`).
+///
+/// We don't verify the JWT's signature on read -- we trust the
+/// file because we wrote it ourselves with mode 0600. The exp-claim
+/// check is just to avoid presenting an obviously-stale token.
+pub async fn load_if_fresh(profile_name: &str) -> Option<StoredTokens> {
+    let path = paths::token_path(profile_name).ok()?;
+    let contents = tokio::fs::read_to_string(&path).await.ok()?;
+    let tokens: StoredTokens = serde_json::from_str(&contents).ok()?;
+    if is_jwt_expired(&tokens.token) {
+        return None;
+    }
+    Some(tokens)
+}
+
+/// Build a `GatewayAuthConfig::bearer` from a `StoredTokens` + the
+/// account string to stamp into `/{account}/*` paths (typically the
+/// profile's configured account). Separated so the main.rs wire-up
+/// reads as "try cached, fall back to SSH" without knowing the
+/// provider's concrete type.
+pub fn bearer_auth_from(
+    tokens: &StoredTokens,
+    account: impl Into<String>,
+) -> triton_gateway_client::GatewayAuthConfig {
+    let provider = Arc::new(CachedTokenProvider::new(tokens.token.clone()));
+    triton_gateway_client::GatewayAuthConfig::bearer(provider, account)
+}
+
+/// Decode a JWT's `exp` claim WITHOUT verifying the signature and
+/// compare against the current time. Returns `true` if the token
+/// looks expired (or malformed / unparseable) so the caller falls
+/// back to SSH auth. We shave 30 seconds off the apparent expiry
+/// so we don't present a token that will expire between our check
+/// and the gateway's verification.
+fn is_jwt_expired(jwt: &str) -> bool {
+    use base64::Engine as _;
+    let Some(payload_b64) = jwt.split('.').nth(1) else {
+        return true;
+    };
+    let Ok(payload) = base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(payload_b64) else {
+        return true;
+    };
+    let Ok(claims) = serde_json::from_slice::<serde_json::Value>(&payload) else {
+        return true;
+    };
+    // A JWT without `exp` is unusual but not wrong; assume it's still
+    // valid and let the server reject it if not.
+    let Some(exp) = claims.get("exp").and_then(|v| v.as_i64()) else {
+        return false;
+    };
+    let now = chrono::Utc::now().timestamp();
+    exp <= now + 30
+}
 
 #[derive(Args, Clone, Debug, Default)]
 pub struct LoginArgs {

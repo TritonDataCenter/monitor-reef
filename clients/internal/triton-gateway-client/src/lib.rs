@@ -243,17 +243,19 @@ impl TypedClient {
         self.inner.baseurl()
     }
 
-    /// Return the account to use in URL paths for the SSH-auth path.
+    /// Return the account to use in URL paths.
     ///
     /// Mirrors `cloudapi-client`'s `TypedClient::effective_account`: for the
     /// SSH path this is the inner `AuthConfig`'s effective account (honoring
-    /// `--act-as`). For the Bearer path we have no notion of `act-as` here
-    /// today, so we return `""` — callers that need the account on the
-    /// Bearer path should use the tritonapi-profile's `account` instead.
+    /// `--act-as`). For the Bearer path it's the `account` captured when the
+    /// auth config was constructed -- typically the profile's configured
+    /// account. Both branches return a non-empty string on well-formed
+    /// configs; callers can treat this as the authoritative source for
+    /// `/{account}/*` path construction regardless of auth method.
     pub fn effective_account(&self) -> &str {
         match &self.auth_config.method {
             GatewayAuthMethod::SshKey(cfg) => cfg.effective_account(),
-            GatewayAuthMethod::Bearer(_) => "",
+            GatewayAuthMethod::Bearer { account, .. } => account,
         }
     }
 
@@ -265,7 +267,7 @@ impl TypedClient {
     pub fn ssh_auth_config(&self) -> Option<&triton_auth::AuthConfig> {
         match &self.auth_config.method {
             GatewayAuthMethod::SshKey(cfg) => Some(cfg),
-            GatewayAuthMethod::Bearer(_) => None,
+            GatewayAuthMethod::Bearer { .. } => None,
         }
     }
 }
