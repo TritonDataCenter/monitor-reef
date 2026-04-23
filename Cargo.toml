@@ -100,7 +100,7 @@ p256 = { version = "0.13", default-features = false, features = ["ecdsa", "jwk",
 progenitor = "0.12"
 progenitor-client = "0.12"
 progenitor-impl = "0.12"
-rand = "0.8"
+rand = { version = "0.9", features = ["os_rng"] }
 rustfmt-wrapper = "0.2"
 
 #

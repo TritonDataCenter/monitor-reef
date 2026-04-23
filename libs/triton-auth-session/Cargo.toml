@@ -29,4 +29,6 @@ url = { version = "2", features = ["serde"] }
 uuid = { workspace = true }
 
 [dev-dependencies]
-rand = { workspace = true }
+# Match triton-auth's rand_core pin (0.6) so p256's `SecretKey::random`
+# in the test module gets the compatible RNG traits.
+rand_core = { version = "0.6", features = ["std", "getrandom"] }

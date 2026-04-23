@@ -49,7 +49,12 @@ des = "0.8"
 
 # X.509 certificate generation for Docker/CMON setup
 rcgen = { version = "0.14", features = ["pem"] }
-rand = { workspace = true }
+# rand_core (not rand) because the crypto-stack crates (p256, p384,
+# rsa, ed25519-dalek) pin rand_core 0.6 and their `*::random(&mut _)`
+# APIs want the 0.6 `RngCore` / `CryptoRng` traits. Using `rand` 0.9
+# here would pull a second rand_core (0.9) into the graph and fail to
+# satisfy those trait bounds.
+rand_core = { version = "0.6", features = ["std", "getrandom"] }
 der = "0.7"
 time = "0.3"
 

@@ -29,7 +29,7 @@ cloudapi-api = { workspace = true }
 triton-api = { workspace = true }
 # Required for WebSocket endpoints (Progenitor-generated code)
 base64 = "0.22"
-rand = "0.9"
+rand = { workspace = true }
 # HTTP Signature fallback path delegates to triton-auth
 triton-auth = { workspace = true }
 # Generic list-endpoint paginator (shared with cloudapi-client)

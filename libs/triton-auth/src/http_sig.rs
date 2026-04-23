@@ -528,7 +528,7 @@ mod tests {
     //! No private-key material is checked in.
     use super::*;
     use http::{HeaderMap, HeaderValue, header};
-    use rand::rngs::OsRng;
+    use rand_core::OsRng;
     use rsa::pkcs1v15::SigningKey as RsaSigningKey;
     use rsa::signature::{RandomizedSigner, SignatureEncoding};
 

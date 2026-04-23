@@ -27,7 +27,7 @@ uuid = { workspace = true }
 cloudapi-api = { workspace = true }
 # Required for WebSocket endpoints (Progenitor-generated code)
 base64 = "0.22"
-rand = "0.9"
+rand = { workspace = true }
 # Authentication support
 triton-auth = { workspace = true }
 # Generic list-endpoint paginator (shared with triton-gateway-client)

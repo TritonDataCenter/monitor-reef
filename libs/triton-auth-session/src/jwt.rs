@@ -315,7 +315,7 @@ mod tests {
     use super::*;
     use p256::SecretKey;
     use p256::pkcs8::{EncodePrivateKey, EncodePublicKey, LineEnding};
-    use rand::rngs::OsRng;
+    use rand_core::OsRng;
 
     fn test_config() -> JwtConfig {
         let secret_key = SecretKey::random(&mut OsRng);

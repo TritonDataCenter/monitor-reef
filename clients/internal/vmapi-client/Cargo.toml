@@ -27,6 +27,6 @@ uuid = { workspace = true }
 vmapi-api = { workspace = true }
 # Required for WebSocket endpoints (Progenitor-generated code)
 base64 = "0.22"
-rand = "0.9"
+rand = { workspace = true }
 # clap::ValueEnum on generated enum types for CLI consumers
 clap = { workspace = true }
