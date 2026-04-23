@@ -209,6 +209,15 @@ enum Commands {
     /// Bearer-authenticated tritonapi calls.
     Login(commands::login::LoginArgs),
 
+    /// Show the current tritonapi session (Bearer-authenticated
+    /// `GET /v1/auth/session`). Requires a cached token; run
+    /// `triton login` first if not logged in.
+    Whoami,
+
+    /// Revoke the current tritonapi session on the server (best
+    /// effort) and delete the cached token file.
+    Logout,
+
     /// List datacenters
     #[command(alias = "dcs")]
     Datacenters(commands::datacenters::DatacenterListArgs),
@@ -631,6 +640,14 @@ async fn try_main() -> Result<()> {
             // regardless of whether a (possibly stale) JWT is cached.
             let (client, profile) = cli.build_ssh_client().await?;
             commands::login::run(args.clone(), &client, &profile, cli.json).await
+        }
+        Commands::Whoami => {
+            let (client, profile) = cli.build_client().await?;
+            commands::whoami::run(&client, &profile, cli.json).await
+        }
+        Commands::Logout => {
+            let (client, profile) = cli.build_client().await?;
+            commands::logout::run(&client, &profile, cli.json).await
         }
         Commands::Datacenters(args) => {
             let (client, _profile) = cli.build_client().await?;
