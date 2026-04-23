@@ -168,7 +168,9 @@ fn build_cloudapi_signer(cfg: &CloudapiSignerConfig) -> AuthConfig {
 }
 
 fn default_bind_address() -> String {
-    "0.0.0.0:80".to_string()
+    // Loopback-only: haproxy terminates TLS on :443 and proxies to us
+    // here. Nothing outside the zone should reach this port directly.
+    "127.0.0.1:80".to_string()
 }
 
 fn default_tritonapi_url() -> String {
