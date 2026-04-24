@@ -1457,7 +1457,7 @@ type FirewallRule struct {
 	Log *bool `json:"log,omitempty"`
 
 	// RoleTag Role tags for RBAC
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 
 	// Rule Rule text
 	Rule string `json:"rule"`
@@ -1514,7 +1514,7 @@ type Image struct {
 	Requirements *ImageRequirements `json:"requirements,omitempty"`
 
 	// RoleTag Role tags for RBAC
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 
 	// State Image state (API version >= 7.1.0)
 	State *ImageState `json:"state,omitempty"`
@@ -1689,7 +1689,7 @@ type Machine struct {
 	PrimaryIP *string `json:"primaryIp,omitempty"`
 
 	// RoleTag Role tags for RBAC
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 
 	// State Current state
 	State MachineState `json:"state"`
@@ -1990,7 +1990,7 @@ type Network struct {
 	Resolvers *[]string `json:"resolvers,omitempty"`
 
 	// RoleTag Role tags for RBAC
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 
 	// Routes Routes
 	Routes interface{} `json:"routes,omitempty"`
@@ -2107,7 +2107,7 @@ type Package struct {
 	Name string `json:"name"`
 
 	// RoleTag Role tags for RBAC
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 
 	// Swap Swap in MB
 	Swap uint64 `json:"swap"`
@@ -2142,7 +2142,7 @@ type Policy struct {
 	Name string `json:"name"`
 
 	// RoleTag Role tags for RBAC
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 
 	// Rules Policy rules (array of rule strings)
 	Rules []string `json:"rules"`
@@ -2187,6 +2187,11 @@ type ProvisioningLimit struct {
 	Value int64 `json:"value"`
 }
 
+// ProvisioningLimits Provisioning limits for an account — an array of limit entries.
+//
+// Newtype wrapper rather than a type alias so the generated OpenAPI spec carries `ProvisioningLimits` as a named schema rather than an anonymous array-of-ProvisioningLimit on the single endpoint that returns it.
+type ProvisioningLimits = []ProvisioningLimit
+
 // RebootMachineRequest Request to reboot a machine
 type RebootMachineRequest struct {
 	// Origin Origin identifier (defaults to 'cloudapi')
@@ -2205,7 +2210,7 @@ type RenameMachineRequest struct {
 // ReplaceRoleTagsRequest Request to replace role tags
 type ReplaceRoleTagsRequest struct {
 	// RoleTag Role tags (list of role names)
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 }
 
 // ResizeDiskRequest Request to resize disk
@@ -2244,8 +2249,13 @@ type Role struct {
 	Policies *[]PolicyRef `json:"policies,omitempty"`
 
 	// RoleTag Role tags for RBAC
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 }
+
+// RoleTags Role tags for RBAC
+//
+// Newtype wrapper rather than a type alias so the generated OpenAPI spec carries `RoleTags` as a named schema. Every RBAC-taggable resource (FirewallRule, Image, Machine, Network, Package, Policy, Role, SshKey, User, plus the bulk replace-role-tags request/ response) carries a `role-tag` field — with an alias, each was inlined as an anonymous `Vec<String>` per field. The newtype preserves the name so all clients see a single `RoleTags` type.
+type RoleTags = []string
 
 // RoleTagsResponse Response after replacing role tags on a resource
 type RoleTagsResponse struct {
@@ -2253,7 +2263,7 @@ type RoleTagsResponse struct {
 	Name string `json:"name"`
 
 	// RoleTag List of role names assigned to the resource
-	RoleTag []string `json:"role-tag"`
+	RoleTag RoleTags `json:"role-tag"`
 }
 
 // Services Services map: name -> URL
@@ -2304,7 +2314,7 @@ type SSHKey struct {
 	Name string `json:"name"`
 
 	// RoleTag Role tags for RBAC
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 }
 
 // StartMachineRequest Request to start a machine
@@ -2546,7 +2556,7 @@ type User struct {
 	Phone *string `json:"phone,omitempty"`
 
 	// RoleTag Role tags for RBAC
-	RoleTag *[]string `json:"role-tag,omitempty"`
+	RoleTag *RoleTags `json:"role-tag,omitempty"`
 
 	// Updated Last update timestamp
 	Updated time.Time `json:"updated"`
@@ -19021,7 +19031,7 @@ func (r ReplaceKeyRoleTagsResponse) StatusCode() int {
 type GetProvisioningLimitsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *[]ProvisioningLimit
+	JSON200      *ProvisioningLimits
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -26122,7 +26132,7 @@ func ParseGetProvisioningLimitsResponse(rsp *http.Response) (*GetProvisioningLim
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest []ProvisioningLimit
+		var dest ProvisioningLimits
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

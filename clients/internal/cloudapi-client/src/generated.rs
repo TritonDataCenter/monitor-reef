@@ -2946,13 +2946,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"rule\": {"]
     #[doc = "      \"description\": \"Rule text\","]
@@ -2996,7 +3001,7 @@ pub mod types {
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
         #[doc = "Rule text"]
         pub rule: ::std::string::String,
         #[doc = "Last update timestamp"]
@@ -3147,13 +3152,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"state\": {"]
     #[doc = "      \"description\": \"Image state (API version >= 7.1.0)\","]
@@ -3253,7 +3263,7 @@ pub mod types {
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
         #[doc = "Image state (API version >= 7.1.0)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub state: ::std::option::Option<ImageState>,
@@ -4054,13 +4064,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"state\": {"]
     #[doc = "      \"description\": \"Current state\","]
@@ -4169,7 +4184,7 @@ pub mod types {
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
         #[doc = "Current state"]
         pub state: MachineState,
         #[doc = "Tags"]
@@ -5751,13 +5766,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"routes\": {"]
     #[doc = "      \"description\": \"Routes\""]
@@ -5832,7 +5852,7 @@ pub mod types {
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
         #[doc = "Routes"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub routes: ::std::option::Option<::serde_json::Value>,
@@ -6275,13 +6295,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"swap\": {"]
     #[doc = "      \"description\": \"Swap in MB\","]
@@ -6346,7 +6371,7 @@ pub mod types {
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
         #[doc = "Swap in MB"]
         pub swap: u64,
         #[doc = "VCPUs (defaults to 0)"]
@@ -6459,13 +6484,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"rules\": {"]
     #[doc = "      \"description\": \"Policy rules (array of rule strings)\","]
@@ -6495,7 +6525,7 @@ pub mod types {
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
         #[doc = "Policy rules (array of rule strings)"]
         pub rules: ::std::vec::Vec<::std::string::String>,
     }
@@ -6758,10 +6788,11 @@ pub mod types {
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags (list of role names)\","]
     #[doc = "      \"default\": [],"]
-    #[doc = "      \"type\": \"array\","]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -6774,16 +6805,15 @@ pub mod types {
         #[doc = "Role tags (list of role names)"]
         #[serde(
             rename = "role-tag",
-            default,
-            skip_serializing_if = "::std::vec::Vec::is_empty"
+            default = "defaults::replace_role_tags_request_role_tag"
         )]
-        pub role_tag: ::std::vec::Vec<::std::string::String>,
+        pub role_tag: cloudapi_api::RoleTags,
     }
 
     impl ::std::default::Default for ReplaceRoleTagsRequest {
         fn default() -> Self {
             Self {
-                role_tag: Default::default(),
+                role_tag: defaults::replace_role_tags_request_role_tag(),
             }
         }
     }
@@ -6934,13 +6964,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -6969,7 +7004,7 @@ pub mod types {
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
     }
 
     impl Role {
@@ -6997,10 +7032,11 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"List of role names assigned to the resource\","]
-    #[doc = "      \"type\": \"array\","]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -7014,7 +7050,7 @@ pub mod types {
         pub name: ::std::string::String,
         #[doc = "List of role names assigned to the resource"]
         #[serde(rename = "role-tag")]
-        pub role_tag: ::std::vec::Vec<::std::string::String>,
+        pub role_tag: cloudapi_api::RoleTags,
     }
 
     impl RoleTagsResponse {
@@ -7288,13 +7324,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -7319,7 +7360,7 @@ pub mod types {
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
     }
 
     impl SshKey {
@@ -8530,13 +8571,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/RoleTags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"updated\": {"]
     #[doc = "      \"description\": \"Last update timestamp\","]
@@ -8589,7 +8635,7 @@ pub mod types {
             default,
             skip_serializing_if = "::std::option::Option::is_none"
         )]
-        pub role_tag: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
         #[doc = "Last update timestamp"]
         pub updated: ::chrono::DateTime<::chrono::offset::Utc>,
     }
@@ -12196,7 +12242,7 @@ pub mod types {
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             log: ::std::result::Result<bool, ::std::string::String>,
             role_tag: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
             rule: ::std::result::Result<::std::string::String, ::std::string::String>,
@@ -12287,9 +12333,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::RoleTags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -12397,7 +12441,7 @@ pub mod types {
             >,
             requirements: ::std::result::Result<super::ImageRequirements, ::std::string::String>,
             role_tag: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
             state: ::std::result::Result<
@@ -12596,9 +12640,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::RoleTags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -13066,7 +13108,7 @@ pub mod types {
                 ::std::string::String,
             >,
             role_tag: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
             state: ::std::result::Result<super::MachineState, ::std::string::String>,
@@ -13350,9 +13392,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::RoleTags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -14261,7 +14301,7 @@ pub mod types {
                 ::std::string::String,
             >,
             role_tag: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
             routes: ::std::result::Result<
@@ -14417,9 +14457,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::RoleTags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -14876,7 +14914,7 @@ pub mod types {
             memory: ::std::result::Result<u64, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             role_tag: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
             swap: ::std::result::Result<u64, ::std::string::String>,
@@ -15024,9 +15062,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::RoleTags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -15184,7 +15220,7 @@ pub mod types {
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             role_tag: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
             rules: ::std::result::Result<
@@ -15238,9 +15274,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::RoleTags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -15605,16 +15639,13 @@ pub mod types {
 
         #[derive(Clone, Debug)]
         pub struct ReplaceRoleTagsRequest {
-            role_tag: ::std::result::Result<
-                ::std::vec::Vec<::std::string::String>,
-                ::std::string::String,
-            >,
+            role_tag: ::std::result::Result<cloudapi_api::RoleTags, ::std::string::String>,
         }
 
         impl ::std::default::Default for ReplaceRoleTagsRequest {
             fn default() -> Self {
                 Self {
-                    role_tag: Ok(Default::default()),
+                    role_tag: Ok(super::defaults::replace_role_tags_request_role_tag()),
                 }
             }
         }
@@ -15622,7 +15653,7 @@ pub mod types {
         impl ReplaceRoleTagsRequest {
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T: ::std::convert::TryInto<cloudapi_api::RoleTags>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -15788,7 +15819,7 @@ pub mod types {
             policies:
                 ::std::result::Result<::std::vec::Vec<super::PolicyRef>, ::std::string::String>,
             role_tag: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
         }
@@ -15859,9 +15890,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::RoleTags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -15901,10 +15930,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct RoleTagsResponse {
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
-            role_tag: ::std::result::Result<
-                ::std::vec::Vec<::std::string::String>,
-                ::std::string::String,
-            >,
+            role_tag: ::std::result::Result<cloudapi_api::RoleTags, ::std::string::String>,
         }
 
         impl ::std::default::Default for RoleTagsResponse {
@@ -15929,7 +15955,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T: ::std::convert::TryInto<cloudapi_api::RoleTags>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -16067,7 +16093,7 @@ pub mod types {
             key: ::std::result::Result<::std::string::String, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             role_tag: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
         }
@@ -16129,9 +16155,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::RoleTags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -17539,7 +17563,7 @@ pub mod types {
                 ::std::string::String,
             >,
             role_tag: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
             updated: ::std::result::Result<
@@ -17648,9 +17672,7 @@ pub mod types {
             }
             pub fn role_tag<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::RoleTags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.role_tag = value
@@ -18044,6 +18066,10 @@ pub mod types {
                 min_memory: Default::default(),
                 min_ram: Default::default(),
             }
+        }
+
+        pub(super) fn replace_role_tags_request_role_tag() -> cloudapi_api::RoleTags {
+            ::serde_json::from_str::<cloudapi_api::RoleTags>("[]").unwrap()
         }
 
         pub(super) fn volume_tags() -> cloudapi_api::Tags {
@@ -25251,8 +25277,7 @@ pub mod builder {
         #[doc = "Sends a `GET` request to `/{account}/limits`"]
         pub async fn send(
             self,
-        ) -> Result<ResponseValue<::std::vec::Vec<types::ProvisioningLimit>>, Error<types::Error>>
-        {
+        ) -> Result<ResponseValue<cloudapi_api::ProvisioningLimits>, Error<types::Error>> {
             let Self { client, account } = self;
             let account = account.map_err(Error::InvalidRequest)?;
             let url = format!(

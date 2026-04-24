@@ -97,7 +97,7 @@ fn test_ssh_key_with_role_tag() {
     assert!(key.created.is_some());
 
     let tags = key.role_tag.expect("role_tag should be present");
-    assert_eq!(tags, vec!["admin"]);
+    assert_eq!(tags.0, vec!["admin".to_string()]);
 }
 
 #[test]

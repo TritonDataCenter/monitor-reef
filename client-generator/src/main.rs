@@ -67,11 +67,16 @@ fn configure_vmapi(settings: &mut GenerationSettings) {
         .with_tag(progenitor::TagStyle::Merged)
         .with_derive("schemars::JsonSchema")
         // Keep generated field types aligned with the canonical newtype
-        // definitions (see vmapi-api::Tags / MetadataObject).
+        // definitions (see vmapi-api's common / statuses modules).
         .with_replacement("Tags", "vmapi_api::Tags", std::iter::empty())
         .with_replacement(
             "MetadataObject",
             "vmapi_api::MetadataObject",
+            std::iter::empty(),
+        )
+        .with_replacement(
+            "StatusesResponse",
+            "vmapi_api::StatusesResponse",
             std::iter::empty(),
         )
         .with_patch("VmBrand", &value_enum_patch)
@@ -97,6 +102,12 @@ fn configure_cloudapi(settings: &mut GenerationSettings) {
         .with_replacement(
             "MetadataObject",
             "cloudapi_api::Metadata",
+            std::iter::empty(),
+        )
+        .with_replacement("RoleTags", "cloudapi_api::RoleTags", std::iter::empty())
+        .with_replacement(
+            "ProvisioningLimits",
+            "cloudapi_api::ProvisioningLimits",
             std::iter::empty(),
         )
         .with_patch("VmBrand", &value_enum_patch)

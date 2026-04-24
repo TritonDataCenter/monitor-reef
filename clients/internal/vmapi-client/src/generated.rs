@@ -8453,10 +8453,7 @@ pub mod builder {
         #[doc = "Sends a `GET` request to `/statuses`"]
         pub async fn send(
             self,
-        ) -> Result<
-            ResponseValue<::std::collections::HashMap<::std::string::String, types::VmStatus>>,
-            Error<types::Error>,
-        > {
+        ) -> Result<ResponseValue<vmapi_api::StatusesResponse>, Error<types::Error>> {
             let Self { client, uuids } = self;
             let uuids = uuids.map_err(Error::InvalidRequest)?;
             let url = format!("{}/statuses", client.baseurl,);

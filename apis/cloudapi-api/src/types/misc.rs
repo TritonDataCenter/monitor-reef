@@ -456,7 +456,7 @@ mod tests {
         let package: Package = serde_json::from_str(json).expect("should deserialize");
         assert_eq!(package.flexible_disk, Some(true));
         assert_eq!(
-            package.role_tag.as_deref(),
+            package.role_tag.as_deref().map(Vec::as_slice),
             Some(&["admin".to_string()][..])
         );
 

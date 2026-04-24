@@ -1158,12 +1158,13 @@
             "type": "boolean"
           },
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "description": "Role tags for RBAC",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "rule": {
             "description": "Rule text",
@@ -1280,12 +1281,13 @@
             "description": "Requirements (always present, may be empty)"
           },
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "description": "Role tags for RBAC",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "state": {
             "allOf": [
@@ -1647,12 +1649,13 @@
             "type": "string"
           },
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "description": "Role tags for RBAC",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "state": {
             "allOf": [
@@ -2251,12 +2254,13 @@
             "type": "array"
           },
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "description": "Role tags for RBAC",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "routes": {
             "description": "Routes",
@@ -2485,12 +2489,13 @@
             "type": "string"
           },
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "description": "Role tags for RBAC",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "swap": {
             "description": "Swap in MB",
@@ -2560,12 +2565,13 @@
             "type": "string"
           },
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "description": "Role tags for RBAC",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "rules": {
             "description": "Policy rules (array of rule strings)",
@@ -2644,6 +2650,13 @@
         ],
         "type": "object"
       },
+      "ProvisioningLimits": {
+        "description": "Provisioning limits for an account — an array of limit entries.\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries `ProvisioningLimits` as a named schema rather than an anonymous array-of-ProvisioningLimit on the single endpoint that returns it.",
+        "items": {
+          "$ref": "#/components/schemas/ProvisioningLimit"
+        },
+        "type": "array"
+      },
       "RebootMachineRequest": {
         "description": "Request to reboot a machine",
         "properties": {
@@ -2681,12 +2694,13 @@
         "description": "Request to replace role tags",
         "properties": {
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "default": [],
-            "description": "Role tags (list of role names)",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+            "description": "Role tags (list of role names)"
           }
         },
         "type": "object"
@@ -2770,12 +2784,13 @@
             "type": "array"
           },
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "description": "Role tags for RBAC",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           }
         },
         "required": [
@@ -2783,6 +2798,13 @@
           "name"
         ],
         "type": "object"
+      },
+      "RoleTags": {
+        "description": "Role tags for RBAC\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries `RoleTags` as a named schema. Every RBAC-taggable resource (FirewallRule, Image, Machine, Network, Package, Policy, Role, SshKey, User, plus the bulk replace-role-tags request/ response) carries a `role-tag` field — with an alias, each was inlined as an anonymous `Vec<String>` per field. The newtype preserves the name so all clients see a single `RoleTags` type.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
       },
       "RoleTagsResponse": {
         "description": "Response after replacing role tags on a resource",
@@ -2792,11 +2814,12 @@
             "type": "string"
           },
           "role-tag": {
-            "description": "List of role names assigned to the resource",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
+            "description": "List of role names assigned to the resource"
           }
         },
         "required": [
@@ -2890,12 +2913,13 @@
             "type": "string"
           },
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "description": "Role tags for RBAC",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           }
         },
         "required": [
@@ -3392,12 +3416,13 @@
             "type": "string"
           },
           "role-tag": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleTags"
+              }
+            ],
             "description": "Role tags for RBAC",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "updated": {
             "description": "Last update timestamp",
@@ -6629,11 +6654,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/ProvisioningLimit"
-                  },
-                  "title": "Array_of_ProvisioningLimit",
-                  "type": "array"
+                  "$ref": "#/components/schemas/ProvisioningLimits"
                 }
               }
             },

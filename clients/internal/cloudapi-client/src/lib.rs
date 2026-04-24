@@ -189,6 +189,7 @@ pub use cloudapi_api::{
     ReplaceRoleTagsRequest,
     Role,
     RolePath,
+    RoleTags,
     Service,
     Services,
     // Share/Unshare: client-side ACL logic (no dedicated request types)

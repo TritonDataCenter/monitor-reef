@@ -107,7 +107,7 @@ pub struct UpdateAccountRequest {
 /// - absent / `"machines"` → count of VMs
 /// - `"ram"` → MiB
 /// - `"quota"` → GiB
-#[derive(Debug, Serialize, Deserialize, JsonSchema)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ProvisioningLimit {
     /// The limit value (threshold).
     pub value: i64,
@@ -133,7 +133,54 @@ pub struct ProvisioningLimit {
 }
 
 /// Provisioning limits for an account — an array of limit entries.
-pub type ProvisioningLimits = Vec<ProvisioningLimit>;
+///
+/// Newtype wrapper rather than a type alias so the generated OpenAPI
+/// spec carries `ProvisioningLimits` as a named schema rather than an
+/// anonymous array-of-ProvisioningLimit on the single endpoint that
+/// returns it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, JsonSchema)]
+pub struct ProvisioningLimits(pub Vec<ProvisioningLimit>);
+
+impl std::ops::Deref for ProvisioningLimits {
+    type Target = Vec<ProvisioningLimit>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for ProvisioningLimits {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl From<Vec<ProvisioningLimit>> for ProvisioningLimits {
+    fn from(v: Vec<ProvisioningLimit>) -> Self {
+        ProvisioningLimits(v)
+    }
+}
+
+impl FromIterator<ProvisioningLimit> for ProvisioningLimits {
+    fn from_iter<I: IntoIterator<Item = ProvisioningLimit>>(iter: I) -> Self {
+        ProvisioningLimits(iter.into_iter().collect())
+    }
+}
+
+impl IntoIterator for ProvisioningLimits {
+    type Item = ProvisioningLimit;
+    type IntoIter = std::vec::IntoIter<ProvisioningLimit>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a ProvisioningLimits {
+    type Item = &'a ProvisioningLimit;
+    type IntoIter = std::slice::Iter<'a, ProvisioningLimit>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
 
 /// Configuration settings
 #[derive(Debug, Serialize, Deserialize, JsonSchema)]

@@ -595,11 +595,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_VmStatus",
-                  "type": "object",
-                  "additionalProperties": {
-                    "$ref": "#/components/schemas/VmStatus"
-                  }
+                  "$ref": "#/components/schemas/StatusesResponse"
                 }
               }
             }
@@ -3429,6 +3425,13 @@
             ]
           }
         ]
+      },
+      "StatusesResponse": {
+        "description": "Response mapping VM UUIDs to their statuses.\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries `StatusesResponse` as a named schema, giving downstream clients a named type for the VM-statuses endpoint's response rather than an anonymous map.",
+        "type": "object",
+        "additionalProperties": {
+          "$ref": "#/components/schemas/VmStatus"
+        }
       },
       "StoreMigrationRecordRequest": {
         "description": "Request body for POST /migrations/:uuid/store (internal)",
