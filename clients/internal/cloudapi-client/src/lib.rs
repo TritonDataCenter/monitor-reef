@@ -74,6 +74,20 @@ use progenitor_client::{ClientHooks, OperationInfo};
 // Re-export triton-auth types for convenience
 pub use triton_auth::{AuthConfig, AuthError, KeySource};
 
+// Re-export action-dispatch request structs from the Progenitor-generated
+// types module. These structs land in `types::*` because openapi-manager
+// injects their schemas into components.schemas; see
+// docs/design/action-dispatch-openapi.md. Keeping the user-facing import
+// path (`cloudapi_client::StartMachineRequest`, etc.) spec-derived means
+// Go/Rust/TS clients all agree on the wire shape, while the TypedClient
+// wrapper in this crate continues to use the unqualified names below.
+pub use types::{
+    CloneImageRequest, DisableDeletionProtectionRequest, DisableFirewallRequest,
+    EnableDeletionProtectionRequest, EnableFirewallRequest, ExportImageRequest, ImportImageRequest,
+    RebootMachineRequest, RenameMachineRequest, ResizeDiskRequest, ResizeMachineRequest,
+    StartMachineRequest, StopMachineRequest, UpdateImageRequest, UpdateVolumeRequest,
+};
+
 // Re-export types from the API crate for convenience
 pub use cloudapi_api::{
     // Key types
@@ -99,8 +113,6 @@ pub use cloudapi_api::{
     ChangefeedResource,
     ChangefeedSubResource,
     ChangefeedSubscription,
-    // Image types
-    CloneImageRequest,
     Config,
     CreateAccessKeyRequest,
     CreateAccessKeyResponse,
@@ -121,17 +133,12 @@ pub use cloudapi_api::{
     CredentialType,
     Datacenter,
     Datacenters,
-    DisableDeletionProtectionRequest,
-    DisableFirewallRequest,
     Disk,
     DiskAction,
     DiskActionQuery,
     DiskPath,
     DiskSpec,
     DiskState,
-    EnableDeletionProtectionRequest,
-    EnableFirewallRequest,
-    ExportImageRequest,
     FabricNetworkPath,
     FabricVlan,
     FabricVlanPath,
@@ -144,7 +151,6 @@ pub use cloudapi_api::{
     ImagePath,
     ImageState,
     ImageType,
-    ImportImageRequest,
     KeyPath,
     ListImagesQuery,
     ListMachinesQuery,
@@ -180,11 +186,7 @@ pub use cloudapi_api::{
     PolicyRef,
     ProvisioningLimit,
     ProvisioningLimits,
-    RebootMachineRequest,
-    RenameMachineRequest,
     ReplaceRoleTagsRequest,
-    ResizeDiskRequest,
-    ResizeMachineRequest,
     Role,
     RolePath,
     Service,
@@ -194,8 +196,6 @@ pub use cloudapi_api::{
     SnapshotPath,
     SnapshotState,
     SshKey,
-    StartMachineRequest,
-    StopMachineRequest,
     TagPath,
     Tags,
     TagsRequest,
@@ -206,12 +206,10 @@ pub use cloudapi_api::{
     UpdateFabricNetworkRequest,
     UpdateFabricVlanRequest,
     UpdateFirewallRuleRequest,
-    UpdateImageRequest,
     UpdateNetworkIpRequest,
     UpdatePolicyRequest,
     UpdateRoleRequest,
     UpdateUserRequest,
-    UpdateVolumeRequest,
     User,
     UserAccessKeyPath,
     UserPath,

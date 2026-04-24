@@ -1433,7 +1433,7 @@ async fn set_image_tags(
         homepage: None,
         eula: None,
         acl: None,
-        tags: Some(tags.clone()),
+        tags: Some(tags.clone().into_iter().collect()),
     };
 
     client
@@ -1495,7 +1495,7 @@ async fn delete_image_tag(
         homepage: None,
         eula: None,
         acl: None,
-        tags: Some(tags),
+        tags: Some(tags.into_iter().collect()),
     };
 
     client
