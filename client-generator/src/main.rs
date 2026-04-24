@@ -66,6 +66,14 @@ fn configure_vmapi(settings: &mut GenerationSettings) {
         .with_interface(progenitor::InterfaceStyle::Builder)
         .with_tag(progenitor::TagStyle::Merged)
         .with_derive("schemars::JsonSchema")
+        // Keep generated field types aligned with the canonical newtype
+        // definitions (see vmapi-api::Tags / MetadataObject).
+        .with_replacement("Tags", "vmapi_api::Tags", std::iter::empty())
+        .with_replacement(
+            "MetadataObject",
+            "vmapi_api::MetadataObject",
+            std::iter::empty(),
+        )
         .with_patch("VmBrand", &value_enum_patch)
         .with_patch("VmState", &value_enum_patch)
         .with_patch("MigrationState", &value_enum_patch)
@@ -81,6 +89,16 @@ fn configure_cloudapi(settings: &mut GenerationSettings) {
         .with_inner_type(syn::parse_quote!(triton_auth::AuthConfig))
         .with_pre_hook_async(syn::parse_quote!(crate::auth::add_auth_headers))
         .with_derive("schemars::JsonSchema")
+        // Tags and MetadataObject are now named schemas (see vmapi-api's
+        // newtype definitions). Replace Progenitor's generated copies
+        // with type aliases to the canonical API-crate versions so field
+        // types across generated structs agree with hand-written code.
+        .with_replacement("Tags", "cloudapi_api::Tags", std::iter::empty())
+        .with_replacement(
+            "MetadataObject",
+            "cloudapi_api::Metadata",
+            std::iter::empty(),
+        )
         .with_patch("VmBrand", &value_enum_patch)
         .with_patch("Brand", &value_enum_patch)
         .with_patch("MachineState", &value_enum_patch)

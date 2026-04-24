@@ -204,13 +204,13 @@ pub async fn run(
     let metadata = build_metadata(&args).await?;
     if !metadata.is_empty() {
         // arch-lint: allow(no-sync-io) reason="metadata() is a builder method, not filesystem I/O"
-        request = request.metadata(metadata);
+        request = request.metadata(cloudapi_client::Metadata::from(metadata));
     }
 
     // Build tags from --tag
     let tags = build_tags(&args)?;
     if !tags.is_empty() {
-        request = request.tags(tags);
+        request = request.tags(cloudapi_client::Tags::from(tags));
     }
 
     // Handle volumes

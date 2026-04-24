@@ -81,10 +81,10 @@ pub struct ErrorResponse {
 pub type Timestamp = vmapi_api::Timestamp;
 
 /// Key-value tags (values can be strings, booleans, or numbers)
-pub type Tags = vmapi_api::Tags;
+pub use vmapi_api::Tags;
 
 /// Key-value metadata (values can be strings, booleans, or numbers)
-pub type Metadata = vmapi_api::MetadataObject;
+pub use vmapi_api::MetadataObject as Metadata;
 
 /// Role tags for RBAC
 pub type RoleTags = Vec<String>;

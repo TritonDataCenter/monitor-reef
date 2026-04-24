@@ -4208,9 +4208,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_AnyValue",
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/MetadataObject"
                 }
               }
             }
@@ -4267,9 +4265,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_AnyValue",
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/MetadataObject"
                 }
               }
             }
@@ -5329,9 +5325,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_AnyValue",
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/Tags"
                 }
               }
             }
@@ -5388,9 +5382,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_AnyValue",
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/Tags"
                 }
               }
             }
@@ -5447,9 +5439,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "title": "Map_of_AnyValue",
-                  "type": "object",
-                  "additionalProperties": true
+                  "$ref": "#/components/schemas/Tags"
                 }
               }
             }
@@ -9603,8 +9593,11 @@
             "nullable": true,
             "description": "Metadata (modern format - nested object)",
             "default": null,
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetadataObject"
+              }
+            ]
           },
           "name": {
             "nullable": true,
@@ -9629,8 +9622,11 @@
             "nullable": true,
             "description": "Tags (modern format - nested object)",
             "default": null,
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ]
           },
           "volumes": {
             "nullable": true,
@@ -9842,8 +9838,11 @@
             "nullable": true,
             "description": "Tags",
             "default": null,
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ]
           },
           "type": {
             "nullable": true,
@@ -10221,8 +10220,11 @@
           "tags": {
             "nullable": true,
             "description": "Tags",
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ]
           },
           "type": {
             "description": "Image type",
@@ -10489,8 +10491,11 @@
           },
           "metadata": {
             "description": "Metadata",
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetadataObject"
+              }
+            ]
           },
           "name": {
             "description": "Machine alias/name",
@@ -10539,8 +10544,11 @@
           },
           "tags": {
             "description": "Tags",
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ]
           },
           "type": {
             "description": "Machine type (smartmachine or virtualmachine)",
@@ -10742,6 +10750,11 @@
             ]
           }
         ]
+      },
+      "MetadataObject": {
+        "description": "Key-value metadata (values can be strings, booleans, or numbers)\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries `MetadataObject` as a named schema rather than an anonymous `additionalProperties` object. See the note on `Tags` below for the full rationale.",
+        "type": "object",
+        "additionalProperties": true
       },
       "MigrateRequest": {
         "description": "Migration request\n\nUsed to perform migration actions on an instance. The `action` field specifies which migration operation to perform.\n\n# Examples\n\nStart a new migration: ```json {\"action\": \"begin\"} ```\n\nStart migration with affinity rules: ```json {\"action\": \"begin\", \"affinity\": [\"instance!=web-*\"]} ```\n\nSwitch to the new server: ```json {\"action\": \"switch\"} ```\n\nAbort an in-progress migration: ```json {\"action\": \"abort\"} ```",
@@ -11670,6 +11683,11 @@
           "name"
         ]
       },
+      "Tags": {
+        "description": "Key-value tags (values can be strings, booleans, or numbers)\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries `Tags` as a named schema rather than an anonymous `additionalProperties` object. A `pub type Tags = HashMap<String, Value>` is erased by schemars at compile time, causing every field typed `Tags` to inline the map shape and downstream code generators (Progenitor, oapi-codegen) to emit unnamed `serde_json::Map` / `map[string]interface{}` types per field. The newtype preserves the name so all clients see a single `Tags` type.",
+        "type": "object",
+        "additionalProperties": true
+      },
       "TagsRequest": {
         "description": "Request to add/replace machine tags",
         "type": "object",
@@ -12170,8 +12188,11 @@
           "tags": {
             "description": "Tags",
             "default": {},
-            "type": "object",
-            "additionalProperties": true
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ]
           },
           "type": {
             "description": "Volume type",

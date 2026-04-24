@@ -622,7 +622,7 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
         None
     };
 
-    // Parse tags into HashMap (matches the Tags type alias)
+    // Parse tags into the named Tags newtype.
     let tags = if let Some(tag_strings) = &args.tags {
         let mut tag_map = HashMap::new();
         for tag in tag_strings {
@@ -635,7 +635,7 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
                 ));
             }
         }
-        Some(tag_map)
+        Some(cloudapi_client::Tags(tag_map))
     } else {
         None
     };
@@ -1410,8 +1410,7 @@ async fn set_image_tags(
         .await?;
 
     let image = response.into_inner();
-    // Convert Map to HashMap
-    let mut tags: HashMap<String, Value> = image.tags.unwrap_or_default().into_iter().collect();
+    let mut tags: HashMap<String, Value> = image.tags.map(|t| t.0).unwrap_or_default();
 
     // Parse and add new tags
     for tag in &args.tags {
@@ -1433,7 +1432,7 @@ async fn set_image_tags(
         homepage: None,
         eula: None,
         acl: None,
-        tags: Some(tags.clone().into_iter().collect()),
+        tags: Some(tags.clone().into()),
     };
 
     client
@@ -1476,8 +1475,7 @@ async fn delete_image_tag(
         .await?;
 
     let image = response.into_inner();
-    // Convert Map to HashMap
-    let mut tags: HashMap<String, Value> = image.tags.unwrap_or_default().into_iter().collect();
+    let mut tags: HashMap<String, Value> = image.tags.map(|t| t.0).unwrap_or_default();
 
     if tags.remove(&args.key).is_none() {
         return Err(crate::errors::ResourceNotFoundError(format!(
@@ -1495,7 +1493,7 @@ async fn delete_image_tag(
         homepage: None,
         eula: None,
         acl: None,
-        tags: Some(tags.into_iter().collect()),
+        tags: Some(tags.into()),
     };
 
     client

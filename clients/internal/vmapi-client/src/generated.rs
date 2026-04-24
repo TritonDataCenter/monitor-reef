@@ -169,11 +169,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"customer_metadata\": {"]
     #[doc = "      \"description\": \"Customer metadata\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/MetadataObject\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"delegate_dataset\": {"]
     #[doc = "      \"description\": \"Delegate dataset flag\","]
@@ -207,11 +214,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"internal_metadata\": {"]
     #[doc = "      \"description\": \"Internal metadata\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/MetadataObject\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"networks\": {"]
     #[doc = "      \"description\": \"Networks to attach\","]
@@ -264,11 +278,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"tags\": {"]
     #[doc = "      \"description\": \"Tags\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Tags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"vcpus\": {"]
     #[doc = "      \"description\": \"VCPUs\","]
@@ -302,8 +323,7 @@ pub mod types {
         pub cpu_cap: ::std::option::Option<u32>,
         #[doc = "Customer metadata"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub customer_metadata:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub customer_metadata: ::std::option::Option<vmapi_api::MetadataObject>,
         #[doc = "Delegate dataset flag"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub delegate_dataset: ::std::option::Option<bool>,
@@ -318,8 +338,7 @@ pub mod types {
         pub image_uuid: ::std::option::Option<::uuid::Uuid>,
         #[doc = "Internal metadata"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub internal_metadata:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub internal_metadata: ::std::option::Option<vmapi_api::MetadataObject>,
         #[doc = "Networks to attach"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub networks: ::std::option::Option<::std::vec::Vec<::serde_json::Value>>,
@@ -339,8 +358,7 @@ pub mod types {
         pub server_uuid: ::std::option::Option<::uuid::Uuid>,
         #[doc = "Tags"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub tags:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub tags: ::std::option::Option<vmapi_api::Tags>,
         #[doc = "VCPUs"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub vcpus: ::std::option::Option<u32>,
@@ -2817,11 +2835,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"customer_metadata\": {"]
     #[doc = "      \"description\": \"Customer metadata\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/MetadataObject\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"delegate_dataset\": {"]
     #[doc = "      \"description\": \"Delegate dataset flag\","]
@@ -2917,11 +2942,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"internal_metadata\": {"]
     #[doc = "      \"description\": \"Internal metadata\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/MetadataObject\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"internal_metadata_namespaces\": {"]
     #[doc = "      \"description\": \"Internal metadata namespaces\","]
@@ -3069,11 +3101,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"tags\": {"]
     #[doc = "      \"description\": \"Tags\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Tags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"uuid\": {"]
     #[doc = "      \"description\": \"VM UUID\","]
@@ -3139,8 +3178,7 @@ pub mod types {
         pub create_timestamp: ::std::option::Option<::chrono::DateTime<::chrono::offset::Utc>>,
         #[doc = "Customer metadata"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub customer_metadata:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub customer_metadata: ::std::option::Option<vmapi_api::MetadataObject>,
         #[doc = "Delegate dataset flag"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub delegate_dataset: ::std::option::Option<bool>,
@@ -3179,8 +3217,7 @@ pub mod types {
         pub indestructible_zoneroot: ::std::option::Option<bool>,
         #[doc = "Internal metadata"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub internal_metadata:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub internal_metadata: ::std::option::Option<vmapi_api::MetadataObject>,
         #[doc = "Internal metadata namespaces"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub internal_metadata_namespaces:
@@ -3233,8 +3270,7 @@ pub mod types {
         pub state: VmState,
         #[doc = "Tags"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub tags:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub tags: ::std::option::Option<vmapi_api::Tags>,
         #[doc = "VM UUID"]
         pub uuid: ::uuid::Uuid,
         #[doc = "Number of VCPUs"]
@@ -3794,9 +3830,7 @@ pub mod types {
                 ::std::result::Result<::std::option::Option<super::VmBrand>, ::std::string::String>,
             cpu_cap: ::std::result::Result<::std::option::Option<u32>, ::std::string::String>,
             customer_metadata: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<vmapi_api::MetadataObject>,
                 ::std::string::String,
             >,
             delegate_dataset:
@@ -3810,9 +3844,7 @@ pub mod types {
             image_uuid:
                 ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             internal_metadata: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<vmapi_api::MetadataObject>,
                 ::std::string::String,
             >,
             networks: ::std::result::Result<
@@ -3829,9 +3861,7 @@ pub mod types {
             server_uuid:
                 ::std::result::Result<::std::option::Option<::uuid::Uuid>, ::std::string::String>,
             tags: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<vmapi_api::Tags>,
                 ::std::string::String,
             >,
             vcpus: ::std::result::Result<::std::option::Option<u32>, ::std::string::String>,
@@ -3905,11 +3935,7 @@ pub mod types {
             }
             pub fn customer_metadata<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<vmapi_api::MetadataObject>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.customer_metadata = value.try_into().map_err(|e| {
@@ -3961,11 +3987,7 @@ pub mod types {
             }
             pub fn internal_metadata<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<vmapi_api::MetadataObject>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.internal_metadata = value.try_into().map_err(|e| {
@@ -4037,11 +4059,7 @@ pub mod types {
             }
             pub fn tags<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<vmapi_api::Tags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.tags = value
@@ -6313,9 +6331,7 @@ pub mod types {
                 ::std::string::String,
             >,
             customer_metadata: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<vmapi_api::MetadataObject>,
                 ::std::string::String,
             >,
             delegate_dataset:
@@ -6347,9 +6363,7 @@ pub mod types {
             indestructible_zoneroot:
                 ::std::result::Result<::std::option::Option<bool>, ::std::string::String>,
             internal_metadata: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<vmapi_api::MetadataObject>,
                 ::std::string::String,
             >,
             internal_metadata_namespaces: ::std::result::Result<
@@ -6395,9 +6409,7 @@ pub mod types {
             >,
             state: ::std::result::Result<super::VmState, ::std::string::String>,
             tags: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<vmapi_api::Tags>,
                 ::std::string::String,
             >,
             uuid: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
@@ -6529,11 +6541,7 @@ pub mod types {
             }
             pub fn customer_metadata<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<vmapi_api::MetadataObject>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.customer_metadata = value.try_into().map_err(|e| {
@@ -6665,11 +6673,7 @@ pub mod types {
             }
             pub fn internal_metadata<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<vmapi_api::MetadataObject>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.internal_metadata = value.try_into().map_err(|e| {
@@ -6855,11 +6859,7 @@ pub mod types {
             }
             pub fn tags<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<vmapi_api::Tags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.tags = value
@@ -9651,10 +9651,7 @@ pub mod builder {
         #[doc = "Sends a `GET` request to `/vms/{uuid}/customer_metadata`"]
         pub async fn send(
             self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        ) -> Result<ResponseValue<vmapi_api::MetadataObject>, Error<types::Error>> {
             let Self { client, uuid } = self;
             let uuid = uuid.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -10126,10 +10123,7 @@ pub mod builder {
         #[doc = "Sends a `GET` request to `/vms/{uuid}/internal_metadata`"]
         pub async fn send(
             self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        ) -> Result<ResponseValue<vmapi_api::MetadataObject>, Error<types::Error>> {
             let Self { client, uuid } = self;
             let uuid = uuid.map_err(Error::InvalidRequest)?;
             let url = format!(
@@ -11177,10 +11171,7 @@ pub mod builder {
         #[doc = "Sends a `GET` request to `/vms/{uuid}/tags`"]
         pub async fn send(
             self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        ) -> Result<ResponseValue<vmapi_api::MetadataObject>, Error<types::Error>> {
             let Self { client, uuid } = self;
             let uuid = uuid.map_err(Error::InvalidRequest)?;
             let url = format!(

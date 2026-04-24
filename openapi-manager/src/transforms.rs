@@ -133,7 +133,7 @@ fn apply_all_cloudapi_patches(spec: &mut Value) -> Result<()> {
 ///
 /// See `docs/design/action-dispatch-openapi.md`.
 fn patch_inject_action_request_schemas(spec: &mut Value) -> Result<()> {
-    let mut injected: Vec<(&'static str, Value)> = Vec::new();
+    let mut injected: Vec<(&'static str, Value, serde_json::Map<String, Value>)> = Vec::new();
 
     // Machine action bodies.
     injected.push(action_schema::<cloudapi_api::StartMachineRequest>(
@@ -189,27 +189,43 @@ fn patch_inject_action_request_schemas(spec: &mut Value) -> Result<()> {
         .and_then(|s| s.as_object_mut())
         .ok_or_else(|| anyhow::anyhow!("components.schemas not found in spec"))?;
 
-    for (name, schema) in injected {
+    for (name, schema, definitions) in injected {
         schemas.insert(name.to_string(), schema);
+        // Merge any subschemas discovered while generating the root schema.
+        // `insert` overwrites if the name already exists — which is fine
+        // because schemars produces the same shape for a given type
+        // regardless of which root generated it.
+        for (def_name, def_value) in definitions {
+            schemas.insert(def_name, def_value);
+        }
     }
 
     Ok(())
 }
 
-/// Generate a self-contained OpenAPI-3 schema for the given type.
+/// Generate an OpenAPI-3 schema for the given type.
 ///
-/// Uses `inline_subschemas = true` so the emitted object has no `$ref`s,
-/// matching the inlined-schema convention already used by dropshot's
-/// existing schemas (see e.g. `Tags` / uuid fields in the spec).
-fn action_schema<T: schemars::JsonSchema>(name: &'static str) -> Result<(&'static str, Value)> {
-    let settings = schemars::r#gen::SchemaSettings::openapi3().with(|s| {
-        s.inline_subschemas = true;
-    });
+/// Uses `inline_subschemas = false` so that named referenced types
+/// (e.g. `Tags`, `MetadataObject`, `Uuid`) emit as `$ref`s to existing
+/// `#/components/schemas/` entries rather than inlined copies. That
+/// keeps code-generated clients seeing the same named type as every
+/// other spec consumer. Any `definitions` discovered along the way
+/// are merged into `components.schemas` by the caller.
+fn action_schema<T: schemars::JsonSchema>(
+    name: &'static str,
+) -> Result<(&'static str, Value, serde_json::Map<String, Value>)> {
+    let settings = schemars::r#gen::SchemaSettings::openapi3();
     let mut generator = schemars::r#gen::SchemaGenerator::new(settings);
     let root = generator.root_schema_for::<T>();
-    let value = serde_json::to_value(&root.schema)
+    let schema_value = serde_json::to_value(&root.schema)
         .with_context(|| format!("failed to serialize schema for {}", name))?;
-    Ok((name, value))
+    let mut definitions = serde_json::Map::new();
+    for (def_name, def_schema) in &root.definitions {
+        let def_value = serde_json::to_value(def_schema)
+            .with_context(|| format!("failed to serialize definition {}", def_name))?;
+        definitions.insert(def_name.clone(), def_value);
+    }
+    Ok((name, schema_value, definitions))
 }
 
 /// Patch the Error schema in a parsed OpenAPI spec to match CloudAPI's wire format.

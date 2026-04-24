@@ -583,11 +583,14 @@
             "nullable": true
           },
           "metadata": {
-            "additionalProperties": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetadataObject"
+              }
+            ],
             "default": null,
             "description": "Metadata (modern format - nested object)",
-            "nullable": true,
-            "type": "object"
+            "nullable": true
           },
           "name": {
             "default": null,
@@ -609,11 +612,14 @@
             "type": "string"
           },
           "tags": {
-            "additionalProperties": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ],
             "default": null,
             "description": "Tags (modern format - nested object)",
-            "nullable": true,
-            "type": "object"
+            "nullable": true
           },
           "volumes": {
             "default": null,
@@ -822,11 +828,14 @@
             "type": "integer"
           },
           "tags": {
-            "additionalProperties": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ],
             "default": null,
             "description": "Tags",
-            "nullable": true,
-            "type": "object"
+            "nullable": true
           },
           "type": {
             "allOf": [
@@ -1288,10 +1297,13 @@
             "nullable": true
           },
           "tags": {
-            "additionalProperties": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ],
             "description": "Tags",
-            "nullable": true,
-            "type": "object"
+            "nullable": true
           },
           "type": {
             "allOf": [
@@ -1598,9 +1610,12 @@
             "type": "integer"
           },
           "metadata": {
-            "additionalProperties": true,
-            "description": "Metadata",
-            "type": "object"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/MetadataObject"
+              }
+            ],
+            "description": "Metadata"
           },
           "name": {
             "description": "Machine alias/name",
@@ -1648,9 +1663,12 @@
             "description": "Current state"
           },
           "tags": {
-            "additionalProperties": true,
-            "description": "Tags",
-            "type": "object"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ],
+            "description": "Tags"
           },
           "type": {
             "allOf": [
@@ -1879,6 +1897,11 @@
             "type": "string"
           }
         ]
+      },
+      "MetadataObject": {
+        "additionalProperties": true,
+        "description": "Key-value metadata (values can be strings, booleans, or numbers)\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries `MetadataObject` as a named schema rather than an anonymous `additionalProperties` object. See the note on `Tags` below for the full rationale.",
+        "type": "object"
       },
       "MigrateRequest": {
         "description": "Migration request\n\nUsed to perform migration actions on an instance. The `action` field specifies which migration operation to perform.\n\n# Examples\n\nStart a new migration: ```json {\"action\": \"begin\"} ```\n\nStart migration with affinity rules: ```json {\"action\": \"begin\", \"affinity\": [\"instance!=web-*\"]} ```\n\nSwitch to the new server: ```json {\"action\": \"switch\"} ```\n\nAbort an in-progress migration: ```json {\"action\": \"abort\"} ```",
@@ -2908,6 +2931,11 @@
         "title": "StopMachineRequest",
         "type": "object"
       },
+      "Tags": {
+        "additionalProperties": true,
+        "description": "Key-value tags (values can be strings, booleans, or numbers)\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries `Tags` as a named schema rather than an anonymous `additionalProperties` object. A `pub type Tags = HashMap<String, Value>` is erased by schemars at compile time, causing every field typed `Tags` to inline the map shape and downstream code generators (Progenitor, oapi-codegen) to emit unnamed `serde_json::Map` / `map[string]interface{}` types per field. The newtype preserves the name so all clients see a single `Tags` type.",
+        "type": "object"
+      },
       "TagsRequest": {
         "additionalProperties": true,
         "description": "Request to add/replace machine tags",
@@ -3154,11 +3182,14 @@
             "type": "string"
           },
           "tags": {
-            "additionalProperties": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ],
             "default": null,
             "description": "Tags",
-            "nullable": true,
-            "type": "object"
+            "nullable": true
           },
           "version": {
             "default": null,
@@ -3472,10 +3503,13 @@
             "description": "State"
           },
           "tags": {
-            "additionalProperties": true,
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Tags"
+              }
+            ],
             "default": {},
-            "description": "Tags",
-            "type": "object"
+            "description": "Tags"
           },
           "type": {
             "allOf": [
@@ -7829,9 +7863,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Map_of_AnyValue",
-                  "type": "object"
+                  "$ref": "#/components/schemas/MetadataObject"
                 }
               }
             },
@@ -7927,9 +7959,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Map_of_AnyValue",
-                  "type": "object"
+                  "$ref": "#/components/schemas/MetadataObject"
                 }
               }
             },
@@ -8939,9 +8969,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Map_of_AnyValue",
-                  "type": "object"
+                  "$ref": "#/components/schemas/Tags"
                 }
               }
             },
@@ -9037,9 +9065,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Map_of_AnyValue",
-                  "type": "object"
+                  "$ref": "#/components/schemas/Tags"
                 }
               }
             },
@@ -9096,9 +9122,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Map_of_AnyValue",
-                  "type": "object"
+                  "$ref": "#/components/schemas/Tags"
                 }
               }
             },

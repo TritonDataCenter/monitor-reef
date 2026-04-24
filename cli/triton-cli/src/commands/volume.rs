@@ -409,7 +409,11 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
     };
 
     // Parse tags
-    let tags = args.tags.as_ref().map(|t| parse_tags(t)).transpose()?;
+    let tags = args
+        .tags
+        .as_ref()
+        .map(|t| parse_tags(t).map(cloudapi_client::Tags::from))
+        .transpose()?;
 
     let request = cloudapi_client::types::CreateVolumeRequest {
         name: args.name.clone(),

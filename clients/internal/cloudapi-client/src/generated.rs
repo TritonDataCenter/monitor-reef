@@ -1420,11 +1420,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"metadata\": {"]
     #[doc = "      \"description\": \"Metadata (modern format - nested object)\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/MetadataObject\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"description\": \"Machine alias/name\","]
@@ -1449,11 +1456,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"tags\": {"]
     #[doc = "      \"description\": \"Tags (modern format - nested object)\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Tags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"volumes\": {"]
     #[doc = "      \"description\": \"Volumes to mount on the instance\","]
@@ -1504,8 +1518,7 @@ pub mod types {
         pub locality: ::std::option::Option<::serde_json::Value>,
         #[doc = "Metadata (modern format - nested object)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub metadata:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub metadata: ::std::option::Option<cloudapi_api::Metadata>,
         #[doc = "Machine alias/name"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub name: ::std::option::Option<::std::string::String>,
@@ -1516,8 +1529,7 @@ pub mod types {
         pub package: ::std::string::String,
         #[doc = "Tags (modern format - nested object)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub tags:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub tags: ::std::option::Option<cloudapi_api::Tags>,
         #[doc = "Volumes to mount on the instance"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub volumes: ::std::option::Option<::std::vec::Vec<VolumeMount>>,
@@ -1919,11 +1931,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"tags\": {"]
     #[doc = "      \"description\": \"Tags\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Tags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"type\": {"]
     #[doc = "      \"description\": \"Volume type\","]
@@ -1958,8 +1977,7 @@ pub mod types {
         pub size: u64,
         #[doc = "Tags"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub tags:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub tags: ::std::option::Option<cloudapi_api::Tags>,
         #[doc = "Volume type"]
         #[serde(
             rename = "type",
@@ -3154,11 +3172,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"tags\": {"]
     #[doc = "      \"description\": \"Tags\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Tags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"type\": {"]
     #[doc = "      \"description\": \"Image type\","]
@@ -3234,8 +3259,7 @@ pub mod types {
         pub state: ::std::option::Option<ImageState>,
         #[doc = "Tags"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub tags:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub tags: ::std::option::Option<cloudapi_api::Tags>,
         #[doc = "Image type"]
         #[serde(rename = "type")]
         pub type_: ImageType,
@@ -3989,8 +4013,11 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"metadata\": {"]
     #[doc = "      \"description\": \"Metadata\","]
-    #[doc = "      \"type\": \"object\","]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/MetadataObject\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"name\": {"]
     #[doc = "      \"description\": \"Machine alias/name\","]
@@ -4045,8 +4072,11 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"tags\": {"]
     #[doc = "      \"description\": \"Tags\","]
-    #[doc = "      \"type\": \"object\","]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/Tags\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"type\": {"]
     #[doc = "      \"description\": \"Machine type (smartmachine or virtualmachine)\","]
@@ -4115,7 +4145,7 @@ pub mod types {
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub memory: ::std::option::Option<u64>,
         #[doc = "Metadata"]
-        pub metadata: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+        pub metadata: cloudapi_api::Metadata,
         #[doc = "Machine alias/name"]
         pub name: ::std::string::String,
         #[doc = "Network UUIDs (API version >= 7.1.0)"]
@@ -4143,7 +4173,7 @@ pub mod types {
         #[doc = "Current state"]
         pub state: MachineState,
         #[doc = "Tags"]
-        pub tags: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+        pub tags: cloudapi_api::Tags,
         #[doc = "Machine type (smartmachine or virtualmachine)"]
         #[serde(rename = "type")]
         pub type_: MachineType,
@@ -7990,11 +8020,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"tags\": {"]
     #[doc = "      \"description\": \"Tags\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"object\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Tags\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"version\": {"]
     #[doc = "      \"description\": \"Image version\","]
@@ -8028,8 +8065,7 @@ pub mod types {
         pub name: ::std::option::Option<::std::string::String>,
         #[doc = "Tags"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub tags:
-            ::std::option::Option<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
+        pub tags: ::std::option::Option<cloudapi_api::Tags>,
         #[doc = "Image version"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub version: ::std::option::Option<::std::string::String>,
@@ -8767,8 +8803,11 @@ pub mod types {
     #[doc = "    \"tags\": {"]
     #[doc = "      \"description\": \"Tags\","]
     #[doc = "      \"default\": {},"]
-    #[doc = "      \"type\": \"object\","]
-    #[doc = "      \"additionalProperties\": true"]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/Tags\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"type\": {"]
     #[doc = "      \"description\": \"Volume type\","]
@@ -8808,8 +8847,8 @@ pub mod types {
         #[doc = "State"]
         pub state: VolumeState,
         #[doc = "Tags"]
-        #[serde(default, skip_serializing_if = "::serde_json::Map::is_empty")]
-        pub tags: ::serde_json::Map<::std::string::String, ::serde_json::Value>,
+        #[serde(default = "defaults::volume_tags")]
+        pub tags: cloudapi_api::Tags,
         #[doc = "Volume type"]
         #[serde(rename = "type")]
         pub type_: VolumeType,
@@ -10607,9 +10646,7 @@ pub mod types {
                 ::std::string::String,
             >,
             metadata: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<cloudapi_api::Metadata>,
                 ::std::string::String,
             >,
             name: ::std::result::Result<
@@ -10622,9 +10659,7 @@ pub mod types {
             >,
             package: ::std::result::Result<::std::string::String, ::std::string::String>,
             tags: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<cloudapi_api::Tags>,
                 ::std::string::String,
             >,
             volumes: ::std::result::Result<
@@ -10761,11 +10796,7 @@ pub mod types {
             }
             pub fn metadata<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::Metadata>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.metadata = value
@@ -10807,11 +10838,7 @@ pub mod types {
             }
             pub fn tags<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::Tags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.tags = value
@@ -11387,9 +11414,7 @@ pub mod types {
             >,
             size: ::std::result::Result<u64, ::std::string::String>,
             tags: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<cloudapi_api::Tags>,
                 ::std::string::String,
             >,
             type_: ::std::result::Result<
@@ -11443,11 +11468,7 @@ pub mod types {
             }
             pub fn tags<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::Tags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.tags = value
@@ -12384,9 +12405,7 @@ pub mod types {
                 ::std::string::String,
             >,
             tags: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<cloudapi_api::Tags>,
                 ::std::string::String,
             >,
             type_: ::std::result::Result<super::ImageType, ::std::string::String>,
@@ -12599,11 +12618,7 @@ pub mod types {
             }
             pub fn tags<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::Tags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.tags = value
@@ -13038,10 +13053,7 @@ pub mod types {
                 ::std::string::String,
             >,
             memory: ::std::result::Result<::std::option::Option<u64>, ::std::string::String>,
-            metadata: ::std::result::Result<
-                ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                ::std::string::String,
-            >,
+            metadata: ::std::result::Result<cloudapi_api::Metadata, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             networks: ::std::result::Result<
                 ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
@@ -13058,10 +13070,7 @@ pub mod types {
                 ::std::string::String,
             >,
             state: ::std::result::Result<super::MachineState, ::std::string::String>,
-            tags: ::std::result::Result<
-                ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                ::std::string::String,
-            >,
+            tags: ::std::result::Result<cloudapi_api::Tags, ::std::string::String>,
             type_: ::std::result::Result<super::MachineType, ::std::string::String>,
             updated: ::std::result::Result<
                 ::chrono::DateTime<::chrono::offset::Utc>,
@@ -13281,9 +13290,7 @@ pub mod types {
             }
             pub fn metadata<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                    >,
+                T: ::std::convert::TryInto<cloudapi_api::Metadata>,
                 T::Error: ::std::fmt::Display,
             {
                 self.metadata = value
@@ -13365,9 +13372,7 @@ pub mod types {
             }
             pub fn tags<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                    >,
+                T: ::std::convert::TryInto<cloudapi_api::Tags>,
                 T::Error: ::std::fmt::Display,
             {
                 self.tags = value
@@ -16919,9 +16924,7 @@ pub mod types {
                 ::std::string::String,
             >,
             tags: ::std::result::Result<
-                ::std::option::Option<
-                    ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                >,
+                ::std::option::Option<cloudapi_api::Tags>,
                 ::std::string::String,
             >,
             version: ::std::result::Result<
@@ -16997,11 +17000,7 @@ pub mod types {
             }
             pub fn tags<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<
-                            ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                        >,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::Tags>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.tags = value
@@ -17723,10 +17722,7 @@ pub mod types {
             refs: ::std::result::Result<::std::vec::Vec<::uuid::Uuid>, ::std::string::String>,
             size: ::std::result::Result<u64, ::std::string::String>,
             state: ::std::result::Result<super::VolumeState, ::std::string::String>,
-            tags: ::std::result::Result<
-                ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                ::std::string::String,
-            >,
+            tags: ::std::result::Result<cloudapi_api::Tags, ::std::string::String>,
             type_: ::std::result::Result<super::VolumeType, ::std::string::String>,
         }
 
@@ -17742,7 +17738,7 @@ pub mod types {
                     refs: Ok(Default::default()),
                     size: Err("no value supplied for size".to_string()),
                     state: Err("no value supplied for state".to_string()),
-                    tags: Ok(Default::default()),
+                    tags: Ok(super::defaults::volume_tags()),
                     type_: Err("no value supplied for type_".to_string()),
                 }
             }
@@ -17841,9 +17837,7 @@ pub mod types {
             }
             pub fn tags<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::serde_json::Map<::std::string::String, ::serde_json::Value>,
-                    >,
+                T: ::std::convert::TryInto<cloudapi_api::Tags>,
                 T::Error: ::std::fmt::Display,
             {
                 self.tags = value
@@ -18050,6 +18044,10 @@ pub mod types {
                 min_memory: Default::default(),
                 min_ram: Default::default(),
             }
+        }
+
+        pub(super) fn volume_tags() -> cloudapi_api::Tags {
+            ::serde_json::from_str::<cloudapi_api::Tags>("{}").unwrap()
         }
     }
 }
@@ -27556,10 +27554,7 @@ pub mod builder {
         #[doc = "Sends a `GET` request to `/{account}/machines/{machine}/metadata`"]
         pub async fn send(
             self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        ) -> Result<ResponseValue<cloudapi_api::Metadata>, Error<types::Error>> {
             let Self {
                 client,
                 account,
@@ -27664,10 +27659,7 @@ pub mod builder {
         #[doc = "Sends a `POST` request to `/{account}/machines/{machine}/metadata`"]
         pub async fn send(
             self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        ) -> Result<ResponseValue<cloudapi_api::Metadata>, Error<types::Error>> {
             let Self {
                 client,
                 account,
@@ -29740,12 +29732,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `GET` request to `/{account}/machines/{machine}/tags`"]
-        pub async fn send(
-            self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        pub async fn send(self) -> Result<ResponseValue<cloudapi_api::Tags>, Error<types::Error>> {
             let Self {
                 client,
                 account,
@@ -29848,12 +29835,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `PUT` request to `/{account}/machines/{machine}/tags`"]
-        pub async fn send(
-            self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        pub async fn send(self) -> Result<ResponseValue<cloudapi_api::Tags>, Error<types::Error>> {
             let Self {
                 client,
                 account,
@@ -29959,12 +29941,7 @@ pub mod builder {
         }
 
         #[doc = "Sends a `POST` request to `/{account}/machines/{machine}/tags`"]
-        pub async fn send(
-            self,
-        ) -> Result<
-            ResponseValue<::serde_json::Map<::std::string::String, ::serde_json::Value>>,
-            Error<types::Error>,
-        > {
+        pub async fn send(self) -> Result<ResponseValue<cloudapi_api::Tags>, Error<types::Error>> {
             let Self {
                 client,
                 account,

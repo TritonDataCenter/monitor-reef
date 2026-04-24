@@ -1184,7 +1184,7 @@ type CreateMachineRequest struct {
 	Locality interface{} `json:"locality,omitempty"`
 
 	// Metadata Metadata (modern format - nested object)
-	Metadata *map[string]interface{} `json:"metadata,omitempty"`
+	Metadata *MetadataObject `json:"metadata,omitempty"`
 
 	// Name Machine alias/name
 	Name *string `json:"name,omitempty"`
@@ -1196,7 +1196,7 @@ type CreateMachineRequest struct {
 	Package string `json:"package"`
 
 	// Tags Tags (modern format - nested object)
-	Tags *map[string]interface{} `json:"tags,omitempty"`
+	Tags *Tags `json:"tags,omitempty"`
 
 	// Volumes Volumes to mount on the instance
 	Volumes *[]VolumeMount `json:"volumes,omitempty"`
@@ -1292,7 +1292,7 @@ type CreateVolumeRequest struct {
 	Size uint64 `json:"size"`
 
 	// Tags Tags
-	Tags *map[string]interface{} `json:"tags,omitempty"`
+	Tags *Tags `json:"tags,omitempty"`
 
 	// Type Volume type
 	Type *VolumeType `json:"type,omitempty"`
@@ -1520,7 +1520,7 @@ type Image struct {
 	State *ImageState `json:"state,omitempty"`
 
 	// Tags Tags
-	Tags *map[string]interface{} `json:"tags,omitempty"`
+	Tags *Tags `json:"tags,omitempty"`
 
 	// Type Image type
 	Type ImageType `json:"type"`
@@ -1671,7 +1671,7 @@ type Machine struct {
 	Memory *uint64 `json:"memory,omitempty"`
 
 	// Metadata Metadata
-	Metadata map[string]interface{} `json:"metadata"`
+	Metadata MetadataObject `json:"metadata"`
 
 	// Name Machine alias/name
 	Name string `json:"name"`
@@ -1695,7 +1695,7 @@ type Machine struct {
 	State MachineState `json:"state"`
 
 	// Tags Tags
-	Tags map[string]interface{} `json:"tags"`
+	Tags Tags `json:"tags"`
 
 	// Type Machine type (smartmachine or virtualmachine)
 	Type MachineType `json:"type"`
@@ -1802,6 +1802,11 @@ type MemberType0 string
 
 // MemberType1 Unknown type (forward compatibility)
 type MemberType1 string
+
+// MetadataObject Key-value metadata (values can be strings, booleans, or numbers)
+//
+// Newtype wrapper rather than a type alias so the generated OpenAPI spec carries `MetadataObject` as a named schema rather than an anonymous `additionalProperties` object. See the note on `Tags` below for the full rationale.
+type MetadataObject map[string]interface{}
 
 // MigrateRequest Migration request
 //
@@ -2314,6 +2319,11 @@ type StopMachineRequest struct {
 	Origin *string `json:"origin,omitempty"`
 }
 
+// Tags Key-value tags (values can be strings, booleans, or numbers)
+//
+// Newtype wrapper rather than a type alias so the generated OpenAPI spec carries `Tags` as a named schema rather than an anonymous `additionalProperties` object. A `pub type Tags = HashMap<String, Value>` is erased by schemars at compile time, causing every field typed `Tags` to inline the map shape and downstream code generators (Progenitor, oapi-codegen) to emit unnamed `serde_json::Map` / `map[string]interface{}` types per field. The newtype preserves the name so all clients see a single `Tags` type.
+type Tags map[string]interface{}
+
 // TagsRequest Request to add/replace machine tags
 type TagsRequest map[string]interface{}
 
@@ -2434,7 +2444,7 @@ type UpdateImageRequest struct {
 	Name *string `json:"name,omitempty"`
 
 	// Tags Tags
-	Tags *map[string]interface{} `json:"tags,omitempty"`
+	Tags *Tags `json:"tags,omitempty"`
 
 	// Version Image version
 	Version *string `json:"version,omitempty"`
@@ -2588,7 +2598,7 @@ type Volume struct {
 	State VolumeState `json:"state"`
 
 	// Tags Tags
-	Tags *map[string]interface{} `json:"tags,omitempty"`
+	Tags *Tags `json:"tags,omitempty"`
 
 	// Type Volume type
 	Type VolumeType `json:"type"`
@@ -19493,7 +19503,7 @@ func (r DeleteAllMachineMetadataResponse) StatusCode() int {
 type ListMachineMetadataResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *map[string]interface{}
+	JSON200      *MetadataObject
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -19538,7 +19548,7 @@ func (r HeadMachineMetadataResponse) StatusCode() int {
 type AddMachineMetadataResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *map[string]interface{}
+	JSON200      *MetadataObject
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -19998,7 +20008,7 @@ func (r DeleteMachineTagsResponse) StatusCode() int {
 type ListMachineTagsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *map[string]interface{}
+	JSON200      *Tags
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -20043,7 +20053,7 @@ func (r HeadMachineTagsResponse) StatusCode() int {
 type AddMachineTagsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *map[string]interface{}
+	JSON200      *Tags
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -20067,7 +20077,7 @@ func (r AddMachineTagsResponse) StatusCode() int {
 type ReplaceMachineTagsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *map[string]interface{}
+	JSON200      *Tags
 	JSON4XX      *Error
 	JSON5XX      *Error
 }
@@ -26780,7 +26790,7 @@ func ParseListMachineMetadataResponse(rsp *http.Response) (*ListMachineMetadataR
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest map[string]interface{}
+		var dest MetadataObject
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -26836,7 +26846,7 @@ func ParseAddMachineMetadataResponse(rsp *http.Response) (*AddMachineMetadataRes
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest map[string]interface{}
+		var dest MetadataObject
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -27481,7 +27491,7 @@ func ParseListMachineTagsResponse(rsp *http.Response) (*ListMachineTagsResponse,
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest map[string]interface{}
+		var dest Tags
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -27537,7 +27547,7 @@ func ParseAddMachineTagsResponse(rsp *http.Response) (*AddMachineTagsResponse, e
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest map[string]interface{}
+		var dest Tags
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -27577,7 +27587,7 @@ func ParseReplaceMachineTagsResponse(rsp *http.Response) (*ReplaceMachineTagsRes
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest map[string]interface{}
+		var dest Tags
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
