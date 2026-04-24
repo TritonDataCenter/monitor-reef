@@ -130,6 +130,22 @@ git add apis/<service>-api/ openapi-specs/generated/<service>-api.json conversio
 git commit -m "Add <service> API trait (Phase 2)"
 ```
 
+### Step 2b: Apply OpenAPI Spec Patches (if needed)
+
+If the Phase 1 plan identified endpoints needing patches (bare string responses,
+empty bodies, status code mismatches), apply them now — BEFORE generating the client.
+
+1. Add transform functions to `openapi-manager/src/transforms.rs`
+2. Point the client at the patched spec in `client-generator/src/main.rs`
+3. Run `make openapi-generate` to create the patched spec
+4. Commit the patches:
+```bash
+git add openapi-manager/src/transforms.rs openapi-specs/patched/<service>-api.json client-generator/src/main.rs
+git commit -m "Add <service> OpenAPI spec patches for wire format compatibility"
+```
+
+See `openapi-manager/src/transforms.rs` for existing examples (cloudapi, sapi).
+
 ### Step 3: Spawn Phase 3 (Generate Client)
 
 ```
