@@ -291,6 +291,14 @@ pub struct VmDetails {
 }
 ```
 
+**Caveat — Progenitor drops `extra`/catch-all fields.** `#[serde(flatten)] extra`
+and bare `serde_json::Value` blobs survive round-trip through the API-crate type,
+but Progenitor regenerates client types from the OpenAPI schema and does **not**
+emit catch-alls. Any field that is only discoverable via `extra` will be silently
+dropped when a Rust caller goes through `<service>_client::types::X`. If a
+downstream Rust consumer needs a specific field, model it explicitly on the
+API-crate struct — even if you also keep `extra` for genuine passthrough.
+
 ## Action Dispatch Pattern
 
 Some APIs use an action-based pattern where a single endpoint handles multiple operations. Node.js Restify's `mapParams: true` merges query and body params, so clients may send the action in either place:
@@ -684,6 +692,14 @@ Be aware of these Progenitor limitations that affect client generation:
 3. **Empty response bodies** — For 200 responses with no content, remove the `content`
    field from the spec. Progenitor generates `ResponseValue<()>` which is easy to use.
    For 204, use `HttpResponseUpdatedNoContent` in the trait — Progenitor handles this natively.
+
+4. **No `#[serde(flatten)]` catch-all on generated types** — API-crate structs
+   commonly use `#[serde(flatten)] extra: HashMap<String, serde_json::Value>` to
+   capture unmodeled passthrough fields. The generated OpenAPI emits
+   `additionalProperties: true`, but Progenitor ignores it: the generated struct
+   only has fields the schema declared. If a Rust caller needs a specific
+   passthrough field, promote it to an explicit typed field on the API struct so
+   it survives the client boundary.
 
 ## Checklist
 
