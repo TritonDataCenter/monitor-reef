@@ -104,15 +104,16 @@ service-new: ## Create new service (usage: make service-new SERVICE=my-service A
 	cp -r services/service-template services/$(SERVICE)
 	sed -i 's/service-template/$(SERVICE)/g' services/$(SERVICE)/Cargo.toml
 	@if [ ! -z "$(API)" ]; then \
-		echo "$$API = { path = \"../../apis/$$API\" }" >> services/$(SERVICE)/Cargo.toml; \
+		echo "$$API = { workspace = true }" >> services/$(SERVICE)/Cargo.toml; \
 		echo "Added dependency on $(API)"; \
 	fi
 	@echo "Created new service: services/$(SERVICE)"
 	@echo ""
 	@echo "Next steps:"
 	@echo "  1. Add 'services/$(SERVICE)' to workspace Cargo.toml members list"
-	@echo "  2. Implement the API trait in services/$(SERVICE)/src/main.rs"
-	@echo "  3. Test: make service-run SERVICE=$(SERVICE)"
+	@echo "  2. Register $(API) in the root Cargo.toml's [workspace.dependencies] block"
+	@echo "  3. Implement the API trait in services/$(SERVICE)/src/main.rs"
+	@echo "  4. Test: make service-run SERVICE=$(SERVICE)"
 
 service-build: | $(CARGO_EXEC) ## Build specific service (usage: make service-build SERVICE=my-service)
 	@if [ -z "$(SERVICE)" ]; then echo "Usage: make service-build SERVICE=my-service"; exit 1; fi

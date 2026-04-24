@@ -26,5 +26,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 schemars = { workspace = true }
 semver = { workspace = true }
-# Replace 'example-api' with your actual API crate
-# example-api = { path = "../../apis/example-api" }
+# Replace 'example-api' with your actual API crate. Add an entry for
+# it in the root Cargo.toml's [workspace.dependencies] block (under
+# the "Internal workspace crates" section), then reference it here:
+# example-api = { workspace = true }
