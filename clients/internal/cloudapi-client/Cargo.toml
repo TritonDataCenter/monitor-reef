@@ -24,12 +24,12 @@ schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
-cloudapi-api = { path = "../../../apis/cloudapi-api" }
+cloudapi-api = { workspace = true }
 # Required for WebSocket endpoints (Progenitor-generated code)
 base64 = "0.22"
 rand = "0.9"
 # Authentication support
-triton-auth = { path = "../../../libs/triton-auth" }
+triton-auth = { workspace = true }
 thiserror = { workspace = true }
 # clap::ValueEnum on generated enum types for CLI consumers
 clap = { workspace = true }

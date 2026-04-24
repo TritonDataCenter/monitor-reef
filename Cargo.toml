@@ -89,3 +89,21 @@ tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v4", "serde"] }
+
+#
+# Internal workspace crates.
+#
+# All intra-workspace dependencies are declared here and pulled in by
+# consumers with `workspace = true`, so crate Cargo.tomls do not carry
+# relative `../../...` paths.
+#
+bugview-api = { path = "apis/bugview-api" }
+bugview-client = { path = "clients/internal/bugview-client" }
+cloudapi-api = { path = "apis/cloudapi-api" }
+cloudapi-client = { path = "clients/internal/cloudapi-client" }
+jira-api = { path = "apis/jira-api" }
+jira-client = { path = "clients/internal/jira-client" }
+jira-stub-server = { path = "services/jira-stub-server" }
+triton-auth = { path = "libs/triton-auth" }
+vmapi-api = { path = "apis/vmapi-api" }
+vmapi-client = { path = "clients/internal/vmapi-client" }
