@@ -10,6 +10,57 @@ use super::common::{RoleTags, Uuid};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+/// List of network UUIDs a resource is attached to.
+///
+/// Newtype wrapper so Machine / Volume / CreateVolumeRequest all reference
+/// the same named `NetworkIds` schema rather than each carrying an
+/// anonymous `Vec<Uuid>` field. Different shape from
+/// `CreateMachineRequest.networks: Option<Vec<NetworkObject>>`, which
+/// uses a richer per-entry struct -- only the UUID-list form is unified here.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct NetworkIds(pub Vec<Uuid>);
+
+impl std::ops::Deref for NetworkIds {
+    type Target = Vec<Uuid>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for NetworkIds {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl From<Vec<Uuid>> for NetworkIds {
+    fn from(v: Vec<Uuid>) -> Self {
+        NetworkIds(v)
+    }
+}
+
+impl FromIterator<Uuid> for NetworkIds {
+    fn from_iter<I: IntoIterator<Item = Uuid>>(iter: I) -> Self {
+        NetworkIds(iter.into_iter().collect())
+    }
+}
+
+impl IntoIterator for NetworkIds {
+    type Item = Uuid;
+    type IntoIter = std::vec::IntoIter<Uuid>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a NetworkIds {
+    type Item = &'a Uuid;
+    type IntoIter = std::slice::Iter<'a, Uuid>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
+
 /// List of DNS resolver addresses for a fabric network.
 ///
 /// Newtype wrapper rather than a type alias so generated clients see a

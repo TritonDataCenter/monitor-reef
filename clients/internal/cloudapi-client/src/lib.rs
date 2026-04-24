@@ -174,6 +174,7 @@ pub use cloudapi_api::{
     MigrationState,
     MountMode,
     Network,
+    NetworkIds,
     NetworkIp,
     NetworkIpPath,
     NetworkObject,

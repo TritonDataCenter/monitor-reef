@@ -7,6 +7,7 @@
 //! Volume-related types
 
 use super::common::{Tags, Timestamp, Uuid};
+use super::network::NetworkIds;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -60,7 +61,7 @@ pub struct Volume {
     pub state: VolumeState,
     /// Networks (array of UUIDs)
     #[serde(default)]
-    pub networks: Vec<Uuid>,
+    pub networks: NetworkIds,
     /// Filesystem path
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub filesystem_path: Option<String>,
@@ -94,7 +95,7 @@ pub struct CreateVolumeRequest {
     pub size: u64,
     /// Networks (array of UUIDs)
     #[serde(default)]
-    pub networks: Option<Vec<Uuid>>,
+    pub networks: Option<NetworkIds>,
     /// Tags
     #[serde(default)]
     pub tags: Option<Tags>,

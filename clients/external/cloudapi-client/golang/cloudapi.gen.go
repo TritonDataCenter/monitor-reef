@@ -1291,7 +1291,7 @@ type CreateVolumeRequest struct {
 	Name *string `json:"name,omitempty"`
 
 	// Networks Networks (array of UUIDs)
-	Networks *[]openapi_types.UUID `json:"networks,omitempty"`
+	Networks *NetworkIds `json:"networks,omitempty"`
 
 	// Size Size in MiB
 	Size uint64 `json:"size"`
@@ -1685,7 +1685,7 @@ type Machine struct {
 	Name string `json:"name"`
 
 	// Networks Network UUIDs (API version >= 7.1.0)
-	Networks *[]openapi_types.UUID `json:"networks,omitempty"`
+	Networks *NetworkIds `json:"networks,omitempty"`
 
 	// Nics Network interfaces
 	Nics *[]MachineNic `json:"nics,omitempty"`
@@ -2012,6 +2012,11 @@ type Network struct {
 	// VlanID VLAN ID
 	VlanID *uint16 `json:"vlan_id,omitempty"`
 }
+
+// NetworkIds List of network UUIDs a resource is attached to.
+//
+// Newtype wrapper so Machine / Volume / CreateVolumeRequest all reference the same named `NetworkIds` schema rather than each carrying an anonymous `Vec<Uuid>` field. Different shape from `CreateMachineRequest.networks: Option<Vec<NetworkObject>>`, which uses a richer per-entry struct -- only the UUID-list form is unified here.
+type NetworkIds = []openapi_types.UUID
 
 // NetworkIP Network IP information
 //
@@ -2609,7 +2614,7 @@ type Volume struct {
 	Name string `json:"name"`
 
 	// Networks Networks (array of UUIDs)
-	Networks *[]openapi_types.UUID `json:"networks,omitempty"`
+	Networks *NetworkIds `json:"networks,omitempty"`
 
 	// OwnerUUID Owner UUID
 	OwnerUUID openapi_types.UUID `json:"owner_uuid"`

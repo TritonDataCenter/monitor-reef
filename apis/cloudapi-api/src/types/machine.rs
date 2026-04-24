@@ -8,6 +8,7 @@
 
 use super::common::{Brand, Metadata, RoleTags, Tags, Timestamp, Uuid};
 use super::misc::DiskSize;
+use super::network::NetworkIds;
 use super::volume::VolumeType;
 
 /// Affinity rule strings (used by CreateMachineRequest and MigrateRequest).
@@ -153,7 +154,7 @@ pub struct Machine {
     pub updated: Timestamp,
     /// Network UUIDs (API version >= 7.1.0)
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub networks: Option<Vec<Uuid>>,
+    pub networks: Option<NetworkIds>,
     /// Primary IP address
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub primary_ip: Option<String>,

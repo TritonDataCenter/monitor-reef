@@ -822,14 +822,14 @@
             "type": "string"
           },
           "networks": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NetworkIds"
+              }
+            ],
             "default": null,
             "description": "Networks (array of UUIDs)",
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "size": {
             "description": "Size in MiB",
@@ -1642,13 +1642,13 @@
             "type": "string"
           },
           "networks": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NetworkIds"
+              }
+            ],
             "description": "Network UUIDs (API version >= 7.1.0)",
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "nics": {
             "description": "Network interfaces",
@@ -2313,6 +2313,14 @@
           "public"
         ],
         "type": "object"
+      },
+      "NetworkIds": {
+        "description": "List of network UUIDs a resource is attached to.\n\nNewtype wrapper so Machine / Volume / CreateVolumeRequest all reference the same named `NetworkIds` schema rather than each carrying an anonymous `Vec<Uuid>` field. Different shape from `CreateMachineRequest.networks: Option<Vec<NetworkObject>>`, which uses a richer per-entry struct -- only the UUID-list form is unified here.",
+        "items": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "type": "array"
       },
       "NetworkIp": {
         "description": "Network IP information\n\nNote: CloudAPI's `translateIp()` (networks.js) copies NAPI fields directly, so multi-word fields stay in snake_case (owner_uuid, belongs_to_uuid, etc.).",
@@ -3528,13 +3536,13 @@
             "type": "string"
           },
           "networks": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NetworkIds"
+              }
+            ],
             "default": [],
-            "description": "Networks (array of UUIDs)",
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "type": "array"
+            "description": "Networks (array of UUIDs)"
           },
           "owner_uuid": {
             "description": "Owner UUID",

@@ -403,7 +403,7 @@ async fn create_volume(args: VolumeCreateArgs, client: &TypedClient, use_json: b
     // Always validate via GET (matches node-triton's getNetwork call in createVolume).
     let networks = if let Some(net) = &args.network {
         let network_id = crate::commands::network::resolve_network_with_get(net, client).await?;
-        Some(vec![network_id])
+        Some(cloudapi_client::NetworkIds(vec![network_id]))
     } else {
         None
     };

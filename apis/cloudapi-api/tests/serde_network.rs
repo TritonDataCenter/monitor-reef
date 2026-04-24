@@ -115,7 +115,10 @@ fn test_network_resolvers() {
     let network: Network = common::deserialize_fixture("network", "public.json");
 
     let resolvers = network.resolvers.expect("resolvers should be present");
-    assert_eq!(resolvers.0, vec!["8.8.8.8".to_string(), "8.8.4.4".to_string()]);
+    assert_eq!(
+        resolvers.0,
+        vec!["8.8.8.8".to_string(), "8.8.4.4".to_string()]
+    );
 }
 
 /// Test deserialization of a network list.

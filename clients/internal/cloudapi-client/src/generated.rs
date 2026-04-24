@@ -1925,14 +1925,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"networks\": {"]
     #[doc = "      \"description\": \"Networks (array of UUIDs)\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\","]
-    #[doc = "        \"format\": \"uuid\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/NetworkIds\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"size\": {"]
     #[doc = "      \"description\": \"Size in MiB\","]
@@ -1983,7 +1987,7 @@ pub mod types {
         pub name: ::std::option::Option<::std::string::String>,
         #[doc = "Networks (array of UUIDs)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub networks: ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
+        pub networks: ::std::option::Option<cloudapi_api::NetworkIds>,
         #[doc = "Size in MiB"]
         pub size: u64,
         #[doc = "Tags"]
@@ -4050,14 +4054,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"networks\": {"]
     #[doc = "      \"description\": \"Network UUIDs (API version >= 7.1.0)\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\","]
-    #[doc = "        \"format\": \"uuid\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/NetworkIds\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"nics\": {"]
     #[doc = "      \"description\": \"Network interfaces\","]
@@ -4180,7 +4188,7 @@ pub mod types {
         pub name: ::std::string::String,
         #[doc = "Network UUIDs (API version >= 7.1.0)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub networks: ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
+        pub networks: ::std::option::Option<cloudapi_api::NetworkIds>,
         #[doc = "Network interfaces"]
         #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
         pub nics: ::std::vec::Vec<MachineNic>,
@@ -8852,11 +8860,11 @@ pub mod types {
     #[doc = "    \"networks\": {"]
     #[doc = "      \"description\": \"Networks (array of UUIDs)\","]
     #[doc = "      \"default\": [],"]
-    #[doc = "      \"type\": \"array\","]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\","]
-    #[doc = "        \"format\": \"uuid\""]
-    #[doc = "      }"]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/NetworkIds\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"owner_uuid\": {"]
     #[doc = "      \"description\": \"Owner UUID\","]
@@ -8921,8 +8929,8 @@ pub mod types {
         #[doc = "Volume name"]
         pub name: ::std::string::String,
         #[doc = "Networks (array of UUIDs)"]
-        #[serde(default, skip_serializing_if = "::std::vec::Vec::is_empty")]
-        pub networks: ::std::vec::Vec<::uuid::Uuid>,
+        #[serde(default = "defaults::volume_networks")]
+        pub networks: cloudapi_api::NetworkIds,
         #[doc = "Owner UUID"]
         pub owner_uuid: ::uuid::Uuid,
         #[doc = "References (machines using this volume)"]
@@ -11488,7 +11496,7 @@ pub mod types {
                 ::std::string::String,
             >,
             networks: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
+                ::std::option::Option<cloudapi_api::NetworkIds>,
                 ::std::string::String,
             >,
             size: ::std::result::Result<u64, ::std::string::String>,
@@ -11527,7 +11535,7 @@ pub mod types {
             }
             pub fn networks<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::vec::Vec<::uuid::Uuid>>>,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::NetworkIds>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.networks = value
@@ -13131,7 +13139,7 @@ pub mod types {
             metadata: ::std::result::Result<cloudapi_api::Metadata, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
             networks: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
+                ::std::option::Option<cloudapi_api::NetworkIds>,
                 ::std::string::String,
             >,
             nics: ::std::result::Result<::std::vec::Vec<super::MachineNic>, ::std::string::String>,
@@ -13385,7 +13393,7 @@ pub mod types {
             }
             pub fn networks<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::vec::Vec<::uuid::Uuid>>>,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::NetworkIds>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.networks = value
@@ -17761,7 +17769,7 @@ pub mod types {
             >,
             id: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
-            networks: ::std::result::Result<::std::vec::Vec<::uuid::Uuid>, ::std::string::String>,
+            networks: ::std::result::Result<cloudapi_api::NetworkIds, ::std::string::String>,
             owner_uuid: ::std::result::Result<::uuid::Uuid, ::std::string::String>,
             refs: ::std::result::Result<::std::vec::Vec<::uuid::Uuid>, ::std::string::String>,
             size: ::std::result::Result<u64, ::std::string::String>,
@@ -17777,7 +17785,7 @@ pub mod types {
                     filesystem_path: Ok(Default::default()),
                     id: Err("no value supplied for id".to_string()),
                     name: Err("no value supplied for name".to_string()),
-                    networks: Ok(Default::default()),
+                    networks: Ok(super::defaults::volume_networks()),
                     owner_uuid: Err("no value supplied for owner_uuid".to_string()),
                     refs: Ok(Default::default()),
                     size: Err("no value supplied for size".to_string()),
@@ -17831,7 +17839,7 @@ pub mod types {
             }
             pub fn networks<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::vec::Vec<::uuid::Uuid>>,
+                T: ::std::convert::TryInto<cloudapi_api::NetworkIds>,
                 T::Error: ::std::fmt::Display,
             {
                 self.networks = value
@@ -18092,6 +18100,10 @@ pub mod types {
 
         pub(super) fn replace_role_tags_request_role_tag() -> cloudapi_api::RoleTags {
             ::serde_json::from_str::<cloudapi_api::RoleTags>("[]").unwrap()
+        }
+
+        pub(super) fn volume_networks() -> cloudapi_api::NetworkIds {
+            ::serde_json::from_str::<cloudapi_api::NetworkIds>("[]").unwrap()
         }
 
         pub(super) fn volume_tags() -> cloudapi_api::Tags {
