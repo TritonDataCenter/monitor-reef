@@ -27,7 +27,7 @@ http = { workspace = true }
 indexmap = "2"
 jira-api = { workspace = true }
 jira-client = { workspace = true }
-rand = "0.9"
+rand = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 schemars = { workspace = true }
 serde = { workspace = true }
