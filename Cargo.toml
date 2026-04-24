@@ -63,7 +63,7 @@ axum = { version = "0.8", features = ["ws"] }
 build-data = "0.2"
 camino = "1.1"
 cargo_toml = "0.22"
-chrono = "0.4"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4.5", features = ["derive", "env"] }
 dropshot = { version = "0.16" }
 dropshot-api-manager = "0.3"
