@@ -84,7 +84,13 @@ pub async fn start(args: StartArgs, client: &TypedClient) -> Result<()> {
                 .await
                 .map(|_| ())
         } else {
-            client.start_machine(account, &machine_id, None).await
+            client
+                .start_machine(
+                    account,
+                    &machine_id,
+                    &cloudapi_client::StartMachineRequest::default(),
+                )
+                .await
         };
 
         if let Err(e) = start_result {
@@ -146,7 +152,14 @@ pub async fn stop(args: StopArgs, client: &TypedClient) -> Result<()> {
         let account = client.effective_account();
         let id_str = machine_id.to_string();
 
-        if let Err(e) = client.stop_machine(account, &machine_id, None).await {
+        if let Err(e) = client
+            .stop_machine(
+                account,
+                &machine_id,
+                &cloudapi_client::StopMachineRequest::default(),
+            )
+            .await
+        {
             #[cfg(debug_assertions)]
             if e.to_string()
                 .contains(cloudapi_client::EMIT_PAYLOAD_SENTINEL)
@@ -209,7 +222,14 @@ pub async fn reboot(args: RebootArgs, client: &TypedClient) -> Result<()> {
         // corresponding audit entry later.
         let reboot_time = chrono::Utc::now();
 
-        if let Err(e) = client.reboot_machine(account, &machine_id, None).await {
+        if let Err(e) = client
+            .reboot_machine(
+                account,
+                &machine_id,
+                &cloudapi_client::RebootMachineRequest::default(),
+            )
+            .await
+        {
             #[cfg(debug_assertions)]
             if e.to_string()
                 .contains(cloudapi_client::EMIT_PAYLOAD_SENTINEL)

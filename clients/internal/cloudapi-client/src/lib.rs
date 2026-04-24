@@ -1139,11 +1139,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &StartMachineRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::Start,
-            body: StartMachineRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1165,11 +1165,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &StopMachineRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::Stop,
-            body: StopMachineRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1191,11 +1191,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &RebootMachineRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::Reboot,
-            body: RebootMachineRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1218,12 +1218,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        package: String,
-        origin: Option<String>,
+        request: &ResizeMachineRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::Resize,
-            body: ResizeMachineRequest { package, origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1246,12 +1245,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        name: String,
-        origin: Option<String>,
+        request: &RenameMachineRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::Rename,
-            body: RenameMachineRequest { name, origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1273,11 +1271,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &EnableFirewallRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::EnableFirewall,
-            body: EnableFirewallRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1299,11 +1297,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &DisableFirewallRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::DisableFirewall,
-            body: DisableFirewallRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1325,11 +1323,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &EnableDeletionProtectionRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::EnableDeletionProtection,
-            body: EnableDeletionProtectionRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1351,11 +1349,11 @@ impl TypedClient {
         &self,
         account: &str,
         machine: &Uuid,
-        origin: Option<String>,
+        request: &DisableDeletionProtectionRequest,
     ) -> Result<(), Error<types::Error>> {
         let body = ActionBody {
             action: MachineAction::DisableDeletionProtection,
-            body: DisableDeletionProtectionRequest { origin },
+            body: request,
         };
         self.inner
             .update_machine()
@@ -1410,11 +1408,11 @@ impl TypedClient {
         &self,
         account: &str,
         dataset: &Uuid,
-        manta_path: String,
+        request: &ExportImageRequest,
     ) -> Result<types::Image, Error<types::Error>> {
         let body = ActionBody {
             action: ImageAction::Export,
-            body: ExportImageRequest { manta_path },
+            body: request,
         };
         self.inner
             .update_image()
@@ -1504,22 +1502,17 @@ impl TypedClient {
             .into_inner();
 
         // 2. Add target to ACL (if not already present)
-        let mut acl: Vec<Uuid> = image.acl.unwrap_or_default().0;
+        let mut acl = image.acl.unwrap_or_default();
         if !acl.contains(&target_account) {
             acl.push(target_account);
         }
 
         // 3. POST update with modified ACL
-        // (in emit-payload mode the pre hook emits this and returns sentinel)
-        self.inner
-            .update_image()
-            .account(account)
-            .dataset(dataset.to_string())
-            .action(types::ImageAction::Update)
-            .body(serde_json::json!({"acl": acl}))
-            .send()
-            .await
-            .map(|r| r.into_inner())
+        let request = UpdateImageRequest {
+            acl: Some(acl),
+            ..Default::default()
+        };
+        self.update_image_metadata(account, dataset, &request).await
     }
 
     /// Unshare image from another account
@@ -1549,20 +1542,15 @@ impl TypedClient {
             .into_inner();
 
         // 2. Remove target from ACL
-        let mut acl: Vec<Uuid> = image.acl.unwrap_or_default().0;
+        let mut acl = image.acl.unwrap_or_default();
         acl.retain(|a| a != &target_account);
 
         // 3. POST update with modified ACL
-        // (in emit-payload mode the pre hook emits this and returns sentinel)
-        self.inner
-            .update_image()
-            .account(account)
-            .dataset(dataset.to_string())
-            .action(types::ImageAction::Update)
-            .body(serde_json::json!({"acl": acl}))
-            .send()
-            .await
-            .map(|r| r.into_inner())
+        let request = UpdateImageRequest {
+            acl: Some(acl),
+            ..Default::default()
+        };
+        self.update_image_metadata(account, dataset, &request).await
     }
 
     // ========================================================================

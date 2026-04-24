@@ -33,7 +33,14 @@ pub async fn run(args: RenameArgs, client: &TypedClient) -> Result<()> {
     let id_str = machine_id.to_string();
 
     client
-        .rename_machine(account, &machine_id, args.name.clone(), None)
+        .rename_machine(
+            account,
+            &machine_id,
+            &cloudapi_client::RenameMachineRequest {
+                name: args.name.clone(),
+                origin: None,
+            },
+        )
         .await?;
 
     println!("Renaming instance {} to {}", &id_str[..8], args.name);

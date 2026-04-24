@@ -50,7 +50,11 @@ pub async fn enable(args: EnableProtectionArgs, client: &TypedClient) -> Result<
         let machine_id = super::get::resolve_instance(instance, client).await?;
 
         client
-            .enable_deletion_protection(account, &machine_id, None)
+            .enable_deletion_protection(
+                account,
+                &machine_id,
+                &cloudapi_client::EnableDeletionProtectionRequest::default(),
+            )
             .await?;
 
         if args.wait {
@@ -74,7 +78,11 @@ pub async fn disable(args: DisableProtectionArgs, client: &TypedClient) -> Resul
         let machine_id = super::get::resolve_instance(instance, client).await?;
 
         client
-            .disable_deletion_protection(account, &machine_id, None)
+            .disable_deletion_protection(
+                account,
+                &machine_id,
+                &cloudapi_client::DisableDeletionProtectionRequest::default(),
+            )
             .await?;
 
         if args.wait {

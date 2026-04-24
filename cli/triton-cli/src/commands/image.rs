@@ -983,7 +983,13 @@ async fn export_image(
     }
 
     let image = client
-        .export_image(account, &image_uuid, args.manta_path.clone())
+        .export_image(
+            account,
+            &image_uuid,
+            &cloudapi_client::ExportImageRequest {
+                manta_path: args.manta_path.clone(),
+            },
+        )
         .await?;
 
     eprintln!("Exporting image {} to {}", image.name, args.manta_path);
