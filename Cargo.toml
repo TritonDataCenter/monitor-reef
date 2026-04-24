@@ -112,9 +112,16 @@ reqwest = { version = "0.13", default-features = false, features = ["json", "rus
 rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }
 rustls-native-certs = "0.8"
 rustls-pemfile = "2"
-# NOTE: schemars version is tied to dropshot compatibility
-# Dropshot 0.16.x requires schemars 0.8.x
-# Do not upgrade to schemars 1.x without also upgrading dropshot
+# schemars version is tied to dropshot/progenitor compatibility.
+# Dropshot 0.16.x requires schemars 0.8.x. Do not upgrade to
+# schemars 1.x without also upgrading dropshot AND progenitor.
+#
+# NOTE: dropshot 0.17 + progenitor 0.13 was attempted 2026-04-23 —
+# dropshot 0.17 emits richer WebSocket response schemas (101 / 4XX /
+# 5XX instead of `default`) which triggers a progenitor 0.13 panic
+# (`assertion failed: response_types.len() <= 1` in method.rs).
+# Revisit after both crates cut a coordinated release that closes
+# the assertion.
 schemars = { version = "0.8", features = ["derive"] }
 sec1 = { version = "0.7", features = ["pem"] }
 semver = "1.0"
