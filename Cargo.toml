@@ -68,6 +68,7 @@ clap = { version = "4.5", features = ["derive", "env"] }
 dropshot = { version = "0.16" }
 dropshot-api-manager = "0.3"
 dropshot-api-manager-types = "0.3"
+http = "1"
 openapiv3 = "2.0"
 progenitor = "0.12"
 progenitor-client = "0.12"

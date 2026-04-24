@@ -36,7 +36,7 @@ clap = { workspace = true }
 # URL-encoding for RBAC role query parameters
 urlencoding = "2"
 # Constructing fake HTTP responses in emit-payload mode (debug builds only)
-http = "1"
+http = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
