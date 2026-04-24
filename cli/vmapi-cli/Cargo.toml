@@ -20,7 +20,7 @@ path = "src/main.rs"
 [dependencies]
 vmapi-api = { workspace = true }
 vmapi-client = { workspace = true }
-clap = { workspace = true, features = ["env"] }
+clap = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }

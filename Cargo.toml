@@ -63,7 +63,7 @@ build-data = "0.2"
 camino = "1.1"
 cargo_toml = "0.22"
 chrono = "0.4"
-clap = { version = "4.5", features = ["derive"] }
+clap = { version = "4.5", features = ["derive", "env"] }
 dropshot = { version = "0.16" }
 dropshot-api-manager = "0.3"
 dropshot-api-manager-types = "0.3"
