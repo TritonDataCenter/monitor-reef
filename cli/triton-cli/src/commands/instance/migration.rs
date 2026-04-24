@@ -215,7 +215,7 @@ async fn begin_migration(
 
     let request = cloudapi_client::types::MigrateRequest {
         action: cloudapi_client::types::MigrationAction::Begin,
-        affinity: args.affinity,
+        affinity: args.affinity.map(cloudapi_client::AffinityRules::from),
     };
 
     let response = client

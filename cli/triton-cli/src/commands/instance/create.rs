@@ -197,7 +197,7 @@ pub async fn run(
 
     // Handle affinity rules
     if let Some(affinity) = &args.affinity {
-        request = request.affinity(affinity.clone());
+        request = request.affinity(cloudapi_client::AffinityRules::from(affinity.clone()));
     }
 
     // Build metadata from --metadata, --metadata-file, and --script

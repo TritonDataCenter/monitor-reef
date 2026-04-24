@@ -500,7 +500,7 @@ pub async fn rbac_apply(args: ApplyArgs, client: &TypedClient, use_json: bool) -
         if let Some(current) = current_policy_map.get(&policy.name) {
             // Check if update needed
             let rules_differ = {
-                let mut current_rules: Vec<_> = current.rules.clone();
+                let mut current_rules: Vec<_> = current.rules.0.clone();
                 let mut want_rules: Vec<_> = policy.rules.clone();
                 current_rules.sort();
                 want_rules.sort();
@@ -1205,7 +1205,7 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
         } => {
             let request = cloudapi_client::types::CreatePolicyRequest {
                 name: name.clone(),
-                rules: rules.clone(),
+                rules: rules.clone().into(),
                 description: description.clone(),
             };
             client
@@ -1224,7 +1224,7 @@ async fn execute_rbac_change(change: &RbacChange, client: &TypedClient) -> Resul
         } => {
             let request = cloudapi_client::types::UpdatePolicyRequest {
                 name: None,
-                rules: rules.clone(),
+                rules: rules.clone().map(Into::into),
                 description: description.clone(),
             };
             client

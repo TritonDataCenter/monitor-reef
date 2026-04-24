@@ -9,6 +9,7 @@
 use std::collections::HashMap;
 
 use super::common::{RoleTags, Timestamp, Uuid};
+use super::machine::AffinityRules;
 // Package output type uses VMAPI's Brand to accurately represent the brand
 // requirement stored in the system, which may include internal-only brands.
 use schemars::JsonSchema;
@@ -300,7 +301,7 @@ pub struct MigrationProgressEntry {
 pub struct MigrationEstimateRequest {
     /// Affinity rules
     #[serde(default)]
-    pub affinity: Option<Vec<String>>,
+    pub affinity: Option<AffinityRules>,
 }
 
 /// Migration estimate response
@@ -347,7 +348,7 @@ pub struct MigrateRequest {
     ///
     /// These rules influence which server the instance will be migrated to.
     #[serde(default)]
-    pub affinity: Option<Vec<String>>,
+    pub affinity: Option<AffinityRules>,
 }
 
 /// Path parameter for resource role tag operations

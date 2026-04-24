@@ -9272,6 +9272,13 @@
           "network"
         ]
       },
+      "AffinityRules": {
+        "description": "Affinity rule strings (used by CreateMachineRequest and MigrateRequest).\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries a single named `AffinityRules` schema shared between machine provisioning and migration.",
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      },
       "AuditEntry": {
         "description": "Audit entry for a machine",
         "type": "object",
@@ -9434,10 +9441,11 @@
             "nullable": true,
             "description": "Resolvers",
             "default": null,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resolvers"
+              }
+            ]
           },
           "routes": {
             "nullable": true,
@@ -9521,10 +9529,11 @@
             "nullable": true,
             "description": "Affinity rules for instance placement (added in CloudAPI v8.3.0)\n\nRules follow the pattern: `<key><operator><value>` where: - key: 'instance', 'container', or a tag name - operator: '==' (must), '!=' (must not), '==~' (prefer), '!=~' (prefer not) - value: exact string, glob pattern (*), or regex (/pattern/)\n\nExamples: `instance==myvm`, `role!=database`, `instance!=~foo*`",
             "default": null,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AffinityRules"
+              }
+            ]
           },
           "allow_shared_images": {
             "nullable": true,
@@ -9655,10 +9664,11 @@
           },
           "rules": {
             "description": "Policy rules (array of rule strings)",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PolicyRules"
+              }
+            ]
           }
         },
         "required": [
@@ -10107,11 +10117,11 @@
           "acl": {
             "nullable": true,
             "description": "ACL - list of account UUIDs with access (API version >= 7.1.0)",
-            "type": "array",
-            "items": {
-              "type": "string",
-              "format": "uuid"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageAcl"
+              }
+            ]
           },
           "description": {
             "nullable": true,
@@ -10244,6 +10254,14 @@
           "type",
           "version"
         ]
+      },
+      "ImageAcl": {
+        "description": "List of account UUIDs authorised to use a private image (shared across Image, CreateImageRequest, UpdateImageRequest).",
+        "type": "array",
+        "items": {
+          "type": "string",
+          "format": "uuid"
+        }
       },
       "ImageErrorInfo": {
         "description": "Image error information (for failed image creation)",
@@ -10771,10 +10789,11 @@
             "nullable": true,
             "description": "Affinity rules (only valid for \"begin\" and \"automatic\" actions)\n\nThese rules influence which server the instance will be migrated to.",
             "default": null,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AffinityRules"
+              }
+            ]
           }
         },
         "required": [
@@ -11098,10 +11117,11 @@
           "resolvers": {
             "nullable": true,
             "description": "Resolvers",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resolvers"
+              }
+            ]
           },
           "role-tag": {
             "nullable": true,
@@ -11425,10 +11445,11 @@
           },
           "rules": {
             "description": "Policy rules (array of rule strings)",
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PolicyRules"
+              }
+            ]
           }
         },
         "required": [
@@ -11452,6 +11473,13 @@
             "description": "Policy name",
             "type": "string"
           }
+        }
+      },
+      "PolicyRules": {
+        "description": "Aperture policy rule strings (shared across Policy, CreatePolicyRequest, UpdatePolicyRequest so all three reference the same named schema).",
+        "type": "array",
+        "items": {
+          "type": "string"
         }
       },
       "ProvisioningLimit": {
@@ -11519,6 +11547,13 @@
               }
             ]
           }
+        }
+      },
+      "Resolvers": {
+        "description": "List of DNS resolver addresses for a fabric network.\n\nNewtype wrapper rather than a type alias so generated clients see a single named `Resolvers` type across all fabric-network schemas (Network, CreateFabricNetworkRequest, UpdateFabricNetworkRequest).",
+        "type": "array",
+        "items": {
+          "type": "string"
         }
       },
       "Role": {
@@ -11856,10 +11891,11 @@
             "nullable": true,
             "description": "Resolvers",
             "default": null,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resolvers"
+              }
+            ]
           },
           "routes": {
             "nullable": true,
@@ -11949,10 +11985,11 @@
             "nullable": true,
             "description": "Policy rules (array of rule strings)",
             "default": null,
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PolicyRules"
+              }
+            ]
           }
         }
       },

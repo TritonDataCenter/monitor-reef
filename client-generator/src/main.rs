@@ -110,6 +110,18 @@ fn configure_cloudapi(settings: &mut GenerationSettings) {
             "cloudapi_api::ProvisioningLimits",
             std::iter::empty(),
         )
+        .with_replacement("Resolvers", "cloudapi_api::Resolvers", std::iter::empty())
+        .with_replacement(
+            "PolicyRules",
+            "cloudapi_api::PolicyRules",
+            std::iter::empty(),
+        )
+        .with_replacement("ImageAcl", "cloudapi_api::ImageAcl", std::iter::empty())
+        .with_replacement(
+            "AffinityRules",
+            "cloudapi_api::AffinityRules",
+            std::iter::empty(),
+        )
         .with_patch("VmBrand", &value_enum_patch)
         .with_patch("Brand", &value_enum_patch)
         .with_patch("MachineState", &value_enum_patch)

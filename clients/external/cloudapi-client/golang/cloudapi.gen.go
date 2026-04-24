@@ -1023,6 +1023,11 @@ type AddNicRequest struct {
 	Primary *bool `json:"primary,omitempty"`
 }
 
+// AffinityRules Affinity rule strings (used by CreateMachineRequest and MigrateRequest).
+//
+// Newtype wrapper rather than a type alias so the generated OpenAPI spec carries a single named `AffinityRules` schema shared between machine provisioning and migration.
+type AffinityRules = []string
+
 // AuditEntry Audit entry for a machine
 type AuditEntry struct {
 	// Action Action performed
@@ -1105,7 +1110,7 @@ type CreateFabricNetworkRequest struct {
 	ProvisionStartIP string `json:"provision_start_ip"`
 
 	// Resolvers Resolvers
-	Resolvers *[]string `json:"resolvers,omitempty"`
+	Resolvers *Resolvers `json:"resolvers,omitempty"`
 
 	// Routes Routes
 	Routes interface{} `json:"routes,omitempty"`
@@ -1154,7 +1159,7 @@ type CreateMachineRequest struct {
 	// Rules follow the pattern: `<key><operator><value>` where: - key: 'instance', 'container', or a tag name - operator: '==' (must), '!=' (must not), '==~' (prefer), '!=~' (prefer not) - value: exact string, glob pattern (*), or regex (/pattern/)
 	//
 	// Examples: `instance==myvm`, `role!=database`, `instance!=~foo*`
-	Affinity *[]string `json:"affinity,omitempty"`
+	Affinity *AffinityRules `json:"affinity,omitempty"`
 
 	// AllowSharedImages Allow using images shared with this account (not owned by it)
 	AllowSharedImages *bool `json:"allow_shared_images,omitempty"`
@@ -1211,7 +1216,7 @@ type CreatePolicyRequest struct {
 	Name string `json:"name"`
 
 	// Rules Policy rules (array of rule strings)
-	Rules []string `json:"rules"`
+	Rules PolicyRules `json:"rules"`
 }
 
 // CreateRoleRequest Request to create role
@@ -1469,7 +1474,7 @@ type FirewallRule struct {
 // Image Image/dataset information
 type Image struct {
 	// ACL ACL - list of account UUIDs with access (API version >= 7.1.0)
-	ACL *[]openapi_types.UUID `json:"acl,omitempty"`
+	ACL *ImageACL `json:"acl,omitempty"`
 
 	// Description Description
 	Description *string `json:"description,omitempty"`
@@ -1528,6 +1533,9 @@ type Image struct {
 	// Version Image version
 	Version string `json:"version"`
 }
+
+// ImageACL List of account UUIDs authorised to use a private image (shared across Image, CreateImageRequest, UpdateImageRequest).
+type ImageACL = []openapi_types.UUID
 
 // ImageAction Image action for action dispatch
 type ImageAction struct {
@@ -1828,7 +1836,7 @@ type MigrateRequest struct {
 	// Affinity Affinity rules (only valid for "begin" and "automatic" actions)
 	//
 	// These rules influence which server the instance will be migrated to.
-	Affinity *[]string `json:"affinity,omitempty"`
+	Affinity *AffinityRules `json:"affinity,omitempty"`
 }
 
 // Migration Migration information
@@ -1987,7 +1995,7 @@ type Network struct {
 	Public bool `json:"public"`
 
 	// Resolvers Resolvers
-	Resolvers *[]string `json:"resolvers,omitempty"`
+	Resolvers *Resolvers `json:"resolvers,omitempty"`
 
 	// RoleTag Role tags for RBAC
 	RoleTag *RoleTags `json:"role-tag,omitempty"`
@@ -2145,7 +2153,7 @@ type Policy struct {
 	RoleTag *RoleTags `json:"role-tag,omitempty"`
 
 	// Rules Policy rules (array of rule strings)
-	Rules []string `json:"rules"`
+	Rules PolicyRules `json:"rules"`
 }
 
 // PolicyRef A structured policy reference for role create/update requests.
@@ -2158,6 +2166,9 @@ type PolicyRef struct {
 	// Name Policy name
 	Name *string `json:"name,omitempty"`
 }
+
+// PolicyRules Aperture policy rule strings (shared across Policy, CreatePolicyRequest, UpdatePolicyRequest so all three reference the same named schema).
+type PolicyRules = []string
 
 // ProvisioningLimit A single provisioning limit entry.
 //
@@ -2230,6 +2241,11 @@ type ResizeMachineRequest struct {
 	// Package New package name or UUID
 	Package string `json:"package"`
 }
+
+// Resolvers List of DNS resolver addresses for a fabric network.
+//
+// Newtype wrapper rather than a type alias so generated clients see a single named `Resolvers` type across all fabric-network schemas (Network, CreateFabricNetworkRequest, UpdateFabricNetworkRequest).
+type Resolvers = []string
 
 // Role Role information
 type Role struct {
@@ -2406,7 +2422,7 @@ type UpdateFabricNetworkRequest struct {
 	ProvisionStartIP *string `json:"provision_start_ip,omitempty"`
 
 	// Resolvers Resolvers
-	Resolvers *[]string `json:"resolvers,omitempty"`
+	Resolvers *Resolvers `json:"resolvers,omitempty"`
 
 	// Routes Routes
 	Routes interface{} `json:"routes,omitempty"`
@@ -2439,7 +2455,7 @@ type UpdateFirewallRuleRequest struct {
 // UpdateImageRequest Request to update an image
 type UpdateImageRequest struct {
 	// ACL ACL
-	ACL *[]openapi_types.UUID `json:"acl,omitempty"`
+	ACL *ImageACL `json:"acl,omitempty"`
 
 	// Description Description
 	Description *string `json:"description,omitempty"`
@@ -2475,7 +2491,7 @@ type UpdatePolicyRequest struct {
 	Name *string `json:"name,omitempty"`
 
 	// Rules Policy rules (array of rule strings)
-	Rules *[]string `json:"rules,omitempty"`
+	Rules *PolicyRules `json:"rules,omitempty"`
 }
 
 // UpdateRoleRequest Request to update role

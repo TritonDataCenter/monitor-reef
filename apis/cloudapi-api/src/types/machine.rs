@@ -9,6 +9,55 @@
 use super::common::{Brand, Metadata, RoleTags, Tags, Timestamp, Uuid};
 use super::misc::DiskSize;
 use super::volume::VolumeType;
+
+/// Affinity rule strings (used by CreateMachineRequest and MigrateRequest).
+///
+/// Newtype wrapper rather than a type alias so the generated OpenAPI spec
+/// carries a single named `AffinityRules` schema shared between machine
+/// provisioning and migration.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct AffinityRules(pub Vec<String>);
+
+impl std::ops::Deref for AffinityRules {
+    type Target = Vec<String>;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for AffinityRules {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl From<Vec<String>> for AffinityRules {
+    fn from(v: Vec<String>) -> Self {
+        AffinityRules(v)
+    }
+}
+
+impl<S: Into<String>> FromIterator<S> for AffinityRules {
+    fn from_iter<I: IntoIterator<Item = S>>(iter: I) -> Self {
+        AffinityRules(iter.into_iter().map(Into::into).collect())
+    }
+}
+
+impl IntoIterator for AffinityRules {
+    type Item = String;
+    type IntoIter = std::vec::IntoIter<String>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl<'a> IntoIterator for &'a AffinityRules {
+    type Item = &'a String;
+    type IntoIter = std::slice::Iter<'a, String>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.iter()
+    }
+}
 // Machine output type and ListMachinesQuery use VMAPI's Brand to support internal-only
 // brands (e.g., "builder") that may appear in changefeed messages or operator queries.
 // Only CreateMachineRequest uses CloudAPI's restrictive Brand to validate provisioning.
@@ -309,7 +358,7 @@ pub struct CreateMachineRequest {
     ///
     /// Examples: `instance==myvm`, `role!=database`, `instance!=~foo*`
     #[serde(default)]
-    pub affinity: Option<Vec<String>>,
+    pub affinity: Option<AffinityRules>,
     /// Locality hints (deprecated, use affinity instead)
     #[serde(default)]
     pub locality: Option<serde_json::Value>,

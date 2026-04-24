@@ -617,7 +617,7 @@ async fn create_image(args: ImageCreateArgs, client: &TypedClient, use_json: boo
                 .map_err(|_| anyhow::anyhow!("Invalid ACL UUID: {}", acl_str))?;
             acl_uuids.push(uuid);
         }
-        Some(acl_uuids)
+        Some(cloudapi_client::ImageAcl(acl_uuids))
     } else {
         None
     };
@@ -1557,7 +1557,7 @@ mod tests {
         let acct_b = uuid::Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap();
         let img = Image {
             owner: Some(acct_a),
-            acl: Some(vec![acct_b]),
+            acl: Some(cloudapi_client::ImageAcl(vec![acct_b])),
             ..test_image()
         };
         assert_eq!(compute_image_flags(&img, Some(&acct_a)), "+");
@@ -1569,7 +1569,7 @@ mod tests {
         let acct_b = uuid::Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap();
         let img = Image {
             owner: Some(acct_b),
-            acl: Some(vec![acct_a]),
+            acl: Some(cloudapi_client::ImageAcl(vec![acct_a])),
             ..test_image()
         };
         assert_eq!(compute_image_flags(&img, Some(&acct_a)), "S");
@@ -1583,7 +1583,7 @@ mod tests {
             public: Some(true),
             state: Some(ImageState::Disabled),
             owner: Some(acct_a),
-            acl: Some(vec![acct_a]),
+            acl: Some(cloudapi_client::ImageAcl(vec![acct_a])),
             ..test_image()
         };
         assert_eq!(compute_image_flags(&img, Some(&acct_a)), "IPX+S");
@@ -1599,7 +1599,7 @@ mod tests {
     fn flags_no_account_uuid() {
         let acct_b = uuid::Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap();
         let img = Image {
-            acl: Some(vec![acct_b]),
+            acl: Some(cloudapi_client::ImageAcl(vec![acct_b])),
             ..test_image()
         };
         assert_eq!(compute_image_flags(&img, None), "-");

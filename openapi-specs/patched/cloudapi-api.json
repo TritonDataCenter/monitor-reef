@@ -265,6 +265,13 @@
         ],
         "type": "object"
       },
+      "AffinityRules": {
+        "description": "Affinity rule strings (used by CreateMachineRequest and MigrateRequest).\n\nNewtype wrapper rather than a type alias so the generated OpenAPI spec carries a single named `AffinityRules` schema shared between machine provisioning and migration.",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
       "AuditEntry": {
         "description": "Audit entry for a machine",
         "properties": {
@@ -428,13 +435,14 @@
             "type": "string"
           },
           "resolvers": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resolvers"
+              }
+            ],
             "default": null,
             "description": "Resolvers",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "routes": {
             "default": null,
@@ -515,13 +523,14 @@
         "description": "Request to create a machine\n\nThis struct supports both the modern nested format and the legacy flattened format:\n\n**Modern format:** ```json {\"image\": \"...\", \"tags\": {\"foo\": \"bar\"}, \"metadata\": {\"key\": \"value\"}} ```\n\n**Legacy format:** ```json {\"image\": \"...\", \"tag.foo\": \"bar\", \"metadata.key\": \"value\"} ```",
         "properties": {
           "affinity": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AffinityRules"
+              }
+            ],
             "default": null,
             "description": "Affinity rules for instance placement (added in CloudAPI v8.3.0)\n\nRules follow the pattern: `<key><operator><value>` where: - key: 'instance', 'container', or a tag name - operator: '==' (must), '!=' (must not), '==~' (prefer), '!=~' (prefer not) - value: exact string, glob pattern (*), or regex (/pattern/)\n\nExamples: `instance==myvm`, `role!=database`, `instance!=~foo*`",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "allow_shared_images": {
             "default": null,
@@ -651,11 +660,12 @@
             "type": "string"
           },
           "rules": {
-            "description": "Policy rules (array of rule strings)",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PolicyRules"
+              }
+            ],
+            "description": "Policy rules (array of rule strings)"
           }
         },
         "required": [
@@ -1188,13 +1198,13 @@
         "description": "Image/dataset information",
         "properties": {
           "acl": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageAcl"
+              }
+            ],
             "description": "ACL - list of account UUIDs with access (API version >= 7.1.0)",
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "description": {
             "description": "Description",
@@ -1328,6 +1338,14 @@
           "version"
         ],
         "type": "object"
+      },
+      "ImageAcl": {
+        "description": "List of account UUIDs authorised to use a private image (shared across Image, CreateImageRequest, UpdateImageRequest).",
+        "items": {
+          "format": "uuid",
+          "type": "string"
+        },
+        "type": "array"
       },
       "ImageAction": {
         "description": "Image action for action dispatch",
@@ -1918,13 +1936,14 @@
             "description": "Migration action to perform"
           },
           "affinity": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/AffinityRules"
+              }
+            ],
             "default": null,
             "description": "Affinity rules (only valid for \"begin\" and \"automatic\" actions)\n\nThese rules influence which server the instance will be migrated to.",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           }
         },
         "required": [
@@ -2246,12 +2265,13 @@
             "type": "boolean"
           },
           "resolvers": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resolvers"
+              }
+            ],
             "description": "Resolvers",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "role-tag": {
             "allOf": [
@@ -2574,11 +2594,12 @@
             "nullable": true
           },
           "rules": {
-            "description": "Policy rules (array of rule strings)",
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PolicyRules"
+              }
+            ],
+            "description": "Policy rules (array of rule strings)"
           }
         },
         "required": [
@@ -2604,6 +2625,13 @@
           }
         },
         "type": "object"
+      },
+      "PolicyRules": {
+        "description": "Aperture policy rule strings (shared across Policy, CreatePolicyRequest, UpdatePolicyRequest so all three reference the same named schema).",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
       },
       "ProvisioningLimit": {
         "description": "A single provisioning limit entry.\n\nEach limit constrains a specific dimension (VM count, RAM, or disk quota), optionally filtered by brand, image, or OS. A `value` of `-1` blocks all matching provisions; `0` means unlimited (filtered out before the response reaches the client).\n\nUnits for `value` and `used` depend on `by`: - absent / `\"machines\"` → count of VMs - `\"ram\"` → MiB - `\"quota\"` → GiB",
@@ -2746,6 +2774,13 @@
         ],
         "title": "ResizeMachineRequest",
         "type": "object"
+      },
+      "Resolvers": {
+        "description": "List of DNS resolver addresses for a fabric network.\n\nNewtype wrapper rather than a type alias so generated clients see a single named `Resolvers` type across all fabric-network schemas (Network, CreateFabricNetworkRequest, UpdateFabricNetworkRequest).",
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
       },
       "Role": {
         "description": "Role information",
@@ -3104,13 +3139,14 @@
             "type": "string"
           },
           "resolvers": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/Resolvers"
+              }
+            ],
             "default": null,
             "description": "Resolvers",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "routes": {
             "default": null,
@@ -3172,14 +3208,14 @@
         "description": "Request to update an image",
         "properties": {
           "acl": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ImageAcl"
+              }
+            ],
             "default": null,
             "description": "ACL",
-            "items": {
-              "format": "uuid",
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           },
           "description": {
             "default": null,
@@ -3254,13 +3290,14 @@
             "type": "string"
           },
           "rules": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/PolicyRules"
+              }
+            ],
             "default": null,
             "description": "Policy rules (array of rule strings)",
-            "items": {
-              "type": "string"
-            },
-            "nullable": true,
-            "type": "array"
+            "nullable": true
           }
         },
         "type": "object"

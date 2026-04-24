@@ -1156,13 +1156,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"resolvers\": {"]
     #[doc = "      \"description\": \"Resolvers\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Resolvers\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"routes\": {"]
     #[doc = "      \"description\": \"Routes\""]
@@ -1196,7 +1201,7 @@ pub mod types {
         pub provision_start_ip: ::std::string::String,
         #[doc = "Resolvers"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub resolvers: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub resolvers: ::std::option::Option<cloudapi_api::Resolvers>,
         #[doc = "Routes"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub routes: ::std::option::Option<::serde_json::Value>,
@@ -1342,13 +1347,18 @@ pub mod types {
     #[doc = "  \"properties\": {"]
     #[doc = "    \"affinity\": {"]
     #[doc = "      \"description\": \"Affinity rules for instance placement (added in CloudAPI v8.3.0)\\n\\nRules follow the pattern: `<key><operator><value>` where: - key: 'instance', 'container', or a tag name - operator: '==' (must), '!=' (must not), '==~' (prefer), '!=~' (prefer not) - value: exact string, glob pattern (*), or regex (/pattern/)\\n\\nExamples: `instance==myvm`, `role!=database`, `instance!=~foo*`\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/AffinityRules\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"allow_shared_images\": {"]
     #[doc = "      \"description\": \"Allow using images shared with this account (not owned by it)\","]
@@ -1489,7 +1499,7 @@ pub mod types {
     pub struct CreateMachineRequest {
         #[doc = "Affinity rules for instance placement (added in CloudAPI v8.3.0)\n\nRules follow the pattern: `<key><operator><value>` where: - key: 'instance', 'container', or a tag name - operator: '==' (must), '!=' (must not), '==~' (prefer), '!=~' (prefer not) - value: exact string, glob pattern (*), or regex (/pattern/)\n\nExamples: `instance==myvm`, `role!=database`, `instance!=~foo*`"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub affinity: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub affinity: ::std::option::Option<cloudapi_api::AffinityRules>,
         #[doc = "Allow using images shared with this account (not owned by it)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub allow_shared_images: ::std::option::Option<bool>,
@@ -1567,10 +1577,11 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"rules\": {"]
     #[doc = "      \"description\": \"Policy rules (array of rule strings)\","]
-    #[doc = "      \"type\": \"array\","]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/PolicyRules\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -1586,7 +1597,7 @@ pub mod types {
         #[doc = "Policy name"]
         pub name: ::std::string::String,
         #[doc = "Policy rules (array of rule strings)"]
-        pub rules: ::std::vec::Vec<::std::string::String>,
+        pub rules: cloudapi_api::PolicyRules,
     }
 
     impl CreatePolicyRequest {
@@ -3033,14 +3044,18 @@ pub mod types {
     #[doc = "  \"properties\": {"]
     #[doc = "    \"acl\": {"]
     #[doc = "      \"description\": \"ACL - list of account UUIDs with access (API version >= 7.1.0)\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\","]
-    #[doc = "        \"format\": \"uuid\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/ImageAcl\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"description\": {"]
     #[doc = "      \"description\": \"Description\","]
@@ -3217,7 +3232,7 @@ pub mod types {
     pub struct Image {
         #[doc = "ACL - list of account UUIDs with access (API version >= 7.1.0)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub acl: ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
+        pub acl: ::std::option::Option<cloudapi_api::ImageAcl>,
         #[doc = "Description"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub description: ::std::option::Option<::std::string::String>,
@@ -4915,13 +4930,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"affinity\": {"]
     #[doc = "      \"description\": \"Affinity rules (only valid for \\\"begin\\\" and \\\"automatic\\\" actions)\\n\\nThese rules influence which server the instance will be migrated to.\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/AffinityRules\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -4935,7 +4955,7 @@ pub mod types {
         pub action: MigrationAction,
         #[doc = "Affinity rules (only valid for \"begin\" and \"automatic\" actions)\n\nThese rules influence which server the instance will be migrated to."]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub affinity: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub affinity: ::std::option::Option<cloudapi_api::AffinityRules>,
     }
 
     impl MigrateRequest {
@@ -5756,13 +5776,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"resolvers\": {"]
     #[doc = "      \"description\": \"Resolvers\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Resolvers\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"role-tag\": {"]
     #[doc = "      \"description\": \"Role tags for RBAC\","]
@@ -5845,7 +5870,7 @@ pub mod types {
         pub public: bool,
         #[doc = "Resolvers"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub resolvers: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub resolvers: ::std::option::Option<cloudapi_api::Resolvers>,
         #[doc = "Role tags for RBAC"]
         #[serde(
             rename = "role-tag",
@@ -6499,10 +6524,11 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"rules\": {"]
     #[doc = "      \"description\": \"Policy rules (array of rule strings)\","]
-    #[doc = "      \"type\": \"array\","]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"allOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"$ref\": \"#/components/schemas/PolicyRules\""]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -6527,7 +6553,7 @@ pub mod types {
         )]
         pub role_tag: ::std::option::Option<cloudapi_api::RoleTags>,
         #[doc = "Policy rules (array of rule strings)"]
-        pub rules: ::std::vec::Vec<::std::string::String>,
+        pub rules: cloudapi_api::PolicyRules,
     }
 
     impl Policy {
@@ -7818,13 +7844,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"resolvers\": {"]
     #[doc = "      \"description\": \"Resolvers\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/Resolvers\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"routes\": {"]
     #[doc = "      \"description\": \"Routes\""]
@@ -7854,7 +7885,7 @@ pub mod types {
         pub provision_start_ip: ::std::option::Option<::std::string::String>,
         #[doc = "Resolvers"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub resolvers: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub resolvers: ::std::option::Option<cloudapi_api::Resolvers>,
         #[doc = "Routes"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub routes: ::std::option::Option<::serde_json::Value>,
@@ -8022,14 +8053,18 @@ pub mod types {
     #[doc = "  \"properties\": {"]
     #[doc = "    \"acl\": {"]
     #[doc = "      \"description\": \"ACL\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\","]
-    #[doc = "        \"format\": \"uuid\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/ImageAcl\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    },"]
     #[doc = "    \"description\": {"]
     #[doc = "      \"description\": \"Description\","]
@@ -8091,7 +8126,7 @@ pub mod types {
     pub struct UpdateImageRequest {
         #[doc = "ACL"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub acl: ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
+        pub acl: ::std::option::Option<cloudapi_api::ImageAcl>,
         #[doc = "Description"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
         pub description: ::std::option::Option<::std::string::String>,
@@ -8191,13 +8226,18 @@ pub mod types {
     #[doc = "    },"]
     #[doc = "    \"rules\": {"]
     #[doc = "      \"description\": \"Policy rules (array of rule strings)\","]
-    #[doc = "      \"type\": ["]
-    #[doc = "        \"array\","]
-    #[doc = "        \"null\""]
-    #[doc = "      ],"]
-    #[doc = "      \"items\": {"]
-    #[doc = "        \"type\": \"string\""]
-    #[doc = "      }"]
+    #[doc = "      \"oneOf\": ["]
+    #[doc = "        {"]
+    #[doc = "          \"type\": \"null\""]
+    #[doc = "        },"]
+    #[doc = "        {"]
+    #[doc = "          \"allOf\": ["]
+    #[doc = "            {"]
+    #[doc = "              \"$ref\": \"#/components/schemas/PolicyRules\""]
+    #[doc = "            }"]
+    #[doc = "          ]"]
+    #[doc = "        }"]
+    #[doc = "      ]"]
     #[doc = "    }"]
     #[doc = "  }"]
     #[doc = "}"]
@@ -8215,7 +8255,7 @@ pub mod types {
         pub name: ::std::option::Option<::std::string::String>,
         #[doc = "Policy rules (array of rule strings)"]
         #[serde(default, skip_serializing_if = "::std::option::Option::is_none")]
-        pub rules: ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+        pub rules: ::std::option::Option<cloudapi_api::PolicyRules>,
     }
 
     impl ::std::default::Default for UpdatePolicyRequest {
@@ -10343,7 +10383,7 @@ pub mod types {
             provision_end_ip: ::std::result::Result<::std::string::String, ::std::string::String>,
             provision_start_ip: ::std::result::Result<::std::string::String, ::std::string::String>,
             resolvers: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::Resolvers>,
                 ::std::string::String,
             >,
             routes: ::std::result::Result<
@@ -10432,9 +10472,7 @@ pub mod types {
             }
             pub fn resolvers<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::Resolvers>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.resolvers = value
@@ -10668,7 +10706,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct CreateMachineRequest {
             affinity: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::AffinityRules>,
                 ::std::string::String,
             >,
             allow_shared_images:
@@ -10740,9 +10778,7 @@ pub mod types {
         impl CreateMachineRequest {
             pub fn affinity<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::AffinityRules>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.affinity = value
@@ -10962,10 +10998,7 @@ pub mod types {
                 ::std::string::String,
             >,
             name: ::std::result::Result<::std::string::String, ::std::string::String>,
-            rules: ::std::result::Result<
-                ::std::vec::Vec<::std::string::String>,
-                ::std::string::String,
-            >,
+            rules: ::std::result::Result<cloudapi_api::PolicyRules, ::std::string::String>,
         }
 
         impl ::std::default::Default for CreatePolicyRequest {
@@ -11001,7 +11034,7 @@ pub mod types {
             }
             pub fn rules<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T: ::std::convert::TryInto<cloudapi_api::PolicyRules>,
                 T::Error: ::std::fmt::Display,
             {
                 self.rules = value
@@ -12403,7 +12436,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct Image {
             acl: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
+                ::std::option::Option<cloudapi_api::ImageAcl>,
                 ::std::string::String,
             >,
             description: ::std::result::Result<
@@ -12486,7 +12519,7 @@ pub mod types {
         impl Image {
             pub fn acl<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::vec::Vec<::uuid::Uuid>>>,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::ImageAcl>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.acl = value
@@ -13832,7 +13865,7 @@ pub mod types {
         pub struct MigrateRequest {
             action: ::std::result::Result<super::MigrationAction, ::std::string::String>,
             affinity: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::AffinityRules>,
                 ::std::string::String,
             >,
         }
@@ -13859,9 +13892,7 @@ pub mod types {
             }
             pub fn affinity<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::AffinityRules>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.affinity = value
@@ -14297,7 +14328,7 @@ pub mod types {
             >,
             public: ::std::result::Result<bool, ::std::string::String>,
             resolvers: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::Resolvers>,
                 ::std::string::String,
             >,
             role_tag: ::std::result::Result<
@@ -14445,9 +14476,7 @@ pub mod types {
             }
             pub fn resolvers<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::Resolvers>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.resolvers = value
@@ -15223,10 +15252,7 @@ pub mod types {
                 ::std::option::Option<cloudapi_api::RoleTags>,
                 ::std::string::String,
             >,
-            rules: ::std::result::Result<
-                ::std::vec::Vec<::std::string::String>,
-                ::std::string::String,
-            >,
+            rules: ::std::result::Result<cloudapi_api::PolicyRules, ::std::string::String>,
         }
 
         impl ::std::default::Default for Policy {
@@ -15284,7 +15310,7 @@ pub mod types {
             }
             pub fn rules<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::vec::Vec<::std::string::String>>,
+                T: ::std::convert::TryInto<cloudapi_api::PolicyRules>,
                 T::Error: ::std::fmt::Display,
             {
                 self.rules = value
@@ -16638,7 +16664,7 @@ pub mod types {
                 ::std::string::String,
             >,
             resolvers: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::Resolvers>,
                 ::std::string::String,
             >,
             routes: ::std::result::Result<
@@ -16714,9 +16740,7 @@ pub mod types {
             }
             pub fn resolvers<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::Resolvers>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.resolvers = value
@@ -16928,7 +16952,7 @@ pub mod types {
         #[derive(Clone, Debug)]
         pub struct UpdateImageRequest {
             acl: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::uuid::Uuid>>,
+                ::std::option::Option<cloudapi_api::ImageAcl>,
                 ::std::string::String,
             >,
             description: ::std::result::Result<
@@ -16974,7 +16998,7 @@ pub mod types {
         impl UpdateImageRequest {
             pub fn acl<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<::std::option::Option<::std::vec::Vec<::uuid::Uuid>>>,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::ImageAcl>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.acl = value
@@ -17131,7 +17155,7 @@ pub mod types {
                 ::std::string::String,
             >,
             rules: ::std::result::Result<
-                ::std::option::Option<::std::vec::Vec<::std::string::String>>,
+                ::std::option::Option<cloudapi_api::PolicyRules>,
                 ::std::string::String,
             >,
         }
@@ -17169,9 +17193,7 @@ pub mod types {
             }
             pub fn rules<T>(mut self, value: T) -> Self
             where
-                T: ::std::convert::TryInto<
-                        ::std::option::Option<::std::vec::Vec<::std::string::String>>,
-                    >,
+                T: ::std::convert::TryInto<::std::option::Option<cloudapi_api::PolicyRules>>,
                 T::Error: ::std::fmt::Display,
             {
                 self.rules = value

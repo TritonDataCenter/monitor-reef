@@ -103,6 +103,7 @@ pub use cloudapi_api::{
     AddMetadataRequest,
     // Network types
     AddNicRequest,
+    AffinityRules,
     // Machine types
     AuditEntry,
     // User types
@@ -145,6 +146,7 @@ pub use cloudapi_api::{
     FirewallRule,
     FirewallRulePath,
     Image,
+    ImageAcl,
     ImageAction,
     ImageActionQuery,
     ImageCollectionActionQuery,
@@ -184,9 +186,11 @@ pub use cloudapi_api::{
     Policy,
     PolicyPath,
     PolicyRef,
+    PolicyRules,
     ProvisioningLimit,
     ProvisioningLimits,
     ReplaceRoleTagsRequest,
+    Resolvers,
     Role,
     RolePath,
     RoleTags,
@@ -1499,7 +1503,7 @@ impl TypedClient {
             .into_inner();
 
         // 2. Add target to ACL (if not already present)
-        let mut acl: Vec<Uuid> = image.acl.unwrap_or_default();
+        let mut acl: Vec<Uuid> = image.acl.unwrap_or_default().0;
         if !acl.contains(&target_account) {
             acl.push(target_account);
         }
@@ -1544,7 +1548,7 @@ impl TypedClient {
             .into_inner();
 
         // 2. Remove target from ACL
-        let mut acl: Vec<Uuid> = image.acl.unwrap_or_default();
+        let mut acl: Vec<Uuid> = image.acl.unwrap_or_default().0;
         acl.retain(|a| a != &target_account);
 
         // 3. POST update with modified ACL
