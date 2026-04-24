@@ -57,14 +57,16 @@ unwrap_used = "deny"
 expect_used = "deny"
 
 [workspace.dependencies]
-askama = "0.15"
 anyhow = "1.0"
+askama = "0.15"
 axum = { version = "0.8", features = ["ws"] }
+base64 = "0.22"
 build-data = "0.2"
 camino = "1.1"
 cargo_toml = "0.22"
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 clap = { version = "4.5", features = ["derive", "env"] }
+dirs = "6.0"
 dropshot = { version = "0.16" }
 dropshot-api-manager = "0.3"
 dropshot-api-manager-types = "0.3"
@@ -74,6 +76,7 @@ progenitor = "0.12"
 progenitor-client = "0.12"
 progenitor-impl = "0.12"
 rand = { version = "0.9", features = ["os_rng"] }
+rcgen = { version = "0.14", features = ["pem"] }
 rustfmt-wrapper = "0.2"
 # reqwest needs to track with progenitor-client
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
@@ -91,6 +94,7 @@ tokio = { version = "1.48", features = ["full"] }
 tokio-tungstenite = { version = "0.28", features = ["rustls-tls-webpki-roots"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+urlencoding = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 
 #
