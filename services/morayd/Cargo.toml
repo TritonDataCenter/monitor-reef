@@ -1,0 +1,48 @@
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# Copyright 2026 Edgecast Cloud LLC.
+
+[package]
+name = "morayd"
+version = "0.1.0"
+edition.workspace = true
+description = "Moray-compatible key-value service backed by FoundationDB"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# Build with FDB backend:
+#   RUSTFLAGS="-L /opt/fdb/lib" cargo build --release --features fdb
+# Without this feature, morayd compiles to a mem-backed dev server — the
+# fallback path lets us build + test on developer laptops without libfdb_c.
+fdb = ["dep:foundationdb"]
+
+[[bin]]
+name = "morayd"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+bytes = "1"
+crc16 = "0.4"
+futures = "0.3"
+parking_lot = "0.12"
+zstd = "0.13"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { version = "0.7", features = ["codec"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid = { workspace = true, features = ["v4", "v7"] }
+chrono = { version = "0.4", features = ["serde"] }
+
+foundationdb = { version = "0.10", optional = true, features = [
+    "fdb-7_3",
+    "embedded-fdb-include",
+] }
