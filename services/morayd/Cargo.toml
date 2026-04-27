@@ -19,7 +19,7 @@ default = []
 #   RUSTFLAGS="-L /opt/fdb/lib" cargo build --release --features fdb
 # Without this feature, morayd compiles to a mem-backed dev server — the
 # fallback path lets us build + test on developer laptops without libfdb_c.
-fdb = ["dep:foundationdb"]
+fdb = ["dep:foundationdb", "dep:triton-fdb"]
 
 [[bin]]
 name = "morayd"
@@ -46,3 +46,6 @@ foundationdb = { version = "0.10", optional = true, features = [
     "fdb-7_3",
     "embedded-fdb-include",
 ] }
+# Shared FDB plumbing extracted to triton-fdb. Path dep during initial
+# port; switch to git/published before merge.
+triton-fdb = { path = "../../../tritonfs/crates/triton-fdb", optional = true, features = ["fdb"] }

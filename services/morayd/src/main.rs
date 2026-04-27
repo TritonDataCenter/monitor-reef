@@ -37,14 +37,14 @@ async fn main() -> anyhow::Result<()> {
 
     #[cfg(feature = "fdb")]
     {
-        // FDB: exactly once, leak the guard so shutdown does not stall on
-        // the network thread teardown. See mantad fdb-integration.md §3.
-        let _net = unsafe { foundationdb::boot() };
+        // FDB network thread bootstrap. The triton-fdb wrapper enforces the
+        // "exactly once per process" rule and leaks the guard so shutdown
+        // does not stall on C-client teardown.
+        triton_fdb::boot_and_forget()?;
         let cluster = std::env::var("MORAYD_CLUSTER_FILE")
             .unwrap_or_else(|_| "/etc/fdb/fdb.cluster".into());
         info!(cluster = %cluster, "opening FDB store");
         let store = Arc::new(FdbStore::open(&cluster)?);
-        std::mem::forget(_net);
         info!(backend = "fdb", "morayd starting");
         server::run(store, listen.as_str()).await?;
     }

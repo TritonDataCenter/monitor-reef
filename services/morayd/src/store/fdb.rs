@@ -21,30 +21,29 @@
 //! values without a schema. Mantad paid its way with postcard; morayd's
 //! workload is dominated by schemas the client supplies, so JSON wins.
 
-use std::sync::Arc;
-
 use foundationdb::options::StreamingMode;
 use foundationdb::tuple::pack;
-use foundationdb::{Database, FdbBindingError, RangeOption};
+use foundationdb::{FdbBindingError, RangeOption};
 use serde_json::Value;
+use triton_fdb::FdbClient;
 
 use crate::error::{MorayError, Result};
 use crate::store::{MorayStore, PutOpts};
 use crate::types::{Bucket, BucketConfig, ObjectMeta, ReindexState};
 
 pub struct FdbStore {
-    db: Arc<Database>,
+    client: FdbClient,
 }
 
 impl FdbStore {
     pub fn open(cluster_file: &str) -> Result<Self> {
-        let db = Database::new(Some(cluster_file))
+        let client = FdbClient::open(cluster_file)
             .map_err(|e| MorayError::Storage(anyhow::anyhow!("open: {e}")))?;
-        Ok(Self { db: Arc::new(db) })
+        Ok(Self { client })
     }
 }
 
-fn to_store_err(e: FdbBindingError) -> MorayError {
+fn to_store_err(e: triton_fdb::Error) -> MorayError {
     MorayError::Storage(anyhow::anyhow!("fdb: {e}"))
 }
 
@@ -117,7 +116,7 @@ fn etag_of(v: &Value) -> String {
 
 impl MorayStore for FdbStore {
     async fn create_bucket(&self, name: &str, config: BucketConfig) -> Result<Bucket> {
-        let db = self.db.clone();
+        let client = self.client.clone();
         let name = name.to_string();
         let bk = bucket_key(&name);
 
@@ -132,7 +131,7 @@ impl MorayStore for FdbStore {
         };
         let value = encode_json(&bucket)?;
 
-        db.run(|trx, _| {
+        client.transact("create_bucket", |trx, _| {
             let bk = bk.clone();
             let value = value.clone();
             let name = name.clone();
@@ -160,15 +159,15 @@ impl MorayStore for FdbStore {
     }
 
     async fn update_bucket(&self, name: &str, config: BucketConfig) -> Result<Bucket> {
-        let db = self.db.clone();
+        let client = self.client.clone();
         let bk = bucket_key(name);
         let obj_prefix = pack(&("m", "k", name));
         let obj_end = range_end(&obj_prefix);
         let name_s = name.to_string();
         let now = chrono::Utc::now();
 
-        let bucket = db
-            .run(|trx, _| {
+        let bucket = client
+            .transact("update_bucket", |trx, _| {
                 let bk = bk.clone();
                 let obj_prefix = obj_prefix.clone();
                 let obj_end = obj_end.clone();
@@ -231,9 +230,9 @@ impl MorayStore for FdbStore {
     }
 
     async fn clear_reindex_just_finished(&self, bucket: &str) -> Result<()> {
-        let db = self.db.clone();
+        let client = self.client.clone();
         let bk = bucket_key(bucket);
-        db.run(|trx, _| {
+        client.transact("clear_reindex_just_finished", |trx, _| {
             let bk = bk.clone();
             async move {
                 let existing = trx.get(&bk, false).await?;
@@ -254,10 +253,10 @@ impl MorayStore for FdbStore {
     }
 
     async fn reindex_step(&self, bucket: &str, count: u64) -> Result<(u64, u64)> {
-        let db = self.db.clone();
+        let client = self.client.clone();
         let bk = bucket_key(bucket);
         let name_s = bucket.to_string();
-        db.run(|trx, _| {
+        client.transact("reindex_step", |trx, _| {
             let bk = bk.clone();
             let name_s = name_s.clone();
             async move {
@@ -293,10 +292,10 @@ impl MorayStore for FdbStore {
     }
 
     async fn get_bucket(&self, name: &str) -> Result<Bucket> {
-        let db = self.db.clone();
+        let client = self.client.clone();
         let bk = bucket_key(name);
-        let raw = db
-            .run(|trx, _| {
+        let raw = client
+            .transact("get_bucket", |trx, _| {
                 let bk = bk.clone();
                 async move {
                     Ok::<_, FdbBindingError>(trx.get(&bk, false).await?.map(|s| s.to_vec()))
@@ -309,11 +308,11 @@ impl MorayStore for FdbStore {
     }
 
     async fn delete_bucket(&self, name: &str) -> Result<()> {
-        let db = self.db.clone();
+        let client = self.client.clone();
         let bk = bucket_key(name);
         let obj_prefix = pack(&("m", "k", name));
         let cnt = counter_key(name);
-        db.run(|trx, _| {
+        client.transact("delete_bucket", |trx, _| {
             let bk = bk.clone();
             let obj_prefix = obj_prefix.clone();
             let cnt = cnt.clone();
@@ -329,14 +328,14 @@ impl MorayStore for FdbStore {
     }
 
     async fn list_buckets(&self) -> Result<Vec<Bucket>> {
-        let db = self.db.clone();
+        let client = self.client.clone();
         let prefix = pack(&("m", "b"));
         let mut range_opt = RangeOption::from((prefix.clone(), range_end(&prefix)));
         range_opt.mode = StreamingMode::WantAll;
         range_opt.limit = Some(10_000);
 
-        let kvs: Vec<Vec<u8>> = db
-            .run(|trx, _| {
+        let kvs: Vec<Vec<u8>> = client
+            .transact("list_buckets", |trx, _| {
                 let r = range_opt.clone();
                 async move {
                     let kvs = trx.get_range(&r, 1, false).await?;
@@ -363,7 +362,7 @@ impl MorayStore for FdbStore {
         opts: PutOpts,
         unique_cols: Vec<(String, Vec<String>)>,
     ) -> Result<ObjectMeta> {
-        let db = self.db.clone();
+        let client = self.client.clone();
         let bk = bucket_key(bucket);
         let ok = object_key(bucket, key);
         let ck = counter_key(bucket);
@@ -374,8 +373,8 @@ impl MorayStore for FdbStore {
         let back_key = unique_back_key(bucket, key);
         let expected_etag_for_err = opts.etag.clone().unwrap_or_default();
 
-        let meta = db
-            .run(|trx, _| {
+        let meta = client
+            .transact("put_object", |trx, _| {
                 let bk = bk.clone();
                 let ok = ok.clone();
                 let ck = ck.clone();
@@ -535,11 +534,11 @@ impl MorayStore for FdbStore {
     }
 
     async fn get_object(&self, bucket: &str, key: &str) -> Result<ObjectMeta> {
-        let db = self.db.clone();
+        let client = self.client.clone();
         let bk = bucket_key(bucket);
         let ok = object_key(bucket, key);
-        let (bucket_exists, raw) = db
-            .run(|trx, _| {
+        let (bucket_exists, raw) = client
+            .transact("get_object", |trx, _| {
                 let bk = bk.clone();
                 let ok = ok.clone();
                 async move {
@@ -565,15 +564,15 @@ impl MorayStore for FdbStore {
         bucket: &str,
         limit: usize,
     ) -> Result<Vec<ObjectMeta>> {
-        let db = self.db.clone();
+        let client = self.client.clone();
         let bk = bucket_key(bucket);
         let prefix = pack(&("m", "k", bucket));
         let end = range_end(&prefix);
 
         // Bucket existence check is a cheap point read; do it up front so
         // we fail early without consuming a scan transaction.
-        let exists = db
-            .run(|trx, _| {
+        let exists = client
+            .transact("scan_objects", |trx, _| {
                 let bk = bk.clone();
                 async move {
                     Ok::<_, FdbBindingError>(trx.get(&bk, false).await?.is_some())
@@ -604,8 +603,8 @@ impl MorayStore for FdbStore {
                 r
             };
 
-            let chunk: Vec<(Vec<u8>, Vec<u8>)> = db
-                .run(|trx, _| {
+            let chunk: Vec<(Vec<u8>, Vec<u8>)> = client
+                .transact("scan_objects.2", |trx, _| {
                     let r = range_opt.clone();
                     async move {
                         let kvs = trx.get_range(&r, 1, false).await?;
@@ -655,14 +654,14 @@ impl MorayStore for FdbStore {
         key: &str,
         expected_etag: Option<String>,
     ) -> Result<()> {
-        let db = self.db.clone();
+        let client = self.client.clone();
         let bk = bucket_key(bucket);
         let ok = object_key(bucket, key);
         let back_key = unique_back_key(bucket, key);
         let bucket_name = bucket.to_string();
         let expected_etag_for_err = expected_etag.clone().unwrap_or_default();
-        let (bucket_exists, object_exists) = db
-            .run(|trx, _| {
+        let (bucket_exists, object_exists) = client
+            .transact("delete_object", |trx, _| {
                 let bk = bk.clone();
                 let ok = ok.clone();
                 let back_key = back_key.clone();
