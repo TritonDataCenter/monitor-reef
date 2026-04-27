@@ -34,10 +34,9 @@ impl DcMaintCommand {
 }
 
 async fn cmd_dc_maint_status(sapi_url: &str, json: bool) -> Result<()> {
-    let http = triton_tls::build_http_client(false)
+    let sapi = sapi_client::build_client(sapi_url, false)
         .await
-        .context("failed to build HTTP client")?;
-    let sapi = sapi_client::Client::new_with_client(sapi_url, http);
+        .context("failed to build SAPI client")?;
 
     // Get the "sdc" application to read DC_MAINT_MESSAGE and DC_MAINT_ETA
     let apps = sapi

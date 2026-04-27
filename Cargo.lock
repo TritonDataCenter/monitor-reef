@@ -3383,6 +3383,7 @@ dependencies = [
  "schemars",
  "serde",
  "serde_json",
+ "triton-tls",
  "uuid",
 ]
 

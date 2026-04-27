@@ -94,7 +94,7 @@ pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
     let http = triton_tls::build_http_client(false)
         .await
         .context("failed to build HTTP client")?;
-    let updates = Client::new_with_client(&opts.updates_url, http.clone());
+    let updates = Client::new_with_client(&opts.updates_url, http);
 
     // Resolve channel: --channel flag > sdc SAPI metadata > updates default.
     // Mirrors sdcadm's getDefaultChannel.
@@ -108,7 +108,9 @@ pub async fn run(opts: SelfUpdateOpts) -> Result<()> {
                  metadata supplies update_channel"
             )
         })?;
-        let sapi = sapi_client::Client::new_with_client(sapi_url, http);
+        let sapi = sapi_client::build_client(sapi_url, false)
+            .await
+            .context("failed to build SAPI client")?;
         let apps = sapi
             .list_applications()
             .name("sdc")

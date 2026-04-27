@@ -180,9 +180,21 @@ async fn load_extra_cert_paths(root_store: &mut rustls::RootCertStore) {
 /// When `insecure` is `true`, TLS certificate validation is skipped entirely.
 /// Otherwise, certificates are loaded via [`build_root_cert_store`].
 pub async fn build_http_client(insecure: bool) -> Result<reqwest::Client, reqwest::Error> {
+    build_http_client_with_headers(insecure, reqwest::header::HeaderMap::new()).await
+}
+
+/// Like [`build_http_client`], but installs the supplied default headers on
+/// every request the resulting client issues. Used to attach API-version
+/// negotiation headers (e.g. SAPI's `Accept-Version: ~2`).
+pub async fn build_http_client_with_headers(
+    insecure: bool,
+    default_headers: reqwest::header::HeaderMap,
+) -> Result<reqwest::Client, reqwest::Error> {
     install_default_crypto_provider();
 
-    let mut builder = reqwest::Client::builder().danger_accept_invalid_certs(insecure);
+    let mut builder = reqwest::Client::builder()
+        .danger_accept_invalid_certs(insecure)
+        .default_headers(default_headers);
 
     // Only apply custom root cert store when we actually need to verify
     // certificates. When insecure=true, reqwest's built-in handling of

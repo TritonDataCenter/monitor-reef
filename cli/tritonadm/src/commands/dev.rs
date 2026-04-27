@@ -52,7 +52,9 @@ async fn cmd_remove_external_nics(sapi_url: &str, vmapi_url: &str, napi_url: &st
         .await
         .context("failed to build HTTP client")?;
 
-    let sapi = sapi_client::Client::new_with_client(sapi_url, http.clone());
+    let sapi = sapi_client::build_client(sapi_url, false)
+        .await
+        .context("failed to build SAPI client")?;
     let vmapi = vmapi_client::TypedClient::new_with_client(vmapi_url, http.clone());
     let napi = napi_client::Client::new_with_client(napi_url, http);
 
@@ -117,7 +119,9 @@ async fn cmd_remove_instances_only(sapi_url: &str, vmapi_url: &str, svc_name: &s
         .await
         .context("failed to build HTTP client")?;
 
-    let sapi = sapi_client::Client::new_with_client(sapi_url, http.clone());
+    let sapi = sapi_client::build_client(sapi_url, false)
+        .await
+        .context("failed to build SAPI client")?;
     let vmapi = vmapi_client::TypedClient::new_with_client(vmapi_url, http);
 
     let instances = get_service_instances(&sapi, svc_name).await?;
@@ -159,7 +163,9 @@ async fn cmd_remove_service(sapi_url: &str, vmapi_url: &str, svc_name: &str) -> 
         .await
         .context("failed to build HTTP client")?;
 
-    let sapi = sapi_client::Client::new_with_client(sapi_url, http.clone());
+    let sapi = sapi_client::build_client(sapi_url, false)
+        .await
+        .context("failed to build SAPI client")?;
     let vmapi = vmapi_client::TypedClient::new_with_client(vmapi_url, http);
 
     let services = sapi

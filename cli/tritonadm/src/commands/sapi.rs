@@ -11,7 +11,6 @@
 
 use anyhow::{Context, Result};
 use clap::Subcommand;
-use sapi_client::Client;
 use sapi_client::types;
 use uuid::Uuid;
 
@@ -477,10 +476,9 @@ fn parse_action(s: &str) -> Result<types::UpdateAction> {
 
 impl SapiCommand {
     pub async fn run(self, sapi_url: &str) -> Result<()> {
-        let http = triton_tls::build_http_client(false)
+        let client = sapi_client::build_client(sapi_url, false)
             .await
-            .context("failed to build HTTP client")?;
-        let client = Client::new_with_client(sapi_url, http);
+            .context("failed to build SAPI client")?;
 
         match self {
             // ================================================================

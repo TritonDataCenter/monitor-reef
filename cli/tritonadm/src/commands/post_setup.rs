@@ -800,7 +800,9 @@ async fn cmd_add_service(
         .await
         .context("failed to build HTTP client")?;
 
-    let sapi = sapi_client::Client::new_with_client(&urls.sapi_url, http.clone());
+    let sapi = sapi_client::build_client(&urls.sapi_url, false)
+        .await
+        .context("failed to build SAPI client")?;
     let local_imgapi = imgapi_client::Client::new_with_client(&urls.imgapi_url, http.clone());
     let local_imgapi_typed =
         imgapi_client::TypedClient::new_with_client(&urls.imgapi_url, http.clone());
@@ -1368,7 +1370,9 @@ async fn cmd_common_external_nics(urls: &PostSetupUrls) -> Result<()> {
         .await
         .context("failed to build HTTP client")?;
 
-    let sapi = sapi_client::Client::new_with_client(&urls.sapi_url, http.clone());
+    let sapi = sapi_client::build_client(&urls.sapi_url, false)
+        .await
+        .context("failed to build SAPI client")?;
     let vmapi = vmapi_client::TypedClient::new_with_client(&urls.vmapi_url, http.clone());
     let napi = napi_client::Client::new_with_client(&urls.napi_url, http);
 

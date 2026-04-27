@@ -38,6 +38,25 @@
 mod generated;
 pub use generated::*;
 
+/// SAPI Accept-Version header value. SAPI v2+ adds the `type` field to
+/// services/instances and surfaces `agent`-typed entries; without this the
+/// server returns the v1 shape (VMs only, no `type`).
+pub const ACCEPT_VERSION: &str = "~2";
+
+/// Build a SAPI [`Client`] with the v2 `Accept-Version` header applied to
+/// every request, using the standard Triton TLS handling. Prefer this over
+/// constructing the HTTP client and `Client` separately — the version header
+/// is required for `type` and agent rows to appear.
+pub async fn build_client(url: &str, insecure: bool) -> Result<Client, reqwest::Error> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        reqwest::header::HeaderName::from_static("accept-version"),
+        reqwest::header::HeaderValue::from_static(ACCEPT_VERSION),
+    );
+    let http = triton_tls::build_http_client_with_headers(insecure, headers).await?;
+    Ok(Client::new_with_client(url, http))
+}
+
 // Re-export types from the API crate for convenience.
 pub use sapi_api::{
     // Application types
