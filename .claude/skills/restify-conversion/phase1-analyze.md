@@ -79,6 +79,64 @@ For each endpoint, record:
 - `res.json([...])` or `res.send(array)` → `Vec<T>`
 - `res.json({key: value, ...})` → `HashMap<String, T>` or custom struct
 
+### 3b. Identify Enum Opportunities
+
+Search for fields that should be enums rather than strings. Where to look:
+
+1. Conditional string comparisons — `if (x === 'foo')` or `switch(x)` on a field value
+   means the field has a fixed set of values → enum.
+2. Constructor names — `constructor.name` returns a class name from a fixed set
+   (e.g., storage backends, handler types). Map each class to an enum variant.
+3. Conditional `res.send()` with different strings — e.g., `res.send(flag ? 'proto' : 'full')`
+   means the response is a fixed set of strings → enum.
+4. Internal `require()` dispatching — when code picks between N implementations,
+   the selector is usually a string from a fixed set.
+5. Fields that shadow an enum from another type — e.g., if a response includes a `mode`
+   field and there's already a Mode type, the response should use the typed enum, not String.
+6. Bunyan/restify internals — `log.level()` returns an integer, not a string.
+   Check actual return types, don't assume String.
+
+For each enum found, document in the plan:
+- Field name and where it appears
+- All known variant values (wire-format strings)
+- Whether it needs `#[serde(other)] Unknown` (yes for any server-controlled state field)
+
+### 3c. Catalog Restify Response Patterns (Wire Format)
+
+Restify has response patterns that don't map directly to Dropshot. Catalog every
+response call in the endpoint handlers to catch these early:
+
+| Restify Pattern | Wire Behavior | Dropshot Mapping |
+|----------------|---------------|------------------|
+| `res.send(obj)` (no status) | 200 + JSON body | `HttpResponseOk<T>` (NOT `HttpResponseCreated`) |
+| `res.send(201, obj)` | 201 + JSON body | `HttpResponseCreated<T>` |
+| `res.send(204)` | 204 no content | `HttpResponseUpdatedNoContent` |
+| `res.send()` (no args) | 200 empty body | Needs patch: remove content from 200 response |
+| `res.send('string')` | 200 + bare text | Needs patch: change schema to plain string |
+| `res.send(cond ? 200 : 500, obj)` | Variable status + same body | Progenitor limitation: can't have multiple body types |
+
+For each endpoint, record:
+- The exact `res.send(...)` call and its arguments
+- Whether the response needs OpenAPI spec patching
+- Whether Progenitor will have trouble generating a usable client
+
+Flag endpoints that will need patching in a "Patch Requirements" section of the plan.
+The orchestrator can then create the patched spec and point the client at it.
+
+### 3d. Catalog All Request Body Fields
+
+Node.js handlers often accept more fields than are documented. Search for all
+`req.params.*` and `req.body.*` access patterns in each handler, not just the ones
+that appear required.
+
+Common hidden optional fields:
+- `uuid` — many create endpoints accept a caller-provided UUID
+- `master` — flag for records replicated from remote datacenters
+- `owner_uuid` — sometimes optional on creates
+
+For each create endpoint, verify the complete set of accepted fields by reading
+the handler and the model layer it calls.
+
 ### 4. Identify Route Conflicts
 
 **CRITICAL:** Check for routes that will conflict in Dropshot.
@@ -235,6 +293,17 @@ apis/<service>-api/src/
 └── <modules>
 ```
 
+## Enum Opportunities
+- <list fields that should be enums with their variant values>
+- Example: `PingResponse.mode` → `SapiMode { Proto, Full }`
+- Example: `PingResponse.stor_type` → `StorageType { LocalStorage, MorayStorage, ... }`
+
+## Patch Requirements
+- <list endpoints needing OpenAPI spec patching>
+- Example: `GET /mode` returns bare string, needs schema patch
+- Example: `POST /mode` returns 204, trait uses HttpResponseUpdatedNoContent
+- Example: `POST /loglevel` returns empty 200, needs content removal patch
+
 ## Types to Define
 - <list major request/response types>
 
@@ -264,6 +333,10 @@ Phase 1 is complete when:
 - [ ] Response types verified (array vs map for each list endpoint)
 - [ ] Field casing verified from translate() functions for every multi-word field
 - [ ] Field naming exceptions documented
+- [ ] Enum opportunities identified (string fields with fixed value sets)
+- [ ] Restify response patterns cataloged (bare strings, 204s, empty 200s, variable status)
+- [ ] Patch requirements documented (endpoints needing OpenAPI spec patching)
+- [ ] All request body fields captured (including hidden optional fields like uuid, master)
 - [ ] File structure planned
 - [ ] Plan file written to `conversion-plans/<service>/plan.md`
 

@@ -18,5 +18,5 @@ schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 strum = { workspace = true }
-http = "1.1"
-jira-api = { path = "../jira-api" }
+http = { workspace = true }
+jira-api = { workspace = true }

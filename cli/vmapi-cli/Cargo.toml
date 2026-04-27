@@ -18,9 +18,9 @@ name = "vmapi"
 path = "src/main.rs"
 
 [dependencies]
-vmapi-api = { path = "../../apis/vmapi-api" }
-vmapi-client = { path = "../../clients/internal/vmapi-client" }
-clap = { workspace = true, features = ["env"] }
+vmapi-api = { workspace = true }
+vmapi-client = { workspace = true }
+clap = { workspace = true }
 tokio = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
@@ -28,5 +28,5 @@ serde_json = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
-assert_cmd = "2.0"
-predicates = "3.0"
+assert_cmd = { workspace = true }
+predicates = { workspace = true }

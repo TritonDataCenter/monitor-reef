@@ -92,7 +92,25 @@ Compare CLI commands against API endpoints:
 - [ ] Action-dispatch endpoints have individual action commands
 - [ ] Nested resources have appropriate subcommands
 
-### 5. Behavioral Analysis
+### 5. Enum and Wire Format Validation
+
+Check every enum variant against the Node.js source:
+- Verify variant wire-format strings match the actual values the server sends
+- For `constructor.name`-based enums, verify against the actual function/class names
+- For conditional string responses, verify all branches are covered
+
+Check every response for wire format match:
+- Compare `res.send()` arguments against OpenAPI spec response schema
+- Verify status codes: Restify defaults to 200 for `res.send(obj)` — spec should say 200, not 201
+- Verify bare string responses are patched (not wrapped in an object)
+- Verify empty responses (204, empty 200) have content removed from spec
+- Verify no dead/unused schemas remain in the (patched) spec
+
+Check for missing enum opportunities:
+- Search for any remaining String fields in response types that only take a fixed set of values
+- Look for `if (field === 'value')` patterns in the Node.js source for fields still typed as String
+
+### 6. Behavioral Analysis
 
 Review handler implementations for behaviors that may need special handling:
 
@@ -218,6 +236,11 @@ Create `conversion-plans/<service>/validation.md`:
 Phase 5 is complete when:
 - [ ] All endpoints compared
 - [ ] Type coverage analyzed
+- [ ] Enum variant wire values verified against Node.js source
+- [ ] Response status codes verified (especially create endpoints: 200 vs 201)
+- [ ] Bare string / empty body responses verified (patched correctly in spec)
+- [ ] No dead schemas in the patched spec
+- [ ] No remaining String fields that should be enums
 - [ ] Route conflict resolutions verified
 - [ ] CLI commands verified
 - [ ] Behavioral notes documented

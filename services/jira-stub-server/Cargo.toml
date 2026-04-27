@@ -22,7 +22,7 @@ name = "jira-stub-server"
 path = "src/main.rs"
 
 [dependencies]
-jira-api = { path = "../../apis/jira-api" }
+jira-api = { workspace = true }
 dropshot = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

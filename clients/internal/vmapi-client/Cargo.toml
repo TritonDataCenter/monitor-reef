@@ -24,9 +24,9 @@ schemars = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
-vmapi-api = { path = "../../../apis/vmapi-api" }
+vmapi-api = { workspace = true }
 # Required for WebSocket endpoints (Progenitor-generated code)
-base64 = "0.22"
-rand = "0.9"
+base64 = { workspace = true }
+rand = { workspace = true }
 # clap::ValueEnum on generated enum types for CLI consumers
 clap = { workspace = true }
