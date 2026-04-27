@@ -333,7 +333,11 @@ const PORTAL_CONFIG: ServiceConfig = ServiceConfig {
     delegate_dataset: true,
     firewall_enabled: true,
     ensure_manta_nic: false,
-    include_external_primary: true,
+    // Admin-only at zone creation; external NIC is attached later by
+    // `post-setup common-external-nics`. Avoids accidentally exposing a
+    // freshly-provisioned portal on the public network before the
+    // operator has reviewed it.
+    include_external_primary: false,
 };
 
 const TRITONADMIN_CONFIG: ServiceConfig = ServiceConfig {
@@ -345,7 +349,11 @@ const TRITONADMIN_CONFIG: ServiceConfig = ServiceConfig {
     delegate_dataset: true,
     firewall_enabled: true,
     ensure_manta_nic: false,
-    include_external_primary: true,
+    // Admin-only at zone creation; external NIC is attached later by
+    // `post-setup common-external-nics`. Same reasoning as portal —
+    // never expose the admin UI to the public network without an
+    // explicit operator action.
+    include_external_primary: false,
 };
 
 const TRITONAPI_CONFIG: ServiceConfig = ServiceConfig {
@@ -1343,7 +1351,7 @@ async fn wait_for_image_active(imgapi: &imgapi_client::Client, uuid: uuid::Uuid)
     anyhow::bail!("timed out waiting for image {uuid} to become active (4 minutes)")
 }
 
-/// Add external NICs to adminui, imgapi, and triton-api zones.
+/// Add external NICs to adminui, imgapi, triton-api, portal, and triton-admin zones.
 ///
 /// Matches sdcadm's `post-setup common-external-nics`. Two responsibilities,
 /// mirroring `SdcAdm.prototype.addNics`:
@@ -1352,9 +1360,9 @@ async fn wait_for_image_active(imgapi: &imgapi_client::Client, uuid: uuid::Uuid)
 ///  2. Update each service's SAPI `params.networks` so *future* instances
 ///     inherit the NIC without another run of this command.
 ///
-/// Without (2), a reprovision of triton-api — which is created admin-only
-/// to match the adminui/imgapi convention — would come back without an
-/// external NIC and need this command re-run.
+/// Without (2), a reprovision of any of these services — all created
+/// admin-only to match the adminui/imgapi convention — would come back
+/// without an external NIC and need this command re-run.
 async fn cmd_common_external_nics(urls: &PostSetupUrls) -> Result<()> {
     let http = triton_tls::build_http_client(false)
         .await
@@ -1379,7 +1387,7 @@ async fn cmd_common_external_nics(urls: &PostSetupUrls) -> Result<()> {
         .context("failed to parse external network UUID")?;
     let network_name = external_net.name.clone();
 
-    let svc_names = ["imgapi", "adminui", "triton-api"];
+    let svc_names = ["imgapi", "adminui", "triton-api", "portal", "triton-admin"];
     let mut any_change = false;
 
     for svc_name in &svc_names {
@@ -1423,8 +1431,8 @@ async fn cmd_common_external_nics(urls: &PostSetupUrls) -> Result<()> {
 
     if !any_change {
         eprintln!(
-            "All imgapi, adminui, and triton-api instances and service \
-             definitions already have external NICs."
+            "All instances and service definitions for the common-external-nics \
+             services already have external NICs."
         );
     }
     Ok(())
