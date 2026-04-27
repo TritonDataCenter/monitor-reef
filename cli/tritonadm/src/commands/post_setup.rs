@@ -137,6 +137,24 @@ pub enum PostSetupCommand {
         #[arg(long, short = 'C')]
         channel: Option<String>,
     },
+    /// Create the "triton-admin" service and a first instance
+    Tritonadmin {
+        /// Skip confirmation prompt
+        #[arg(long, short = 'y')]
+        yes: bool,
+        /// Dry run (preview without executing)
+        #[arg(long, short = 'n')]
+        dry_run: bool,
+        /// Server UUID to place the instance on (default: headnode)
+        #[arg(long, short = 's')]
+        server: Option<String>,
+        /// Image UUID, "latest" (from updates server), or "current" (local only)
+        #[arg(long, short = 'i', default_value = "current")]
+        image: String,
+        /// Updates server channel (default: from SAPI config or remote default)
+        #[arg(long, short = 'C')]
+        channel: Option<String>,
+    },
 }
 
 impl PostSetupCommand {
@@ -244,6 +262,28 @@ impl PostSetupCommand {
                 )
                 .await
             }
+            Self::Tritonadmin {
+                yes,
+                dry_run,
+                server,
+                image,
+                channel,
+            } => {
+                let extra = build_tritonadmin_metadata().await?;
+                cmd_add_service(
+                    &TRITONADMIN_CONFIG,
+                    &urls,
+                    SetupOpts {
+                        yes,
+                        dry_run,
+                        server,
+                        image,
+                        channel,
+                        extra_metadata: Some(extra),
+                    },
+                )
+                .await
+            }
         }
     }
 }
@@ -288,7 +328,21 @@ const PORTAL_CONFIG: ServiceConfig = ServiceConfig {
     name: "portal",
     image_name: "user-portal",
     package_name: "sdc_1024",
-    delegate_dataset: false,
+    // haproxy needs a persistent /data/tls for the self-signed cert it
+    // generates on first boot, so the zone must have a delegated dataset.
+    delegate_dataset: true,
+    firewall_enabled: true,
+    ensure_manta_nic: false,
+    include_external_primary: true,
+};
+
+const TRITONADMIN_CONFIG: ServiceConfig = ServiceConfig {
+    name: "triton-admin",
+    image_name: "triton-admin",
+    package_name: "sdc_1024",
+    // haproxy needs a persistent /data/tls for the self-signed cert it
+    // generates on first boot, so the zone must have a delegated dataset.
+    delegate_dataset: true,
     firewall_enabled: true,
     ensure_manta_nic: false,
     include_external_primary: true,
@@ -388,6 +442,20 @@ async fn build_portal_metadata(
             }]),
         );
     }
+
+    Ok(meta)
+}
+
+/// Build triton-admin-specific SAPI metadata.
+///
+/// Only seeds the JWT signing secret. UFDS and SAPI URL fields in the
+/// config template are auto-populated from application metadata.
+async fn build_tritonadmin_metadata() -> Result<serde_json::Map<String, serde_json::Value>> {
+    let mut meta = serde_json::Map::new();
+
+    // Generate a random JWT secret (64 hex chars)
+    let jwt_secret = generate_hex_secret(32).await?;
+    meta.insert("TRITON_ADMIN_JWT_SECRET".into(), json!(jwt_secret));
 
     Ok(meta)
 }
